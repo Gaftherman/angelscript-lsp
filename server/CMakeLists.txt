@@ -55,3 +55,30 @@ target_link_libraries(angel_lsp PRIVATE
     AngelScriptLib
     fmt::fmt
 )
+
+# =========================================================================
+# AUTOMATED MULTI-PLATFORM LSP BINARY DEPLOYMENT PIPELINE
+# =========================================================================
+
+# 1. Detect runtime target operating system context strings
+if(WIN32)
+    set(TARGET_OS "win32")
+elseif(APPLE)
+    set(TARGET_OS "darwin")
+else()
+    set(TARGET_OS "linux")
+endif()
+
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(TARGET_ARCH "x64")
+else()
+    set(TARGET_ARCH "x86")
+endif()
+
+set(LSP_DEPLOY_DEST "${CMAKE_CURRENT_SOURCE_DIR}/../client/bin/${TARGET_OS}-${TARGET_ARCH}")
+
+add_custom_command(TARGET angel_lsp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_DEST}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_DEST}/"
+    COMMENT "Deploying compiled LSP server binary straight to client destination folder: bin/${TARGET_OS}-${TARGET_ARCH}"
+)

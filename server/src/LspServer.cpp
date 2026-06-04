@@ -12,6 +12,7 @@
 #include <regex>
 #include <fmt/core.h>
 
+// CRITICAL FIX: Explicit Win32 binary stream headers to override carriage return text-mode translations
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
@@ -164,7 +165,8 @@ void AngelScriptLSPServer::HandleSemanticTokens(json id, const std::string& uri)
                 tokenType = 1; 
             } else {
                 tokenType = 3; size_t nextPos = i + len;
-                while (nextPos < code.length() && isspace(code[nextPos])) nextPos++;
+                // CRITICAL FIX: Safe character cast for internal verification loop
+                while (nextPos < code.length() && isspace(static_cast<unsigned char>(code[nextPos]))) nextPos++;
                 if (nextPos < code.length() && code[nextPos] == '(') tokenType = 2; 
             }
         }
@@ -199,23 +201,43 @@ void AngelScriptLSPServer::HandleCompletion(json id, const std::string& uri, int
 
     json itemsArray = json::array();
     if (line >= (int)lines.size()) {
-        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isIncomplete", false}, {"items", itemsArray}}}}); return;
+        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isIncomplete", false}, {"items", itemsArray}}}}); 
+        return;
     }
 
     std::string currentLineText = lines[line];
-    bool isDotCompletion = false; std::string objectName = "";
+    
+    // CRITICAL FIX 1: Look behind the current typing context word layout safely via unsigned char casting
     int pos = character - 1;
     if (pos >= (int)currentLineText.length()) pos = (int)currentLineText.length() - 1;
 
-    while (pos >= 0 && isspace(currentLineText[pos])) pos--;
+    while (pos >= 0 && isspace(static_cast<unsigned char>(currentLineText[pos]))) pos--;
+    
+    // Clear the active word the user is typing to check what context symbol preceded it
+    int endWordPos = pos;
+    while (endWordPos >= 0 && (isalnum(static_cast<unsigned char>(currentLineText[endWordPos])) || currentLineText[endWordPos] == '_')) {
+        endWordPos--;
+    }
+    while (endWordPos >= 0 && isspace(static_cast<unsigned char>(currentLineText[endWordPos]))) {
+        endWordPos--;
+    }
+
+    // CRITICAL FIX 2: If statement composition reveals a dangling handle symbol '@' left of the user expression word, suppress global autocomplete
+    if (pos >= 0 && (currentLineText[pos] == '@' || (endWordPos >= 0 && currentLineText[endWordPos] == '@'))) {
+        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isIncomplete", false}, {"items", itemsArray}}}});
+        return;
+    }
+
+    bool isDotCompletion = false; std::string objectName = "";
     if (pos >= 0 && currentLineText[pos] == '.') {
         isDotCompletion = true; pos--;
-        while (pos >= 0 && isspace(currentLineText[pos])) pos--;
+        while (pos >= 0 && isspace(static_cast<unsigned char>(currentLineText[pos]))) pos--;
         int endObj = pos;
-        while (pos >= 0 && (isalnum(currentLineText[pos]) || currentLineText[pos] == '_')) pos--;
+        while (pos >= 0 && (isalnum(static_cast<unsigned char>(currentLineText[pos])) || currentLineText[pos] == '_')) pos--;
         objectName = currentLineText.substr(pos + 1, endObj - pos);
     }
 
+    // Line sanitization loop
     std::string modifiedText = originalText;
     size_t lineStartPos = 0;
     for (int i = 0; i < line; ++i) {
@@ -242,12 +264,11 @@ void AngelScriptLSPServer::HandleCompletion(json id, const std::string& uri, int
 
     if (isDotCompletion && !objectName.empty()) {
         std::string inferredTypeName = "";
-        
-        for (const auto& v : localVars) { 
-            if (v.name == objectName) { 
-                inferredTypeName = v.typeName; 
-                break; 
-            } 
+        for (const auto& v : localVars) { if (v.name == objectName) { inferredTypeName = v.typeName; break; } }
+        if (inferredTypeName.empty()) {
+            std::regex typeRegex(R"(\b([A-Za-z_]\w*)\s+(?:@\s*)?)" + objectName + R"(\b)");
+            std::smatch match;
+            if (std::regex_search(originalText, match, typeRegex) && match.size() > 1) inferredTypeName = match[1].str();
         }
 
         if (!inferredTypeName.empty() && mod) {
@@ -277,13 +298,11 @@ void AngelScriptLSPServer::HandleCompletion(json id, const std::string& uri, int
         for (const auto& kw : keywords) itemsArray.push_back({{"label", kw}, {"kind", 14}, {"detail", "keyword"}});
         for (const auto& v : localVars) itemsArray.push_back({{"label", v.name}, {"kind", 6}, {"detail", "local " + v.typeName}});
         
-        // CRITICAL FIX: Lexical Context Auto-injection if typing inside an unclosed or active class function scope
         if (!enclosingClass.empty() && mod) {
             asITypeInfo* classType = mod->GetTypeInfoByName(enclosingClass.c_str());
             if (!classType) classType = nativeEng->GetTypeInfoByName(enclosingClass.c_str());
             
             if (classType) {
-                // Class Properties
                 for (asUINT p = 0; p < classType->GetPropertyCount(); p++) {
                     const char* propName = nullptr; int propTypeId = 0;
                     classType->GetProperty(p, &propName, &propTypeId);
@@ -294,7 +313,6 @@ void AngelScriptLSPServer::HandleCompletion(json id, const std::string& uri, int
                         {"documentation", {{"kind", "markdown"}, {"value", fmt::format("Member property of enclosing class `{}`", enclosingClass)}}}
                     });
                 }
-                // Class Methods
                 for (asUINT m = 0; m < classType->GetMethodCount(); m++) {
                     asIScriptFunction* func = classType->GetMethodByIndex(m);
                     if (func) {
@@ -413,8 +431,8 @@ void AngelScriptLSPServer::HandleHover(json id, const std::string& uri, int line
     if (start > (int)currentLineText.length()) start = (int)currentLineText.length();
     int end = start;
 
-    while (start > 0 && (isalnum(currentLineText[start - 1]) || currentLineText[start - 1] == '_')) start--;
-    while (end < (int)currentLineText.length() && (isalnum(currentLineText[end]) || currentLineText[end] == '_')) end++;
+    while (start > 0 && (isalnum(static_cast<unsigned char>(currentLineText[start - 1])) || currentLineText[start - 1] == '_')) start--;
+    while (end < (int)currentLineText.length() && (isalnum(static_cast<unsigned char>(currentLineText[end])) || currentLineText[end] == '_')) end++;
     
     std::string word = currentLineText.substr(start, end - start);
     if (word.empty()) { SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", nullptr}}); return; }

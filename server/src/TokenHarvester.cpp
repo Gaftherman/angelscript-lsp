@@ -22,10 +22,13 @@ std::vector<TokenHarvester::LocalVariable> TokenHarvester::ScanLocalVariables(as
     size_t i = 0;
     int currentDepth = 0;
     
+    // Modern 3-step look-behind history tracking to support handles (@) and comma separation safely
+    std::string_view thirdLastToken;
     std::string_view secondLastToken;
     std::string_view lastToken;
     asETokenClass lastTc = asTC_UNKNOWN;
 
+    std::string_view latestType = "";
     std::string enclosingClass = "";
     std::string lastClassSeen = "";
     int classDeclarationDepth = -1;
@@ -52,12 +55,13 @@ std::vector<TokenHarvester::LocalVariable> TokenHarvester::ScanLocalVariables(as
                     enclosingClass = "";
                     classDeclarationDepth = -1;
                 }
-                // Limpieza léxica: Solo borramos las variables que nacieron en un bloque local profundo.
-                // Las variables nacidas en depth 0 (globales) o depth 1 (miembros de clase si estás dentro de una) se conservan si el cursor sigue ahí.
                 locals.erase(std::remove_if(locals.begin(), locals.end(),
                     [currentDepth](const LocalVariable& v) {
                         return v.declarationDepth > currentDepth;
                     }), locals.end());
+            }
+            else if (tokenStr == ";") {
+                latestType = ""; // Reset type tracking context when statement boundary finishes
             }
         }
         else if (tc == asTC_IDENTIFIER) {
@@ -66,24 +70,48 @@ std::vector<TokenHarvester::LocalVariable> TokenHarvester::ScanLocalVariables(as
             }
         }
         
-        // Captura de declaraciones nativas (Tipo objeto; o Tipo@ objeto;)
+        // Evaluates delimiter punctuation token against historically buffered token look-backs
         if (tc == asTC_KEYWORD && (tokenStr == ";" || tokenStr == "=" || tokenStr == "," || tokenStr == ")")) {
             if (lastTc == asTC_IDENTIFIER && !secondLastToken.empty() && 
                 secondLastToken != "return" && secondLastToken != "class" && secondLastToken != "interface" &&
-                secondLastToken != "}" && secondLastToken != "{" && secondLastToken != ";") {
+                secondLastToken != "}" && secondLastToken != "{" && secondLastToken != ";" &&
+                secondLastToken != ".") {
                 
                 std::string varName(lastToken);
-                std::string typeName(secondLastToken);
+                std::string typeName = "";
+
+                // CRITICAL FIX: Resolve data type extracting bypasses for object handles (Class@ obj) and multi-variables (int a, b;)
+                if (secondLastToken == "@") {
+                    typeName = std::string(thirdLastToken);
+                    latestType = thirdLastToken;
+                } 
+                else if (secondLastToken == "," && !latestType.empty()) {
+                    typeName = std::string(latestType);
+                }
+                else {
+                    typeName = std::string(secondLastToken);
+                    latestType = secondLastToken;
+                }
                 
-                bool alreadyExists = false;
-                for (const auto& v : locals) { if (v.name == varName) { alreadyExists = true; break; } }
-                if (!alreadyExists) {
-                    locals.push_back({varName, typeName, currentDepth});
+                bool isLocal = false;
+                if (enclosingClass.empty()) {
+                    if (currentDepth >= 1) isLocal = true;
+                } else {
+                    if (currentDepth > (classDeclarationDepth + 1)) isLocal = true;
+                }
+
+                if (isLocal && !typeName.empty()) {
+                    bool alreadyExists = false;
+                    for (const auto& v : locals) { if (v.name == varName) { alreadyExists = true; break; } }
+                    if (!alreadyExists) {
+                        locals.push_back({varName, typeName, currentDepth});
+                    }
                 }
             }
         }
 
         if (tc != asTC_WHITESPACE && tc != asTC_COMMENT) {
+            thirdLastToken = secondLastToken;
             secondLastToken = lastToken;
             lastToken = tokenStr;
             lastTc = tc;
@@ -126,7 +154,6 @@ std::vector<TokenHarvester::GlobalFunction> TokenHarvester::ScanGlobalFunctions(
         if (tc != asTC_WHITESPACE && tc != asTC_COMMENT) {
             secondLastToken = lastToken; lastToken = tokenStr; lastTc = tc;
         }
-        std::string_view prefix = "Content-Length: ";
         i += len;
     }
     return funcs;

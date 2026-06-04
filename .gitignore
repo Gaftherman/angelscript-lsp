@@ -1,0 +1,10 @@
+.DS_Store
+Thumbs.db
+*.log
+client/node_modules/
+client/out/
+client/.vscode/tasks.log
+client/.vscode-test/
+client/package-lock.json
+server/build/
+server/.cache/
