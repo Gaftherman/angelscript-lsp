@@ -6,6 +6,8 @@
 
 #include "LspServer.h"
 #include "TokenHarvester.h"
+#include "CompletionHandler.h"
+
 #include <iostream>
 #include <sstream>
 #include <filesystem>
@@ -20,6 +22,9 @@
 
 namespace fs = std::filesystem;
 
+/**
+ * @brief Launches the main infinite execution loop monitoring client stream traffic blocks.
+ */
 void AngelScriptLSPServer::Run() {
 #ifdef _WIN32
     _setmode(_fileno(stdin), _O_BINARY);
@@ -75,12 +80,21 @@ void AngelScriptLSPServer::Run() {
     }
 }
 
+/**
+ * @brief Serializes a JSON message and sends it to the client output stream with proper LSP framing.
+ * @param message JSON object representing the LSP response or notification to be sent.
+ */
 void AngelScriptLSPServer::SendToVSCode(const json& message) {
     std::string content = message.dump();
     fmt::print("Content-Length: {}\r\n\r\n{}", content.length(), content);
     std::cout << std::flush;
 }
 
+/**
+ * @brief Logs a message to the client output console with a specified log level.
+ * @param message The log message content to be sent to the client.
+ * @param logType The severity level of the log (1: Error, 2: Warning, 3: Info).
+ */
 void AngelScriptLSPServer::LogRemote(std::string_view message, int logType) {
     json logNotification = {
         {"jsonrpc", "2.0"}, {"method", "window/logMessage"},
@@ -89,6 +103,11 @@ void AngelScriptLSPServer::LogRemote(std::string_view message, int logType) {
     SendToVSCode(logNotification);
 }
 
+/**
+ * @brief Transforms a given file URI into an absolute filesystem path string.
+ * @param uri The file URI to be transformed (e.g., "file:///C:/path/to/file.as").
+ * @return A string representing the absolute filesystem path corresponding to the input URI.
+ */
 std::string AngelScriptLSPServer::TransformUriToPath(std::string_view uri) {
     std::string ret(uri);
     if (ret.find("file:///") == 0) {
@@ -108,6 +127,10 @@ std::string AngelScriptLSPServer::TransformUriToPath(std::string_view uri) {
     return decoded;
 }
 
+/**
+ * @brief Handles the 'initialize' LSP request by responding with the server's capabilities and supported features.
+ * @param id The unique identifier of the LSP request to which this response corresponds.
+ */
 void AngelScriptLSPServer::HandleInitialize(json id) {
     json response = {
         {"jsonrpc", "2.0"}, {"id", id},
@@ -128,6 +151,11 @@ void AngelScriptLSPServer::HandleInitialize(json id) {
     LogRemote("AngelScript LSP engine worker module successfully attached.", 3);
 }
 
+/**
+ * @brief Handles the 'textDocument/didOpen' and 'textDocument/didChange' LSP notifications by caching the document's content and triggering an analysis pass.
+ * @param uri The URI of the document that was opened or modified.
+ * @param code The full text content of the document.
+ */
 void AngelScriptLSPServer::AnalyzeAndReport(const std::string& uri, const std::string& code) {
     scriptEngine.ClearDiagnostics();
     std::string cleanUri = TransformUriToPath(uri);
@@ -144,6 +172,11 @@ void AngelScriptLSPServer::AnalyzeAndReport(const std::string& uri, const std::s
     SendToVSCode({{"jsonrpc", "2.0"}, {"method", "textDocument/publishDiagnostics"}, {"params", {{"uri", uri}, {"diagnostics", diagnosticsArray}}}});
 }
 
+/**
+ * @brief Handles the 'textDocument/semanticTokens/full' LSP request by analyzing the document content and returning semantic token information for syntax highlighting.
+ * @param id The unique identifier of the LSP request to which this response corresponds.
+ * @param uri The URI of the document for which semantic tokens are being requested.
+ */
 void AngelScriptLSPServer::HandleSemanticTokens(json id, const std::string& uri) {
     std::string_view code = documentCache[uri];
     std::vector<int> tokens;
@@ -187,57 +220,20 @@ void AngelScriptLSPServer::HandleSemanticTokens(json id, const std::string& uri)
     SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", { {"data", tokens} }}});
 }
 
+/**
+ * @brief Handles the 'textDocument/completion' LSP request by analyzing the document context at the specified position and returning relevant completion items.
+ * @param id The unique identifier of the LSP request to which this response corresponds.
+ * @param uri The URI of the document for which completion is being requested.
+ * @param line The line number (0-based) in the document where the completion request was triggered.
+ * @param character The character offset (0-based) in the line where the completion request was triggered.
+ */
 void AngelScriptLSPServer::HandleCompletion(json id, const std::string& uri, int line, int character) {
     std::string originalText = documentCache[uri];
     asIScriptEngine* nativeEng = scriptEngine.GetNativeEngine();
     size_t cursorAbsPos = TokenHarvester::GetAbsolutePosition(originalText, line, character);
-    
-    std::vector<std::string> lines;
-    std::istringstream stream(originalText); std::string tmpLine;
-    while (std::getline(stream, tmpLine)) {
-        if (!tmpLine.empty() && tmpLine.back() == '\r') tmpLine.pop_back();
-        lines.push_back(tmpLine);
-    }
 
-    json itemsArray = json::array();
-    if (line >= (int)lines.size()) {
-        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isIncomplete", false}, {"items", itemsArray}}}}); 
-        return;
-    }
+    TokenHarvester::CompletionContext ctx = TokenHarvester::GetCompletionContext(nativeEng, originalText, cursorAbsPos);
 
-    std::string currentLineText = lines[line];
-    
-    // CRITICAL FIX 1: Look behind the current typing context word layout safely via unsigned char casting
-    int pos = character - 1;
-    if (pos >= (int)currentLineText.length()) pos = (int)currentLineText.length() - 1;
-
-    while (pos >= 0 && isspace(static_cast<unsigned char>(currentLineText[pos]))) pos--;
-    
-    // Clear the active word the user is typing to check what context symbol preceded it
-    int endWordPos = pos;
-    while (endWordPos >= 0 && (isalnum(static_cast<unsigned char>(currentLineText[endWordPos])) || currentLineText[endWordPos] == '_')) {
-        endWordPos--;
-    }
-    while (endWordPos >= 0 && isspace(static_cast<unsigned char>(currentLineText[endWordPos]))) {
-        endWordPos--;
-    }
-
-    // CRITICAL FIX 2: If statement composition reveals a dangling handle symbol '@' left of the user expression word, suppress global autocomplete
-    if (pos >= 0 && (currentLineText[pos] == '@' || (endWordPos >= 0 && currentLineText[endWordPos] == '@'))) {
-        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"isIncomplete", false}, {"items", itemsArray}}}});
-        return;
-    }
-
-    bool isDotCompletion = false; std::string objectName = "";
-    if (pos >= 0 && currentLineText[pos] == '.') {
-        isDotCompletion = true; pos--;
-        while (pos >= 0 && isspace(static_cast<unsigned char>(currentLineText[pos]))) pos--;
-        int endObj = pos;
-        while (pos >= 0 && (isalnum(static_cast<unsigned char>(currentLineText[pos])) || currentLineText[pos] == '_')) pos--;
-        objectName = currentLineText.substr(pos + 1, endObj - pos);
-    }
-
-    // Line sanitization loop
     std::string modifiedText = originalText;
     size_t lineStartPos = 0;
     for (int i = 0; i < line; ++i) {
@@ -258,156 +254,13 @@ void AngelScriptLSPServer::HandleCompletion(json id, const std::string& uri, int
     asIScriptModule* mod = nativeEng->GetModule("LSPModule");
 
     std::string enclosingClass = "";
-    auto localVars = TokenHarvester::ScanLocalVariables(nativeEng, originalText, cursorAbsPos, enclosingClass);
+    auto customClasses = TokenHarvester::ScanCustomClasses(nativeEng, originalText);
     auto tokenFuncs = TokenHarvester::ScanGlobalFunctions(nativeEng, originalText);
     auto tokenGlobalVars = TokenHarvester::ScanGlobalVariables(nativeEng, originalText);
+    auto localVars = TokenHarvester::ScanLocalVariables(nativeEng, originalText, cursorAbsPos, enclosingClass, customClasses, tokenGlobalVars, tokenFuncs);
 
-    if (isDotCompletion && !objectName.empty()) {
-        std::string inferredTypeName = "";
-        for (const auto& v : localVars) { if (v.name == objectName) { inferredTypeName = v.typeName; break; } }
-        if (inferredTypeName.empty()) {
-            std::regex typeRegex(R"(\b([A-Za-z_]\w*)\s+(?:@\s*)?)" + objectName + R"(\b)");
-            std::smatch match;
-            if (std::regex_search(originalText, match, typeRegex) && match.size() > 1) inferredTypeName = match[1].str();
-        }
-
-        if (!inferredTypeName.empty() && mod) {
-            asITypeInfo* targetType = mod->GetTypeInfoByName(inferredTypeName.c_str());
-            if (!targetType) targetType = nativeEng->GetTypeInfoByName(inferredTypeName.c_str());
-
-            if (targetType) {
-                for (asUINT p = 0; p < targetType->GetPropertyCount(); p++) {
-                    const char* propName = nullptr; int propTypeId = 0;
-                    targetType->GetProperty(p, &propName, &propTypeId);
-                    asITypeInfo* propType = nativeEng->GetTypeInfoById(propTypeId);
-                    itemsArray.push_back({{"label", propName}, {"kind", 5}, {"detail", propType ? propType->GetName() : "primitive"}});
-                }
-                for (asUINT m = 0; m < targetType->GetMethodCount(); m++) {
-                    asIScriptFunction* func = targetType->GetMethodByIndex(m);
-                    itemsArray.push_back({
-                        {"label", func->GetName()}, {"kind", 2}, 
-                        {"detail", func->GetDeclaration(true, false, true)},
-                        {"insertText", std::string(func->GetName()) + "($1)"}, {"insertTextFormat", 2}
-                    });
-                }
-            }
-        }
-    } 
-    else {
-        std::vector<std::string> keywords = {"class", "interface", "void", "int", "float", "string", "array", "bool", "if", "else", "for", "while", "return", "this"};
-        for (const auto& kw : keywords) itemsArray.push_back({{"label", kw}, {"kind", 14}, {"detail", "keyword"}});
-        for (const auto& v : localVars) itemsArray.push_back({{"label", v.name}, {"kind", 6}, {"detail", "local " + v.typeName}});
-        
-        if (!enclosingClass.empty() && mod) {
-            asITypeInfo* classType = mod->GetTypeInfoByName(enclosingClass.c_str());
-            if (!classType) classType = nativeEng->GetTypeInfoByName(enclosingClass.c_str());
-            
-            if (classType) {
-                for (asUINT p = 0; p < classType->GetPropertyCount(); p++) {
-                    const char* propName = nullptr; int propTypeId = 0;
-                    classType->GetProperty(p, &propName, &propTypeId);
-                    asITypeInfo* propType = nativeEng->GetTypeInfoById(propTypeId);
-                    itemsArray.push_back({
-                        {"label", propName}, {"kind", 5}, 
-                        {"detail", propType ? propType->GetName() : "primitive"},
-                        {"documentation", {{"kind", "markdown"}, {"value", fmt::format("Member property of enclosing class `{}`", enclosingClass)}}}
-                    });
-                }
-                for (asUINT m = 0; m < classType->GetMethodCount(); m++) {
-                    asIScriptFunction* func = classType->GetMethodByIndex(m);
-                    if (func) {
-                        std::string funcName = func->GetName();
-                        itemsArray.push_back({
-                            {"label", funcName}, {"kind", 2}, 
-                            {"detail", func->GetDeclaration(true, false, true)},
-                            {"documentation", {{"kind", "markdown"}, {"value", fmt::format("Member method of enclosing class `{}`", enclosingClass)}}},
-                            {"insertText", funcName + "($1)"}, {"insertTextFormat", 2}
-                        });
-                    }
-                }
-            }
-        }
-
-        std::unordered_map<std::string, bool> addedFunctions;
-
-        if (mod) {
-            for (asUINT f = 0; f < mod->GetFunctionCount(); f++) {
-                asIScriptFunction* func = mod->GetFunctionByIndex(f);
-                if (func) {
-                    std::string funcName = func->GetName(); addedFunctions[funcName] = true;
-                    const char* section = nullptr; int r = 0, c = 0;
-                    func->GetDeclaredAt(&section, &r, &c);
-                    std::string filename = section ? fs::path(section).filename().string() : "workspace";
-
-                    itemsArray.push_back({
-                        {"label", funcName}, {"kind", 3}, 
-                        {"detail", func->GetDeclaration(true, false, true)},
-                        {"documentation", {{"kind", "markdown"}, {"value", fmt::format("**File:** {}", filename)}}},
-                        {"insertText", funcName + "($1)"}, {"insertTextFormat", 2}
-                    });
-                }
-            }
-            for (asUINT g = 0; g < mod->GetGlobalVarCount(); g++) {
-                const char* varName = nullptr; int typeId = 0;
-                mod->GetGlobalVar(g, &varName, nullptr, &typeId);
-                if (varName) {
-                    itemsArray.push_back({
-                        {"label", varName}, {"kind", 6}, {"detail", "Global variable"},
-                        {"documentation", {{"kind", "markdown"}, {"value", "Global var in module"}}}
-                    });
-                }
-            }
-        }
-
-        for (const auto& tf : tokenFuncs) {
-            if (!addedFunctions[tf.name]) {
-                addedFunctions[tf.name] = true;
-                std::string docLabel = fmt::format("**File:** {}", fs::path(cleanUri).filename().string());
-                itemsArray.push_back({
-                    {"label", tf.name}, {"kind", 3}, {"detail", tf.declaration},
-                    {"documentation", {{"kind", "markdown"}, {"value", docLabel}}},
-                    {"insertText", tf.name + "($1)"}, {"insertTextFormat", 2}
-                });
-            }
-        }
-
-        for (const auto& nativeVar : tokenGlobalVars) {
-            bool exists = false;
-            for (const auto& item : itemsArray) { if (item.contains("label") && item["label"] == nativeVar.name) { exists = true; break; } }
-            if (!exists) {
-                itemsArray.push_back({
-                    {"label", nativeVar.name}, {"kind", 6}, {"detail", nativeVar.typeName + " " + nativeVar.name},
-                    {"documentation", {{"kind", "markdown"}, {"value", "Variable (parsed fallback)"}}}
-                });
-            }
-        }
-
-        for (asUINT f = 0; f < nativeEng->GetGlobalFunctionCount(); f++) {
-            asIScriptFunction* func = nativeEng->GetGlobalFunctionByIndex(f);
-            if (func) {
-                std::string funcName = func->GetName();
-                if (!addedFunctions[funcName]) {
-                    itemsArray.push_back({
-                        {"label", funcName}, {"kind", 3}, 
-                        {"detail", func->GetDeclaration(true, false, true)},
-                        {"documentation", {{"kind", "markdown"}, {"value", "**Native Global Function**"}}},
-                        {"insertText", funcName + "($1)"}, {"insertTextFormat", 2}
-                    });
-                }
-            }
-        }
-
-        for (asUINT g = 0; g < nativeEng->GetGlobalPropertyCount(); g++) {
-            const char* varName = nullptr;
-            nativeEng->GetGlobalPropertyByIndex(g, &varName, nullptr, nullptr, nullptr);
-            if (varName) {
-                itemsArray.push_back({
-                    {"label", varName}, {"kind", 6}, {"detail", "Native global variable"},
-                    {"documentation", {{"kind", "markdown"}, {"value", "Native engine property"}}}
-                });
-            }
-        }
-    }
+    CompletionHandler handler(nativeEng, mod, ctx, enclosingClass, localVars, customClasses, tokenFuncs, tokenGlobalVars);
+    json itemsArray = handler.GenerateItems(originalText, cursorAbsPos);
 
     json response = {
         {"jsonrpc", "2.0"}, {"id", id},
@@ -416,6 +269,13 @@ void AngelScriptLSPServer::HandleCompletion(json id, const std::string& uri, int
     SendToVSCode(response);
 }
 
+/**
+ * @brief Handles the 'textDocument/hover' LSP request by analyzing the document context at the specified position and returning relevant hover information.
+ * @param id The unique identifier of the LSP request to which this response corresponds.
+ * @param uri The URI of the document for which hover information is being requested.
+ * @param line The line number (0-based) in the document where the hover request was triggered.
+ * @param character The character offset (0-based) in the line where the hover request was triggered.
+ */
 void AngelScriptLSPServer::HandleHover(json id, const std::string& uri, int line, int character) {
     std::string_view text = documentCache[uri];
     asIScriptEngine* nativeEng = scriptEngine.GetNativeEngine();
@@ -435,23 +295,60 @@ void AngelScriptLSPServer::HandleHover(json id, const std::string& uri, int line
     while (end < (int)currentLineText.length() && (isalnum(static_cast<unsigned char>(currentLineText[end])) || currentLineText[end] == '_')) end++;
     
     std::string word = currentLineText.substr(start, end - start);
-    if (word.empty()) { SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", nullptr}}); return; }
+    if (word.empty()) { 
+        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", nullptr}}); 
+        return; 
+    }
+
+    size_t cursorAbsPos = TokenHarvester::GetAbsolutePosition(text, line, character);
+    
+    auto customClasses = TokenHarvester::ScanCustomClasses(nativeEng, text);
+    auto tokenFuncs = TokenHarvester::ScanGlobalFunctions(nativeEng, text);
+    auto tokenGlobalVars = TokenHarvester::ScanGlobalVariables(nativeEng, text);
+
+    std::string enclosingClass = "";
+    auto localVars = TokenHarvester::ScanLocalVariables(nativeEng, text, cursorAbsPos, enclosingClass, customClasses, tokenGlobalVars, tokenFuncs);
 
     std::string hoverResult = "";
-    size_t cursorAbsPos = TokenHarvester::GetAbsolutePosition(text, line, character);
-    std::string dummyEnclosingClass = "";
-    auto localVars = TokenHarvester::ScanLocalVariables(nativeEng, text, cursorAbsPos, dummyEnclosingClass);
+
     for (const auto& v : localVars) {
         if (v.name == word) {
-            hoverResult = fmt::format("Local variable: `{} {}`", v.typeName, v.name);
+            hoverResult = fmt::format("```cpp\n(local) {} {}\n```", v.typeName, v.name);
             break;
+        }
+    }
+
+    if (hoverResult.empty()) {
+        for (const auto& v : tokenGlobalVars) {
+            if (v.name == word) {
+                hoverResult = fmt::format("```cpp\n(global) {} {}\n```", v.typeName, v.name);
+                break;
+            }
+        }
+    }
+
+    if (hoverResult.empty()) {
+        for (const auto& c : customClasses) {
+            if (c.name == word) {
+                hoverResult = fmt::format("```cpp\nclass {}\n```\n*User-defined script type.*", c.name);
+                break;
+            }
+        }
+    }
+
+    if (hoverResult.empty()) {
+        for (const auto& f : tokenFuncs) {
+            if (f.name == word) {
+                hoverResult = fmt::format("```cpp\n(function) {}\n```", f.declaration);
+                break;
+            }
         }
     }
 
     if (hoverResult.empty()) {
         asITypeInfo* typeInfo = nativeEng->GetTypeInfoByName(word.c_str());
         if (typeInfo) {
-            hoverResult = fmt::format("```cpp\nclass {}\n```\nRegistered object layout definition.", typeInfo->GetName());
+            hoverResult = fmt::format("```cpp\nclass {}\n```\n*Native C++ object.*", typeInfo->GetName());
         }
     }
 
@@ -459,7 +356,7 @@ void AngelScriptLSPServer::HandleHover(json id, const std::string& uri, int line
         for (asUINT f = 0; f < nativeEng->GetGlobalFunctionCount(); f++) {
             asIScriptFunction* func = nativeEng->GetGlobalFunctionByIndex(f);
             if (std::string(func->GetName()) == word) {
-                hoverResult = fmt::format("```cpp\n{}\n```", func->GetDeclaration(false, false, true));
+                hoverResult = fmt::format("```cpp\n(native function) {}\n```", func->GetDeclaration(false, false, true));
                 break;
             }
         }

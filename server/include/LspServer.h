@@ -15,13 +15,24 @@
 
 using json = nlohmann::json;
 
+/**
+ * @class AngelScriptLSPServer
+ * @brief Core controller class managing Language Server Protocol (LSP) routing, state, and client-server communication.
+ */
 class AngelScriptLSPServer {
 private:
     ScriptEngine scriptEngine;
     std::unordered_map<std::string, std::string> documentCache;
 
 public:
+    /**
+     * @brief Default constructor for the AngelScriptLSPServer.
+     */
     AngelScriptLSPServer() = default;
+
+    /**
+     * @brief Default destructor for the AngelScriptLSPServer.
+     */
     ~AngelScriptLSPServer() = default;
 
     /**
@@ -57,9 +68,9 @@ private:
     void HandleInitialize(json id);
 
     /**
-     * @brief Handles the 'textDocument/didOpen' LSP notification by caching the opened document's content and triggering an initial analysis pass.
-     * @param uri The URI of the document that was opened.
-     * @param code The full text content of the opened document.
+     * @brief Handles the 'textDocument/didOpen' and 'textDocument/didChange' LSP notifications by caching the document's content and triggering an analysis pass.
+     * @param uri The URI of the document that was opened or modified.
+     * @param code The full text content of the document.
      */
     void AnalyzeAndReport(const std::string& uri, const std::string& code);
 
@@ -75,7 +86,7 @@ private:
      * @param id The unique identifier of the LSP request to which this response corresponds.
      * @param uri The URI of the document for which completion is being requested.
      * @param line The line number (0-based) in the document where the completion request was triggered.
-     * @param character The character offset (0-based) in the line where the completion request
+     * @param character The character offset (0-based) in the line where the completion request was triggered.
      */
     void HandleCompletion(json id, const std::string& uri, int line, int character);
 

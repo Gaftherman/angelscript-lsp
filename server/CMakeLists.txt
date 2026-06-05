@@ -46,6 +46,7 @@ add_executable(angel_lsp
     src/LspServer.cpp
     src/ScriptEngine.cpp
     src/TokenHarvester.cpp
+    src/CompletionHandler.cpp
 )
 
 target_include_directories(angel_lsp PRIVATE include)
@@ -56,11 +57,6 @@ target_link_libraries(angel_lsp PRIVATE
     fmt::fmt
 )
 
-# =========================================================================
-# AUTOMATED MULTI-PLATFORM LSP BINARY DEPLOYMENT PIPELINE
-# =========================================================================
-
-# 1. Detect runtime target operating system context strings
 if(WIN32)
     set(TARGET_OS "win32")
 elseif(APPLE)
