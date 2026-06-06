@@ -13,16 +13,209 @@
 #include <filesystem>
 #include <regex>
 #include <fmt/core.h>
-
 #include <fstream>
+#include <unordered_set>
 
-// CRITICAL FIX: Explicit Win32 binary stream headers to override carriage return text-mode translations
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
 #endif
 
 namespace fs = std::filesystem;
+
+namespace LspServer
+{
+    /**
+     * @brief Blanks out the content of a specific line to prevent parser syntax errors.
+     */
+    std::string BlankOutLine(const std::string &text, int line)
+    {
+        std::string modifiedText = text;
+        size_t lineStartPos = 0;
+        for (int i = 0; i < line; ++i)
+        {
+            lineStartPos = text.find('\n', lineStartPos);
+            if (lineStartPos == std::string::npos)
+                return modifiedText;
+            lineStartPos++;
+        }
+
+        size_t lineEndPos = text.find('\n', lineStartPos);
+        if (lineEndPos == std::string::npos)
+            lineEndPos = text.length();
+
+        for (size_t p = lineStartPos; p < lineEndPos; ++p)
+        {
+            if (modifiedText[p] != '\r' && modifiedText[p] != '\n')
+                modifiedText[p] = ' ';
+        }
+        return modifiedText;
+    }
+
+    /**
+     * @brief Extracts the full alphanumeric word under the specified cursor coordinate.
+     */
+    std::string ExtractWordAtPosition(std::string_view text, int line, int character)
+    {
+        std::string codeCopy(text);
+        std::istringstream stream(codeCopy);
+        std::string currentLineText;
+        for (int i = 0; i <= line; ++i)
+        {
+            if (!std::getline(stream, currentLineText))
+                break;
+        }
+
+        int start = character;
+        if (start > (int)currentLineText.length())
+            start = (int)currentLineText.length();
+        int end = start;
+
+        while (start > 0 && (isalnum(static_cast<unsigned char>(currentLineText[start - 1])) || currentLineText[start - 1] == '_'))
+            start--;
+        while (end < (int)currentLineText.length() && (isalnum(static_cast<unsigned char>(currentLineText[end])) || currentLineText[end] == '_'))
+            end++;
+
+        return currentLineText.substr(start, end - start);
+    }
+
+    /**
+     * @brief Collects and populates script classes and object structures compiled inside a module.
+     */
+    void PopulateCustomClassesFromModule(asIScriptEngine *engine, asIScriptModule *mod, std::vector<TokenHarvester::ScriptClass> &customClasses)
+    {
+        if (!mod || !engine)
+            return;
+
+        for (asUINT t = 0; t < mod->GetObjectTypeCount(); t++)
+        {
+            asITypeInfo *typeInfo = mod->GetObjectTypeByIndex(t);
+            if (!typeInfo)
+                continue;
+
+            std::string className = typeInfo->GetName();
+            auto it = std::find_if(customClasses.begin(), customClasses.end(),
+                                   [&](const TokenHarvester::ScriptClass &c)
+                                   { return c.name == className; });
+
+            if (it == customClasses.end())
+            {
+                TokenHarvester::ScriptClass extClass;
+                extClass.name = className;
+
+                for (asUINT p = 0; p < typeInfo->GetPropertyCount(); p++)
+                {
+                    const char *pName = nullptr;
+                    int pTypeId = 0;
+                    typeInfo->GetProperty(p, &pName, &pTypeId);
+                    const char *pDecl = engine->GetTypeDeclaration(pTypeId, true);
+                    if (pName && pDecl)
+                    {
+                        extClass.properties.push_back({pName, pDecl, "public"});
+                    }
+                }
+
+                for (asUINT m = 0; m < typeInfo->GetMethodCount(); m++)
+                {
+                    asIScriptFunction *method = typeInfo->GetMethodByIndex(m);
+                    if (method)
+                    {
+                        const char *rDecl = engine->GetTypeDeclaration(method->GetReturnTypeId(), true);
+                        bool isConstructorOrDestructor = (method->GetName() == className || method->GetName() == ("~" + className));
+                        extClass.methods.push_back({method->GetName(),
+                                                    rDecl ? rDecl : "void",
+                                                    method->GetDeclaration(true, false, true),
+                                                    "public",
+                                                    isConstructorOrDestructor});
+                    }
+                }
+                customClasses.push_back(extClass);
+            }
+        }
+
+        for (asUINT e = 0; e < mod->GetEnumCount(); e++)
+        {
+            asITypeInfo *enumType = mod->GetEnumByIndex(e);
+            if (!enumType)
+                continue;
+
+            std::string enumName = enumType->GetName();
+            auto it = std::find_if(customClasses.begin(), customClasses.end(),
+                                   [&](const TokenHarvester::ScriptClass &c)
+                                   { return c.name == enumName; });
+
+            if (it != customClasses.end())
+            {
+                it->properties.clear();
+                it->methods.clear();
+                for (asUINT v = 0; v < enumType->GetEnumValueCount(); v++)
+                {
+                    asINT64 val = 0;
+                    const char *enumValName = enumType->GetEnumValueByIndex(v, &val);
+                    if (enumValName)
+                    {
+                        it->properties.push_back({enumValName, enumName, "public"});
+                    }
+                }
+            }
+            else
+            {
+                TokenHarvester::ScriptClass extEnum;
+                extEnum.name = enumName;
+                for (asUINT v = 0; v < enumType->GetEnumValueCount(); v++)
+                {
+                    asINT64 val = 0;
+                    const char *enumValName = enumType->GetEnumValueByIndex(v, &val);
+                    if (enumValName)
+                    {
+                        extEnum.properties.push_back({enumValName, enumName, "public"});
+                    }
+                }
+                customClasses.push_back(extEnum);
+            }
+        }
+    }
+
+    /**
+     * @brief Looks up custom object types and enums declared within the current active module scope.
+     */
+    bool IsCustomScriptType(asIScriptModule *mod, const std::string &name)
+    {
+        if (!mod)
+            return false;
+
+        for (asUINT t = 0; t < mod->GetObjectTypeCount(); t++)
+        {
+            if (asITypeInfo *ti = mod->GetObjectTypeByIndex(t))
+            {
+                if (ti->GetName() == name)
+                    return true;
+            }
+        }
+
+        for (asUINT e = 0; e < mod->GetEnumCount(); e++)
+        {
+            if (asITypeInfo *ti = mod->GetEnumByIndex(e))
+            {
+                if (ti->GetName() == name)
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @brief Performs comprehensive introspection to verify if an identifier is a registered structural data type.
+     */
+    bool IsEngineOrScriptType(asIScriptEngine *engine, asIScriptModule *mod, const std::string &name)
+    {
+        if (engine && engine->GetTypeIdByDecl(name.c_str()) >= 0)
+            return true;
+
+        return IsCustomScriptType(mod, name);
+    }
+}
 
 /**
  * @brief Launches the main infinite execution loop monitoring client stream traffic blocks.
@@ -109,7 +302,6 @@ void AngelScriptLSPServer::Run()
 
 /**
  * @brief Serializes a JSON message and sends it to the client output stream with proper LSP framing.
- * @param message JSON object representing the LSP response or notification to be sent.
  */
 void AngelScriptLSPServer::SendToVSCode(const json &message)
 {
@@ -120,8 +312,6 @@ void AngelScriptLSPServer::SendToVSCode(const json &message)
 
 /**
  * @brief Logs a message to the client output console with a specified log level.
- * @param message The log message content to be sent to the client.
- * @param logType The severity level of the log (1: Error, 2: Warning, 3: Info).
  */
 void AngelScriptLSPServer::LogRemote(std::string_view message, int logType)
 {
@@ -132,8 +322,6 @@ void AngelScriptLSPServer::LogRemote(std::string_view message, int logType)
 
 /**
  * @brief Transforms a given file URI into an absolute filesystem path string.
- * @param uri The file URI to be transformed (e.g., "file:///C:/path/to/file.as").
- * @return A string representing the absolute filesystem path corresponding to the input URI.
  */
 std::string AngelScriptLSPServer::TransformUriToPath(std::string_view uri)
 {
@@ -165,8 +353,7 @@ std::string AngelScriptLSPServer::TransformUriToPath(std::string_view uri)
 }
 
 /**
- * @brief Handles the 'initialize' LSP request by responding with the server's capabilities and supported features.
- * @param id The unique identifier of the LSP request to which this response corresponds.
+ * @brief Handles the 'initialize' LSP request by responding with the server's capabilities.
  */
 void AngelScriptLSPServer::HandleInitialize(json id)
 {
@@ -177,9 +364,7 @@ void AngelScriptLSPServer::HandleInitialize(json id)
 }
 
 /**
- * @brief Handles the 'textDocument/didOpen' and 'textDocument/didChange' LSP notifications by caching the document's content and triggering an analysis pass.
- * @param uri The URI of the document that was opened or modified.
- * @param code The full text content of the document.
+ * @brief Compiles code block buffers and reports structural diagnostic compilation messages.
  */
 void AngelScriptLSPServer::AnalyzeAndReport(const std::string &uri, const std::string &code)
 {
@@ -201,9 +386,7 @@ void AngelScriptLSPServer::AnalyzeAndReport(const std::string &uri, const std::s
 }
 
 /**
- * @brief Handles the 'textDocument/semanticTokens/full' LSP request by analyzing the document content and returning semantic token information for syntax highlighting.
- * @param id The unique identifier of the LSP request to which this response corresponds.
- * @param uri The URI of the document for which semantic tokens are being requested.
+ * @brief Computes token streams and responds with metadata layouts mapping syntax highlight profiles.
  */
 void AngelScriptLSPServer::HandleSemanticTokens(json id, const std::string &uri)
 {
@@ -232,23 +415,7 @@ void AngelScriptLSPServer::HandleSemanticTokens(json id, const std::string &uri)
             std::string_view text = code.substr(i, len);
             std::string textStr(text);
 
-            bool isCustomScriptType = false;
-            if (mod)
-            {
-                for (asUINT t = 0; t < mod->GetObjectTypeCount(); t++)
-                {
-                    if (asITypeInfo *ti = mod->GetObjectTypeByIndex(t))
-                    {
-                        if (ti->GetName() == textStr)
-                        {
-                            isCustomScriptType = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (text == "string" || text == "array" || text == "dictionary" || text == "int" || text == "float" || text == "bool" || text == "void" || text == "uint" || isCustomScriptType)
+            if (LspServer::IsEngineOrScriptType(nativeEng, mod, textStr))
             {
                 tokenType = 1;
             }
@@ -292,11 +459,7 @@ void AngelScriptLSPServer::HandleSemanticTokens(json id, const std::string &uri)
 }
 
 /**
- * @brief Handles the 'textDocument/completion' LSP request by analyzing the document context at the specified position and returning relevant completion items.
- * @param id The unique identifier of the LSP request to which this response corresponds.
- * @param uri The URI of the document for which completion is being requested.
- * @param line The line number (0-based) in the document where the completion request was triggered.
- * @param character The character offset (0-based) in the line where the completion request was triggered.
+ * @brief Processes completion context trees and calculates in-scope structural data lists.
  */
 void AngelScriptLSPServer::HandleCompletion(json id, const std::string &uri, int line, int character)
 {
@@ -306,26 +469,7 @@ void AngelScriptLSPServer::HandleCompletion(json id, const std::string &uri, int
 
     TokenHarvester::CompletionContext ctx = TokenHarvester::GetCompletionContext(nativeEng, originalText, cursorAbsPos);
 
-    std::string modifiedText = originalText;
-    size_t lineStartPos = 0;
-    for (int i = 0; i < line; ++i)
-    {
-        lineStartPos = originalText.find('\n', lineStartPos);
-        if (lineStartPos == std::string::npos)
-            break;
-        lineStartPos++;
-    }
-    if (lineStartPos != std::string::npos)
-    {
-        size_t lineEndPos = originalText.find('\n', lineStartPos);
-        if (lineEndPos == std::string::npos)
-            lineEndPos = originalText.length();
-        for (size_t p = lineStartPos; p < lineEndPos; ++p)
-        {
-            if (modifiedText[p] != '\r' && modifiedText[p] != '\n')
-                modifiedText[p] = ' ';
-        }
-    }
+    std::string modifiedText = LspServer::BlankOutLine(originalText, line);
 
     std::string cleanUri = TransformUriToPath(uri);
     scriptEngine.BuildModule("LSPModule", cleanUri, modifiedText);
@@ -334,93 +478,7 @@ void AngelScriptLSPServer::HandleCompletion(json id, const std::string &uri, int
     std::string enclosingClass = "";
     auto customClasses = TokenHarvester::ScanCustomClasses(nativeEng, originalText);
 
-    if (mod)
-    {
-        for (asUINT t = 0; t < mod->GetObjectTypeCount(); t++)
-        {
-            asITypeInfo *typeInfo = mod->GetObjectTypeByIndex(t);
-            if (typeInfo)
-            {
-                std::string className = typeInfo->GetName();
-                auto it = std::find_if(customClasses.begin(), customClasses.end(), [&](const TokenHarvester::ScriptClass &c)
-                                       { return c.name == className; });
-                if (it == customClasses.end())
-                {
-                    TokenHarvester::ScriptClass extClass;
-                    extClass.name = className;
-
-                    for (asUINT p = 0; p < typeInfo->GetPropertyCount(); p++)
-                    {
-                        const char *pName = nullptr;
-                        int pTypeId = 0;
-                        typeInfo->GetProperty(p, &pName, &pTypeId);
-                        const char *pDecl = nativeEng->GetTypeDeclaration(pTypeId, true);
-                        if (pName && pDecl)
-                        {
-                            extClass.properties.push_back({pName, pDecl, "public"});
-                        }
-                    }
-
-                    for (asUINT m = 0; m < typeInfo->GetMethodCount(); m++)
-                    {
-                        asIScriptFunction *method = typeInfo->GetMethodByIndex(m);
-                        if (method)
-                        {
-                            const char *rDecl = nativeEng->GetTypeDeclaration(method->GetReturnTypeId(), true);
-                            bool isConstructorOrDestructor = (method->GetName() == className || method->GetName() == ("~" + className));
-                            extClass.methods.push_back({method->GetName(),
-                                                        rDecl ? rDecl : "void",
-                                                        method->GetDeclaration(true, false, true),
-                                                        "public",
-                                                        isConstructorOrDestructor});
-                        }
-                    }
-                    customClasses.push_back(extClass);
-                }
-            }
-        }
-
-        for (asUINT e = 0; e < mod->GetEnumCount(); e++)
-        {
-            asITypeInfo *enumType = mod->GetEnumByIndex(e);
-            if (enumType)
-            {
-                std::string enumName = enumType->GetName();
-                auto it = std::find_if(customClasses.begin(), customClasses.end(), [&](const TokenHarvester::ScriptClass &c)
-                                       { return c.name == enumName; });
-
-                if (it != customClasses.end())
-                {
-                    it->properties.clear();
-                    it->methods.clear();
-                    for (asUINT v = 0; v < enumType->GetEnumValueCount(); v++)
-                    {
-                        asINT64 val = 0;
-                        const char *enumValName = enumType->GetEnumValueByIndex(v, &val);
-                        if (enumValName)
-                        {
-                            it->properties.push_back({enumValName, enumName, "public"});
-                        }
-                    }
-                }
-                else
-                {
-                    TokenHarvester::ScriptClass extEnum;
-                    extEnum.name = enumName;
-                    for (asUINT v = 0; v < enumType->GetEnumValueCount(); v++)
-                    {
-                        asINT64 val = 0;
-                        const char *enumValName = enumType->GetEnumValueByIndex(v, &val);
-                        if (enumValName)
-                        {
-                            extEnum.properties.push_back({enumValName, enumName, "public"});
-                        }
-                    }
-                    customClasses.push_back(extEnum);
-                }
-            }
-        }
-    }
+    LspServer::PopulateCustomClassesFromModule(nativeEng, mod, customClasses);
 
     auto tokenFuncs = TokenHarvester::ScanGlobalFunctions(nativeEng, originalText);
     auto tokenGlobalVars = TokenHarvester::ScanGlobalVariables(nativeEng, originalText);
@@ -442,37 +500,14 @@ void AngelScriptLSPServer::HandleCompletion(json id, const std::string &uri, int
 }
 
 /**
- * @brief Handles the 'textDocument/hover' LSP request by analyzing the document context at the specified position and returning relevant hover information.
- * @param id The unique identifier of the LSP request to which this response corresponds.
- * @param uri The URI of the document for which hover information is being requested.
- * @param line The line number (0-based) in the document where the hover request was triggered.
- * @param character The character offset (0-based) in the line where the hover request was triggered.
+ * @brief Interrogates active structural scopes and targets descriptive string popups to mouse coordinates.
  */
 void AngelScriptLSPServer::HandleHover(json id, const std::string &uri, int line, int character)
 {
     std::string_view text = documentCache[uri];
     asIScriptEngine *nativeEng = scriptEngine.GetNativeEngine();
 
-    std::string codeCopy(text);
-    std::istringstream stream(codeCopy);
-    std::string currentLineText;
-    for (int i = 0; i <= line; ++i)
-    {
-        if (!std::getline(stream, currentLineText))
-            break;
-    }
-
-    int start = character;
-    if (start > (int)currentLineText.length())
-        start = (int)currentLineText.length();
-    int end = start;
-
-    while (start > 0 && (isalnum(static_cast<unsigned char>(currentLineText[start - 1])) || currentLineText[start - 1] == '_'))
-        start--;
-    while (end < (int)currentLineText.length() && (isalnum(static_cast<unsigned char>(currentLineText[end])) || currentLineText[end] == '_'))
-        end++;
-
-    std::string word = currentLineText.substr(start, end - start);
+    std::string word = LspServer::ExtractWordAtPosition(text, line, character);
     if (word.empty())
     {
         SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", nullptr}});
@@ -480,46 +515,10 @@ void AngelScriptLSPServer::HandleHover(json id, const std::string &uri, int line
     }
 
     size_t cursorAbsPos = TokenHarvester::GetAbsolutePosition(text, line, character);
-
     auto customClasses = TokenHarvester::ScanCustomClasses(nativeEng, text);
-
     asIScriptModule *mod = nativeEng->GetModule("LSPModule");
-    if (mod)
-    {
-        for (asUINT t = 0; t < mod->GetObjectTypeCount(); t++)
-        {
-            asITypeInfo *typeInfo = mod->GetObjectTypeByIndex(t);
-            if (typeInfo)
-            {
-                std::string className = typeInfo->GetName();
-                auto it = std::find_if(customClasses.begin(), customClasses.end(), [&](const TokenHarvester::ScriptClass &c)
-                                       { return c.name == className; });
-                if (it == customClasses.end())
-                {
-                    TokenHarvester::ScriptClass extClass;
-                    extClass.name = className;
-                    customClasses.push_back(extClass);
-                }
-            }
-        }
 
-        for (asUINT e = 0; e < mod->GetEnumCount(); e++)
-        {
-            asITypeInfo *enumType = mod->GetEnumByIndex(e);
-            if (enumType)
-            {
-                std::string enumName = enumType->GetName();
-                auto it = std::find_if(customClasses.begin(), customClasses.end(), [&](const TokenHarvester::ScriptClass &c)
-                                       { return c.name == enumName; });
-                if (it == customClasses.end())
-                {
-                    TokenHarvester::ScriptClass extEnum;
-                    extEnum.name = enumName;
-                    customClasses.push_back(extEnum);
-                }
-            }
-        }
-    }
+    LspServer::PopulateCustomClassesFromModule(nativeEng, mod, customClasses);
 
     auto tokenFuncs = TokenHarvester::ScanGlobalFunctions(nativeEng, text);
     auto tokenGlobalVars = TokenHarvester::ScanGlobalVariables(nativeEng, text);
@@ -550,34 +549,28 @@ void AngelScriptLSPServer::HandleHover(json id, const std::string &uri, int line
         }
     }
 
-    if (hoverResult.empty())
+    if (hoverResult.empty() && mod)
     {
-        if (mod)
+        for (asUINT e = 0; e < mod->GetEnumCount(); e++)
         {
-            for (asUINT e = 0; e < mod->GetEnumCount(); e++)
+            asITypeInfo *ti = mod->GetEnumByIndex(e);
+            if (ti && ti->GetName() == word)
             {
-                asITypeInfo *ti = mod->GetEnumByIndex(e);
-                if (ti && ti->GetName() == word)
-                {
-                    hoverResult = fmt::format("```cpp\nenum {}\n```\n*User-defined script enum.*", ti->GetName());
-                    break;
-                }
+                hoverResult = fmt::format("```cpp\nenum {}\n```\n*User-defined script enum.*", ti->GetName());
+                break;
             }
         }
     }
 
-    if (hoverResult.empty())
+    if (hoverResult.empty() && mod)
     {
-        if (mod)
+        for (asUINT t = 0; t < mod->GetObjectTypeCount(); t++)
         {
-            for (asUINT t = 0; t < mod->GetObjectTypeCount(); t++)
+            asITypeInfo *ti = mod->GetObjectTypeByIndex(t);
+            if (ti && ti->GetName() == word)
             {
-                asITypeInfo *ti = mod->GetObjectTypeByIndex(t);
-                if (ti && ti->GetName() == word)
-                {
-                    hoverResult = fmt::format("```cpp\nclass {}\n```\n*User-defined script type.*", ti->GetName());
-                    break;
-                }
+                hoverResult = fmt::format("```cpp\nclass {}\n```\n*User-defined script type.*", ti->GetName());
+                break;
             }
         }
     }
@@ -612,13 +605,9 @@ void AngelScriptLSPServer::HandleHover(json id, const std::string &uri, int line
         if (typeInfo)
         {
             if (typeInfo->GetFlags() & asOBJ_ENUM)
-            {
                 hoverResult = fmt::format("```cpp\nenum {}\n```\n*Native C++ enum.*", typeInfo->GetName());
-            }
             else
-            {
                 hoverResult = fmt::format("```cpp\nclass {}\n```\n*Native C++ object.*", typeInfo->GetName());
-            }
         }
     }
 

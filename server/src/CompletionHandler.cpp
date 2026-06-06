@@ -783,9 +783,9 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
 
 void CompletionHandler::HandleGlobalScope(const std::string &originalText, size_t cursorAbsPos)
 {
-    std::vector<std::string> keywords;
     std::unordered_set<std::string> addedImplicitMembers;
     std::unordered_map<std::string, bool> addedFunctions;
+    std::unordered_set<std::string> addedTypes;
     asIScriptFunction *func = nullptr;
     std::string funcName;
     const char *varName = nullptr;
@@ -796,17 +796,87 @@ void CompletionHandler::HandleGlobalScope(const std::string &originalText, size_
         return;
     }
 
-    keywords = {
-        "super", "this", "get", "set", "property", "const",
-        "override", "final", "mixin", "class", "interface", "enum",
-        "void", "int", "float", "bool", "string", "array", "auto", "return",
-        "null", "true", "false"};
+    // Pure language structural keywords
+    std::vector<std::string> keywords = {
+        "if", "else", "switch", "case", "default", "break", "continue",
+        "while", "for", "foreach", "return", "class", "interface", "mixin",
+        "enum", "shared", "external", "private", "protected", "import",
+        "from", "cast", "is", "super", "this", "get", "set", "property",
+        "const", "override", "final", "null", "true", "false", "try",
+        "catch", "auto", "typedef", "funcdef"};
 
     for (const auto &kw : keywords)
     {
         if (ctx.partialMember.empty() || kw.rfind(ctx.partialMember, 0) == 0)
         {
             itemsArray.push_back({{"label", kw}, {"kind", 14}, {"detail", "keyword"}});
+        }
+    }
+
+    // Fundamental primitive data types
+    std::vector<std::string> primitives = {
+        "void", "int", "int8", "int16", "int32", "int64",
+        "uint", "uint8", "uint16", "uint32", "uint64",
+        "float", "double", "bool"};
+
+    for (const auto &prim : primitives)
+    {
+        if (ctx.partialMember.empty() || prim.rfind(ctx.partialMember, 0) == 0)
+        {
+            itemsArray.push_back({{"label", prim}, {"kind", 6}, {"detail", "primitive type"}});
+            addedTypes.insert(prim);
+        }
+    }
+
+    // Introspect native engine-registered types dynamically
+    if (engine)
+    {
+        for (asUINT i = 0; i < engine->GetObjectTypeCount(); i++)
+        {
+            if (asITypeInfo *ti = engine->GetObjectTypeByIndex(i))
+            {
+                std::string name = ti->GetName();
+                if ((ctx.partialMember.empty() || name.rfind(ctx.partialMember, 0) == 0) && addedTypes.insert(name).second)
+                {
+                    itemsArray.push_back({{"label", name}, {"kind", 7}, {"detail", "native class"}});
+                }
+            }
+        }
+
+        for (asUINT i = 0; i < engine->GetEnumCount(); i++)
+        {
+            if (asITypeInfo *ti = engine->GetEnumByIndex(i))
+            {
+                std::string name = ti->GetName();
+                if ((ctx.partialMember.empty() || name.rfind(ctx.partialMember, 0) == 0) && addedTypes.insert(name).second)
+                {
+                    itemsArray.push_back({{"label", name}, {"kind", 13}, {"detail", "native enum"}});
+                }
+            }
+        }
+
+        for (asUINT i = 0; i < engine->GetTypedefCount(); i++)
+        {
+            if (asITypeInfo *ti = engine->GetTypedefByIndex(i))
+            {
+                std::string name = ti->GetName();
+                if ((ctx.partialMember.empty() || name.rfind(ctx.partialMember, 0) == 0) && addedTypes.insert(name).second)
+                {
+                    itemsArray.push_back({{"label", name}, {"kind", 6}, {"detail", "native typedef"}});
+                }
+            }
+        }
+
+        for (asUINT i = 0; i < engine->GetFuncdefCount(); i++)
+        {
+            if (asITypeInfo *ti = engine->GetFuncdefByIndex(i))
+            {
+                std::string name = ti->GetName();
+                if ((ctx.partialMember.empty() || name.rfind(ctx.partialMember, 0) == 0) && addedTypes.insert(name).second)
+                {
+                    itemsArray.push_back({{"label", name}, {"kind", 11}, {"detail", "native funcdef"}});
+                }
+            }
         }
     }
 
