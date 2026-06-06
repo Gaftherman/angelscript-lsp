@@ -8,3 +8,4 @@ client/.vscode-test/
 client/package-lock.json
 server/build/
 server/.cache/
+build/

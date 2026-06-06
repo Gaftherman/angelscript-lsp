@@ -66,7 +66,7 @@ export async function activate(context: ExtensionContext) {
         documentSelector: [{ scheme: 'file', language: 'angelscript' }],
         outputChannel: lspOutputChannel
     };
-
+6
     client = new LanguageClient(
         'angelScriptLSP',
         'AngelScript C++ Language Server',
@@ -76,6 +76,9 @@ export async function activate(context: ExtensionContext) {
 
     try {        
         await client.start();
+        client.onNotification("angelscript/debug", (params: { message: string }) => {
+            lspOutputChannel.appendLine(`[AST Debug] ${params.message}`);
+        });
     } catch (error) {
         lspOutputChannel.appendLine(`Failed to start Language Client: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -92,4 +95,3 @@ export function deactivate(): Thenable<void> | undefined {
     } 
     return client.stop();
 }
-

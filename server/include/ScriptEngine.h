@@ -16,13 +16,15 @@
  * @class ScriptEngine
  * @brief Wrapper class managing the native AngelScript engine instance and compilation diagnostics.
  */
-class ScriptEngine {
+class ScriptEngine
+{
 public:
     /**
      * @struct EngineDiagnostic
      * @brief Structured diagnostic record for compiler messages emitted during module builds.
      */
-    struct EngineDiagnostic {
+    struct EngineDiagnostic
+    {
         /** @brief The line number where the diagnostic event occurred. */
         int row;
         /** @brief The column number where the diagnostic event occurred. */
@@ -34,7 +36,7 @@ public:
     };
 
 private:
-    asIScriptEngine* engine;
+    asIScriptEngine *engine;
     std::vector<EngineDiagnostic> diagnostics;
 
 public:
@@ -52,13 +54,13 @@ public:
      * @brief Accessor for the underlying native AngelScript engine instance.
      * @return Pointer to the native asIScriptEngine instance managed by this wrapper.
      */
-    asIScriptEngine* GetNativeEngine() const { return engine; }
+    asIScriptEngine *GetNativeEngine() const { return engine; }
 
     /**
      * @brief Accessor for the collection of diagnostics emitted during module builds.
      * @return A vector of EngineDiagnostic records representing compiler messages.
      */
-    const std::vector<EngineDiagnostic>& GetDiagnostics() const { return diagnostics; }
+    const std::vector<EngineDiagnostic> &GetDiagnostics() const { return diagnostics; }
 
     /**
      * @brief Clears the current diagnostics collection, preparing for a new module build cycle.
@@ -69,7 +71,7 @@ public:
      * @brief Appends a new diagnostic record to the diagnostics collection.
      * @param diag The EngineDiagnostic record to be added to the collection.
      */
-    void AppendDiagnostic(const EngineDiagnostic& diag) { diagnostics.push_back(diag); }
+    void AppendDiagnostic(const EngineDiagnostic &diag) { diagnostics.push_back(diag); }
 
     /**
      * @brief Triggers an isolated module build routine onto a chosen text slice definition.
@@ -77,7 +79,7 @@ public:
      * @param sectionName Absolute working filesystem path location corresponding to the source file.
      * @param code In-memory source context code string.
      */
-    void BuildModule(const std::string& moduleName, const std::string& sectionName, const std::string& code);
+    void BuildModule(const std::string &moduleName, const std::string &sectionName, const std::string &code);
 
 private:
     /**

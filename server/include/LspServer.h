@@ -19,7 +19,8 @@ using json = nlohmann::json;
  * @class AngelScriptLSPServer
  * @brief Core controller class managing Language Server Protocol (LSP) routing, state, and client-server communication.
  */
-class AngelScriptLSPServer {
+class AngelScriptLSPServer
+{
 private:
     ScriptEngine scriptEngine;
     std::unordered_map<std::string, std::string> documentCache;
@@ -45,7 +46,7 @@ private:
      * @brief Serializes a JSON message and sends it to the client output stream with proper LSP framing.
      * @param message JSON object representing the LSP response or notification to be sent.
      */
-    void SendToVSCode(const json& message);
+    void SendToVSCode(const json &message);
 
     /**
      * @brief Logs a message to the client output console with a specified log level.
@@ -72,14 +73,14 @@ private:
      * @param uri The URI of the document that was opened or modified.
      * @param code The full text content of the document.
      */
-    void AnalyzeAndReport(const std::string& uri, const std::string& code);
+    void AnalyzeAndReport(const std::string &uri, const std::string &code);
 
     /**
      * @brief Handles the 'textDocument/semanticTokens/full' LSP request by analyzing the document content and returning semantic token information for syntax highlighting.
      * @param id The unique identifier of the LSP request to which this response corresponds.
      * @param uri The URI of the document for which semantic tokens are being requested.
      */
-    void HandleSemanticTokens(json id, const std::string& uri);
+    void HandleSemanticTokens(json id, const std::string &uri);
 
     /**
      * @brief Handles the 'textDocument/completion' LSP request by analyzing the document context at the specified position and returning relevant completion items.
@@ -88,7 +89,7 @@ private:
      * @param line The line number (0-based) in the document where the completion request was triggered.
      * @param character The character offset (0-based) in the line where the completion request was triggered.
      */
-    void HandleCompletion(json id, const std::string& uri, int line, int character);
+    void HandleCompletion(json id, const std::string &uri, int line, int character);
 
     /**
      * @brief Handles the 'textDocument/hover' LSP request by analyzing the document context at the specified position and returning relevant hover information.
@@ -97,7 +98,7 @@ private:
      * @param line The line number (0-based) in the document where the hover request was triggered.
      * @param character The character offset (0-based) in the line where the hover request was triggered.
      */
-    void HandleHover(json id, const std::string& uri, int line, int character);
+    void HandleHover(json id, const std::string &uri, int line, int character);
 };
 
 #endif // LSP_SERVER_H
