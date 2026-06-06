@@ -7,11 +7,11 @@
 #include "LspServer.h"
 #include "TokenHarvester.h"
 #include "CompletionHandler.h"
+#include "SafeCtype.h"
 
 #include <iostream>
 #include <sstream>
 #include <filesystem>
-#include <regex>
 #include <fmt/core.h>
 #include <fstream>
 #include <unordered_set>
@@ -71,9 +71,9 @@ namespace LspServer
             start = (int)currentLineText.length();
         int end = start;
 
-        while (start > 0 && (isalnum(static_cast<unsigned char>(currentLineText[start - 1])) || currentLineText[start - 1] == '_'))
+        while (start > 0 && (SAFE_IS_ALNUM(static_cast<unsigned char>(currentLineText[start - 1])) || currentLineText[start - 1] == '_'))
             start--;
-        while (end < (int)currentLineText.length() && (isalnum(static_cast<unsigned char>(currentLineText[end])) || currentLineText[end] == '_'))
+        while (end < (int)currentLineText.length() && (SAFE_IS_ALNUM(static_cast<unsigned char>(currentLineText[end])) || currentLineText[end] == '_'))
             end++;
 
         return currentLineText.substr(start, end - start);
@@ -382,6 +382,58 @@ void AngelScriptLSPServer::AnalyzeAndReport(const std::string &uri, const std::s
                                     {"message", diag.message},
                                     {"source", "AngelScript"}});
     }
+
+    fs::path currentPath(cleanUri);
+    fs::path baseDir = currentPath.parent_path();
+    std::istringstream stream(code);
+    std::string lineStr;
+    int lineIndex = 0;
+
+    while (std::getline(stream, lineStr))
+    {
+        size_t firstChar = lineStr.find_first_not_of(" \t\r\n");
+        if (firstChar != std::string::npos && lineStr[firstChar] == '#')
+        {
+            size_t includePos = lineStr.find("include", firstChar + 1);
+            if (includePos != std::string::npos)
+            {
+                bool validIncludeKeyword = true;
+                for (size_t check = firstChar + 1; check < includePos; ++check)
+                {
+                    if (lineStr[check] != ' ' && lineStr[check] != '\t')
+                    {
+                        validIncludeKeyword = false;
+                        break;
+                    }
+                }
+
+                if (validIncludeKeyword)
+                {
+                    size_t startDelim = lineStr.find_first_of("\"<", includePos + 7);
+                    if (startDelim != std::string::npos)
+                    {
+                        char closeChar = (lineStr[startDelim] == '"') ? '"' : '>';
+                        size_t endDelim = lineStr.find(closeChar, startDelim + 1);
+                        if (endDelim != std::string::npos)
+                        {
+                            std::string includeFileName = lineStr.substr(startDelim + 1, endDelim - startDelim - 1);
+                            fs::path absolutePath = baseDir / fs::path(includeFileName);
+
+                            if (!fs::exists(absolutePath))
+                            {
+                                diagnosticsArray.push_back({{"range", {{"start", {{"line", lineIndex}, {"character", 0}}}, {"end", {{"line", lineIndex}, {"character", static_cast<int>(lineStr.length())}}}}},
+                                                            {"severity", 1},
+                                                            {"message", fmt::format("Preprocessor Error: Include file '{}' not found on path.", includeFileName)},
+                                                            {"source", "AngelScript LSP Preprocessor"}});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        lineIndex++;
+    }
+
     SendToVSCode({{"jsonrpc", "2.0"}, {"method", "textDocument/publishDiagnostics"}, {"params", {{"uri", uri}, {"diagnostics", diagnosticsArray}}}});
 }
 

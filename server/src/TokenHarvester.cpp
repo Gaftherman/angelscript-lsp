@@ -26,7 +26,7 @@ namespace TokenHarvester
     /**
      * @brief Identifies if a token represents a scope or type declaration block.
      * @param token The keyword string to evaluate.
-     * @return True if it is a class, interface, namespace, enum, or mixin.
+     * @return True if it is a class, interface, namespace, enum, or mixin, false otherwise.
      */
     static inline bool IsTypeDeclaration(std::string_view token)
     {
@@ -34,9 +34,9 @@ namespace TokenHarvester
     }
 
     /**
-     * @brief Identifies if a token is an access or sharing modifier.
+     * @brief Identifies if a token represents an access modifier.
      * @param token The keyword string to evaluate.
-     * @return True if modifies scope visibility or shared status.
+     * @return True if it is a private, protected, public, or shared modifier, false otherwise.
      */
     static inline bool IsAccessModifier(std::string_view token)
     {
@@ -44,9 +44,9 @@ namespace TokenHarvester
     }
 
     /**
-     * @brief Identifies if a token is a global structural modifier.
+     * @brief Identifies if a token represents a global modifier.
      * @param token The keyword string to evaluate.
-     * @return True if it is an access modifier, external, or mixin declaration.
+     * @return True if it is an access modifier, external, or mixin, false otherwise.
      */
     static inline bool IsGlobalModifier(std::string_view token)
     {
@@ -54,9 +54,9 @@ namespace TokenHarvester
     }
 
     /**
-     * @brief Identifies if a token acts as an end-of-statement or property separator.
-     * @param token The keyword string to evaluate.
-     * @return True if it is a semicolon, comma, or assignment operator.
+     * @brief Identifies if a token represents a property separator.
+     * @param token The symbol string to evaluate.
+     * @return True if it is a semicolon, equals sign, or comma, false otherwise.
      */
     static inline bool IsPropertySeparator(std::string_view token)
     {
@@ -64,9 +64,9 @@ namespace TokenHarvester
     }
 
     /**
-     * @brief Identifies if a token represents a core built-in data type or native template.
+     * @brief Identifies if a token represents a built-in data type.
      * @param token The keyword string to evaluate.
-     * @return True if it is a primitive type (int, float, etc.) or a native template (array, dictionary).
+     * @return True if it is a recognized built-in type, false otherwise.
      */
     static inline bool IsBuiltInType(std::string_view token)
     {
@@ -77,9 +77,9 @@ namespace TokenHarvester
     }
 
     /**
-     * @brief Identifies if a token is a method declaration modifier.
+     * @brief Identifies if a token represents a method modifier.
      * @param token The keyword string to evaluate.
-     * @return True if the token is a standard method modifier (const, override, final, property).
+     * @return True if it is a recognized method modifier, false otherwise.
      */
     static inline bool IsMethodModifier(std::string_view token)
     {
@@ -87,9 +87,9 @@ namespace TokenHarvester
     }
 
     /**
-     * @brief Identifies if a token is a formal EBNF control flow keyword that opens statement blocks.
+     * @brief Identifies if a token represents a control keyword.
      * @param token The keyword string to evaluate.
-     * @return True if it is a control flow statement introducer (if, for, while, switch, etc.).
+     * @return True if it is a recognized control keyword, false otherwise.
      */
     static inline bool IsControlKeyword(std::string_view token)
     {
@@ -111,12 +111,17 @@ namespace TokenHarvester
     public:
         /**
          * @brief Constructs a new Token Stream object.
+         * @param e Pointer to the active AngelScript script engine.
+         * @param c The source code text view to parse.
+         * @param start The initial absolute buffer position offset.
          */
         TokenStream(asIScriptEngine *e, std::string_view c, size_t start = 0)
             : engine(e), code(c), pos(start) {}
 
         /**
          * @brief Peeks at the upcoming token class without advancing the stream position.
+         * @param outToken Reference to a string view to store the peeked token content.
+         * @return The token class classification type.
          */
         asETokenClass Peek(std::string_view &outToken)
         {
@@ -159,6 +164,8 @@ namespace TokenHarvester
 
         /**
          * @brief Advances the stream position to the next valid token.
+         * @param outToken Reference to a string view to store the advanced token content.
+         * @return The token class classification type of the extracted token.
          */
         asETokenClass Advance(std::string_view &outToken)
         {
@@ -200,6 +207,7 @@ namespace TokenHarvester
 
         /**
          * @brief Checks if the stream has reached the true end of the file.
+         * @return True if the stream is at EOF, false otherwise.
          */
         bool IsEOF()
         {
@@ -210,17 +218,21 @@ namespace TokenHarvester
 
         /**
          * @brief Gets the current internal buffer position.
+         * @return The current absolute index position.
          */
         size_t GetPos() const { return pos; }
 
         /**
          * @brief Sets the internal buffer position.
+         * @param p The new absolute position offset to apply.
          */
         void SetPos(size_t p) { pos = p; }
     };
 
     /**
      * @brief Resolves and extracts the primitive base type from modifiers or templates.
+     * @param type The raw data type description string.
+     * @return A clean string representation of the parsed base data type.
      */
     std::string GetBaseType(const std::string &type)
     {
@@ -228,7 +240,7 @@ namespace TokenHarvester
         size_t start = 0;
         size_t templatePos = std::string::npos;
 
-        while (start < clean.length() && clean[start] == ' ')
+        while (start < clean.length() && (clean[start] == ' ' || clean[start] == '\t'))
         {
             start++;
         }
@@ -238,7 +250,7 @@ namespace TokenHarvester
             start += 6;
         }
 
-        while (start < clean.length() && clean[start] == ' ')
+        while (start < clean.length() && (clean[start] == ' ' || clean[start] == '\t'))
         {
             start++;
         }
@@ -253,18 +265,46 @@ namespace TokenHarvester
 
         while (!clean.empty())
         {
-            if (clean.back() == '@' || clean.back() == '&' || clean.back() == ' ')
+            if (clean.back() == ' ' || clean.back() == '\t' || clean.back() == '\r' || clean.back() == '\n')
             {
                 clean.pop_back();
+                continue;
             }
-            else if (clean.length() >= 5 && clean.substr(clean.length() - 5) == "const")
+
+            if (clean.length() >= 5 && clean.substr(clean.length() - 5) == "inout")
             {
                 clean = clean.substr(0, clean.length() - 5);
+                continue;
             }
-            else
+
+            if (clean.length() >= 3 && clean.substr(clean.length() - 3) == "out")
             {
-                break;
+                clean = clean.substr(0, clean.length() - 3);
+                continue;
             }
+
+            if (clean.length() >= 2 && clean.substr(clean.length() - 2) == "in")
+            {
+                if (clean.length() == 2 || clean[clean.length() - 3] == ' ' || clean[clean.length() - 3] == '&')
+                {
+                    clean = clean.substr(0, clean.length() - 2);
+                    continue;
+                }
+            }
+
+            if (clean.back() == '&' || clean.back() == '@')
+            {
+                clean.pop_back();
+                continue;
+            }
+
+            if (clean.length() >= 5 && clean.substr(clean.length() - 5) == "const")
+            {
+                clean = clean.substr(0, clean.length() - 5);
+                continue;
+            }
+
+            break;
         }
 
         if (clean.find("[]") != std::string::npos)
@@ -277,6 +317,8 @@ namespace TokenHarvester
 
     /**
      * @brief Extracts the underlying parameter type wrapped inside native structural collections.
+     * @param type The raw wrapper collection data type string.
+     * @return A string representation of the isolated inner data type.
      */
     std::string ExtractInnerType(const std::string &type)
     {
@@ -299,6 +341,8 @@ namespace TokenHarvester
 
     /**
      * @brief Yields an instantiated script type stripped of type qualifiers.
+     * @param type The qualified complex type string.
+     * @return A clean string representing the instantiated script type.
      */
     std::string GetInstantiatedType(const std::string &type)
     {
@@ -343,6 +387,11 @@ namespace TokenHarvester
 
     /**
      * @brief Verifies if a token safely maps to registered or recognized language types.
+     * @param engine Pointer to the active AngelScript script engine core.
+     * @param stream Reference to the current token stream processor.
+     * @param token The token string contents to evaluate.
+     * @param localClasses List of user-declared custom script classes.
+     * @return True if the token is a valid recognized data type, false otherwise.
      */
     static bool IsValidDataType(asIScriptEngine *engine, TokenStream &stream, std::string_view token, const std::vector<std::string> &localClasses)
     {
@@ -380,6 +429,10 @@ namespace TokenHarvester
 
     /**
      * @brief Parses full semantic data type signatures from the stream including templates and handles.
+     * @param engine Pointer to the active AngelScript script engine instance.
+     * @param stream Reference to the token parsing stream.
+     * @param knownClassNames List of globally identified class titles.
+     * @return A constructed string representation of the final resolved data type signature.
      */
     static std::string ParseDataType(asIScriptEngine *engine, TokenStream &stream, const std::vector<std::string> &knownClassNames)
     {
@@ -432,10 +485,9 @@ namespace TokenHarvester
             typeName += "<";
             stream.Advance(token);
             templateDepth = 1;
-
             static_cast<void>(templateDepth);
 
-            while (templateDepth > 0 && stream.Peek(token) != asTC_UNKNOWN)
+            while (templateDepth > 0 && !stream.IsEOF())
             {
                 tc = stream.Peek(token);
 
@@ -491,7 +543,11 @@ namespace TokenHarvester
     }
 
     /**
-     * @brief Translates localized grid metrics into an absolute memory position index.
+     * @brief Converts line and character indices to an absolute character position index.
+     * @param text The source document layout view.
+     * @param line Zero-indexed target script row coordinate.
+     * @param character Zero-indexed target script column offset.
+     * @return The precise flat buffer offset index size_t value.
      */
     size_t GetAbsolutePosition(std::string_view text, int line, int character)
     {
@@ -512,7 +568,11 @@ namespace TokenHarvester
     }
 
     /**
-     * @brief Evaluates code scope context preceding the active user cursor point.
+     * @brief Contextually evaluates token chains preceding a cursor position to identify completion environments.
+     * @param engine Pointer to the active script engine compiler backend.
+     * @param code The script scope code layout view.
+     * @param cursorAbsolutePos Absolute offset index indicating the location of the autocomplete trigger.
+     * @return A detailed context specification collection object mapping properties.
      */
     CompletionContext GetCompletionContext(asIScriptEngine *engine, std::string_view code, size_t cursorAbsolutePos)
     {
@@ -651,11 +711,15 @@ namespace TokenHarvester
 
     /**
      * @class ASTScanner
-     * @brief Base structural scanner mapping program scopes.
+     * @brief Base parser class analyzing block architecture layouts to maintain scope state configurations.
      */
     class ASTScanner
     {
     protected:
+        /**
+         * @struct ScopeCtx
+         * @brief Representation tracking nested lexical scope structural environments.
+         */
         struct ScopeCtx
         {
             std::string name;
@@ -675,14 +739,17 @@ namespace TokenHarvester
 
     public:
         /**
-         * @brief Constructs a new ASTScanner instance.
+         * @brief Constructs a base ASTScanner component.
+         * @param e Pointer to the active host AngelScript script compiler layout module.
+         * @param c Source character text sequence tracking context view.
          */
         ASTScanner(asIScriptEngine *e, std::string_view c)
             : engine(e), code(c), stream(e, c), currentDepth(0) {}
 
     protected:
         /**
-         * @brief Resolves fully qualified scope path prefixes based on current context stack.
+         * @brief Unifies active scope strings to construct a scope resolution string identifier.
+         * @return Fully structural qualified contextual resolution chain namespace string.
          */
         std::string GetFullScope() const
         {
@@ -702,13 +769,13 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Advances stream forward skipping localized statement or routine code blocks.
+         * @brief Fast-forwards layout scanning sequences until nested braces resolve symmetrically.
          */
         void SkipBlock()
         {
             int methodDepth = 1;
 
-            while (methodDepth > 0 && stream.Peek(token) != asTC_UNKNOWN)
+            while (methodDepth > 0 && !stream.IsEOF())
             {
                 stream.Advance(token);
 
@@ -724,7 +791,7 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Builds tracking collections matching visible custom structured types.
+         * @brief Executes basic preliminary passes registering namespace and object tags.
          */
         void CollectKnownTypes()
         {
@@ -783,7 +850,7 @@ namespace TokenHarvester
 
     /**
      * @class CustomClassScanner
-     * @brief Specialized grammar scanner classifying structure and class layouts.
+     * @brief Specialized class tracker identifying structural object components, declarations, and method rows.
      */
     class CustomClassScanner : public ASTScanner
     {
@@ -793,7 +860,9 @@ namespace TokenHarvester
 
     public:
         /**
-         * @brief Constructs a new Custom Class Scanner object.
+         * @brief Constructs a new Custom Class Scanner object processor.
+         * @param e Handle context pointing to the current script environment instance.
+         * @param c Comprehensive code layout script source blueprint view string.
          */
         CustomClassScanner(asIScriptEngine *e, std::string_view c) : ASTScanner(e, c), currentAccess("public")
         {
@@ -801,7 +870,8 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Parses the active stream context identifying nested type definitions.
+         * @brief Scans through files isolating all declared object layout descriptions.
+         * @return Discovered records mapping definitions extracted from structures.
          */
         std::vector<ScriptClass> Scan()
         {
@@ -810,7 +880,6 @@ namespace TokenHarvester
             std::vector<ScriptClass> results;
             size_t savedPos = 0;
             asETokenClass tc = asTC_UNKNOWN;
-            bool validDeclFound = false;
 
             while (!stream.IsEOF())
             {
@@ -831,7 +900,7 @@ namespace TokenHarvester
                         {
                             stream.Advance(token);
 
-                            while (stream.Peek(token) != asTC_UNKNOWN && token != "{")
+                            while (!stream.IsEOF() && token != "{")
                             {
                                 stream.Advance(token);
 
@@ -917,7 +986,7 @@ namespace TokenHarvester
                     continue;
                 }
 
-                validDeclFound = ProcessConstructorOrDestructor(tc);
+                bool validDeclFound = ProcessConstructorOrDestructor(tc);
 
                 if (!validDeclFound)
                 {
@@ -944,7 +1013,9 @@ namespace TokenHarvester
 
     private:
         /**
-         * @brief Maps parsed identifiers into enum values inside structured scopes.
+         * @brief Extracts individual element identifiers listed within isolated enumerations.
+         * @param tc Core structural classification code.
+         * @return True if an enumeration member matches and updates successfully, false otherwise.
          */
         bool ProcessEnum(asETokenClass tc)
         {
@@ -962,7 +1033,9 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Evaluates signatures targeting constructor or destructor procedures.
+         * @brief Validates method symbols checking formatting configurations targeting lifecycle blocks.
+         * @param tc Native token context structural classification.
+         * @return True if matching constructor/destructor operations parse correctly, false otherwise.
          */
         bool ProcessConstructorOrDestructor(asETokenClass tc)
         {
@@ -1005,11 +1078,11 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Advances stream skip patterns directly up to the execution block context.
+         * @brief Skips token tracking layers up to structural code body frames or delimiter endings.
          */
         void SkipToBody()
         {
-            while (stream.Peek(token) != asTC_UNKNOWN && token != "{" && token != ";")
+            while (!stream.IsEOF() && token != "{" && token != ";")
             {
                 stream.Advance(token);
             }
@@ -1026,7 +1099,9 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Differentiates and structures fields versus nested routine declarations.
+         * @brief Parses details configuring individual internal class rows or operations signatures.
+         * @param savedPos Entry positional fallback index utilized to reset states during evaluation conflicts.
+         * @return True if a class attribute or method row matches criteria, false otherwise.
          */
         bool ProcessMember(size_t savedPos)
         {
@@ -1074,7 +1149,9 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Extracts parameters and processes explicit class method metadata.
+         * @brief Extracts descriptive parameter layouts and logic details structuring class functions.
+         * @param parsedType Datatype designation describing operation output returns.
+         * @param memberName Plain identifier naming the current function method target.
          */
         void ParseMethod(const std::string &parsedType, const std::string &memberName)
         {
@@ -1101,7 +1178,7 @@ namespace TokenHarvester
                     parenDepth--;
                 }
 
-            } while (parenDepth > 0 && stream.Peek(token) != asTC_UNKNOWN);
+            } while (parenDepth > 0 && !stream.IsEOF());
 
             sigEnd = stream.GetPos();
             exactParams = std::string(code.data() + sigStart, sigEnd - sigStart);
@@ -1126,7 +1203,9 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Registers object instances or field parameters into active class contexts.
+         * @brief Isolates properties resolving syntax setups processing shared definition tracks.
+         * @param parsedType Clean data description tracking label specifications.
+         * @param memberName Plain descriptor detailing primary class properties labels.
          */
         void ParseProperty(const std::string &parsedType, const std::string &memberName)
         {
@@ -1168,7 +1247,10 @@ namespace TokenHarvester
     };
 
     /**
-     * @brief High-level orchestration mapping object layouts discovered in raw context buffers.
+     * @brief High-level helper starting parsing routines targeting file script structures.
+     * @param engine Handle referencing the host scripting system controller framework module.
+     * @param code View covering active text sequences data streams under review.
+     * @return Tracking list mapping individual user definitions fields.
      */
     std::vector<ScriptClass> ScanCustomClasses(asIScriptEngine *engine, std::string_view code)
     {
@@ -1178,11 +1260,15 @@ namespace TokenHarvester
 
     /**
      * @class LocalVariableScanner
-     * @brief Formally structured state machine mapping variables matching explicit EBNF blocks.
+     * @brief Specialized tracking parser tracing execution segments to extract localized scope variables.
      */
     class LocalVariableScanner : public ASTScanner
     {
     private:
+        /**
+         * @struct BlockCtxInfo
+         * @brief Representation recording metrics mapping structural tracking data.
+         */
         struct BlockCtxInfo
         {
             std::string type;
@@ -1202,7 +1288,13 @@ namespace TokenHarvester
 
     public:
         /**
-         * @brief Constructs a new Local Variable Scanner instance.
+         * @brief Constructs a new Local Variable Scanner system context handle.
+         * @param e Main target script platform application management pointer.
+         * @param c Continuous text mapping raw project layouts description structures views.
+         * @param pos Cursor location indicator setting limits tracking absolute ranges.
+         * @param cClasses Cached definitions catalog detailing active structure environments profiles.
+         * @param gVars Configuration logs tracking file level variable environments registers.
+         * @param gFuncs List capturing functional descriptions mapping global routines components.
          */
         LocalVariableScanner(asIScriptEngine *e, std::string_view c, size_t pos,
                              const std::vector<ScriptClass> &cClasses,
@@ -1215,7 +1307,10 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Determines environmental source characteristics framing a localized variable entry.
+         * @brief Maps structural context metrics into explicit human-readable definitions strings.
+         * @param pDepth Tracking tracker monitoring nesting depths across parenthesized groupings tokens.
+         * @param effDepth Quantitative reference setting target absolute layer context levels.
+         * @return Informative literal highlighting the identified variable usage context category.
          */
         std::string GetVariableNature(int pDepth, int effDepth) const
         {
@@ -1264,7 +1359,9 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Scans statement tracking windows classifying declarations up to the cursor position.
+         * @brief Parses through source layout configurations up to target positioning thresholds.
+         * @param outEnclosingClass Receives the text label naming the parent class scope wrapper context.
+         * @return List outlining stack values identified as fully accessible.
          */
         std::vector<LocalVariable> Scan(std::string &outEnclosingClass)
         {
@@ -1286,6 +1383,42 @@ namespace TokenHarvester
             {
                 savedPos = stream.GetPos();
                 tc = stream.Peek(token);
+
+                if (tc == asTC_KEYWORD && token == "function")
+                {
+                    stream.Advance(token);
+                    if (stream.Peek(token) == asTC_KEYWORD && token == "(")
+                    {
+                        stream.Advance(token);
+                        while (!stream.IsEOF() && token != ")")
+                        {
+                            std::string paramType = ParseDataType(engine, stream, knownClassNames);
+                            if (!paramType.empty() && stream.Peek(token) == asTC_IDENTIFIER)
+                            {
+                                std::string paramName = std::string(token);
+                                stream.Advance(token);
+                                locals.push_back({paramName, paramType, currentDepth + 1});
+                                std::string scopePrefix = GetFullScope().empty() ? "::" : GetFullScope() + "::";
+                                HARVEST_DEBUG(fmt::format("NEW LOCAL VARIABLE: '{}{}' of type '{}' (lambda parameter) at depth {}",
+                                                          scopePrefix, paramName, paramType, currentDepth + 1));
+                            }
+                            else
+                            {
+                                stream.Advance(token);
+                            }
+                            if (stream.Peek(token) == asTC_KEYWORD && token == ",")
+                            {
+                                stream.Advance(token);
+                            }
+                        }
+                        if (stream.Peek(token) == asTC_KEYWORD && token == ")")
+                        {
+                            stream.Advance(token);
+                        }
+                    }
+                    lastTokenStr = ")";
+                    continue;
+                }
 
                 if (tc == asTC_KEYWORD)
                 {
@@ -1394,13 +1527,13 @@ namespace TokenHarvester
                             stream.Advance(token);
                             containerExpr.clear();
 
-                            while (stream.Peek(token) != asTC_UNKNOWN && token != ")")
+                            while (!stream.IsEOF() && token != ")")
                             {
                                 stream.Advance(token);
 
                                 if (token == ":")
                                 {
-                                    while (stream.Peek(token) != asTC_UNKNOWN && token != ")")
+                                    while (!stream.IsEOF() && token != ")")
                                     {
                                         stream.Advance(token);
                                         containerExpr.push_back(std::string(token));
@@ -1495,7 +1628,9 @@ namespace TokenHarvester
 
     private:
         /**
-         * @brief Deduces static datatypes assigned into dynamically resolved keywords.
+         * @brief Evaluates code syntax configurations resolving exact datatypes matching abstract auto labels.
+         * @param tokens Sequence tracking components formatting the active declaration row layout.
+         * @return The inferred specific script type name signature.
          */
         std::string InferAutoType(const std::vector<std::string> &tokens)
         {
@@ -1773,7 +1908,10 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Evaluates statements assessing presence of inline standard variables.
+         * @brief Evaluates statement configurations verifying whether tracking codes map to fresh variable allocations.
+         * @param savedPos Stored backup positioning placeholder used to backtrack safely.
+         * @param directlyInClass Flag confirming whether operations sit directly inside target object bodies templates.
+         * @return True if a local variable signature validates, false otherwise.
          */
         bool ProcessLocalDeclaration(size_t savedPos, bool directlyInClass = false)
         {
@@ -1846,7 +1984,10 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Evaluates assignment steps modifying structural metadata of mapped instances.
+         * @brief Parses inline initialization assignments and comma-separated definition sequences.
+         * @param parsedType Active foundational type description applied over current segments.
+         * @param effectiveDepth Nested tracking depth assigned to context operations.
+         * @param currentVarName Base tag labeling the active targeted variable item.
          */
         void ParseAssignments(std::string parsedType, int effectiveDepth, std::string currentVarName)
         {
@@ -1860,7 +2001,48 @@ namespace TokenHarvester
 
             while (true)
             {
+                if (stream.IsEOF())
+                    break;
                 lookTc = stream.Peek(token);
+
+                if (lookTc == asTC_KEYWORD && token == "function")
+                {
+                    stream.Advance(token);
+                    if (stream.Peek(token) == asTC_KEYWORD && token == "(")
+                    {
+                        stream.Advance(token);
+                        while (!stream.IsEOF() && token != ")")
+                        {
+                            std::string paramType = ParseDataType(engine, stream, knownClassNames);
+                            if (!paramType.empty() && stream.Peek(token) == asTC_IDENTIFIER)
+                            {
+                                std::string paramName = std::string(token);
+                                stream.Advance(token);
+                                locals.push_back({paramName, paramType, currentDepth + 1});
+                                std::string scopePrefix = GetFullScope().empty() ? "::" : GetFullScope() + "::";
+                                HARVEST_DEBUG(fmt::format("NEW LOCAL VARIABLE: '{}{}' of type '{}' (lambda parameter) at depth {}",
+                                                          scopePrefix, paramName, paramType, currentDepth + 1));
+                            }
+                            else
+                            {
+                                stream.Advance(token);
+                            }
+                            if (stream.Peek(token) == asTC_KEYWORD && token == ",")
+                            {
+                                stream.Advance(token);
+                            }
+                        }
+                        if (stream.Peek(token) == asTC_KEYWORD && token == ")")
+                        {
+                            stream.Advance(token);
+                        }
+                    }
+                    if (stream.Peek(token) == asTC_KEYWORD && token == "{")
+                    {
+                        break;
+                    }
+                    continue;
+                }
 
                 if (lookTc == asTC_UNKNOWN || (lookTc == asTC_KEYWORD && (token == ";" || token == ")")))
                 {
@@ -1990,7 +2172,15 @@ namespace TokenHarvester
     };
 
     /**
-     * @brief Formally scans script segments constructing visible list indices tracking local states.
+     * @brief Public parsing entry tracking stack items available at particular coordinates locations.
+     * @param engine Host compiler processing configuration context handle.
+     * @param code View covering active document code stream layout data.
+     * @param cursorAbsolutePos Absolute positioning character indicator marking targets coordinates boundaries.
+     * @param outEnclosingClass Receives the name of the active surrounding class structure definition layer if found.
+     * @param customClasses Mapped descriptors detailing custom script layout profiles.
+     * @param globalVars Collection summarizing file layer variable properties.
+     * @param globalFuncs Registry mapping globally compiled operations methods routines.
+     * @return Listing aggregating variables identified as active at selection limits.
      */
     std::vector<LocalVariable> ScanLocalVariables(
         asIScriptEngine *engine, std::string_view code, size_t cursorAbsolutePos, std::string &outEnclosingClass,
@@ -2001,7 +2191,10 @@ namespace TokenHarvester
     }
 
     /**
-     * @brief Parses an un-scoped script window for publicly accessible global routines.
+     * @brief Performs sweeps identifying and indexing free functional methods configured over root layouts.
+     * @param engine Target interface configuration platform backend pointer context.
+     * @param code Absolute character string describing the input document source stream.
+     * @return Vector listing global operations records isolated across global spaces.
      */
     std::vector<GlobalFunction> ScanGlobalFunctions(asIScriptEngine *engine, std::string_view code)
     {
@@ -2105,7 +2298,10 @@ namespace TokenHarvester
     }
 
     /**
-     * @brief Parses file blocks capturing variable setups defined at the outer global scope layer.
+     * @brief Isolates standalone properties configured over primary root file levels layers.
+     * @param engine Active application database connection frame runtime pointer context.
+     * @param code Main view mapping flat text rows formatting current projects records code views.
+     * @return Listing summarizing global variable metadata records isolated.
      */
     std::vector<GlobalVariable> ScanGlobalVariables(asIScriptEngine *engine, std::string_view code)
     {
