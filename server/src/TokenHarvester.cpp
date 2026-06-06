@@ -128,6 +128,7 @@ namespace TokenHarvester
             {
                 if (tempPos >= code.length())
                 {
+                    outToken = "";
                     return asTC_UNKNOWN;
                 }
 
@@ -135,11 +136,21 @@ namespace TokenHarvester
 
                 if (len == 0)
                 {
+                    outToken = "";
                     return asTC_UNKNOWN;
                 }
 
                 outToken = code.substr(tempPos, len);
                 tempPos += len;
+
+                if (tc == asTC_UNKNOWN && !outToken.empty() && outToken[0] == '#')
+                {
+                    while (tempPos < code.length() && code[tempPos] != '\n' && code[tempPos] != '\r')
+                    {
+                        tempPos++;
+                    }
+                    tc = asTC_WHITESPACE;
+                }
 
             } while (tc == asTC_WHITESPACE || tc == asTC_COMMENT);
 
@@ -158,6 +169,7 @@ namespace TokenHarvester
             {
                 if (pos >= code.length())
                 {
+                    outToken = "";
                     return asTC_UNKNOWN;
                 }
 
@@ -165,15 +177,35 @@ namespace TokenHarvester
 
                 if (len == 0)
                 {
+                    outToken = "";
                     return asTC_UNKNOWN;
                 }
 
                 outToken = code.substr(pos, len);
                 pos += len;
 
+                if (tc == asTC_UNKNOWN && !outToken.empty() && outToken[0] == '#')
+                {
+                    while (pos < code.length() && code[pos] != '\n' && code[pos] != '\r')
+                    {
+                        pos++;
+                    }
+                    tc = asTC_WHITESPACE;
+                }
+
             } while (tc == asTC_WHITESPACE || tc == asTC_COMMENT);
 
             return tc;
+        }
+
+        /**
+         * @brief Checks if the stream has reached the true end of the file.
+         */
+        bool IsEOF()
+        {
+            std::string_view dummy;
+            asETokenClass tc = Peek(dummy);
+            return (tc == asTC_UNKNOWN && dummy.empty());
         }
 
         /**
@@ -502,7 +534,7 @@ namespace TokenHarvester
         ctx.partialMember = "";
         ctx.lastSeparator = "";
 
-        while (stream.GetPos() < cursorAbsolutePos && stream.Peek(token) != asTC_UNKNOWN)
+        while (stream.GetPos() < cursorAbsolutePos && !stream.IsEOF())
         {
             stream.Advance(token);
             tokens.push_back(std::string(token));
@@ -704,7 +736,7 @@ namespace TokenHarvester
             asETokenClass tc = asTC_UNKNOWN;
             int qDepth = 0;
 
-            while (quickStream.Peek(token) != asTC_UNKNOWN)
+            while (!quickStream.IsEOF())
             {
                 tc = quickStream.Advance(token);
 
@@ -780,7 +812,7 @@ namespace TokenHarvester
             asETokenClass tc = asTC_UNKNOWN;
             bool validDeclFound = false;
 
-            while (stream.Peek(token) != asTC_UNKNOWN)
+            while (!stream.IsEOF())
             {
                 savedPos = stream.GetPos();
                 tc = stream.Advance(token);
@@ -1250,7 +1282,7 @@ namespace TokenHarvester
             bool validDeclFound = false;
             bool insideClassDecl = false;
 
-            while (stream.GetPos() < cursorAbsolutePos && stream.Peek(token) != asTC_UNKNOWN)
+            while (stream.GetPos() < cursorAbsolutePos && !stream.IsEOF())
             {
                 savedPos = stream.GetPos();
                 tc = stream.Peek(token);
@@ -1995,7 +2027,7 @@ namespace TokenHarvester
             localClasses.push_back(c.name);
         }
 
-        while (stream.Peek(token) != asTC_UNKNOWN)
+        while (!stream.IsEOF())
         {
             savedPos = stream.GetPos();
             tc = stream.Peek(token);
@@ -2100,7 +2132,7 @@ namespace TokenHarvester
             localClasses.push_back(c.name);
         }
 
-        while (stream.Peek(token) != asTC_UNKNOWN)
+        while (!stream.IsEOF())
         {
             savedPos = stream.GetPos();
             tc = stream.Peek(token);

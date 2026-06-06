@@ -580,12 +580,37 @@ std::string CompletionHandler::WalkObjectChain(std::string inferredTypeName)
 void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
 {
     std::string baseTypeName = TokenHarvester::GetBaseType(inferredTypeName);
+    std::unordered_set<std::string> addedMembers;
+    asITypeInfo *targetType = GetNativeTypeInfo(inferredTypeName);
+    const char *enumName = nullptr;
+
+    if (targetType && (targetType->GetFlags() & asOBJ_ENUM))
+    {
+        if (ctx.lastSeparator == "::")
+        {
+            for (asUINT v = 0; v < targetType->GetEnumValueCount(); v++)
+            {
+                enumName = targetType->GetEnumValueByIndex(v, nullptr);
+                if (enumName)
+                {
+                    if (addedMembers.find(enumName) != addedMembers.end())
+                    {
+                        continue;
+                    }
+                    if (ctx.partialMember.empty() || std::string(enumName).rfind(ctx.partialMember, 0) == 0)
+                    {
+                        itemsArray.push_back({{"label", enumName}, {"kind", 20}, {"detail", "enum value"}});
+                        addedMembers.insert(enumName);
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     bool classFoundInScript = false;
     bool canAccessPrivate = (enclosingClass == baseTypeName);
     bool canAccessProtected = false;
-    std::unordered_set<std::string> addedMembers;
-    asITypeInfo *targetType = nullptr;
-    const char *enumName = nullptr;
     const char *propName = nullptr;
     int propTypeId = 0;
     const char *decl = nullptr;
@@ -598,7 +623,6 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
         {
             return true;
         }
-
         for (const auto &c : customClasses)
         {
             if (c.name == child)
@@ -610,11 +634,9 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
                         return true;
                     }
                 }
-
                 break;
             }
         }
-
         return false;
     };
 
@@ -627,53 +649,44 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
             if (c.name == targetClass)
             {
                 classFoundInScript = true;
-
                 for (const auto &prop : c.properties)
                 {
                     if (ctx.lastSeparator == "::")
                     {
                         continue;
                     }
-
                     if (!canAccessPrivate && (prop.access == "private" || prop.access == "protected"))
                     {
                         continue;
                     }
-
                     if (addedMembers.find(prop.name) != addedMembers.end())
                     {
                         continue;
                     }
-
                     if (ctx.partialMember.empty() || prop.name.rfind(ctx.partialMember, 0) == 0)
                     {
                         itemsArray.push_back({{"label", prop.name}, {"kind", 5}, {"detail", prop.access + " " + prop.typeName}});
                         addedMembers.insert(prop.name);
                     }
                 }
-
                 for (const auto &method : c.methods)
                 {
                     if (method.isConstructor)
                     {
                         continue;
                     }
-
                     if (ctx.lastSeparator == "::" && !canAccessProtected)
                     {
                         continue;
                     }
-
                     if (method.access == "private" && !canAccessPrivate)
                     {
                         continue;
                     }
-
                     if (method.access == "protected" && !canAccessProtected)
                     {
                         continue;
                     }
-
                     if (ctx.lastSeparator != "::")
                     {
                         if (method.name.find("get_") == 0 || method.name.find("set_") == 0)
@@ -681,12 +694,10 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
                             continue;
                         }
                     }
-
                     if (addedMembers.find(method.name) != addedMembers.end())
                     {
                         continue;
                     }
-
                     if (ctx.partialMember.empty() || method.name.rfind(ctx.partialMember, 0) == 0)
                     {
                         itemsArray.push_back({{"label", method.name},
@@ -697,12 +708,10 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
                         addedMembers.insert(method.name);
                     }
                 }
-
                 for (const auto &baseType : c.baseTypes)
                 {
                     ExtractClassMembers(baseType);
                 }
-
                 break;
             }
         }
@@ -713,52 +722,21 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
     if (!classFoundInScript)
     {
         targetType = GetNativeTypeInfo(inferredTypeName);
-
         if (targetType)
         {
-            if (targetType->GetFlags() & asOBJ_ENUM)
-            {
-                if (ctx.lastSeparator == "::")
-                {
-                    for (asUINT v = 0; v < targetType->GetEnumValueCount(); v++)
-                    {
-                        enumName = targetType->GetEnumValueByIndex(v, nullptr);
-
-                        if (enumName)
-                        {
-                            if (addedMembers.find(enumName) != addedMembers.end())
-                            {
-                                continue;
-                            }
-
-                            if (ctx.partialMember.empty() || std::string(enumName).rfind(ctx.partialMember, 0) == 0)
-                            {
-                                itemsArray.push_back({{"label", enumName}, {"kind", 20}, {"detail", "enum value"}});
-                                addedMembers.insert(enumName);
-                            }
-                        }
-                    }
-                }
-
-                return;
-            }
-
             for (asUINT p = 0; p < targetType->GetPropertyCount(); p++)
             {
                 if (ctx.lastSeparator == "::")
                 {
                     continue;
                 }
-
                 propName = nullptr;
                 propTypeId = 0;
                 targetType->GetProperty(p, &propName, &propTypeId);
-
                 if (addedMembers.find(propName) != addedMembers.end())
                 {
                     continue;
                 }
-
                 if (ctx.partialMember.empty() || std::string(propName).rfind(ctx.partialMember, 0) == 0)
                 {
                     decl = engine->GetTypeDeclaration(propTypeId, true);
@@ -766,22 +744,18 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
                     addedMembers.insert(propName);
                 }
             }
-
             for (asUINT m = 0; m < targetType->GetMethodCount(); m++)
             {
                 func = targetType->GetMethodByIndex(m);
                 mName = func->GetName();
-
                 if (mName == baseTypeName || (!mName.empty() && mName[0] == '~'))
                 {
                     continue;
                 }
-
                 if (ctx.lastSeparator == "::" && !canAccessProtected)
                 {
                     continue;
                 }
-
                 if (ctx.lastSeparator != "::")
                 {
                     if (mName.find("get_") == 0 || mName.find("set_") == 0)
@@ -789,12 +763,10 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
                         continue;
                     }
                 }
-
                 if (addedMembers.find(mName) != addedMembers.end())
                 {
                     continue;
                 }
-
                 if (ctx.partialMember.empty() || mName.rfind(ctx.partialMember, 0) == 0)
                 {
                     itemsArray.push_back({{"label", mName},
