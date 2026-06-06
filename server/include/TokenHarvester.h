@@ -14,7 +14,6 @@
 
 namespace TokenHarvester
 {
-
     /**
      * @struct LocalVariable
      * @brief Context storage for variables alive within current functional execution scopes.
@@ -23,8 +22,10 @@ namespace TokenHarvester
     {
         /** @brief The name of the local variable. */
         std::string name;
+
         /** @brief The type identifier for the variable. */
         std::string typeName;
+
         /** @brief Track curly brace nesting depth at instantiation time. */
         int declarationDepth;
     };
@@ -37,8 +38,10 @@ namespace TokenHarvester
     {
         /** @brief The identifier name of the function. */
         std::string name;
+
         /** @brief The return type of the global function. */
         std::string typeName;
+
         /** @brief The full signature declaration of the function. */
         std::string declaration;
     };
@@ -51,6 +54,7 @@ namespace TokenHarvester
     {
         /** @brief The identifier name of the global variable. */
         std::string name;
+
         /** @brief The data type of the global variable. */
         std::string typeName;
     };
@@ -63,8 +67,10 @@ namespace TokenHarvester
     {
         /** @brief The identifier name of the property. */
         std::string name;
+
         /** @brief The data type of the property. */
         std::string typeName;
+
         /** @brief The access specifier (e.g., "public", "private", "protected"). */
         std::string access;
     };
@@ -77,12 +83,16 @@ namespace TokenHarvester
     {
         /** @brief The identifier name of the method. */
         std::string name;
+
         /** @brief The return type of the method. */
         std::string typeName;
+
         /** @brief The full signature declaration of the method. */
         std::string declaration;
+
         /** @brief The access specifier (e.g., "public", "private", "protected"). */
         std::string access;
+
         /** @brief Flag indicating if this method serves as a constructor. */
         bool isConstructor;
     };
@@ -95,10 +105,13 @@ namespace TokenHarvester
     {
         /** @brief The identifier name of the class. */
         std::string name;
+
         /** @brief List of base types for inheritance (e.g., "BaseClass", "Interface"). */
         std::vector<std::string> baseTypes;
+
         /** @brief Collection of properties encapsulated by the class. */
         std::vector<ClassProperty> properties;
+
         /** @brief Collection of methods defined within the class. */
         std::vector<ClassMethod> methods;
     };
@@ -111,10 +124,13 @@ namespace TokenHarvester
     {
         /** @brief Flag indicating if the completion trigger is a member access. */
         bool isMemberAccess;
+
         /** @brief The sequence of accessed objects, supporting infinite chaining (e.g., A.B.C). */
         std::vector<std::string> objectChain;
+
         /** @brief The incomplete or partial member string currently being typed. */
         std::string partialMember;
+
         /** @brief The absolute linear position of the cursor in the source code. */
         std::string lastSeparator;
     };
@@ -175,6 +191,7 @@ namespace TokenHarvester
      * @return A vector of active local variables within the identified scope.
      */
     std::vector<LocalVariable> ScanLocalVariables(asIScriptEngine *engine, std::string_view code, size_t cursorAbsolutePos, std::string &outEnclosingClass, const std::vector<ScriptClass> &customClasses, const std::vector<GlobalVariable> &globalVars, const std::vector<GlobalFunction> &globalFuncs);
+
     /**
      * @brief Extracts global function signatures using safe pattern matching token boundaries.
      * @param engine Pointer to the active AngelScript engine instance.

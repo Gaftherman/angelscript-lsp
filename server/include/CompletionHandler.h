@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include <functional>
 #include <nlohmann/json.hpp>
 #include <angelscript.h>
 #include "TokenHarvester.h"
@@ -42,6 +43,7 @@ public:
      * @param classes A collection of user-defined script classes available in the scope.
      * @param funcs A collection of globally defined script functions.
      * @param globals A collection of globally defined variables.
+     * @param logFn Optional diagnostics logger callback mechanism.
      */
     CompletionHandler(asIScriptEngine *eng, asIScriptModule *mod,
                       const TokenHarvester::CompletionContext &context,
@@ -65,6 +67,11 @@ private:
      * @brief Evaluates a member access chain and populates autocompletion items for the natively resolved object type.
      */
     void HandleMemberAccess();
+
+    /**
+     * @brief Evaluates variables, functions, and keywords active at the current cursor scope, populating the completion items.
+     */
+    void HandleGlobalScopeResolution();
 
     /**
      * @brief Evaluates variables, functions, and keywords active at the current cursor scope, populating the completion items.

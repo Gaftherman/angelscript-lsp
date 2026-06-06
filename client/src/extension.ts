@@ -66,7 +66,7 @@ export async function activate(context: ExtensionContext) {
         documentSelector: [{ scheme: 'file', language: 'angelscript' }],
         outputChannel: lspOutputChannel
     };
-6
+
     client = new LanguageClient(
         'angelScriptLSP',
         'AngelScript C++ Language Server',

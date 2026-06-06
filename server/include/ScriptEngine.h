@@ -27,10 +27,13 @@ public:
     {
         /** @brief The line number where the diagnostic event occurred. */
         int row;
+
         /** @brief The column number where the diagnostic event occurred. */
         int col;
+
         /** @brief The text message describing the compiler output. */
         std::string message;
+
         /** @brief The severity classification of the diagnostic message (e.g., error, warning, info). */
         int type;
     };
