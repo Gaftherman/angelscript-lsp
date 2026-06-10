@@ -47,6 +47,7 @@ add_executable(angel_lsp
     src/ScriptEngine.cpp
     src/TokenHarvester.cpp
     src/CompletionHandler.cpp
+    src/HoverHandler.cpp
 )
 
 target_include_directories(angel_lsp PRIVATE include)
