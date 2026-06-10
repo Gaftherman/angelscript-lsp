@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <unordered_set>
 #include <nlohmann/json.hpp>
 #include <angelscript.h>
 #include "TokenHarvester.h"
@@ -64,56 +65,164 @@ public:
 
 private:
     /**
-     * @brief Evaluates a member access chain and populates autocompletion items for the natively resolved object type.
-     */
-    void HandleMemberAccess();
-
-    /**
-     * @brief Evaluates variables, functions, and keywords active at the current cursor scope, populating the completion items.
-     */
-    void HandleGlobalScopeResolution();
-
-    /**
-     * @brief Evaluates variables, functions, and keywords active at the current cursor scope, populating the completion items.
-     * @param originalText The raw string representation of the source code being analyzed.
+     * @brief Processes global-level statements, definitions, types, and keywords.
+     * @param originalText The raw document text being analyzed.
      * @param cursorAbsPos The absolute linear index position of the cursor within the text.
      */
-    void HandleGlobalScope(const std::string &originalText, size_t cursorAbsPos);
+    void ComputeGlobalScopeCompletions(const std::string &originalText, size_t cursorAbsPos);
 
     /**
-     * @brief Determines the initial data type at the root of a member access chain.
-     * @param rootName The identifier name of the root object or function.
-     * @param rootIsMethod Flag indicating whether the root identifier represents a function call.
-     * @return The resolved data type name of the root object as a string.
+     * @brief Processes declarations tied specifically behind a scope resolution operator.
+     * @param namespacePrefix The extracted namespace or static scope path definition.
+     */
+    void ComputeNamespaceScopeCompletions(std::string_view namespacePrefix);
+
+    /**
+     * @brief Evaluates type deductions to populate properties and methods after member invocation.
+     * @param objectName The textual representation of the object or sequence being traversed.
+     */
+    void ComputeMemberAccessCompletions(std::string_view objectName);
+
+    /**
+     * @brief Computes stack and scoped elements accessible within localized instruction sequences.
+     * @param activeOffset The absolute coordinate indexing the block structure scope entry.
+     */
+    void ComputeLocalScopeCompletions(size_t activeOffset);
+
+    /**
+     * @brief Recursively maps inheritance hierarchies to extract validation rules for base class structures.
+     * @param child The name of the specialized class definition.
+     * @param potentialBase The name of the ancestor candidate signature.
+     * @return true if lineage relation is confirmed, false otherwise.
+     */
+    bool IsBaseClass(const std::string &child, const std::string &potentialBase);
+
+    /**
+     * @brief Gathers matching member variables and functions across active script translations.
+     * @param targetClass The current scope segment being parsed.
+     * @param addedMembers A cumulative reference mapping tracking unique identifiers to prevent collisions.
+     * @param canAccessPrivate Indicates authorization to register private tokens.
+     * @param canAccessProtected Indicates authorization to register protected tokens.
+     */
+    void ExtractClassMembers(const std::string &targetClass, std::unordered_set<std::string> &addedMembers, bool canAccessPrivate, bool canAccessProtected);
+
+    /**
+     * @brief Performs recursive internal scope introspection to add class field descriptions dynamically.
+     * @param targetClass The matching definition identity keyword.
+     * @param addedImplicitMembers Scoped tracking collection tracking unique token outputs.
+     */
+    void AddImplicitMembersRecursive(const std::string &targetClass, std::unordered_set<std::string> &addedImplicitMembers);
+
+    /**
+     * @brief Decodes root tracking keywords to establish primary typing assignments.
+     * @param rootName The identifier text matching the object sequence.
+     * @param rootIsMethod True if identifier acts as an executable call marker.
+     * @return The fully qualified data type designation.
      */
     std::string ResolveRootType(const std::string &rootName, bool rootIsMethod);
 
     /**
-     * @brief Traverses a sequence of member accesses to determine the final evaluated type in an object chain.
-     * @param inferredTypeName The baseline type name starting the chain evaluation.
-     * @return The final evaluated data type name after fully traversing the chain.
+     * @brief Loops across segment accessors to update cascading object sequence definitions.
+     * @param inferredTypeName The active processing type label.
+     * @return The resulting terminal type specification sequence.
      */
     std::string WalkObjectChain(std::string inferredTypeName);
 
     /**
-     * @brief Extracts class or native members of a specified type and appends them to the autocompletion items list.
-     * @param inferredTypeName The fully resolved type name whose members should be retrieved.
+     * @brief Coordinates internal mapping to load fields or methods onto active payload arrays.
+     * @param inferredTypeName The resolved target template configuration sequence.
      */
     void PopulateMembers(const std::string &inferredTypeName);
 
     /**
-     * @brief Retrieves the native AngelScript type information object corresponding to a given type name.
-     * @param typeName The string representation of the data type to query.
-     * @return A pointer to the corresponding asITypeInfo structure, or nullptr if the type cannot be found.
+     * @brief Extracts underlying system structure representations from native engine references.
+     * @param typeName The identifier lookup sequence string.
+     * @return A pointer to the internal AngelScript structural type representation wrapper.
      */
     asITypeInfo *GetNativeTypeInfo(const std::string &typeName);
 
     /**
-     * @brief Parses a discrete textual segment of an object chain into its logical base identifier and applied modifiers.
-     * @param segment The raw text fragment from the chain to analyze (e.g., "myArray[0]" or "myFunction()").
-     * @param outName Output parameter populated with the base identifier string after parsing.
-     * @param outDerefCount Output parameter tracking the number of array dereference modifiers found.
-     * @param outIsMethod Output boolean flag asserting true if the segment identifies as a method or function call.
+     * @brief Strips modifier suffixes to isolate baseline label names.
+     * @param segment The contextual segment block fragment.
+     * @param outName Receives the stripped variable target text.
+     * @param outDerefCount Receives computed indexing dereference depths.
+     * @param outIsMethod Receives execution confirmation status flags.
      */
     void ParseSegment(const std::string &segment, std::string &outName, int &outDerefCount, bool &outIsMethod);
+
+    /**
+     * @brief Predicate tracking whether token identifies structural entity markers.
+     * @param text String segment targeting evaluation.
+     * @return true if context qualifies, false otherwise.
+     */
+    bool IsStructureDeclarationKeyword(std::string_view text) const noexcept;
+
+    /**
+     * @brief Predicate tracking whether token matches standard logical statements.
+     * @param text String segment targeting evaluation.
+     * @return true if context qualifies, false otherwise.
+     */
+    bool IsStatementKeyword(std::string_view text) const noexcept;
+
+    /**
+     * @brief Predicate tracking whether token sets storage modifier boundaries.
+     * @param text String segment targeting evaluation.
+     * @return true if context qualifies, false otherwise.
+     */
+    bool IsStorageModifierKeyword(std::string_view text) const noexcept;
+
+    /**
+     * @brief Predicate tracking whether token defines basic default primitive parameters.
+     * @param text String segment targeting evaluation.
+     * @return true if context qualifies, false otherwise.
+     */
+    bool IsPrimitiveType(std::string_view text) const noexcept;
+
+    /**
+     * @brief Strips formatting artifacts to guarantee compact spacing layout within signatures.
+     * @param signature Scoping reference tracking output layouts.
+     */
+    void NormalizeSignatureSpacing(std::string &signature) const;
+
+    /**
+     * @brief Cleans signature white spaces to provide structural formatting layouts.
+     * @param str Raw string containing unformatted templates.
+     * @return Cleaned string layout context mapping.
+     */
+    std::string CleanSignature(std::string str);
+
+    /**
+     * @brief Discards visible storage qualifiers from specific string blocks.
+     * @param typeStr Target type evaluation sequence.
+     * @return A view highlighting isolated definition terms.
+     */
+    std::string_view StripAccessModifiers(std::string_view typeStr) noexcept;
+
+    /**
+     * @brief Extracts foundational identifier roots while stripping operators and references.
+     * @param typeStr Target configuration string sequence.
+     * @return Formatted foundational identity term.
+     */
+    std::string ExtractBaseTypeName(std::string_view typeStr);
+
+    /**
+     * @brief Evaluates code identifiers backwards to infer exact contextual type outputs.
+     * @param objectName Target identity label string view sequence.
+     * @return The deduced classification string name.
+     */
+    std::string DeduceTypeFromRHS(const std::string &objectName);
+
+    /**
+     * @brief Substitutes parameterized placeholder tokens inside layout schemas with real type names.
+     * @param targetStr The blueprint block description text requiring updates.
+     * @param templateType The specialized source type wrapper containing target data fields.
+     */
+    void SubstituteTemplateArguments(std::string &targetStr, std::string_view templateType);
+
+    /**
+     * @brief Appends complete blueprint formatting descriptors when processing specialized tracking definitions.
+     * @param hoverText Base literal structural detail parameters.
+     * @return Enriched specification layout output.
+     */
+    std::string EnhanceIfFuncdef(const std::string &hoverText);
 };
