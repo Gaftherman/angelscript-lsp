@@ -21,55 +21,69 @@ using json = nlohmann::json;
  * @param customClasses Extracted translation unit context containing user class metadata indices.
  * @return True if the member resolution successfully completed within the lineage tree.
  */
-static bool SearchCustomClassRecursively(const std::string &typeName,
+static bool SearchCustomClassRecursively(const std::string &initialTypeName,
                                          const std::string &memberName,
                                          bool isMethod,
                                          std::string &outType,
                                          const std::vector<TokenHarvester::ScriptClass> &customClasses)
 {
+    std::vector<std::string> stack;
+    std::unordered_set<std::string> visitedClasses;
     size_t cIdx;
     size_t pIdx;
     size_t mIdx;
     size_t bIdx;
+    std::string currentClass;
 
-    for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+    stack.push_back(initialTypeName);
+
+    while (!stack.empty())
     {
-        const auto &c = customClasses[cIdx];
-        if (c.name == typeName)
+        currentClass = stack.back();
+        stack.pop_back();
+
+        if (visitedClasses.find(currentClass) != visitedClasses.end())
         {
-            if (!isMethod)
+            continue;
+        }
+        visitedClasses.insert(currentClass);
+
+        for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+        {
+            const auto &c = customClasses[cIdx];
+            if (c.name == currentClass)
             {
-                for (pIdx = 0; pIdx < c.properties.size(); ++pIdx)
+                if (!isMethod)
                 {
-                    if (c.properties[pIdx].name == memberName)
+                    for (pIdx = 0; pIdx < c.properties.size(); ++pIdx)
                     {
-                        outType = c.properties[pIdx].typeName;
-                        return true;
+                        if (c.properties[pIdx].name == memberName)
+                        {
+                            outType = c.properties[pIdx].typeName;
+                            return true;
+                        }
                     }
                 }
-            }
 
-            if (outType.empty())
-            {
-                for (mIdx = 0; mIdx < c.methods.size(); ++mIdx)
+                if (outType.empty())
                 {
-                    if (c.methods[mIdx].name == memberName)
+                    for (mIdx = 0; mIdx < c.methods.size(); ++mIdx)
                     {
-                        outType = c.methods[mIdx].typeName;
-                        return true;
+                        if (c.methods[mIdx].name == memberName)
+                        {
+                            outType = c.methods[mIdx].typeName;
+                            return true;
+                        }
                     }
                 }
-            }
 
-            for (bIdx = 0; bIdx < c.baseTypes.size(); ++bIdx)
-            {
-                if (SearchCustomClassRecursively(c.baseTypes[bIdx], memberName, isMethod, outType, customClasses))
+                for (bIdx = 0; bIdx < c.baseTypes.size(); ++bIdx)
                 {
-                    return true;
+                    stack.push_back(c.baseTypes[bIdx]);
                 }
-            }
 
-            break;
+                break;
+            }
         }
     }
 
@@ -199,87 +213,107 @@ nlohmann::json CompletionHandler::GenerateItems(const std::string &originalText,
 
 void CompletionHandler::ExtractClassMembers(const std::string &targetClass, std::unordered_set<std::string> &addedMembers, bool canAccessPrivate, bool canAccessProtected)
 {
+    std::vector<std::string> stack;
+    std::unordered_set<std::string> visitedClasses;
     size_t cIdx;
     size_t pIdx;
     size_t mIdx;
     size_t bIdx;
     std::string subbedDetail;
+    std::string currentClass;
 
-    for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+    stack.push_back(targetClass);
+
+    while (!stack.empty())
     {
-        if (customClasses[cIdx].name == targetClass)
-        {
-            for (pIdx = 0; pIdx < customClasses[cIdx].properties.size(); ++pIdx)
-            {
-                const auto &prop = customClasses[cIdx].properties[pIdx];
+        currentClass = stack.back();
+        stack.pop_back();
 
-                if (ctx.lastSeparator == "::" && !customClasses[cIdx].methods.empty())
-                {
-                    continue;
-                }
-                if (!canAccessPrivate && (prop.access == "private" || prop.access == "protected"))
-                {
-                    continue;
-                }
-                if (addedMembers.find(prop.name) != addedMembers.end())
-                {
-                    continue;
-                }
-                if (ctx.partialMember.empty() || prop.name.rfind(ctx.partialMember, 0) == 0)
-                {
-                    subbedDetail = prop.access + " " + prop.typeName;
-                    subbedDetail = EnhanceIfFuncdef(subbedDetail);
-                    itemsArray.push_back({{"label", prop.name}, {"kind", 5}, {"detail", subbedDetail}});
-                    addedMembers.insert(prop.name);
-                }
-            }
-            for (mIdx = 0; mIdx < customClasses[cIdx].methods.size(); ++mIdx)
+        if (visitedClasses.find(currentClass) != visitedClasses.end())
+        {
+            continue;
+        }
+        visitedClasses.insert(currentClass);
+
+        for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+        {
+            if (customClasses[cIdx].name == currentClass)
             {
-                const auto &method = customClasses[cIdx].methods[mIdx];
-                if (method.isConstructor)
+                for (pIdx = 0; pIdx < customClasses[cIdx].properties.size(); ++pIdx)
                 {
-                    continue;
-                }
-                if (ctx.lastSeparator == "::" && !canAccessProtected)
-                {
-                    continue;
-                }
-                if (method.access == "private" && !canAccessPrivate)
-                {
-                    continue;
-                }
-                if (method.access == "protected" && !canAccessProtected)
-                {
-                    continue;
-                }
-                if (ctx.lastSeparator != "::")
-                {
-                    if (method.name.find("get_") == 0 || method.name.find("set_") == 0)
+                    const auto &prop = customClasses[cIdx].properties[pIdx];
+
+                    if (ctx.lastSeparator == "::" && !customClasses[cIdx].methods.empty())
                     {
                         continue;
                     }
+                    if (!canAccessPrivate && (prop.access == "private" || prop.access == "protected"))
+                    {
+                        continue;
+                    }
+                    if (addedMembers.find(prop.name) != addedMembers.end())
+                    {
+                        continue;
+                    }
+                    if (ctx.partialMember.empty() || prop.name.rfind(ctx.partialMember, 0) == 0)
+                    {
+                        subbedDetail = prop.access + " " + prop.typeName;
+                        subbedDetail = EnhanceIfFuncdef(subbedDetail);
+                        itemsArray.push_back({{"label", prop.name}, {"kind", 5}, {"detail", subbedDetail}});
+                        addedMembers.insert(prop.name);
+                    }
                 }
-                if (addedMembers.find(method.name) != addedMembers.end())
+
+                for (mIdx = 0; mIdx < customClasses[cIdx].methods.size(); ++mIdx)
                 {
-                    continue;
+                    const auto &method = customClasses[cIdx].methods[mIdx];
+                    if (method.isConstructor)
+                    {
+                        continue;
+                    }
+                    if (ctx.lastSeparator == "::" && !canAccessProtected)
+                    {
+                        continue;
+                    }
+                    if (method.access == "private" && !canAccessPrivate)
+                    {
+                        continue;
+                    }
+                    if (method.access == "protected" && !canAccessProtected)
+                    {
+                        continue;
+                    }
+                    if (ctx.lastSeparator != "::")
+                    {
+                        if (method.name.find("get_") == 0 || method.name.find("set_") == 0)
+                        {
+                            continue;
+                        }
+                    }
+                    if (addedMembers.find(method.name) != addedMembers.end())
+                    {
+                        continue;
+                    }
+                    if (ctx.partialMember.empty() || method.name.rfind(ctx.partialMember, 0) == 0)
+                    {
+                        subbedDetail = method.access + " " + method.declaration;
+                        subbedDetail = EnhanceIfFuncdef(subbedDetail);
+                        itemsArray.push_back({{"label", method.name},
+                                              {"kind", 2},
+                                              {"detail", subbedDetail},
+                                              {"insertText", method.name + "($1)"},
+                                              {"insertTextFormat", 2}});
+                        addedMembers.insert(method.name);
+                    }
                 }
-                if (ctx.partialMember.empty() || method.name.rfind(ctx.partialMember, 0) == 0)
+
+                for (bIdx = 0; bIdx < customClasses[cIdx].baseTypes.size(); ++bIdx)
                 {
-                    subbedDetail = method.access + " " + method.declaration;
-                    subbedDetail = EnhanceIfFuncdef(subbedDetail);
-                    itemsArray.push_back({{"label", method.name},
-                                          {"kind", 2},
-                                          {"detail", subbedDetail},
-                                          {"insertText", method.name + "($1)"},
-                                          {"insertTextFormat", 2}});
-                    addedMembers.insert(method.name);
+                    stack.push_back(customClasses[cIdx].baseTypes[bIdx]);
                 }
+
+                break;
             }
-            for (bIdx = 0; bIdx < customClasses[cIdx].baseTypes.size(); ++bIdx)
-            {
-                ExtractClassMembers(customClasses[cIdx].baseTypes[bIdx], addedMembers, canAccessPrivate, canAccessProtected);
-            }
-            break;
         }
     }
 }
@@ -710,94 +744,128 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
 
 bool CompletionHandler::IsBaseClass(const std::string &child, const std::string &potentialBase)
 {
+    std::vector<std::string> stack;
+    std::unordered_set<std::string> visitedClasses;
     size_t cIdx;
     size_t bIdx;
+    std::string currentClass;
 
     if (child == potentialBase)
     {
         return true;
     }
 
-    for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+    stack.push_back(child);
+
+    while (!stack.empty())
     {
-        if (customClasses[cIdx].name == child)
+        currentClass = stack.back();
+        stack.pop_back();
+
+        if (visitedClasses.find(currentClass) != visitedClasses.end())
         {
-            for (bIdx = 0; bIdx < customClasses[cIdx].baseTypes.size(); ++bIdx)
+            continue;
+        }
+        visitedClasses.insert(currentClass);
+
+        for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+        {
+            if (customClasses[cIdx].name == currentClass)
             {
-                if (IsBaseClass(customClasses[cIdx].baseTypes[bIdx], potentialBase))
+                for (bIdx = 0; bIdx < customClasses[cIdx].baseTypes.size(); ++bIdx)
                 {
-                    return true;
+                    if (customClasses[cIdx].baseTypes[bIdx] == potentialBase)
+                    {
+                        return true;
+                    }
+                    stack.push_back(customClasses[cIdx].baseTypes[bIdx]);
                 }
+                break;
             }
-            break;
         }
     }
+
     return false;
 }
 
 void CompletionHandler::AddImplicitMembersRecursive(const std::string &targetClass, std::unordered_set<std::string> &addedImplicitMembers)
 {
+    std::vector<std::string> stack;
+    std::unordered_set<std::string> visitedClasses;
     size_t cIdx;
     size_t pIdx;
     size_t mIdx;
     size_t bIdx;
+    std::string currentClass;
 
-    for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+    stack.push_back(targetClass);
+
+    while (!stack.empty())
     {
-        if (customClasses[cIdx].name == targetClass)
+        currentClass = stack.back();
+        stack.pop_back();
+
+        if (visitedClasses.find(currentClass) != visitedClasses.end())
         {
-            for (pIdx = 0; pIdx < customClasses[cIdx].properties.size(); ++pIdx)
+            continue;
+        }
+        visitedClasses.insert(currentClass);
+
+        for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+        {
+            if (customClasses[cIdx].name == currentClass)
             {
-                const auto &prop = customClasses[cIdx].properties[pIdx];
-                if (addedImplicitMembers.find(prop.name) != addedImplicitMembers.end())
+                for (pIdx = 0; pIdx < customClasses[cIdx].properties.size(); ++pIdx)
                 {
-                    continue;
+                    const auto &prop = customClasses[cIdx].properties[pIdx];
+                    if (addedImplicitMembers.find(prop.name) != addedImplicitMembers.end())
+                    {
+                        continue;
+                    }
+
+                    if (ctx.partialMember.empty() || prop.name.rfind(ctx.partialMember, 0) == 0)
+                    {
+                        itemsArray.push_back({{"label", prop.name},
+                                              {"kind", 5},
+                                              {"detail", prop.access + " " + prop.typeName},
+                                              {"documentation", {{"kind", "markdown"}, {"value", fmt::format("Member property of `{}`", currentClass)}}}});
+                        addedImplicitMembers.insert(prop.name);
+                    }
                 }
 
-                if (ctx.partialMember.empty() || prop.name.rfind(ctx.partialMember, 0) == 0)
+                for (mIdx = 0; mIdx < customClasses[cIdx].methods.size(); ++mIdx)
                 {
-                    itemsArray.push_back({{"label", prop.name},
-                                          {"kind", 5},
-                                          {"detail", prop.access + " " + prop.typeName},
-                                          {"documentation", {{"kind", "markdown"}, {"value", fmt::format("Member property of `{}`", targetClass)}}}});
-                    addedImplicitMembers.insert(prop.name);
+                    const auto &method = customClasses[cIdx].methods[mIdx];
+                    if (method.isConstructor)
+                    {
+                        continue;
+                    }
+                    if (method.name.find("get_") == 0 || method.name.find("set_") == 0)
+                    {
+                        continue;
+                    }
+                    if (addedImplicitMembers.find(method.name) != addedImplicitMembers.end())
+                    {
+                        continue;
+                    }
+
+                    if (ctx.partialMember.empty() || method.name.rfind(ctx.partialMember, 0) == 0)
+                    {
+                        itemsArray.push_back({{"label", method.name},
+                                              {"kind", 2},
+                                              {"detail", method.access + " " + method.declaration},
+                                              {"documentation", {{"kind", "markdown"}, {"value", fmt::format("Member method of `{}`", currentClass)}}}});
+                        addedImplicitMembers.insert(method.name);
+                    }
                 }
+
+                for (bIdx = 0; bIdx < customClasses[cIdx].baseTypes.size(); ++bIdx)
+                {
+                    stack.push_back(customClasses[cIdx].baseTypes[bIdx]);
+                }
+
+                break;
             }
-
-            for (mIdx = 0; mIdx < customClasses[cIdx].methods.size(); ++mIdx)
-            {
-                const auto &method = customClasses[cIdx].methods[mIdx];
-                if (method.isConstructor)
-                {
-                    continue;
-                }
-
-                if (method.name.find("get_") == 0 || method.name.find("set_") == 0)
-                {
-                    continue;
-                }
-
-                if (addedImplicitMembers.find(method.name) != addedImplicitMembers.end())
-                {
-                    continue;
-                }
-
-                if (ctx.partialMember.empty() || method.name.rfind(ctx.partialMember, 0) == 0)
-                {
-                    itemsArray.push_back({{"label", method.name},
-                                          {"kind", 2},
-                                          {"detail", method.access + " " + method.declaration},
-                                          {"documentation", {{"kind", "markdown"}, {"value", fmt::format("Member method of `{}`", targetClass)}}}});
-                    addedImplicitMembers.insert(method.name);
-                }
-            }
-
-            for (bIdx = 0; bIdx < customClasses[cIdx].baseTypes.size(); ++bIdx)
-            {
-                AddImplicitMembersRecursive(customClasses[cIdx].baseTypes[bIdx], addedImplicitMembers);
-            }
-
-            break;
         }
     }
 }

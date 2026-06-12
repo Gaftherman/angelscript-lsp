@@ -1054,6 +1054,9 @@ namespace TokenHarvester
         {
             ScopeCtx currentScope;
             std::string fullScope = "";
+            std::string_view nextToken;
+            int parenDepth = 0;
+            asETokenClass tcPeek = asTC_UNKNOWN;
 
             if (scopeStack.empty())
             {
@@ -1065,23 +1068,98 @@ namespace TokenHarvester
 
             if (tc == asTC_IDENTIFIER && token == currentScope.name)
             {
-                if (stream.Peek(token) == asTC_KEYWORD && token == "(")
+                tcPeek = stream.Peek(nextToken);
+                if (tcPeek == asTC_KEYWORD && nextToken == "(")
                 {
+                    parenDepth = 0;
+                    do
+                    {
+                        stream.Advance(token);
+                        if (token == "(")
+                        {
+                            parenDepth++;
+                        }
+                        else if (token == ")")
+                        {
+                            parenDepth--;
+                        }
+                    } while (parenDepth > 0 && !stream.IsEOF());
+
                     classMap[fullScope].methods.push_back({currentScope.name, "void", fullScope + "()", currentAccess, true});
-                    SkipToBody();
+
+                    while (!stream.IsEOF())
+                    {
+                        tcPeek = stream.Peek(nextToken);
+                        if (tcPeek == asTC_KEYWORD && (nextToken == "{" || nextToken == ";"))
+                        {
+                            break;
+                        }
+                        stream.Advance(token);
+                    }
+
+                    tcPeek = stream.Peek(nextToken);
+                    if (tcPeek == asTC_KEYWORD && nextToken == "{")
+                    {
+                        stream.Advance(token);
+                        SkipBlock();
+                    }
+                    else if (tcPeek == asTC_KEYWORD && nextToken == ";")
+                    {
+                        stream.Advance(token);
+                    }
+
+                    currentAccess = "public";
                     return true;
                 }
             }
             else if (tc == asTC_KEYWORD && token == "~")
             {
-                if (stream.Peek(token) == asTC_IDENTIFIER && token == currentScope.name)
+                tcPeek = stream.Peek(nextToken);
+                if (tcPeek == asTC_IDENTIFIER && nextToken == currentScope.name)
                 {
                     stream.Advance(token);
 
-                    if (stream.Peek(token) == asTC_KEYWORD && token == "(")
+                    tcPeek = stream.Peek(nextToken);
+                    if (tcPeek == asTC_KEYWORD && nextToken == "(")
                     {
+                        parenDepth = 0;
+                        do
+                        {
+                            stream.Advance(token);
+                            if (token == "(")
+                            {
+                                parenDepth++;
+                            }
+                            else if (token == ")")
+                            {
+                                parenDepth--;
+                            }
+                        } while (parenDepth > 0 && !stream.IsEOF());
+
                         classMap[fullScope].methods.push_back({"~" + currentScope.name, "void", "~" + fullScope + "()", currentAccess, true});
-                        SkipToBody();
+
+                        while (!stream.IsEOF())
+                        {
+                            tcPeek = stream.Peek(nextToken);
+                            if (tcPeek == asTC_KEYWORD && (nextToken == "{" || nextToken == ";"))
+                            {
+                                break;
+                            }
+                            stream.Advance(token);
+                        }
+
+                        tcPeek = stream.Peek(nextToken);
+                        if (tcPeek == asTC_KEYWORD && nextToken == "{")
+                        {
+                            stream.Advance(token);
+                            SkipBlock();
+                        }
+                        else if (tcPeek == asTC_KEYWORD && nextToken == ";")
+                        {
+                            stream.Advance(token);
+                        }
+
+                        currentAccess = "public";
                         return true;
                     }
                 }
@@ -1139,21 +1217,48 @@ namespace TokenHarvester
             if (lookTc == asTC_KEYWORD && token == "(")
             {
                 ParseMethod(parsedType, memberName);
+                currentAccess = "public";
                 return true;
             }
 
             if (lookTc == asTC_KEYWORD && IsPropertySeparator(token))
             {
                 ParseProperty(parsedType, memberName);
+                currentAccess = "public";
                 return true;
             }
 
+            // CASO C: Bloque anidado
             if (lookTc == asTC_KEYWORD && token == "{")
             {
                 fullScope = GetFullScope();
                 classMap[fullScope].properties.push_back({memberName, parsedType, currentAccess});
                 stream.Advance(token);
                 SkipBlock();
+                currentAccess = "public";
+                return true;
+            }
+
+            if (lookTc == asTC_KEYWORD && (token == ";" || token == "="))
+            {
+                fullScope = GetFullScope();
+                classMap[fullScope].properties.push_back({memberName, parsedType, currentAccess});
+
+                if (token == "=")
+                {
+                    while (!stream.IsEOF())
+                    {
+                        stream.Advance(token);
+                        if (token == ";")
+                            break;
+                    }
+                }
+                else
+                {
+                    stream.Advance(token);
+                }
+
+                currentAccess = "public";
                 return true;
             }
 
@@ -1168,20 +1273,13 @@ namespace TokenHarvester
          */
         void ParseMethod(const std::string &parsedType, const std::string &memberName)
         {
-            std::string fullScope = "";
-            std::string exactParams = "";
-            std::string signature = "";
-            size_t sigStart = 0;
-            size_t sigEnd = 0;
+            std::string fullScope = GetFullScope();
+            size_t sigStart = stream.GetPos();
             int parenDepth = 0;
-
-            fullScope = GetFullScope();
-            sigStart = stream.GetPos();
 
             do
             {
                 stream.Advance(token);
-
                 if (token == "(")
                 {
                     parenDepth++;
@@ -1190,17 +1288,21 @@ namespace TokenHarvester
                 {
                     parenDepth--;
                 }
-
             } while (parenDepth > 0 && !stream.IsEOF());
 
-            sigEnd = stream.GetPos();
-            exactParams = std::string(code.data() + sigStart, sigEnd - sigStart);
-            signature = parsedType + " " + fullScope + "::" + memberName + exactParams;
+            size_t sigEnd = stream.GetPos();
+            std::string exactParams(code.data() + sigStart, sigEnd - sigStart);
+            std::string signature = parsedType + " " + fullScope + "::" + memberName + exactParams;
 
             classMap[fullScope].methods.push_back({memberName, parsedType, signature, currentAccess, false});
 
-            while (stream.Peek(token) == asTC_IDENTIFIER || (stream.Peek(token) == asTC_KEYWORD && IsMethodModifier(token)))
+            while (!stream.IsEOF())
             {
+                asETokenClass tcPeek = stream.Peek(token);
+                if (tcPeek == asTC_KEYWORD && (token == "{" || token == ";"))
+                {
+                    break;
+                }
                 stream.Advance(token);
             }
 
