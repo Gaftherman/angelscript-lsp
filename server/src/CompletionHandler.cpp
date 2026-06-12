@@ -116,6 +116,7 @@ nlohmann::json CompletionHandler::GenerateItems(const std::string &originalText,
     std::string precedingToken;
     bool isTypeName;
     size_t cIdx;
+    std::string scopeName;
 
     isTypeName = false;
 
@@ -156,7 +157,30 @@ nlohmann::json CompletionHandler::GenerateItems(const std::string &originalText,
         {
             if (ctx.lastSeparator == "::")
             {
-                ComputeNamespaceScopeCompletions(ctx.objectChain[0]);
+                scopeName = std::string(ctx.objectChain[0]);
+
+                for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+                {
+                    if (customClasses[cIdx].name == scopeName)
+                    {
+                        isTypeName = true;
+                        break;
+                    }
+                }
+
+                if (!isTypeName && GetNativeTypeInfo(scopeName) != nullptr)
+                {
+                    isTypeName = true;
+                }
+
+                if (isTypeName)
+                {
+                    PopulateMembers(scopeName);
+                }
+                else
+                {
+                    ComputeNamespaceScopeCompletions(ctx.objectChain[0]);
+                }
             }
             else
             {
@@ -171,6 +195,93 @@ nlohmann::json CompletionHandler::GenerateItems(const std::string &originalText,
     }
 
     return itemsArray;
+}
+
+void CompletionHandler::ExtractClassMembers(const std::string &targetClass, std::unordered_set<std::string> &addedMembers, bool canAccessPrivate, bool canAccessProtected)
+{
+    size_t cIdx;
+    size_t pIdx;
+    size_t mIdx;
+    size_t bIdx;
+    std::string subbedDetail;
+
+    for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+    {
+        if (customClasses[cIdx].name == targetClass)
+        {
+            for (pIdx = 0; pIdx < customClasses[cIdx].properties.size(); ++pIdx)
+            {
+                const auto &prop = customClasses[cIdx].properties[pIdx];
+
+                if (ctx.lastSeparator == "::" && !customClasses[cIdx].methods.empty())
+                {
+                    continue;
+                }
+                if (!canAccessPrivate && (prop.access == "private" || prop.access == "protected"))
+                {
+                    continue;
+                }
+                if (addedMembers.find(prop.name) != addedMembers.end())
+                {
+                    continue;
+                }
+                if (ctx.partialMember.empty() || prop.name.rfind(ctx.partialMember, 0) == 0)
+                {
+                    subbedDetail = prop.access + " " + prop.typeName;
+                    subbedDetail = EnhanceIfFuncdef(subbedDetail);
+                    itemsArray.push_back({{"label", prop.name}, {"kind", 5}, {"detail", subbedDetail}});
+                    addedMembers.insert(prop.name);
+                }
+            }
+            for (mIdx = 0; mIdx < customClasses[cIdx].methods.size(); ++mIdx)
+            {
+                const auto &method = customClasses[cIdx].methods[mIdx];
+                if (method.isConstructor)
+                {
+                    continue;
+                }
+                if (ctx.lastSeparator == "::" && !canAccessProtected)
+                {
+                    continue;
+                }
+                if (method.access == "private" && !canAccessPrivate)
+                {
+                    continue;
+                }
+                if (method.access == "protected" && !canAccessProtected)
+                {
+                    continue;
+                }
+                if (ctx.lastSeparator != "::")
+                {
+                    if (method.name.find("get_") == 0 || method.name.find("set_") == 0)
+                    {
+                        continue;
+                    }
+                }
+                if (addedMembers.find(method.name) != addedMembers.end())
+                {
+                    continue;
+                }
+                if (ctx.partialMember.empty() || method.name.rfind(ctx.partialMember, 0) == 0)
+                {
+                    subbedDetail = method.access + " " + method.declaration;
+                    subbedDetail = EnhanceIfFuncdef(subbedDetail);
+                    itemsArray.push_back({{"label", method.name},
+                                          {"kind", 2},
+                                          {"detail", subbedDetail},
+                                          {"insertText", method.name + "($1)"},
+                                          {"insertTextFormat", 2}});
+                    addedMembers.insert(method.name);
+                }
+            }
+            for (bIdx = 0; bIdx < customClasses[cIdx].baseTypes.size(); ++bIdx)
+            {
+                ExtractClassMembers(customClasses[cIdx].baseTypes[bIdx], addedMembers, canAccessPrivate, canAccessProtected);
+            }
+            break;
+        }
+    }
 }
 
 void CompletionHandler::ComputeMemberAccessCompletions(std::string_view objectName)
@@ -229,6 +340,12 @@ void CompletionHandler::ComputeNamespaceScopeCompletions(std::string_view namesp
             if (func)
             {
                 funcName = func->GetName();
+
+                if (IsInternalCompilerFunction(funcName))
+                {
+                    continue;
+                }
+
                 addedFunctions[funcName] = true;
 
                 if (ctx.partialMember.empty() || funcName.rfind(ctx.partialMember, 0) == 0)
@@ -260,6 +377,12 @@ void CompletionHandler::ComputeNamespaceScopeCompletions(std::string_view namesp
     for (tfIdx = 0; tfIdx < tokenFuncs.size(); ++tfIdx)
     {
         const auto &tf = tokenFuncs[tfIdx];
+
+        if (IsInternalCompilerFunction(tf.name))
+        {
+            continue;
+        }
+
         if (!addedFunctions[tf.name])
         {
             addedFunctions[tf.name] = true;
@@ -295,6 +418,11 @@ void CompletionHandler::ComputeNamespaceScopeCompletions(std::string_view namesp
         if (func)
         {
             funcName = func->GetName();
+
+            if (IsInternalCompilerFunction(funcName))
+            {
+                continue;
+            }
 
             if (!addedFunctions[funcName])
             {
@@ -473,6 +601,12 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
             if (func)
             {
                 funcName = func->GetName();
+
+                if (IsInternalCompilerFunction(funcName))
+                {
+                    continue;
+                }
+
                 addedFunctions[funcName] = true;
 
                 if (ctx.partialMember.empty() || funcName.rfind(ctx.partialMember, 0) == 0)
@@ -501,16 +635,23 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
 
     for (tfIdx = 0; tfIdx < tokenFuncs.size(); ++tfIdx)
     {
-        if (!addedFunctions[tokenFuncs[tfIdx].name])
-        {
-            addedFunctions[tokenFuncs[tfIdx].name] = true;
+        const auto &tf = tokenFuncs[tfIdx];
 
-            if (ctx.partialMember.empty() || tokenFuncs[tfIdx].name.rfind(ctx.partialMember, 0) == 0)
+        if (IsInternalCompilerFunction(tf.name))
+        {
+            continue;
+        }
+
+        if (!addedFunctions[tf.name])
+        {
+            addedFunctions[tf.name] = true;
+
+            if (ctx.partialMember.empty() || tf.name.rfind(ctx.partialMember, 0) == 0)
             {
-                itemsArray.push_back({{"label", tokenFuncs[tfIdx].name},
+                itemsArray.push_back({{"label", tf.name},
                                       {"kind", 3},
-                                      {"detail", EnhanceIfFuncdef(CleanSignature(tokenFuncs[tfIdx].declaration))},
-                                      {"insertText", tokenFuncs[tfIdx].name + "($1)"},
+                                      {"detail", EnhanceIfFuncdef(CleanSignature(tf.declaration))},
+                                      {"insertText", tf.name + "($1)"},
                                       {"insertTextFormat", 2}});
             }
         }
@@ -535,6 +676,11 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
         if (func)
         {
             funcName = func->GetName();
+
+            if (IsInternalCompilerFunction(funcName))
+            {
+                continue;
+            }
 
             if (!addedFunctions[funcName])
             {
@@ -587,92 +733,6 @@ bool CompletionHandler::IsBaseClass(const std::string &child, const std::string 
         }
     }
     return false;
-}
-
-void CompletionHandler::ExtractClassMembers(const std::string &targetClass, std::unordered_set<std::string> &addedMembers, bool canAccessPrivate, bool canAccessProtected)
-{
-    size_t cIdx;
-    size_t pIdx;
-    size_t mIdx;
-    size_t bIdx;
-    std::string subbedDetail;
-
-    for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
-    {
-        if (customClasses[cIdx].name == targetClass)
-        {
-            for (pIdx = 0; pIdx < customClasses[cIdx].properties.size(); ++pIdx)
-            {
-                const auto &prop = customClasses[cIdx].properties[pIdx];
-                if (ctx.lastSeparator == "::")
-                {
-                    continue;
-                }
-                if (!canAccessPrivate && (prop.access == "private" || prop.access == "protected"))
-                {
-                    continue;
-                }
-                if (addedMembers.find(prop.name) != addedMembers.end())
-                {
-                    continue;
-                }
-                if (ctx.partialMember.empty() || prop.name.rfind(ctx.partialMember, 0) == 0)
-                {
-                    subbedDetail = prop.access + " " + prop.typeName;
-                    subbedDetail = EnhanceIfFuncdef(subbedDetail);
-                    itemsArray.push_back({{"label", prop.name}, {"kind", 5}, {"detail", subbedDetail}});
-                    addedMembers.insert(prop.name);
-                }
-            }
-            for (mIdx = 0; mIdx < customClasses[cIdx].methods.size(); ++mIdx)
-            {
-                const auto &method = customClasses[cIdx].methods[mIdx];
-                if (method.isConstructor)
-                {
-                    continue;
-                }
-                if (ctx.lastSeparator == "::" && !canAccessProtected)
-                {
-                    continue;
-                }
-                if (method.access == "private" && !canAccessPrivate)
-                {
-                    continue;
-                }
-                if (method.access == "protected" && !canAccessProtected)
-                {
-                    continue;
-                }
-                if (ctx.lastSeparator != "::")
-                {
-                    if (method.name.find("get_") == 0 || method.name.find("set_") == 0)
-                    {
-                        continue;
-                    }
-                }
-                if (addedMembers.find(method.name) != addedMembers.end())
-                {
-                    continue;
-                }
-                if (ctx.partialMember.empty() || method.name.rfind(ctx.partialMember, 0) == 0)
-                {
-                    subbedDetail = method.access + " " + method.declaration;
-                    subbedDetail = EnhanceIfFuncdef(subbedDetail);
-                    itemsArray.push_back({{"label", method.name},
-                                          {"kind", 2},
-                                          {"detail", subbedDetail},
-                                          {"insertText", method.name + "($1)"},
-                                          {"insertTextFormat", 2}});
-                    addedMembers.insert(method.name);
-                }
-            }
-            for (bIdx = 0; bIdx < customClasses[cIdx].baseTypes.size(); ++bIdx)
-            {
-                ExtractClassMembers(customClasses[cIdx].baseTypes[bIdx], addedMembers, canAccessPrivate, canAccessProtected);
-            }
-            break;
-        }
-    }
 }
 
 void CompletionHandler::AddImplicitMembersRecursive(const std::string &targetClass, std::unordered_set<std::string> &addedImplicitMembers)
@@ -1509,4 +1569,9 @@ std::string CompletionHandler::EnhanceIfFuncdef(const std::string &hoverText)
         }
     }
     return baseHover;
+}
+
+bool CompletionHandler::IsInternalCompilerFunction(std::string_view name) const noexcept
+{
+    return name.find('$') != std::string_view::npos;
 }

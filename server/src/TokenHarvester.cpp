@@ -4,6 +4,7 @@
  */
 
 #include "TokenHarvester.h"
+#include "SafeCtype.h"
 #include <sstream>
 #include <algorithm>
 #include <vector>
@@ -399,12 +400,17 @@ namespace TokenHarvester
         size_t savedPos = 0;
         std::string_view dummy;
 
+        if (token == "const")
+        {
+            return true;
+        }
+
         if (IsBuiltInType(token))
         {
             return true;
         }
 
-        if (engine->GetTypeInfoByName(tokenStr.c_str()) != nullptr)
+        if (engine && engine->GetTypeInfoByName(tokenStr.c_str()) != nullptr)
         {
             return true;
         }
@@ -624,7 +630,7 @@ namespace TokenHarvester
         {
             lastTok = tokens[i];
 
-            if (!lastTok.empty() && (isalpha(lastTok[0]) || lastTok[0] == '_'))
+            if (!lastTok.empty() && (SAFE_IS_ALPHA(lastTok[0]) || lastTok[0] == '_'))
             {
                 ctx.partialMember = lastTok;
                 i--;
@@ -677,7 +683,7 @@ namespace TokenHarvester
                 {
                     tok = tokens[i];
 
-                    if (!tok.empty() && (isalpha(tok[0]) || tok[0] == '_' || tok == "this" || tok == "super"))
+                    if (!tok.empty() && (SAFE_IS_ALPHA(tok[0]) || tok[0] == '_' || tok == "this" || tok == "super"))
                     {
                         fullIdent = tok + fullIdent;
                         chain.insert(chain.begin(), fullIdent);
@@ -880,6 +886,7 @@ namespace TokenHarvester
             std::vector<ScriptClass> results;
             size_t savedPos = 0;
             asETokenClass tc = asTC_UNKNOWN;
+            asETokenClass peekTc = asTC_UNKNOWN;
 
             while (!stream.IsEOF())
             {
@@ -900,8 +907,14 @@ namespace TokenHarvester
                         {
                             stream.Advance(token);
 
-                            while (!stream.IsEOF() && token != "{")
+                            while (!stream.IsEOF())
                             {
+                                peekTc = stream.Peek(token);
+                                if (peekTc == asTC_KEYWORD && token == "{")
+                                {
+                                    break;
+                                }
+
                                 stream.Advance(token);
 
                                 if (token != "," && token != "public" && token != "protected" && token != "private")
@@ -1374,6 +1387,7 @@ namespace TokenHarvester
             size_t savedPos = 0;
             size_t foreachPos = 0;
             asETokenClass tc = asTC_UNKNOWN;
+            asETokenClass peekTc = asTC_UNKNOWN;
             int captureDepth = 0;
             bool directlyInClass = false;
             bool validDeclFound = false;
@@ -1655,7 +1669,10 @@ namespace TokenHarvester
                 return "auto";
             }
 
-            HARVEST_DEBUG(fmt::format("Evaluating 'auto' with expression: {}", tokens[0]));
+            if (IsBuiltInType(tokens[0]))
+            {
+                return std::string(tokens[0]);
+            }
 
             if (tokens[0][0] == '"' || tokens[0][0] == '\'')
             {
@@ -1667,12 +1684,12 @@ namespace TokenHarvester
                 return "bool";
             }
 
-            if (tokens[0].find_first_of(".f") != std::string::npos && isdigit(tokens[0][0]))
+            if (tokens[0].find_first_of(".f") != std::string::npos && isdigit(static_cast<unsigned char>(tokens[0][0])))
             {
                 return "float";
             }
 
-            if (isdigit(tokens[0][0]))
+            if (isdigit(static_cast<unsigned char>(tokens[0][0])))
             {
                 return "int";
             }
@@ -1687,7 +1704,6 @@ namespace TokenHarvester
                 {
                     if (tempBracketDepth == 0)
                     {
-                        HARVEST_DEBUG(fmt::format("Detected bracket [ in type: '{}'", inferredType));
                         base = GetBaseType(inferredType);
 
                         if (base == "array" || base == "dictionary" || base == "grid")
@@ -1783,7 +1799,7 @@ namespace TokenHarvester
                     continue;
                 }
 
-                if (!isalpha(tok[0]) && tok[0] != '_')
+                if (!isalpha(static_cast<unsigned char>(tok[0])) && tok[0] != '_')
                 {
                     continue;
                 }
@@ -1804,15 +1820,12 @@ namespace TokenHarvester
                                 break;
                             }
                         }
-
-                        HARVEST_DEBUG(fmt::format("Expression root '{}' resolved as: '{}'", tok, inferredType));
                     }
                 }
                 else
                 {
                     baseType = GetBaseType(inferredType);
                     found = false;
-                    HARVEST_DEBUG(fmt::format("Searching for member '{}' inside '{}'", tok, baseType));
 
                     for (const auto &c : customClasses)
                     {
@@ -1899,11 +1912,9 @@ namespace TokenHarvester
             {
                 inferredType.erase(std::remove(inferredType.begin(), inferredType.end(), '@'), inferredType.end());
                 inferredType.erase(std::remove(inferredType.begin(), inferredType.end(), '&'), inferredType.end());
-                HARVEST_DEBUG(fmt::format("Final inferred auto: '{}'", inferredType));
                 return inferredType;
             }
 
-            HARVEST_DEBUG("Failed to infer auto. Returning 'auto'");
             return "auto";
         }
 
@@ -1913,9 +1924,10 @@ namespace TokenHarvester
          * @param directlyInClass Flag confirming whether operations sit directly inside target object bodies templates.
          * @return True if a local variable signature validates, false otherwise.
          */
-        bool ProcessLocalDeclaration(size_t savedPos, bool directlyInClass = false)
+        bool ProcessLocalDeclaration(size_t savedPos, bool directlyInClass)
         {
             std::string parsedType = "";
+            std::string baseType = "";
             std::string varName = "";
             std::string scopePrefix = "";
             std::string nature = "";
@@ -1927,6 +1939,13 @@ namespace TokenHarvester
             parsedType = ParseDataType(engine, stream, knownClassNames);
 
             if (parsedType.empty())
+            {
+                stream.SetPos(savedPos);
+                return false;
+            }
+
+            baseType = GetBaseType(parsedType);
+            if (!IsValidDataType(engine, stream, baseType, knownClassNames))
             {
                 stream.SetPos(savedPos);
                 return false;
@@ -1984,7 +2003,7 @@ namespace TokenHarvester
         }
 
         /**
-         * @brief Parses inline initialization assignments and comma-separated definition sequences.
+         * @brief Evaluates inline initialization assignments and comma-separated definition sequences.
          * @param parsedType Active foundational type description applied over current segments.
          * @param effectiveDepth Nested tracking depth assigned to context operations.
          * @param currentVarName Base tag labeling the active targeted variable item.
@@ -2019,7 +2038,7 @@ namespace TokenHarvester
                                 std::string paramName = std::string(token);
                                 stream.Advance(token);
                                 locals.push_back({paramName, paramType, currentDepth + 1});
-                                std::string scopePrefix = GetFullScope().empty() ? "::" : GetFullScope() + "::";
+                                scopePrefix = GetFullScope().empty() ? "::" : GetFullScope() + "::";
                                 HARVEST_DEBUG(fmt::format("NEW LOCAL VARIABLE: '{}{}' of type '{}' (lambda parameter) at depth {}",
                                                           scopePrefix, paramName, paramType, currentDepth + 1));
                             }
@@ -2046,7 +2065,7 @@ namespace TokenHarvester
 
                 if (lookTc == asTC_UNKNOWN || (lookTc == asTC_KEYWORD && (token == ";" || token == ")")))
                 {
-                    if (isAssigning && parsedType == "auto" && !expressionTokens.empty())
+                    if (isAssigning && parsedType.find("auto") != std::string::npos && !expressionTokens.empty())
                     {
                         inferred = InferAutoType(expressionTokens);
 
@@ -2093,7 +2112,12 @@ namespace TokenHarvester
 
                 if (lookTc == asTC_KEYWORD && token == ",")
                 {
-                    if (isAssigning && parsedType == "auto" && !expressionTokens.empty())
+                    if (parenDepth > 0)
+                    {
+                        break;
+                    }
+
+                    if (isAssigning && parsedType.find("auto") != std::string::npos && !expressionTokens.empty())
                     {
                         inferred = InferAutoType(expressionTokens);
 

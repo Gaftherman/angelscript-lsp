@@ -225,4 +225,11 @@ private:
      * @return Enriched specification layout output.
      */
     std::string EnhanceIfFuncdef(const std::string &hoverText);
+
+    /**
+     * @brief Identifies if a function name is an internal compiler-generated symbol.
+     * @param name The function name to check.
+     * @return True if the name contains internal decorations, false otherwise.
+     */
+    bool IsInternalCompilerFunction(std::string_view name) const noexcept;
 };
