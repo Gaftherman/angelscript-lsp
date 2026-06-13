@@ -14,7 +14,7 @@ using json = nlohmann::json;
 
 /**
  * @brief Recursively searches for a member within user-defined script classes, checking base types and mixins.
- * @param typeName Name of the class scope being evaluated.
+ * @param initialTypeName Name of the class scope being evaluated.
  * @param memberName Identifier of the member property or method being sought.
  * @param isMethod Assert true to filter tracking specifically for method signatures.
  * @param outType String populated with the discovered identifier type name.
@@ -29,64 +29,48 @@ static bool SearchCustomClassRecursively(const std::string &initialTypeName,
 {
     std::vector<std::string> stack;
     std::unordered_set<std::string> visitedClasses;
-    size_t cIdx;
-    size_t pIdx;
-    size_t mIdx;
-    size_t bIdx;
-    std::string currentClass;
-
     stack.push_back(initialTypeName);
 
     while (!stack.empty())
     {
-        currentClass = stack.back();
+        std::string currentClass = std::move(stack.back());
         stack.pop_back();
 
-        if (visitedClasses.find(currentClass) != visitedClasses.end())
+        if (!visitedClasses.insert(currentClass).second)
         {
             continue;
         }
-        visitedClasses.insert(currentClass);
 
-        for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+        for (const auto &c : customClasses)
         {
-            const auto &c = customClasses[cIdx];
             if (c.name == currentClass)
             {
                 if (!isMethod)
                 {
-                    for (pIdx = 0; pIdx < c.properties.size(); ++pIdx)
+                    if (auto propIt = c.properties.find(memberName); propIt != c.properties.end())
                     {
-                        if (c.properties[pIdx].name == memberName)
-                        {
-                            outType = c.properties[pIdx].typeName;
-                            return true;
-                        }
+                        outType = propIt->second.typeName;
+                        return true;
                     }
                 }
 
                 if (outType.empty())
                 {
-                    for (mIdx = 0; mIdx < c.methods.size(); ++mIdx)
+                    if (auto methodIt = c.methods.find(memberName); methodIt != c.methods.end() && !methodIt->second.empty())
                     {
-                        if (c.methods[mIdx].name == memberName)
-                        {
-                            outType = c.methods[mIdx].typeName;
-                            return true;
-                        }
+                        outType = methodIt->second.front().typeName;
+                        return true;
                     }
                 }
 
-                for (bIdx = 0; bIdx < c.baseTypes.size(); ++bIdx)
+                for (const auto &base : c.baseTypes)
                 {
-                    stack.push_back(c.baseTypes[bIdx]);
+                    stack.push_back(base);
                 }
-
                 break;
             }
         }
     }
-
     return false;
 }
 
@@ -215,35 +199,25 @@ void CompletionHandler::ExtractClassMembers(const std::string &targetClass, std:
 {
     std::vector<std::string> stack;
     std::unordered_set<std::string> visitedClasses;
-    size_t cIdx;
-    size_t pIdx;
-    size_t mIdx;
-    size_t bIdx;
-    std::string subbedDetail;
-    std::string currentClass;
-
     stack.push_back(targetClass);
 
     while (!stack.empty())
     {
-        currentClass = stack.back();
+        std::string currentClass = std::move(stack.back());
         stack.pop_back();
 
-        if (visitedClasses.find(currentClass) != visitedClasses.end())
+        if (!visitedClasses.insert(currentClass).second)
         {
             continue;
         }
-        visitedClasses.insert(currentClass);
 
-        for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+        for (const auto &c : customClasses)
         {
-            if (customClasses[cIdx].name == currentClass)
+            if (c.name == currentClass)
             {
-                for (pIdx = 0; pIdx < customClasses[cIdx].properties.size(); ++pIdx)
+                for (const auto &[propName, prop] : c.properties)
                 {
-                    const auto &prop = customClasses[cIdx].properties[pIdx];
-
-                    if (ctx.lastSeparator == "::" && !customClasses[cIdx].methods.empty())
+                    if (ctx.lastSeparator == "::" && !c.methods.empty())
                     {
                         continue;
                     }
@@ -251,67 +225,66 @@ void CompletionHandler::ExtractClassMembers(const std::string &targetClass, std:
                     {
                         continue;
                     }
-                    if (addedMembers.find(prop.name) != addedMembers.end())
+                    if (!addedMembers.insert(prop.name).second)
                     {
                         continue;
                     }
-                    if (ctx.partialMember.empty() || prop.name.rfind(ctx.partialMember, 0) == 0)
+                    if (ctx.partialMember.empty() || prop.name.starts_with(ctx.partialMember))
                     {
-                        subbedDetail = prop.access + " " + prop.typeName;
+                        std::string subbedDetail = prop.access + " " + prop.typeName;
                         subbedDetail = EnhanceIfFuncdef(subbedDetail);
                         itemsArray.push_back({{"label", prop.name}, {"kind", 5}, {"detail", subbedDetail}});
-                        addedMembers.insert(prop.name);
                     }
                 }
 
-                for (mIdx = 0; mIdx < customClasses[cIdx].methods.size(); ++mIdx)
+                for (const auto &[methodName, overloads] : c.methods)
                 {
-                    const auto &method = customClasses[cIdx].methods[mIdx];
-                    if (method.isConstructor)
+                    for (const auto &method : overloads)
                     {
-                        continue;
-                    }
-                    if (ctx.lastSeparator == "::" && !canAccessProtected)
-                    {
-                        continue;
-                    }
-                    if (method.access == "private" && !canAccessPrivate)
-                    {
-                        continue;
-                    }
-                    if (method.access == "protected" && !canAccessProtected)
-                    {
-                        continue;
-                    }
-                    if (ctx.lastSeparator != "::")
-                    {
-                        if (method.name.find("get_") == 0 || method.name.find("set_") == 0)
+                        if (method.isConstructor)
                         {
                             continue;
                         }
-                    }
-                    if (addedMembers.find(method.name) != addedMembers.end())
-                    {
-                        continue;
-                    }
-                    if (ctx.partialMember.empty() || method.name.rfind(ctx.partialMember, 0) == 0)
-                    {
-                        subbedDetail = method.access + " " + method.declaration;
-                        subbedDetail = EnhanceIfFuncdef(subbedDetail);
-                        itemsArray.push_back({{"label", method.name},
-                                              {"kind", 2},
-                                              {"detail", subbedDetail},
-                                              {"insertText", method.name + "($1)"},
-                                              {"insertTextFormat", 2}});
-                        addedMembers.insert(method.name);
+                        if (ctx.lastSeparator == "::" && !canAccessProtected)
+                        {
+                            continue;
+                        }
+                        if (method.access == "private" && !canAccessPrivate)
+                        {
+                            continue;
+                        }
+                        if (method.access == "protected" && !canAccessProtected)
+                        {
+                            continue;
+                        }
+                        if (ctx.lastSeparator != "::")
+                        {
+                            if (method.name.starts_with("get_") || method.name.starts_with("set_"))
+                            {
+                                continue;
+                            }
+                        }
+                        if (!addedMembers.insert(method.name).second)
+                        {
+                            continue;
+                        }
+                        if (ctx.partialMember.empty() || method.name.starts_with(ctx.partialMember))
+                        {
+                            std::string subbedDetail = method.access + " " + method.declaration;
+                            subbedDetail = EnhanceIfFuncdef(subbedDetail);
+                            itemsArray.push_back({{"label", method.name},
+                                                  {"kind", 2},
+                                                  {"detail", subbedDetail},
+                                                  {"insertText", method.name + "($1)"},
+                                                  {"insertTextFormat", 2}});
+                        }
                     }
                 }
 
-                for (bIdx = 0; bIdx < customClasses[cIdx].baseTypes.size(); ++bIdx)
+                for (const auto &base : c.baseTypes)
                 {
-                    stack.push_back(customClasses[cIdx].baseTypes[bIdx]);
+                    stack.push_back(base);
                 }
-
                 break;
             }
         }
@@ -792,78 +765,67 @@ void CompletionHandler::AddImplicitMembersRecursive(const std::string &targetCla
 {
     std::vector<std::string> stack;
     std::unordered_set<std::string> visitedClasses;
-    size_t cIdx;
-    size_t pIdx;
-    size_t mIdx;
-    size_t bIdx;
-    std::string currentClass;
-
     stack.push_back(targetClass);
 
     while (!stack.empty())
     {
-        currentClass = stack.back();
+        std::string currentClass = std::move(stack.back());
         stack.pop_back();
 
-        if (visitedClasses.find(currentClass) != visitedClasses.end())
+        if (!visitedClasses.insert(currentClass).second)
         {
             continue;
         }
-        visitedClasses.insert(currentClass);
 
-        for (cIdx = 0; cIdx < customClasses.size(); ++cIdx)
+        for (const auto &c : customClasses)
         {
-            if (customClasses[cIdx].name == currentClass)
+            if (c.name == currentClass)
             {
-                for (pIdx = 0; pIdx < customClasses[cIdx].properties.size(); ++pIdx)
+                for (const auto &[propName, prop] : c.properties)
                 {
-                    const auto &prop = customClasses[cIdx].properties[pIdx];
-                    if (addedImplicitMembers.find(prop.name) != addedImplicitMembers.end())
+                    if (!addedImplicitMembers.insert(prop.name).second)
                     {
                         continue;
                     }
-
-                    if (ctx.partialMember.empty() || prop.name.rfind(ctx.partialMember, 0) == 0)
+                    if (ctx.partialMember.empty() || prop.name.starts_with(ctx.partialMember))
                     {
                         itemsArray.push_back({{"label", prop.name},
                                               {"kind", 5},
                                               {"detail", prop.access + " " + prop.typeName},
                                               {"documentation", {{"kind", "markdown"}, {"value", fmt::format("Member property of `{}`", currentClass)}}}});
-                        addedImplicitMembers.insert(prop.name);
                     }
                 }
 
-                for (mIdx = 0; mIdx < customClasses[cIdx].methods.size(); ++mIdx)
+                for (const auto &[methodName, overloads] : c.methods)
                 {
-                    const auto &method = customClasses[cIdx].methods[mIdx];
-                    if (method.isConstructor)
+                    for (const auto &method : overloads)
                     {
-                        continue;
-                    }
-                    if (method.name.find("get_") == 0 || method.name.find("set_") == 0)
-                    {
-                        continue;
-                    }
-                    if (addedImplicitMembers.find(method.name) != addedImplicitMembers.end())
-                    {
-                        continue;
-                    }
-
-                    if (ctx.partialMember.empty() || method.name.rfind(ctx.partialMember, 0) == 0)
-                    {
-                        itemsArray.push_back({{"label", method.name},
-                                              {"kind", 2},
-                                              {"detail", method.access + " " + method.declaration},
-                                              {"documentation", {{"kind", "markdown"}, {"value", fmt::format("Member method of `{}`", currentClass)}}}});
-                        addedImplicitMembers.insert(method.name);
+                        if (method.isConstructor)
+                        {
+                            continue;
+                        }
+                        if (method.name.starts_with("get_") || method.name.starts_with("set_"))
+                        {
+                            continue;
+                        }
+                        if (!addedImplicitMembers.insert(method.name).second)
+                        {
+                            continue;
+                        }
+                        if (ctx.partialMember.empty() || method.name.starts_with(ctx.partialMember))
+                        {
+                            itemsArray.push_back({{"label", method.name},
+                                                  {"kind", 2},
+                                                  {"detail", method.access + " " + method.declaration},
+                                                  {"documentation", {{"kind", "markdown"}, {"value", fmt::format("Member method of `{}`", currentClass)}}}});
+                        }
                     }
                 }
 
-                for (bIdx = 0; bIdx < customClasses[cIdx].baseTypes.size(); ++bIdx)
+                for (const auto &base : c.baseTypes)
                 {
-                    stack.push_back(customClasses[cIdx].baseTypes[bIdx]);
+                    stack.push_back(base);
                 }
-
                 break;
             }
         }

@@ -1,107 +1,217 @@
 /**
  * @file TokenHarvester.cpp
- * @brief Implements fault-tolerant EBNF-guided grammar scanning for AngelScript LSP.
+ * @brief Implements highly-optimized, fault-tolerant grammar scanning for AngelScript LSP.
  */
 
 #include "TokenHarvester.h"
 #include "SafeCtype.h"
 #include <sstream>
 #include <algorithm>
-#include <vector>
+#include <array>
+#include <ranges>
 #include <map>
+#include <unordered_map>
 #include <fmt/core.h>
 #include <fstream>
 #include <iostream>
 
-/**
- * @brief Prints internal debug logs to the standard error stream.
- * @param msg The log message string to output.
- */
-static void HARVEST_DEBUG(const std::string &msg)
-{
-    std::cerr << "[Harvester] " << msg << std::endl;
-}
-
 namespace TokenHarvester
 {
-    /**
-     * @brief Identifies if a token represents a scope or type declaration block.
-     * @param token The keyword string to evaluate.
-     * @return True if it is a class, interface, namespace, enum, or mixin, false otherwise.
-     */
-    static inline bool IsTypeDeclaration(std::string_view token)
+    namespace
     {
-        return token == "class" || token == "interface" || token == "namespace" || token == "enum" || token == "mixin";
+        constexpr std::array<std::string_view, 5> TYPE_DECLARATIONS = {
+            "class", "interface", "namespace", "enum", "mixin"};
+
+        constexpr std::array<std::string_view, 4> ACCESS_MODIFIERS = {
+            "private", "protected", "public", "shared"};
+
+        constexpr std::array<std::string_view, 6> GLOBAL_MODIFIERS = {
+            "private", "protected", "public", "shared", "external", "mixin"};
+
+        constexpr std::array<std::string_view, 3> PROPERTY_SEPARATORS = {
+            ";", "=", ","};
+
+        constexpr std::array<std::string_view, 19> BUILTIN_TYPES = {
+            "void", "int", "int8", "int16", "int32", "int64",
+            "uint", "uint8", "uint16", "uint32", "uint64",
+            "float", "double", "bool", "auto", "string",
+            "array", "dictionary", "grid"};
+
+        constexpr std::array<std::string_view, 4> METHOD_MODIFIERS = {
+            "const", "override", "final", "property"};
+
+        constexpr std::array<std::string_view, 9> CONTROL_KEYWORDS = {
+            "if", "for", "foreach", "while", "do", "switch", "try", "catch", "case"};
+
+        inline void HARVEST_DEBUG(std::string_view msg)
+        {
+            std::cerr << "[Harvester] " << msg << std::endl;
+        }
     }
 
-    /**
-     * @brief Identifies if a token represents an access modifier.
-     * @param token The keyword string to evaluate.
-     * @return True if it is a private, protected, public, or shared modifier, false otherwise.
-     */
-    static inline bool IsAccessModifier(std::string_view token)
+    static inline bool IsTypeDeclaration(std::string_view token) noexcept
     {
-        return token == "private" || token == "protected" || token == "public" || token == "shared";
+        return std::ranges::any_of(TYPE_DECLARATIONS, [token](std::string_view t)
+                                   { return t == token; });
     }
 
-    /**
-     * @brief Identifies if a token represents a global modifier.
-     * @param token The keyword string to evaluate.
-     * @return True if it is an access modifier, external, or mixin, false otherwise.
-     */
-    static inline bool IsGlobalModifier(std::string_view token)
+    static inline bool IsAccessModifier(std::string_view token) noexcept
     {
-        return IsAccessModifier(token) || token == "external" || token == "mixin";
+        return std::ranges::any_of(ACCESS_MODIFIERS, [token](std::string_view t)
+                                   { return t == token; });
     }
 
-    /**
-     * @brief Identifies if a token represents a property separator.
-     * @param token The symbol string to evaluate.
-     * @return True if it is a semicolon, equals sign, or comma, false otherwise.
-     */
-    static inline bool IsPropertySeparator(std::string_view token)
+    static inline bool IsGlobalModifier(std::string_view token) noexcept
     {
-        return token == ";" || token == "=" || token == ",";
+        return std::ranges::any_of(GLOBAL_MODIFIERS, [token](std::string_view t)
+                                   { return t == token; });
     }
 
-    /**
-     * @brief Identifies if a token represents a built-in data type.
-     * @param token The keyword string to evaluate.
-     * @return True if it is a recognized built-in type, false otherwise.
-     */
-    static inline bool IsBuiltInType(std::string_view token)
+    static inline bool IsPropertySeparator(std::string_view token) noexcept
     {
-        return token == "void" || token == "int" || token == "int8" || token == "int16" || token == "int32" || token == "int64" ||
-               token == "uint" || token == "uint8" || token == "uint16" || token == "uint32" || token == "uint64" ||
-               token == "float" || token == "double" || token == "bool" || token == "auto" || token == "string" ||
-               token == "array" || token == "dictionary" || token == "grid";
+        return std::ranges::any_of(PROPERTY_SEPARATORS, [token](std::string_view t)
+                                   { return t == token; });
     }
 
-    /**
-     * @brief Identifies if a token represents a method modifier.
-     * @param token The keyword string to evaluate.
-     * @return True if it is a recognized method modifier, false otherwise.
-     */
-    static inline bool IsMethodModifier(std::string_view token)
+    static inline bool IsBuiltInType(std::string_view token) noexcept
     {
-        return token == "const" || token == "override" || token == "final" || token == "property";
+        return std::ranges::any_of(BUILTIN_TYPES, [token](std::string_view t)
+                                   { return t == token; });
     }
 
-    /**
-     * @brief Identifies if a token represents a control keyword.
-     * @param token The keyword string to evaluate.
-     * @return True if it is a recognized control keyword, false otherwise.
-     */
-    static inline bool IsControlKeyword(std::string_view token)
+    static inline bool IsMethodModifier(std::string_view token) noexcept
     {
-        return token == "if" || token == "for" || token == "foreach" || token == "while" ||
-               token == "do" || token == "switch" || token == "try" || token == "catch" || token == "case";
+        return std::ranges::any_of(METHOD_MODIFIERS, [token](std::string_view t)
+                                   { return t == token; });
     }
 
-    /**
-     * @class TokenStream
-     * @brief Wrapper for the native AngelScript lexer to advance and peek tokens safely.
-     */
+    static inline bool IsControlKeyword(std::string_view token) noexcept
+    {
+        return std::ranges::any_of(CONTROL_KEYWORDS, [token](std::string_view t)
+                                   { return t == token; });
+    }
+
+    std::string_view GetBaseType(std::string_view type) noexcept
+    {
+        while (!type.empty() && (type.front() == ' ' || type.front() == '\t'))
+        {
+            type.remove_prefix(1);
+        }
+
+        if (type.starts_with("const "))
+        {
+            type.remove_prefix(6);
+            while (!type.empty() && (type.front() == ' ' || type.front() == '\t'))
+            {
+                type.remove_prefix(1);
+            }
+        }
+
+        if (size_t templatePos = type.find('<'); templatePos != std::string_view::npos)
+        {
+            type = type.substr(0, templatePos);
+        }
+
+        while (!type.empty())
+        {
+            char back = type.back();
+            if (back == ' ' || back == '\t' || back == '\r' || back == '\n')
+            {
+                type.remove_suffix(1);
+                continue;
+            }
+            if (type.ends_with("inout"))
+            {
+                type.remove_suffix(5);
+                continue;
+            }
+            if (type.ends_with("out"))
+            {
+                type.remove_suffix(3);
+                continue;
+            }
+            if (type.ends_with("in"))
+            {
+                if (type.length() == 2 || type[type.length() - 3] == ' ' || type[type.length() - 3] == '&')
+                {
+                    type.remove_suffix(2);
+                    continue;
+                }
+            }
+            if (back == '&' || back == '@')
+            {
+                type.remove_suffix(1);
+                continue;
+            }
+            if (type.ends_with("const"))
+            {
+                type.remove_suffix(5);
+                continue;
+            }
+            break;
+        }
+
+        if (type.find("[]") != std::string_view::npos)
+        {
+            return "array";
+        }
+
+        return type;
+    }
+
+    std::string_view ExtractInnerType(std::string_view type) noexcept
+    {
+        size_t start = type.find('<');
+        size_t end = type.rfind('>');
+        if (start != std::string_view::npos && end != std::string_view::npos && end > start)
+        {
+            return type.substr(start + 1, end - start - 1);
+        }
+
+        if (size_t bracket = type.rfind("[]"); bracket != std::string_view::npos)
+        {
+            return type.substr(0, bracket);
+        }
+
+        return type;
+    }
+
+    std::string_view GetInstantiatedType(std::string_view type) noexcept
+    {
+        while (!type.empty() && type.front() == ' ')
+        {
+            type.remove_prefix(1);
+        }
+
+        if (type.starts_with("const "))
+        {
+            type.remove_prefix(6);
+            while (!type.empty() && type.front() == ' ')
+            {
+                type.remove_prefix(1);
+            }
+        }
+
+        while (!type.empty())
+        {
+            char back = type.back();
+            if (back == '@' || back == '&' || back == ' ')
+            {
+                type.remove_suffix(1);
+            }
+            else if (type.ends_with("const"))
+            {
+                type.remove_suffix(5);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return type;
+    }
+
     class TokenStream
     {
     private:
@@ -110,20 +220,9 @@ namespace TokenHarvester
         size_t pos;
 
     public:
-        /**
-         * @brief Constructs a new Token Stream object.
-         * @param e Pointer to the active AngelScript script engine.
-         * @param c The source code text view to parse.
-         * @param start The initial absolute buffer position offset.
-         */
         TokenStream(asIScriptEngine *e, std::string_view c, size_t start = 0)
             : engine(e), code(c), pos(start) {}
 
-        /**
-         * @brief Peeks at the upcoming token class without advancing the stream position.
-         * @param outToken Reference to a string view to store the peeked token content.
-         * @return The token class classification type.
-         */
         asETokenClass Peek(std::string_view &outToken)
         {
             size_t tempPos = pos;
@@ -163,11 +262,6 @@ namespace TokenHarvester
             return tc;
         }
 
-        /**
-         * @brief Advances the stream position to the next valid token.
-         * @param outToken Reference to a string view to store the advanced token content.
-         * @return The token class classification type of the extracted token.
-         */
         asETokenClass Advance(std::string_view &outToken)
         {
             asUINT len = 0;
@@ -206,10 +300,6 @@ namespace TokenHarvester
             return tc;
         }
 
-        /**
-         * @brief Checks if the stream has reached the true end of the file.
-         * @return True if the stream is at EOF, false otherwise.
-         */
         bool IsEOF()
         {
             std::string_view dummy;
@@ -217,236 +307,44 @@ namespace TokenHarvester
             return (tc == asTC_UNKNOWN && dummy.empty());
         }
 
-        /**
-         * @brief Gets the current internal buffer position.
-         * @return The current absolute index position.
-         */
         size_t GetPos() const { return pos; }
-
-        /**
-         * @brief Sets the internal buffer position.
-         * @param p The new absolute position offset to apply.
-         */
         void SetPos(size_t p) { pos = p; }
     };
 
-    /**
-     * @brief Resolves and extracts the primitive base type from modifiers or templates.
-     * @param type The raw data type description string.
-     * @return A clean string representation of the parsed base data type.
-     */
-    std::string GetBaseType(const std::string &type)
-    {
-        std::string clean = type;
-        size_t start = 0;
-        size_t templatePos = std::string::npos;
-
-        while (start < clean.length() && (clean[start] == ' ' || clean[start] == '\t'))
-        {
-            start++;
-        }
-
-        if (clean.substr(start, 6) == "const ")
-        {
-            start += 6;
-        }
-
-        while (start < clean.length() && (clean[start] == ' ' || clean[start] == '\t'))
-        {
-            start++;
-        }
-
-        clean = clean.substr(start);
-        templatePos = clean.find('<');
-
-        if (templatePos != std::string::npos)
-        {
-            clean = clean.substr(0, templatePos);
-        }
-
-        while (!clean.empty())
-        {
-            if (clean.back() == ' ' || clean.back() == '\t' || clean.back() == '\r' || clean.back() == '\n')
-            {
-                clean.pop_back();
-                continue;
-            }
-
-            if (clean.length() >= 5 && clean.substr(clean.length() - 5) == "inout")
-            {
-                clean = clean.substr(0, clean.length() - 5);
-                continue;
-            }
-
-            if (clean.length() >= 3 && clean.substr(clean.length() - 3) == "out")
-            {
-                clean = clean.substr(0, clean.length() - 3);
-                continue;
-            }
-
-            if (clean.length() >= 2 && clean.substr(clean.length() - 2) == "in")
-            {
-                if (clean.length() == 2 || clean[clean.length() - 3] == ' ' || clean[clean.length() - 3] == '&')
-                {
-                    clean = clean.substr(0, clean.length() - 2);
-                    continue;
-                }
-            }
-
-            if (clean.back() == '&' || clean.back() == '@')
-            {
-                clean.pop_back();
-                continue;
-            }
-
-            if (clean.length() >= 5 && clean.substr(clean.length() - 5) == "const")
-            {
-                clean = clean.substr(0, clean.length() - 5);
-                continue;
-            }
-
-            break;
-        }
-
-        if (clean.find("[]") != std::string::npos)
-        {
-            return "array";
-        }
-
-        return clean;
-    }
-
-    /**
-     * @brief Extracts the underlying parameter type wrapped inside native structural collections.
-     * @param type The raw wrapper collection data type string.
-     * @return A string representation of the isolated inner data type.
-     */
-    std::string ExtractInnerType(const std::string &type)
-    {
-        size_t start = type.find('<');
-        size_t end = type.rfind('>');
-        size_t bracket = type.rfind("[]");
-
-        if (start != std::string::npos && end != std::string::npos && end > start)
-        {
-            return type.substr(start + 1, end - start - 1);
-        }
-
-        if (bracket != std::string::npos)
-        {
-            return type.substr(0, bracket);
-        }
-
-        return type;
-    }
-
-    /**
-     * @brief Yields an instantiated script type stripped of type qualifiers.
-     * @param type The qualified complex type string.
-     * @return A clean string representing the instantiated script type.
-     */
-    std::string GetInstantiatedType(const std::string &type)
-    {
-        std::string clean = type;
-        size_t start = 0;
-
-        while (start < clean.length() && clean[start] == ' ')
-        {
-            start++;
-        }
-
-        if (clean.substr(start, 6) == "const ")
-        {
-            start += 6;
-        }
-
-        while (start < clean.length() && clean[start] == ' ')
-        {
-            start++;
-        }
-
-        clean = clean.substr(start);
-
-        while (!clean.empty())
-        {
-            if (clean.back() == '@' || clean.back() == '&' || clean.back() == ' ')
-            {
-                clean.pop_back();
-            }
-            else if (clean.length() >= 5 && clean.substr(clean.length() - 5) == "const")
-            {
-                clean = clean.substr(0, clean.length() - 5);
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        return clean;
-    }
-
-    /**
-     * @brief Verifies if a token safely maps to registered or recognized language types.
-     * @param engine Pointer to the active AngelScript script engine core.
-     * @param stream Reference to the current token stream processor.
-     * @param token The token string contents to evaluate.
-     * @param localClasses List of user-declared custom script classes.
-     * @return True if the token is a valid recognized data type, false otherwise.
-     */
     static bool IsValidDataType(asIScriptEngine *engine, TokenStream &stream, std::string_view token, const std::vector<std::string> &localClasses)
     {
+        if (token == "const" || IsBuiltInType(token))
+            return true;
+
         std::string tokenStr(token);
-        size_t savedPos = 0;
-        std::string_view t1;
-        std::string_view t2;
-        asETokenClass tc1 = asTC_UNKNOWN;
-        asETokenClass tc2 = asTC_UNKNOWN;
-
-        if (token == "const")
-        {
-            return true;
-        }
-        if (IsBuiltInType(token))
-        {
-            return true;
-        }
-
         if (engine && engine->GetTypeInfoByName(tokenStr.c_str()) != nullptr)
-        {
             return true;
-        }
-        if (std::find(localClasses.begin(), localClasses.end(), tokenStr) != localClasses.end())
-        {
+        if (std::ranges::find(localClasses, tokenStr) != localClasses.end())
             return true;
-        }
 
-        savedPos = stream.GetPos();
-        tc1 = stream.Peek(t1);
+        size_t savedPos = stream.GetPos();
+        std::string_view t1, t2;
+        asETokenClass tc1 = stream.Peek(t1);
 
         if (tc1 == asTC_KEYWORD && t1 == "::")
         {
             stream.SetPos(savedPos);
             return true;
         }
-
         if (tc1 == asTC_IDENTIFIER)
         {
             stream.SetPos(savedPos);
             return true;
         }
-
         if (tc1 == asTC_KEYWORD && (t1 == "@" || t1 == "&"))
         {
             stream.Advance(t1);
-            tc2 = stream.Peek(t2);
-
+            asETokenClass tc2 = stream.Peek(t2);
             if (tc2 == asTC_KEYWORD && (t2 == "in" || t2 == "out" || t2 == "inout"))
             {
                 stream.Advance(t2);
                 tc2 = stream.Peek(t2);
             }
-
             if (tc2 == asTC_IDENTIFIER)
             {
                 stream.SetPos(savedPos);
@@ -458,20 +356,12 @@ namespace TokenHarvester
         return false;
     }
 
-    /**
-     * @brief Parses full semantic data type signatures from the stream including templates and handles.
-     * @param engine Pointer to the active AngelScript script engine instance.
-     * @param stream Reference to the token parsing stream.
-     * @param knownClassNames List of globally identified class titles.
-     * @return A constructed string representation of the final resolved data type signature.
-     */
     static std::string ParseDataType(asIScriptEngine *engine, TokenStream &stream, const std::vector<std::string> &knownClassNames)
     {
-        std::string typeName = "";
+        std::string typeName;
         std::string_view token;
-        asETokenClass tc;
+        asETokenClass tc = stream.Peek(token);
 
-        tc = stream.Peek(token);
         if (tc == asTC_KEYWORD && token == "const")
         {
             typeName += "const ";
@@ -486,14 +376,7 @@ namespace TokenHarvester
         }
 
         tc = stream.Peek(token);
-
-        bool isPrimitive = false;
-        if (tc == asTC_KEYWORD)
-        {
-            isPrimitive = (token == "void" || token == "int" || token == "int8" || token == "int16" || token == "int32" || token == "int64" ||
-                           token == "uint" || token == "uint8" || token == "uint16" || token == "uint32" || token == "uint64" ||
-                           token == "float" || token == "double" || token == "bool" || token == "string" || token == "auto");
-        }
+        bool isPrimitive = (tc == asTC_KEYWORD && IsBuiltInType(token));
 
         if (tc == asTC_IDENTIFIER || isPrimitive)
         {
@@ -507,7 +390,6 @@ namespace TokenHarvester
                 {
                     typeName += "::";
                     stream.Advance(token);
-
                     tc = stream.Peek(token);
                     if (tc == asTC_IDENTIFIER)
                     {
@@ -516,22 +398,17 @@ namespace TokenHarvester
                     }
                 }
                 else
-                {
                     break;
-                }
             }
         }
         else
-        {
             return "";
-        }
 
         tc = stream.Peek(token);
         if (tc == asTC_KEYWORD && token == "<")
         {
             typeName += "<";
             stream.Advance(token);
-
             int angleDepth = 1;
             while (angleDepth > 0 && !stream.IsEOF())
             {
@@ -546,6 +423,24 @@ namespace TokenHarvester
 
         while (!stream.IsEOF())
         {
+            size_t currentPos = stream.GetPos();
+            std::string_view t1, t2;
+            if (stream.Peek(t1) == asTC_KEYWORD && t1 == "[")
+            {
+                stream.Advance(t1);
+                if (stream.Peek(t2) == asTC_KEYWORD && t2 == "]")
+                {
+                    stream.Advance(t2);
+                    typeName = "array<" + typeName + ">";
+                    continue;
+                }
+            }
+            stream.SetPos(currentPos);
+            break;
+        }
+
+        while (!stream.IsEOF())
+        {
             tc = stream.Peek(token);
             if (tc == asTC_KEYWORD && (token == "@" || token == "&"))
             {
@@ -553,9 +448,7 @@ namespace TokenHarvester
                 stream.Advance(token);
             }
             else
-            {
                 break;
-            }
         }
 
         tc = stream.Peek(token);
@@ -568,38 +461,19 @@ namespace TokenHarvester
         return typeName;
     }
 
-    /**
-     * @brief Converts line and character indices to an absolute character position index.
-     * @param text The source document layout view.
-     * @param line Zero-indexed target script row coordinate.
-     * @param character Zero-indexed target script column offset.
-     * @return The precise flat buffer offset index size_t value.
-     */
     size_t GetAbsolutePosition(std::string_view text, int line, int character)
     {
         size_t pos = 0;
         int currentLine = 0;
-
         while (currentLine < line && pos < text.length())
         {
             if (text[pos] == '\n')
-            {
                 currentLine++;
-            }
-
             pos++;
         }
-
         return pos + character;
     }
 
-    /**
-     * @brief Contextually evaluates token chains preceding a cursor position to identify completion environments.
-     * @param engine Pointer to the active script engine compiler backend.
-     * @param code The script scope code layout view.
-     * @param cursorAbsolutePos Absolute offset index indicating the location of the autocomplete trigger.
-     * @return A detailed context specification collection object mapping properties.
-     */
     CompletionContext GetCompletionContext(asIScriptEngine *engine, std::string_view code, size_t cursorAbsolutePos)
     {
         CompletionContext ctx;
@@ -607,14 +481,6 @@ namespace TokenHarvester
         std::string_view token;
         std::vector<std::string> tokens;
         std::vector<std::string> chain;
-        std::string lastTok = "";
-        std::string fullIdent = "";
-        std::string closingToken = "";
-        std::string openingToken = "";
-        std::string segment = "";
-        std::string tok = "";
-        int i = 0;
-        int depth = 0;
 
         ctx.isMemberAccess = false;
         ctx.partialMember = "";
@@ -627,11 +493,9 @@ namespace TokenHarvester
         }
 
         if (tokens.empty())
-        {
             return ctx;
-        }
 
-        i = (int)tokens.size() - 1;
+        int i = static_cast<int>(tokens.size()) - 1;
 
         if (tokens[i] == "." || tokens[i] == "::")
         {
@@ -648,22 +512,17 @@ namespace TokenHarvester
         }
         else
         {
-            lastTok = tokens[i];
-
+            std::string lastTok = tokens[i];
             if (!lastTok.empty() && (SAFE_IS_ALPHA(lastTok[0]) || lastTok[0] == '_'))
             {
                 ctx.partialMember = lastTok;
                 i--;
             }
-
             if (i >= 0 && tokens[i] == ":")
             {
                 ctx.lastSeparator = ":";
-
                 if (i >= 1)
-                {
                     ctx.objectChain.push_back(tokens[i - 1]);
-                }
             }
         }
 
@@ -671,38 +530,28 @@ namespace TokenHarvester
         {
             while (i >= 0)
             {
-                fullIdent = "";
-
+                std::string fullIdent;
                 while (i >= 0 && (tokens[i] == "]" || tokens[i] == ")"))
                 {
-                    closingToken = tokens[i];
-                    openingToken = (closingToken == "]") ? "[" : "(";
-                    depth = 0;
-                    segment = "";
-
+                    std::string closingToken = tokens[i];
+                    std::string openingToken = (closingToken == "]") ? "[" : "(";
+                    int depth = 0;
+                    std::string segment;
                     do
                     {
                         if (tokens[i] == closingToken)
-                        {
                             depth++;
-                        }
                         else if (tokens[i] == openingToken)
-                        {
                             depth--;
-                        }
-
                         segment = tokens[i] + segment;
                         i--;
-
                     } while (i >= 0 && depth > 0);
-
                     fullIdent = segment + fullIdent;
                 }
 
                 if (i >= 0 && tokens[i] != "." && tokens[i] != "::")
                 {
-                    tok = tokens[i];
-
+                    std::string tok = tokens[i];
                     if (!tok.empty() && (SAFE_IS_ALPHA(tok[0]) || tok[0] == '_' || tok == "this" || tok == "super"))
                     {
                         fullIdent = tok + fullIdent;
@@ -710,9 +559,7 @@ namespace TokenHarvester
                         i--;
                     }
                     else
-                    {
                         break;
-                    }
                 }
                 else if (!fullIdent.empty())
                 {
@@ -720,32 +567,18 @@ namespace TokenHarvester
                 }
 
                 if (i >= 0 && (tokens[i] == "." || tokens[i] == "::"))
-                {
                     i--;
-                }
                 else
-                {
                     break;
-                }
             }
-
             ctx.objectChain = chain;
         }
-
         return ctx;
     }
 
-    /**
-     * @class ASTScanner
-     * @brief Base parser class analyzing block architecture layouts to maintain scope state configurations.
-     */
     class ASTScanner
     {
     protected:
-        /**
-         * @struct ScopeCtx
-         * @brief Representation tracking nested lexical scope structural environments.
-         */
         struct ScopeCtx
         {
             std::string name;
@@ -764,79 +597,50 @@ namespace TokenHarvester
         int currentDepth;
 
     public:
-        /**
-         * @brief Constructs a base ASTScanner component.
-         * @param e Pointer to the active host AngelScript script compiler layout module.
-         * @param c Source character text sequence tracking context view.
-         */
         ASTScanner(asIScriptEngine *e, std::string_view c)
             : engine(e), code(c), stream(e, c), currentDepth(0) {}
 
     protected:
-        /**
-         * @brief Unifies active scope strings to construct a scope resolution string identifier.
-         * @return Fully structural qualified contextual resolution chain namespace string.
-         */
         std::string GetFullScope() const
         {
             std::string res;
-
             for (const auto &s : scopeStack)
             {
                 if (!res.empty())
-                {
                     res += "::";
-                }
-
                 res += s.name;
             }
-
             return res;
         }
 
-        /**
-         * @brief Fast-forwards layout scanning sequences until nested braces resolve symmetrically.
-         */
         void SkipBlock()
         {
             int methodDepth = 1;
-
             while (methodDepth > 0 && !stream.IsEOF())
             {
                 stream.Advance(token);
-
                 if (token == "{")
-                {
                     methodDepth++;
-                }
                 else if (token == "}")
-                {
                     methodDepth--;
-                }
             }
         }
 
-        /**
-         * @brief Executes basic preliminary passes registering namespace and object tags.
-         */
         void CollectKnownTypes()
         {
             TokenStream quickStream(engine, code);
             std::vector<std::string> quickScope;
-            std::string qPendingName = "";
-            std::string qPendingType = "";
-            std::string fScope = "";
-            asETokenClass tc = asTC_UNKNOWN;
+            std::string qPendingName;
+            std::string qPendingType;
+            std::string fScope;
             int qDepth = 0;
 
             while (!quickStream.IsEOF())
             {
-                tc = quickStream.Advance(token);
-
+                asETokenClass tc = quickStream.Advance(token);
                 if (tc == asTC_KEYWORD && IsTypeDeclaration(token))
                 {
                     qPendingType = std::string(token);
-
                     if (quickStream.Peek(token) == asTC_IDENTIFIER)
                     {
                         qPendingName = std::string(token);
@@ -846,38 +650,30 @@ namespace TokenHarvester
                 else if (tc == asTC_KEYWORD && token == "{")
                 {
                     qDepth++;
-
                     if (!qPendingName.empty())
                     {
                         quickScope.push_back(qPendingName);
-                        fScope = "";
-
-                        for (auto &s : quickScope)
+                        fScope.clear();
+                        for (const auto &s : quickScope)
                         {
-                            fScope += (fScope.empty() ? "" : "::") + s;
+                            if (!fScope.empty())
+                                fScope += "::";
+                            fScope += s;
                         }
-
                         knownClassNames.push_back(fScope);
-                        qPendingName = "";
+                        qPendingName.clear();
                     }
                 }
                 else if (tc == asTC_KEYWORD && token == "}")
                 {
                     if (!quickScope.empty())
-                    {
                         quickScope.pop_back();
-                    }
-
                     qDepth--;
                 }
             }
         }
     };
 
-    /**
-     * @class CustomClassScanner
-     * @brief Specialized class tracker identifying structural object components, declarations, and method rows.
-     */
     class CustomClassScanner : public ASTScanner
     {
     private:
@@ -885,38 +681,25 @@ namespace TokenHarvester
         std::string currentAccess;
 
     public:
-        /**
-         * @brief Constructs a new Custom Class Scanner object processor.
-         * @param e Handle context pointing to the current script environment instance.
-         * @param c Comprehensive code layout script source blueprint view string.
-         */
         CustomClassScanner(asIScriptEngine *e, std::string_view c) : ASTScanner(e, c), currentAccess("public")
         {
             CollectKnownTypes();
         }
 
-        /**
-         * @brief Scans through files isolating all declared object layout descriptions.
-         * @return Discovered records mapping definitions extracted from structures.
-         */
         std::vector<ScriptClass> Scan()
         {
             std::vector<std::string> bases;
-            std::string fullScope = "";
+            std::string fullScope;
             std::vector<ScriptClass> results;
-            size_t savedPos = 0;
-            asETokenClass tc = asTC_UNKNOWN;
-            asETokenClass peekTc = asTC_UNKNOWN;
 
             while (!stream.IsEOF())
             {
-                savedPos = stream.GetPos();
-                tc = stream.Advance(token);
+                size_t savedPos = stream.GetPos();
+                asETokenClass tc = stream.Advance(token);
 
                 if (tc == asTC_KEYWORD && IsTypeDeclaration(token))
                 {
                     pendingScopeType = std::string(token);
-
                     if (stream.Peek(token) == asTC_IDENTIFIER)
                     {
                         pendingScopeName = std::string(token);
@@ -926,17 +709,11 @@ namespace TokenHarvester
                         if (stream.Peek(token) == asTC_KEYWORD && token == ":")
                         {
                             stream.Advance(token);
-
                             while (!stream.IsEOF())
                             {
-                                peekTc = stream.Peek(token);
-                                if (peekTc == asTC_KEYWORD && token == "{")
-                                {
+                                if (stream.Peek(token) == asTC_KEYWORD && token == "{")
                                     break;
-                                }
-
                                 stream.Advance(token);
-
                                 if (token != "," && token != "public" && token != "protected" && token != "private")
                                 {
                                     bases.push_back(std::string(token));
@@ -955,35 +732,30 @@ namespace TokenHarvester
                                 classMap[fullScope] = ScriptClass{fullScope, bases, {}, {}};
                             }
 
-                            pendingScopeName = "";
-                            pendingScopeType = "";
+                            pendingScopeName.clear();
+                            pendingScopeType.clear();
                             currentAccess = "public";
                             stream.Advance(token);
                         }
                     }
-
                     continue;
                 }
 
                 if (tc == asTC_KEYWORD && token == "{")
                 {
                     currentDepth++;
-
                     if (!pendingScopeName.empty())
                     {
                         scopeStack.push_back({pendingScopeName, pendingScopeType, currentDepth});
                         fullScope = GetFullScope();
-
                         if (classMap.find(fullScope) == classMap.end())
                         {
                             classMap[fullScope] = ScriptClass{fullScope, {}, {}, {}};
                         }
-
-                        pendingScopeName = "";
-                        pendingScopeType = "";
+                        pendingScopeName.clear();
+                        pendingScopeType.clear();
                         currentAccess = "public";
                     }
-
                     continue;
                 }
 
@@ -994,7 +766,6 @@ namespace TokenHarvester
                         scopeStack.pop_back();
                         currentAccess = "public";
                     }
-
                     currentDepth--;
                     continue;
                 }
@@ -1002,128 +773,84 @@ namespace TokenHarvester
                 if (tc == asTC_KEYWORD && IsAccessModifier(token))
                 {
                     if (token != "shared")
-                    {
                         currentAccess = std::string(token);
-                    }
-
                     continue;
                 }
 
                 if (scopeStack.empty())
-                {
                     continue;
-                }
 
                 if (ProcessEnum(tc))
-                {
                     continue;
-                }
 
                 bool validDeclFound = ProcessConstructorOrDestructor(tc);
-
                 if (!validDeclFound)
-                {
                     validDeclFound = ProcessMember(savedPos);
-                }
 
                 if (validDeclFound)
-                {
                     currentAccess = "public";
-                }
                 else if (stream.GetPos() == savedPos)
-                {
                     stream.Advance(token);
-                }
             }
 
+            results.reserve(classMap.size());
             for (auto &pair : classMap)
             {
-                results.push_back(pair.second);
+                results.push_back(std::move(pair.second));
             }
-
             return results;
         }
 
     private:
-        /**
-         * @brief Extracts individual element identifiers listed within isolated enumerations.
-         * @param tc Core structural classification code.
-         * @return True if an enumeration member matches and updates successfully, false otherwise.
-         */
         bool ProcessEnum(asETokenClass tc)
         {
             if (scopeStack.back().type != "enum")
-            {
                 return false;
-            }
-
             if (tc == asTC_IDENTIFIER)
             {
-                classMap[GetFullScope()].properties.push_back({std::string(token), "int", "public"});
+                std::string propName(token);
+                classMap[GetFullScope()].properties[propName] = ClassProperty{propName, "int", "public"};
             }
-
             return true;
         }
 
-        /**
-         * @brief Validates method symbols checking formatting configurations targeting lifecycle blocks.
-         * @param tc Native token context structural classification.
-         * @return True if matching constructor/destructor operations parse correctly, false otherwise.
-         */
         bool ProcessConstructorOrDestructor(asETokenClass tc)
         {
-            ScopeCtx currentScope;
-            std::string fullScope = "";
-            std::string_view nextToken;
-            int parenDepth = 0;
-            asETokenClass tcPeek = asTC_UNKNOWN;
-
             if (scopeStack.empty())
-            {
                 return false;
-            }
-
-            currentScope = scopeStack.back();
-            fullScope = GetFullScope();
+            ScopeCtx currentScope = scopeStack.back();
+            std::string fullScope = GetFullScope();
+            std::string_view nextToken;
 
             if (tc == asTC_IDENTIFIER && token == currentScope.name)
             {
-                tcPeek = stream.Peek(nextToken);
-                if (tcPeek == asTC_KEYWORD && nextToken == "(")
+                if (stream.Peek(nextToken) == asTC_KEYWORD && nextToken == "(")
                 {
-                    parenDepth = 0;
+                    int parenDepth = 0;
                     do
                     {
                         stream.Advance(token);
                         if (token == "(")
-                        {
                             parenDepth++;
-                        }
                         else if (token == ")")
-                        {
                             parenDepth--;
-                        }
                     } while (parenDepth > 0 && !stream.IsEOF());
 
-                    classMap[fullScope].methods.push_back({currentScope.name, "void", fullScope + "()", currentAccess, true});
+                    classMap[fullScope].methods[currentScope.name].push_back({currentScope.name, "void", fullScope + "()", currentAccess, true});
 
                     while (!stream.IsEOF())
                     {
-                        tcPeek = stream.Peek(nextToken);
-                        if (tcPeek == asTC_KEYWORD && (nextToken == "{" || nextToken == ";"))
-                        {
+                        if (stream.Peek(nextToken) == asTC_KEYWORD && (nextToken == "{" || nextToken == ";"))
                             break;
-                        }
                         stream.Advance(token);
                     }
 
-                    tcPeek = stream.Peek(nextToken);
-                    if (tcPeek == asTC_KEYWORD && nextToken == "{")
+                    if (stream.Peek(nextToken) == asTC_KEYWORD && nextToken == "{")
                     {
                         stream.Advance(token);
                         SkipBlock();
                     }
-                    else if (tcPeek == asTC_KEYWORD && nextToken == ";")
+                    else if (stream.Peek(nextToken) == asTC_KEYWORD && nextToken == ";")
                     {
                         stream.Advance(token);
                     }
@@ -1134,47 +861,37 @@ namespace TokenHarvester
             }
             else if (tc == asTC_KEYWORD && token == "~")
             {
-                tcPeek = stream.Peek(nextToken);
-                if (tcPeek == asTC_IDENTIFIER && nextToken == currentScope.name)
+                if (stream.Peek(nextToken) == asTC_IDENTIFIER && nextToken == currentScope.name)
                 {
                     stream.Advance(token);
-
-                    tcPeek = stream.Peek(nextToken);
-                    if (tcPeek == asTC_KEYWORD && nextToken == "(")
+                    if (stream.Peek(nextToken) == asTC_KEYWORD && nextToken == "(")
                     {
-                        parenDepth = 0;
+                        int parenDepth = 0;
                         do
                         {
                             stream.Advance(token);
                             if (token == "(")
-                            {
                                 parenDepth++;
-                            }
                             else if (token == ")")
-                            {
                                 parenDepth--;
-                            }
                         } while (parenDepth > 0 && !stream.IsEOF());
 
-                        classMap[fullScope].methods.push_back({"~" + currentScope.name, "void", "~" + fullScope + "()", currentAccess, true});
+                        std::string destName = "~" + currentScope.name;
+                        classMap[fullScope].methods[destName].push_back({destName, "void", "~" + fullScope + "()", currentAccess, true});
 
                         while (!stream.IsEOF())
                         {
-                            tcPeek = stream.Peek(nextToken);
-                            if (tcPeek == asTC_KEYWORD && (nextToken == "{" || nextToken == ";"))
-                            {
+                            if (stream.Peek(nextToken) == asTC_KEYWORD && (nextToken == "{" || nextToken == ";"))
                                 break;
-                            }
                             stream.Advance(token);
                         }
 
-                        tcPeek = stream.Peek(nextToken);
-                        if (tcPeek == asTC_KEYWORD && nextToken == "{")
+                        if (stream.Peek(nextToken) == asTC_KEYWORD && nextToken == "{")
                         {
                             stream.Advance(token);
                             SkipBlock();
                         }
-                        else if (tcPeek == asTC_KEYWORD && nextToken == ";")
+                        else if (stream.Peek(nextToken) == asTC_KEYWORD && nextToken == ";")
                         {
                             stream.Advance(token);
                         }
@@ -1184,45 +901,13 @@ namespace TokenHarvester
                     }
                 }
             }
-
             return false;
         }
 
-        /**
-         * @brief Skips token tracking layers up to structural code body frames or delimiter endings.
-         */
-        void SkipToBody()
-        {
-            while (!stream.IsEOF() && token != "{" && token != ";")
-            {
-                stream.Advance(token);
-            }
-
-            if (stream.Peek(token) == asTC_KEYWORD && token == "{")
-            {
-                stream.Advance(token);
-                SkipBlock();
-            }
-            else if (stream.Peek(token) == asTC_KEYWORD && token == ";")
-            {
-                stream.Advance(token);
-            }
-        }
-
-        /**
-         * @brief Parses details configuring individual internal class rows or operations signatures.
-         * @param savedPos Entry positional fallback index utilized to reset states during evaluation conflicts.
-         * @return True if a class attribute or method row matches criteria, false otherwise.
-         */
         bool ProcessMember(size_t savedPos)
         {
-            std::string parsedType = "";
-            std::string memberName = "";
-            std::string fullScope = "";
-            asETokenClass lookTc = asTC_UNKNOWN;
-
             stream.SetPos(savedPos);
-            parsedType = ParseDataType(engine, stream, knownClassNames);
+            std::string parsedType = ParseDataType(engine, stream, knownClassNames);
 
             if (parsedType.empty() || stream.Peek(token) != asTC_IDENTIFIER)
             {
@@ -1230,9 +915,9 @@ namespace TokenHarvester
                 return false;
             }
 
-            memberName = std::string(token);
+            std::string memberName(token);
             stream.Advance(token);
-            lookTc = stream.Peek(token);
+            asETokenClass lookTc = stream.Peek(token);
 
             if (lookTc == asTC_KEYWORD && token == "(")
             {
@@ -1248,11 +933,10 @@ namespace TokenHarvester
                 return true;
             }
 
-            // CASO C: Bloque anidado
             if (lookTc == asTC_KEYWORD && token == "{")
             {
-                fullScope = GetFullScope();
-                classMap[fullScope].properties.push_back({memberName, parsedType, currentAccess});
+                std::string fullScope = GetFullScope();
+                classMap[fullScope].properties[memberName] = ClassProperty{memberName, parsedType, currentAccess};
                 stream.Advance(token);
                 SkipBlock();
                 currentAccess = "public";
@@ -1261,8 +945,8 @@ namespace TokenHarvester
 
             if (lookTc == asTC_KEYWORD && (token == ";" || token == "="))
             {
-                fullScope = GetFullScope();
-                classMap[fullScope].properties.push_back({memberName, parsedType, currentAccess});
+                std::string fullScope = GetFullScope();
+                classMap[fullScope].properties[memberName] = ClassProperty{memberName, parsedType, currentAccess};
 
                 if (token == "=")
                 {
@@ -1274,9 +958,7 @@ namespace TokenHarvester
                     }
                 }
                 else
-                {
                     stream.Advance(token);
-                }
 
                 currentAccess = "public";
                 return true;
@@ -1286,11 +968,6 @@ namespace TokenHarvester
             return false;
         }
 
-        /**
-         * @brief Extracts descriptive parameter layouts and logic details structuring class functions.
-         * @param parsedType Datatype designation describing operation output returns.
-         * @param memberName Plain identifier naming the current function method target.
-         */
         void ParseMethod(const std::string &parsedType, const std::string &memberName)
         {
             std::string fullScope = GetFullScope();
@@ -1301,28 +978,21 @@ namespace TokenHarvester
             {
                 stream.Advance(token);
                 if (token == "(")
-                {
                     parenDepth++;
-                }
                 else if (token == ")")
-                {
                     parenDepth--;
-                }
             } while (parenDepth > 0 && !stream.IsEOF());
 
             size_t sigEnd = stream.GetPos();
             std::string exactParams(code.data() + sigStart, sigEnd - sigStart);
             std::string signature = parsedType + " " + fullScope + "::" + memberName + exactParams;
 
-            classMap[fullScope].methods.push_back({memberName, parsedType, signature, currentAccess, false});
+            classMap[fullScope].methods[memberName].push_back({memberName, parsedType, signature, currentAccess, false});
 
             while (!stream.IsEOF())
             {
-                asETokenClass tcPeek = stream.Peek(token);
-                if (tcPeek == asTC_KEYWORD && (token == "{" || token == ";"))
-                {
+                if (stream.Peek(token) == asTC_KEYWORD && (token == "{" || token == ";"))
                     break;
-                }
                 stream.Advance(token);
             }
 
@@ -1337,24 +1007,14 @@ namespace TokenHarvester
             }
         }
 
-        /**
-         * @brief Isolates properties resolving syntax setups processing shared definition tracks.
-         * @param parsedType Clean data description tracking label specifications.
-         * @param memberName Plain descriptor detailing primary class properties labels.
-         */
         void ParseProperty(const std::string &parsedType, const std::string &memberName)
         {
-            std::string fullScope = "";
-            std::string nextVar = "";
-            asETokenClass tcc = asTC_UNKNOWN;
-
-            fullScope = GetFullScope();
-            classMap[fullScope].properties.push_back({memberName, parsedType, currentAccess});
+            std::string fullScope = GetFullScope();
+            classMap[fullScope].properties[memberName] = ClassProperty{memberName, parsedType, currentAccess};
 
             while (true)
             {
-                tcc = stream.Peek(token);
-
+                asETokenClass tcc = stream.Peek(token);
                 if (tcc == asTC_UNKNOWN || (tcc == asTC_KEYWORD && (token == ";" || token == ")")))
                 {
                     stream.Advance(token);
@@ -1364,46 +1024,29 @@ namespace TokenHarvester
                 if (tcc == asTC_KEYWORD && token == ",")
                 {
                     stream.Advance(token);
-
                     if (stream.Peek(token) == asTC_IDENTIFIER)
                     {
-                        nextVar = std::string(token);
+                        std::string nextVar(token);
                         stream.Advance(token);
-                        classMap[fullScope].properties.push_back({nextVar, parsedType, currentAccess});
+                        classMap[fullScope].properties[nextVar] = ClassProperty{nextVar, parsedType, currentAccess};
                         continue;
                     }
                 }
                 else
-                {
                     stream.Advance(token);
-                }
             }
         }
     };
 
-    /**
-     * @brief High-level helper starting parsing routines targeting file script structures.
-     * @param engine Handle referencing the host scripting system controller framework module.
-     * @param code View covering active text sequences data streams under review.
-     * @return Tracking list mapping individual user definitions fields.
-     */
     std::vector<ScriptClass> ScanCustomClasses(asIScriptEngine *engine, std::string_view code)
     {
         CustomClassScanner scanner(engine, code);
         return scanner.Scan();
     }
 
-    /**
-     * @class LocalVariableScanner
-     * @brief Specialized tracking parser tracing execution segments to extract localized scope variables.
-     */
     class LocalVariableScanner : public ASTScanner
     {
     private:
-        /**
-         * @struct BlockCtxInfo
-         * @brief Representation recording metrics mapping structural tracking data.
-         */
         struct BlockCtxInfo
         {
             std::string type;
@@ -1422,15 +1065,6 @@ namespace TokenHarvester
         const std::vector<GlobalFunction> &globalFuncs;
 
     public:
-        /**
-         * @brief Constructs a new Local Variable Scanner system context handle.
-         * @param e Main target script platform application management pointer.
-         * @param c Continuous text mapping raw project layouts description structures views.
-         * @param pos Cursor location indicator setting limits tracking absolute ranges.
-         * @param cClasses Cached definitions catalog detailing active structure environments profiles.
-         * @param gVars Configuration logs tracking file level variable environments registers.
-         * @param gFuncs List capturing functional descriptions mapping global routines components.
-         */
         LocalVariableScanner(asIScriptEngine *e, std::string_view c, size_t pos,
                              const std::vector<ScriptClass> &cClasses,
                              const std::vector<GlobalVariable> &gVars,
@@ -1441,25 +1075,14 @@ namespace TokenHarvester
             CollectKnownTypes();
         }
 
-        /**
-         * @brief Maps structural context metrics into explicit human-readable definitions strings.
-         * @param pDepth Tracking tracker monitoring nesting depths across parenthesized groupings tokens.
-         * @param effDepth Quantitative reference setting target absolute layer context levels.
-         * @return Informative literal highlighting the identified variable usage context category.
-         */
         std::string GetVariableNature(int pDepth, int effDepth) const
         {
             if (pDepth > 0)
             {
                 if (lastControlKeyword == "for")
-                {
                     return "for loop control variable";
-                }
-
                 if (blockStack.empty())
-                {
                     return "function parameter";
-                }
             }
 
             for (auto it = blockStack.rbegin(); it != blockStack.rend(); ++it)
@@ -1468,57 +1091,29 @@ namespace TokenHarvester
                 {
                     return fmt::format("local variable inside a {} loop block", it->type);
                 }
-
                 if (it->type == "if")
-                {
                     return "local variable inside an if block";
-                }
-
                 if (it->type == "switch" || it->type == "case")
-                {
                     return "local variable inside a switch case";
-                }
-
                 if (it->type == "try" || it->type == "catch")
-                {
                     return "local variable inside a try/catch block";
-                }
-
                 if (it->type == "function")
-                {
                     return "local variable";
-                }
             }
-
             return "local variable";
         }
 
-        /**
-         * @brief Parses through source layout configurations up to target positioning thresholds.
-         * @param outEnclosingClass Receives the text label naming the parent class scope wrapper context.
-         * @return List outlining stack values identified as fully accessible.
-         */
         std::vector<LocalVariable> Scan(std::string &outEnclosingClass)
         {
-            std::string foreachType = "";
-            std::string loopVar = "";
+            std::string foreachType;
+            std::string loopVar;
             std::vector<std::string> containerExpr;
-            std::string containerType = "";
-            std::string inner = "";
-            std::string blockType = "";
-            size_t savedPos = 0;
-            size_t foreachPos = 0;
-            asETokenClass tc = asTC_UNKNOWN;
-            asETokenClass peekTc = asTC_UNKNOWN;
-            int captureDepth = 0;
-            bool directlyInClass = false;
-            bool validDeclFound = false;
-            bool insideClassDecl = false;
+            std::string blockType;
 
             while (stream.GetPos() < cursorAbsolutePos && !stream.IsEOF())
             {
-                savedPos = stream.GetPos();
-                tc = stream.Peek(token);
+                size_t savedPos = stream.GetPos();
+                asETokenClass tc = stream.Peek(token);
 
                 if ((tc == asTC_KEYWORD || tc == asTC_IDENTIFIER) && token == "function")
                 {
@@ -1531,26 +1126,18 @@ namespace TokenHarvester
                             std::string paramType = ParseDataType(engine, stream, knownClassNames);
                             if (!paramType.empty() && stream.Peek(token) == asTC_IDENTIFIER)
                             {
-                                std::string paramName = std::string(token);
+                                std::string paramName(token);
                                 stream.Advance(token);
                                 locals.push_back({paramName, paramType, currentDepth + 1});
-                                std::string scopePrefix = GetFullScope().empty() ? "::" : GetFullScope() + "::";
-                                HARVEST_DEBUG(fmt::format("NEW LOCAL VARIABLE: '{}{}' of type '{}' (lambda parameter) at depth {}",
-                                                          scopePrefix, paramName, paramType, currentDepth + 1));
                             }
                             else
-                            {
                                 stream.Advance(token);
-                            }
+
                             if (stream.Peek(token) == asTC_KEYWORD && token == ",")
-                            {
                                 stream.Advance(token);
-                            }
                         }
                         if (stream.Peek(token) == asTC_KEYWORD && token == ")")
-                        {
                             stream.Advance(token);
-                        }
                     }
                     lastTokenStr = ")";
                     continue;
@@ -1559,16 +1146,9 @@ namespace TokenHarvester
                 if (tc == asTC_KEYWORD)
                 {
                     if (IsControlKeyword(token))
-                    {
                         lastControlKeyword = std::string(token);
-                    }
-                    else if (token == ";")
-                    {
-                        if (parenDepth == 0)
-                        {
-                            lastControlKeyword = "";
-                        }
-                    }
+                    else if (token == ";" && parenDepth == 0)
+                        lastControlKeyword.clear();
                 }
 
                 if (tc == asTC_KEYWORD && IsTypeDeclaration(token))
@@ -1583,7 +1163,6 @@ namespace TokenHarvester
                         stream.Advance(token);
                         lastTokenStr = pendingScopeName;
                     }
-
                     continue;
                 }
 
@@ -1595,16 +1174,13 @@ namespace TokenHarvester
                     if (!lastControlKeyword.empty())
                     {
                         blockType = lastControlKeyword;
-                        lastControlKeyword = "";
+                        lastControlKeyword.clear();
                     }
                     else
                     {
-                        insideClassDecl = (!scopeStack.empty() && scopeStack.back().type == "class" && (currentDepth - 1) == scopeStack.back().depth);
-
+                        bool insideClassDecl = (!scopeStack.empty() && scopeStack.back().type == "class" && (currentDepth - 1) == scopeStack.back().depth);
                         if (scopeStack.empty() || insideClassDecl)
-                        {
                             blockType = "function";
-                        }
                     }
 
                     blockStack.push_back({blockType, currentDepth});
@@ -1612,8 +1188,8 @@ namespace TokenHarvester
                     if (!pendingScopeName.empty())
                     {
                         scopeStack.push_back({pendingScopeName, pendingScopeType, currentDepth});
-                        pendingScopeName = "";
-                        pendingScopeType = "";
+                        pendingScopeName.clear();
+                        pendingScopeType.clear();
                     }
 
                     stream.Advance(token);
@@ -1624,22 +1200,15 @@ namespace TokenHarvester
                 if (tc == asTC_KEYWORD && token == "}")
                 {
                     if (!blockStack.empty() && blockStack.back().depth == currentDepth)
-                    {
                         blockStack.pop_back();
-                    }
-
                     if (!scopeStack.empty() && scopeStack.back().depth == currentDepth)
-                    {
                         scopeStack.pop_back();
-                    }
 
                     currentDepth--;
-                    captureDepth = currentDepth;
+                    int captureDepth = currentDepth;
 
-                    locals.erase(std::remove_if(locals.begin(), locals.end(),
-                                                [captureDepth](const LocalVariable &v)
-                                                { return v.declarationDepth > captureDepth; }),
-                                 locals.end());
+                    std::erase_if(locals, [captureDepth](const LocalVariable &v)
+                                  { return v.declarationDepth > captureDepth; });
 
                     stream.Advance(token);
                     lastTokenStr = "}";
@@ -1649,12 +1218,11 @@ namespace TokenHarvester
                 if (tc == asTC_KEYWORD && token == "foreach")
                 {
                     stream.Advance(token);
-
                     if (stream.Peek(token) == asTC_KEYWORD && token == "(")
                     {
                         stream.Advance(token);
                         parenDepth++;
-                        foreachPos = stream.GetPos();
+                        size_t foreachPos = stream.GetPos();
                         foreachType = ParseDataType(engine, stream, knownClassNames);
 
                         if (!foreachType.empty() && stream.Peek(token) == asTC_IDENTIFIER)
@@ -1666,7 +1234,6 @@ namespace TokenHarvester
                             while (!stream.IsEOF() && token != ")")
                             {
                                 stream.Advance(token);
-
                                 if (token == ":")
                                 {
                                     while (!stream.IsEOF() && token != ")")
@@ -1674,41 +1241,25 @@ namespace TokenHarvester
                                         stream.Advance(token);
                                         containerExpr.push_back(std::string(token));
                                     }
-
                                     break;
                                 }
                             }
 
                             if (foreachType.find("auto") != std::string::npos && !containerExpr.empty())
                             {
-                                containerType = InferAutoType(containerExpr);
-                                inner = ExtractInnerType(containerType);
+                                std::string containerType = InferAutoType(containerExpr);
+                                std::string_view inner = ExtractInnerType(containerType);
 
                                 if (!inner.empty() && inner != containerType)
                                 {
-                                    if (foreachType.back() == '@' && inner.back() != '@')
-                                    {
-                                        foreachType = inner + "@";
-                                    }
-                                    else
-                                    {
-                                        foreachType = inner;
-                                    }
+                                    foreachType = (foreachType.back() == '@' && inner.back() != '@') ? std::string(inner) + "@" : std::string(inner);
                                 }
                             }
-
                             locals.push_back({loopVar, foreachType, currentDepth + 1});
-                            std::string scopePrefix = GetFullScope().empty() ? "::" : GetFullScope() + "::";
-
-                            HARVEST_DEBUG(fmt::format("NEW LOCAL VARIABLE: '{}{}' of type '{}' (foreach loop variable) at depth {}",
-                                                      scopePrefix, loopVar, foreachType, currentDepth + 1));
                         }
                         else
-                        {
                             stream.SetPos(foreachPos);
-                        }
                     }
-
                     continue;
                 }
 
@@ -1719,16 +1270,10 @@ namespace TokenHarvester
                     tc = stream.Peek(token);
                 }
 
-                directlyInClass = false;
+                bool directlyInClass = (!scopeStack.empty() && scopeStack.back().type == "class" && currentDepth == scopeStack.back().depth);
+                bool validDeclFound = false;
 
-                if (!scopeStack.empty() && scopeStack.back().type == "class" && currentDepth == scopeStack.back().depth)
-                {
-                    directlyInClass = true;
-                }
-
-                validDeclFound = false;
-
-                if (lastTokenStr != "." && lastTokenStr != "->" && lastTokenStr != "::")
+                if (lastTokenStr != "." && lastTokenStr != "::")
                 {
                     validDeclFound = ProcessLocalDeclaration(savedPos, directlyInClass);
                 }
@@ -1736,19 +1281,13 @@ namespace TokenHarvester
                 if (!validDeclFound && stream.GetPos() == savedPos)
                 {
                     stream.Advance(token);
-
                     if (token == "(")
-                    {
                         parenDepth++;
-                    }
                     else if (token == ")")
                     {
                         if (parenDepth > 0)
-                        {
                             parenDepth--;
-                        }
                     }
-
                     lastTokenStr = std::string(token);
                 }
             }
@@ -1758,137 +1297,81 @@ namespace TokenHarvester
                 outEnclosingClass = GetFullScope();
                 locals.push_back({"this", outEnclosingClass + "@", 1});
             }
-
             return locals;
         }
 
     private:
-        /**
-         * @brief Evaluates code syntax configurations resolving exact datatypes matching abstract auto labels.
-         * @param tokens Sequence tracking components formatting the active declaration row layout.
-         * @return The inferred specific script type name signature.
-         */
         std::string InferAutoType(const std::vector<std::string> &tokens)
         {
-            std::string inferredType = "";
-            std::string currentEnclosingClass = "";
-            std::string tok = "";
-            std::string base = "";
-            std::string nextType = "";
-            std::string baseType = "";
-            asITypeInfo *t = nullptr;
-            asIScriptFunction *func = nullptr;
-            const char *decl = nullptr;
-            const char *pName = nullptr;
-            size_t i = 0;
-            int tempBracketDepth = 0;
-            int tempParenDepth = 0;
-            int pTypeId = 0;
-            bool found = false;
-
             if (tokens.empty())
-            {
                 return "auto";
-            }
-
             if (IsBuiltInType(tokens[0]))
-            {
                 return std::string(tokens[0]);
-            }
-
-            if (tokens[0][0] == '"' || tokens[0][0] == '\'')
-            {
+            if (tokens[0].front() == '"' || tokens[0].front() == '\'')
                 return "string";
-            }
-
             if (tokens[0] == "true" || tokens[0] == "false")
-            {
                 return "bool";
-            }
-
-            if (tokens[0].find_first_of(".f") != std::string::npos && isdigit(static_cast<unsigned char>(tokens[0][0])))
-            {
-                return "float";
-            }
-
             if (isdigit(static_cast<unsigned char>(tokens[0][0])))
             {
+                if (tokens[0].find_first_of(".f") != std::string::npos)
+                    return "float";
                 return "int";
             }
 
-            currentEnclosingClass = GetFullScope();
+            std::string inferredType;
+            std::string currentEnclosingClass = GetFullScope();
+            int tempBracketDepth = 0;
+            int tempParenDepth = 0;
 
-            for (i = 0; i < tokens.size(); i++)
+            for (size_t i = 0; i < tokens.size(); i++)
             {
-                tok = tokens[i];
-
+                std::string tok = tokens[i];
                 if (tok == "[")
                 {
                     if (tempBracketDepth == 0)
                     {
-                        base = GetBaseType(inferredType);
-
+                        std::string_view base = GetBaseType(inferredType);
                         if (base == "array" || base == "dictionary" || base == "grid")
                         {
                             inferredType = ExtractInnerType(inferredType);
                         }
                         else
                         {
-                            nextType = "";
-                            t = engine ? engine->GetTypeInfoByDecl(inferredType.c_str()) : nullptr;
-
+                            std::string nextType;
+                            asITypeInfo *t = engine ? engine->GetTypeInfoByDecl(inferredType.c_str()) : nullptr;
                             if (!t && engine)
-                            {
-                                t = engine->GetTypeInfoByName(base.c_str());
-                            }
-
+                                t = engine->GetTypeInfoByName(std::string(base).c_str());
                             if (t)
                             {
                                 for (asUINT m = 0; m < t->GetMethodCount(); m++)
                                 {
-                                    func = t->GetMethodByIndex(m);
-
-                                    if (func && std::string(func->GetName()) == "opIndex")
+                                    asIScriptFunction *func = t->GetMethodByIndex(m);
+                                    if (func && std::string_view(func->GetName()) == "opIndex")
                                     {
-                                        decl = engine->GetTypeDeclaration(func->GetReturnTypeId(), true);
-
-                                        if (decl)
-                                        {
+                                        if (const char *decl = engine->GetTypeDeclaration(func->GetReturnTypeId(), true))
                                             nextType = decl;
-                                        }
-
                                         break;
                                     }
                                 }
                             }
-
                             if (nextType.empty())
                             {
                                 for (const auto &c : customClasses)
                                 {
                                     if (c.name == base)
                                     {
-                                        for (const auto &m : c.methods)
+                                        if (auto it = c.methods.find("opIndex"); it != c.methods.end() && !it->second.empty())
                                         {
-                                            if (m.name == "opIndex")
-                                            {
-                                                nextType = m.typeName;
-                                                break;
-                                            }
+                                            nextType = it->second.front().typeName;
                                         }
-
                                         break;
                                     }
                                 }
                             }
-
                             if (!nextType.empty())
-                            {
                                 inferredType = GetInstantiatedType(nextType);
-                            }
                         }
                     }
-
                     tempBracketDepth++;
                     continue;
                 }
@@ -1898,40 +1381,27 @@ namespace TokenHarvester
                     tempBracketDepth--;
                     continue;
                 }
-
                 if (tok == "(")
                 {
                     tempParenDepth++;
                     continue;
                 }
-
                 if (tok == ")")
                 {
                     tempParenDepth--;
                     continue;
                 }
-
                 if (tempBracketDepth > 0 || tempParenDepth > 0)
-                {
                     continue;
-                }
-
-                if (tok == "." || tok == "::" || tok == "new" || tok == "@")
-                {
+                if (tok == "." || tok == "::" || tok == "@")
                     continue;
-                }
-
                 if (!isalpha(static_cast<unsigned char>(tok[0])) && tok[0] != '_')
-                {
                     continue;
-                }
 
                 if (inferredType.empty())
                 {
                     if (tok == "this")
-                    {
                         inferredType = currentEnclosingClass;
-                    }
                     else
                     {
                         for (const auto &v : locals)
@@ -1946,57 +1416,40 @@ namespace TokenHarvester
                 }
                 else
                 {
-                    baseType = GetBaseType(inferredType);
-                    found = false;
-
+                    std::string_view baseType = GetBaseType(inferredType);
+                    bool found = false;
                     for (const auto &c : customClasses)
                     {
                         if (c.name == baseType)
                         {
-                            for (const auto &p : c.properties)
+                            if (auto propIt = c.properties.find(tok); propIt != c.properties.end())
                             {
-                                if (p.name == tok)
-                                {
-                                    inferredType = p.typeName;
-                                    found = true;
-                                    break;
-                                }
+                                inferredType = propIt->second.typeName;
+                                found = true;
+                                break;
                             }
-
-                            if (!found)
+                            if (auto methodIt = c.methods.find(tok); methodIt != c.methods.end() && !methodIt->second.empty())
                             {
-                                for (const auto &m : c.methods)
-                                {
-                                    if (m.name == tok)
-                                    {
-                                        inferredType = m.typeName;
-                                        found = true;
-                                        break;
-                                    }
-                                }
+                                inferredType = methodIt->second.front().typeName;
+                                found = true;
+                                break;
                             }
-
                             break;
                         }
                     }
 
                     if (!found && engine)
                     {
-                        t = engine->GetTypeInfoByName(baseType.c_str());
-
-                        if (t)
+                        if (asITypeInfo *t = engine->GetTypeInfoByName(std::string(baseType).c_str()))
                         {
                             for (asUINT p = 0; p < t->GetPropertyCount(); p++)
                             {
-                                pName = nullptr;
-                                pTypeId = 0;
+                                const char *pName = nullptr;
+                                int pTypeId = 0;
                                 t->GetProperty(p, &pName, &pTypeId);
-
-                                if (pName && std::string(pName) == tok)
+                                if (pName && tok == pName)
                                 {
-                                    decl = engine->GetTypeDeclaration(pTypeId, true);
-
-                                    if (decl)
+                                    if (const char *decl = engine->GetTypeDeclaration(pTypeId, true))
                                     {
                                         inferredType = decl;
                                         found = true;
@@ -2004,19 +1457,14 @@ namespace TokenHarvester
                                     }
                                 }
                             }
-
                             if (!found)
                             {
                                 for (asUINT m = 0; m < t->GetMethodCount(); m++)
                                 {
-                                    func = t->GetMethodByIndex(m);
-
-                                    if (func && std::string(func->GetName()) == tok)
+                                    asIScriptFunction *func = t->GetMethodByIndex(m);
+                                    if (func && tok == func->GetName())
                                     {
-                                        pTypeId = func->GetReturnTypeId();
-                                        decl = engine->GetTypeDeclaration(pTypeId, true);
-
-                                        if (decl)
+                                        if (const char *decl = engine->GetTypeDeclaration(func->GetReturnTypeId(), true))
                                         {
                                             inferredType = decl;
                                             found = true;
@@ -2032,63 +1480,44 @@ namespace TokenHarvester
 
             if (!inferredType.empty())
             {
-                inferredType.erase(std::remove(inferredType.begin(), inferredType.end(), '@'), inferredType.end());
-                inferredType.erase(std::remove(inferredType.begin(), inferredType.end(), '&'), inferredType.end());
+                std::erase(inferredType, '@');
+                std::erase(inferredType, '&');
                 return inferredType;
             }
-
             return "auto";
         }
 
-        /**
-         * @brief Evaluates statement configurations verifying whether tracking codes map to fresh variable allocations.
-         * @param savedPos Stored backup positioning placeholder used to backtrack safely.
-         * @param directlyInClass Flag confirming whether operations sit directly inside target object bodies templates.
-         * @return True if a local variable signature validates, false otherwise.
-         */
         bool ProcessLocalDeclaration(size_t savedPos, bool directlyInClass)
         {
-            std::string parsedType = "";
-            std::string baseType = "";
-            std::string varName = "";
-            std::string scopePrefix = "";
-            std::string nature = "";
-            asETokenClass tc = asTC_UNKNOWN;
-            int effectiveDepth = 0;
-            bool isLocal = false;
-
             stream.SetPos(savedPos);
-            parsedType = ParseDataType(engine, stream, knownClassNames);
-
+            std::string parsedType = ParseDataType(engine, stream, knownClassNames);
             if (parsedType.empty())
             {
                 stream.SetPos(savedPos);
                 return false;
             }
 
-            baseType = GetBaseType(parsedType);
+            std::string_view baseType = GetBaseType(parsedType);
             if (!IsValidDataType(engine, stream, baseType, knownClassNames))
             {
                 stream.SetPos(savedPos);
                 return false;
             }
 
-            tc = stream.Peek(token);
-
-            if (tc != asTC_IDENTIFIER)
+            if (stream.Peek(token) != asTC_IDENTIFIER)
             {
                 stream.SetPos(savedPos);
                 return false;
             }
 
-            varName = std::string(token);
+            std::string varName(token);
             stream.Advance(token);
-            tc = stream.Peek(token);
+            asETokenClass tc = stream.Peek(token);
 
             if (tc == asTC_KEYWORD && (token == ";" || token == "=" || token == "," || token == ")" || token == "("))
             {
-                isLocal = false;
-                effectiveDepth = currentDepth;
+                bool isLocal = false;
+                int effectiveDepth = currentDepth;
 
                 if (parenDepth > 0)
                 {
@@ -2102,18 +1531,10 @@ namespace TokenHarvester
 
                 if (isLocal)
                 {
-                    auto it = std::find_if(locals.begin(), locals.end(), [&](const LocalVariable &v)
-                                           { return v.name == varName; });
-
+                    auto it = std::ranges::find_if(locals, [&](const LocalVariable &v)
+                                                   { return v.name == varName; });
                     if (it == locals.end())
-                    {
                         locals.push_back({varName, parsedType, effectiveDepth});
-                        scopePrefix = GetFullScope().empty() ? "::" : GetFullScope() + "::";
-                        nature = GetVariableNature(parenDepth, effectiveDepth);
-
-                        HARVEST_DEBUG(fmt::format("NEW LOCAL VARIABLE: '{}{}' of type '{}' ({}) at depth {}",
-                                                  scopePrefix, varName, parsedType, nature, effectiveDepth));
-                    }
 
                     ParseAssignments(parsedType, effectiveDepth, varName);
                     return true;
@@ -2124,28 +1545,15 @@ namespace TokenHarvester
             return false;
         }
 
-        /**
-         * @brief Evaluates inline initialization assignments and comma-separated definition sequences.
-         * @param parsedType Active foundational type description applied over current segments.
-         * @param effectiveDepth Nested tracking depth assigned to context operations.
-         * @param currentVarName Base tag labeling the active targeted variable item.
-         */
         void ParseAssignments(std::string parsedType, int effectiveDepth, std::string currentVarName)
         {
             std::vector<std::string> expressionTokens;
-            std::string inferred = "";
-            std::string nextVar = "";
-            std::string scopePrefix = "";
-            std::string nature = "";
-            asETokenClass lookTc = asTC_UNKNOWN;
+            std::string nextVar;
             bool isAssigning = false;
 
-            while (true)
+            while (!stream.IsEOF())
             {
-                if (stream.IsEOF())
-                    break;
-                lookTc = stream.Peek(token);
-
+                asETokenClass lookTc = stream.Peek(token);
                 if ((lookTc == asTC_KEYWORD || lookTc == asTC_IDENTIFIER) && token == "function")
                 {
                     stream.Advance(token);
@@ -2157,31 +1565,20 @@ namespace TokenHarvester
                             std::string paramType = ParseDataType(engine, stream, knownClassNames);
                             if (!paramType.empty() && stream.Peek(token) == asTC_IDENTIFIER)
                             {
-                                std::string paramName = std::string(token);
+                                std::string paramName(token);
                                 stream.Advance(token);
                                 locals.push_back({paramName, paramType, currentDepth + 1});
-                                scopePrefix = GetFullScope().empty() ? "::" : GetFullScope() + "::";
-                                HARVEST_DEBUG(fmt::format("NEW LOCAL VARIABLE: '{}{}' of type '{}' (lambda parameter) at depth {}",
-                                                          scopePrefix, paramName, paramType, currentDepth + 1));
                             }
                             else
-                            {
                                 stream.Advance(token);
-                            }
                             if (stream.Peek(token) == asTC_KEYWORD && token == ",")
-                            {
                                 stream.Advance(token);
-                            }
                         }
                         if (stream.Peek(token) == asTC_KEYWORD && token == ")")
-                        {
                             stream.Advance(token);
-                        }
                     }
                     if (stream.Peek(token) == asTC_KEYWORD && token == "{")
-                    {
                         break;
-                    }
                     continue;
                 }
 
@@ -2189,37 +1586,26 @@ namespace TokenHarvester
                 {
                     if (isAssigning && parsedType.find("auto") != std::string::npos && !expressionTokens.empty())
                     {
-                        inferred = InferAutoType(expressionTokens);
-
+                        std::string inferred = InferAutoType(expressionTokens);
                         if (inferred != "auto")
                         {
                             parsedType = inferred;
-                            auto it = std::find_if(locals.begin(), locals.end(), [&](const LocalVariable &v)
-                                                   { return v.name == currentVarName; });
-
+                            auto it = std::ranges::find_if(locals, [&](const LocalVariable &v)
+                                                           { return v.name == currentVarName; });
                             if (it != locals.end())
-                            {
                                 it->typeName = parsedType;
-                            }
                         }
                     }
 
                     stream.Advance(token);
-
                     if (token == ")")
                     {
                         if (parenDepth > 0)
-                        {
                             parenDepth--;
-                        }
-
                         lastTokenStr = ")";
                     }
                     else
-                    {
                         lastTokenStr = ";";
-                    }
-
                     break;
                 }
 
@@ -2235,24 +1621,18 @@ namespace TokenHarvester
                 if (lookTc == asTC_KEYWORD && token == ",")
                 {
                     if (parenDepth > 0)
-                    {
                         break;
-                    }
 
                     if (isAssigning && parsedType.find("auto") != std::string::npos && !expressionTokens.empty())
                     {
-                        inferred = InferAutoType(expressionTokens);
-
+                        std::string inferred = InferAutoType(expressionTokens);
                         if (inferred != "auto")
                         {
                             parsedType = inferred;
-                            auto it = std::find_if(locals.begin(), locals.end(), [&](const LocalVariable &v)
-                                                   { return v.name == currentVarName; });
-
+                            auto it = std::ranges::find_if(locals, [&](const LocalVariable &v)
+                                                           { return v.name == currentVarName; });
                             if (it != locals.end())
-                            {
                                 it->typeName = parsedType;
-                            }
                         }
                     }
 
@@ -2263,9 +1643,7 @@ namespace TokenHarvester
                     stream.Peek(token);
 
                     if (IsValidDataType(engine, stream, token, knownClassNames))
-                    {
                         break;
-                    }
 
                     if (stream.Peek(token) == asTC_IDENTIFIER)
                     {
@@ -2274,60 +1652,31 @@ namespace TokenHarvester
                         lastTokenStr = nextVar;
                         currentVarName = nextVar;
 
-                        auto it = std::find_if(locals.begin(), locals.end(), [&](const LocalVariable &v)
-                                               { return v.name == nextVar; });
-
+                        auto it = std::ranges::find_if(locals, [&](const LocalVariable &v)
+                                                       { return v.name == nextVar; });
                         if (it == locals.end())
-                        {
                             locals.push_back({nextVar, parsedType, effectiveDepth});
-                            scopePrefix = GetFullScope().empty() ? "::" : GetFullScope() + "::";
-                            nature = GetVariableNature(parenDepth, effectiveDepth);
-
-                            HARVEST_DEBUG(fmt::format("NEW LOCAL VARIABLE: '{}{}' of type '{}' ({}) at depth {}",
-                                                      scopePrefix, nextVar, parsedType, nature, effectiveDepth));
-                        }
-
                         continue;
                     }
                 }
                 else
                 {
                     stream.Advance(token);
-
                     if (isAssigning && lookTc != asTC_WHITESPACE && lookTc != asTC_COMMENT)
-                    {
                         expressionTokens.push_back(std::string(token));
-                    }
-
                     if (token == "(")
-                    {
                         parenDepth++;
-                    }
                     else if (token == ")")
                     {
                         if (parenDepth > 0)
-                        {
                             parenDepth--;
-                        }
                     }
-
                     lastTokenStr = std::string(token);
                 }
             }
         }
     };
 
-    /**
-     * @brief Public parsing entry tracking stack items available at particular coordinates locations.
-     * @param engine Host compiler processing configuration context handle.
-     * @param code View covering active document code stream layout data.
-     * @param cursorAbsolutePos Absolute positioning character indicator marking targets coordinates boundaries.
-     * @param outEnclosingClass Receives the name of the active surrounding class structure definition layer if found.
-     * @param customClasses Mapped descriptors detailing custom script layout profiles.
-     * @param globalVars Collection summarizing file layer variable properties.
-     * @param globalFuncs Registry mapping globally compiled operations methods routines.
-     * @return Listing aggregating variables identified as active at selection limits.
-     */
     std::vector<LocalVariable> ScanLocalVariables(
         asIScriptEngine *engine, std::string_view code, size_t cursorAbsolutePos, std::string &outEnclosingClass,
         const std::vector<ScriptClass> &customClasses, const std::vector<GlobalVariable> &globalVars, const std::vector<GlobalFunction> &globalFuncs)
@@ -2336,40 +1685,26 @@ namespace TokenHarvester
         return scanner.Scan(outEnclosingClass);
     }
 
-    /**
-     * @brief Performs sweeps identifying and indexing free functional methods configured over root layouts.
-     * @param engine Target interface configuration platform backend pointer context.
-     * @param code Absolute character string describing the input document source stream.
-     * @return Vector listing global operations records isolated across global spaces.
-     */
     std::vector<GlobalFunction> ScanGlobalFunctions(asIScriptEngine *engine, std::string_view code)
     {
         std::vector<GlobalFunction> funcs;
-        std::vector<ScriptClass> customClasses;
         std::vector<std::string> localClasses;
         TokenStream stream(engine, code);
-        std::string lastTokenStr = "";
-        std::string parsedType = "";
-        std::string funcName = "";
-        std::string decl = "";
+        std::string lastTokenStr;
+        std::string parsedType;
+        std::string funcName;
         std::string_view token;
-        size_t savedPos = 0;
-        size_t beforeTypePos = 0;
-        asETokenClass tc = asTC_UNKNOWN;
         int currentDepth = 0;
-        bool validDeclFound = false;
 
-        customClasses = ScanCustomClasses(engine, code);
-
+        std::vector<ScriptClass> customClasses = ScanCustomClasses(engine, code);
+        localClasses.reserve(customClasses.size());
         for (const auto &c : customClasses)
-        {
             localClasses.push_back(c.name);
-        }
 
         while (!stream.IsEOF())
         {
-            savedPos = stream.GetPos();
-            tc = stream.Peek(token);
+            size_t savedPos = stream.GetPos();
+            asETokenClass tc = stream.Peek(token);
 
             if (tc == asTC_KEYWORD)
             {
@@ -2380,7 +1715,6 @@ namespace TokenHarvester
                     lastTokenStr = "{";
                     continue;
                 }
-
                 if (token == "}")
                 {
                     currentDepth--;
@@ -2397,11 +1731,10 @@ namespace TokenHarvester
                 tc = stream.Peek(token);
             }
 
-            validDeclFound = false;
-
-            if (lastTokenStr != "." && lastTokenStr != "->" && lastTokenStr != "::")
+            bool validDeclFound = false;
+            if (lastTokenStr != "." && lastTokenStr != "::")
             {
-                beforeTypePos = stream.GetPos();
+                size_t beforeTypePos = stream.GetPos();
                 parsedType = ParseDataType(engine, stream, localClasses);
 
                 if (!parsedType.empty() && stream.Peek(token) == asTC_IDENTIFIER)
@@ -2412,25 +1745,18 @@ namespace TokenHarvester
                     if (stream.Peek(token) == asTC_KEYWORD && token == "(")
                     {
                         validDeclFound = true;
-
                         if (currentDepth == 0)
                         {
-                            decl = fmt::format("{} {}()", parsedType, funcName);
-                            auto it = std::find_if(funcs.begin(), funcs.end(), [&](const GlobalFunction &f)
-                                                   { return f.name == funcName; });
-
+                            std::string decl = fmt::format("{} {}()", parsedType, funcName);
+                            auto it = std::ranges::find_if(funcs, [&](const GlobalFunction &f)
+                                                           { return f.name == funcName; });
                             if (it == funcs.end())
-                            {
                                 funcs.push_back({funcName, parsedType, decl});
-                            }
                         }
                     }
                 }
-
                 if (!validDeclFound)
-                {
                     stream.SetPos(beforeTypePos);
-                }
             }
 
             if (!validDeclFound && stream.GetPos() == savedPos)
@@ -2439,45 +1765,30 @@ namespace TokenHarvester
                 lastTokenStr = std::string(token);
             }
         }
-
         return funcs;
     }
 
-    /**
-     * @brief Isolates standalone properties configured over primary root file levels layers.
-     * @param engine Active application database connection frame runtime pointer context.
-     * @param code Main view mapping flat text rows formatting current projects records code views.
-     * @return Listing summarizing global variable metadata records isolated.
-     */
     std::vector<GlobalVariable> ScanGlobalVariables(asIScriptEngine *engine, std::string_view code)
     {
         std::vector<GlobalVariable> vars;
-        std::vector<ScriptClass> customClasses;
         std::vector<std::string> localClasses;
         TokenStream stream(engine, code);
-        std::string lastTokenStr = "";
-        std::string parsedType = "";
-        std::string varName = "";
-        std::string nextVar = "";
+        std::string lastTokenStr;
+        std::string parsedType;
+        std::string varName;
+        std::string nextVar;
         std::string_view token;
-        size_t savedPos = 0;
-        size_t beforeTypePos = 0;
-        asETokenClass tc = asTC_UNKNOWN;
-        asETokenClass lookTc = asTC_UNKNOWN;
         int currentDepth = 0;
-        bool validDeclFound = false;
 
-        customClasses = ScanCustomClasses(engine, code);
-
+        std::vector<ScriptClass> customClasses = ScanCustomClasses(engine, code);
+        localClasses.reserve(customClasses.size());
         for (const auto &c : customClasses)
-        {
             localClasses.push_back(c.name);
-        }
 
         while (!stream.IsEOF())
         {
-            savedPos = stream.GetPos();
-            tc = stream.Peek(token);
+            size_t savedPos = stream.GetPos();
+            asETokenClass tc = stream.Peek(token);
 
             if (tc == asTC_KEYWORD)
             {
@@ -2488,7 +1799,6 @@ namespace TokenHarvester
                     lastTokenStr = "{";
                     continue;
                 }
-
                 if (token == "}")
                 {
                     currentDepth--;
@@ -2505,11 +1815,10 @@ namespace TokenHarvester
                 tc = stream.Peek(token);
             }
 
-            validDeclFound = false;
-
-            if (lastTokenStr != "." && lastTokenStr != "->" && lastTokenStr != "::")
+            bool validDeclFound = false;
+            if (lastTokenStr != "." && lastTokenStr != "::")
             {
-                beforeTypePos = stream.GetPos();
+                size_t beforeTypePos = stream.GetPos();
                 parsedType = ParseDataType(engine, stream, localClasses);
 
                 if (!parsedType.empty() && stream.Peek(token) == asTC_IDENTIFIER)
@@ -2521,44 +1830,32 @@ namespace TokenHarvester
                     if (tc == asTC_KEYWORD && IsPropertySeparator(token))
                     {
                         validDeclFound = true;
-
                         if (currentDepth == 0)
                         {
-                            auto it = std::find_if(vars.begin(), vars.end(), [&](const GlobalVariable &v)
-                                                   { return v.name == varName; });
-
+                            auto it = std::ranges::find_if(vars, [&](const GlobalVariable &v)
+                                                           { return v.name == varName; });
                             if (it == vars.end())
-                            {
                                 vars.push_back({varName, parsedType});
-                            }
 
                             while (true)
                             {
-                                lookTc = stream.Peek(token);
-
+                                asETokenClass lookTc = stream.Peek(token);
                                 if (lookTc == asTC_UNKNOWN || (lookTc == asTC_KEYWORD && token == ";"))
-                                {
                                     break;
-                                }
 
                                 if (lookTc == asTC_KEYWORD && token == ",")
                                 {
                                     stream.Advance(token);
                                     lastTokenStr = ",";
-
                                     if (stream.Peek(token) == asTC_IDENTIFIER)
                                     {
                                         nextVar = std::string(token);
                                         stream.Advance(token);
                                         lastTokenStr = nextVar;
-                                        it = std::find_if(vars.begin(), vars.end(), [&](const GlobalVariable &v)
-                                                          { return v.name == nextVar; });
-
+                                        it = std::ranges::find_if(vars, [&](const GlobalVariable &v)
+                                                                  { return v.name == nextVar; });
                                         if (it == vars.end())
-                                        {
                                             vars.push_back({nextVar, parsedType});
-                                        }
-
                                         continue;
                                     }
                                 }
@@ -2571,11 +1868,8 @@ namespace TokenHarvester
                         }
                     }
                 }
-
                 if (!validDeclFound)
-                {
                     stream.SetPos(beforeTypePos);
-                }
             }
 
             if (!validDeclFound && stream.GetPos() == savedPos)
@@ -2584,7 +1878,6 @@ namespace TokenHarvester
                 lastTokenStr = std::string(token);
             }
         }
-
         return vars;
     }
-} // namespace TokenHarvester
+}

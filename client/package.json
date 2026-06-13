@@ -36,7 +36,8 @@
           "strings": "off"
         },
         "editor.suggestOnTriggerCharacters": true,
-        "editor.wordBasedSuggestions": "off"
+        "editor.wordBasedSuggestions": "off",
+        "editor.semanticHighlighting.enabled": true
       }
     }
   },
