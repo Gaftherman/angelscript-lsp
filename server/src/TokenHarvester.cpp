@@ -398,13 +398,15 @@ namespace TokenHarvester
     {
         std::string tokenStr(token);
         size_t savedPos = 0;
-        std::string_view dummy;
+        std::string_view t1;
+        std::string_view t2;
+        asETokenClass tc1 = asTC_UNKNOWN;
+        asETokenClass tc2 = asTC_UNKNOWN;
 
         if (token == "const")
         {
             return true;
         }
-
         if (IsBuiltInType(token))
         {
             return true;
@@ -414,19 +416,42 @@ namespace TokenHarvester
         {
             return true;
         }
-
         if (std::find(localClasses.begin(), localClasses.end(), tokenStr) != localClasses.end())
         {
             return true;
         }
 
         savedPos = stream.GetPos();
-        stream.Advance(dummy);
+        tc1 = stream.Peek(t1);
 
-        if (stream.Peek(dummy) == asTC_KEYWORD && dummy == "::")
+        if (tc1 == asTC_KEYWORD && t1 == "::")
         {
             stream.SetPos(savedPos);
             return true;
+        }
+
+        if (tc1 == asTC_IDENTIFIER)
+        {
+            stream.SetPos(savedPos);
+            return true;
+        }
+
+        if (tc1 == asTC_KEYWORD && (t1 == "@" || t1 == "&"))
+        {
+            stream.Advance(t1);
+            tc2 = stream.Peek(t2);
+
+            if (tc2 == asTC_KEYWORD && (t2 == "in" || t2 == "out" || t2 == "inout"))
+            {
+                stream.Advance(t2);
+                tc2 = stream.Peek(t2);
+            }
+
+            if (tc2 == asTC_IDENTIFIER)
+            {
+                stream.SetPos(savedPos);
+                return true;
+            }
         }
 
         stream.SetPos(savedPos);
@@ -444,36 +469,88 @@ namespace TokenHarvester
     {
         std::string typeName = "";
         std::string_view token;
-        asETokenClass tc = stream.Peek(token);
-        bool hasValidRoot = false;
-        int templateDepth = 0;
+        asETokenClass tc;
 
+        tc = stream.Peek(token);
         if (tc == asTC_KEYWORD && token == "const")
         {
             typeName += "const ";
             stream.Advance(token);
-            tc = stream.Peek(token);
         }
 
+        tc = stream.Peek(token);
         if (tc == asTC_KEYWORD && token == "::")
         {
             typeName += "::";
             stream.Advance(token);
-            tc = stream.Peek(token);
         }
 
-        while (tc == asTC_IDENTIFIER || (tc == asTC_KEYWORD && IsBuiltInType(token)))
+        tc = stream.Peek(token);
+
+        bool isPrimitive = false;
+        if (tc == asTC_KEYWORD)
         {
-            hasValidRoot = true;
+            isPrimitive = (token == "void" || token == "int" || token == "int8" || token == "int16" || token == "int32" || token == "int64" ||
+                           token == "uint" || token == "uint8" || token == "uint16" || token == "uint32" || token == "uint64" ||
+                           token == "float" || token == "double" || token == "bool" || token == "string" || token == "auto");
+        }
+
+        if (tc == asTC_IDENTIFIER || isPrimitive)
+        {
             typeName += std::string(token);
             stream.Advance(token);
-            tc = stream.Peek(token);
 
-            if (tc == asTC_KEYWORD && token == "::")
+            while (!stream.IsEOF())
             {
-                typeName += "::";
-                stream.Advance(token);
                 tc = stream.Peek(token);
+                if (tc == asTC_KEYWORD && token == "::")
+                {
+                    typeName += "::";
+                    stream.Advance(token);
+
+                    tc = stream.Peek(token);
+                    if (tc == asTC_IDENTIFIER)
+                    {
+                        typeName += std::string(token);
+                        stream.Advance(token);
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+        else
+        {
+            return "";
+        }
+
+        tc = stream.Peek(token);
+        if (tc == asTC_KEYWORD && token == "<")
+        {
+            typeName += "<";
+            stream.Advance(token);
+
+            int angleDepth = 1;
+            while (angleDepth > 0 && !stream.IsEOF())
+            {
+                stream.Advance(token);
+                typeName += std::string(token);
+                if (token == "<")
+                    angleDepth++;
+                else if (token == ">")
+                    angleDepth--;
+            }
+        }
+
+        while (!stream.IsEOF())
+        {
+            tc = stream.Peek(token);
+            if (tc == asTC_KEYWORD && (token == "@" || token == "&"))
+            {
+                typeName += std::string(token);
+                stream.Advance(token);
             }
             else
             {
@@ -481,68 +558,11 @@ namespace TokenHarvester
             }
         }
 
-        if (!hasValidRoot)
+        tc = stream.Peek(token);
+        if (tc == asTC_KEYWORD && (token == "in" || token == "out" || token == "inout"))
         {
-            return "";
-        }
-
-        if (tc == asTC_KEYWORD && token == "<")
-        {
-            typeName += "<";
+            typeName += " " + std::string(token);
             stream.Advance(token);
-            templateDepth = 1;
-            static_cast<void>(templateDepth);
-
-            while (templateDepth > 0 && !stream.IsEOF())
-            {
-                tc = stream.Peek(token);
-
-                if (tc == asTC_KEYWORD && token == "<")
-                {
-                    templateDepth++;
-                }
-                else if (tc == asTC_KEYWORD && token == ">")
-                {
-                    templateDepth--;
-                }
-
-                typeName += std::string(token);
-                stream.Advance(token);
-            }
-
-            tc = stream.Peek(token);
-        }
-
-        while (tc == asTC_KEYWORD && token == "@")
-        {
-            typeName += "@";
-            stream.Advance(token);
-            tc = stream.Peek(token);
-
-            if (tc == asTC_KEYWORD && token == "const")
-            {
-                typeName += "const";
-                stream.Advance(token);
-                tc = stream.Peek(token);
-            }
-        }
-
-        if (tc == asTC_KEYWORD && (token == "&" || token == "&in" || token == "&out" || token == "&inout"))
-        {
-            stream.Advance(token);
-            typeName += std::string(token);
-
-            if (token == "&")
-            {
-                tc = stream.Peek(token);
-
-                if ((tc == asTC_KEYWORD || tc == asTC_IDENTIFIER) &&
-                    (token == "in" || token == "out" || token == "inout"))
-                {
-                    stream.Advance(token);
-                    typeName += " " + std::string(token);
-                }
-            }
         }
 
         return typeName;
@@ -1500,7 +1520,7 @@ namespace TokenHarvester
                 savedPos = stream.GetPos();
                 tc = stream.Peek(token);
 
-                if (tc == asTC_KEYWORD && token == "function")
+                if ((tc == asTC_KEYWORD || tc == asTC_IDENTIFIER) && token == "function")
                 {
                     stream.Advance(token);
                     if (stream.Peek(token) == asTC_KEYWORD && token == "(")
@@ -1947,7 +1967,7 @@ namespace TokenHarvester
                             {
                                 for (const auto &m : c.methods)
                                 {
-                                    if (m.name == "tok")
+                                    if (m.name == tok)
                                     {
                                         inferredType = m.typeName;
                                         found = true;
@@ -2126,7 +2146,7 @@ namespace TokenHarvester
                     break;
                 lookTc = stream.Peek(token);
 
-                if (lookTc == asTC_KEYWORD && token == "function")
+                if ((lookTc == asTC_KEYWORD || lookTc == asTC_IDENTIFIER) && token == "function")
                 {
                     stream.Advance(token);
                     if (stream.Peek(token) == asTC_KEYWORD && token == "(")
