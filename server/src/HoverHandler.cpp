@@ -1,6 +1,6 @@
 /**
  * @file HoverHandler.cpp
- * @brief Implementation of the HoverHandler class for language server hover functionality.
+ * @brief Processes the syntactic and semantic context for Language Server Protocol (LSP) hover requests.
  */
 
 #include "HoverHandler.h"
@@ -9,7 +9,20 @@
 #include <cctype>
 #include <fmt/core.h>
 
-const std::unordered_set<std::string> HoverHandler::reservedKeywords = {
+namespace
+{
+    /**
+     * @struct FuncParam
+     * @brief File-scoped parameter metadata placeholder ensuring stable MSVC template deduction guides.
+     */
+    struct FuncParam
+    {
+        std::string pName;
+        std::string pType;
+    };
+}
+
+const std::unordered_set<std::string_view> HoverHandler::reservedKeywords = {
     "and", "auto", "bool", "break", "case", "cast", "catch", "class", "const", "continue",
     "default", "do", "double", "else", "enum", "false", "float", "for", "foreach", "funcdef",
     "if", "import", "in", "inout", "int", "interface", "int8", "int16", "int32", "int64",
@@ -17,29 +30,53 @@ const std::unordered_set<std::string> HoverHandler::reservedKeywords = {
     "switch", "true", "try", "typedef", "uint", "uint8", "uint16", "uint32", "uint64", "using",
     "void", "while", "xor"};
 
-const std::unordered_set<std::string> HoverHandler::contextualKeywords = {
+const std::unordered_set<std::string_view> HoverHandler::contextualKeywords = {
     "abstract", "delete", "explicit", "external", "final", "from", "function", "get",
     "override", "property", "set", "shared", "super", "this"};
 
-const std::unordered_set<std::string> HoverHandler::primitiveTypes = {
+const std::unordered_set<std::string_view> HoverHandler::primitiveTypes = {
     "void", "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float", "double", "bool", "auto"};
 
-const std::unordered_set<std::string> HoverHandler::storageModifiers = {
+const std::unordered_set<std::string_view> HoverHandler::storageModifiers = {
     "private", "protected", "public", "shared", "external"};
 
-HoverHandler::HoverHandler(asIScriptEngine *engine, const std::string &sourceCode, int line, int character)
-    : nativeEng(engine), originalText(sourceCode), targetLine(line), targetCharacter(character)
+const std::unordered_set<std::string_view> HoverHandler::structureKeywords = {
+    "class", "interface", "namespace", "enum", "mixin", "abstract"};
+
+const std::unordered_set<std::string_view> HoverHandler::statementKeywords = {
+    "if", "for", "foreach", "while", "return", "break", "continue", "switch", "case", "default", "cast", "try", "catch", "delete", "throw"};
+
+// =========================================================================
+// HIGH-PERFORMANCE ABSTRACTED KEYWORD PREDICATES & SCOPE UTILITIES
+// =========================================================================
+
+bool HoverHandler::IsStructureDeclarationKeyword(std::string_view txt) const noexcept
 {
+    return structureKeywords.contains(txt);
 }
 
-bool HoverHandler::IsWord(const std::string_view &s) const
+bool HoverHandler::IsStatementKeyword(std::string_view txt) const noexcept
 {
-    char c;
-    c = '\0';
+    return statementKeywords.contains(txt);
+}
+
+bool HoverHandler::IsStorageModifierKeyword(std::string_view txt) const noexcept
+{
+    return storageModifiers.contains(txt);
+}
+
+bool HoverHandler::IsPrimitiveType(std::string_view txt) const noexcept
+{
+    return primitiveTypes.contains(txt);
+}
+
+bool HoverHandler::IsWord(std::string_view s) const noexcept
+{
+    unsigned char c;
     if (s.empty())
         return false;
-    c = s[0];
-    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+    c = static_cast<unsigned char>(s[0]);
+    return std::isalnum(c) || c == '_';
 }
 
 std::string_view HoverHandler::StripAccessModifiers(std::string_view typeStr) noexcept
@@ -57,24 +94,12 @@ std::string_view HoverHandler::StripAccessModifiers(std::string_view typeStr) no
     return typeStr;
 }
 
-std::string HoverHandler::ExtractBaseTypeName(std::string_view typeStr)
+std::string_view HoverHandler::ExtractBaseTypeName(std::string_view typeStr) noexcept
 {
-    std::string baseName;
-    size_t i;
-    char c;
-
-    baseName = "";
-    i = 0;
-    for (i = 0; i < typeStr.length(); ++i)
-    {
-        c = typeStr[i];
-        if (c == '@' || c == '&' || c == ' ' || c == '<')
-        {
-            break;
-        }
-        baseName += c;
-    }
-    return baseName;
+    size_t pos = typeStr.find_first_of("@& <");
+    if (pos != std::string_view::npos)
+        return typeStr.substr(0, pos);
+    return typeStr;
 }
 
 bool HoverHandler::IsKeywordHoverException(std::string_view tokenText) const noexcept
@@ -96,19 +121,16 @@ bool HoverHandler::IsValidTemplateToken(std::string_view tokenText) const noexce
 {
     return tokenText == "::" || tokenText == "@" || tokenText == "&" ||
            tokenText == "," || tokenText == "[" || tokenText == "]" ||
-           tokenText == "?" || IsWord(std::string(tokenText));
+           tokenText == "?" || IsWord(tokenText);
 }
 
 void HoverHandler::NormalizeSignatureSpacing(std::string &signature) const
 {
-    size_t p;
-    p = 0;
-
+    size_t p = 0;
     while ((p = signature.find(" ::")) != std::string::npos)
         signature.erase(p, 1);
     while ((p = signature.find(":: ")) != std::string::npos)
         signature.erase(p + 2, 1);
-
     while ((p = signature.find("& in")) != std::string::npos)
         signature.replace(p, 4, "&in");
     while ((p = signature.find("& out")) != std::string::npos)
@@ -126,6 +148,8 @@ std::string HoverHandler::CleanSignature(std::string str)
 
     res = "";
     finalRes = "";
+    res.reserve(str.size());
+    finalRes.reserve(str.size());
 
     for (idx = 0; idx < str.size(); ++idx)
     {
@@ -150,7 +174,7 @@ std::string HoverHandler::CleanSignature(std::string str)
         }
         if (res[idx] == '>')
         {
-            if (idx + 1 < res.size() && res[idx + 1] != ' ' && res[idx + 1] != ',' && res[idx + 1] != ')' && res[idx + 1] != '>' && res[idx + 1] != '@' && res[idx + 1] != '&' && res[idx + 1] != ':')
+            if (idx + 1 < res.size() && res[idx + 1] != ' ' && res[idx + 1] != ',' && res[idx + 1] != ')' && res[idx + 1] != '>')
                 finalRes += ' ';
         }
     }
@@ -159,11 +183,20 @@ std::string HoverHandler::CleanSignature(std::string str)
     return finalRes;
 }
 
+// =========================================================================
+// STANDARD HOVER WORKFLOW ORCHESTRATION METHODS
+// =========================================================================
+
+HoverHandler::HoverHandler(asIScriptEngine *engine, std::string_view sourceCode, int line, int character)
+    : nativeEng(engine), originalText(sourceCode), targetLine(line), targetCharacter(character)
+{
+}
+
 bool HoverHandler::ParseType(size_t startIdx, size_t &nextIdx, std::string &typeStr)
 {
     size_t idx;
     int continuousWords;
-    std::string txt;
+    std::string_view txt;
     int k;
     size_t actualTypeEndCount;
     size_t tIdx;
@@ -178,12 +211,8 @@ bool HoverHandler::ParseType(size_t startIdx, size_t &nextIdx, std::string &type
 
     if (idx >= allTokens.size())
         return false;
-
     while (idx < allTokens.size() && IsStorageModifierKeyword(allTokens[idx].text))
-    {
         idx++;
-    }
-
     if (idx >= allTokens.size())
         return false;
 
@@ -205,9 +234,7 @@ bool HoverHandler::ParseType(size_t startIdx, size_t &nextIdx, std::string &type
             break;
     }
 
-    if (typeTokenIndices.empty())
-        return false;
-    if (allTokens[typeTokenIndices.back()].text == "::")
+    if (typeTokenIndices.empty() || allTokens[typeTokenIndices.back()].text == "::")
         return false;
 
     for (k = static_cast<int>(typeTokenIndices.size()) - 1; k >= 0; --k)
@@ -227,7 +254,6 @@ bool HoverHandler::ParseType(size_t startIdx, size_t &nextIdx, std::string &type
 
     if (typeTokenIndices.empty())
         return false;
-
     for (tIdx = 0; tIdx < typeTokenIndices.size(); ++tIdx)
     {
         typeStr += allTokens[typeTokenIndices[tIdx]].text;
@@ -247,10 +273,7 @@ bool HoverHandler::ParseType(size_t startIdx, size_t &nextIdx, std::string &type
                 depth++;
             else if (txt == ">")
                 depth--;
-            else if (IsValidTemplateToken(txt))
-            {
-            }
-            else
+            else if (!IsValidTemplateToken(txt))
             {
                 isLegitTemplate = false;
                 break;
@@ -312,9 +335,7 @@ void HoverHandler::TokenizePass()
     size_t pos;
     asUINT len;
     asETokenClass tc;
-    std::string tokText;
-    size_t i;
-    char c;
+    std::string_view tokText;
 
     curLine = 0;
     curChar = 0;
@@ -332,12 +353,10 @@ void HoverHandler::TokenizePass()
         }
 
         tokText = originalText.substr(pos, len);
-
         if (tc == asTC_WHITESPACE || tc == asTC_COMMENT)
         {
-            for (i = 0; i < tokText.length(); ++i)
+            for (char c : tokText)
             {
-                c = tokText[i];
                 if (c == '\n')
                 {
                     curLine++;
@@ -351,10 +370,8 @@ void HoverHandler::TokenizePass()
         }
 
         allTokens.push_back({tokText, tc, pos, pos + len, curLine, curChar});
-
-        for (i = 0; i < tokText.length(); ++i)
+        for (char c : tokText)
         {
-            c = tokText[i];
             if (c == '\n')
             {
                 curLine++;
@@ -367,7 +384,7 @@ void HoverHandler::TokenizePass()
     }
 }
 
-int HoverHandler::FindTargetTokenIdx()
+int HoverHandler::FindTargetTokenIdx() noexcept
 {
     int k;
     int startLine;
@@ -400,7 +417,6 @@ int HoverHandler::FindTargetTokenIdx()
                 {
                     return k;
                 }
-
                 segmentStart = i + 1;
                 currentLineInToken++;
             }
@@ -414,32 +430,29 @@ void HoverHandler::StructuralParsingPass()
     std::vector<ScopeFrame> openFrames;
     size_t k;
     std::string currentPrefix;
-    std::vector<ScopeFrame>::const_iterator frameIt;
     int look;
     std::string fType;
     std::string fName;
     bool hasParen;
-    std::string t;
+    std::string_view t;
     int sp;
-    std::string possibleFuncName;
+    std::string_view possibleFuncName;
     ScopeFrame top;
-    std::vector<DeclInfo>::iterator declIt;
 
     tokenScopePrefixes.resize(allTokens.size(), "");
 
     for (k = 0; k < allTokens.size(); ++k)
     {
         currentPrefix = "";
-        for (frameIt = openFrames.begin(); frameIt != openFrames.end(); ++frameIt)
+        for (const auto &frame : openFrames)
         {
-            if (frameIt->type == "namespace" || frameIt->type == "class" || frameIt->type == "interface" || frameIt->type == "mixin class" || frameIt->type == "abstract class")
+            if (frame.type == "namespace" || frame.type == "class" || frame.type == "interface" || frame.type == "mixin class" || frame.type == "abstract class")
             {
-                currentPrefix += frameIt->name + "::";
+                currentPrefix += frame.name + "::";
             }
         }
 
         tokenScopePrefixes[k] = currentPrefix;
-
         if (allTokens[k].text == "{")
         {
             look = static_cast<int>(k) - 1;
@@ -457,14 +470,13 @@ void HoverHandler::StructuralParsingPass()
 
                 if (IsStructureDeclarationKeyword(t))
                 {
-                    fType = t;
+                    fType = std::string(t);
                     if (look + 1 < static_cast<int>(allTokens.size()))
-                        fName = allTokens[look + 1].text;
+                        fName = std::string(allTokens[look + 1].text);
                     if (t == "class" && look > 0 && allTokens[look - 1].text == "mixin")
                         fType = "mixin class";
                     if (t == "class" && look > 0 && allTokens[look - 1].text == "abstract")
                         fType = "abstract class";
-
                     break;
                 }
                 look--;
@@ -474,23 +486,17 @@ void HoverHandler::StructuralParsingPass()
             {
                 sp = static_cast<int>(k) - 1;
                 while (sp >= 0 && allTokens[sp].text != "(")
-                {
                     sp--;
-                }
 
                 if (sp > 0 && IsWord(allTokens[sp - 1].text))
                 {
                     possibleFuncName = allTokens[sp - 1].text;
-
                     if (!IsStatementKeyword(possibleFuncName) && possibleFuncName != "cast")
                     {
                         fType = "function";
-                        fName = possibleFuncName;
-
+                        fName = std::string(possibleFuncName);
                         if (sp >= 2 && allTokens[sp - 2].text == "~")
-                        {
                             fName = "~" + fName;
-                        }
                     }
                     else if (possibleFuncName == "function")
                     {
@@ -501,21 +507,14 @@ void HoverHandler::StructuralParsingPass()
             }
 
             openFrames.push_back({fType, fName, k, allTokens[k].startPos});
-
             if (fType != "other" && fType != "function")
             {
                 if (fType == "namespace")
-                {
                     ProcessNamespaceRule(k, fName, currentPrefix);
-                }
                 else if (fType == "enum")
-                {
                     ProcessEnumRule(k, fName, currentPrefix);
-                }
                 else
-                {
                     ProcessClassAndInterfaceRule(k, fName, fType, currentPrefix, static_cast<size_t>(look));
-                }
             }
         }
         else if (allTokens[k].text == "}")
@@ -528,11 +527,11 @@ void HoverHandler::StructuralParsingPass()
                 if (top.type != "other")
                 {
                     structuralScopes.push_back({top.type, top.name, tokenScopePrefixes[top.openBraceIdx] + top.name, top.startPos, allTokens[k].endPos});
-                    for (declIt = declarations.begin(); declIt != declarations.end(); ++declIt)
+                    for (auto &decl : declarations)
                     {
-                        if (declIt->name == top.name && declIt->type == top.type && declIt->startPos == top.startPos)
+                        if (decl.name == top.name && decl.type == top.type && decl.startPos == top.startPos)
                         {
-                            declIt->endPos = allTokens[k].endPos;
+                            decl.endPos = allTokens[k].endPos;
                             break;
                         }
                     }
@@ -551,16 +550,18 @@ void HoverHandler::ProcessEnumRule(size_t openBraceIdx, const std::string &fName
 {
     size_t enumScan;
     int enumVal;
+    std::string eNameStr;
 
     declarations.push_back({fName, currentPrefix + fName, "enum", "enum " + currentPrefix + fName, allTokens[openBraceIdx].startPos, std::string::npos});
-
     enumScan = openBraceIdx + 1;
     enumVal = 0;
+
     while (enumScan < allTokens.size() && allTokens[enumScan].text != "}")
     {
         if (allTokens[enumScan].tokenClass == asTC_IDENTIFIER && IsWord(allTokens[enumScan].text))
         {
-            declarations.push_back({allTokens[enumScan].text, currentPrefix + fName + "::" + allTokens[enumScan].text, "enum_value", "enum " + currentPrefix + fName + "::" + allTokens[enumScan].text + " = " + std::to_string(enumVal), allTokens[enumScan].startPos, allTokens[enumScan].endPos});
+            eNameStr = std::string(allTokens[enumScan].text);
+            declarations.push_back({eNameStr, currentPrefix + fName + "::" + eNameStr, "enum_value", "enum " + currentPrefix + fName + "::" + eNameStr + " = " + std::to_string(enumVal), allTokens[enumScan].startPos, allTokens[enumScan].endPos});
             enumVal++;
         }
         enumScan++;
@@ -570,10 +571,9 @@ void HoverHandler::ProcessEnumRule(size_t openBraceIdx, const std::string &fName
 void HoverHandler::ProcessClassAndInterfaceRule(size_t openBraceIdx, const std::string &fName, const std::string &fType, const std::string &currentPrefix, size_t lookaheadIdx)
 {
     size_t inheritScan;
-    std::string tokenText;
+    std::string_view tokenText;
 
     declarations.push_back({fName, currentPrefix + fName, fType, fType + " " + currentPrefix + fName, allTokens[openBraceIdx].startPos, std::string::npos});
-
     if (fType == "class" || fType == "interface" || fType == "mixin class" || fType == "abstract class")
     {
         inheritScan = lookaheadIdx + 2;
@@ -582,7 +582,7 @@ void HoverHandler::ProcessClassAndInterfaceRule(size_t openBraceIdx, const std::
             tokenText = allTokens[inheritScan].text;
             if (IsWord(tokenText) && !IsStorageModifierKeyword(tokenText))
             {
-                classInheritanceMapper[fName].push_back(tokenText);
+                classInheritanceMapper[fName].push_back(std::string(tokenText));
             }
             inheritScan++;
         }
@@ -606,12 +606,14 @@ void HoverHandler::ProcessFuncDefRule(size_t &idxScan, const std::string &curren
             nextIdx++;
         if (nextIdx < allTokens.size() && IsWord(allTokens[nextIdx].text))
         {
-            fdName = allTokens[nextIdx].text;
+            fdName = std::string(allTokens[nextIdx].text);
             fullDecl = "funcdef " + typeStr + " " + fdName;
             paramScan = nextIdx + 1;
+
             while (paramScan < allTokens.size() && allTokens[paramScan].text != ";")
             {
-                fullDecl += " " + allTokens[paramScan].text;
+                fullDecl += " ";
+                fullDecl += allTokens[paramScan].text;
                 paramScan++;
             }
             endP = (paramScan < allTokens.size()) ? allTokens[paramScan].endPos : allTokens[paramScan - 1].endPos;
@@ -626,17 +628,11 @@ void HoverHandler::ProcessFuncDefRule(size_t &idxScan, const std::string &curren
 void HoverHandler::ProcessStatementRule(size_t &idxScan)
 {
     if (allTokens[idxScan].text == "for")
-    {
         ProcessForLoopRule(idxScan);
-    }
     else if (allTokens[idxScan].text == "foreach")
-    {
         ProcessForeachLoopRule(idxScan);
-    }
     else
-    {
         idxScan++;
-    }
 }
 
 void HoverHandler::ProcessForLoopRule(size_t &idxScan)
@@ -650,7 +646,6 @@ void HoverHandler::ProcessForLoopRule(size_t &idxScan)
     size_t activeFuncStart;
     size_t activeFuncEnd;
     size_t entPos;
-    std::vector<ScopeRange>::const_iterator scopeIt;
 
     loopIdx = idxScan + 1;
     if (loopIdx < allTokens.size() && allTokens[loopIdx].text == "(")
@@ -659,34 +654,30 @@ void HoverHandler::ProcessForLoopRule(size_t &idxScan)
         loopTypeStr = "";
         if (ParseType(loopIdx + 1, nextIdx, loopTypeStr))
         {
-            if (nextIdx < allTokens.size() && IsWord(allTokens[nextIdx].text) && !reservedKeywords.count(allTokens[nextIdx].text))
+            if (nextIdx < allTokens.size() && IsWord(allTokens[nextIdx].text) && !reservedKeywords.contains(allTokens[nextIdx].text))
             {
-                loopVarName = allTokens[nextIdx].text;
+                loopVarName = std::string(allTokens[nextIdx].text);
                 nameTokenIdx = nextIdx;
 
-                if (IsAutoDeducibleType(loopTypeStr))
+                if (IsAutoDeducibleType(loopTypeStr) && nameTokenIdx + 1 < allTokens.size() && allTokens[nameTokenIdx + 1].text == "=")
                 {
-                    if (nameTokenIdx + 1 < allTokens.size() && allTokens[nameTokenIdx + 1].text == "=")
-                    {
-                        deduced = DeduceTypeFromRHS(nameTokenIdx + 2);
-                        if (deduced != "auto")
-                        {
-                            loopTypeStr = deduced;
-                        }
-                    }
+                    deduced = DeduceTypeFromRHS(nameTokenIdx + 2);
+                    if (deduced != "auto")
+                        loopTypeStr = deduced;
                 }
 
                 activeFuncStart = std::string::npos;
                 activeFuncEnd = std::string::npos;
                 entPos = allTokens[nameTokenIdx].startPos;
-                for (scopeIt = structuralScopes.begin(); scopeIt != structuralScopes.end(); ++scopeIt)
+
+                for (const auto &scope : structuralScopes)
                 {
-                    if (entPos >= scopeIt->startPos && entPos <= scopeIt->endPos && scopeIt->type == "function")
+                    if (entPos >= scope.startPos && entPos <= scope.endPos && scope.type == "function")
                     {
-                        if (activeFuncStart == std::string::npos || scopeIt->startPos > activeFuncStart)
+                        if (activeFuncStart == std::string::npos || scope.startPos > activeFuncStart)
                         {
-                            activeFuncStart = scopeIt->startPos;
-                            activeFuncEnd = scopeIt->endPos;
+                            activeFuncStart = scope.startPos;
+                            activeFuncEnd = scope.endPos;
                         }
                     }
                 }
@@ -709,7 +700,6 @@ void HoverHandler::ProcessForeachLoopRule(size_t &idxScan)
     std::string loopVarName;
     size_t nameTokenIdx;
     std::string containerName;
-    std::vector<DeclInfo>::const_reverse_iterator it;
     size_t lastSpace;
     std::string containerType;
     size_t startAngle;
@@ -717,7 +707,6 @@ void HoverHandler::ProcessForeachLoopRule(size_t &idxScan)
     size_t activeFuncStart;
     size_t activeFuncEnd;
     size_t entPos;
-    std::vector<ScopeRange>::const_iterator scopeIt;
 
     loopIdx = idxScan + 1;
     if (loopIdx < allTokens.size() && allTokens[loopIdx].text == "(")
@@ -726,23 +715,23 @@ void HoverHandler::ProcessForeachLoopRule(size_t &idxScan)
         loopTypeStr = "";
         if (ParseType(loopIdx + 1, nextIdx, loopTypeStr))
         {
-            if (nextIdx < allTokens.size() && IsWord(allTokens[nextIdx].text) && !reservedKeywords.count(allTokens[nextIdx].text))
+            if (nextIdx < allTokens.size() && IsWord(allTokens[nextIdx].text) && !reservedKeywords.contains(allTokens[nextIdx].text))
             {
-                loopVarName = allTokens[nextIdx].text;
+                loopVarName = std::string(allTokens[nextIdx].text);
                 nameTokenIdx = nextIdx;
-
                 containerName = "";
+
                 if (nextIdx + 1 < allTokens.size() && allTokens[nextIdx + 1].text == "in")
                 {
                     if (nextIdx + 2 < allTokens.size() && IsWord(allTokens[nextIdx + 2].text))
                     {
-                        containerName = allTokens[nextIdx + 2].text;
+                        containerName = std::string(allTokens[nextIdx + 2].text);
                     }
                 }
 
                 if (IsAutoDeducibleType(loopTypeStr) && !containerName.empty())
                 {
-                    for (it = declarations.rbegin(); it != declarations.rend(); ++it)
+                    for (auto it = declarations.rbegin(); it != declarations.rend(); ++it)
                     {
                         if (it->name == containerName)
                         {
@@ -765,14 +754,15 @@ void HoverHandler::ProcessForeachLoopRule(size_t &idxScan)
                 activeFuncStart = std::string::npos;
                 activeFuncEnd = std::string::npos;
                 entPos = allTokens[nameTokenIdx].startPos;
-                for (scopeIt = structuralScopes.begin(); scopeIt != structuralScopes.end(); ++scopeIt)
+
+                for (const auto &scope : structuralScopes)
                 {
-                    if (entPos >= scopeIt->startPos && entPos <= scopeIt->endPos && scopeIt->type == "function")
+                    if (entPos >= scope.startPos && entPos <= scope.endPos && scope.type == "function")
                     {
-                        if (activeFuncStart == std::string::npos || scopeIt->startPos > activeFuncStart)
+                        if (activeFuncStart == std::string::npos || scope.startPos > activeFuncStart)
                         {
-                            activeFuncStart = scopeIt->startPos;
-                            activeFuncEnd = scopeIt->endPos;
+                            activeFuncStart = scope.startPos;
+                            activeFuncEnd = scope.endPos;
                         }
                     }
                 }
@@ -787,14 +777,36 @@ void HoverHandler::ProcessForeachLoopRule(size_t &idxScan)
     idxScan++;
 }
 
+/**
+ * @brief Abstracted helper scanning sequential multi-variable chains separating by commas on a single expression line.
+ */
+static size_t ScanInlineChainedDeclarations(const std::vector<HoverHandler::TokenInfo> &allTokens, size_t startIdx, size_t boundaryLimit) noexcept
+{
+    size_t index = startIdx;
+    int squareBracketDepth = 0;
+
+    while (index < boundaryLimit)
+    {
+        std::string_view tokenVal = allTokens[index].text;
+        if (tokenVal == "(" || tokenVal == "[" || tokenVal == "{")
+            squareBracketDepth++;
+        else if (tokenVal == ")" || tokenVal == "]" || tokenVal == "}")
+            squareBracketDepth--;
+        else if (squareBracketDepth == 0 && (tokenVal == "," || tokenVal == ";"))
+            break;
+        index++;
+    }
+    return index;
+}
+
 void HoverHandler::ProcessScriptRule()
 {
     size_t idxScan;
-    std::string txt;
+    std::string_view txt;
     std::string currentPrefix;
     size_t nextIdx;
     std::string typeStr;
-    std::string baseType;
+    std::string_view baseType;
     size_t innerScan;
     size_t nameIdx;
     std::string entityName;
@@ -805,7 +817,6 @@ void HoverHandler::ProcessScriptRule()
     size_t activeClassStart;
     size_t activeClassEnd;
     size_t entPos;
-    std::vector<ScopeRange>::const_iterator scopeIt;
     size_t closeParen;
     int pDepth;
     size_t modScan;
@@ -817,22 +828,14 @@ void HoverHandler::ProcessScriptRule()
     std::string ptStr;
     size_t tIndex;
     size_t functionEndPos;
-    std::vector<ScopeRange>::const_iterator funcScopeIt;
     std::string paramsStr;
     size_t pIndex;
     std::string finalTypeStr;
     std::string deduced;
     size_t searchComma;
-    int sqDepth;
-    std::string sTxt;
     size_t innerProp;
     bool statementMatched;
 
-    struct FuncParam
-    {
-        std::string pName;
-        std::string pType;
-    };
     std::vector<FuncParam> funcParams;
 
     idxScan = 0;
@@ -841,19 +844,15 @@ void HoverHandler::ProcessScriptRule()
         txt = allTokens[idxScan].text;
         currentPrefix = tokenScopePrefixes[idxScan];
 
-        if (IsStructureDeclarationKeyword(txt))
-        {
-            idxScan++;
-            continue;
-        }
-        if (IsStorageModifierKeyword(txt))
+        if (IsStructureDeclarationKeyword(txt) || IsStorageModifierKeyword(txt))
         {
             idxScan++;
             continue;
         }
         if (txt == "typedef" && idxScan + 2 < allTokens.size())
         {
-            declarations.push_back({allTokens[idxScan + 2].text, allTokens[idxScan + 2].text, "typedef", "typedef " + allTokens[idxScan + 1].text + " " + allTokens[idxScan + 2].text, allTokens[idxScan + 2].startPos, allTokens[idxScan + 2].endPos});
+            std::string tdName(allTokens[idxScan + 2].text);
+            declarations.push_back({tdName, tdName, "typedef", "typedef " + std::string(allTokens[idxScan + 1].text) + " " + tdName, allTokens[idxScan + 2].startPos, allTokens[idxScan + 2].endPos});
             idxScan += 3;
             continue;
         }
@@ -863,7 +862,6 @@ void HoverHandler::ProcessScriptRule()
             ProcessStatementRule(idxScan);
             continue;
         }
-
         if (txt == "funcdef")
         {
             ProcessFuncDefRule(idxScan, currentPrefix);
@@ -880,7 +878,6 @@ void HoverHandler::ProcessScriptRule()
                 continue;
             }
             baseType = allTokens[idxScan].text;
-
             if (IsStatementKeyword(baseType))
             {
                 idxScan++;
@@ -890,10 +887,10 @@ void HoverHandler::ProcessScriptRule()
             statementMatched = false;
             innerScan = nextIdx;
 
-            while (innerScan < allTokens.size() && IsWord(allTokens[innerScan].text) && !reservedKeywords.count(allTokens[innerScan].text))
+            while (innerScan < allTokens.size() && IsWord(allTokens[innerScan].text) && !reservedKeywords.contains(allTokens[innerScan].text))
             {
                 nameIdx = innerScan;
-                entityName = allTokens[nameIdx].text;
+                entityName = std::string(allTokens[nameIdx].text);
                 activeFuncName = "";
                 activeFuncStart = std::string::npos;
                 activeFuncEnd = std::string::npos;
@@ -902,27 +899,21 @@ void HoverHandler::ProcessScriptRule()
                 activeClassEnd = std::string::npos;
                 entPos = allTokens[nameIdx].startPos;
 
-                for (scopeIt = structuralScopes.begin(); scopeIt != structuralScopes.end(); ++scopeIt)
+                for (const auto &scope : structuralScopes)
                 {
-                    if (entPos >= scopeIt->startPos && entPos <= scopeIt->endPos)
+                    if (entPos >= scope.startPos && entPos <= scope.endPos)
                     {
-                        if (scopeIt->type == "function")
+                        if (scope.type == "function" && (activeFuncStart == std::string::npos || scope.startPos > activeFuncStart))
                         {
-                            if (activeFuncStart == std::string::npos || scopeIt->startPos > activeFuncStart)
-                            {
-                                activeFuncName = scopeIt->name;
-                                activeFuncStart = scopeIt->startPos;
-                                activeFuncEnd = scopeIt->endPos;
-                            }
+                            activeFuncName = scope.name;
+                            activeFuncStart = scope.startPos;
+                            activeFuncEnd = scope.endPos;
                         }
-                        else if (scopeIt->type == "class" || scopeIt->type == "interface" || scopeIt->type == "mixin class" || scopeIt->type == "abstract class")
+                        else if (scope.type != "function" && (activeClassStart == std::string::npos || scope.startPos > activeClassStart))
                         {
-                            if (activeClassStart == std::string::npos || scopeIt->startPos > activeClassStart)
-                            {
-                                activeClassName = scopeIt->name;
-                                activeClassStart = scopeIt->startPos;
-                                activeClassEnd = scopeIt->endPos;
-                            }
+                            activeClassName = scope.name;
+                            activeClassStart = scope.startPos;
+                            activeClassEnd = scope.endPos;
                         }
                     }
                 }
@@ -944,8 +935,11 @@ void HoverHandler::ProcessScriptRule()
                     modifiers = "";
                     while (modScan < allTokens.size() && allTokens[modScan].text != ";" && allTokens[modScan].text != "{" && allTokens[modScan].text != ",")
                     {
-                        if (contextualKeywords.count(allTokens[modScan].text) || reservedKeywords.count(allTokens[modScan].text))
-                            modifiers += " " + allTokens[modScan].text;
+                        if (contextualKeywords.contains(allTokens[modScan].text) || reservedKeywords.contains(allTokens[modScan].text))
+                        {
+                            modifiers += " ";
+                            modifiers += allTokens[modScan].text;
+                        }
                         modScan++;
                     }
 
@@ -957,14 +951,13 @@ void HoverHandler::ProcessScriptRule()
                     {
                         funcParams.clear();
                         pToks.clear();
-
                         for (kLoop = nameIdx + 2; kLoop < closeParen; ++kLoop)
                         {
                             if (allTokens[kLoop].text == "," || kLoop == closeParen - 1)
                             {
                                 if (kLoop == closeParen - 1 && allTokens[kLoop].text != ",")
                                     pToks.push_back(allTokens[kLoop]);
-                                if (!pToks.empty() && IsWord(pToks.back().text) && !reservedKeywords.count(pToks.back().text))
+                                if (!pToks.empty() && IsWord(pToks.back().text) && !reservedKeywords.contains(pToks.back().text))
                                 {
                                     nTok = pToks.back();
                                     pToks.pop_back();
@@ -975,7 +968,7 @@ void HoverHandler::ProcessScriptRule()
                                             ptStr += " ";
                                         ptStr += pToks[tIndex].text;
                                     }
-                                    funcParams.push_back({nTok.text, ptStr});
+                                    funcParams.push_back(FuncParam{std::string(nTok.text), ptStr});
                                 }
                                 pToks.clear();
                             }
@@ -986,11 +979,11 @@ void HoverHandler::ProcessScriptRule()
                         functionEndPos = allTokens[closeParen].endPos;
                         if (modScan < allTokens.size() && allTokens[modScan].text == "{")
                         {
-                            for (funcScopeIt = structuralScopes.begin(); funcScopeIt != structuralScopes.end(); ++funcScopeIt)
+                            for (const auto &funcScope : structuralScopes)
                             {
-                                if (funcScopeIt->type == "function" && funcScopeIt->name == entityName && funcScopeIt->startPos == allTokens[modScan].startPos)
+                                if (funcScope.type == "function" && funcScope.name == entityName && funcScope.startPos == allTokens[modScan].startPos)
                                 {
-                                    functionEndPos = funcScopeIt->endPos;
+                                    functionEndPos = funcScope.endPos;
                                     break;
                                 }
                             }
@@ -1005,7 +998,6 @@ void HoverHandler::ProcessScriptRule()
                         }
 
                         declarations.push_back({entityName, currentPrefix + entityName, "function", typeStr + " " + currentPrefix + entityName + "(" + paramsStr + ")" + modifiers, allTokens[nameIdx].startPos, functionEndPos});
-
                         if (functionEndPos != std::string::npos)
                         {
                             for (const auto &fp : funcParams)
@@ -1019,17 +1011,14 @@ void HoverHandler::ProcessScriptRule()
                     else
                     {
                         finalTypeStr = typeStr;
-                        if (IsAutoDeducibleType(typeStr))
+                        if (IsAutoDeducibleType(typeStr) && allTokens[nameIdx + 1].text == "=" && nameIdx + 2 < allTokens.size())
                         {
-                            if (allTokens[nameIdx + 1].text == "=" && nameIdx + 2 < allTokens.size())
+                            deduced = DeduceTypeFromRHS(nameIdx + 2);
+                            if (deduced != "auto")
                             {
-                                deduced = DeduceTypeFromRHS(nameIdx + 2);
-                                if (deduced != "auto")
-                                {
-                                    finalTypeStr = deduced;
-                                    if (typeStr.find('@') != std::string::npos && finalTypeStr.find('@') == std::string::npos)
-                                        finalTypeStr += "@";
-                                }
+                                finalTypeStr = deduced;
+                                if (typeStr.find('@') != std::string::npos && finalTypeStr.find('@') == std::string::npos)
+                                    finalTypeStr += "@";
                             }
                         }
 
@@ -1040,31 +1029,15 @@ void HoverHandler::ProcessScriptRule()
                         else
                             declarations.push_back({entityName, currentPrefix + entityName, "global_variable", finalTypeStr + " " + currentPrefix + entityName, allTokens[nameIdx].startPos, std::string::npos});
 
-                        searchComma = closeParen + 1;
-                        sqDepth = 0;
-                        while (searchComma < allTokens.size())
-                        {
-                            sTxt = allTokens[searchComma].text;
-                            if (sTxt == "(" || sTxt == "[" || sTxt == "{")
-                                sqDepth++;
-                            else if (sTxt == ")" || sTxt == "]" || sTxt == "}")
-                                sqDepth--;
-                            else if (sqDepth == 0 && (sTxt == "," || sTxt == ";"))
-                                break;
-                            searchComma++;
-                        }
-
+                        searchComma = ScanInlineChainedDeclarations(allTokens, closeParen + 1, allTokens.size());
                         if (searchComma < allTokens.size() && allTokens[searchComma].text == ",")
                         {
                             innerScan = searchComma + 1;
                             continue;
                         }
-                        else
-                        {
-                            idxScan = (searchComma < allTokens.size()) ? searchComma + 1 : searchComma;
-                            statementMatched = true;
-                            break;
-                        }
+                        idxScan = (searchComma < allTokens.size()) ? searchComma + 1 : searchComma;
+                        statementMatched = true;
+                        break;
                     }
                 }
                 else if (nameIdx + 1 < allTokens.size() && allTokens[nameIdx + 1].text == "{")
@@ -1074,10 +1047,12 @@ void HoverHandler::ProcessScriptRule()
                     while (innerProp < allTokens.size() && allTokens[innerProp].text != "}")
                     {
                         if (allTokens[innerProp].text == "const" || allTokens[innerProp].text == "override")
-                            modifiers += " " + allTokens[innerProp].text;
+                        {
+                            modifiers += " ";
+                            modifiers += allTokens[innerProp].text;
+                        }
                         innerProp++;
                     }
-
                     declarations.push_back({entityName, currentPrefix + entityName, "property", typeStr + " " + currentPrefix + entityName + modifiers, allTokens[nameIdx].startPos, allTokens[innerProp].endPos});
                     idxScan = innerProp + 1;
                     statementMatched = true;
@@ -1086,17 +1061,14 @@ void HoverHandler::ProcessScriptRule()
                 else if (nameIdx + 1 < allTokens.size() && (allTokens[nameIdx + 1].text == ";" || allTokens[nameIdx + 1].text == "=" || allTokens[nameIdx + 1].text == "," || allTokens[nameIdx + 1].text == "[" || allTokens[nameIdx + 1].text == ")"))
                 {
                     finalTypeStr = typeStr;
-                    if (IsAutoDeducibleType(typeStr))
+                    if (IsAutoDeducibleType(typeStr) && allTokens[nameIdx + 1].text == "=" && nameIdx + 2 < allTokens.size())
                     {
-                        if (allTokens[nameIdx + 1].text == "=" && nameIdx + 2 < allTokens.size())
+                        deduced = DeduceTypeFromRHS(nameIdx + 2);
+                        if (deduced != "auto")
                         {
-                            deduced = DeduceTypeFromRHS(nameIdx + 2);
-                            if (deduced != "auto")
-                            {
-                                finalTypeStr = deduced;
-                                if (typeStr.find('@') != std::string::npos && finalTypeStr.find('@') == std::string::npos)
-                                    finalTypeStr += "@";
-                            }
+                            finalTypeStr = deduced;
+                            if (typeStr.find('@') != std::string::npos && finalTypeStr.find('@') == std::string::npos)
+                                finalTypeStr += "@";
                         }
                     }
 
@@ -1107,35 +1079,18 @@ void HoverHandler::ProcessScriptRule()
                     else
                         declarations.push_back({entityName, currentPrefix + entityName, "global_variable", finalTypeStr + " " + currentPrefix + entityName, allTokens[nameIdx].startPos, std::string::npos});
 
-                    searchComma = nameIdx + 1;
-                    sqDepth = 0;
-                    while (searchComma < allTokens.size())
-                    {
-                        sTxt = allTokens[searchComma].text;
-                        if (sTxt == "(" || sTxt == "[" || sTxt == "{")
-                            sqDepth++;
-                        else if (sTxt == ")" || sTxt == "]" || sTxt == "}")
-                            sqDepth--;
-                        else if (sqDepth == 0 && (sTxt == "," || sTxt == ";"))
-                            break;
-                        searchComma++;
-                    }
-
+                    searchComma = ScanInlineChainedDeclarations(allTokens, nameIdx + 1, allTokens.size());
                     if (searchComma < allTokens.size() && allTokens[searchComma].text == ",")
                     {
                         innerScan = searchComma + 1;
                         continue;
                     }
-                    else
-                    {
-                        idxScan = (searchComma < allTokens.size()) ? searchComma + 1 : searchComma;
-                        statementMatched = true;
-                        break;
-                    }
+                    idxScan = (searchComma < allTokens.size()) ? searchComma + 1 : searchComma;
+                    statementMatched = true;
+                    break;
                 }
                 break;
             }
-
             if (statementMatched)
                 continue;
             idxScan = nextIdx;
@@ -1158,12 +1113,10 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
     std::string inferredRet;
     int lookBack;
     std::string targetVar;
-    std::vector<DeclInfo>::const_reverse_iterator it;
     size_t spacePos;
     size_t modScan;
     size_t bodyBraceIdx;
     size_t functionEndPos;
-    std::vector<ScopeRange>::const_iterator scopeIt;
     std::string paramsStr;
     size_t p;
     std::string hoverTxt;
@@ -1171,7 +1124,7 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
     size_t scanIdx;
     size_t endBraceTokenIdx;
     size_t lambdaIdxScan;
-    std::string lTxt;
+    std::string_view lTxt;
     size_t loopIdx;
     size_t nextIdxLoop;
     std::string loopTypeStr;
@@ -1185,7 +1138,7 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
     std::string deducedFor;
     std::string typeStr;
     size_t nextIdx;
-    std::string baseType;
+    std::string_view baseType;
     size_t innerScan;
     bool advanced;
     size_t nameIdxLocal;
@@ -1193,15 +1146,8 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
     std::string finalTypeStr;
     std::string deducedLocal;
     size_t searchComma;
-    int sqDepth;
-    std::string sTxt;
     std::string_view accessStrippedView;
 
-    struct FuncParam
-    {
-        std::string pName;
-        std::string pType;
-    };
     std::vector<FuncParam> funcParams;
 
     if (allTokens[k].text == "function" && k + 1 < allTokens.size() && allTokens[k + 1].text == "(")
@@ -1228,7 +1174,7 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
             {
                 if (idxP == closeParen - 1 && allTokens[idxP].text != ",")
                     pToks.push_back(allTokens[idxP]);
-                if (!pToks.empty() && IsWord(pToks.back().text) && !reservedKeywords.count(pToks.back().text))
+                if (!pToks.empty() && IsWord(pToks.back().text) && !reservedKeywords.contains(pToks.back().text))
                 {
                     nTok = pToks.back();
                     pToks.pop_back();
@@ -1239,7 +1185,7 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
                             ptStr += " ";
                         ptStr += pToks[t].text;
                     }
-                    funcParams.push_back({nTok.text, ptStr});
+                    funcParams.push_back(FuncParam{std::string(nTok.text), ptStr});
                 }
                 pToks.clear();
             }
@@ -1262,8 +1208,8 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
 
         if (lookBack >= 0 && IsWord(allTokens[lookBack].text))
         {
-            targetVar = allTokens[lookBack].text;
-            for (it = declarations.rbegin(); it != declarations.rend(); ++it)
+            targetVar = std::string(allTokens[lookBack].text);
+            for (auto it = declarations.rbegin(); it != declarations.rend(); ++it)
             {
                 if (it->name == targetVar && (it->type == "local_variable" || it->type == "property" || it->type == "global_variable" || it->type == "parameter"))
                 {
@@ -1272,7 +1218,6 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
                     {
                         accessStrippedView = StripAccessModifiers(std::string_view(it->hoverText).substr(0, spacePos));
                         inferredRet = std::string(accessStrippedView);
-
                         while (!inferredRet.empty() && (inferredRet.back() == '@' || inferredRet.back() == '&'))
                             inferredRet.pop_back();
                     }
@@ -1289,11 +1234,11 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
         functionEndPos = allTokens[closeParen].endPos;
         if (bodyBraceIdx != std::string::npos)
         {
-            for (scopeIt = structuralScopes.begin(); scopeIt != structuralScopes.end(); ++scopeIt)
+            for (const auto &scope : structuralScopes)
             {
-                if (scopeIt->type == "function" && scopeIt->startPos == allTokens[bodyBraceIdx].startPos)
+                if (scope.type == "function" && scope.startPos == allTokens[bodyBraceIdx].startPos)
                 {
-                    functionEndPos = scopeIt->endPos;
+                    functionEndPos = scope.endPos;
                     break;
                 }
             }
@@ -1309,23 +1254,23 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
 
         hoverTxt = inferredRet + " function(" + paramsStr + ")";
         declarations.push_back({"function", "function", "lambda", hoverTxt, allTokens[nameIdx].startPos, functionEndPos});
-
-        for (const auto &fp : funcParams)
-            declarations.push_back({fp.pName, fp.pName, "parameter", fp.pType + " " + fp.pName, allTokens[nameIdx].startPos, functionEndPos});
+        if (functionEndPos != std::string::npos)
+        {
+            for (const auto &fp : funcParams)
+                declarations.push_back({fp.pName, fp.pName, "parameter", fp.pType + " " + fp.pName, allTokens[nameIdx].startPos, functionEndPos});
+        }
 
         if (bodyBraceIdx != std::string::npos)
         {
             lambdaBraceDepth = 1;
             scanIdx = bodyBraceIdx + 1;
             endBraceTokenIdx = bodyBraceIdx;
-
             while (scanIdx < allTokens.size() && lambdaBraceDepth > 0)
             {
                 if (allTokens[scanIdx].text == "{")
                     lambdaBraceDepth++;
                 else if (allTokens[scanIdx].text == "}")
                     lambdaBraceDepth--;
-
                 if (lambdaBraceDepth == 0)
                 {
                     endBraceTokenIdx = scanIdx;
@@ -1338,7 +1283,6 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
             while (lambdaIdxScan < endBraceTokenIdx)
             {
                 lTxt = allTokens[lambdaIdxScan].text;
-
                 if (lTxt == "foreach")
                 {
                     loopIdx = lambdaIdxScan + 1;
@@ -1348,21 +1292,18 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
                         loopTypeStr = "";
                         if (ParseType(loopIdx + 1, nextIdxLoop, loopTypeStr))
                         {
-                            if (nextIdxLoop < endBraceTokenIdx && IsWord(allTokens[nextIdxLoop].text) && !reservedKeywords.count(allTokens[nextIdxLoop].text))
+                            if (nextIdxLoop < endBraceTokenIdx && IsWord(allTokens[nextIdxLoop].text) && !reservedKeywords.contains(allTokens[nextIdxLoop].text))
                             {
-                                loopVarName = allTokens[nextIdxLoop].text;
+                                loopVarName = std::string(allTokens[nextIdxLoop].text);
                                 containerName = "";
-                                if (nextIdxLoop + 1 < endBraceTokenIdx && allTokens[nextIdxLoop + 1].text == "in")
+                                if (nextIdxLoop + 1 < endBraceTokenIdx && allTokens[nextIdxLoop + 1].text == "in" && nextIdxLoop + 2 < endBraceTokenIdx && IsWord(allTokens[nextIdxLoop + 2].text))
                                 {
-                                    if (nextIdxLoop + 2 < endBraceTokenIdx && IsWord(allTokens[nextIdxLoop + 2].text))
-                                    {
-                                        containerName = allTokens[nextIdxLoop + 2].text;
-                                    }
+                                    containerName = std::string(allTokens[nextIdxLoop + 2].text);
                                 }
 
                                 if (IsAutoDeducibleType(loopTypeStr) && !containerName.empty())
                                 {
-                                    for (it = declarations.rbegin(); it != declarations.rend(); ++it)
+                                    for (auto it = declarations.rbegin(); it != declarations.rend(); ++it)
                                     {
                                         if (it->name == containerName)
                                         {
@@ -1373,9 +1314,7 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
                                                 startAngle = containerType.find('<');
                                                 endAngle = containerType.rfind('>');
                                                 if (startAngle != std::string::npos && endAngle != std::string::npos && endAngle > startAngle)
-                                                {
                                                     loopTypeStr = containerType.substr(startAngle + 1, endAngle - startAngle - 1);
-                                                }
                                             }
                                             break;
                                         }
@@ -1398,21 +1337,15 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
                         loopTypeStr = "";
                         if (ParseType(loopIdx + 1, nextIdxLoop, loopTypeStr))
                         {
-                            if (nextIdxLoop < endBraceTokenIdx && IsWord(allTokens[nextIdxLoop].text) && !reservedKeywords.count(allTokens[nextIdxLoop].text))
+                            if (nextIdxLoop < endBraceTokenIdx && IsWord(allTokens[nextIdxLoop].text) && !reservedKeywords.contains(allTokens[nextIdxLoop].text))
                             {
-                                loopVarName = allTokens[nextIdxLoop].text;
+                                loopVarName = std::string(allTokens[nextIdxLoop].text);
                                 nameTokenIdx = nextIdxLoop;
-
-                                if (IsAutoDeducibleType(loopTypeStr))
+                                if (IsAutoDeducibleType(loopTypeStr) && nameTokenIdx + 1 < endBraceTokenIdx && allTokens[nameTokenIdx + 1].text == "=")
                                 {
-                                    if (nameTokenIdx + 1 < endBraceTokenIdx && allTokens[nameTokenIdx + 1].text == "=")
-                                    {
-                                        deducedFor = DeduceTypeFromRHS(nameTokenIdx + 2);
-                                        if (deducedFor != "auto")
-                                        {
-                                            loopTypeStr = deducedFor;
-                                        }
-                                    }
+                                    deducedFor = DeduceTypeFromRHS(nameTokenIdx + 2);
+                                    if (deducedFor != "auto")
+                                        loopTypeStr = deducedFor;
                                 }
                                 declarations.push_back({loopVarName, loopVarName, "local_variable", loopTypeStr + " " + loopVarName, allTokens[nameTokenIdx].startPos, functionEndPos});
                             }
@@ -1424,7 +1357,6 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
 
                 typeStr = "";
                 nextIdx = lambdaIdxScan;
-
                 if (ParseType(lambdaIdxScan, nextIdx, typeStr))
                 {
                     if (nextIdx <= lambdaIdxScan)
@@ -1433,7 +1365,6 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
                         continue;
                     }
                     baseType = allTokens[lambdaIdxScan].text;
-
                     if (IsStatementKeyword(baseType))
                     {
                         lambdaIdxScan = nextIdx;
@@ -1442,43 +1373,26 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
 
                     innerScan = nextIdx;
                     advanced = false;
-                    while (innerScan < endBraceTokenIdx && IsWord(allTokens[innerScan].text) && !reservedKeywords.count(allTokens[innerScan].text))
+                    while (innerScan < endBraceTokenIdx && IsWord(allTokens[innerScan].text) && !reservedKeywords.contains(allTokens[innerScan].text))
                     {
                         nameIdxLocal = innerScan;
-                        entityName = allTokens[nameIdxLocal].text;
-
+                        entityName = std::string(allTokens[nameIdxLocal].text);
                         if (nameIdxLocal + 1 < allTokens.size() && (allTokens[nameIdxLocal + 1].text == ";" || allTokens[nameIdxLocal + 1].text == "=" || allTokens[nameIdxLocal + 1].text == "," || allTokens[nameIdxLocal + 1].text == "[" || allTokens[nameIdxLocal + 1].text == ")"))
                         {
                             finalTypeStr = typeStr;
-                            if (IsAutoDeducibleType(typeStr))
+                            if (IsAutoDeducibleType(typeStr) && allTokens[nameIdxLocal + 1].text == "=" && nameIdxLocal + 2 < allTokens.size())
                             {
-                                if (allTokens[nameIdxLocal + 1].text == "=" && nameIdxLocal + 2 < allTokens.size())
+                                deducedLocal = DeduceTypeFromRHS(nameIdxLocal + 2);
+                                if (deducedLocal != "auto")
                                 {
-                                    deducedLocal = DeduceTypeFromRHS(nameIdxLocal + 2);
-                                    if (deducedLocal != "auto")
-                                    {
-                                        finalTypeStr = deducedLocal;
-                                        if (typeStr.find('@') != std::string::npos && finalTypeStr.find('@') == std::string::npos)
-                                            finalTypeStr += "@";
-                                    }
+                                    finalTypeStr = deducedLocal;
+                                    if (typeStr.find('@') != std::string::npos && finalTypeStr.find('@') == std::string::npos)
+                                        finalTypeStr += "@";
                                 }
                             }
 
                             declarations.push_back({entityName, entityName, "local_variable", finalTypeStr + " " + entityName, allTokens[bodyBraceIdx].startPos, functionEndPos});
-
-                            searchComma = nameIdxLocal + 1;
-                            sqDepth = 0;
-                            while (searchComma < endBraceTokenIdx)
-                            {
-                                sTxt = allTokens[searchComma].text;
-                                if (sTxt == "(" || sTxt == "[" || sTxt == "{")
-                                    sqDepth++;
-                                else if (sTxt == ")" || sTxt == "]" || sTxt == "}")
-                                    sqDepth--;
-                                else if (sqDepth == 0 && (sTxt == "," || sTxt == ";"))
-                                    break;
-                                searchComma++;
-                            }
+                            searchComma = ScanInlineChainedDeclarations(allTokens, nameIdxLocal + 1, endBraceTokenIdx);
 
                             lambdaIdxScan = (searchComma < endBraceTokenIdx) ? searchComma + 1 : searchComma;
                             advanced = true;
@@ -1486,10 +1400,8 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
                         }
                         innerScan++;
                     }
-
                     if (advanced)
                         continue;
-
                     lambdaIdxScan = nextIdx;
                     continue;
                 }
@@ -1503,79 +1415,60 @@ void HoverHandler::ProcessLambdaRule(size_t &k)
 std::string HoverHandler::DeduceTypeFromRHS(size_t startIdx)
 {
     size_t curIdx;
-    std::string firstToken;
-    std::vector<DeclInfo>::const_reverse_iterator it;
-    size_t lastSpace;
+    std::string_view firstToken;
     std::string deduced;
+    size_t lastSpace;
     size_t startAngle;
     size_t endAngle;
 
     if (startIdx >= allTokens.size())
         return "auto";
-
     curIdx = startIdx;
     if (allTokens[curIdx].text == "@")
-    {
         curIdx++;
-    }
-
     if (curIdx >= allTokens.size())
         return "auto";
 
     if (allTokens[curIdx].tokenClass == asTC_VALUE)
     {
-        if (!allTokens[curIdx].text.empty() && allTokens[curIdx].text[0] == '"')
+        if (!allTokens[curIdx].text.empty() && (allTokens[curIdx].text[0] == '"' || allTokens[curIdx].text[0] == '\'' || allTokens[curIdx].text.starts_with("\"\"\"")))
         {
             return "string";
         }
         if (!allTokens[curIdx].text.empty() && std::isdigit(static_cast<unsigned char>(allTokens[curIdx].text[0])))
         {
-            if (allTokens[curIdx].text.find('.') != std::string::npos || allTokens[curIdx].text.back() == 'f')
-            {
+            if (allTokens[curIdx].text.find('.') != std::string_view::npos || allTokens[curIdx].text.back() == 'f')
                 return "float";
-            }
             return "int";
         }
     }
 
     firstToken = allTokens[curIdx].text;
-
     if (IsPrimitiveType(firstToken))
-    {
-        return firstToken;
-    }
+        return std::string(firstToken);
 
-    for (it = declarations.rbegin(); it != declarations.rend(); ++it)
+    for (auto it = declarations.rbegin(); it != declarations.rend(); ++it)
     {
-        if (it->name == firstToken || (it->fullName.length() >= firstToken.length() &&
-                                       it->fullName.substr(it->fullName.length() - firstToken.length()) == firstToken))
+        if (it->name == firstToken || (it->fullName.length() >= firstToken.length() && it->fullName.substr(it->fullName.length() - firstToken.length()) == firstToken))
         {
             lastSpace = it->hoverText.rfind(' ');
             if (lastSpace != std::string::npos)
             {
                 deduced = it->hoverText.substr(0, lastSpace);
-
                 if (curIdx + 1 < allTokens.size() && allTokens[curIdx + 1].text == "[")
                 {
                     startAngle = deduced.find('<');
                     endAngle = deduced.rfind('>');
                     if (startAngle != std::string::npos && endAngle != std::string::npos && endAngle > startAngle)
-                    {
                         deduced = deduced.substr(startAngle + 1, endAngle - startAngle - 1);
-                    }
                 }
                 return deduced;
             }
         }
     }
 
-    if (nativeEng)
-    {
-        if (nativeEng->GetTypeInfoByName(firstToken.c_str()))
-        {
-            return firstToken;
-        }
-    }
+    if (nativeEng && nativeEng->GetTypeInfoByName(std::string(firstToken).c_str()))
+        return std::string(firstToken);
     return "auto";
 }
 
@@ -1586,7 +1479,6 @@ std::string HoverHandler::EnhanceIfFuncdef(const std::string &hoverText)
     size_t firstSpace;
     std::string typeName;
     std::string paramsSuffix;
-    std::vector<DeclInfo>::const_iterator dIt;
     size_t paren;
     asIScriptModule *mod;
     asITypeInfo *fdefInfo;
@@ -1605,10 +1497,9 @@ std::string HoverHandler::EnhanceIfFuncdef(const std::string &hoverText)
         typeName = std::string(cleanedView.substr(0, firstSpace));
         if (!typeName.empty() && typeName.back() == '@')
             typeName.pop_back();
-
         paramsSuffix = "";
 
-        for (dIt = declarations.begin(); dIt != declarations.end(); ++dIt)
+        for (auto dIt = declarations.begin(); dIt != declarations.end(); ++dIt)
         {
             if (dIt->type == "funcdef" && dIt->name == typeName)
             {
@@ -1626,9 +1517,7 @@ std::string HoverHandler::EnhanceIfFuncdef(const std::string &hoverText)
             mod = nativeEng->GetModule("LSPModule");
             fdefInfo = mod ? mod->GetTypeInfoByName(typeName.c_str()) : nullptr;
             if (!fdefInfo)
-            {
                 fdefInfo = nativeEng->GetTypeInfoByName(typeName.c_str());
-            }
 
             if (fdefInfo && (fdefInfo->GetFlags() & asOBJ_FUNCDEF))
             {
@@ -1638,22 +1527,17 @@ std::string HoverHandler::EnhanceIfFuncdef(const std::string &hoverText)
                     fullFuncDecl = fdefFunc->GetDeclaration(true, true);
                     parenPos = fullFuncDecl.find('(');
                     if (parenPos != std::string::npos)
-                    {
                         paramsSuffix = fullFuncDecl.substr(parenPos);
-                    }
                 }
             }
         }
-
         if (!paramsSuffix.empty())
-        {
             baseHover += paramsSuffix;
-        }
     }
     return baseHover;
 }
 
-bool HoverHandler::MatchesQual(const DeclInfo &decl, const std::string &fullQualName) const
+bool HoverHandler::MatchesQual(const DeclInfo &decl, const std::string &fullQualName) const noexcept
 {
     size_t p;
     if (decl.fullName == fullQualName)
@@ -1679,12 +1563,10 @@ std::string HoverHandler::SemanticValidationPass(int targetIdx)
     int backIdx;
     int depth;
     std::string objType;
-    std::vector<DeclInfo>::const_reverse_iterator it;
     size_t lastSpace;
-    std::string cleanTypeName;
+    std::string_view accessStrippedView;
+    std::string_view cleanTypeName;
     std::vector<std::string> searchHierarchy;
-    bool methodResolved;
-    std::vector<std::string>::const_iterator typeIt;
     asITypeInfo *typeInfo;
     asUINT m;
     asIScriptFunction *methodFunc;
@@ -1705,10 +1587,8 @@ std::string HoverHandler::SemanticValidationPass(int targetIdx)
     asITypeInfo *fInfo;
     asIScriptFunction *fFunc;
     asITypeInfo *tInfo;
-    std::string_view accessStrippedView;
 
     hoverResult = "";
-
     if (targetIdx == -1)
         return "";
 
@@ -1719,7 +1599,6 @@ std::string HoverHandler::SemanticValidationPass(int targetIdx)
     {
         objName = "";
         backIdx = targetIdx - 2;
-
         if (backIdx >= 0 && allTokens[backIdx].text == "]")
         {
             depth = 1;
@@ -1735,14 +1614,14 @@ std::string HoverHandler::SemanticValidationPass(int targetIdx)
         }
 
         if (backIdx >= 0 && IsWord(allTokens[backIdx].text))
-            objName = allTokens[backIdx].text;
-
+            objName = std::string(allTokens[backIdx].text);
         objType = "";
-        for (it = declarations.rbegin(); it != declarations.rend(); ++it)
+
+        for (auto it = declarations.rbegin(); it != declarations.rend(); ++it)
         {
             if (it->name == objName && (it->type == "local_variable" || it->type == "parameter" || it->type == "property" || it->type == "global_variable"))
             {
-                if (it->type != "local_variable" && it->type != "parameter" || (targetTok.startPos >= it->startPos && targetTok.startPos <= it->endPos))
+                if ((it->type != "local_variable" && it->type != "parameter") || (targetTok.startPos >= it->startPos && targetTok.startPos <= it->endPos))
                 {
                     lastSpace = it->hoverText.rfind(' ');
                     if (lastSpace != std::string::npos)
@@ -1758,35 +1637,26 @@ std::string HoverHandler::SemanticValidationPass(int targetIdx)
         if (!objType.empty())
         {
             cleanTypeName = ExtractBaseTypeName(objType);
-            searchHierarchy = {cleanTypeName};
-            if (classInheritanceMapper.count(cleanTypeName))
+            searchHierarchy = {std::string(cleanTypeName)};
+            if (classInheritanceMapper.contains(std::string(cleanTypeName)))
             {
-                for (const auto &baseClass : classInheritanceMapper[cleanTypeName])
+                for (const auto &baseClass : classInheritanceMapper[std::string(cleanTypeName)])
                     searchHierarchy.push_back(baseClass);
             }
 
-            methodResolved = false;
-            for (typeIt = searchHierarchy.begin(); typeIt != searchHierarchy.end(); ++typeIt)
+            for (const auto &typeHierarchyStr : searchHierarchy)
             {
-                for (it = declarations.rbegin(); it != declarations.rend(); ++it)
+                for (auto it = declarations.rbegin(); it != declarations.rend(); ++it)
                 {
-                    if (it->name == targetTok.text && IsCallableOrFieldSemantic(it->type))
+                    if (it->name == targetTok.text && IsCallableOrFieldSemantic(it->type) && it->fullName.find(typeHierarchyStr + "::") != std::string::npos)
                     {
-                        if (it->fullName.find(*typeIt + "::") != std::string::npos)
-                        {
-                            hoverResult = fmt::format("```cpp\n{}\n```", CleanSignature(EnhanceIfFuncdef(it->hoverText)));
-                            methodResolved = true;
-                            break;
-                        }
+                        return fmt::format("```cpp\n{}\n```", CleanSignature(EnhanceIfFuncdef(it->hoverText)));
                     }
                 }
 
-                if (methodResolved)
-                    break;
-
                 if (nativeEng)
                 {
-                    typeInfo = nativeEng->GetTypeInfoByName(typeIt->c_str());
+                    typeInfo = nativeEng->GetTypeInfoByName(typeHierarchyStr.c_str());
                     if (typeInfo)
                     {
                         for (m = 0; m < typeInfo->GetMethodCount(); ++m)
@@ -1799,9 +1669,9 @@ std::string HoverHandler::SemanticValidationPass(int targetIdx)
                                 if (tppos != std::string::npos)
                                     declStr.erase(tppos, 5);
 
-                                if (declStr.find(cleanTypeName + "::") == std::string::npos)
+                                if (declStr.find(std::string(cleanTypeName) + "::") == std::string::npos)
                                 {
-                                    namePos = declStr.find(targetTok.text + "(");
+                                    namePos = declStr.find(std::string(targetTok.text) + "(");
                                     if (namePos != std::string::npos)
                                         declStr.insert(namePos, objType + "::");
                                 }
@@ -1816,58 +1686,103 @@ std::string HoverHandler::SemanticValidationPass(int targetIdx)
                                     {
                                         leftOk = (tPos == 0 || (!std::isalnum(static_cast<unsigned char>(declStr[tPos - 1])) && declStr[tPos - 1] != '_'));
                                         rightOk = (tPos + 1 == declStr.length() || (!std::isalnum(static_cast<unsigned char>(declStr[tPos + 1])) && declStr[tPos + 1] != '_'));
-
                                         if (leftOk && rightOk)
                                         {
                                             declStr.replace(tPos, 1, templateArg);
                                             tPos += templateArg.length();
                                         }
                                         else
-                                        {
                                             tPos++;
-                                        }
                                     }
                                 }
-
-                                hoverResult = fmt::format("```cpp\n{}\n```", CleanSignature(declStr));
-                                methodResolved = true;
-                                break;
+                                return fmt::format("```cpp\n{}\n```", CleanSignature(declStr));
                             }
                         }
                     }
                 }
-                if (methodResolved)
-                    break;
             }
         }
-
-        if (hoverResult.empty())
-            return "";
+        return "";
     }
 
-    if (hoverResult.empty() && (reservedKeywords.count(targetTok.text) || contextualKeywords.count(targetTok.text)) && !primitiveTypes.count(targetTok.text))
+    if (targetTok.tokenClass == asTC_VALUE)
+    {
+        if (!targetTok.text.empty() && (targetTok.text[0] == '"' || targetTok.text[0] == '\'' || targetTok.text.starts_with("\"\"\"")))
+        {
+            int chainStart = targetIdx;
+            int chainEnd = targetIdx;
+            std::string combinedLiteral = "\"";
+            size_t totalInternalLength = 0;
+            // Scan backward for contiguous string segments
+            while (chainStart > 0)
+            {
+                std::string_view prevText = allTokens[chainStart - 1].text;
+                if (allTokens[chainStart - 1].tokenClass == asTC_VALUE &&
+                    !prevText.empty() &&
+                    (prevText[0] == '"' || prevText[0] == '\'' || prevText.starts_with("\"\"\"")))
+                {
+                    chainStart--;
+                }
+                else
+                    break;
+            }
+
+            // Scan forward for contiguous string segments
+            while (chainEnd + 1 < static_cast<int>(allTokens.size()))
+            {
+                std::string_view nextText = allTokens[chainEnd + 1].text;
+                if (allTokens[chainEnd + 1].tokenClass == asTC_VALUE &&
+                    !nextText.empty() &&
+                    (nextText[0] == '"' || nextText[0] == '\'' || nextText.starts_with("\"\"\"")))
+                {
+                    chainEnd++;
+                }
+                else
+                    break;
+            }
+
+            for (int cIdx = chainStart; cIdx <= chainEnd; ++cIdx)
+            {
+                std::string_view tText = allTokens[cIdx].text;
+                if (tText.starts_with("\"\"\"") && tText.length() >= 6)
+                {
+                    combinedLiteral += tText.substr(3, tText.length() - 6);
+                    totalInternalLength += (tText.length() - 6);
+                }
+                else if (tText.length() >= 2)
+                {
+                    combinedLiteral += tText.substr(1, tText.length() - 2);
+                    totalInternalLength += (tText.length() - 2);
+                }
+            }
+            combinedLiteral += "\"";
+            size_t finalArraySize = totalInternalLength + 1;
+
+            return fmt::format("```cpp\n(const char [{}]) {}\n```", finalArraySize, combinedLiteral);
+        }
+
+        if (targetTok.text.find('.') != std::string_view::npos || targetTok.text.back() == 'f')
+        {
+            return fmt::format("```cpp\n(float) {}\n```", targetTok.text);
+        }
+        return fmt::format("```cpp\n(int) {}\n```", targetTok.text);
+    }
+
+    if ((reservedKeywords.contains(targetTok.text) || contextualKeywords.contains(targetTok.text)) && !primitiveTypes.contains(targetTok.text))
     {
         if (!IsKeywordHoverException(targetTok.text))
             return "";
     }
 
-    if (hoverResult.empty() && targetTok.tokenClass == asTC_VALUE)
+    if (targetTok.tokenClass == asTC_IDENTIFIER)
     {
-        if (!targetTok.text.empty() && targetTok.text[0] == '"')
-            hoverResult = fmt::format("```cpp\n(const char [{}]) {}\n```", targetTok.text.length() - 1, targetTok.text);
-        else
-            hoverResult = fmt::format("```cpp\n(int) {}\n```", targetTok.text);
-    }
-
-    if (hoverResult.empty() && targetTok.tokenClass == asTC_IDENTIFIER)
-    {
-        fullQualName = targetTok.text;
+        fullQualName = std::string(targetTok.text);
         left = targetIdx - 1;
         while (left >= 0 && allTokens[left].text == "::")
         {
             if (left > 0 && IsWord(allTokens[left - 1].text))
             {
-                fullQualName = allTokens[left - 1].text + "::" + fullQualName;
+                fullQualName = std::string(allTokens[left - 1].text) + "::" + fullQualName;
                 left -= 2;
             }
             else
@@ -1877,54 +1792,39 @@ std::string HoverHandler::SemanticValidationPass(int targetIdx)
         isFollowedByParen = (targetIdx + 1 < static_cast<int>(allTokens.size()) && allTokens[targetIdx + 1].text == "(");
         isPrecededByTilde = (targetIdx > 0 && allTokens[targetIdx - 1].text == "~");
 
-        for (it = declarations.rbegin(); it != declarations.rend(); ++it)
+        for (auto itDecls = declarations.rbegin(); itDecls != declarations.rend(); ++itDecls)
         {
-            if ((it->type == "local_variable" || it->type == "parameter" || it->type == "global_variable") && it->name == targetTok.text)
+            if ((itDecls->type == "local_variable" || itDecls->type == "parameter" || itDecls->type == "global_variable") && itDecls->name == targetTok.text)
             {
-                if (it->type == "global_variable" || (targetTok.startPos >= it->startPos && targetTok.startPos <= it->endPos))
+                if (itDecls->type == "global_variable" || (targetTok.startPos >= itDecls->startPos && targetTok.startPos <= itDecls->endPos))
                 {
-                    hoverResult = fmt::format("```cpp\n{}\n```", CleanSignature(EnhanceIfFuncdef(it->hoverText)));
-                    break;
+                    return fmt::format("```cpp\n{}\n```", CleanSignature(EnhanceIfFuncdef(itDecls->hoverText)));
                 }
             }
         }
 
-        if (hoverResult.empty() && (isFollowedByParen || isPrecededByTilde || targetTok.text == "function"))
+        if (isFollowedByParen || isPrecededByTilde || targetTok.text == "function")
         {
-            for (it = declarations.rbegin(); it != declarations.rend(); ++it)
+            for (auto itDecls = declarations.rbegin(); itDecls != declarations.rend(); ++itDecls)
             {
-                if ((it->type == "function" || it->type == "lambda") && MatchesQual(*it, fullQualName))
+                if ((itDecls->type == "function" || itDecls->type == "lambda") && MatchesQual(*itDecls, fullQualName))
                 {
-                    if (it->type == "lambda")
-                    {
-                        if (targetTok.startPos == it->startPos)
-                        {
-                            hoverResult = fmt::format("```cpp\n{}\n```", CleanSignature(it->hoverText));
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        hoverResult = fmt::format("```cpp\n{}\n```", CleanSignature(it->hoverText));
-                        break;
-                    }
+                    if (itDecls->type == "lambda" && targetTok.startPos != itDecls->startPos)
+                        continue;
+                    return fmt::format("```cpp\n{}\n```", CleanSignature(itDecls->hoverText));
                 }
             }
         }
 
-        if (hoverResult.empty())
+        for (auto itDecls = declarations.rbegin(); itDecls != declarations.rend(); ++itDecls)
         {
-            for (it = declarations.rbegin(); it != declarations.rend(); ++it)
+            if (itDecls->type != "function" && itDecls->type != "local_variable" && itDecls->type != "parameter" && itDecls->type != "global_variable" && itDecls->type != "lambda" && MatchesQual(*itDecls, fullQualName))
             {
-                if (it->type != "function" && it->type != "local_variable" && it->type != "parameter" && it->type != "global_variable" && it->type != "lambda" && MatchesQual(*it, fullQualName))
-                {
-                    hoverResult = fmt::format("```cpp\n{}\n```", CleanSignature(EnhanceIfFuncdef(it->hoverText)));
-                    break;
-                }
+                return fmt::format("```cpp\n{}\n```", CleanSignature(EnhanceIfFuncdef(itDecls->hoverText)));
             }
         }
 
-        if (hoverResult.empty() && nativeEng)
+        if (nativeEng)
         {
             for (f = 0; f < nativeEng->GetFuncdefCount(); ++f)
             {
@@ -1933,22 +1833,15 @@ std::string HoverHandler::SemanticValidationPass(int targetIdx)
                 {
                     fFunc = fInfo->GetFuncdefSignature();
                     if (fFunc)
-                    {
-                        hoverResult = fmt::format("```cpp\nfuncdef {}\n```", CleanSignature(fFunc->GetDeclaration(true, true)));
-                        break;
-                    }
+                        return fmt::format("```cpp\nfuncdef {}\n```", CleanSignature(fFunc->GetDeclaration(true, true)));
                 }
             }
 
-            if (hoverResult.empty())
-            {
-                tInfo = nativeEng->GetTypeInfoByName(targetTok.text.c_str());
-                if (tInfo)
-                    hoverResult = fmt::format("```cpp\nclass {}\n```", tInfo->GetName());
-            }
+            tInfo = nativeEng->GetTypeInfoByName(std::string(targetTok.text).c_str());
+            if (tInfo)
+                return fmt::format("```cpp\nclass {}\n```", tInfo->GetName());
         }
     }
-
     return hoverResult;
 }
 
@@ -1960,45 +1853,19 @@ json HoverHandler::Process()
 
     TokenizePass();
     targetIdx = FindTargetTokenIdx();
-
     StructuralParsingPass();
     ProcessScriptRule();
 
     for (k = 0; k < allTokens.size(); ++k)
     {
         if (allTokens[k].text == "function")
-        {
             ProcessLambdaRule(k);
-        }
     }
 
     resultMarkdown = SemanticValidationPass(targetIdx);
-
     if (!resultMarkdown.empty())
     {
         return {{"contents", {{"kind", "markdown"}, {"value", resultMarkdown}}}};
     }
     return nullptr;
-}
-
-bool HoverHandler::IsStructureDeclarationKeyword(std::string_view txt) const
-{
-    return txt == "class" || txt == "interface" || txt == "namespace" || txt == "enum" || txt == "mixin" || txt == "abstract";
-}
-
-bool HoverHandler::IsStatementKeyword(std::string_view txt) const
-{
-    return txt == "if" || txt == "for" || txt == "foreach" || txt == "while" || txt == "return" ||
-           txt == "break" || txt == "continue" || txt == "switch" || txt == "case" || txt == "default" ||
-           txt == "cast" || txt == "try" || txt == "catch" || txt == "delete" || txt == "throw";
-}
-
-bool HoverHandler::IsStorageModifierKeyword(std::string_view txt) const
-{
-    return storageModifiers.count(std::string(txt)) > 0;
-}
-
-bool HoverHandler::IsPrimitiveType(std::string_view txt) const
-{
-    return primitiveTypes.count(std::string(txt)) > 0;
 }
