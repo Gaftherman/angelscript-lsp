@@ -144,4 +144,30 @@ private:
     bool IsPrimitiveType(std::string_view txt) const noexcept;
 };
 
+/**
+ * @namespace HoverUtils
+ * @brief Contains internal parameter tracking types and text scanning helpers for hover resolution.
+ */
+namespace HoverUtils
+{
+    /**
+     * @struct FuncParam
+     * @brief File-scoped parameter metadata placeholder ensuring stable MSVC template deduction guides.
+     */
+    struct FuncParam
+    {
+        std::string pName;
+        std::string pType;
+    };
+
+    /**
+     * @brief Abstracted helper scanning sequential multi-variable chains separating by commas on a single expression line.
+     * @param allTokens Vector containing the fully tokenized representation of the document.
+     * @param startIdx The initial token index position to start scanning from.
+     * @param boundaryLimit The maximum search boundary index within the token vector.
+     * @return The terminal index matching the completion or delimiter of the variable chain.
+     */
+    size_t ScanInlineChainedDeclarations(const std::vector<HoverHandler::TokenInfo> &allTokens, size_t startIdx, size_t boundaryLimit) noexcept;
+}
+
 #endif // HOVER_HANDLER_H

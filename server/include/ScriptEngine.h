@@ -57,24 +57,24 @@ public:
      * @brief Accessor for the underlying native AngelScript engine instance.
      * @return Pointer to the native asIScriptEngine instance managed by this wrapper.
      */
-    asIScriptEngine *GetNativeEngine() const { return engine; }
+    asIScriptEngine *GetNativeEngine() const;
 
     /**
      * @brief Accessor for the collection of diagnostics emitted during module builds.
      * @return A vector of EngineDiagnostic records representing compiler messages.
      */
-    const std::vector<EngineDiagnostic> &GetDiagnostics() const { return diagnostics; }
+    const std::vector<EngineDiagnostic> &GetDiagnostics() const;
 
     /**
      * @brief Clears the current diagnostics collection, preparing for a new module build cycle.
      */
-    void ClearDiagnostics() { diagnostics.clear(); }
+    void ClearDiagnostics();
 
     /**
      * @brief Appends a new diagnostic record to the diagnostics collection.
      * @param diag The EngineDiagnostic record to be added to the collection.
      */
-    void AppendDiagnostic(const EngineDiagnostic &diag) { diagnostics.push_back(diag); }
+    void AppendDiagnostic(const EngineDiagnostic &diag);
 
     /**
      * @brief Triggers an isolated module build routine onto a chosen text slice definition.

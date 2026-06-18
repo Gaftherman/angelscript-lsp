@@ -3,7 +3,8 @@
  * @brief Encapsulates the semantic resolution and item generation for LSP autocompletion.
  */
 
-#pragma once
+#ifndef COMPLETION_HANDLER_H
+#define COMPLETION_HANDLER_H
 
 #include <string>
 #include <vector>
@@ -12,6 +13,36 @@
 #include <nlohmann/json.hpp>
 #include <angelscript.h>
 #include "TokenHarvester.h"
+
+/**
+ * @namespace CompletionUtils
+ * @brief Contains internal helper utilities and algorithms for autocompletion resolution.
+ */
+namespace CompletionUtils
+{
+    /**
+     * @brief Recursively searches for a member within user-defined script classes using O(1) maps.
+     * @param initialTypeName Name of the class scope being evaluated.
+     * @param memberName Identifier of the member property or method being sought.
+     * @param isMethod Assert true to filter tracking specifically for method signatures.
+     * @param outType String populated with the discovered identifier type name.
+     * @param customClasses Extracted translation unit context containing user class metadata indices.
+     * @return True if the member resolution successfully completed within the lineage tree.
+     */
+    bool SearchCustomClassRecursively(const std::string &initialTypeName,
+                                      const std::string &memberName,
+                                      bool isMethod,
+                                      std::string &outType,
+                                      const std::vector<TokenHarvester::ScriptClass> &customClasses);
+
+    /**
+     * @brief Evaluates whether a completion entry with a specific label signature already exists.
+     * @param itemsArray Target internal JSON array structure containing populated metadata suggestions.
+     * @param label Concrete literal identifier used for the identity mapping evaluation match.
+     * @return True if a collision is explicitly identified within the array scope items.
+     */
+    bool ContainsItemLabel(const nlohmann::json &itemsArray, std::string_view label) noexcept;
+}
 
 /**
  * @class CompletionHandler
@@ -30,7 +61,6 @@ private:
     std::vector<TokenHarvester::GlobalVariable> tokenGlobalVars;
 
     std::function<void(const std::string &)> logger;
-
     nlohmann::json itemsArray;
 
 public:
@@ -233,3 +263,5 @@ private:
      */
     bool IsInternalCompilerFunction(std::string_view name) const noexcept;
 };
+
+#endif // COMPLETION_HANDLER_H

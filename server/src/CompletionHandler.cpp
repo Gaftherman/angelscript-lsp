@@ -5,7 +5,6 @@
 
 #include "CompletionHandler.h"
 #include <unordered_map>
-#include <unordered_set>
 #include <algorithm>
 #include <ranges>
 #include <cctype>
@@ -13,91 +12,84 @@
 
 using json = nlohmann::json;
 
-/**
- * @brief Recursively searches for a member within user-defined script classes using O(1) maps.
- * @param initialTypeName Name of the class scope being evaluated.
- * @param memberName Identifier of the member property or method being sought.
- * @param isMethod Assert true to filter tracking specifically for method signatures.
- * @param outType String populated with the discovered identifier type name.
- * @param customClasses Extracted translation unit context containing user class metadata indices.
- * @return True if the member resolution successfully completed within the lineage tree.
- */
-static bool SearchCustomClassRecursively(const std::string &initialTypeName,
-                                         const std::string &memberName,
-                                         bool isMethod,
-                                         std::string &outType,
-                                         const std::vector<TokenHarvester::ScriptClass> &customClasses)
+namespace CompletionUtils
 {
-    std::vector<std::string> stack;
-    std::unordered_set<std::string> visitedClasses;
-    stack.push_back(initialTypeName);
-
-    while (!stack.empty())
+    bool SearchCustomClassRecursively(const std::string &initialTypeName,
+                                      const std::string &memberName,
+                                      bool isMethod,
+                                      std::string &outType,
+                                      const std::vector<TokenHarvester::ScriptClass> &customClasses)
     {
-        std::string currentClass = std::move(stack.back());
-        stack.pop_back();
+        std::vector<std::string> stack;
+        std::unordered_set<std::string> visitedClasses;
 
-        if (!visitedClasses.insert(currentClass).second)
-        {
-            continue;
-        }
+        stack.push_back(initialTypeName);
 
-        for (const auto &c : customClasses)
+        while (!stack.empty())
         {
-            if (c.name != currentClass)
+            std::string currentClass = std::move(stack.back());
+            stack.pop_back();
+
+            if (!visitedClasses.insert(currentClass).second)
+            {
                 continue;
+            }
 
-            if (!isMethod)
+            for (const auto &c : customClasses)
             {
-                if (auto propIt = c.properties.find(memberName); propIt != c.properties.end())
+                if (c.name != currentClass)
+                    continue;
+
+                if (!isMethod)
                 {
-                    outType = propIt->second.typeName;
-                    return true;
+                    if (auto propIt = c.properties.find(memberName); propIt != c.properties.end())
+                    {
+                        outType = propIt->second.typeName;
+                        return true;
+                    }
                 }
-            }
 
-            if (outType.empty())
-            {
-                if (auto methodIt = c.methods.find(memberName); methodIt != c.methods.end() && !methodIt->second.empty())
+                if (outType.empty())
                 {
-                    outType = methodIt->second.front().typeName;
-                    return true;
+                    if (auto methodIt = c.methods.find(memberName); methodIt != c.methods.end() && !methodIt->second.empty())
+                    {
+                        outType = methodIt->second.front().typeName;
+                        return true;
+                    }
                 }
-            }
 
-            for (const auto &base : c.baseTypes)
-            {
-                stack.push_back(base);
+                for (const auto &base : c.baseTypes)
+                {
+                    stack.push_back(base);
+                }
+
+                break;
             }
-            break;
         }
-    }
-    return false;
-}
 
-/**
- * @brief Evaluates whether a completion entry with a specific label signature already exists.
- * @param itemsArray Target internal JSON array structure containing populated metadata suggestions.
- * @param label Concrete literal identifier used for the identity mapping evaluation match.
- * @return True if a collision is explicitly identified within the array scope items.
- */
-static inline bool ContainsItemLabel(const nlohmann::json &itemsArray, std::string_view label) noexcept
-{
-    for (const auto &item : itemsArray)
+        return false;
+    }
+
+    bool ContainsItemLabel(const nlohmann::json &itemsArray, std::string_view label) noexcept
     {
-        if (item.contains("label"))
+        for (const auto &item : itemsArray)
         {
-            const auto &labelNode = item["label"];
-            if (labelNode.is_string())
+            if (item.contains("label"))
             {
-                if (labelNode.get_ref<const std::string &>().compare(label) == 0)
+                const auto &labelNode = item["label"];
+
+                if (labelNode.is_string())
                 {
-                    return true;
+                    if (labelNode.get_ref<const std::string &>().compare(label) == 0)
+                    {
+                        return true;
+                    }
                 }
             }
         }
+
+        return false;
     }
-    return false;
 }
 
 CompletionHandler::CompletionHandler(asIScriptEngine *eng, asIScriptModule *mod,
@@ -122,6 +114,7 @@ nlohmann::json CompletionHandler::GenerateItems(const std::string &originalText,
         bool isTypeName = std::ranges::any_of(customClasses, [precedingToken](const auto &c)
                                               { return c.name == precedingToken; }) ||
                           GetNativeTypeInfo(std::string(precedingToken)) != nullptr;
+
         if (isTypeName)
             return itemsArray;
     }
@@ -130,6 +123,7 @@ nlohmann::json CompletionHandler::GenerateItems(const std::string &originalText,
     {
         ComputeLocalScopeCompletions(cursorAbsPos);
         ComputeGlobalScopeCompletions(originalText, cursorAbsPos);
+
         return itemsArray;
     }
 
@@ -137,12 +131,14 @@ nlohmann::json CompletionHandler::GenerateItems(const std::string &originalText,
     {
         if (ctx.lastSeparator == "::")
             ComputeNamespaceScopeCompletions("");
+
         return itemsArray;
     }
 
     if (ctx.lastSeparator != "::")
     {
         ComputeMemberAccessCompletions(ctx.objectChain[0]);
+
         return itemsArray;
     }
 
@@ -167,6 +163,7 @@ void CompletionHandler::ExtractClassMembers(const std::string &targetClass, std:
 {
     std::vector<std::string> stack;
     std::unordered_set<std::string> visitedClasses;
+
     stack.push_back(targetClass);
 
     while (!stack.empty())
@@ -197,6 +194,7 @@ void CompletionHandler::ExtractClassMembers(const std::string &targetClass, std:
                 {
                     std::string subbedDetail = prop.access + " " + prop.typeName;
                     subbedDetail = EnhanceIfFuncdef(subbedDetail);
+
                     itemsArray.push_back({{"label", prop.name}, {"kind", 5}, {"detail", subbedDetail}});
                 }
             }
@@ -222,6 +220,7 @@ void CompletionHandler::ExtractClassMembers(const std::string &targetClass, std:
                     {
                         std::string subbedDetail = method.access + " " + method.declaration;
                         subbedDetail = EnhanceIfFuncdef(subbedDetail);
+
                         itemsArray.push_back({{"label", method.name},
                                               {"kind", 2},
                                               {"detail", subbedDetail},
@@ -235,6 +234,7 @@ void CompletionHandler::ExtractClassMembers(const std::string &targetClass, std:
             {
                 stack.push_back(base);
             }
+
             break;
         }
     }
@@ -243,10 +243,12 @@ void CompletionHandler::ExtractClassMembers(const std::string &targetClass, std:
 void CompletionHandler::ComputeMemberAccessCompletions(std::string_view objectName)
 {
     std::string inferredTypeName = DeduceTypeFromRHS(std::string(objectName));
+
     if (logger)
         logger(fmt::format("Resolved Type from RHS: '{}'", inferredTypeName));
 
     inferredTypeName = WalkObjectChain(inferredTypeName);
+
     if (!inferredTypeName.empty())
     {
         PopulateMembers(inferredTypeName);
@@ -272,13 +274,16 @@ void CompletionHandler::ComputeNamespaceScopeCompletions(std::string_view namesp
     {
         for (asUINT f = 0; f < module->GetFunctionCount(); f++)
         {
-            if (asIScriptFunction *func = module->GetFunctionByIndex(f))
+            asIScriptFunction *func = module->GetFunctionByIndex(f);
+
+            if (func)
             {
                 std::string funcName = func->GetName();
                 if (IsInternalCompilerFunction(funcName))
                     continue;
 
                 addedFunctions[funcName] = true;
+
                 if (ctx.partialMember.empty() || funcName.starts_with(ctx.partialMember))
                 {
                     itemsArray.push_back({{"label", funcName},
@@ -294,7 +299,9 @@ void CompletionHandler::ComputeNamespaceScopeCompletions(std::string_view namesp
         {
             const char *varName = nullptr;
             int typeId = 0;
+
             module->GetGlobalVar(g, &varName, nullptr, &typeId);
+
             if (varName && (ctx.partialMember.empty() || std::string_view(varName).starts_with(ctx.partialMember)))
             {
                 itemsArray.push_back({{"label", varName}, {"kind", 6}, {"detail", "Global variable"}});
@@ -306,6 +313,7 @@ void CompletionHandler::ComputeNamespaceScopeCompletions(std::string_view namesp
     {
         if (IsInternalCompilerFunction(tf.name) || addedFunctions[tf.name])
             continue;
+
         addedFunctions[tf.name] = true;
 
         if (ctx.partialMember.empty() || tf.name.starts_with(ctx.partialMember))
@@ -322,7 +330,7 @@ void CompletionHandler::ComputeNamespaceScopeCompletions(std::string_view namesp
     {
         if (ctx.partialMember.empty() || nativeVar.name.starts_with(ctx.partialMember))
         {
-            if (!ContainsItemLabel(itemsArray, nativeVar.name))
+            if (!CompletionUtils::ContainsItemLabel(itemsArray, nativeVar.name))
             {
                 itemsArray.push_back({{"label", nativeVar.name},
                                       {"kind", 6},
@@ -333,7 +341,9 @@ void CompletionHandler::ComputeNamespaceScopeCompletions(std::string_view namesp
 
     for (asUINT f = 0; f < engine->GetGlobalFunctionCount(); f++)
     {
-        if (asIScriptFunction *func = engine->GetGlobalFunctionByIndex(f))
+        asIScriptFunction *func = engine->GetGlobalFunctionByIndex(f);
+
+        if (func)
         {
             std::string funcName = func->GetName();
             if (IsInternalCompilerFunction(funcName) || addedFunctions[funcName])
@@ -353,7 +363,9 @@ void CompletionHandler::ComputeNamespaceScopeCompletions(std::string_view namesp
     for (asUINT g = 0; g < engine->GetGlobalPropertyCount(); g++)
     {
         const char *varName = nullptr;
+
         engine->GetGlobalPropertyByIndex(g, &varName, nullptr, nullptr, nullptr);
+
         if (varName && (ctx.partialMember.empty() || std::string_view(varName).starts_with(ctx.partialMember)))
         {
             itemsArray.push_back({{"label", varName}, {"kind", 6}, {"detail", "Native global"}});
@@ -399,6 +411,7 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
         "float", "double", "bool"};
 
     std::unordered_set<std::string_view> addedTypes;
+
     for (std::string_view prim : primitives)
     {
         if (ctx.partialMember.empty() || prim.starts_with(ctx.partialMember))
@@ -412,7 +425,9 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
     {
         for (asUINT i = 0; i < engine->GetObjectTypeCount(); i++)
         {
-            if (asITypeInfo *ti = engine->GetObjectTypeByIndex(i))
+            asITypeInfo *ti = engine->GetObjectTypeByIndex(i);
+
+            if (ti)
             {
                 std::string_view name = ti->GetName();
                 if ((ctx.partialMember.empty() || name.starts_with(ctx.partialMember)) && addedTypes.insert(name).second)
@@ -421,9 +436,12 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
                 }
             }
         }
+
         for (asUINT i = 0; i < engine->GetEnumCount(); i++)
         {
-            if (asITypeInfo *ti = engine->GetEnumByIndex(i))
+            asITypeInfo *ti = engine->GetEnumByIndex(i);
+
+            if (ti)
             {
                 std::string_view name = ti->GetName();
                 if ((ctx.partialMember.empty() || name.starts_with(ctx.partialMember)) && addedTypes.insert(name).second)
@@ -432,9 +450,12 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
                 }
             }
         }
+
         for (asUINT i = 0; i < engine->GetTypedefCount(); i++)
         {
-            if (asITypeInfo *ti = engine->GetTypedefByIndex(i))
+            asITypeInfo *ti = engine->GetTypedefByIndex(i);
+
+            if (ti)
             {
                 std::string_view name = ti->GetName();
                 if ((ctx.partialMember.empty() || name.starts_with(ctx.partialMember)) && addedTypes.insert(name).second)
@@ -443,9 +464,12 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
                 }
             }
         }
+
         for (asUINT i = 0; i < engine->GetFuncdefCount(); i++)
         {
-            if (asITypeInfo *ti = engine->GetFuncdefByIndex(i))
+            asITypeInfo *ti = engine->GetFuncdefByIndex(i);
+
+            if (ti)
             {
                 std::string_view name = ti->GetName();
                 if ((ctx.partialMember.empty() || name.starts_with(ctx.partialMember)) && addedTypes.insert(name).second)
@@ -457,12 +481,14 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
     }
 
     std::unordered_set<std::string> addedImplicitMembers;
+
     if (!enclosingClass.empty())
     {
         AddImplicitMembersRecursive(enclosingClass, addedImplicitMembers);
     }
 
     std::unordered_map<std::string, bool> addedFunctions;
+
     for (const auto &c : customClasses)
     {
         if (ctx.partialMember.empty() || c.name.starts_with(ctx.partialMember))
@@ -478,11 +504,14 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
     {
         for (asUINT f = 0; f < module->GetFunctionCount(); f++)
         {
-            if (asIScriptFunction *func = module->GetFunctionByIndex(f))
+            asIScriptFunction *func = module->GetFunctionByIndex(f);
+
+            if (func)
             {
                 std::string funcName = func->GetName();
                 if (IsInternalCompilerFunction(funcName))
                     continue;
+
                 addedFunctions[funcName] = true;
 
                 if (ctx.partialMember.empty() || funcName.starts_with(ctx.partialMember))
@@ -495,10 +524,13 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
                 }
             }
         }
+
         for (asUINT g = 0; g < module->GetGlobalVarCount(); g++)
         {
             const char *varName = nullptr;
+
             module->GetGlobalVar(g, &varName, nullptr, nullptr);
+
             if (varName && (ctx.partialMember.empty() || std::string_view(varName).starts_with(ctx.partialMember)))
             {
                 itemsArray.push_back({{"label", varName}, {"kind", 6}, {"detail", "Global variable"}});
@@ -510,6 +542,7 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
     {
         if (IsInternalCompilerFunction(tf.name) || addedFunctions[tf.name])
             continue;
+
         addedFunctions[tf.name] = true;
 
         if (ctx.partialMember.empty() || tf.name.starts_with(ctx.partialMember))
@@ -526,7 +559,7 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
     {
         if (ctx.partialMember.empty() || nativeVar.name.starts_with(ctx.partialMember))
         {
-            if (!ContainsItemLabel(itemsArray, nativeVar.name))
+            if (!CompletionUtils::ContainsItemLabel(itemsArray, nativeVar.name))
             {
                 itemsArray.push_back({{"label", nativeVar.name},
                                       {"kind", 6},
@@ -537,7 +570,9 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
 
     for (asUINT f = 0; f < engine->GetGlobalFunctionCount(); f++)
     {
-        if (asIScriptFunction *func = engine->GetGlobalFunctionByIndex(f))
+        asIScriptFunction *func = engine->GetGlobalFunctionByIndex(f);
+
+        if (func)
         {
             std::string funcName = func->GetName();
             if (IsInternalCompilerFunction(funcName) || addedFunctions[funcName])
@@ -557,7 +592,9 @@ void CompletionHandler::ComputeGlobalScopeCompletions(const std::string &origina
     for (asUINT g = 0; g < engine->GetGlobalPropertyCount(); g++)
     {
         const char *varName = nullptr;
+
         engine->GetGlobalPropertyByIndex(g, &varName, nullptr, nullptr, nullptr);
+
         if (varName && (ctx.partialMember.empty() || std::string_view(varName).starts_with(ctx.partialMember)))
         {
             itemsArray.push_back({{"label", varName}, {"kind", 6}, {"detail", "Native global"}});
@@ -572,6 +609,7 @@ bool CompletionHandler::IsBaseClass(const std::string &child, const std::string 
 
     std::vector<std::string> stack;
     std::unordered_set<std::string> visitedClasses;
+
     stack.push_back(child);
 
     while (!stack.empty())
@@ -586,15 +624,19 @@ bool CompletionHandler::IsBaseClass(const std::string &child, const std::string 
         {
             if (c.name != currentClass)
                 continue;
+
             for (const auto &base : c.baseTypes)
             {
                 if (base == potentialBase)
                     return true;
+
                 stack.push_back(base);
             }
+
             break;
         }
     }
+
     return false;
 }
 
@@ -602,6 +644,7 @@ void CompletionHandler::AddImplicitMembersRecursive(const std::string &targetCla
 {
     std::vector<std::string> stack;
     std::unordered_set<std::string> visitedClasses;
+
     stack.push_back(targetClass);
 
     while (!stack.empty())
@@ -621,6 +664,7 @@ void CompletionHandler::AddImplicitMembersRecursive(const std::string &targetCla
             {
                 if (!addedImplicitMembers.insert(prop.name).second)
                     continue;
+
                 if (ctx.partialMember.empty() || prop.name.starts_with(ctx.partialMember))
                 {
                     itemsArray.push_back({{"label", prop.name},
@@ -655,6 +699,7 @@ void CompletionHandler::AddImplicitMembersRecursive(const std::string &targetCla
             {
                 stack.push_back(base);
             }
+
             break;
         }
     }
@@ -681,7 +726,8 @@ std::string CompletionHandler::ResolveRootType(const std::string &rootName, bool
             return rootName;
 
         std::string outType;
-        if (!enclosingClass.empty() && SearchCustomClassRecursively(enclosingClass, rootName, true, outType, customClasses))
+
+        if (!enclosingClass.empty() && CompletionUtils::SearchCustomClassRecursively(enclosingClass, rootName, true, outType, customClasses))
             return outType;
 
         for (const auto &tf : tokenFuncs)
@@ -692,20 +738,21 @@ std::string CompletionHandler::ResolveRootType(const std::string &rootName, bool
 
         for (asUINT f = 0; f < engine->GetGlobalFunctionCount(); f++)
         {
-            if (asIScriptFunction *func = engine->GetGlobalFunctionByIndex(f))
+            asIScriptFunction *func = engine->GetGlobalFunctionByIndex(f);
+
+            if (func && func->GetName() == rootName)
             {
-                if (func->GetName() == rootName)
-                {
-                    if (const char *decl = engine->GetTypeDeclaration(func->GetReturnTypeId(), true))
-                        return decl;
-                }
+                if (const char *decl = engine->GetTypeDeclaration(func->GetReturnTypeId(), true))
+                    return decl;
             }
         }
+
         return "";
     }
 
     if (isStaticAccess)
         return rootName;
+
     if (rootName == "this" && !enclosingClass.empty())
         return enclosingClass;
 
@@ -714,6 +761,7 @@ std::string CompletionHandler::ResolveRootType(const std::string &rootName, bool
         if (v.name == rootName)
             return v.typeName;
     }
+
     for (const auto &v : tokenGlobalVars)
     {
         if (v.name == rootName)
@@ -721,20 +769,24 @@ std::string CompletionHandler::ResolveRootType(const std::string &rootName, bool
     }
 
     std::string outType;
-    if (!enclosingClass.empty() && SearchCustomClassRecursively(enclosingClass, rootName, false, outType, customClasses))
+
+    if (!enclosingClass.empty() && CompletionUtils::SearchCustomClassRecursively(enclosingClass, rootName, false, outType, customClasses))
         return outType;
 
     for (asUINT g = 0; g < engine->GetGlobalPropertyCount(); g++)
     {
         const char *varName = nullptr;
         int typeId = 0;
+
         engine->GetGlobalPropertyByIndex(g, &varName, nullptr, &typeId, nullptr);
+
         if (varName && rootName == varName)
         {
             if (const char *decl = engine->GetTypeDeclaration(typeId, true))
                 return decl;
         }
     }
+
     return "";
 }
 
@@ -743,6 +795,7 @@ std::string CompletionHandler::WalkObjectChain(std::string inferredTypeName)
     if (logger)
         logger(fmt::format("Starting WalkObjectChain with base type: '{}'", inferredTypeName));
 
+    // Skips the first element as it marks the root context
     for (size_t i = 1; i < ctx.objectChain.size(); ++i)
     {
         if (inferredTypeName.empty())
@@ -751,6 +804,7 @@ std::string CompletionHandler::WalkObjectChain(std::string inferredTypeName)
         std::string nextName;
         int nextDeref = 0;
         bool nextIsMethod = false;
+
         ParseSegment(ctx.objectChain[i], nextName, nextDeref, nextIsMethod);
 
         if (logger)
@@ -758,11 +812,13 @@ std::string CompletionHandler::WalkObjectChain(std::string inferredTypeName)
 
         std::string nextType;
         std::string_view baseTypeName = TokenHarvester::GetBaseType(inferredTypeName);
-        bool foundInScript = SearchCustomClassRecursively(std::string(baseTypeName), nextName, nextIsMethod, nextType, customClasses);
+        bool foundInScript = CompletionUtils::SearchCustomClassRecursively(std::string(baseTypeName), nextName, nextIsMethod, nextType, customClasses);
 
         if (!foundInScript)
         {
-            if (asITypeInfo *t = GetNativeTypeInfo(inferredTypeName))
+            asITypeInfo *t = GetNativeTypeInfo(inferredTypeName);
+
+            if (t)
             {
                 if (!nextIsMethod)
                 {
@@ -770,24 +826,30 @@ std::string CompletionHandler::WalkObjectChain(std::string inferredTypeName)
                     {
                         const char *pName = nullptr;
                         int pTypeId = 0;
+
                         t->GetProperty(p, &pName, &pTypeId);
+
                         if (pName && std::string_view(pName) == nextName)
                         {
                             if (const char *decl = engine->GetTypeDeclaration(pTypeId, true))
                                 nextType = decl;
+
                             break;
                         }
                     }
                 }
+
                 if (nextType.empty())
                 {
                     for (asUINT m = 0; m < t->GetMethodCount(); m++)
                     {
                         asIScriptFunction *func = t->GetMethodByIndex(m);
+
                         if (func && std::string_view(func->GetName()) == nextName)
                         {
                             if (const char *decl = engine->GetTypeDeclaration(func->GetReturnTypeId(), true))
                                 nextType = decl;
+
                             break;
                         }
                     }
@@ -802,6 +864,7 @@ std::string CompletionHandler::WalkObjectChain(std::string inferredTypeName)
         }
 
         std::string_view cleanNext = TokenHarvester::GetBaseType(nextType);
+
         if (cleanNext.length() <= 2)
         {
             nextType = inferredTypeName;
@@ -812,8 +875,10 @@ std::string CompletionHandler::WalkObjectChain(std::string inferredTypeName)
         {
             nextType = std::string(TokenHarvester::ExtractInnerType(nextType));
         }
+
         inferredTypeName = std::string(TokenHarvester::GetInstantiatedType(nextType));
     }
+
     return inferredTypeName;
 }
 
@@ -832,10 +897,13 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
         {
             for (asUINT v = 0; v < targetType->GetEnumValueCount(); v++)
             {
-                if (const char *enumName = targetType->GetEnumValueByIndex(v, nullptr))
+                const char *enumName = targetType->GetEnumValueByIndex(v, nullptr);
+
+                if (enumName)
                 {
                     if (!addedMembers.insert(enumName).second)
                         continue;
+
                     if (ctx.partialMember.empty() || std::string_view(enumName).starts_with(ctx.partialMember))
                     {
                         itemsArray.push_back({{"label", enumName}, {"kind", 20}, {"detail", "enum value"}});
@@ -847,6 +915,7 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
     }
 
     ExtractClassMembers(std::string(baseTypeName), addedMembers, canAccessPrivate, canAccessProtected);
+
     bool classFoundInScript = std::ranges::any_of(customClasses, [baseTypeName](const auto &c)
                                                   { return c.name == baseTypeName; });
 
@@ -856,9 +925,12 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
         {
             if (ctx.lastSeparator == "::")
                 continue;
+
             const char *propName = nullptr;
             int propTypeId = 0;
+
             targetType->GetProperty(p, &propName, &propTypeId);
+
             if (!addedMembers.insert(propName).second)
                 continue;
 
@@ -866,15 +938,19 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
             {
                 const char *decl = engine->GetTypeDeclaration(propTypeId, true);
                 std::string subbedDetail = decl ? decl : "primitive";
+
                 SubstituteTemplateArguments(subbedDetail, inferredTypeName);
                 subbedDetail = EnhanceIfFuncdef(subbedDetail);
+
                 itemsArray.push_back({{"label", propName}, {"kind", 5}, {"detail", subbedDetail}});
             }
         }
+
         for (asUINT m = 0; m < targetType->GetMethodCount(); m++)
         {
             asIScriptFunction *func = targetType->GetMethodByIndex(m);
             std::string mName = func->GetName();
+
             if (mName == baseTypeName || (!mName.empty() && mName[0] == '~'))
                 continue;
             if (ctx.lastSeparator == "::" && !canAccessProtected)
@@ -887,9 +963,11 @@ void CompletionHandler::PopulateMembers(const std::string &inferredTypeName)
             if (ctx.partialMember.empty() || mName.starts_with(ctx.partialMember))
             {
                 std::string subbedDetail = func->GetDeclaration(true, false, true);
+
                 SubstituteTemplateArguments(subbedDetail, inferredTypeName);
                 subbedDetail = CleanSignature(subbedDetail);
                 subbedDetail = EnhanceIfFuncdef(subbedDetail);
+
                 itemsArray.push_back({{"label", mName},
                                       {"kind", 2},
                                       {"detail", subbedDetail},
@@ -936,6 +1014,7 @@ asITypeInfo *CompletionHandler::GetNativeTypeInfo(const std::string &typeName)
         if (t && t->GetName() == base)
             return t;
     }
+
     return nullptr;
 }
 
@@ -952,10 +1031,12 @@ void CompletionHandler::ParseSegment(const std::string &segment, std::string &ou
     }
 
     size_t cutoff = outName.find_first_of("([");
+
     if (cutoff != std::string::npos)
     {
         if (outName[cutoff] == '(')
             outIsMethod = true;
+
         outName = outName.substr(0, cutoff);
     }
 }
@@ -987,28 +1068,38 @@ bool CompletionHandler::IsPrimitiveType(std::string_view text) const noexcept
 void CompletionHandler::NormalizeSignatureSpacing(std::string &signature) const
 {
     size_t p = 0;
+
     while ((p = signature.find(" ::")) != std::string::npos)
+    {
         signature.erase(p, 1);
+    }
     while ((p = signature.find(":: ")) != std::string::npos)
+    {
         signature.erase(p + 2, 1);
+    }
     while ((p = signature.find("& in")) != std::string::npos)
+    {
         signature.replace(p, 4, "&in");
+    }
     while ((p = signature.find("& out")) != std::string::npos)
+    {
         signature.replace(p, 5, "&out");
+    }
     while ((p = signature.find("& inout")) != std::string::npos)
+    {
         signature.replace(p, 7, "&inout");
+    }
 }
 
 std::string CompletionHandler::CleanSignature(std::string str)
 {
     std::string res;
-    std::string finalRes;
     res.reserve(str.size());
-    finalRes.reserve(str.size());
 
     for (size_t idx = 0; idx < str.size(); ++idx)
     {
         char c = str[idx];
+
         if (c == ' ')
         {
             if (!res.empty() && (res.back() == '<' || res.back() == '>' || res.back() == '@' || res.back() == '&' || res.back() == '('))
@@ -1019,9 +1110,13 @@ std::string CompletionHandler::CleanSignature(std::string str)
         res += c;
     }
 
+    std::string finalRes;
+    finalRes.reserve(str.size());
+
     for (size_t idx = 0; idx < res.size(); ++idx)
     {
         finalRes += res[idx];
+
         if (res[idx] == '@' || res[idx] == '&' || res[idx] == ',')
         {
             if (idx + 1 < res.size() && res[idx + 1] != ' ' && res[idx + 1] != ',' && res[idx + 1] != ')' && res[idx + 1] != '>')
@@ -1050,18 +1145,22 @@ std::string_view CompletionHandler::StripAccessModifiers(std::string_view typeSt
         return typeStr.substr(7);
     if (typeStr.starts_with("shared "))
         return typeStr.substr(7);
+
     return typeStr;
 }
 
 std::string CompletionHandler::ExtractBaseTypeName(std::string_view typeStr)
 {
     std::string baseName;
+
     for (char c : typeStr)
     {
         if (c == '@' || c == '&' || c == ' ' || c == '<')
             break;
+
         baseName += c;
     }
+
     return baseName;
 }
 
@@ -1078,6 +1177,7 @@ std::string CompletionHandler::DeduceTypeFromRHS(const std::string &objectName)
     {
         resolvedType = std::string(TokenHarvester::ExtractInnerType(resolvedType));
     }
+
     return std::string(TokenHarvester::GetInstantiatedType(resolvedType));
 }
 
@@ -1090,6 +1190,7 @@ void CompletionHandler::SubstituteTemplateArguments(std::string &targetStr, std:
     {
         std::string_view templateArg = templateType.substr(startAngle + 1, endAngle - startAngle - 1);
         size_t tPos = 0;
+
         while ((tPos = targetStr.find('T', tPos)) != std::string::npos)
         {
             bool leftOk = (tPos == 0 || (!std::isalnum(static_cast<unsigned char>(targetStr[tPos - 1])) && targetStr[tPos - 1] != '_'));
@@ -1101,7 +1202,9 @@ void CompletionHandler::SubstituteTemplateArguments(std::string &targetStr, std:
                 tPos += templateArg.length();
             }
             else
+            {
                 tPos++;
+            }
         }
     }
 }
@@ -1109,29 +1212,36 @@ void CompletionHandler::SubstituteTemplateArguments(std::string &targetStr, std:
 std::string CompletionHandler::EnhanceIfFuncdef(const std::string &hoverText)
 {
     std::string baseHover = hoverText;
+
     if (!engine)
         return baseHover;
 
     std::string_view cleanedView = StripAccessModifiers(baseHover);
     size_t firstSpace = cleanedView.find(' ');
+
     if (firstSpace != std::string_view::npos)
     {
         std::string typeName = std::string(cleanedView.substr(0, firstSpace));
+
         if (!typeName.empty() && typeName.back() == '@')
             typeName.pop_back();
 
         std::string paramsSuffix;
         asIScriptModule *mod = engine->GetModule("LSPModule");
         asITypeInfo *fdefInfo = mod ? mod->GetTypeInfoByName(typeName.c_str()) : nullptr;
+
         if (!fdefInfo)
             fdefInfo = engine->GetTypeInfoByName(typeName.c_str());
 
         if (fdefInfo && (fdefInfo->GetFlags() & asOBJ_FUNCDEF))
         {
-            if (asIScriptFunction *fdefFunc = fdefInfo->GetFuncdefSignature())
+            asIScriptFunction *fdefFunc = fdefInfo->GetFuncdefSignature();
+
+            if (fdefFunc)
             {
                 std::string fullFuncDecl = fdefFunc->GetDeclaration(true, true);
                 size_t parenPos = fullFuncDecl.find('(');
+
                 if (parenPos != std::string::npos)
                     paramsSuffix = fullFuncDecl.substr(parenPos);
             }
@@ -1140,6 +1250,7 @@ std::string CompletionHandler::EnhanceIfFuncdef(const std::string &hoverText)
         if (!paramsSuffix.empty())
             baseHover += paramsSuffix;
     }
+
     return baseHover;
 }
 

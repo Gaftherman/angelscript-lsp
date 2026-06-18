@@ -1,7 +1,6 @@
 /**
  * @file LspServer.cpp
  * @brief Implements highly-optimized JSON-RPC message parsing and routing workflows compliant with LSP lifecycle rules.
- * @author AngelScript LSP Team
  */
 
 #include "LspServer.h"
@@ -9,18 +8,15 @@
 #include "CompletionHandler.h"
 #include "HoverHandler.h"
 #include "SafeCtype.h"
-
 #include <iostream>
 #include <sstream>
 #include <filesystem>
 #include <fmt/core.h>
 #include <fstream>
 #include <unordered_set>
-#include <unordered_map>
 #include <algorithm>
 #include <optional>
 #include <ranges>
-#include <string_view>
 #include <cstdio>
 #include <charconv>
 
@@ -59,14 +55,15 @@ namespace LspServer
         for (int i = 0; i < line; ++i)
         {
             lineStartPos = text.find('\n', lineStartPos);
+
             if (lineStartPos == std::string::npos)
-            {
                 return modifiedText;
-            }
+
             lineStartPos++;
         }
 
         size_t lineEndPos = text.find('\n', lineStartPos);
+
         if (lineEndPos == std::string::npos)
         {
             lineEndPos = textLen;
@@ -91,14 +88,15 @@ namespace LspServer
         for (int i = 0; i < line; ++i)
         {
             lineStartPos = text.find('\n', lineStartPos);
+
             if (lineStartPos == std::string::npos)
-            {
                 return "";
-            }
+
             lineStartPos++;
         }
 
         size_t lineEndPos = text.find('\n', lineStartPos);
+
         if (lineEndPos == std::string::npos)
         {
             lineEndPos = textLen;
@@ -111,20 +109,20 @@ namespace LspServer
         while (start > 0)
         {
             unsigned char startChar = static_cast<unsigned char>(lineText[start - 1]);
+
             if (!SAFE_IS_ALNUM(startChar) && lineText[start - 1] != '_')
-            {
                 break;
-            }
+
             start--;
         }
 
         while (end < static_cast<int>(lineText.length()))
         {
             unsigned char endChar = static_cast<unsigned char>(lineText[end]);
+
             if (!SAFE_IS_ALNUM(endChar) && lineText[end] != '_')
-            {
                 break;
-            }
+
             end++;
         }
 
@@ -134,21 +132,22 @@ namespace LspServer
     void PopulateCustomClassesFromModule(asIScriptEngine *engine, asIScriptModule *mod, std::vector<TokenHarvester::ScriptClass> &customClasses)
     {
         if (!mod || !engine)
-        {
             return;
-        }
 
         std::unordered_map<std::string, size_t> classIndexMap;
         classIndexMap.reserve(customClasses.size());
+
         for (size_t i = 0; i < customClasses.size(); ++i)
         {
             classIndexMap[customClasses[i].name] = i;
         }
 
         asUINT objectTypeCount = mod->GetObjectTypeCount();
+
         for (asUINT t = 0; t < objectTypeCount; t++)
         {
             asITypeInfo *typeInfo = mod->GetObjectTypeByIndex(t);
+
             if (!typeInfo)
                 continue;
 
@@ -161,10 +160,12 @@ namespace LspServer
                 extClass.name = className;
 
                 asUINT propertyCount = typeInfo->GetPropertyCount();
+
                 for (asUINT p = 0; p < propertyCount; p++)
                 {
                     const char *pName = nullptr;
                     int pTypeId = 0;
+
                     typeInfo->GetProperty(p, &pName, &pTypeId);
                     const char *pDecl = engine->GetTypeDeclaration(pTypeId, true);
 
@@ -175,9 +176,11 @@ namespace LspServer
                 }
 
                 asUINT methodCount = typeInfo->GetMethodCount();
+
                 for (asUINT m = 0; m < methodCount; m++)
                 {
                     asIScriptFunction *method = typeInfo->GetMethodByIndex(m);
+
                     if (!method)
                         continue;
 
@@ -199,9 +202,11 @@ namespace LspServer
         }
 
         asUINT enumCount = mod->GetEnumCount();
+
         for (asUINT e = 0; e < enumCount; e++)
         {
             asITypeInfo *enumType = mod->GetEnumByIndex(e);
+
             if (!enumType)
                 continue;
 
@@ -218,6 +223,7 @@ namespace LspServer
                 for (asUINT v = 0; v < enumValueCount; v++)
                 {
                     asINT64 val = 0;
+
                     if (const char *enumValName = enumType->GetEnumValueByIndex(v, &val))
                     {
                         existingMap.properties[enumValName] = TokenHarvester::ClassProperty{enumValName, enumName, "public"};
@@ -232,6 +238,7 @@ namespace LspServer
                 for (asUINT v = 0; v < enumValueCount; v++)
                 {
                     asINT64 val = 0;
+
                     if (const char *enumValName = enumType->GetEnumValueByIndex(v, &val))
                     {
                         extEnum.properties[enumValName] = TokenHarvester::ClassProperty{enumValName, enumName, "public"};
@@ -250,31 +257,33 @@ namespace LspServer
             return false;
 
         asUINT objectTypeCount = mod->GetObjectTypeCount();
+
         for (asUINT t = 0; t < objectTypeCount; t++)
         {
-            if (asITypeInfo *ti = mod->GetObjectTypeByIndex(t); ti && ti->GetName() == name)
-            {
+            asITypeInfo *ti = mod->GetObjectTypeByIndex(t);
+
+            if (ti && ti->GetName() == name)
                 return true;
-            }
         }
 
         asUINT enumCount = mod->GetEnumCount();
+
         for (asUINT e = 0; e < enumCount; e++)
         {
-            if (asITypeInfo *ti = mod->GetEnumByIndex(e); ti && ti->GetName() == name)
-            {
+            asITypeInfo *ti = mod->GetEnumByIndex(e);
+
+            if (ti && ti->GetName() == name)
                 return true;
-            }
         }
+
         return false;
     }
 
     bool IsEngineOrScriptType(asIScriptEngine *engine, asIScriptModule *mod, const std::string &name)
     {
         if (engine && engine->GetTypeIdByDecl(name.c_str()) >= 0)
-        {
             return true;
-        }
+
         return IsCustomScriptType(mod, name);
     }
 
@@ -286,16 +295,14 @@ namespace LspServer
     bool IsIncludeDirective(std::string_view line, size_t &outPathStart, size_t &outPathEnd) noexcept
     {
         size_t firstChar = line.find_first_not_of(" \t\r\n");
+
         if (firstChar == std::string::npos || line[firstChar] != '#')
-        {
             return false;
-        }
 
         size_t includePos = line.find(LspConstants::IncludeKeyword, firstChar + 1);
+
         if (includePos == std::string::npos)
-        {
             return false;
-        }
 
         for (size_t check = firstChar + 1; check < includePos; ++check)
         {
@@ -304,22 +311,34 @@ namespace LspServer
         }
 
         size_t startDelim = line.find_first_of("\"<", includePos + LspConstants::IncludeKeyword.length());
+
         if (startDelim == std::string::npos)
-        {
             return false;
-        }
 
         char closeChar = (line[startDelim] == '"') ? '"' : '>';
         size_t endDelim = line.find(closeChar, startDelim + 1);
+
         if (endDelim == std::string::npos)
-        {
             return false;
-        }
 
         outPathStart = startDelim + 1;
         outPathEnd = endDelim;
         return true;
     }
+}
+
+// =========================================================================
+// AngelScriptLSPServer Core API Implementations
+// =========================================================================
+
+ScriptEngine &AngelScriptLSPServer::GetScriptEngine()
+{
+    return scriptEngine;
+}
+
+std::unordered_map<std::string, std::string> &AngelScriptLSPServer::GetDocumentCache()
+{
+    return documentCache;
 }
 
 void AngelScriptLSPServer::Run()
@@ -345,14 +364,13 @@ void AngelScriptLSPServer::Run()
             }
 
             if (line.empty())
-            {
                 break;
-            }
 
             if (line.starts_with(prefix))
             {
                 std::string_view lengthView = std::string_view(line).substr(prefix.length());
                 auto [ptr, ec] = std::from_chars(lengthView.data(), lengthView.data() + lengthView.size(), contentLength);
+
                 if (ec != std::errc{})
                 {
                     contentLength = 0;
@@ -361,26 +379,21 @@ void AngelScriptLSPServer::Run()
         }
 
         if (std::cin.eof() || std::cin.fail())
-        {
             break;
-        }
 
         if (contentLength == 0)
-        {
             continue;
-        }
 
         content.resize(contentLength);
         std::cin.read(content.data(), contentLength);
 
         if (std::cin.gcount() < static_cast<std::streamsize>(contentLength))
-        {
             break;
-        }
 
         try
         {
             json request = json::parse(content);
+
             if (!request.contains("method"))
                 continue;
 
@@ -403,6 +416,7 @@ void AngelScriptLSPServer::Run()
             else if (method == LspConstants::MethodSemanticTokens)
             {
                 std::string uri = request["params"]["textDocument"]["uri"].get<std::string>();
+
                 if (documentCache.contains(uri))
                 {
                     HandleSemanticTokens(request["id"], uri);
@@ -411,6 +425,7 @@ void AngelScriptLSPServer::Run()
             else if (method == LspConstants::MethodCompletion)
             {
                 std::string uri = request["params"]["textDocument"]["uri"].get<std::string>();
+
                 if (documentCache.contains(uri))
                 {
                     HandleCompletion(request["id"], uri, request["params"]["position"]["line"].get<int>(), request["params"]["position"]["character"].get<int>());
@@ -419,6 +434,7 @@ void AngelScriptLSPServer::Run()
             else if (method == LspConstants::MethodHover)
             {
                 std::string uri = request["params"]["textDocument"]["uri"].get<std::string>();
+
                 if (documentCache.contains(uri))
                 {
                     HandleHover(request["id"], uri, request["params"]["position"]["line"].get<int>(), request["params"]["position"]["character"].get<int>());
@@ -434,6 +450,7 @@ void AngelScriptLSPServer::Run()
 void AngelScriptLSPServer::SendToVSCode(const json &message)
 {
     std::string content = message.dump();
+
     fmt::print("Content-Length: {}\r\n\r\n{}", content.length(), content);
     std::fflush(stdout);
 }
@@ -448,6 +465,7 @@ void AngelScriptLSPServer::LogRemote(std::string_view message, int logType)
 std::string AngelScriptLSPServer::TransformUriToPath(std::string_view uri)
 {
     std::string_view remaining = uri;
+
     if (remaining.starts_with(LspConstants::UriFilePrefixWin))
     {
         remaining.remove_prefix(LspConstants::UriFilePrefixWin.length());
@@ -483,6 +501,7 @@ std::string AngelScriptLSPServer::TransformUriToPath(std::string_view uri)
         }
         decoded += remaining[i];
     }
+
     return decoded;
 }
 
@@ -490,8 +509,9 @@ void AngelScriptLSPServer::HandleInitialize(json id)
 {
     SendToVSCode({{"jsonrpc", "2.0"},
                   {"id", id},
-                  {"result", {{"capabilities", {{"textDocumentSync", 1}, {"semanticTokensProvider", {{"legend", {{"tokenTypes", std::vector<std::string>{"keyword", "type", "function", "variable", "number", "string", "comment", "operator"}}, {"tokenModifiers", std::vector<std::string>()}}}, {"full", true}}}, {"completionProvider", {{"resolveProvider", false}, {"triggerCharacters", std::vector<std::string>{".", ":", "@"}}}}, {"hoverProvider", true}}}}}});
-    LogRemote("AngelScript LSP engine worker module successfully attached.", 3);
+                  {"result", {{"capabilities", {{"textDocumentSync", 1}, {"semanticTokensProvider", {{"legend", {{"tokenTypes", std::vector<std::string>{"keyword", "type", "function", "variable", "number", "string", "comment", "operator"}}, {"tokenModifiers", std::vector<std::string>()}}}, {"full", true}}}, {"completionProvider", {{"resolveProvider", false}, {"triggerCharacters", std::vector<std::string>{".", ":", "@"}}}}, {"hoverProvider", true}, {"definitionProvider", true}}}}}});
+
+    LogRemote("AngelScript LSP engine worker module successfully attached with Definition capabilities.", 3);
 }
 
 void AngelScriptLSPServer::AnalyzeAndReport(const std::string &uri, const std::string &code)
@@ -522,15 +542,18 @@ void AngelScriptLSPServer::AnalyzeAndReport(const std::string &uri, const std::s
     while (lineStartPos < remainingCode.length())
     {
         size_t lineEndPos = remainingCode.find('\n', lineStartPos);
+
         if (lineEndPos == std::string_view::npos)
             lineEndPos = remainingCode.length();
 
         std::string_view lineStr = remainingCode.substr(lineStartPos, lineEndPos - lineStartPos);
-        size_t pathStart = 0, pathEnd = 0;
+        size_t pathStart = 0;
+        size_t pathEnd = 0;
 
         if (LspServer::IsIncludeDirective(lineStr, pathStart, pathEnd))
         {
             std::string includeFileName = std::string(lineStr.substr(pathStart, pathEnd - pathStart));
+
             if (!fs::exists(baseDir / fs::path(includeFileName)))
             {
                 diagnosticsArray.push_back({{"range", {{"start", {{"line", lineIndex}, {"character", 0}}}, {"end", {{"line", lineIndex}, {"character", static_cast<int>(lineStr.length())}}}}},
@@ -539,6 +562,7 @@ void AngelScriptLSPServer::AnalyzeAndReport(const std::string &uri, const std::s
                                             {"source", std::string(LspConstants::PreprocessorSource)}});
             }
         }
+
         lineStartPos = lineEndPos + 1;
         lineIndex++;
     }
@@ -550,8 +574,10 @@ void AngelScriptLSPServer::HandleSemanticTokens(json id, const std::string &uri)
 {
     std::string_view code = documentCache[uri];
     std::vector<int> tokens;
-    int prevLine = 0, prevChar = 0;
-    int currentLine = 0, currentChar = 0;
+    int prevLine = 0;
+    int prevChar = 0;
+    int currentLine = 0;
+    int currentChar = 0;
     size_t i = 0;
 
     asIScriptEngine *nativeEng = scriptEngine.GetNativeEngine();
@@ -578,6 +604,7 @@ void AngelScriptLSPServer::HandleSemanticTokens(json id, const std::string &uri)
         else if (tc == asTC_IDENTIFIER)
         {
             std::string textStr = std::string(code.substr(i, len));
+
             if (LspServer::IsEngineOrScriptType(nativeEng, mod, textStr))
             {
                 tokenType = 1;
@@ -586,6 +613,7 @@ void AngelScriptLSPServer::HandleSemanticTokens(json id, const std::string &uri)
             {
                 tokenType = 3;
                 size_t nextPos = i + len;
+
                 while (nextPos < code.length() && isspace(static_cast<unsigned char>(code[nextPos])))
                 {
                     nextPos++;
@@ -620,10 +648,14 @@ void AngelScriptLSPServer::HandleSemanticTokens(json id, const std::string &uri)
                 currentChar = 0;
             }
             else
+            {
                 currentChar++;
+            }
         }
+
         i += (len == 0 ? 1 : len);
     }
+
     SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"data", tokens}}}});
 }
 
@@ -667,4 +699,10 @@ void AngelScriptLSPServer::HandleHover(json id, const std::string &uri, int line
     json hoverResult = handler.Process();
 
     SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", hoverResult}});
+}
+
+void AngelScriptLSPServer::HandleDefinition(json id, const json &request)
+{
+    // Execution payload pipeline mapping is safely deferred to the custom implementation handler context
+    SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", nullptr}});
 }

@@ -18,15 +18,51 @@
 using json = nlohmann::json;
 
 /**
+ * @namespace LspConstants
+ * @brief Contains immutable configuration strings and protocol tokens for JSON-RPC framing.
+ */
+namespace LspConstants
+{
+    extern const std::string_view MethodInitialize;
+    extern const std::string_view MethodDidOpen;
+    extern const std::string_view MethodDidChange;
+    extern const std::string_view MethodSemanticTokens;
+    extern const std::string_view MethodCompletion;
+    extern const std::string_view MethodHover;
+
+    extern const std::string_view UriFilePrefixWin;
+    extern const std::string_view UriFilePrefixUnix;
+    extern const std::string_view ContentLengthPrefix;
+    extern const std::string_view IncludeKeyword;
+    extern const std::string_view DiagnosticSource;
+    extern const std::string_view PreprocessorSource;
+}
+
+/**
+ * @namespace LspUtils
+ * @brief Contains auxiliary utility scanners, parameter placeholders, and string manipulation helpers.
+ */
+namespace LspUtils
+{
+    /**
+     * @struct FuncParam
+     * @brief File-scoped parameter metadata placeholder ensuring stable MSVC template deduction guides.
+     */
+    struct FuncParam
+    {
+        std::string pName;
+        std::string pType;
+    };
+}
+
+/**
  * @namespace LspServer
- * @brief Contains auxiliary utility scanners, string manipulation helpers, and data-type validation
- * predicates optimized for Language Server Protocol workflows.
+ * @brief Contains string manipulation helpers and data-type validation predicates optimized for LSP workflows.
  */
 namespace LspServer
 {
     /**
-     * @brief Overwrites the contents of a targeted script line with whitespaces to preserve line numbers
-     * while isolating parsing segments.
+     * @brief Overwrites the contents of a targeted script line with whitespaces to preserve line numbers.
      * @param text Complete original source text string reference.
      * @param line Target line index (0-based) to be blanked out.
      * @return A modified string copy where the specified line contents have been replaced with whitespaces.
@@ -34,8 +70,7 @@ namespace LspServer
     std::string BlankOutLine(const std::string &text, int line);
 
     /**
-     * @brief Extracts the full alphanumeric word under the specified cursor coordinate using zero-allocation
-     * string segmentation.
+     * @brief Extracts the full alphanumeric word under the specified cursor coordinate using zero-allocation string segmentation.
      * @param text String view window pointing directly to the multi-line source buffer content.
      * @param line Target coordinate row layout index (0-based).
      * @param character Target coordinate horizontal column offset index (0-based).
@@ -44,8 +79,7 @@ namespace LspServer
     std::string_view ExtractWordAtPosition(std::string_view text, int line, int character);
 
     /**
-     * @brief Collects and populates script classes and object structures compiled inside an active module
-     * utilizing an accelerated cache mapping profile.
+     * @brief Collects and populates script classes and object structures compiled inside an active module.
      * @param engine Pointer to the active core AngelScript compiler engine instance framework.
      * @param mod Pointer to the target active script compilation unit storage segment module.
      * @param customClasses Extracted metadata associative lookup structure profile collection to populate.
@@ -97,15 +131,20 @@ private:
     std::unordered_map<std::string, std::string> documentCache;
 
 public:
-    /**
-     * @brief Default constructor for the AngelScriptLSPServer.
-     */
     AngelScriptLSPServer() = default;
+    ~AngelScriptLSPServer() = default;
 
     /**
-     * @brief Default destructor for the AngelScriptLSPServer.
+     * @brief Accessor for the underlying script engine orchestrator wrapper.
+     * @return A reference to the active ScriptEngine manager instance.
      */
-    ~AngelScriptLSPServer() = default;
+    ScriptEngine &GetScriptEngine();
+
+    /**
+     * @brief Accessor for the standard in-memory track buffer mapping document layouts.
+     * @return A reference to the active document key-value cache registry.
+     */
+    std::unordered_map<std::string, std::string> &GetDocumentCache();
 
     /**
      * @brief Launches the main infinite execution loop monitoring client stream traffic blocks.
@@ -170,6 +209,13 @@ private:
      * @param character The character offset (0-based) in the line where the hover request was triggered.
      */
     void HandleHover(json id, const std::string &uri, int line, int character);
+
+    /**
+     * @brief Handles the 'textDocument/definition' LSP request by resolving the definition location of the symbol at the given position.
+     * @param id The unique identifier of the LSP request to which this response corresponds.
+     * @param request The full JSON object representing the LSP request, containing parameters such as the document URI and position.
+     */
+    void HandleDefinition(json id, const json &request);
 };
 
 #endif // LSP_SERVER_H

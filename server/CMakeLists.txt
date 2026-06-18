@@ -18,10 +18,7 @@ FetchContent_MakeAvailable(fmt)
 
 FetchContent_Declare(angelscript_repo GIT_REPOSITORY https://github.com/anjo76/angelscript.git GIT_TAG master)
 
-if(POLICY CMP0169)
-    cmake_policy(SET CMP0169 OLD)
-endif()
-FetchContent_Populate(angelscript_repo)
+FetchContent_MakeAvailable(angelscript_repo)
 
 file(GLOB AS_SOURCES "${angelscript_repo_SOURCE_DIR}/sdk/angelscript/source/*.cpp")
 list(APPEND AS_SOURCES "${angelscript_repo_SOURCE_DIR}/sdk/add_on/scriptbuilder/scriptbuilder.cpp")
@@ -48,6 +45,7 @@ add_executable(angel_lsp
     src/TokenHarvester.cpp
     src/CompletionHandler.cpp
     src/HoverHandler.cpp
+    src/DefinitionHandler.cpp
 )
 
 target_include_directories(angel_lsp PRIVATE include)

@@ -1,6 +1,6 @@
 /**
  * @file TokenHarvester.h
- * @brief Fault-tolerant textual token scanning utilities for context parsing.
+ * @brief Fault-tolerant textual token scanning utilities for context parsing and definition tracking.
  * @author AngelScript LSP Team
  */
 
@@ -11,19 +11,44 @@
 #include <string_view>
 #include <vector>
 #include <unordered_map>
+#include <map>
 #include <angelscript.h>
 
 namespace TokenHarvester
 {
+    /**
+     * @struct DeclarationLocation
+     * @brief Represents the exact coordinate positioning of a symbol declaration inside a specific file resource.
+     */
+    struct DeclarationLocation
+    {
+        /** @brief The absolute file resource URI string identifier. */
+        std::string uri;
+
+        /** @brief The zero-based row line index of the declaration. */
+        int line = 0;
+
+        /** @brief The zero-based column character offset index of the declaration. */
+        int character = 0;
+    };
+
     /**
      * @struct LocalVariable
      * @brief Context storage for variables alive within current functional execution scopes.
      */
     struct LocalVariable
     {
+        /** @brief The name identifier of the local variable. */
         std::string name;
+
+        /** @brief The data type identifier for the variable. */
         std::string typeName;
+
+        /** @brief Track curly brace nesting depth at instantiation time. */
         int declarationDepth;
+
+        /** @brief Concrete definition tracking coordinates for definition jumps. */
+        DeclarationLocation location;
     };
 
     /**
@@ -32,9 +57,17 @@ namespace TokenHarvester
      */
     struct GlobalFunction
     {
+        /** @brief The identifier name of the global function. */
         std::string name;
+
+        /** @brief The return type identifier of the global function. */
         std::string typeName;
+
+        /** @brief The full raw signature declaration statement of the function. */
         std::string declaration;
+
+        /** @brief Concrete definition tracking coordinates for definition jumps. */
+        DeclarationLocation location;
     };
 
     /**
@@ -43,8 +76,14 @@ namespace TokenHarvester
      */
     struct GlobalVariable
     {
+        /** @brief The identifier name of the global variable. */
         std::string name;
+
+        /** @brief The data type identifier of the global variable. */
         std::string typeName;
+
+        /** @brief Concrete definition tracking coordinates for definition jumps. */
+        DeclarationLocation location;
     };
 
     /**
@@ -53,9 +92,17 @@ namespace TokenHarvester
      */
     struct ClassProperty
     {
+        /** @brief The identifier name of the class property. */
         std::string name;
+
+        /** @brief The data type identifier of the property. */
         std::string typeName;
+
+        /** @brief The access visibility specifier (e.g., "public", "private", "protected"). */
         std::string access;
+
+        /** @brief Concrete definition tracking coordinates for definition jumps. */
+        DeclarationLocation location;
     };
 
     /**
@@ -64,11 +111,23 @@ namespace TokenHarvester
      */
     struct ClassMethod
     {
+        /** @brief The identifier name of the method. */
         std::string name;
+
+        /** @brief The return type identifier of the class method. */
         std::string typeName;
+
+        /** @brief The full signature statement declaration of the class method. */
         std::string declaration;
+
+        /** @brief The access visibility specifier (e.g., "public", "private", "protected"). */
         std::string access;
+
+        /** @brief Flag indicating if this method serves as an initialization constructor. */
         bool isConstructor;
+
+        /** @brief Concrete definition tracking coordinates for definition jumps. */
+        DeclarationLocation location;
     };
 
     /**
@@ -77,10 +136,20 @@ namespace TokenHarvester
      */
     struct ScriptClass
     {
+        /** @brief The identifier name of the user-defined script class. */
         std::string name;
+
+        /** @brief List of parent class identifiers used for tree resolution. */
         std::vector<std::string> baseTypes;
+
+        /** @brief Map of encapsulating property variables indexed for O(1) tracking lookups. */
         std::unordered_map<std::string, ClassProperty> properties;
+
+        /** @brief Map of encapsulated methods and polymorph overloads indexed for O(1) tracking lookups. */
         std::unordered_map<std::string, std::vector<ClassMethod>> methods;
+
+        /** @brief Concrete definition tracking coordinates for definition jumps. */
+        DeclarationLocation location;
     };
 
     /**
@@ -89,86 +158,142 @@ namespace TokenHarvester
      */
     struct CompletionContext
     {
+        /** @brief Flag indicating if the completion trigger is a member access. */
         bool isMemberAccess;
+
+        /** @brief The sequence of accessed objects, supporting infinite chaining (e.g., A.B.C). */
         std::vector<std::string> objectChain;
+
+        /** @brief The incomplete or partial member string currently being typed. */
         std::string partialMember;
+
+        /** @brief The structural separator token context triggering completion. */
         std::string lastSeparator;
     };
 
     /**
-     * @brief Strips qualifiers and modifiers from a type string to get the base type.
-     * @param type The original type string view.
-     * @return The base type string view stripped of modifiers.
+     * @class TokenStream
+     * @brief Fault-tolerant lexical token streaming wrapper for parsing AngelScript source buffers.
      */
+    class TokenStream
+    {
+    private:
+        asIScriptEngine *engine;
+        std::string_view code;
+        size_t pos;
+
+    public:
+        TokenStream(asIScriptEngine *e, std::string_view c, size_t start = 0);
+
+        asETokenClass Peek(std::string_view &outToken);
+        asETokenClass Advance(std::string_view &outToken);
+        bool IsEOF();
+        size_t GetPos() const { return pos; }
+        void SetPos(size_t p) { pos = p; }
+    };
+
+    /**
+     * @class ASTScanner
+     * @brief Base class for syntax tree traversal operations providing scoping and validation blocks.
+     */
+    class ASTScanner
+    {
+    protected:
+        struct ScopeCtx
+        {
+            std::string name;
+            std::string type;
+            int depth;
+        };
+
+        asIScriptEngine *engine;
+        std::string_view code;
+        TokenStream stream;
+        std::vector<std::string> knownClassNames;
+        std::vector<ScopeCtx> scopeStack;
+        std::string_view token;
+        std::string pendingScopeType;
+        std::string pendingScopeName;
+        int currentDepth;
+
+    public:
+        ASTScanner(asIScriptEngine *e, std::string_view c);
+
+    protected:
+        std::string GetFullScope() const;
+        void SkipBlock();
+        void CollectKnownTypes();
+    };
+
+    /**
+     * @class CustomClassScanner
+     * @brief Context framework specialized in harvesting user-defined script classes and properties.
+     */
+    class CustomClassScanner : public ASTScanner
+    {
+    private:
+        std::map<std::string, ScriptClass> classMap;
+        std::string currentAccess;
+
+    public:
+        CustomClassScanner(asIScriptEngine *e, std::string_view c);
+        std::vector<ScriptClass> Scan();
+
+    private:
+        bool ProcessEnum(asETokenClass tc);
+        bool ProcessConstructorOrDestructor(asETokenClass tc);
+        bool ProcessMember(size_t savedPos);
+        void ParseMethod(const std::string &parsedType, const std::string &memberName);
+        void ParseProperty(const std::string &parsedType, const std::string &memberName);
+    };
+
+    /**
+     * @class LocalVariableScanner
+     * @brief Introspects localized execution blocks to extract and map out current active scope variables.
+     */
+    class LocalVariableScanner : public ASTScanner
+    {
+    private:
+        struct BlockCtxInfo
+        {
+            std::string type;
+            int depth;
+        };
+
+        std::vector<LocalVariable> locals;
+        std::vector<BlockCtxInfo> blockStack;
+        std::string lastControlKeyword;
+        std::string lastTokenStr;
+        size_t cursorAbsolutePos;
+        int parenDepth;
+
+        const std::vector<ScriptClass> &customClasses;
+        const std::vector<GlobalVariable> &globalVars;
+        const std::vector<GlobalFunction> &globalFuncs;
+
+    public:
+        LocalVariableScanner(asIScriptEngine *e, std::string_view c, size_t pos,
+                             const std::vector<ScriptClass> &cClasses,
+                             const std::vector<GlobalVariable> &gVars,
+                             const std::vector<GlobalFunction> &gFuncs);
+
+        std::string GetVariableNature(int pDepth, int effDepth) const;
+        std::vector<LocalVariable> Scan(std::string &outEnclosingClass);
+
+    private:
+        std::string InferAutoType(const std::vector<std::string> &tokens);
+        bool ProcessLocalDeclaration(size_t savedPos, bool directlyInClass);
+        void ParseAssignments(std::string parsedType, int effectiveDepth, std::string currentVarName);
+    };
+
     std::string_view GetBaseType(std::string_view type) noexcept;
-
-    /**
-     * @brief Extracts the underlying parameter type wrapped inside collections.
-     * @param type The raw data type string view.
-     * @return The isolated inner data type representation string view.
-     */
     std::string_view ExtractInnerType(std::string_view type) noexcept;
-
-    /**
-     * @brief Strips references and pointers but preserves template arguments (<T>).
-     * @param type The original type string view.
-     * @return The instantiated type string view.
-     */
     std::string_view GetInstantiatedType(std::string_view type) noexcept;
-
-    /**
-     * @brief Evaluates if a token sequence represents a valid data type.
-     * @param engine Pointer to the active AngelScript engine instance.
-     * @param code The source code string view to be analyzed.
-     * @return A vector containing all identified custom script classes.
-     */
     std::vector<ScriptClass> ScanCustomClasses(asIScriptEngine *engine, std::string_view code);
-
-    /**
-     * @brief Parses backward from the cursor to determine completion contexts.
-     * @param engine Pointer to the active AngelScript engine instance.
-     * @param code The source code string view being analyzed.
-     * @param cursorAbsolutePos The linear index position of the cursor.
-     * @return The structural completion context corresponding to the cursor's location.
-     */
     CompletionContext GetCompletionContext(asIScriptEngine *engine, std::string_view code, size_t cursorAbsolutePos);
-
-    /**
-     * @brief Computes multidimensional rows and columns down to a linear string offset character tracker.
-     * @param text The full multi-line string view.
-     * @param line The zero-based index of the target line.
-     * @param character The zero-based index of the target character on the line.
-     * @return The absolute linear position within the total string.
-     */
     size_t GetAbsolutePosition(std::string_view text, int line, int character);
-
-    /**
-     * @brief Traverses tokens sequentially inside a scope to map active local variables.
-     * @param engine Pointer to the active AngelScript engine instance.
-     * @param code The source code string view being analyzed.
-     * @param cursorAbsolutePos The linear index position of the cursor defining the scope limit.
-     * @param outEnclosingClass Output string parameter populated with the active enclosing class name.
-     * @param customClasses Mapped script classes metadata database profiles.
-     * @param globalVars Collection summarizing file layer variable properties.
-     * @param globalFuncs Registry mapping globally compiled operations methods routines.
-     * @return A vector of active local variables within the identified scope.
-     */
     std::vector<LocalVariable> ScanLocalVariables(asIScriptEngine *engine, std::string_view code, size_t cursorAbsolutePos, std::string &outEnclosingClass, const std::vector<ScriptClass> &customClasses, const std::vector<GlobalVariable> &globalVars, const std::vector<GlobalFunction> &globalFuncs);
-
-    /**
-     * @brief Extracts global function signatures using safe pattern matching.
-     * @param engine Pointer to the active AngelScript engine instance.
-     * @param code The source code string view to be scanned.
-     * @return A vector containing all globally defined functions.
-     */
     std::vector<GlobalFunction> ScanGlobalFunctions(asIScriptEngine *engine, std::string_view code);
-
-    /**
-     * @brief Traverses tokens globally inside a raw file to extract global variable records.
-     * @param engine Pointer to the active AngelScript engine instance.
-     * @param code The source code string view to be scanned.
-     * @return A vector containing all globally defined variables.
-     */
     std::vector<GlobalVariable> ScanGlobalVariables(asIScriptEngine *engine, std::string_view code);
 }
 
