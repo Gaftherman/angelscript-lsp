@@ -211,10 +211,6 @@ namespace TokenHarvester
         return type;
     }
 
-    // =========================================================================
-    // TokenStream Implementation
-    // =========================================================================
-
     TokenStream::TokenStream(asIScriptEngine *e, std::string_view c, size_t start)
         : engine(e), code(c), pos(start) {}
 
@@ -473,10 +469,6 @@ namespace TokenHarvester
         return typeName;
     }
 
-    // =========================================================================
-    // ASTScanner Implementation
-    // =========================================================================
-
     ASTScanner::ASTScanner(asIScriptEngine *e, std::string_view c)
         : engine(e), code(c), stream(e, c), currentDepth(0) {}
 
@@ -542,7 +534,6 @@ namespace TokenHarvester
                     {
                         if (!fScope.empty())
                             fScope += "::";
-
                         fScope += s;
                     }
 
@@ -558,10 +549,6 @@ namespace TokenHarvester
             }
         }
     }
-
-    // =========================================================================
-    // CustomClassScanner Implementation
-    // =========================================================================
 
     CustomClassScanner::CustomClassScanner(asIScriptEngine *e, std::string_view c)
         : ASTScanner(e, c), currentAccess("public")
@@ -623,6 +610,7 @@ namespace TokenHarvester
                         stream.Advance(token);
                     }
                 }
+
                 continue;
             }
 
@@ -644,6 +632,7 @@ namespace TokenHarvester
                     pendingScopeType.clear();
                     currentAccess = "public";
                 }
+
                 continue;
             }
 
@@ -662,7 +651,9 @@ namespace TokenHarvester
             if (tc == asTC_KEYWORD && HarvesterInternal::IsAccessModifier(token))
             {
                 if (token != "shared")
+                {
                     currentAccess = std::string(token);
+                }
 
                 continue;
             }
@@ -676,7 +667,9 @@ namespace TokenHarvester
             bool validDeclFound = ProcessConstructorOrDestructor(tc);
 
             if (!validDeclFound)
+            {
                 validDeclFound = ProcessMember(savedPos);
+            }
 
             if (validDeclFound)
             {
@@ -725,16 +718,16 @@ namespace TokenHarvester
         {
             if (stream.Peek(nextToken) == asTC_KEYWORD && nextToken == "(")
             {
-                int parenDepth = 0;
+                int pDepth = 0;
 
                 do
                 {
                     stream.Advance(token);
                     if (token == "(")
-                        parenDepth++;
+                        pDepth++;
                     else if (token == ")")
-                        parenDepth--;
-                } while (parenDepth > 0 && !stream.IsEOF());
+                        pDepth--;
+                } while (pDepth > 0 && !stream.IsEOF());
 
                 classMap[fullScope].methods[currentScope.name].push_back({currentScope.name, "void", fullScope + "()", currentAccess, true});
 
@@ -768,16 +761,16 @@ namespace TokenHarvester
 
                 if (stream.Peek(nextToken) == asTC_KEYWORD && nextToken == "(")
                 {
-                    int parenDepth = 0;
+                    int pDepth = 0;
 
                     do
                     {
                         stream.Advance(token);
                         if (token == "(")
-                            parenDepth++;
+                            pDepth++;
                         else if (token == ")")
-                            parenDepth--;
-                    } while (parenDepth > 0 && !stream.IsEOF());
+                            pDepth--;
+                    } while (pDepth > 0 && !stream.IsEOF());
 
                     std::string destName = "~" + currentScope.name;
                     classMap[fullScope].methods[destName].push_back({destName, "void", "~" + fullScope + "()", currentAccess, true});
@@ -879,16 +872,16 @@ namespace TokenHarvester
     {
         std::string fullScope = GetFullScope();
         size_t sigStart = stream.GetPos();
-        int parenDepth = 0;
+        int pDepth = 0;
 
         do
         {
             stream.Advance(token);
             if (token == "(")
-                parenDepth++;
+                pDepth++;
             else if (token == ")")
-                parenDepth--;
-        } while (parenDepth > 0 && !stream.IsEOF());
+                pDepth--;
+        } while (pDepth > 0 && !stream.IsEOF());
 
         size_t sigEnd = stream.GetPos();
         std::string exactParams(code.data() + sigStart, sigEnd - sigStart);
@@ -947,10 +940,6 @@ namespace TokenHarvester
             }
         }
     }
-
-    // =========================================================================
-    // LocalVariableScanner Implementation
-    // =========================================================================
 
     LocalVariableScanner::LocalVariableScanner(asIScriptEngine *e, std::string_view c, size_t pos,
                                                const std::vector<ScriptClass> &cClasses,
@@ -1056,6 +1045,7 @@ namespace TokenHarvester
                     stream.Advance(token);
                     lastTokenStr = pendingScopeName;
                 }
+
                 continue;
             }
 
@@ -1157,6 +1147,7 @@ namespace TokenHarvester
                         stream.SetPos(foreachPos);
                     }
                 }
+
                 continue;
             }
 
@@ -1274,6 +1265,7 @@ namespace TokenHarvester
                                     {
                                         nextType = it->second.front().typeName;
                                     }
+
                                     break;
                                 }
                             }
@@ -1349,6 +1341,7 @@ namespace TokenHarvester
                             found = true;
                             break;
                         }
+
                         break;
                     }
                 }
@@ -1455,7 +1448,9 @@ namespace TokenHarvester
                                                { return v.name == varName; });
 
                 if (it == locals.end())
+                {
                     locals.push_back({varName, parsedType, effectiveDepth});
+                }
 
                 ParseAssignments(parsedType, effectiveDepth, varName);
                 return true;
@@ -1504,6 +1499,7 @@ namespace TokenHarvester
                     if (stream.Peek(token) == asTC_KEYWORD && token == ")")
                         stream.Advance(token);
                 }
+
                 if (stream.Peek(token) == asTC_KEYWORD && token == "{")
                     break;
 
@@ -1592,7 +1588,9 @@ namespace TokenHarvester
                                                    { return v.name == nextVar; });
 
                     if (it == locals.end())
+                    {
                         locals.push_back({nextVar, parsedType, effectiveDepth});
+                    }
 
                     continue;
                 }
@@ -1602,7 +1600,9 @@ namespace TokenHarvester
                 stream.Advance(token);
 
                 if (isAssigning && lookTc != asTC_WHITESPACE && lookTc != asTC_COMMENT)
+                {
                     expressionTokens.push_back(std::string(token));
+                }
 
                 if (token == "(")
                 {
@@ -1618,10 +1618,6 @@ namespace TokenHarvester
             }
         }
     }
-
-    // =========================================================================
-    // Global Static Core API Mappings
-    // =========================================================================
 
     size_t GetAbsolutePosition(std::string_view text, int line, int character)
     {
@@ -1769,50 +1765,10 @@ namespace TokenHarvester
     std::vector<GlobalFunction> ScanGlobalFunctions(asIScriptEngine *engine, std::string_view code)
     {
         std::vector<GlobalFunction> funcs;
-        std::vector<std::string> localClasses;
-        TokenStream stream(engine, code);
-        std::string lastTokenStr;
-        int currentDepth = 0;
-
         std::vector<ScriptClass> customClasses = ScanCustomClasses(engine, code);
-        localClasses.reserve(customClasses.size());
 
-        for (const auto &c : customClasses)
-        {
-            localClasses.push_back(c.name);
-        }
-
-        while (!stream.IsEOF())
-        {
-            size_t savedPos = stream.GetPos();
-            std::string_view token;
-            asETokenClass tc = stream.Peek(token);
-
-            if (tc == asTC_KEYWORD)
-            {
-                if (token == "{")
-                {
-                    currentDepth++;
-                    stream.Advance(token);
-                    lastTokenStr = "{";
-                    continue;
-                }
-                if (token == "}")
-                {
-                    currentDepth--;
-                    stream.Advance(token);
-                    lastTokenStr = "}";
-                    continue;
-                }
-            }
-
-            while (tc == asTC_KEYWORD && HarvesterInternal::IsGlobalModifier(token))
-            {
-                stream.Advance(token);
-                lastTokenStr = std::string(token);
-                tc = stream.Peek(token);
-            }
-
+        Service::HarvestGlobalTokens(engine, code, customClasses, [&](TokenStream &stream, asETokenClass tc, std::string_view token, std::string &lastTokenStr, int currentDepth, size_t savedPos, const std::vector<std::string> &localClasses)
+                                     {
             bool validDeclFound = false;
 
             if (lastTokenStr != "." && lastTokenStr != "::")
@@ -1832,66 +1788,16 @@ namespace TokenHarvester
                         if (currentDepth == 0)
                         {
                             std::string decl = fmt::format("{} {}()", parsedType, funcName);
-                            auto it = std::ranges::find_if(funcs, [&](const GlobalFunction &f)
-                                                           { return f.name == funcName; });
+                            auto it = std::ranges::find_if(funcs, [&](const GlobalFunction &f) { return f.name == funcName; });
 
                             if (it == funcs.end())
                                 funcs.push_back({funcName, parsedType, decl});
                         }
                     }
                 }
+                
                 if (!validDeclFound)
                     stream.SetPos(beforeTypePos);
-            }
-
-            if (!validDeclFound && stream.GetPos() == savedPos)
-            {
-                stream.Advance(token);
-                lastTokenStr = std::string(token);
-            }
-        }
-
-        return funcs;
-    }
-
-    std::vector<GlobalVariable> ScanGlobalVariables(asIScriptEngine *engine, std::string_view code)
-    {
-        std::vector<GlobalVariable> vars;
-        std::vector<std::string> localClasses;
-        TokenStream stream(engine, code);
-        std::string lastTokenStr;
-        int currentDepth = 0;
-
-        std::vector<ScriptClass> customClasses = ScanCustomClasses(engine, code);
-        localClasses.reserve(customClasses.size());
-
-        for (const auto &c : customClasses)
-        {
-            localClasses.push_back(c.name);
-        }
-
-        while (!stream.IsEOF())
-        {
-            size_t savedPos = stream.GetPos();
-            std::string_view token;
-            asETokenClass tc = stream.Peek(token);
-
-            if (tc == asTC_KEYWORD)
-            {
-                if (token == "{")
-                {
-                    currentDepth++;
-                    stream.Advance(token);
-                    lastTokenStr = "{";
-                    continue;
-                }
-                if (token == "}")
-                {
-                    currentDepth--;
-                    stream.Advance(token);
-                    lastTokenStr = "}";
-                    continue;
-                }
             }
 
             while (tc == asTC_KEYWORD && HarvesterInternal::IsGlobalModifier(token))
@@ -1901,6 +1807,22 @@ namespace TokenHarvester
                 tc = stream.Peek(token);
             }
 
+            if (!validDeclFound && stream.GetPos() == savedPos)
+            {
+                stream.Advance(token);
+                lastTokenStr = std::string(token);
+            } });
+
+        return funcs;
+    }
+
+    std::vector<GlobalVariable> ScanGlobalVariables(asIScriptEngine *engine, std::string_view code)
+    {
+        std::vector<GlobalVariable> vars;
+        std::vector<ScriptClass> customClasses = ScanCustomClasses(engine, code);
+
+        Service::HarvestGlobalTokens(engine, code, customClasses, [&](TokenStream &stream, asETokenClass tc, std::string_view token, std::string &lastTokenStr, int currentDepth, size_t savedPos, const std::vector<std::string> &localClasses)
+                                     {
             bool validDeclFound = false;
 
             if (lastTokenStr != "." && lastTokenStr != "::")
@@ -1920,8 +1842,7 @@ namespace TokenHarvester
 
                         if (currentDepth == 0)
                         {
-                            auto it = std::ranges::find_if(vars, [&](const GlobalVariable &v)
-                                                           { return v.name == varName; });
+                            auto it = std::ranges::find_if(vars, [&](const GlobalVariable &v) { return v.name == varName; });
 
                             if (it == vars.end())
                                 vars.push_back({varName, parsedType});
@@ -1942,8 +1863,7 @@ namespace TokenHarvester
                                         std::string nextVar = std::string(token);
                                         stream.Advance(token);
                                         lastTokenStr = nextVar;
-                                        it = std::ranges::find_if(vars, [&](const GlobalVariable &v)
-                                                                  { return v.name == nextVar; });
+                                        it = std::ranges::find_if(vars, [&](const GlobalVariable &v) { return v.name == nextVar; });
 
                                         if (it == vars.end())
                                             vars.push_back({nextVar, parsedType});
@@ -1960,17 +1880,24 @@ namespace TokenHarvester
                         }
                     }
                 }
+                
                 if (!validDeclFound)
                     stream.SetPos(beforeTypePos);
+            }
+
+            while (tc == asTC_KEYWORD && HarvesterInternal::IsGlobalModifier(token))
+            {
+                stream.Advance(token);
+                lastTokenStr = std::string(token);
+                tc = stream.Peek(token);
             }
 
             if (!validDeclFound && stream.GetPos() == savedPos)
             {
                 stream.Advance(token);
                 lastTokenStr = std::string(token);
-            }
-        }
+            } });
 
         return vars;
     }
-}
+} // namespace TokenHarvester

@@ -7,7 +7,10 @@
 #include "TokenHarvester.h"
 #include "CompletionHandler.h"
 #include "HoverHandler.h"
+#include "DefinitionHandler.h"
+#include "ReferencesHandler.h"
 #include "SafeCtype.h"
+
 #include <iostream>
 #include <sstream>
 #include <filesystem>
@@ -35,6 +38,8 @@ namespace LspConstants
     constexpr std::string_view MethodSemanticTokens = "textDocument/semanticTokens/full";
     constexpr std::string_view MethodCompletion = "textDocument/completion";
     constexpr std::string_view MethodHover = "textDocument/hover";
+    constexpr std::string_view MethodDefinition = "textDocument/definition";
+    constexpr std::string_view MethodReferences = "textDocument/references";
 
     constexpr std::string_view UriFilePrefixWin = "file:///";
     constexpr std::string_view UriFilePrefixUnix = "file://";
@@ -440,9 +445,22 @@ void AngelScriptLSPServer::Run()
                     HandleHover(request["id"], uri, request["params"]["position"]["line"].get<int>(), request["params"]["position"]["character"].get<int>());
                 }
             }
+            else if (method == LspConstants::MethodDefinition)
+            {
+                HandleDefinition(request["id"], request);
+            }
+            else if (method == LspConstants::MethodReferences)
+            {
+                HandleReferences(request["id"], request);
+            }
         }
-        catch (...)
+        catch (const std::exception &e) // 🎯 REPARACIÓN CRÍTICA: Captura y expone excepciones estándar en stderr
         {
+            std::cerr << "[LSP Server Fatal Error] Exception captured: " << e.what() << std::endl;
+        }
+        catch (...) // 🎯 REPARACIÓN CRÍTICA: Captura fallos desconocidos para evitar caídas silenciosas
+        {
+            std::cerr << "[LSP Server Fatal Error] Unknown exception captured inside event loop." << std::endl;
         }
     }
 }
@@ -509,9 +527,9 @@ void AngelScriptLSPServer::HandleInitialize(json id)
 {
     SendToVSCode({{"jsonrpc", "2.0"},
                   {"id", id},
-                  {"result", {{"capabilities", {{"textDocumentSync", 1}, {"semanticTokensProvider", {{"legend", {{"tokenTypes", std::vector<std::string>{"keyword", "type", "function", "variable", "number", "string", "comment", "operator"}}, {"tokenModifiers", std::vector<std::string>()}}}, {"full", true}}}, {"completionProvider", {{"resolveProvider", false}, {"triggerCharacters", std::vector<std::string>{".", ":", "@"}}}}, {"hoverProvider", true}, {"definitionProvider", true}}}}}});
+                  {"result", {{"capabilities", {{"textDocumentSync", 1}, {"semanticTokensProvider", {{"legend", {{"tokenTypes", std::vector<std::string>{"keyword", "type", "function", "variable", "number", "string", "comment", "operator"}}, {"tokenModifiers", std::vector<std::string>()}}}, {"full", true}}}, {"completionProvider", {{"resolveProvider", false}, {"triggerCharacters", std::vector<std::string>{".", ":", "@"}}}}, {"hoverProvider", true}, {"definitionProvider", true}, {"referencesProvider", true}}}}}});
 
-    LogRemote("AngelScript LSP engine worker module successfully attached with Definition capabilities.", 3);
+    LogRemote("AngelScript LSP engine worker module successfully attached with Definition and References capabilities.", 3);
 }
 
 void AngelScriptLSPServer::AnalyzeAndReport(const std::string &uri, const std::string &code)
@@ -703,6 +721,80 @@ void AngelScriptLSPServer::HandleHover(json id, const std::string &uri, int line
 
 void AngelScriptLSPServer::HandleDefinition(json id, const json &request)
 {
-    // Execution payload pipeline mapping is safely deferred to the custom implementation handler context
-    SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", nullptr}});
+    if (!request.contains("params"))
+    {
+        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", nullptr}});
+        return;
+    }
+
+    const auto &params = request["params"];
+
+    if (!params.contains("textDocument"))
+    {
+        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", nullptr}});
+        return;
+    }
+
+    std::string uri = params["textDocument"]["uri"].get<std::string>();
+
+    if (!documentCache.contains(uri))
+    {
+        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", nullptr}});
+        return;
+    }
+
+    std::string_view sourceCode = documentCache[uri];
+    asIScriptEngine *nativeEng = scriptEngine.GetNativeEngine();
+
+    json definitionLocation = DefinitionHandler::HandleDefinitionRequest(nativeEng, request, sourceCode);
+
+    SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", definitionLocation}});
+}
+
+void AngelScriptLSPServer::HandleReferences(json id, const json &request)
+{
+    if (!request.contains("params"))
+    {
+        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", json::array()}});
+        return;
+    }
+
+    const auto &params = request["params"];
+
+    if (!params.contains("textDocument"))
+    {
+        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", json::array()}});
+        return;
+    }
+
+    std::string uri = params["textDocument"]["uri"].get<std::string>();
+
+    if (!documentCache.contains(uri))
+    {
+        SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", json::array()}});
+        return;
+    }
+
+    std::string_view sourceCode = documentCache[uri];
+    asIScriptEngine *nativeEng = scriptEngine.GetNativeEngine();
+
+    auto debugLogBridge = [](std::string_view diagnosticMessage, int severityLevel)
+    {
+        std::string prefix = "[References Info] ";
+
+        if (severityLevel == 1)
+        {
+            prefix = "[References ERROR] ";
+        }
+        else if (severityLevel == 2)
+        {
+            prefix = "[References WARNING] ";
+        }
+
+        std::cerr << prefix << diagnosticMessage << std::endl;
+    };
+
+    json referencesCollection = ReferencesHandler::HandleReferencesRequest(nativeEng, request, sourceCode, debugLogBridge);
+
+    SendToVSCode({{"jsonrpc", "2.0"}, {"id", id}, {"result", referencesCollection}});
 }

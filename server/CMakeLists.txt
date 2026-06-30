@@ -46,6 +46,7 @@ add_executable(angel_lsp
     src/CompletionHandler.cpp
     src/HoverHandler.cpp
     src/DefinitionHandler.cpp
+    src/ReferencesHandler.cpp
 )
 
 target_include_directories(angel_lsp PRIVATE include)

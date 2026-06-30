@@ -216,6 +216,13 @@ private:
      * @param request The full JSON object representing the LSP request, containing parameters such as the document URI and position.
      */
     void HandleDefinition(json id, const json &request);
+
+    /**
+     * @brief Handles the 'textDocument/references' LSP request by resolving all reference locations of the symbol at the given position.
+     * @param id The unique identifier of the LSP request to which this response corresponds.
+     * @param request The full JSON object representing the LSP request, containing parameters such as the document URI and position.
+     */
+    void HandleReferences(json id, const json &request);
 };
 
 #endif // LSP_SERVER_H
