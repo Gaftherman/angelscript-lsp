@@ -9,6 +9,5 @@ client/package-lock.json
 server/build/
 server/.cache/
 build/
-.vscode/settings.json
-client/bin/win32-x64/angel_lsp.exe
-client/bin/win32-x64/angel_lsp.exe
+.vscode/
+client/bin/
