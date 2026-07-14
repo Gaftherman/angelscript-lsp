@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.14)
 project(AngelLSP VERSION 1.0)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -8,16 +9,18 @@ if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     enable_language(ASM_MASM)
 endif()
 
+# ── Vendor libraries (tree-sitter runtime + AngelScript grammar) ────────────
+add_subdirectory(vendor)
+
 include(FetchContent)
 
 FetchContent_Declare(json GIT_REPOSITORY https://github.com/nlohmann/json.git GIT_TAG v3.11.3)
 FetchContent_MakeAvailable(json)
 
-FetchContent_Declare(fmt GIT_REPOSITORY https://github.com/fmtlib/fmt.git GIT_TAG 10.2.1)
-FetchContent_MakeAvailable(fmt)
+FetchContent_Declare(spdlog GIT_REPOSITORY https://github.com/gabime/spdlog.git GIT_TAG v1.13.0)
+FetchContent_MakeAvailable(spdlog)
 
 FetchContent_Declare(angelscript_repo GIT_REPOSITORY https://github.com/anjo76/angelscript.git GIT_TAG master)
-
 FetchContent_MakeAvailable(angelscript_repo)
 
 file(GLOB AS_SOURCES "${angelscript_repo_SOURCE_DIR}/sdk/angelscript/source/*.cpp")
@@ -38,24 +41,36 @@ target_include_directories(AngelScriptLib PUBLIC
     "${angelscript_repo_SOURCE_DIR}/sdk/add_on"
 )
 
-add_executable(angel_lsp 
-    src/main.cpp
-    src/LspServer.cpp
-    src/ScriptEngine.cpp
-    src/TokenHarvester.cpp
-    src/CompletionHandler.cpp
-    src/HoverHandler.cpp
-    src/DefinitionHandler.cpp
-    src/ReferencesHandler.cpp
+# ── Tests ───────────────────────────────────────────────────────────────────
+FetchContent_Declare(doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG v2.4.11
 )
+FetchContent_MakeAvailable(doctest)
 
-target_include_directories(angel_lsp PRIVATE include)
+# We will compile all our source files into a static library so they can be
+# shared easily between the LSP executable and the Tests executable.
+file(GLOB_RECURSE BACKEND_SOURCES "src/*.cpp")
 
-target_link_libraries(angel_lsp PRIVATE 
+# Remove test_main.cpp or main.cpp from the shared sources if we have them
+list(REMOVE_ITEM BACKEND_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
+
+add_library(angel_lsp_core STATIC ${BACKEND_SOURCES})
+target_include_directories(angel_lsp_core PUBLIC 
+    src 
+    vendor/tree-sitter-angelscript/src 
+    vendor/tree-sitter-runtime/lib/include
+)
+target_link_libraries(angel_lsp_core PUBLIC 
+    tree_sitter_angelscript
     nlohmann_json::nlohmann_json 
+    spdlog::spdlog
     AngelScriptLib
-    fmt::fmt
 )
+
+# ── Main Executable ─────────────────────────────────────────────────────────
+add_executable(angel_lsp src/main.cpp)
+target_link_libraries(angel_lsp PRIVATE angel_lsp_core)
 
 if(WIN32)
     set(TARGET_OS "win32")
@@ -76,5 +91,15 @@ set(LSP_DEPLOY_DEST "${CMAKE_CURRENT_SOURCE_DIR}/../client/bin/${TARGET_OS}-${TA
 add_custom_command(TARGET angel_lsp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_DEST}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_DEST}/"
-    COMMENT "Deploying compiled LSP server binary straight to client destination folder: bin/${TARGET_OS}-${TARGET_ARCH}"
+    COMMENT "Deploying compiled LSP server binary to client: bin/${TARGET_OS}-${TARGET_ARCH}"
 )
+
+# ── Test Executable ─────────────────────────────────────────────────────────
+file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")
+add_executable(angel_lsp_tests ${TEST_SOURCES})
+target_link_libraries(angel_lsp_tests PRIVATE 
+    angel_lsp_core
+    doctest::doctest
+)
+enable_testing()
+add_test(NAME AngelLSPTests COMMAND angel_lsp_tests)
