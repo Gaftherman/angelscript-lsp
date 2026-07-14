@@ -1,0 +1,6 @@
+[submodule "server/vendor/tree-sitter-angelscript"]
+	path = server/vendor/tree-sitter-angelscript
+	url = https://github.com/Relrin/tree-sitter-angelscript.git
+[submodule "server/vendor/tree-sitter-runtime"]
+	path = server/vendor/tree-sitter-runtime
+	url = https://github.com/tree-sitter/tree-sitter.git
