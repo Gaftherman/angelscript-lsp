@@ -16,12 +16,13 @@ namespace analysis
         // Traverse the AST starting from a specific block node.
         static void TraverseLocals(TSNode node, const Document& doc, SymbolTable& table, Symbol* currentScope = nullptr);
 
+        // Utility to extract text from a node
+        static std::string GetNodeText(TSNode node, const Document& doc);
+        
     private:
         // Recursive helper to traverse AST for globals
         static void TraverseGlobals(TSNode node, const Document& doc, SymbolTable& table, Symbol* parentScope);
 
-        // Utility to extract text from a node
-        static std::string GetNodeText(TSNode node, const Document& doc);
         
         // Factory for symbol ranges
         static lsp::Range GetRange(TSNode node, const Document& doc);

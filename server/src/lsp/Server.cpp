@@ -21,6 +21,21 @@
 
 namespace angel_lsp {
 
+static void CollectLocalsForDocument(const Document& doc, analysis::SymbolTable& table)
+{
+    TSNode root = doc.RootNode();
+    uint32_t count = ts_node_child_count(root);
+    for (uint32_t i = 0; i < count; i++) {
+        TSNode child = ts_node_child(root, i);
+        if (std::string_view(ts_node_type(child)) == "func_declaration") {
+            TSNode body = ts_node_child_by_field_name(child, "body", 4);
+            if (!ts_node_is_null(body)) {
+                analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
+            }
+        }
+    }
+}
+
 Server::Server()
 {
     asEngine = asCreateScriptEngine();
@@ -127,6 +142,7 @@ void Server::RegisterHandlers()
             auto& table = m_symbolTables[uri];
             table.ClearAll();
             analysis::SymbolCollector::CollectGlobals(*m_documents[uri], table);
+            CollectLocalsForDocument(*m_documents[uri], table);
         }
     );
 
@@ -150,6 +166,7 @@ void Server::RegisterHandlers()
                     auto& table = m_symbolTables[uri];
                     table.ClearAll();
                     analysis::SymbolCollector::CollectGlobals(*it->second, table);
+                    CollectLocalsForDocument(*it->second, table);
                     
                     ScheduleValidation(uri, newText);
                 }

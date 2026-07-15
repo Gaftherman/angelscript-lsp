@@ -3,6 +3,36 @@
 
 namespace analysis
 {
+    static const Symbol* FindNamespace(const SymbolTable& table, const std::string& path) {
+        std::vector<std::string> parts;
+        size_t start = 0;
+        size_t end = path.find("::");
+        while (end != std::string::npos) {
+            parts.push_back(path.substr(start, end - start));
+            start = end + 2;
+            end = path.find("::", start);
+        }
+        parts.push_back(path.substr(start));
+
+        const Symbol* current = nullptr;
+        for (const std::string& part : parts) {
+            if (!current) {
+                current = table.FindGlobalByName(part);
+            } else {
+                const Symbol* next = nullptr;
+                for (const auto& child : current->children) {
+                    if (child->name == part && child->kind == SymbolKind::Namespace) {
+                        next = child.get();
+                        break;
+                    }
+                }
+                current = next;
+            }
+            if (!current) break;
+        }
+        return current;
+    }
+
     const Symbol* SymbolResolver::ResolveAt(const Document& doc, const SymbolTable& table, uint32_t line, uint32_t character)
     {
         TSNode node = doc.NodeAt(line, character);
@@ -28,26 +58,22 @@ namespace analysis
         // Member resolution: myObject.Prop
         if (parentType == "member_expression")
         {
-            // Usually: [object] [.] [member]
-            // We need to check if the node we are on is the member (right side)
-            uint32_t count = ts_node_child_count(parent);
-            if (count >= 3)
+            TSNode memberNode = ts_node_child_by_field_name(parent, "member", 6);
+            TSNode objectNode = ts_node_child_by_field_name(parent, "object", 6);
+            
+            if (!ts_node_is_null(memberNode) && ts_node_eq(node, memberNode))
             {
-                TSNode memberNode = ts_node_child(parent, count - 1); // the last child is the member
-                if (ts_node_eq(node, memberNode))
-                {
-                    TSNode objectNode = ts_node_child(parent, 0);
-                    std::string_view objSv = doc.SourceAt(objectNode);
-                    std::string objText(objSv.begin(), objSv.end());
+                std::string_view objSv = doc.SourceAt(objectNode);
+                std::string objText(objSv.begin(), objSv.end());
                     
-                    // 1. Find the object's symbol to get its type
-                    const Symbol* objSym = table.FindLocalByName(objText);
-                    if (!objSym)
-                        objSym = table.FindGlobalByName(objText);
+                // 1. Find the object's symbol to get its type
+                const Symbol* objSym = table.FindLocalByName(objText);
+                if (!objSym)
+                    objSym = table.FindGlobalByName(objText);
                         
-                    if (objSym)
-                    {
-                        // 2. Clean the type name ("Enemy@" -> "Enemy")
+                if (objSym)
+                {
+                    // 2. Clean the type name ("Enemy@" -> "Enemy")
                         std::string typeName = CleanTypeName(objSym->typeInfo);
                         
                         // 3. Find the type (class) symbol
@@ -66,7 +92,6 @@ namespace analysis
                     }
                     return nullptr; // Failed to resolve member
                 }
-            }
         }
 
         // Namespace resolution (Valid scoped_identifier)
@@ -80,7 +105,7 @@ namespace analysis
                 std::string_view nsSv = doc.SourceAt(nsNode);
                 std::string nsText(nsSv.begin(), nsSv.end());
                 
-                const Symbol* nsSym = table.FindGlobalByName(nsText);
+                const Symbol* nsSym = FindNamespace(table, nsText);
                 if (nsSym && nsSym->kind == SymbolKind::Namespace)
                 {
                     for (const auto& child : nsSym->children)
@@ -106,7 +131,7 @@ namespace analysis
                     std::string_view nsSv = doc.SourceAt(nsNode);
                     std::string nsText(nsSv.begin(), nsSv.end());
                     
-                    const Symbol* nsSym = table.FindGlobalByName(nsText);
+                    const Symbol* nsSym = FindNamespace(table, nsText);
                     if (nsSym && nsSym->kind == SymbolKind::Namespace)
                     {
                         for (const auto& child : nsSym->children)
@@ -114,7 +139,7 @@ namespace analysis
                             if (child->name == identText) return child.get();
                         }
                     }
-                    return nullptr;
+                    // Fallthrough
                 }
             }
         }
@@ -130,7 +155,7 @@ namespace analysis
                 std::string_view nsSv = doc.SourceAt(nsNode);
                 std::string nsText(nsSv.begin(), nsSv.end());
                 
-                const Symbol* nsSym = table.FindGlobalByName(nsText);
+                const Symbol* nsSym = FindNamespace(table, nsText);
                 if (nsSym && nsSym->kind == SymbolKind::Namespace)
                 {
                     for (const auto& child : nsSym->children)
@@ -142,6 +167,54 @@ namespace analysis
             }
         }
 
+        // Namespace resolution workaround for `Engine::Math::Lerp()` which parses as variable_declaration with an ERROR node for `::`
+        if (parentType == "variable_declarator")
+        {
+            TSNode varDecl = ts_node_parent(parent);
+            if (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) == "variable_declaration")
+            {
+                // Find the `type` node of the variable declaration
+                TSNode typeNode = ts_node_child_by_field_name(varDecl, "var_type", 8); // wait, we don't have named fields for type?
+                // Let's just find the `type` child.
+                TSNode tNode;
+                bool foundType = false;
+                for (uint32_t i = 0; i < ts_node_child_count(varDecl); i++) {
+                    TSNode child = ts_node_child(varDecl, i);
+                    if (std::string_view(ts_node_type(child)) == "type") {
+                        tNode = child;
+                        foundType = true;
+                        break;
+                    }
+                }
+                
+                if (foundType)
+                {
+                    std::string_view nsSv = doc.SourceAt(tNode);
+                    std::string nsText(nsSv.begin(), nsSv.end());
+                    
+                    const Symbol* nsSym = FindNamespace(table, nsText);
+                    if (nsSym && nsSym->kind == SymbolKind::Namespace)
+                    {
+                        for (const auto& child : nsSym->children)
+                        {
+                            if (child->name == identText) return child.get();
+                        }
+                    }
+                    // What if nsSym is an Enum? Let's check that too for Engine::Math::Lerp vs State::IDLE?
+                    // No, `State s = IDLE` has type `State`. nsSym is `State` (Enum).
+                    // Wait, if it IS an Enum, and the child matches, we could return it!
+                    if (nsSym && nsSym->kind == SymbolKind::Enum)
+                    {
+                        for (const auto& child : nsSym->children)
+                        {
+                            if (child->name == identText) return child.get();
+                        }
+                    }
+                    // Fallthrough
+                }
+            }
+        }
+
         // Local resolution
         if (const Symbol* localSym = table.FindLocalByName(identText))
         {
@@ -149,7 +222,27 @@ namespace analysis
         }
 
         // Fallback to global search
-        return table.FindGlobalByName(identText);
+        if (const Symbol* globalSym = table.FindGlobalByName(identText))
+        {
+            return globalSym;
+        }
+
+        // Deep search for Enum members (AngelScript allows un-prefixed enum members)
+        for (const auto& [name, sym] : table.GetGlobals())
+        {
+            if (sym->kind == SymbolKind::Enum)
+            {
+                for (const auto& child : sym->children)
+                {
+                    if (child->name == identText)
+                    {
+                        return child.get();
+                    }
+                }
+            }
+        }
+        
+        return nullptr;
     }
 
     std::string SymbolResolver::CleanTypeName(std::string_view raw)

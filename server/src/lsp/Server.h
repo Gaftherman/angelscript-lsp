@@ -11,43 +11,46 @@
 #include <condition_variable>
 #include <ankerl/unordered_dense.h>
 
-namespace lsp {
+namespace lsp
+{
     class MessageHandler;
     class Connection;
 }
 
-namespace angel_lsp {
+namespace angel_lsp
+{
 
-class Server {
-public:
-    Server();
-    ~Server();
+    class Server
+    {
+    public:
+        Server();
+        ~Server();
 
-    void Run();
+        void Run();
 
-private:
-    void RegisterHandlers();
-    
-    // Background validation
-    void ScheduleValidation(std::string uri, std::string text);
-    void ValidationWorkerLoop(std::stop_token st);
+    private:
+        void RegisterHandlers();
 
-    std::unique_ptr<lsp::Connection> m_connection;
-    std::unique_ptr<lsp::MessageHandler> messageHandler;
-    std::shared_mutex m_docMutex;
-    ankerl::unordered_dense::map<std::string, std::unique_ptr<Document>> m_documents;
-    ankerl::unordered_dense::map<std::string, analysis::SymbolTable> m_symbolTables;
-    
-    class asIScriptEngine* asEngine;
-    std::unique_ptr<analysis::ValidationOracle> oracle;
-    bool running = true;
-    
-    std::jthread m_validationThread;
-    std::mutex m_validationMutex;
-    std::condition_variable_any m_validationCV;
-    bool m_validationPending = false;
-    std::string m_pendingUri;
-    std::string m_pendingText;
-};
+        // Background validation
+        void ScheduleValidation(std::string uri, std::string text);
+        void ValidationWorkerLoop(std::stop_token st);
+
+        std::unique_ptr<lsp::Connection> m_connection;
+        std::unique_ptr<lsp::MessageHandler> messageHandler;
+        std::shared_mutex m_docMutex;
+        ankerl::unordered_dense::map<std::string, std::unique_ptr<Document>> m_documents;
+        ankerl::unordered_dense::map<std::string, analysis::SymbolTable> m_symbolTables;
+
+        class asIScriptEngine *asEngine;
+        std::unique_ptr<analysis::ValidationOracle> oracle;
+        bool running = true;
+
+        std::jthread m_validationThread;
+        std::mutex m_validationMutex;
+        std::condition_variable_any m_validationCV;
+        bool m_validationPending = false;
+        std::string m_pendingUri;
+        std::string m_pendingText;
+    };
 
 } // namespace angel_lsp

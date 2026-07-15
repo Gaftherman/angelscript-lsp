@@ -22,6 +22,11 @@ namespace analysis
         Funcdef
     };
 
+    struct SymbolParam {
+        std::string typeName; // "int", "Player@", "const float &in"
+        std::string name;     // "amount", "target", ""
+    };
+
     struct Symbol
     {
         std::string name;
@@ -31,6 +36,8 @@ namespace analysis
         std::string typeInfo;     // e.g. "int", "Player@"
         std::string signature;    // e.g. "void DoThing(int)"
         std::string docComment;   // Extracted documentation if any
+        
+        std::vector<SymbolParam> params; // For functions/methods/funcdefs
         
         // Where is it defined in the AST?
         size_t definitionStartByte = 0;
