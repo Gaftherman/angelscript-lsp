@@ -1,0 +1,39 @@
+name: CMake Build and Test
+
+on:
+  push:
+    branches: [ "main", "feat/ts-backend" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    # We test on Windows and Ubuntu to ensure cross-platform compatibility
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Configure CMake
+      # Configure CMake in a 'build' subdirectory.
+      run: cmake -S server -B server/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+
+    - name: Build
+      # Build your program with the given configuration
+      run: cmake --build server/build --config ${{env.BUILD_TYPE}} -j 4
+
+    - name: Test
+      # Execute tests defined by the CMake configuration.
+      run: server/build/angel_lsp_tests
+      if: matrix.os == 'ubuntu-latest'
+      
+    - name: Test (Windows)
+      # On Windows the executable is put in Debug/Release folders
+      run: server\build\${{env.BUILD_TYPE}}\angel_lsp_tests.exe
+      if: matrix.os == 'windows-latest'

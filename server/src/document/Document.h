@@ -4,22 +4,7 @@
 #include <string_view>
 #include <tree_sitter/api.h>
 
-namespace lsp {
-    struct Position {
-        uint32_t line = 0;
-        uint32_t character = 0;
-    };
-
-    struct Range {
-        Position start;
-        Position end;
-    };
-
-    struct TextEdit {
-        Range range;
-        std::string newText;
-    };
-}
+#include <lsp/types.h>
 
 class Document {
 public:

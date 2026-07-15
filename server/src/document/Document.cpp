@@ -16,7 +16,8 @@ Document::Document(std::string uri, std::string text)
     );
 }
 
-Document::~Document() {
+Document::~Document()
+{
     if (tree) ts_tree_delete(tree);
     if (parser) ts_parser_delete(parser);
 }
@@ -29,8 +30,10 @@ Document::Document(Document&& other) noexcept
     other.tree = nullptr;
 }
 
-Document& Document::operator=(Document&& other) noexcept {
-    if (this != &other) {
+Document& Document::operator=(Document&& other) noexcept
+{
+    if (this != &other)
+    {
         if (tree) ts_tree_delete(tree);
         if (parser) ts_parser_delete(parser);
         
@@ -45,20 +48,26 @@ Document& Document::operator=(Document&& other) noexcept {
     return *this;
 }
 
-size_t Document::ToByteOffset(uint32_t line, uint32_t col) const {
+size_t Document::ToByteOffset(uint32_t line, uint32_t col) const
+{
     size_t offset = 0;
     uint32_t currentLine = 0;
     uint32_t currentCol = 0;
     
-    while (offset < text.size()) {
-        if (currentLine == line && currentCol == col) {
+    while (offset < text.size())
+    {
+        if (currentLine == line && currentCol == col)
+        {
             return offset;
         }
         
-        if (text[offset] == '\n') {
+        if (text[offset] == '\n')
+        {
             currentLine++;
             currentCol = 0;
-        } else {
+        }
+        else
+        {
             // Note: simple character counting, ignores UTF-8 multi-byte logic for simplicity
             // A real LSP would use UTF-16 code unit offset or UTF-8 depending on client capabilities.
             currentCol++;
@@ -69,22 +78,28 @@ size_t Document::ToByteOffset(uint32_t line, uint32_t col) const {
     return offset;
 }
 
-TSPoint Document::ByteToPoint(size_t byteOffset) const {
+TSPoint Document::ByteToPoint(size_t byteOffset) const
+{
     TSPoint point = {0, 0};
     size_t limit = std::min(byteOffset, text.size());
     
-    for (size_t i = 0; i < limit; i++) {
-        if (text[i] == '\n') {
+    for (size_t i = 0; i < limit; i++)
+    {
+        if (text[i] == '\n')
+        {
             point.row++;
             point.column = 0;
-        } else {
+        }
+        else
+        {
             point.column++;
         }
     }
     return point;
 }
 
-void Document::ApplyEdit(const lsp::TextEdit& edit) {
+void Document::ApplyEdit(const lsp::TextEdit& edit)
+{
     size_t startByte = ToByteOffset(edit.range.start.line, edit.range.start.character);
     size_t oldEndByte = ToByteOffset(edit.range.end.line, edit.range.end.character);
     size_t newEndByte = startByte + edit.newText.size();
@@ -116,18 +131,21 @@ void Document::ApplyEdit(const lsp::TextEdit& edit) {
     tree = newTree;
 }
 
-TSNode Document::RootNode() const {
+TSNode Document::RootNode() const
+{
     if (!tree) return {{0, 0, 0, 0}, nullptr, nullptr};
     return ts_tree_root_node(tree);
 }
 
-TSNode Document::NodeAt(uint32_t line, uint32_t col) const {
+TSNode Document::NodeAt(uint32_t line, uint32_t col) const
+{
     if (!tree) return {{0, 0, 0, 0}, nullptr, nullptr};
     TSPoint point = { line, col };
     return ts_node_descendant_for_point_range(ts_tree_root_node(tree), point, point);
 }
 
-std::string_view Document::SourceAt(TSNode node) const {
+std::string_view Document::SourceAt(TSNode node) const
+{
     if (ts_node_is_null(node)) return "";
     size_t start = ts_node_start_byte(node);
     size_t end = ts_node_end_byte(node);

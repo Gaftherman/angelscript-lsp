@@ -11,11 +11,18 @@ struct Parser {
     TSParser* raw = nullptr;
     Parser() {
         raw = ts_parser_new();
-        ts_parser_set_language(raw, tree_sitter_angelscript());
+        printf("ts_parser_new returned %p\n", raw);
+        TSLanguage* lang = tree_sitter_angelscript();
+        printf("tree_sitter_angelscript returned %p\n", lang);
+        bool ok = ts_parser_set_language(raw, lang);
+        printf("ts_parser_set_language returned %d\n", ok);
     }
     ~Parser() { ts_parser_delete(raw); }
     TSTree* parse(const std::string& code, TSTree* oldTree = nullptr) const {
-        return ts_parser_parse_string(raw, oldTree, code.c_str(), (uint32_t)code.size());
+        printf("parsing string...\n");
+        TSTree* res = ts_parser_parse_string(raw, oldTree, code.c_str(), (uint32_t)code.size());
+        printf("parsed string, res=%p\n", res);
+        return res;
     }
 };
 
