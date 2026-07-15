@@ -26,8 +26,8 @@ Server::Server()
     asEngine = asCreateScriptEngine();
     oracle = std::make_unique<analysis::ValidationOracle>(asEngine);
     
-    auto connection = lsp::Connection(lsp::io::standardIO());
-    messageHandler = std::make_unique<lsp::MessageHandler>(connection);
+    m_connection = std::make_unique<lsp::Connection>(lsp::io::standardIO());
+    messageHandler = std::make_unique<lsp::MessageHandler>(*m_connection);
     
     RegisterHandlers();
 

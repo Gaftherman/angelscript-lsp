@@ -11,9 +11,9 @@
 #include <condition_variable>
 #include <ankerl/unordered_dense.h>
 
-// Forward declarations to avoid heavy includes in header
 namespace lsp {
     class MessageHandler;
+    class Connection;
 }
 
 namespace angel_lsp {
@@ -32,6 +32,7 @@ private:
     void ScheduleValidation(std::string uri, std::string text);
     void ValidationWorkerLoop(std::stop_token st);
 
+    std::unique_ptr<lsp::Connection> m_connection;
     std::unique_ptr<lsp::MessageHandler> messageHandler;
     std::shared_mutex m_docMutex;
     ankerl::unordered_dense::map<std::string, std::unique_ptr<Document>> m_documents;
