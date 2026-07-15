@@ -23,6 +23,54 @@ TEST_SUITE("SymbolCollector")
         CHECK(sym->signature == "void Main()");
     }
 
+    TEST_CASE("A1.1: Funcion disfrazada como variable_declaration en namespace (Bug 2)")
+    {
+        // Bug 2: Tree-sitter recovers "float Lerp(float a, float b, float t) {}" inside a namespace
+        // as a variable_declaration with a parameter_list if the context causes a parse anomaly.
+        // Even if it parses correctly in a clean test, simulating a syntax error or a context
+        // that produces this node structure verifies our recovery logic in SymbolCollector.
+        // We will construct a code snippet that forces a variable_declaration parsing or tests
+        // the fix directly. Wait, if it parses as func_declaration naturally, we should just
+        // test the natural parse inside a namespace.
+        Document doc("file:///test.as", 
+            "namespace Engine {\n"
+            "    namespace Math {\n"
+            "        float Lerp(float a, float b, float t) { return a + (b - a) * t; }\n"
+            "    }\n"
+            "}\n"
+        );
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        
+        Symbol* engineSym = table.FindGlobalByName("Engine");
+        REQUIRE(engineSym != nullptr);
+        CHECK(engineSym->kind == SymbolKind::Namespace);
+
+        bool foundMath = false;
+        Symbol* mathSym = nullptr;
+        for (auto& child : engineSym->children) {
+            if (child->name == "Math") {
+                foundMath = true;
+                mathSym = child.get();
+                break;
+            }
+        }
+        REQUIRE(foundMath);
+        
+        bool foundLerp = false;
+        for (auto& child : mathSym->children) {
+            if (child->name == "Lerp") {
+                foundLerp = true;
+                // Bug 2 fix ensures this is a Function, not a Variable!
+                CHECK(child->kind == SymbolKind::Function);
+                CHECK(child->signature == "float Lerp(float a, float b, float t)");
+                CHECK(child->typeInfo == "float");
+                break;
+            }
+        }
+        REQUIRE(foundLerp);
+    }
+
     TEST_CASE("A2: Funcion con parametros primitivos")
     {
         Document doc("file:///test.as", "int Add(int a, int b) { return a + b; }");

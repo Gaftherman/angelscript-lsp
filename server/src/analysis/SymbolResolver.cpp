@@ -291,9 +291,19 @@ namespace analysis
                 if (identText == containingClass) {
                     return classSym;
                 }
-                for (const auto& child : classSym->children) {
-                    if (child->name == identText) return child.get();
-                }
+                // Recursive search through own children AND all base classes (including Mixins)
+                auto findInHierarchy = [&](auto& self, const Symbol* cSym) -> const Symbol* {
+                    if (!cSym) return nullptr;
+                    for (const auto& child : cSym->children) {
+                        if (child->name == identText) return child.get();
+                    }
+                    for (const auto& baseName : cSym->baseClasses) {
+                        const Symbol* baseSym = table.FindByNameDeep(baseName);
+                        if (const Symbol* found = self(self, baseSym)) return found;
+                    }
+                    return nullptr;
+                };
+                if (const Symbol* found = findInHierarchy(findInHierarchy, classSym)) return found;
 
                 // HOST-CLASS SEARCH: Si es un Mixin y no encontramos el miembro,
                 // buscar en todas las clases que incluyen este Mixin.

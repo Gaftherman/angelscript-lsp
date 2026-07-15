@@ -225,8 +225,20 @@ namespace analysis
                 TSNode child = ts_node_child(node, i);
                 if (std::string_view(ts_node_type(child)) == "variable_declarator")
                 {
+                    bool hasParamList = false;
+                    TSNode paramListNode;
+                    for (uint32_t k = 0; k < ts_node_child_count(child); k++) {
+                        TSNode grandchild = ts_node_child(child, k);
+                        std::string_view gtype = ts_node_type(grandchild);
+                        if (gtype == "parameter_list" || gtype == "parameter_list_decl") {
+                            hasParamList = true;
+                            paramListNode = grandchild;
+                            break;
+                        }
+                    }
+
                     auto sym = std::make_shared<Symbol>();
-                    sym->kind = SymbolKind::Variable;
+                    sym->kind = hasParamList ? SymbolKind::Function : SymbolKind::Variable;
                     sym->fullRange = GetRange(node, doc);
                     sym->typeInfo = typeInfo;
 
@@ -234,6 +246,10 @@ namespace analysis
                     if (!ts_node_is_null(nameNode)) {
                         sym->name = GetNodeText(nameNode, doc);
                         sym->selectionRange = GetRange(nameNode, doc);
+                    }
+
+                    if (hasParamList) {
+                        ReadParams(paramListNode, doc, *sym, parentScope ? nullptr : &table, sym.get());
                     }
 
                     if (parentScope)
@@ -500,6 +516,16 @@ namespace analysis
 
         if (type == "variable_declaration")
         {
+            // Workaround: Tree-sitter parses `Engine::Math::Lerp()` as a variable_declaration containing an ERROR node `::`.
+            // If it contains an ERROR node, it is likely a misparsed function call, so we skip adding it as a local variable.
+            bool hasErrorNode = false;
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+                if (std::string_view(ts_node_type(ts_node_child(node, i))) == "ERROR") {
+                    hasErrorNode = true;
+                    break;
+                }
+            }
+
             TSNode varTypeNode = ts_node_child_by_field_name(node, "var_type", 8);
             std::string typeInfo;
             if (!ts_node_is_null(varTypeNode)) {
@@ -515,30 +541,34 @@ namespace analysis
                 }
             }
 
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
-            {
-                TSNode child = ts_node_child(node, i);
-                if (std::string_view(ts_node_type(child)) == "variable_declarator")
+            if (!hasErrorNode) {
+                for (uint32_t i = 0; i < ts_node_child_count(node); i++)
                 {
-                    auto sym = std::make_shared<Symbol>();
-                    sym->kind = SymbolKind::Variable;
-                    sym->fullRange = GetRange(node, doc);
-                    sym->typeInfo = typeInfo;
-
-                    TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
-                    if (!ts_node_is_null(nameNode)) {
-                        sym->name = GetNodeText(nameNode, doc);
-                        sym->selectionRange = GetRange(nameNode, doc);
-                    }
-
-                    if (currentScope)
+                    TSNode child = ts_node_child(node, i);
+                    if (std::string_view(ts_node_type(child)) == "variable_declarator")
                     {
-                        sym->parent = currentScope;
+                        auto sym = std::make_shared<Symbol>();
+                        sym->kind = SymbolKind::Variable;
+                        sym->fullRange = GetRange(node, doc);
+                        sym->typeInfo = typeInfo;
+
+                        TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
+                        if (!ts_node_is_null(nameNode)) {
+                            sym->name = GetNodeText(nameNode, doc);
+                            sym->selectionRange = GetRange(nameNode, doc);
+                        }
+
+                        if (currentScope)
+                        {
+                            sym->parent = currentScope;
+                        }
+                        table.AddLocal(sym);
                     }
-                    table.AddLocal(sym);
                 }
             }
-            return;
+            
+            // Note: We still fall through to traverse the children of this node, 
+            // because even if it's a misparsed call, its arguments might contain local variables!
         }
 
         uint32_t count = ts_node_child_count(node);

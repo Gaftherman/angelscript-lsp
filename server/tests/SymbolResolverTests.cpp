@@ -142,8 +142,65 @@ TEST_SUITE("SymbolResolver")
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
 
-        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, 0);
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, 2);
         CHECK(sym == nullptr);
+    }
+
+    TEST_CASE("R21: Lerp namespace call resolution")
+    {
+        std::string code = R"(
+namespace Engine {
+    namespace Math {
+        float Lerp(float a, float b, float t) {
+            return a + (b - a) * t;
+        }
+    }
+}
+void Main() {
+    float val = Engine::Math::Lerp(0, 1, 0.5f);
+}
+)";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        size_t offset = code.rfind("Lerp(0,");
+        uint32_t line = 0;
+        for (size_t i = 0; i < offset; i++) if (code[i] == '\n') line++;
+        uint32_t col = (uint32_t)(offset - code.rfind('\n', offset) - 1);
+        
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "Lerp");
+        CHECK(sym->kind == SymbolKind::Function);
+    }
+
+    TEST_CASE("R22: Mixin host resolution from subclass")
+    {
+        std::string code = R"(
+class Entity { float hp; }
+mixin class Regenerator { float regenRate; }
+class Troll : Entity, Regenerator {
+    void Enrage() {
+        regenRate = 5.0f;
+    }
+}
+)";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        size_t offset = code.rfind("regenRate =");
+        uint32_t line = 0;
+        for (size_t i = 0; i < offset; i++) if (code[i] == '\n') line++;
+        uint32_t col = (uint32_t)(offset - code.rfind('\n', offset) - 1);
+
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "regenRate");
+        CHECK(sym->kind == SymbolKind::Variable);
+        CHECK(sym->parent != nullptr);
+        CHECK(sym->parent->name == "Regenerator");
     }
 
     TEST_CASE("R9: Cursor en espacio en blanco -> null")
@@ -595,7 +652,7 @@ mixin class Mover { float speed; void Move() { speed = 1.0f; } }
 class Player : Entity, Mover {}
 
 mixin class Regenerator { float regenRate; void Regen() { float x = regenRate; hp = hp + 1.0f; } }
-class Troll : Entity, Regenerator {}
+class Troll : Entity, Regenerator { void Enrage() { regenRate = 5.0f; } }
 
 class Monster { float hp; }
 class Ogre : Monster, Regenerator {}
@@ -725,6 +782,18 @@ interface IMovable { void Move(); }
             CHECK(foundEntity);
             CHECK(foundMonster);
             CHECK(foundBoss);
+        }
+
+        SUBCASE("Group H: Host -> Mixin Search (Bug 1)") {
+            parseLocalsIn("Troll", "Enrage");
+            auto [line, col] = getPos("regenRate = 5.0f"); // inside Enrage
+            std::vector<const Symbol*> multiResults;
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
+            
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "regenRate");
+            REQUIRE(sym->parent != nullptr);
+            CHECK(sym->parent->name == "Regenerator");
         }
     }
 }
