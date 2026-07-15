@@ -346,4 +346,57 @@ TEST_SUITE("SymbolResolver")
         CHECK(sym->name == "y");
         CHECK(sym->kind == SymbolKind::Variable);
     }
+
+    TEST_CASE("RH8: Hover sobre clase anidada en namespace (Bug 1)")
+    {
+        std::string code = "namespace Game { class Entity { float speed; float GetSpeed() {} } }";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        size_t offset = code.find("Entity");
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "Entity");
+        CHECK(sym->kind == SymbolKind::Class);
+
+        size_t offsetSpeed = code.find("speed");
+        const Symbol* symSpeed = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offsetSpeed);
+        REQUIRE(symSpeed != nullptr);
+        CHECK(symSpeed->name == "speed");
+        CHECK(symSpeed->kind == SymbolKind::Variable);
+        REQUIRE(symSpeed->parent != nullptr);
+        CHECK(symSpeed->parent->name == "Entity");
+    }
+
+    TEST_CASE("RH9: member_expression con tipo de namespace (Bug 2)")
+    {
+        std::string code = "namespace Game { class Entity { float speed; } } void Main() { Game::Entity e; e.speed = 5.0f; }";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        
+        // Populate local table for Main to have "e"
+        size_t offsetMain = code.find("Main");
+        TSNode root = doc.RootNode();
+        TSNode mainFunc;
+        for (uint32_t i = 0; i < ts_node_child_count(root); i++) {
+            TSNode child = ts_node_child(root, i);
+            if (std::string_view(ts_node_type(child)) == "func_declaration") {
+                mainFunc = child;
+                break;
+            }
+        }
+        TSNode blockNode = ts_node_child_by_field_name(mainFunc, "body", 4);
+        SymbolCollector::TraverseLocals(blockNode, doc, table, nullptr);
+
+        // Hover over the e.speed 'speed'
+        size_t offset = code.rfind("speed");
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "speed");
+        CHECK(sym->kind == SymbolKind::Variable);
+        REQUIRE(sym->parent != nullptr);
+        CHECK(sym->parent->name == "Entity");
+    }
 }

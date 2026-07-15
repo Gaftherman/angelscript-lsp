@@ -19,7 +19,8 @@ namespace analysis
         Enum,
         EnumMember,
         Interface,
-        Funcdef
+        Funcdef,
+        Mixin
     };
 
     struct SymbolParam {
@@ -66,6 +67,7 @@ namespace analysis
             case SymbolKind::EnumMember: return lsp::SymbolKind::EnumMember;
             case SymbolKind::Interface:  return lsp::SymbolKind::Interface;
             case SymbolKind::Funcdef:    return lsp::SymbolKind::Function; // Funcdefs act like function pointers
+            case SymbolKind::Mixin:      return lsp::SymbolKind::Class; // Mixins act like classes
             default:                     return lsp::SymbolKind::Null;
         }
     }

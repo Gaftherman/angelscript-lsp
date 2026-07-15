@@ -28,6 +28,52 @@ namespace analysis
         return nullptr;
     }
 
+    const Symbol* SymbolTable::FindByNameDeep(const std::string& name) const
+    {
+        // 1. Search in globals first
+        if (Symbol* global = FindGlobalByName(name))
+        {
+            return global;
+        }
+
+        // 2. Deep search inside namespaces
+        for (const auto& [nsName, nsSym] : m_globalSymbols)
+        {
+            if (nsSym->kind == SymbolKind::Namespace)
+            {
+                // Recursive lambda to search inside a namespace
+                auto searchChildren = [&](auto& self, const Symbol* currentNs) -> const Symbol* {
+                    // Check direct children
+                    for (const auto& child : currentNs->children)
+                    {
+                        if (child->name == name)
+                        {
+                            return child.get();
+                        }
+                    }
+                    // Recurse into nested namespaces
+                    for (const auto& child : currentNs->children)
+                    {
+                        if (child->kind == SymbolKind::Namespace)
+                        {
+                            if (const Symbol* found = self(self, child.get()))
+                            {
+                                return found;
+                            }
+                        }
+                    }
+                    return nullptr;
+                };
+
+                if (const Symbol* found = searchChildren(searchChildren, nsSym.get()))
+                {
+                    return found;
+                }
+            }
+        }
+        return nullptr;
+    }
+
     Symbol* SymbolTable::FindLocalByName(const std::string& name) const
     {
         // Search backwards to return the most recently declared local (shadowing)

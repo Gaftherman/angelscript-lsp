@@ -73,11 +73,16 @@ namespace analysis
                         
                 if (objSym)
                 {
-                    // 2. Clean the type name ("Enemy@" -> "Enemy")
+                        // 2. Clean the type name ("Enemy@" -> "Enemy")
                         std::string typeName = CleanTypeName(objSym->typeInfo);
                         
+                        size_t colonPos = typeName.rfind("::");
+                        if (colonPos != std::string::npos) {
+                            typeName = typeName.substr(colonPos + 2);
+                        }
+                        
                         // 3. Find the type (class) symbol
-                        const Symbol* classSym = table.FindGlobalByName(typeName);
+                        const Symbol* classSym = table.FindByNameDeep(typeName);
                         if (classSym)
                         {
                             // 4. Find the member inside the class
@@ -224,8 +229,8 @@ namespace analysis
             return localSym;
         }
 
-        // Fallback to global search
-        if (const Symbol* globalSym = table.FindGlobalByName(identText))
+        // Fallback to global search (deep)
+        if (const Symbol* globalSym = table.FindByNameDeep(identText))
         {
             return globalSym;
         }
@@ -262,8 +267,11 @@ namespace analysis
         }
 
         if (!containingClass.empty()) {
-            const Symbol* classSym = table.FindGlobalByName(containingClass);
+            const Symbol* classSym = table.FindByNameDeep(containingClass);
             if (classSym) {
+                if (identText == containingClass) {
+                    return classSym;
+                }
                 for (const auto& child : classSym->children) {
                     if (child->name == identText) return child.get();
                 }

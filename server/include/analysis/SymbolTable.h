@@ -22,6 +22,7 @@ namespace analysis
 
         // Find a symbol by exact name at global scope
         Symbol* FindGlobalByName(const std::string& name) const;
+        const Symbol* FindByNameDeep(const std::string& name) const;
         
         // Find a symbol by exact name at local scope
         Symbol* FindLocalByName(const std::string& name) const;

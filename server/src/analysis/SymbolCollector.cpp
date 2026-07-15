@@ -213,10 +213,13 @@ namespace analysis
             }
             return;
         }
-        else if (type == "class_declaration")
+        else if (type == "class_declaration" || type == "interface_declaration" || type == "mixin_class_declaration")
         {
             auto sym = std::make_shared<Symbol>();
-            sym->kind = SymbolKind::Class;
+            if (type == "class_declaration") sym->kind = SymbolKind::Class;
+            else if (type == "interface_declaration") sym->kind = SymbolKind::Interface;
+            else sym->kind = SymbolKind::Mixin;
+            
             sym->fullRange = GetRange(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
