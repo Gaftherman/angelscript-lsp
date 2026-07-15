@@ -1,6 +1,7 @@
 #include "HoverHandler.h"
 #include "analysis/SymbolResolver.h"
 #include <angelscript.h>
+#include <set>
 
 namespace angel_lsp {
 namespace features {
@@ -78,15 +79,20 @@ lsp::requests::TextDocument_Hover::Result ProcessHover(
         std::string sig = !sym->signature.empty() ? sym->signature : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
         
         std::string contextStr = sym->parent ? sym->parent->name : "";
-        if (multiResults.size() > 1) {
-            contextStr = "{";
-            for (size_t i = 0; i < multiResults.size(); i++) {
-                if (multiResults[i]->parent) {
-                    if (i > 0) contextStr += ", ";
-                    contextStr += multiResults[i]->parent->name;
-                }
+        std::vector<std::string> uniqueNames;
+        std::set<std::string> seen;
+        for (auto s : multiResults) {
+            if (s->parent && seen.find(s->parent->name) == seen.end()) {
+                uniqueNames.push_back(s->parent->name);
+                seen.insert(s->parent->name);
             }
-            contextStr += "}";
+        }
+        if (uniqueNames.size() > 1) {
+            contextStr = "";
+            for (size_t i = 0; i < uniqueNames.size(); i++) {
+                if (i > 0) contextStr += ", ";
+                contextStr += uniqueNames[i];
+            }
         }
         
         markdown = "```angelscript\n" + sig + "\n```\n"
