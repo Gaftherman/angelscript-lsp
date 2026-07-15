@@ -175,4 +175,47 @@ TEST_SUITE("TreeSitter - Basic Parsing") {
         printTree(root, 0);
         printf("=== END AST ===\n\n");
     }
+    TEST_CASE("AST dump: typedef and collisions") {
+        Parser p;
+        std::string code = R"(
+typedef float MyFloat;
+namespace Collision {
+    class Collision {}
+    void Collision() {}
+    enum Collision { COLLISION_VAL }
+}
+)";
+        Tree tree(p.parse(code));
+        TSNode root = tree.root();
+
+        std::function<void(TSNode, int, const char*)> printTree = [&](TSNode node, int depth, const char* fieldName) {
+            if (ts_node_is_null(node)) return;
+            std::string indent(depth * 2, ' ');
+            if (fieldName) indent += std::string(fieldName) + ": ";
+            uint32_t start = ts_node_start_byte(node);
+            uint32_t end   = ts_node_end_byte(node);
+            std::string src = code.substr(start, end - start);
+            if (src.size() > 50) src = src.substr(0, 47) + "...";
+            for (auto& ch : src) if (ch == '\n') ch = ' ';
+            if (ts_node_is_named(node))
+                printf("%s[%s] \"%s\"\n", indent.c_str(), ts_node_type(node), src.c_str());
+            else
+                printf("%s(%s)\n", indent.c_str(), ts_node_type(node));
+                
+            TSTreeCursor cursor = ts_tree_cursor_new(node);
+            if (ts_tree_cursor_goto_first_child(&cursor)) {
+                do {
+                    TSNode child = ts_tree_cursor_current_node(&cursor);
+                    const char* child_field = ts_tree_cursor_current_field_name(&cursor);
+                    printTree(child, depth + 1, child_field);
+                } while (ts_tree_cursor_goto_next_sibling(&cursor));
+                ts_tree_cursor_goto_parent(&cursor);
+            }
+            ts_tree_cursor_delete(&cursor);
+        };
+
+        printf("\n=== AST: typedef and collisions ===\n");
+        printTree(root, 0, nullptr);
+        printf("=== END AST ===\n\n");
+    }
 }

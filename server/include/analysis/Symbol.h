@@ -20,7 +20,8 @@ namespace analysis
         EnumMember,
         Interface,
         Funcdef,
-        Mixin
+        Mixin,
+        Typedef
     };
 
     struct SymbolParam {

@@ -145,7 +145,35 @@ namespace analysis
 
         std::string_view type = ts_node_type(node);
 
-        if (type == "func_declaration")
+        if (type == "typedef_declaration")
+        {
+            auto sym = std::make_shared<Symbol>();
+            sym->kind = SymbolKind::Typedef;
+            sym->fullRange = GetRange(node, doc);
+            
+            TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
+            if (!ts_node_is_null(nameNode)) {
+                sym->name = GetNodeText(nameNode, doc);
+                sym->selectionRange = GetRange(nameNode, doc);
+            }
+
+            TSNode baseTypeNode = ts_node_child_by_field_name(node, "base_type", 9);
+            if (!ts_node_is_null(baseTypeNode)) {
+                sym->typeInfo = GetNodeText(baseTypeNode, doc);
+            }
+
+            if (parentScope)
+            {
+                sym->parent = parentScope;
+                parentScope->children.push_back(sym);
+            }
+            else
+            {
+                table.AddGlobal(sym);
+            }
+            return;
+        }
+        else if (type == "func_declaration")
         {
             auto sym = std::make_shared<Symbol>();
             sym->kind = SymbolKind::Function;

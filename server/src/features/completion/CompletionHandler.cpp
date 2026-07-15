@@ -71,6 +71,8 @@ static lsp::CompletionItemKind SymbolKindToCompletionKind(analysis::SymbolKind k
         case analysis::SymbolKind::EnumMember: return lsp::CompletionItemKind::EnumMember;
         case analysis::SymbolKind::Interface:  return lsp::CompletionItemKind::Interface;
         case analysis::SymbolKind::Funcdef:    return lsp::CompletionItemKind::Function;
+        case analysis::SymbolKind::Mixin:      return lsp::CompletionItemKind::Class;
+        case analysis::SymbolKind::Typedef:    return lsp::CompletionItemKind::Struct;
         default: return lsp::CompletionItemKind::Text;
     }
 }

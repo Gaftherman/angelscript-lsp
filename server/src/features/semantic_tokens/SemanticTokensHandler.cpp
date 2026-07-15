@@ -30,8 +30,10 @@ lsp::requests::TextDocument_SemanticTokens_Full::Result ProcessSemanticTokensFul
             case analysis::SymbolKind::Function: return 12;
             case analysis::SymbolKind::Method: return 13;
             case analysis::SymbolKind::Funcdef: return 1;
-            default: return 8; // fallback
+            case analysis::SymbolKind::Typedef: return 2; // type
+            case analysis::SymbolKind::Mixin: return 2; // type
         }
+        return 0; // fallback
     };
 
     auto processSymbol = [&](auto& self, const analysis::Symbol* sym) -> void {

@@ -20,6 +20,7 @@ static std::string KindName(analysis::SymbolKind kind) {
         case analysis::SymbolKind::Interface: return "Interface";
         case analysis::SymbolKind::Funcdef: return "Funcdef";
         case analysis::SymbolKind::Mixin: return "Mixin";
+        case analysis::SymbolKind::Typedef: return "Typedef";
         default: return "Symbol";
     }
 }

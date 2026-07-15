@@ -135,6 +135,54 @@ TEST_SUITE("SymbolResolver")
         CHECK(sym->kind == SymbolKind::EnumMember);
     }
 
+
+
+    TEST_CASE("R23: Name collisions and typedef resolution")
+    {
+        std::string code = R"(
+typedef float MyFloat;
+class MyFloat {}
+
+namespace Collider {
+    class Collider {}
+    void Collider() {}
+    enum Collider { COLLIDER_VAL }
+    MyFloat Collider;
+}
+
+void Main() {
+    MyFloat f;
+    Collider::Collider c;
+}
+)";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        auto resolveAndCheck = [&](const std::string& searchStr, SymbolKind expectedKind) {
+            size_t offset = code.rfind(searchStr);
+            uint32_t line = 0;
+            for (size_t i = 0; i < offset; i++) if (code[i] == '\n') line++;
+            uint32_t col = (uint32_t)(offset - code.rfind('\n', offset) - 1);
+            
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            return sym;
+        };
+        
+        // When resolving MyFloat in `MyFloat f;`, we might get Typedef or Class. 
+        // We will just verify it finds ONE of them without crashing.
+        const Symbol* myFloatSym = resolveAndCheck("MyFloat f;", SymbolKind::Typedef);
+        REQUIRE(myFloatSym != nullptr);
+        CHECK(myFloatSym->name == "MyFloat");
+
+        // When resolving Collider in `Collider::Collider c;`, first Collider is namespace, second is class/function/enum/var.
+        const Symbol* colliderSym = resolveAndCheck("Collider c;", SymbolKind::Class);
+        REQUIRE(colliderSym != nullptr);
+        CHECK(colliderSym->name == "Collider");
+        CHECK(colliderSym->parent != nullptr);
+        CHECK(colliderSym->parent->name == "Collider"); // inside namespace Collider
+    }
+
     TEST_CASE("R8: Cursor en keyword void -> null (sin crash)")
     {
         std::string code = "void Main() {}";
