@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include <iostream>
 #include "helpers/TestFixtures.h"
 #include "analysis/SymbolResolver.h"
 #include "analysis/SymbolCollector.h"
@@ -270,5 +271,79 @@ TEST_SUITE("SymbolResolver")
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "x");
         CHECK(sym->kind == SymbolKind::Parameter);
+    }
+
+    TEST_CASE("RH5: Hover en miembro de clase con igual nombre (Scope-aware)")
+    {
+        std::string code = "class A { int hp; } class B { int hp; }";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        // Cursor en "hp" de clase B
+        size_t offsetB = code.rfind("hp"); // hp inside class B
+        const Symbol* symB = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offsetB);
+        REQUIRE(symB != nullptr);
+        CHECK(symB->name == "hp");
+        REQUIRE(symB->parent != nullptr);
+        CHECK(symB->parent->name == "B");
+
+        // Cursor en "hp" de clase A
+        size_t offsetA = code.find("hp"); // hp inside class A
+        const Symbol* symA = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offsetA);
+        REQUIRE(symA != nullptr);
+        CHECK(symA->name == "hp");
+        REQUIRE(symA->parent != nullptr);
+        CHECK(symA->parent->name == "A");
+    }
+
+    TEST_CASE("RH6: Hover en nombre de namespace")
+    {
+        std::string code = "namespace Game { void Foo() {} }";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        size_t offset = code.find("Game");
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "Game");
+        CHECK(sym->kind == SymbolKind::Namespace);
+    }
+
+    TEST_CASE("RH7: Hover en local de funcion anidada en namespace")
+    {
+        std::string code = "namespace Game { void Foo() { int y = 5; } }";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        
+        // This is exactly what Server::CollectLocalsForDocument does now (recursive)
+        extern void CollectLocalsFunctions(TSNode node, const Document& doc, analysis::SymbolTable& table);
+        // Wait, CollectLocalsFunctions is static in Server.cpp.
+        // We will just call TraverseLocals directly on the block to test the resolver part.
+        // Or better yet, we can't test Server.cpp's static function here easily.
+        // Let's just simulate the collection to test the resolver.
+        TSNode root = doc.RootNode();
+        TSNode nsNode = ts_node_child(root, 0);
+        TSNode bodyNode = ts_node_child_by_field_name(nsNode, "body", 4);
+        
+        TSNode funcNode;
+        for (uint32_t i = 0; i < ts_node_child_count(bodyNode); i++) {
+            TSNode child = ts_node_child(bodyNode, i);
+            if (std::string_view(ts_node_type(child)) == "func_declaration") {
+                funcNode = child;
+                break;
+            }
+        }
+        
+        TSNode blockNode = ts_node_child_by_field_name(funcNode, "body", 4);
+        SymbolCollector::TraverseLocals(blockNode, doc, table, nullptr);
+
+        size_t offset = code.find("y");
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "y");
+        CHECK(sym->kind == SymbolKind::Variable);
     }
 }

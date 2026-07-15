@@ -21,19 +21,35 @@
 
 namespace angel_lsp {
 
-static void CollectLocalsForDocument(const Document& doc, analysis::SymbolTable& table)
+static void CollectLocalsFunctions(TSNode node, const Document& doc, analysis::SymbolTable& table)
 {
-    TSNode root = doc.RootNode();
-    uint32_t count = ts_node_child_count(root);
+    uint32_t count = ts_node_child_count(node);
     for (uint32_t i = 0; i < count; i++) {
-        TSNode child = ts_node_child(root, i);
-        if (std::string_view(ts_node_type(child)) == "func_declaration") {
+        TSNode child = ts_node_child(node, i);
+        std::string_view t = ts_node_type(child);
+        
+        if (t == "func_declaration") {
+            TSNode params = ts_node_child_by_field_name(child, "parameters", 10);
+            analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table);
+            
             TSNode body = ts_node_child_by_field_name(child, "body", 4);
             if (!ts_node_is_null(body)) {
                 analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
             }
         }
+        else if (t == "namespace_declaration" || t == "class_declaration") {
+            TSNode body = ts_node_child_by_field_name(child, "body", 4);
+            if (!ts_node_is_null(body)) {
+                CollectLocalsFunctions(body, doc, table);
+            }
+        }
     }
+}
+
+static void CollectLocalsForDocument(const Document& doc, analysis::SymbolTable& table)
+{
+    TSNode root = doc.RootNode();
+    CollectLocalsFunctions(root, doc, table);
 }
 
 Server::Server()

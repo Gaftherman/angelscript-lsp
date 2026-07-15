@@ -1,6 +1,7 @@
 #include "analysis/SymbolCollector.h"
 #include <string_view>
 #include <sstream>
+#include <iostream>
 
 namespace analysis
 {
@@ -85,6 +86,50 @@ namespace analysis
         }
         ss << ")";
         sym.signature = ss.str();
+    }
+
+    void SymbolCollector::RegisterParamsAsLocals(TSNode paramListNode, const Document& doc, SymbolTable& table) {
+        if (ts_node_is_null(paramListNode)) return;
+        
+        for (uint32_t i = 0; i < ts_node_child_count(paramListNode); i++) {
+            TSNode child = ts_node_child(paramListNode, i);
+            if (std::string_view(ts_node_type(child)) != "parameter") continue;
+            
+            TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
+            if (ts_node_is_null(nameNode)) continue;
+            
+            std::string name = GetNodeText(nameNode, doc);
+            if (name.empty()) continue;
+            
+            std::string typeName;
+            TSNode firstChild = ts_node_child(child, 0);
+            TSNode lastTypeChild = firstChild;
+            for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+                TSNode paramChild = ts_node_child(child, j);
+                if (ts_node_eq(paramChild, nameNode)) break;
+                if (std::string_view(ts_node_type(paramChild)) == "=") break;
+                lastTypeChild = paramChild;
+            }
+            
+            if (!ts_node_is_null(firstChild) && !ts_node_is_null(lastTypeChild)) {
+                uint32_t startByte = ts_node_start_byte(firstChild);
+                uint32_t endByte = ts_node_end_byte(lastTypeChild);
+                if (endByte > startByte) {
+                    typeName = doc.GetText().substr(startByte, endByte - startByte);
+                    while (!typeName.empty() && typeName.back() == ' ') {
+                        typeName.pop_back();
+                    }
+                }
+            }
+            
+            auto paramSym = std::make_shared<Symbol>();
+            paramSym->kind       = SymbolKind::Parameter;
+            paramSym->name       = name;
+            paramSym->typeInfo   = typeName;
+            paramSym->selectionRange = GetRange(nameNode, doc);
+            paramSym->fullRange      = GetRange(child, doc);
+            table.AddLocal(paramSym);
+        }
     }
 
     void SymbolCollector::CollectGlobals(const Document& doc, SymbolTable& table)

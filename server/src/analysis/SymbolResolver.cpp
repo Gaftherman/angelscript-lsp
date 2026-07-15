@@ -42,7 +42,7 @@ namespace analysis
         while (!ts_node_is_null(node))
         {
             std::string_view type = ts_node_type(node);
-            if (type == "identifier") break;
+            if (type == "identifier" || type == "type_identifier") break;
             node = ts_node_parent(node);
         }
 
@@ -98,22 +98,25 @@ namespace analysis
         if (parentType == "scoped_identifier")
         {
             uint32_t count = ts_node_child_count(parent);
-            TSNode lastId = ts_node_child(parent, count - 1);
-            if (ts_node_eq(node, lastId))
+            if (count >= 3)
             {
-                TSNode nsNode = ts_node_child(parent, 0);
-                std::string_view nsSv = doc.SourceAt(nsNode);
-                std::string nsText(nsSv.begin(), nsSv.end());
-                
-                const Symbol* nsSym = FindNamespace(table, nsText);
-                if (nsSym && nsSym->kind == SymbolKind::Namespace)
+                TSNode lastId = ts_node_child(parent, count - 1);
+                if (ts_node_eq(node, lastId))
                 {
-                    for (const auto& child : nsSym->children)
+                    TSNode nsNode = ts_node_child(parent, 0);
+                    std::string_view nsSv = doc.SourceAt(nsNode);
+                    std::string nsText(nsSv.begin(), nsSv.end());
+                    
+                    const Symbol* nsSym = FindNamespace(table, nsText);
+                    if (nsSym && nsSym->kind == SymbolKind::Namespace)
                     {
-                        if (child->name == identText) return child.get();
+                        for (const auto& child : nsSym->children)
+                        {
+                            if (child->name == identText) return child.get();
+                        }
                     }
+                    return nullptr;
                 }
-                return nullptr;
             }
         }
 
@@ -242,7 +245,34 @@ namespace analysis
             }
         }
         
-        // Deep member search: buscar en children de clases y namespaces globales
+        // Scope-aware Deep member search
+        std::string containingClass;
+        TSNode climb = ts_node_parent(node);
+        while (!ts_node_is_null(climb)) {
+            std::string_view ct = ts_node_type(climb);
+            if (ct == "class_declaration") {
+                TSNode nameNode = ts_node_child_by_field_name(climb, "name", 4);
+                if (!ts_node_is_null(nameNode)) {
+                    std::string_view sv = doc.SourceAt(nameNode);
+                    containingClass = std::string(sv.begin(), sv.end());
+                }
+                break;
+            }
+            climb = ts_node_parent(climb);
+        }
+
+        if (!containingClass.empty()) {
+            const Symbol* classSym = table.FindGlobalByName(containingClass);
+            if (classSym) {
+                for (const auto& child : classSym->children) {
+                    if (child->name == identText) return child.get();
+                }
+            }
+            // Do not fall back to other classes if we are inside a specific class
+            return nullptr;
+        }
+
+        // Generic Deep member search (fallback for when not inside a class, e.g. for globals or namespaces)
         for (const auto& [name, sym] : table.GetGlobals()) {
             if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Namespace) {
                 for (const auto& child : sym->children) {

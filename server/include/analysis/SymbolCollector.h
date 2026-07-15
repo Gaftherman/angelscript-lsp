@@ -16,6 +16,9 @@ namespace analysis
         // Traverse the AST starting from a specific block node.
         static void TraverseLocals(TSNode node, const Document& doc, SymbolTable& table, Symbol* currentScope = nullptr);
 
+        // Utility to register parameters as local variables
+        static void RegisterParamsAsLocals(TSNode paramListNode, const Document& doc, SymbolTable& table);
+
         // Utility to extract text from a node
         static std::string GetNodeText(TSNode node, const Document& doc);
         
