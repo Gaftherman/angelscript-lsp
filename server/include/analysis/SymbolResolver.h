@@ -9,7 +9,7 @@ namespace analysis
     {
     public:
         // Returns the symbol corresponding to the identifier under the cursor, or nullptr if none found.
-        static const Symbol* ResolveAt(const Document& doc, const SymbolTable& table, uint32_t line, uint32_t character);
+        static const Symbol* ResolveAt(const Document& doc, const SymbolTable& table, uint32_t line, uint32_t character, std::vector<const Symbol*>* outMultipleResults = nullptr);
         
     private:
         static std::string CleanTypeName(std::string_view raw);

@@ -60,7 +60,8 @@ lsp::requests::TextDocument_Hover::Result ProcessHover(
     
     std::string markdown = "";
     
-    const analysis::Symbol* sym = analysis::SymbolResolver::ResolveAt(doc, table, line, col);
+    std::vector<const analysis::Symbol*> multiResults;
+    const analysis::Symbol* sym = analysis::SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
     if (sym != nullptr)
     {
         auto getFullName = [](const analysis::Symbol* s) -> std::string {
@@ -75,11 +76,22 @@ lsp::requests::TextDocument_Hover::Result ProcessHover(
         };
 
         std::string sig = !sym->signature.empty() ? sym->signature : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
-        std::string containerName = getFullName(sym);
+        
+        std::string contextStr = sym->parent ? sym->parent->name : "";
+        if (multiResults.size() > 1) {
+            contextStr = "{";
+            for (size_t i = 0; i < multiResults.size(); i++) {
+                if (multiResults[i]->parent) {
+                    if (i > 0) contextStr += ", ";
+                    contextStr += multiResults[i]->parent->name;
+                }
+            }
+            contextStr += "}";
+        }
         
         markdown = "```angelscript\n" + sig + "\n```\n"
                  + "**" + sym->name + "** — " + KindName(sym->kind)
-                 + (!containerName.empty() ? " in `" + containerName + "`" : "");
+                 + (!contextStr.empty() ? " in `" + contextStr + "`" : "");
                  
         if (!sym->docComment.empty()) {
             markdown += "\n\n" + sym->docComment;

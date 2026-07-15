@@ -597,6 +597,12 @@ class Player : Entity, Mover {}
 mixin class Regenerator { float regenRate; void Regen() { float x = regenRate; hp = hp + 1.0f; } }
 class Troll : Entity, Regenerator {}
 
+class Monster { float hp; }
+class Ogre : Monster, Regenerator {}
+
+class Boss : Monster { float hp; } // Boss shadows hp
+class MegaBoss : Boss, Regenerator {}
+
 mixin class OrphanMixin { void Foo() { nonExistentVar = 0; } }
 
 interface IMovable { void Move(); }
@@ -695,6 +701,30 @@ interface IMovable { void Move(); }
             REQUIRE(sym != nullptr);
             CHECK(sym->name == "IMovable");
             CHECK(sym->kind == SymbolKind::Interface);
+        }
+
+        SUBCASE("Group G: Multi-Host Search") {
+            parseLocalsIn("Regenerator", "Regen");
+            auto [line, col] = getPos("hp = hp"); // inside Regen
+            std::vector<const Symbol*> multiResults;
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
+            
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "hp");
+            
+            // Should find hp in Entity (via Troll), Monster (via Ogre), and Boss (via MegaBoss)
+            REQUIRE(multiResults.size() >= 3);
+            bool foundEntity = false;
+            bool foundMonster = false;
+            bool foundBoss = false;
+            for (const auto& res : multiResults) {
+                if (res->parent && res->parent->name == "Entity") foundEntity = true;
+                if (res->parent && res->parent->name == "Monster") foundMonster = true;
+                if (res->parent && res->parent->name == "Boss") foundBoss = true;
+            }
+            CHECK(foundEntity);
+            CHECK(foundMonster);
+            CHECK(foundBoss);
         }
     }
 }

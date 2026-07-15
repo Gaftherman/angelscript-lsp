@@ -33,7 +33,7 @@ namespace analysis
         return current;
     }
 
-    const Symbol* SymbolResolver::ResolveAt(const Document& doc, const SymbolTable& table, uint32_t line, uint32_t character)
+    const Symbol* SymbolResolver::ResolveAt(const Document& doc, const SymbolTable& table, uint32_t line, uint32_t character, std::vector<const Symbol*>* outMultipleResults)
     {
         TSNode node = doc.NodeAt(line, character);
         if (ts_node_is_null(node)) return nullptr;
@@ -300,6 +300,7 @@ namespace analysis
                 if (classSym->kind == SymbolKind::Mixin)
                 {
                     std::vector<const Symbol*> hosts = table.FindHostClassesOf(containingClass);
+                    const Symbol* firstFound = nullptr;
                     for (const Symbol* hostSym : hosts)
                     {
                         auto findMember = [&](auto& self, const Symbol* cSym) -> const Symbol* {
@@ -316,8 +317,12 @@ namespace analysis
                         };
 
                         if (const Symbol* found = findMember(findMember, hostSym))
-                            return found;
+                        {
+                            if (outMultipleResults) outMultipleResults->push_back(found);
+                            if (!firstFound) firstFound = found;
+                        }
                     }
+                    if (firstFound) return firstFound;
                 }
             }
             // Do not fall back to other classes if we are inside a specific class
