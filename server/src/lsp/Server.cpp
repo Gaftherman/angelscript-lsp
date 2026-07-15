@@ -165,7 +165,7 @@ void Server::RegisterHandlers()
             std::shared_lock lock(m_docMutex);
             if (m_documents.find(uri) != m_documents.end())
             {
-                return features::ProcessHover(req, *m_documents[uri], asEngine);
+                return features::ProcessHover(req, *m_documents[uri], m_symbolTables[uri], asEngine);
             }
             return lsp::requests::TextDocument_Hover::Result{};
         }
@@ -178,7 +178,7 @@ void Server::RegisterHandlers()
             std::shared_lock lock(m_docMutex);
             if (m_documents.find(uri) != m_documents.end())
             {
-                return features::ProcessDefinition(req, *m_documents[uri], asEngine);
+                return features::ProcessDefinition(req, *m_documents[uri], m_symbolTables[uri], asEngine);
             }
             return lsp::requests::TextDocument_Definition::Result{};
         }
@@ -191,7 +191,7 @@ void Server::RegisterHandlers()
             std::shared_lock lock(m_docMutex);
             if (m_documents.find(uri) != m_documents.end())
             {
-                return features::ProcessCompletion(req, *m_documents[uri], asEngine);
+                return features::ProcessCompletion(req, *m_documents[uri], m_symbolTables[uri], asEngine);
             }
             return lsp::requests::TextDocument_Completion::Result{};
         }
@@ -204,7 +204,7 @@ void Server::RegisterHandlers()
             std::shared_lock lock(m_docMutex);
             if (m_documents.find(uri) != m_documents.end())
             {
-                return features::ProcessSemanticTokensFull(req, *m_documents[uri], asEngine);
+                return features::ProcessSemanticTokensFull(req, *m_documents[uri], m_symbolTables[uri]);
             }
             return lsp::requests::TextDocument_SemanticTokens_Full::Result{};
         }
@@ -217,7 +217,7 @@ void Server::RegisterHandlers()
             std::shared_lock lock(m_docMutex);
             if (m_documents.find(uri) != m_documents.end())
             {
-                return features::ProcessSignatureHelp(req, *m_documents[uri], asEngine);
+                return features::ProcessSignatureHelp(req, *m_documents[uri], m_symbolTables[uri], asEngine);
             }
             return lsp::requests::TextDocument_SignatureHelp::Result{};
         }

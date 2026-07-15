@@ -39,6 +39,38 @@ namespace analysis
         return nullptr;
     }
 
+    std::vector<const Symbol*> SymbolTable::FindByName(const std::string& name) const
+    {
+        std::vector<const Symbol*> results;
+        for (const auto& sym : m_localSymbols) {
+            if (sym->name == name) results.push_back(sym.get());
+        }
+        auto it = m_globalSymbols.find(name);
+        if (it != m_globalSymbols.end()) {
+            results.push_back(it->second.get());
+        }
+        return results;
+    }
+
+    Symbol* SymbolTable::FindFirst(const std::string& name) const
+    {
+        Symbol* local = FindLocalByName(name);
+        if (local) return local;
+        return FindGlobalByName(name);
+    }
+
+    std::vector<const Symbol*> SymbolTable::FindInContainer(const std::string& containerName) const
+    {
+        std::vector<const Symbol*> result;
+        Symbol* container = FindGlobalByName(containerName);
+        if (container) {
+            for (const auto& child : container->children) {
+                result.push_back(child.get());
+            }
+        }
+        return result;
+    }
+
     Symbol* SymbolTable::FindScopeByPosition(uint32_t line, uint32_t col) const
     {
         // Currently we don't have line/col in Symbol struct directly (we have fullRange which is an lsp::Range).

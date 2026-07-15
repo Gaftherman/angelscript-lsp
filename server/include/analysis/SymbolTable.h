@@ -26,6 +26,16 @@ namespace analysis
         // Find a symbol by exact name at local scope
         Symbol* FindLocalByName(const std::string& name) const;
 
+        // Find all symbols with the exact name (e.g. overloads)
+        std::vector<const Symbol*> FindByName(const std::string& name) const;
+
+        // Find first symbol (local or global) by name
+        Symbol* FindFirst(const std::string& name) const;
+
+        // Find symbols inside a specific container (e.g. class or namespace)
+        std::vector<const Symbol*> FindInContainer(const std::string& containerName) const;
+
+        const ankerl::unordered_dense::map<std::string, std::shared_ptr<Symbol>>& GetGlobals() const { return m_globalSymbols; }
         const std::vector<std::shared_ptr<Symbol>>& GetLocals() const { return m_localSymbols; }
 
         // Clears only local symbols (e.g. before re-parsing a function body)

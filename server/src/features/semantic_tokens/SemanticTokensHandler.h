@@ -2,7 +2,7 @@
 #include <lsp/messages.h>
 #include "document/Document.h"
 
-class asIScriptEngine;
+#include "analysis/SymbolTable.h"
 
 namespace angel_lsp {
 namespace features {
@@ -10,7 +10,7 @@ namespace features {
 lsp::requests::TextDocument_SemanticTokens_Full::Result ProcessSemanticTokensFull(
     const lsp::requests::TextDocument_SemanticTokens_Full::Params& req,
     const Document& doc,
-    const asIScriptEngine* engine
+    const analysis::SymbolTable& table
 );
 
 }
