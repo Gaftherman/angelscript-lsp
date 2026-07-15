@@ -24,7 +24,7 @@ namespace analysis
         return r;
     }
 
-    static void ReadParams(TSNode paramListNode, const Document& doc, Symbol& sym) {
+    static void ReadParams(TSNode paramListNode, const Document& doc, Symbol& sym, SymbolTable* table = nullptr, Symbol* parentFunc = nullptr) {
         if (ts_node_is_null(paramListNode)) return;
         
         for (uint32_t i = 0; i < ts_node_child_count(paramListNode); i++) {
@@ -59,6 +59,18 @@ namespace analysis
             }
             
             sym.params.push_back(param);
+            
+            if (table && !param.name.empty()) {
+                auto paramSym = std::make_shared<Symbol>();
+                paramSym->kind       = SymbolKind::Parameter;
+                paramSym->name       = param.name;
+                paramSym->typeInfo   = param.typeName;
+                paramSym->signature  = param.typeName + " " + param.name;
+                paramSym->parent     = parentFunc;
+                paramSym->selectionRange = SymbolCollector::GetRange(nameNode, doc);
+                paramSym->fullRange      = SymbolCollector::GetRange(child, doc);
+                table->AddLocal(paramSym);
+            }
         }
         
         // Build signature
@@ -106,7 +118,7 @@ namespace analysis
             }
 
             TSNode parametersNode = ts_node_child_by_field_name(node, "parameters", 10);
-            ReadParams(parametersNode, doc, *sym);
+            ReadParams(parametersNode, doc, *sym, &table, sym.get());
             
             if (parentScope)
             {
@@ -318,7 +330,7 @@ namespace analysis
             }
 
             TSNode parametersNode = ts_node_child_by_field_name(node, "parameters", 10);
-            ReadParams(parametersNode, doc, *sym);
+            ReadParams(parametersNode, doc, *sym, &table, sym.get());
             
             if (parentScope)
             {

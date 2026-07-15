@@ -242,6 +242,19 @@ namespace analysis
             }
         }
         
+        // Deep member search: buscar en children de clases y namespaces globales
+        for (const auto& [name, sym] : table.GetGlobals()) {
+            if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Namespace) {
+                for (const auto& child : sym->children) {
+                    if (child->name == identText) return child.get();
+                    // Buscar también en hijos de hijos (métodos dentro de clases)
+                    for (const auto& grandchild : child->children) {
+                        if (grandchild->name == identText) return grandchild.get();
+                    }
+                }
+            }
+        }
+
         return nullptr;
     }
 

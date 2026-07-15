@@ -19,12 +19,11 @@ namespace analysis
         // Utility to extract text from a node
         static std::string GetNodeText(TSNode node, const Document& doc);
         
+        // Factory for symbol ranges
+        static lsp::Range GetRange(TSNode node, const Document& doc);
+        
     private:
         // Recursive helper to traverse AST for globals
         static void TraverseGlobals(TSNode node, const Document& doc, SymbolTable& table, Symbol* parentScope);
-
-        
-        // Factory for symbol ranges
-        static lsp::Range GetRange(TSNode node, const Document& doc);
     };
 }

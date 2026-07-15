@@ -205,4 +205,70 @@ TEST_SUITE("SymbolResolver")
         REQUIRE(sym->parent->parent != nullptr);
         CHECK(sym->parent->parent->name == "Engine");
     }
+
+    TEST_CASE("RH1: Hover en miembro de clase (Deep Search)")
+    {
+        std::string code = "class Actor { float m_speed; float GetSpeed() {} }";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        size_t offset = code.find("m_speed");
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "m_speed");
+        CHECK(sym->kind == SymbolKind::Variable);
+        REQUIRE(sym->parent != nullptr);
+        CHECK(sym->parent->name == "Actor");
+    }
+
+    TEST_CASE("RH2: Hover en metodo de clase (Deep Search)")
+    {
+        std::string code = "class Actor { float m_speed; float GetSpeed() {} }";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        size_t offset = code.find("GetSpeed");
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "GetSpeed");
+        CHECK(sym->kind == SymbolKind::Function);
+        REQUIRE(sym->parent != nullptr);
+        CHECK(sym->parent->name == "Actor");
+    }
+
+    TEST_CASE("RH3: Hover en parametro de funcion en declaracion")
+    {
+        std::string code = "void DealDamage(Player@ target, int &out actualDamage) {}";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        size_t offset = code.find("target");
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "target");
+        CHECK(sym->kind == SymbolKind::Parameter);
+        CHECK(sym->typeInfo == "Player@");
+    }
+
+    TEST_CASE("RH4: Hover en parametro en uso dentro del body")
+    {
+        std::string code = "void Foo(int x) { int y = x + 1; }";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        
+        TSNode root = doc.RootNode();
+        TSNode funcNode = ts_node_child(root, 0); 
+        TSNode blockNode = ts_node_child_by_field_name(funcNode, "body", 4);
+        SymbolCollector::TraverseLocals(blockNode, doc, table, nullptr);
+
+        size_t offset = code.rfind("x"); // The 'x' in 'x + 1'
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "x");
+        CHECK(sym->kind == SymbolKind::Parameter);
+    }
 }

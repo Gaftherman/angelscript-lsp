@@ -179,10 +179,13 @@ void Server::RegisterHandlers()
         [this](lsp::requests::TextDocument_Hover::Params&& req)
         {
             std::string uri = req.textDocument.uri.toString();
-            std::shared_lock lock(m_docMutex);
+            std::unique_lock lock(m_docMutex);
             if (m_documents.find(uri) != m_documents.end())
             {
-                return features::ProcessHover(req, *m_documents[uri], m_symbolTables[uri], asEngine);
+                auto& table = m_symbolTables[uri];
+                table.ClearLocals();
+                CollectLocalsForDocument(*m_documents[uri], table);
+                return features::ProcessHover(req, *m_documents[uri], table, asEngine);
             }
             return lsp::requests::TextDocument_Hover::Result{};
         }
@@ -192,10 +195,13 @@ void Server::RegisterHandlers()
         [this](lsp::requests::TextDocument_Definition::Params&& req)
         {
             std::string uri = req.textDocument.uri.toString();
-            std::shared_lock lock(m_docMutex);
+            std::unique_lock lock(m_docMutex);
             if (m_documents.find(uri) != m_documents.end())
             {
-                return features::ProcessDefinition(req, *m_documents[uri], m_symbolTables[uri], asEngine);
+                auto& table = m_symbolTables[uri];
+                table.ClearLocals();
+                CollectLocalsForDocument(*m_documents[uri], table);
+                return features::ProcessDefinition(req, *m_documents[uri], table, asEngine);
             }
             return lsp::requests::TextDocument_Definition::Result{};
         }
