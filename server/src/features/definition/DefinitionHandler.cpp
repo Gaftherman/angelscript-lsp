@@ -17,7 +17,7 @@ lsp::requests::TextDocument_Definition::Result ProcessDefinition(
     if (!sym) return {};
 
     lsp::Location loc;
-    loc.uri = lsp::DocumentUri::fromPath(doc.GetUri()); // Currently all symbols are in the same file context for this iteration
+    loc.uri = lsp::DocumentUri::parse(doc.GetUri()); // Currently all symbols are in the same file context for this iteration
     loc.range = sym->selectionRange;
 
     res = loc;

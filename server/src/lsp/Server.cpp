@@ -305,7 +305,7 @@ void Server::ValidationWorkerLoop(std::stop_token st)
         auto diagnostics = oracle->ValidateSync(text);
 
         lsp::notifications::TextDocument_PublishDiagnostics::Params params;
-        params.uri = lsp::DocumentUri::fromPath(uri);
+        params.uri = lsp::DocumentUri::parse(uri);
         params.diagnostics = std::move(diagnostics);
 
         messageHandler->sendNotification<lsp::notifications::TextDocument_PublishDiagnostics>(std::move(params));
