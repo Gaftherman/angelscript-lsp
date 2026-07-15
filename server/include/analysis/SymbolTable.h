@@ -16,6 +16,9 @@ namespace analysis
         void AddGlobal(std::shared_ptr<Symbol> symbol);
         void AddLocal(std::shared_ptr<Symbol> symbol);
 
+        void AddUsingNamespace(const std::string& ns);
+        const std::vector<std::string>& GetUsingNamespaces() const;
+
         // Find a symbol whose definition range contains the given (line, col)
         // Usually for finding what scope we are currently inside.
         Symbol* FindScopeByPosition(uint32_t line, uint32_t col) const;
@@ -51,5 +54,6 @@ namespace analysis
         
         // Locals are typically small in number and ordered by appearance
         std::vector<std::shared_ptr<Symbol>> m_localSymbols;
+        std::vector<std::string> m_usingNamespaces;
     };
 }

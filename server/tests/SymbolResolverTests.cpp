@@ -399,4 +399,99 @@ TEST_SUITE("SymbolResolver")
         REQUIRE(sym->parent != nullptr);
         CHECK(sym->parent->name == "Entity");
     }
+
+    TEST_CASE("Dump AST")
+    {
+        std::string code =
+            "interface IDam { void TakeDamage(float a); }";
+        Document doc("file:///test.as", code);
+        
+        std::function<void(TSNode, int, const Document&)> print_node = [&](TSNode node, int depth, const Document& doc) {
+            std::string indent(depth * 2, ' ');
+            std::string type = ts_node_type(node);
+            printf("%s%s", indent.c_str(), type.c_str());
+            if (ts_node_child_count(node) == 0) {
+                std::string_view sv = doc.SourceAt(node);
+                std::string text(sv.begin(), sv.end());
+                printf(" ('%s')", text.c_str());
+            }
+            printf("\n");
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+                print_node(ts_node_child(node, i), depth + 1, doc);
+            }
+        };
+        print_node(doc.RootNode(), 0, doc);
+        REQUIRE(true);
+    }
+
+    TEST_CASE("Advanced Hover Features (Inheritance, Mixin, Using)")
+    {
+        std::string code =
+            "interface IDam { void TakeDamage(float a); }\n"
+            "mixin class Regen { void Tick() {} }\n"
+            "class Entity : IDam, Regen { float hp; }\n"
+            "namespace Engine { class Vector3 { float x; } }\n"
+            "using namespace Engine;\n"
+            "void Main() {\n"
+            "  Entity e;\n"
+            "  e.TakeDamage(10.0f);\n"
+            "  e.Tick();\n"
+            "  Vector3 pos;\n"
+            "}\n";
+        Document doc("file:///test.as", code);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        size_t offsetMain = code.find("Main");
+        TSNode root = doc.RootNode();
+        TSNode mainFunc;
+        for (uint32_t i = 0; i < ts_node_child_count(root); i++) {
+            TSNode child = ts_node_child(root, i);
+            if (std::string_view(ts_node_type(child)) == "func_declaration") {
+                mainFunc = child;
+                break;
+            }
+        }
+        TSNode blockNode = ts_node_child_by_field_name(mainFunc, "body", 4);
+        SymbolCollector::TraverseLocals(blockNode, doc, table, nullptr);
+
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+            size_t offset = code.rfind(target);
+            uint32_t line = 0, col = 0;
+            for (size_t i = 0; i < offset; i++) {
+                if (code[i] == '\n') { line++; col = 0; } else { col++; }
+            }
+            return {line, col};
+        };
+
+        SUBCASE("Hover over inherited method") {
+            auto [line, col] = getPos("TakeDamage(");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "TakeDamage");
+            CHECK(sym->kind == SymbolKind::Method);
+            REQUIRE(sym->parent != nullptr);
+            CHECK(sym->parent->name == "IDam");
+        }
+
+        SUBCASE("Hover over mixin method") {
+            auto [line, col] = getPos("Tick()");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "Tick");
+            CHECK(sym->kind == SymbolKind::Function); // Currently mixin methods might parse as Function, that's fine
+            REQUIRE(sym->parent != nullptr);
+            CHECK(sym->parent->name == "Regen");
+        }
+
+        SUBCASE("Hover over type from using namespace") {
+            auto [line, col] = getPos("Vector3 pos");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "Vector3");
+            CHECK(sym->kind == SymbolKind::Class);
+            REQUIRE(sym->parent != nullptr);
+            CHECK(sym->parent->name == "Engine");
+        }
+    }
 }

@@ -154,6 +154,16 @@ namespace analysis
     {
         m_localSymbols.clear();
     }
+
+    void SymbolTable::AddUsingNamespace(const std::string& ns)
+    {
+        m_usingNamespaces.push_back(ns);
+    }
+
+    const std::vector<std::string>& SymbolTable::GetUsingNamespaces() const
+    {
+        return m_usingNamespaces;
+    }
     
     void SymbolTable::ClearAll()
     {

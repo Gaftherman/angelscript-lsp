@@ -39,6 +39,7 @@ namespace analysis
         std::string docComment;   // Extracted documentation if any
         
         std::vector<SymbolParam> params; // For functions/methods/funcdefs
+        std::vector<std::string> baseClasses; // For inheritance and mixins
         
         // Where is it defined in the AST?
         size_t definitionStartByte = 0;

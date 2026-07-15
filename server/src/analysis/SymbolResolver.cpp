@@ -85,13 +85,23 @@ namespace analysis
                         const Symbol* classSym = table.FindByNameDeep(typeName);
                         if (classSym)
                         {
-                            // 4. Find the member inside the class
-                            for (const auto& child : classSym->children)
-                            {
-                                if (child->name == identText)
-                                {
-                                    return child.get();
+                            // 4. Find the member inside the class or its base classes
+                            auto findMember = [&](auto& self, const Symbol* cSym) -> const Symbol* {
+                                if (!cSym) return nullptr;
+                                for (const auto& child : cSym->children) {
+                                    if (child->name == identText) return child.get();
                                 }
+                                for (const auto& baseName : cSym->baseClasses) {
+                                    const Symbol* baseSym = table.FindByNameDeep(baseName);
+                                    if (baseSym) {
+                                        if (const Symbol* found = self(self, baseSym)) return found;
+                                    }
+                                }
+                                return nullptr;
+                            };
+                            
+                            if (const Symbol* found = findMember(findMember, classSym)) {
+                                return found;
                             }
                         }
                     }
@@ -227,6 +237,17 @@ namespace analysis
         if (const Symbol* localSym = table.FindLocalByName(identText))
         {
             return localSym;
+        }
+
+        // Check in using namespaces
+        for (const std::string& usingNs : table.GetUsingNamespaces())
+        {
+            const Symbol* nsSym = FindNamespace(table, usingNs);
+            if (nsSym && nsSym->kind == SymbolKind::Namespace) {
+                for (const auto& child : nsSym->children) {
+                    if (child->name == identText) return child.get();
+                }
+            }
         }
 
         // Fallback to global search (deep)

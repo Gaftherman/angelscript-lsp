@@ -176,6 +176,33 @@ namespace analysis
             }
             return;
         }
+        else if (type == "interface_method")
+        {
+            auto sym = std::make_shared<Symbol>();
+            sym->kind = SymbolKind::Method;
+            sym->fullRange = GetRange(node, doc);
+            
+            TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
+            if (!ts_node_is_null(nameNode)) {
+                sym->name = GetNodeText(nameNode, doc);
+                sym->selectionRange = GetRange(nameNode, doc);
+            }
+
+            TSNode returnTypeNode = ts_node_child_by_field_name(node, "return_type", 11);
+            if (!ts_node_is_null(returnTypeNode)) {
+                sym->typeInfo = GetNodeText(returnTypeNode, doc);
+            }
+
+            TSNode parametersNode = ts_node_child_by_field_name(node, "parameters", 10);
+            ReadParams(parametersNode, doc, *sym, &table, sym.get());
+            
+            if (parentScope)
+            {
+                sym->parent = parentScope;
+                parentScope->children.push_back(sym);
+            }
+            return;
+        }
         else if (type == "variable_declaration")
         {
             TSNode varTypeNode = ts_node_child_by_field_name(node, "var_type", 8);
@@ -213,7 +240,7 @@ namespace analysis
             }
             return;
         }
-        else if (type == "class_declaration" || type == "interface_declaration" || type == "mixin_class_declaration")
+        else if (type == "class_declaration" || type == "interface_declaration" || type == "mixin_declaration")
         {
             auto sym = std::make_shared<Symbol>();
             if (type == "class_declaration") sym->kind = SymbolKind::Class;
@@ -226,6 +253,20 @@ namespace analysis
             if (!ts_node_is_null(nameNode)) {
                 sym->name = GetNodeText(nameNode, doc);
                 sym->selectionRange = GetRange(nameNode, doc);
+            }
+            
+            // Extract base classes and mixins
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+                TSNode child = ts_node_child(node, i);
+                if (std::string_view(ts_node_type(child)) == "base_class_list") {
+                    for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+                        TSNode baseChild = ts_node_child(child, j);
+                        if (std::string_view(ts_node_type(baseChild)) == "identifier") {
+                            sym->baseClasses.push_back(GetNodeText(baseChild, doc));
+                        }
+                    }
+                    break;
+                }
             }
 
             if (parentScope)
@@ -245,6 +286,20 @@ namespace analysis
                 for (uint32_t i = 0; i < count; i++)
                 {
                     TraverseGlobals(ts_node_child(bodyNode, i), doc, table, sym.get());
+                }
+            }
+            return;
+        }
+        else if (type == "using_declaration")
+        {
+            TSNode nsNode = ts_node_child_by_field_name(node, "namespace", 9); // usually it's just 'namespace' or we can find scoped_identifier
+            // Let's just find the scoped_identifier or identifier
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+                TSNode child = ts_node_child(node, i);
+                std::string_view childType = ts_node_type(child);
+                if (childType == "scoped_identifier" || childType == "identifier") {
+                    table.AddUsingNamespace(GetNodeText(child, doc));
+                    break;
                 }
             }
             return;

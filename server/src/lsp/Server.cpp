@@ -37,7 +37,22 @@ static void CollectLocalsFunctions(TSNode node, const Document& doc, analysis::S
                 analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
             }
         }
-        else if (t == "namespace_declaration" || t == "class_declaration") {
+        else if (t == "funcdef_declaration") {
+            TSNode params = ts_node_child_by_field_name(child, "parameters", 10);
+            analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table);
+        }
+        else if (t == "virtual_property") {
+            for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+                TSNode acc = ts_node_child(child, j);
+                if (std::string_view(ts_node_type(acc)) == "accessor") {
+                    TSNode body = ts_node_child_by_field_name(acc, "body", 4);
+                    if (!ts_node_is_null(body)) {
+                        analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
+                    }
+                }
+            }
+        }
+        else if (t == "namespace_declaration" || t == "class_declaration" || t == "interface_declaration" || t == "mixin_declaration") {
             TSNode body = ts_node_child_by_field_name(child, "body", 4);
             if (!ts_node_is_null(body)) {
                 CollectLocalsFunctions(body, doc, table);

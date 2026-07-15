@@ -62,8 +62,19 @@ lsp::requests::TextDocument_Hover::Result ProcessHover(
     const analysis::Symbol* sym = analysis::SymbolResolver::ResolveAt(doc, table, line, col);
     if (sym != nullptr)
     {
+        auto getFullName = [](const analysis::Symbol* s) -> std::string {
+            if (!s || !s->parent) return "";
+            std::string name = s->parent->name;
+            const analysis::Symbol* p = s->parent->parent;
+            while (p && !p->name.empty()) {
+                name = p->name + "::" + name;
+                p = p->parent;
+            }
+            return name;
+        };
+
         std::string sig = !sym->signature.empty() ? sym->signature : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
-        std::string containerName = sym->parent ? sym->parent->name : "";
+        std::string containerName = getFullName(sym);
         
         markdown = "```angelscript\n" + sig + "\n```\n"
                  + "**" + sym->name + "** — " + KindName(sym->kind)
