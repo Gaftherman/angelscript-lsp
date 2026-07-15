@@ -192,20 +192,18 @@ namespace analysis
             if (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) == "variable_declaration")
             {
                 // Find the `type` node of the variable declaration
-                TSNode typeNode = ts_node_child_by_field_name(varDecl, "var_type", 8); // wait, we don't have named fields for type?
-                // Let's just find the `type` child.
-                TSNode tNode;
-                bool foundType = false;
-                for (uint32_t i = 0; i < ts_node_child_count(varDecl); i++) {
-                    TSNode child = ts_node_child(varDecl, i);
-                    if (std::string_view(ts_node_type(child)) == "type") {
-                        tNode = child;
-                        foundType = true;
-                        break;
+                TSNode tNode = ts_node_child_by_field_name(varDecl, "var_type", 8);
+                if (ts_node_is_null(tNode)) {
+                    for (uint32_t j = 0; j < ts_node_child_count(varDecl); j++) {
+                        TSNode child = ts_node_child(varDecl, j);
+                        if (std::string_view(ts_node_type(child)) == "type") {
+                            tNode = child;
+                            break;
+                        }
                     }
                 }
                 
-                if (foundType)
+                if (!ts_node_is_null(tNode))
                 {
                     std::string_view nsSv = doc.SourceAt(tNode);
                     std::string nsText(nsSv.begin(), nsSv.end());

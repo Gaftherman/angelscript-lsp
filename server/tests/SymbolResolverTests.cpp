@@ -400,28 +400,120 @@ TEST_SUITE("SymbolResolver")
         CHECK(sym->parent->name == "Entity");
     }
 
-    TEST_CASE("Dump AST")
+    TEST_CASE("Shared, External, Auto, and Namespace Shadowing")
     {
         std::string code =
-            "interface IDam { void TakeDamage(float a); }";
+            "namespace Foo { class Foo { int x; } }\n"
+            "shared class Bar { int y; }\n"
+            "external shared class ExtBar;\n"
+            "shared void GlobalFunc() {}\n"
+            "external shared void ExtFunc();\n"
+            "void Main() {\n"
+            "  Foo::Foo f;\n"
+            "  f.x = 10;\n"
+            "  Bar b;\n"
+            "  ExtBar eb;\n"
+            "  GlobalFunc();\n"
+            "  ExtFunc();\n"
+            "  auto a = 5;\n"
+            "  auto @ptr = @a;\n"
+            "}";
         Document doc("file:///test.as", code);
-        
-        std::function<void(TSNode, int, const Document&)> print_node = [&](TSNode node, int depth, const Document& doc) {
-            std::string indent(depth * 2, ' ');
-            std::string type = ts_node_type(node);
-            printf("%s%s", indent.c_str(), type.c_str());
-            if (ts_node_child_count(node) == 0) {
-                std::string_view sv = doc.SourceAt(node);
-                std::string text(sv.begin(), sv.end());
-                printf(" ('%s')", text.c_str());
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+            size_t offset = code.rfind(target);
+            uint32_t line = 0, col = 0;
+            for (size_t i = 0; i < offset; i++) {
+                if (code[i] == '\n') { line++; col = 0; } else { col++; }
             }
-            printf("\n");
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
-                print_node(ts_node_child(node, i), depth + 1, doc);
-            }
+            return {line, col};
         };
-        print_node(doc.RootNode(), 0, doc);
-        REQUIRE(true);
+
+        size_t offsetMain = code.find("Main");
+        TSNode root = doc.RootNode();
+        TSNode mainFunc;
+        for (uint32_t i = 0; i < ts_node_child_count(root); i++) {
+            TSNode child = ts_node_child(root, i);
+            if (std::string_view(ts_node_type(child)) == "func_declaration") {
+                TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
+                if (!ts_node_is_null(nameNode) && std::string_view(doc.SourceAt(nameNode)) == "Main") {
+                    mainFunc = child;
+                    break;
+                }
+            }
+        }
+        TSNode blockNode = ts_node_child_by_field_name(mainFunc, "body", 4);
+        SymbolCollector::TraverseLocals(blockNode, doc, table, nullptr);
+
+        SUBCASE("Namespace Shadowing") {
+            auto [line, col] = getPos("Foo f;");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "Foo");
+            CHECK(sym->kind == SymbolKind::Class);
+            REQUIRE(sym->parent != nullptr);
+            CHECK(sym->parent->name == "Foo"); // Parent is namespace Foo
+        }
+
+        SUBCASE("Shared Class") {
+            auto [line, col] = getPos("Bar b;");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "Bar");
+            CHECK(sym->kind == SymbolKind::Class);
+        }
+
+        SUBCASE("External Shared Class") {
+            auto [line, col] = getPos("ExtBar eb;");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "ExtBar");
+            CHECK(sym->kind == SymbolKind::Class);
+        }
+
+        SUBCASE("Shared Function") {
+            auto [line, col] = getPos("GlobalFunc(");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "GlobalFunc");
+            CHECK(sym->kind == SymbolKind::Function);
+        }
+
+        SUBCASE("External Shared Function") {
+            auto [line, col] = getPos("ExtFunc(");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "ExtFunc");
+            CHECK(sym->kind == SymbolKind::Function);
+        }
+
+        SUBCASE("Auto variable") {
+            auto [line, col] = getPos("auto a");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            
+            // DUMP LOCALS
+            for (auto& l : table.GetLocals()) {
+                printf("Local: %s (type: %s)\n", l->name.c_str(), l->typeInfo.c_str());
+            }
+
+            auto [line2, col2] = getPos("a = 5");
+            const Symbol* varSym = SymbolResolver::ResolveAt(doc, table, line2, col2);
+            REQUIRE(varSym != nullptr);
+            CHECK(varSym->name == "a");
+            CHECK(varSym->kind == SymbolKind::Variable);
+            CHECK(varSym->typeInfo == "auto");
+        }
+        
+        SUBCASE("Auto handle variable") {
+            auto [line, col] = getPos("ptr =");
+            const Symbol* varSym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(varSym != nullptr);
+            CHECK(varSym->name == "ptr");
+            CHECK(varSym->kind == SymbolKind::Variable);
+            CHECK(varSym->typeInfo == "auto @");
+        }
     }
 
     TEST_CASE("Advanced Hover Features (Inheritance, Mixin, Using)")

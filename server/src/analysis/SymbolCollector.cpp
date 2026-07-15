@@ -210,6 +210,15 @@ namespace analysis
             if (!ts_node_is_null(varTypeNode)) {
                 typeInfo = GetNodeText(varTypeNode, doc);
             }
+            else {
+                for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+                    TSNode child = ts_node_child(node, i);
+                    if (std::string_view(ts_node_type(child)) == "type") {
+                        typeInfo = GetNodeText(child, doc);
+                        break;
+                    }
+                }
+            }
 
             for (uint32_t i = 0; i < ts_node_child_count(node); i++)
             {
@@ -495,6 +504,15 @@ namespace analysis
             std::string typeInfo;
             if (!ts_node_is_null(varTypeNode)) {
                 typeInfo = GetNodeText(varTypeNode, doc);
+            }
+            else {
+                for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+                    TSNode child = ts_node_child(node, i);
+                    if (std::string_view(ts_node_type(child)) == "type") {
+                        typeInfo = GetNodeText(child, doc);
+                        break;
+                    }
+                }
             }
 
             for (uint32_t i = 0; i < ts_node_child_count(node); i++)

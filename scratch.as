@@ -1,1 +1,1 @@
-interface IDam { void TakeDamage(float a); }
+void Main() { auto a = 5; }
