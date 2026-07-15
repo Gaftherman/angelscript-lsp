@@ -74,6 +74,20 @@ namespace analysis
         return nullptr;
     }
 
+    std::vector<const Symbol*> SymbolTable::FindHostClassesOf(const std::string& mixinName) const
+    {
+        std::vector<const Symbol*> result;
+        for (const auto& [name, sym] : m_globalSymbols)
+        {
+            if (sym->kind != SymbolKind::Class) continue;
+            for (const auto& base : sym->baseClasses)
+            {
+                if (base == mixinName) { result.push_back(sym.get()); break; }
+            }
+        }
+        return result;
+    }
+
     Symbol* SymbolTable::FindLocalByName(const std::string& name) const
     {
         // Search backwards to return the most recently declared local (shadowing)

@@ -586,4 +586,115 @@ TEST_SUITE("SymbolResolver")
             CHECK(sym->parent->name == "Engine");
         }
     }
+
+    TEST_CASE("Mixin Scope and Host-Class Search") {
+        analysis::SymbolTable table;
+        std::string code = R"(
+class Entity { float hp; float speed; }
+mixin class Mover { float speed; void Move() { speed = 1.0f; } }
+class Player : Entity, Mover {}
+
+mixin class Regenerator { float regenRate; void Regen() { float x = regenRate; hp = hp + 1.0f; } }
+class Troll : Entity, Regenerator {}
+
+mixin class OrphanMixin { void Foo() { nonExistentVar = 0; } }
+
+interface IMovable { void Move(); }
+        )";
+
+        Document doc("file:///test.as", code);
+
+        analysis::SymbolCollector::CollectGlobals(doc, table);
+        TSNode root = doc.RootNode();
+
+        auto parseLocalsIn = [&](const std::string& className, const std::string& funcName) {
+            for (uint32_t i = 0; i < ts_node_child_count(root); i++) {
+                TSNode child = ts_node_child(root, i);
+                std::string_view type = ts_node_type(child);
+                if (type == "class_declaration" || type == "mixin_declaration") {
+                    TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
+                    if (!ts_node_is_null(nameNode) && std::string_view(doc.SourceAt(nameNode)) == className) {
+                        TSNode body = ts_node_child_by_field_name(child, "body", 4);
+                        if (!ts_node_is_null(body)) {
+                            for (uint32_t j = 0; j < ts_node_child_count(body); j++) {
+                                TSNode m = ts_node_child(body, j);
+                                if (std::string_view(ts_node_type(m)) == "func_declaration") {
+                                    TSNode mNameNode = ts_node_child_by_field_name(m, "name", 4);
+                                    if (!ts_node_is_null(mNameNode) && std::string_view(doc.SourceAt(mNameNode)) == funcName) {
+                                        TSNode fbody = ts_node_child_by_field_name(m, "body", 4);
+                                        analysis::SymbolCollector::TraverseLocals(fbody, doc, table, nullptr);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        auto getPos = [&](const std::string& match) -> std::pair<uint32_t, uint32_t> {
+            size_t idx = code.find(match);
+            REQUIRE(idx != std::string::npos);
+            uint32_t line = 0, col = 0;
+            for (size_t i = 0; i < idx; i++) {
+                if (code[i] == '\n') { line++; col = 0; }
+                else { col++; }
+            }
+            return {line, col};
+        };
+
+        SUBCASE("Group A: Mixin Hover") {
+            auto [line, col] = getPos("Regenerator");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "Regenerator");
+            CHECK(sym->kind == SymbolKind::Mixin);
+        }
+
+        SUBCASE("Group B: Mixin own member") {
+            parseLocalsIn("Regenerator", "Regen");
+            auto [line, col] = getPos("regenRate;"); // inside Regen
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "regenRate");
+            REQUIRE(sym->parent != nullptr);
+            CHECK(sym->parent->name == "Regenerator");
+        }
+
+        SUBCASE("Group C: Host-Class Search") {
+            parseLocalsIn("Regenerator", "Regen");
+            auto [line, col] = getPos("hp = hp"); // inside Regen
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "hp");
+            REQUIRE(sym->parent != nullptr);
+            CHECK(sym->parent->name == "Entity");
+        }
+
+        SUBCASE("Group D: Orphan Mixin (No Host)") {
+            parseLocalsIn("OrphanMixin", "Foo");
+            auto [line, col] = getPos("nonExistentVar");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            CHECK(sym == nullptr);
+        }
+
+        SUBCASE("Group E: Shadowing (Mixin has priority over Host)") {
+            parseLocalsIn("Mover", "Move");
+            auto [line, col] = getPos("speed = 1.0f");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "speed");
+            REQUIRE(sym->parent != nullptr);
+            CHECK(sym->parent->name == "Mover"); // not Entity
+        }
+
+        SUBCASE("Group F: Interface is correctly resolved as Interface") {
+            auto [line, col] = getPos("IMovable");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "IMovable");
+            CHECK(sym->kind == SymbolKind::Interface);
+        }
+    }
 }

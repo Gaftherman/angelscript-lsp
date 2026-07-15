@@ -274,7 +274,7 @@ namespace analysis
         TSNode climb = ts_node_parent(node);
         while (!ts_node_is_null(climb)) {
             std::string_view ct = ts_node_type(climb);
-            if (ct == "class_declaration") {
+            if (ct == "class_declaration" || ct == "mixin_declaration" || ct == "interface_declaration") {
                 TSNode nameNode = ts_node_child_by_field_name(climb, "name", 4);
                 if (!ts_node_is_null(nameNode)) {
                     std::string_view sv = doc.SourceAt(nameNode);
@@ -293,6 +293,31 @@ namespace analysis
                 }
                 for (const auto& child : classSym->children) {
                     if (child->name == identText) return child.get();
+                }
+
+                // HOST-CLASS SEARCH: Si es un Mixin y no encontramos el miembro,
+                // buscar en todas las clases que incluyen este Mixin.
+                if (classSym->kind == SymbolKind::Mixin)
+                {
+                    std::vector<const Symbol*> hosts = table.FindHostClassesOf(containingClass);
+                    for (const Symbol* hostSym : hosts)
+                    {
+                        auto findMember = [&](auto& self, const Symbol* cSym) -> const Symbol* {
+                            if (!cSym) return nullptr;
+                            for (const auto& child : cSym->children) {
+                                if (child->name == identText) return child.get();
+                            }
+                            for (const auto& baseName : cSym->baseClasses) {
+                                if (baseName == containingClass) continue; // No recursión circular
+                                const Symbol* baseSym = table.FindByNameDeep(baseName);
+                                if (const Symbol* found = self(self, baseSym)) return found;
+                            }
+                            return nullptr;
+                        };
+
+                        if (const Symbol* found = findMember(findMember, hostSym))
+                            return found;
+                    }
                 }
             }
             // Do not fall back to other classes if we are inside a specific class

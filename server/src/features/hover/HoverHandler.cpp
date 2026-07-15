@@ -18,6 +18,7 @@ static std::string KindName(analysis::SymbolKind kind) {
         case analysis::SymbolKind::EnumMember: return "Enum Member";
         case analysis::SymbolKind::Interface: return "Interface";
         case analysis::SymbolKind::Funcdef: return "Funcdef";
+        case analysis::SymbolKind::Mixin: return "Mixin";
         default: return "Symbol";
     }
 }

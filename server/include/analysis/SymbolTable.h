@@ -28,6 +28,9 @@ namespace analysis
         const Symbol* FindByNameDeep(const std::string& name) const;
         
         // Find a symbol by exact name at local scope
+        // Encontra todas las clases que incluyen el mixin especificado en sus bases
+        std::vector<const Symbol*> FindHostClassesOf(const std::string& mixinName) const;
+
         Symbol* FindLocalByName(const std::string& name) const;
 
         // Find all symbols with the exact name (e.g. overloads)
