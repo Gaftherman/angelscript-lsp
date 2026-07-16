@@ -21,7 +21,9 @@ namespace analysis
         Interface,
         Funcdef,
         Mixin,
-        Typedef
+        Typedef,
+        Constructor,
+        Destructor
     };
 
     struct SymbolParam {

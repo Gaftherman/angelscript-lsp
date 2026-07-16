@@ -179,15 +179,37 @@ namespace analysis
             sym->kind = SymbolKind::Function;
             sym->fullRange = GetRange(node, doc);
             
+            bool isDestructor = false;
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
+            if (ts_node_is_null(nameNode)) {
+                // If it's a destructor, the name might not be neatly under a 'name' field, or we might need to find the identifier.
+                // Let's just find the identifier child and check if there's a ~ before it.
+                for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+                    TSNode child = ts_node_child(node, i);
+                    if (std::string_view(ts_node_type(child)) == "identifier") {
+                        nameNode = child;
+                        break;
+                    }
+                }
+            }
+
             if (!ts_node_is_null(nameNode)) {
                 sym->name = GetNodeText(nameNode, doc);
                 sym->selectionRange = GetRange(nameNode, doc);
+                
+                TSNode prev = ts_node_prev_sibling(nameNode);
+                if (!ts_node_is_null(prev) && std::string_view(ts_node_type(prev)) == "~") {
+                    isDestructor = true;
+                    sym->name = "~" + sym->name;
+                    sym->selectionRange = GetRange(prev, doc); // maybe include ~ in selection
+                }
             }
 
             TSNode returnTypeNode = ts_node_child_by_field_name(node, "return_type", 11);
             if (!ts_node_is_null(returnTypeNode)) {
                 sym->typeInfo = GetNodeText(returnTypeNode, doc);
+            } else if (parentScope && parentScope->kind == SymbolKind::Class) {
+                sym->kind = isDestructor ? SymbolKind::Destructor : SymbolKind::Constructor;
             }
 
             TSNode parametersNode = ts_node_child_by_field_name(node, "parameters", 10);
@@ -244,6 +266,19 @@ namespace analysis
                     if (std::string_view(ts_node_type(child)) == "type") {
                         typeInfo = GetNodeText(child, doc);
                         break;
+                    }
+                }
+            }
+
+            // Workaround for Engine::Math::Vector3 pos; where Engine::Math:: is an ERROR node sibling
+            TSNode prevSibling = ts_node_prev_sibling(node);
+            if (!ts_node_is_null(prevSibling) && std::string_view(ts_node_type(prevSibling)) == "ERROR") {
+                std::string errText = GetNodeText(prevSibling, doc);
+                if (!errText.empty()) {
+                    if (!typeInfo.empty() && typeInfo.starts_with("::")) {
+                        typeInfo = errText + typeInfo;
+                    } else {
+                        typeInfo = errText + "::" + typeInfo;
                     }
                 }
             }

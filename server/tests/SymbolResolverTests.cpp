@@ -937,4 +937,54 @@ void Main() {
             CHECK(sym->typeInfo == "Engine::Math::Vector3"); // Full type correctly rebuilt
         }
     }
+
+    TEST_SUITE("Hover Context and Constructors") {
+        TEST_CASE("Hover over constructor and destructor") {
+            std::string code = "class Vec { Vec() {} ~Vec() {} Vec(float x) {} }\nvoid Main() { Vec v; }";
+            Document doc("file:///test.as", code);
+            SymbolTable table;
+            SymbolCollector::CollectGlobals(doc, table);
+
+            auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+                size_t offset = code.rfind(target);
+                uint32_t line = 0, col = 0;
+                for (size_t i = 0; i < offset; i++) {
+                    if (code[i] == '\n') { line++; col = 0; } else { col++; }
+                }
+                return {line, col};
+            };
+
+            SUBCASE("Default Constructor") {
+                auto [line, col] = getPos(" Vec() {}");
+                const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col + 1); // +1 because we added a space
+                REQUIRE(sym != nullptr);
+                CHECK(sym->kind == SymbolKind::Constructor);
+                CHECK(sym->name == "Vec");
+            }
+
+            SUBCASE("Destructor") {
+                auto [line, col] = getPos("~Vec() {}");
+                const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col + 1); // +1 to hit 'Vec'
+                REQUIRE(sym != nullptr);
+                CHECK(sym->kind == SymbolKind::Destructor);
+                CHECK(sym->name == "~Vec");
+            }
+
+            SUBCASE("Constructor with params") {
+                auto [line, col] = getPos("Vec(float x)");
+                const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+                REQUIRE(sym != nullptr);
+                CHECK(sym->kind == SymbolKind::Constructor);
+                CHECK(sym->name == "Vec");
+            }
+
+            SUBCASE("Class type in variable declaration") {
+                auto [line, col] = getPos("Vec v;");
+                const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+                REQUIRE(sym != nullptr);
+                CHECK(sym->kind == SymbolKind::Class);
+                CHECK(sym->name == "Vec");
+            }
+        }
+    }
 }

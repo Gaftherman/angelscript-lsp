@@ -16,6 +16,8 @@ static const LspStrings EN_STRINGS = {
     .kindFuncdef = "Funcdef",
     .kindMixin = "Mixin",
     .kindTypedef = "Typedef",
+    .kindConstructor = "Constructor",
+    .kindDestructor = "Destructor",
     .kindUnknown = "Symbol",
 
     .hoverIn = "in",
@@ -41,6 +43,8 @@ static const LspStrings ES_STRINGS = {
     .kindFuncdef = "Definición de Función",
     .kindMixin = "Mixin",
     .kindTypedef = "Definición de Tipo",
+    .kindConstructor = "Constructor",
+    .kindDestructor = "Destructor",
     .kindUnknown = "Símbolo",
 
     .hoverIn = "en",

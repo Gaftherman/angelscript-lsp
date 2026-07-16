@@ -162,6 +162,62 @@ namespace analysis
                 }
         }
 
+        // Check if we are hovering a constructor or destructor
+        if (parentType == "func_declaration")
+        {
+            // If the func_declaration doesn't have a return_type, it's a constructor or destructor.
+            bool hasReturnType = false;
+            for (uint32_t i = 0; i < ts_node_child_count(parent); i++) {
+                TSNode child = ts_node_child(parent, i);
+                if (std::string_view(ts_node_type(child)) == "return_type" || 
+                    std::string_view(ts_node_type(child)) == "type" || 
+                    std::string_view(ts_node_type(child)) == "datatype") {
+                    hasReturnType = true;
+                    break;
+                }
+            }
+            if (!hasReturnType) {
+                // Determine if it's a destructor by checking for ~
+                bool isDestructor = false;
+                TSNode prev = ts_node_prev_sibling(node);
+                if (!ts_node_is_null(prev) && std::string_view(ts_node_type(prev)) == "~") {
+                    isDestructor = true;
+                }
+                
+                std::string targetName = isDestructor ? ("~" + identText) : identText;
+                
+                // We should look for Constructor or Destructor first
+                const Symbol* foundSym = nullptr;
+                // Climb scopes to find the enclosing class and look inside its children
+                TSNode scopeNode = parent;
+                while (!ts_node_is_null(scopeNode)) {
+                    if (std::string_view(ts_node_type(scopeNode)) == "class_declaration") {
+                        TSNode classNameNode = ts_node_child_by_field_name(scopeNode, "name", 4);
+                        if (!ts_node_is_null(classNameNode)) {
+                            std::string_view cNameSv = doc.SourceAt(classNameNode);
+                            std::string cName(cNameSv.begin(), cNameSv.end());
+                            const Symbol* classSym = table.FindByNameDeep(cName);
+                            if (classSym) {
+                                for (const auto& child : classSym->children) {
+                                    if (child->name == targetName && (child->kind == SymbolKind::Constructor || child->kind == SymbolKind::Destructor)) {
+                                        foundSym = child.get();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    scopeNode = ts_node_parent(scopeNode);
+                }
+                
+                if (foundSym) {
+                    if (outMultipleResults) outMultipleResults->push_back(foundSym);
+                    return foundSym;
+                }
+            }
+        }
+
         bool isScoped = false;
         std::vector<const Symbol*> globalCandidates;
 

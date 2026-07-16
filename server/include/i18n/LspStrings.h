@@ -25,6 +25,8 @@ struct LspStrings {
     const char* kindFuncdef;
     const char* kindMixin;
     const char* kindTypedef;
+    const char* kindConstructor;
+    const char* kindDestructor;
     const char* kindUnknown;
 
     // --- Hover labels ---

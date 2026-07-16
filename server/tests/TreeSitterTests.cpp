@@ -237,15 +237,15 @@ namespace Collision {
             }
         };
 
-        std::string source1 = "void Main() { Engine::Math::Lerp(0.0f, 10.0f, 0.5f); }";
+        std::string source1 = "class Vector3 { Vector3() {} ~Vector3() {} Vector3(float ax) {} }";
         TSTree *tree1 = ts_parser_parse_string(parser, NULL, source1.c_str(), source1.length());
-        printf("\n=== AST: Lerp ===\n");
+        printf("\n=== AST: Constructors ===\n");
         printTree(printTree, ts_tree_root_node(tree1), source1, 0);
         printf("=== END AST ===\n\n");
         
-        std::string source2 = "void Main() { Engine::Math::Vector3 pos2; }";
+        std::string source2 = "class RigidBody { Engine::Math::Vector3 position; }";
         TSTree *tree2 = ts_parser_parse_string(parser, NULL, source2.c_str(), source2.length());
-        printf("\n=== AST: Vector3 ===\n");
+        printf("\n=== AST: Field ===\n");
         printTree(printTree, ts_tree_root_node(tree2), source2, 0);
         printf("=== END AST ===\n\n");
         

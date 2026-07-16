@@ -36,7 +36,8 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             case analysis::SymbolKind::Interface: return s.kindInterface;
             case analysis::SymbolKind::Funcdef: return s.kindFuncdef;
             case analysis::SymbolKind::Mixin: return s.kindMixin;
-            case analysis::SymbolKind::Typedef: return s.kindTypedef;
+            case analysis::SymbolKind::Constructor: return s.kindConstructor;
+            case analysis::SymbolKind::Destructor: return s.kindDestructor;
             default: return s.kindUnknown;
         }
     };
@@ -44,6 +45,44 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
     std::vector<const analysis::Symbol*> multiResults;
     const analysis::Symbol* sym = analysis::SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
     
+    // Dynamic Display Name logic: if we hover over a Class/Enum/Interface, try to find the full qualified name written by the user.
+    std::string dynamicDisplayName = "";
+    if (sym != nullptr && (sym->kind == analysis::SymbolKind::Class || sym->kind == analysis::SymbolKind::Enum || 
+                           sym->kind == analysis::SymbolKind::Interface || sym->kind == analysis::SymbolKind::Mixin || 
+                           sym->kind == analysis::SymbolKind::Typedef)) 
+    {
+        TSNode nodeUnder = doc.NodeAt(line, col);
+        if (!ts_node_is_null(nodeUnder)) {
+            TSNode current = nodeUnder;
+            // Climb up to `type` or similar to find preceding `scope` or `ERROR` nodes
+            while (!ts_node_is_null(current)) {
+                std::string_view typeStr = ts_node_type(current);
+                if (typeStr == "type" || typeStr == "datatype") {
+                    TSNode prevSibling = ts_node_prev_sibling(current);
+                    if (!ts_node_is_null(prevSibling)) {
+                        std::string_view prevType = ts_node_type(prevSibling);
+                        if (prevType == "scope" || prevType == "ERROR") {
+                            std::string_view scopeSv = doc.SourceAt(prevSibling);
+                            std::string scopeStr(scopeSv.begin(), scopeSv.end());
+                            std::string_view typeSv = doc.SourceAt(current);
+                            std::string typeStrText(typeSv.begin(), typeSv.end());
+                            // Some AST paths might put the `::` inside the type, some in the scope.
+                            if (!scopeStr.empty()) {
+                                if (typeStrText.starts_with("::")) {
+                                    dynamicDisplayName = scopeStr + typeStrText;
+                                } else {
+                                    dynamicDisplayName = scopeStr + (scopeStr.ends_with("::") ? "" : "::") + typeStrText;
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+                current = ts_node_parent(current);
+            }
+        }
+    }
+
     if (sym != nullptr)
     {
         bool multipleDistinctKinds = false;
@@ -62,11 +101,12 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
         }
 
         auto renderSymbol = [&](const analysis::Symbol* renderSym) {
-            std::string sig = !renderSym->signature.empty() ? renderSym->signature : (renderSym->typeInfo + (renderSym->typeInfo.empty() ? "" : " ") + renderSym->name);
+            std::string dispName = (!dynamicDisplayName.empty() && renderSym->name == sym->name) ? dynamicDisplayName : renderSym->name;
+            std::string sig = !renderSym->signature.empty() ? renderSym->signature : (renderSym->typeInfo + (renderSym->typeInfo.empty() ? "" : " ") + dispName);
             std::string contextStr = renderSym->parent ? renderSym->parent->name : "";
             
             std::string md = "```angelscript\n" + sig + "\n```\n"
-                           + "**" + renderSym->name + "** — " + getKindName(renderSym->kind)
+                           + "**" + dispName + "** — " + getKindName(renderSym->kind)
                            + (!contextStr.empty() ? " " + std::string(s.hoverIn) + " `" + contextStr + "`" : "");
             
             if (!renderSym->docComment.empty()) {

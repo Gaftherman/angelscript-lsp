@@ -282,11 +282,46 @@ TEST_SUITE("SymbolCollector")
         
         Symbol* cls = table.FindGlobalByName("Enemy");
         REQUIRE(cls != nullptr);
-        REQUIRE(cls->children.size() == 1);
-        CHECK(cls->children[0]->name == "Attack");
-        
+        CHECK(cls->baseClasses[0] == "Entity");
+
         Symbol* notCls = table.FindGlobalByName("Entity");
         CHECK(notCls == nullptr); // Ensure "Entity" is not mistakenly collected
+    }
+
+    TEST_CASE("C3: Constructores y Destructores detectados correctamente") {
+        Document doc("file:///test.as", "class Vec { Vec() {} ~Vec() {} Vec(float x) {} }");
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        const Symbol* vecClass = table.FindGlobalByName("Vec");
+        REQUIRE(vecClass != nullptr);
+
+        int constructors = 0;
+        int destructors = 0;
+        for (const auto& child : vecClass->children) {
+            if (child->kind == SymbolKind::Constructor && child->name == "Vec") constructors++;
+            if (child->kind == SymbolKind::Destructor && child->name == "~Vec") destructors++;
+        }
+
+        CHECK(constructors == 2);
+        CHECK(destructors == 1);
+    }
+
+    TEST_CASE("C4: Campos de clase con namespace tienen typeInfo cualificado") {
+        Document doc("file:///test.as", "class Body { Engine::Math::Vector3 pos; }");
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        const Symbol* bodyClass = table.FindGlobalByName("Body");
+        REQUIRE(bodyClass != nullptr);
+
+        const Symbol* posField = nullptr;
+        for (const auto& child : bodyClass->children) {
+            if (child->name == "pos") posField = child.get();
+        }
+
+        REQUIRE(posField != nullptr);
+        CHECK(posField->typeInfo == "Engine::Math::Vector3");
     }
 
     TEST_CASE("C3: Clase con modificadores")
