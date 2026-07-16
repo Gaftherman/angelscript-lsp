@@ -86,22 +86,39 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
 
     if (sym != nullptr)
     {
-        bool multipleDistinctKinds = false;
-        bool multipleDistinctParents = false;
-        if (multiResults.size() > 1) {
-            analysis::SymbolKind firstKind = multiResults[0]->kind;
-            const analysis::Symbol* firstParent = multiResults[0]->parent;
-            for (auto r : multiResults) {
-                if (r->kind != firstKind) {
-                    multipleDistinctKinds = true;
+        struct GroupedResult {
+            const analysis::Symbol* sym;
+            std::vector<std::string> parents;
+        };
+        std::vector<GroupedResult> grouped;
+
+        for (const analysis::Symbol* r : multiResults) {
+            bool foundGroup = false;
+            for (auto& g : grouped) {
+                // To group, they must have same kind, name, and signature/type
+                bool sameSignature = r->signature == g.sym->signature;
+                bool sameTypeInfo = r->typeInfo == g.sym->typeInfo;
+                if (r->kind == g.sym->kind && r->name == g.sym->name && sameSignature && sameTypeInfo) {
+                    if (r->parent) {
+                        // avoid duplicate parent names
+                        if (std::find(g.parents.begin(), g.parents.end(), r->parent->name) == g.parents.end()) {
+                            g.parents.push_back(r->parent->name);
+                        }
+                    }
+                    foundGroup = true;
+                    break;
                 }
-                if (r->parent != firstParent) {
-                    multipleDistinctParents = true;
-                }
+            }
+            if (!foundGroup) {
+                GroupedResult gr;
+                gr.sym = r;
+                if (r->parent) gr.parents.push_back(r->parent->name);
+                grouped.push_back(gr);
             }
         }
 
-        auto renderSymbol = [&](const analysis::Symbol* renderSym) {
+        auto renderGrouped = [&](const GroupedResult& gr, const analysis::Symbol* originalSym) {
+            const analysis::Symbol* renderSym = originalSym ? originalSym : gr.sym;
             // For Parameters/Variables: dispName is always the identifier name (e.g. "target").
             // For types (Class/Enum etc.): dispName can be the full qualified name from the source.
             bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
@@ -113,7 +130,12 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             std::string sig = !renderSym->signature.empty()
                                 ? renderSym->signature
                                 : (renderSym->typeInfo + (renderSym->typeInfo.empty() ? "" : " ") + dispName);
-            std::string contextStr = renderSym->parent ? renderSym->parent->name : "";
+            
+            std::string contextStr = "";
+            for (size_t i = 0; i < gr.parents.size(); i++) {
+                if (i > 0) contextStr += ", ";
+                contextStr += gr.parents[i];
+            }
             
             std::string md = "```angelscript\n" + sig + "\n```\n"
                            + "**" + dispName + "** — " + getKindName(renderSym->kind)
@@ -125,13 +147,16 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             return md;
         };
 
-        if (multipleDistinctKinds || multipleDistinctParents) {
-            for (size_t i = 0; i < multiResults.size(); i++) {
+        if (grouped.size() > 1 || (!grouped.empty() && grouped[0].parents.size() > 1)) {
+            for (size_t i = 0; i < grouped.size(); i++) {
                 if (i > 0) markdown += "\n\n---\n\n";
-                markdown += renderSymbol(multiResults[i]);
+                markdown += renderGrouped(grouped[i], nullptr);
             }
         } else {
-            markdown = renderSymbol(sym);
+            GroupedResult gr;
+            gr.sym = sym;
+            if (sym->parent) gr.parents.push_back(sym->parent->name);
+            markdown = renderGrouped(gr, sym);
         }
     }
     else
