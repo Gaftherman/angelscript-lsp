@@ -45,65 +45,41 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
     std::vector<const analysis::Symbol*> multiResults;
     const analysis::Symbol* sym = analysis::SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
     
-    // Dynamic Display Name logic: if we hover over a Class/Enum/Interface, try to find the full qualified name written by the user.
+    // Dynamic Display Name logic: if we hover over a Class/Enum/Interface/Mixin/Typedef, try to find the full qualified name written by the user.
+    // For Parameters/Variables the signature already contains the fully-qualified type (fixed in SymbolCollector), so we don't need this.
     std::string dynamicDisplayName = "";
     if (sym != nullptr && (sym->kind == analysis::SymbolKind::Class || sym->kind == analysis::SymbolKind::Enum || 
                            sym->kind == analysis::SymbolKind::Interface || sym->kind == analysis::SymbolKind::Mixin || 
-                           sym->kind == analysis::SymbolKind::Typedef || sym->kind == analysis::SymbolKind::Parameter ||
-                           sym->kind == analysis::SymbolKind::Variable)) 
+                           sym->kind == analysis::SymbolKind::Typedef)) 
     {
         TSNode nodeUnder = doc.NodeAt(line, col);
         if (!ts_node_is_null(nodeUnder)) {
             TSNode current = nodeUnder;
-            
-            if (sym->kind == analysis::SymbolKind::Parameter || sym->kind == analysis::SymbolKind::Variable) {
-                // Climb up to `parameter` or `variable_declaration`
-                while (!ts_node_is_null(current)) {
-                    std::string_view typeStr = ts_node_type(current);
-                    if (typeStr == "parameter" || typeStr == "declaration") {
-                        TSNode prevSibling = ts_node_prev_sibling(current);
-                        if (!ts_node_is_null(prevSibling) && std::string_view(ts_node_type(prevSibling)) == "ERROR") {
-                            std::string_view errSv = doc.SourceAt(prevSibling);
-                            std::string errStr(errSv.begin(), errSv.end());
-                            if (!errStr.empty()) {
-                                if (sym->typeInfo.starts_with("::")) {
-                                    dynamicDisplayName = errStr + sym->typeInfo;
+            // Climb up to `type` or similar to find preceding `scope` or `ERROR` nodes
+            while (!ts_node_is_null(current)) {
+                std::string_view typeStr = ts_node_type(current);
+                if (typeStr == "type" || typeStr == "datatype") {
+                    TSNode prevSibling = ts_node_prev_sibling(current);
+                    if (!ts_node_is_null(prevSibling)) {
+                        std::string_view prevType = ts_node_type(prevSibling);
+                        if (prevType == "scope" || prevType == "ERROR") {
+                            std::string_view scopeSv = doc.SourceAt(prevSibling);
+                            std::string scopeStr(scopeSv.begin(), scopeSv.end());
+                            std::string_view typeSv = doc.SourceAt(current);
+                            std::string typeStrText(typeSv.begin(), typeSv.end());
+                            // Some AST paths might put the `::` inside the type, some in the scope.
+                            if (!scopeStr.empty()) {
+                                if (typeStrText.starts_with("::")) {
+                                    dynamicDisplayName = scopeStr + typeStrText;
                                 } else {
-                                    dynamicDisplayName = errStr + "::" + sym->typeInfo;
+                                    dynamicDisplayName = scopeStr + (scopeStr.ends_with("::") ? "" : "::") + typeStrText;
                                 }
                             }
                         }
-                        break;
                     }
-                    current = ts_node_parent(current);
+                    break;
                 }
-            } else {
-                // Climb up to `type` or similar to find preceding `scope` or `ERROR` nodes
-                while (!ts_node_is_null(current)) {
-                    std::string_view typeStr = ts_node_type(current);
-                    if (typeStr == "type" || typeStr == "datatype") {
-                        TSNode prevSibling = ts_node_prev_sibling(current);
-                        if (!ts_node_is_null(prevSibling)) {
-                            std::string_view prevType = ts_node_type(prevSibling);
-                            if (prevType == "scope" || prevType == "ERROR") {
-                                std::string_view scopeSv = doc.SourceAt(prevSibling);
-                                std::string scopeStr(scopeSv.begin(), scopeSv.end());
-                                std::string_view typeSv = doc.SourceAt(current);
-                                std::string typeStrText(typeSv.begin(), typeSv.end());
-                                // Some AST paths might put the `::` inside the type, some in the scope.
-                                if (!scopeStr.empty()) {
-                                    if (typeStrText.starts_with("::")) {
-                                        dynamicDisplayName = scopeStr + typeStrText;
-                                    } else {
-                                        dynamicDisplayName = scopeStr + (scopeStr.ends_with("::") ? "" : "::") + typeStrText;
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    }
-                    current = ts_node_parent(current);
-                }
+                current = ts_node_parent(current);
             }
         }
     }
@@ -126,8 +102,17 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
         }
 
         auto renderSymbol = [&](const analysis::Symbol* renderSym) {
-            std::string dispName = (!dynamicDisplayName.empty() && renderSym->name == sym->name) ? dynamicDisplayName : renderSym->name;
-            std::string sig = !renderSym->signature.empty() ? renderSym->signature : (renderSym->typeInfo + (renderSym->typeInfo.empty() ? "" : " ") + dispName);
+            // For Parameters/Variables: dispName is always the identifier name (e.g. "target").
+            // For types (Class/Enum etc.): dispName can be the full qualified name from the source.
+            bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
+                             renderSym->kind == analysis::SymbolKind::Variable  ||
+                             renderSym->kind == analysis::SymbolKind::Property;
+            std::string dispName = (!isVarLike && !dynamicDisplayName.empty() && renderSym->name == sym->name)
+                                        ? dynamicDisplayName
+                                        : renderSym->name;
+            std::string sig = !renderSym->signature.empty()
+                                ? renderSym->signature
+                                : (renderSym->typeInfo + (renderSym->typeInfo.empty() ? "" : " ") + dispName);
             std::string contextStr = renderSym->parent ? renderSym->parent->name : "";
             
             std::string md = "```angelscript\n" + sig + "\n```\n"

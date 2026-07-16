@@ -351,6 +351,25 @@ namespace analysis
                 }
             }
         }
+
+        // Namespace resolution for identifiers INSIDE an ERROR node.
+        // Example: `Engine::Math::Vector3(0,0,0)` inside a function body generates:
+        //   ERROR
+        //     scoped_identifier "Engine::Math"   ← (or scope nodes)
+        //     identifier "Vector3"  / call_expression...
+        // When hovering `Math`, its parent is a `scoped_identifier` (handled above) OR an ERROR node.
+        // When hovering `Engine` whose parent is the ERROR node, handle it here.
+        if (!isScoped && (parentType == "ERROR" || parentType == "scoped_identifier"))
+        {
+            // Build the full path from root of the enclosing scoped_identifier/ERROR chain up to this token
+            // by checking if identText is a known namespace
+            const Symbol* directNs = FindNamespace(table, identText);
+            if (directNs && directNs->kind == SymbolKind::Namespace)
+            {
+                if (outMultipleResults) outMultipleResults->push_back(directNs);
+                return directNs;
+            }
+        }
         
         // Namespace resolution workaround for Combat::Fire() which produces `ERROR -> type -> scope + datatype -> identifier`
         if (!isScoped && parentType == "datatype")
@@ -506,10 +525,34 @@ namespace analysis
                 }
             }
             
-            // If outMultipleResults is null (meaning caller only wants 1 result like Goto Definition)
-            // we return bestMatch right away. If it's Hover, we might still return bestMatch but populate outMultipleResults.
-            // Wait, we need to continue with scope-aware deep search if globals didn't give us a clear definitive answer?
-            // Usually if we find a global we stop.
+            // Constructor redirection: if the resolved symbol is a Class but the context is a call
+            // expression (e.g. `Vector3(x, y, z)`), the user is actually calling a constructor.
+            // Find the best matching constructor inside the class by argument count.
+            if (bestMatch && bestMatch->kind == SymbolKind::Class &&
+                expected.has_value() && expected.value() == SymbolKind::Function)
+            {
+                const Symbol* bestCtor = nullptr;
+                int bestCtorScore = -1;
+                for (const auto& child : bestMatch->children)
+                {
+                    if (child->kind != SymbolKind::Constructor) continue;
+                    int score = 0;
+                    if (argCount.has_value())
+                    {
+                        if (child->params.size() == argCount.value())
+                            score += 200; // Perfect arity match
+                        else
+                            score -= 50;  // Penalize wrong arity
+                    }
+                    if (score > bestCtorScore)
+                    {
+                        bestCtorScore = score;
+                        bestCtor = child.get();
+                    }
+                }
+                if (bestCtor) bestMatch = bestCtor;
+            }
+            
             return bestMatch;
         }
         
