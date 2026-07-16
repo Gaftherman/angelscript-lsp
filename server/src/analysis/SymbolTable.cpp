@@ -118,6 +118,40 @@ namespace analysis
         return nullptr;
     }
 
+    const Symbol* SymbolTable::FindLocalByNameAt(const std::string& name, uint32_t line, uint32_t col) const
+    {
+        auto isInside = [](const lsp::Range& r, uint32_t l, uint32_t c) {
+            if (l < r.start.line || l > r.end.line) return false;
+            if (l == r.start.line && c < r.start.character) return false;
+            if (l == r.end.line && c > r.end.character) return false;
+            return true;
+        };
+
+        const Symbol* bestMatch = nullptr;
+        uint32_t bestScore = 0xFFFFFFFF; // Smaller score = tighter scope
+
+        for (const auto& sym : m_localSymbols)
+        {
+            if (sym->name == name && isInside(sym->fullRange, line, col))
+            {
+                uint32_t lineSpan = sym->fullRange.end.line - sym->fullRange.start.line;
+                // Add column difference to break ties
+                uint32_t colSpan = 0;
+                if (lineSpan == 0) {
+                    colSpan = sym->fullRange.end.character - sym->fullRange.start.character;
+                }
+                
+                uint32_t score = (lineSpan << 16) | (colSpan & 0xFFFF);
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    bestMatch = sym.get();
+                }
+            }
+        }
+        return bestMatch;
+    }
+
     std::vector<const Symbol*> SymbolTable::FindByName(const std::string& name) const
     {
         std::vector<const Symbol*> results;

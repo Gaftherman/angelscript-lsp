@@ -53,9 +53,15 @@ namespace analysis
             return SymbolKind::Class; // También podría ser Typedef o Enum, filtraremos por jerarquía
         }
         if (parentType == "call_expression" || parentType == "func_call") {
-            // Llamada a función `Func();`
             return SymbolKind::Function; // También Method
         }
+        
+        // Also check if the next sibling is an argument_list (which means this is a call)
+        TSNode nextSibling = ts_node_next_sibling(node);
+        if (!ts_node_is_null(nextSibling) && std::string_view(ts_node_type(nextSibling)) == "argument_list") {
+            return SymbolKind::Function;
+        }
+        
         if (parentType == "base_class_list" || parentType == "inheritance_specifier") {
             return SymbolKind::Class; // También Interface, Mixin
         }
@@ -74,11 +80,52 @@ namespace analysis
         return std::nullopt;
     }
 
+    // Returns argument count if this node is the callee of a call expression
+    static std::optional<uint32_t> GetCallArgumentCount(TSNode node, TSNode parent, std::string_view parentType)
+    {
+        TSNode argList = {0};
+        
+        if (parentType == "call_expression" || parentType == "func_call") {
+            argList = ts_node_child_by_field_name(parent, "arguments", 9);
+            if (ts_node_is_null(argList)) {
+                for (uint32_t i = 0; i < ts_node_child_count(parent); i++) {
+                    TSNode child = ts_node_child(parent, i);
+                    if (std::string_view(ts_node_type(child)) == "argument_list") {
+                        argList = child;
+                        break;
+                    }
+                }
+            }
+        } else {
+            TSNode nextSibling = ts_node_next_sibling(node);
+            if (!ts_node_is_null(nextSibling) && std::string_view(ts_node_type(nextSibling)) == "argument_list") {
+                argList = nextSibling;
+            }
+        }
+        
+        if (!ts_node_is_null(argList)) {
+            // Count arguments based on comma nodes or child count heuristics
+            uint32_t count = ts_node_child_count(argList);
+            uint32_t argCount = 0;
+            for (uint32_t i = 0; i < count; i++) {
+                TSNode child = ts_node_child(argList, i);
+                std::string_view type = ts_node_type(child);
+                if (type != "(" && type != ")" && type != ",") {
+                    argCount++;
+                }
+            }
+            return argCount;
+        }
+        
+        return std::nullopt;
+    }
+
     static int GetKindPriority(SymbolKind kind)
     {
         switch (kind) {
             case SymbolKind::Typedef: return 6;
             case SymbolKind::Class: return 5;
+            case SymbolKind::Constructor: return 4;
             case SymbolKind::Enum: return 4;
             case SymbolKind::Function: return 3;
             case SymbolKind::Method: return 2;
@@ -200,8 +247,14 @@ namespace analysis
                             if (classSym) {
                                 for (const auto& child : classSym->children) {
                                     if (child->name == targetName && (child->kind == SymbolKind::Constructor || child->kind == SymbolKind::Destructor)) {
-                                        foundSym = child.get();
-                                        break;
+                                        bool inRange = (child->selectionRange.start.line == (uint32_t)line);
+                                        if (inRange) {
+                                            foundSym = child.get();
+                                            break;
+                                        }
+                                        if (!foundSym) {
+                                            foundSym = child.get(); // fallback
+                                        }
                                     }
                                 }
                             }
@@ -254,6 +307,27 @@ namespace analysis
                     std::string_view nsSv = doc.SourceAt(nsNode);
                     collectFromNamespace(std::string(nsSv.begin(), nsSv.end()));
                     isScoped = true;
+                }
+                else
+                {
+                    // Intermediate namespace token (Bug 4)
+                    std::string path = "";
+                    for (uint32_t i = 0; i < count; i++) {
+                        TSNode child = ts_node_child(parent, i);
+                        std::string_view childType = ts_node_type(child);
+                        if (childType == "::") continue;
+                        std::string_view childText = doc.SourceAt(child);
+                        if (ts_node_eq(child, node)) break;
+                        if (!path.empty()) path += "::";
+                        path += std::string(childText.begin(), childText.end());
+                    }
+                    path += (path.empty() ? "" : "::") + identText;
+                    
+                    const Symbol* nsSym = FindNamespace(table, path);
+                    if (nsSym) {
+                        if (outMultipleResults) outMultipleResults->push_back(nsSym);
+                        return nsSym;
+                    }
                 }
             }
         }
@@ -324,7 +398,7 @@ namespace analysis
         if (!isScoped)
         {
             // Local resolution
-            if (const Symbol* localSym = table.FindLocalByName(identText))
+            if (const Symbol* localSym = table.FindLocalByNameAt(identText, line, character))
             {
                 if (outMultipleResults) outMultipleResults->push_back(localSym);
                 return localSym;
@@ -388,6 +462,8 @@ namespace analysis
         if (!globalCandidates.empty())
         {
             std::optional<SymbolKind> expected = InferExpectedKind(node, parent, parentType);
+            std::optional<uint32_t> argCount = GetCallArgumentCount(node, parent, parentType);
+            
             const Symbol* bestMatch = nullptr;
             int bestPriority = -1;
 
@@ -408,8 +484,14 @@ namespace analysis
                             candPriority += 100;
                         }
                     } else if (expected.value() == SymbolKind::Function) {
-                        if (cand->kind == SymbolKind::Function || cand->kind == SymbolKind::Method) {
+                        if (cand->kind == SymbolKind::Function || cand->kind == SymbolKind::Method || cand->kind == SymbolKind::Constructor) {
                             candPriority += 100;
+                            // Constructor arity matching (Bug 2)
+                            if (cand->kind == SymbolKind::Constructor && argCount.has_value()) {
+                                if (cand->params.size() == argCount.value()) {
+                                    candPriority += 200; // Perfect match
+                                }
+                            }
                         }
                     } else if (expected.value() == SymbolKind::Namespace) {
                         if (cand->kind == SymbolKind::Namespace || cand->kind == SymbolKind::Enum) {

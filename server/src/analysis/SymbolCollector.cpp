@@ -58,6 +58,19 @@ namespace analysis
                     }
                 }
             }
+
+            // Workaround: check if the `parameter` node has a preceding ERROR sibling
+            // containing the namespace prefix (e.g. "Engine::Math::").
+            TSNode paramPrev = ts_node_prev_sibling(child);
+            if (!ts_node_is_null(paramPrev) && std::string_view(ts_node_type(paramPrev)) == "ERROR") {
+                std::string errText = SymbolCollector::GetNodeText(paramPrev, doc);
+                if (!errText.empty()) {
+                    if (!param.typeName.empty() && param.typeName.starts_with("::"))
+                        param.typeName = errText + param.typeName;
+                    else
+                        param.typeName = errText + "::" + param.typeName;
+                }
+            }
             
             sym.params.push_back(param);
             
@@ -69,14 +82,22 @@ namespace analysis
                 paramSym->signature  = param.typeName + " " + param.name;
                 paramSym->parent     = parentFunc;
                 paramSym->selectionRange = SymbolCollector::GetRange(nameNode, doc);
-                paramSym->fullRange      = SymbolCollector::GetRange(child, doc);
+                
+                // fullRange is the entire function so FindLocalByNameAt filters correctly by cursor position
+                if (parentFunc) {
+                    paramSym->fullRange = parentFunc->fullRange;
+                } else {
+                    paramSym->fullRange = SymbolCollector::GetRange(child, doc);
+                }
+                
                 table->AddLocal(paramSym);
             }
         }
         
         // Build signature
         std::stringstream ss;
-        ss << sym.typeInfo << " " << sym.name << "(";
+        if (!sym.typeInfo.empty()) ss << sym.typeInfo << " ";
+        ss << sym.name << "(";
         for (size_t i = 0; i < sym.params.size(); i++) {
             ss << sym.params[i].typeName;
             if (!sym.params[i].name.empty()) {
@@ -121,13 +142,34 @@ namespace analysis
                     }
                 }
             }
+
+            // Workaround: check if the `parameter` node has a preceding ERROR sibling
+            // containing the namespace prefix (e.g. "Engine::Math::").
+            TSNode paramPrev = ts_node_prev_sibling(child);
+            if (!ts_node_is_null(paramPrev) && std::string_view(ts_node_type(paramPrev)) == "ERROR") {
+                std::string errText = SymbolCollector::GetNodeText(paramPrev, doc);
+                if (!errText.empty()) {
+                    if (!typeName.empty() && typeName.starts_with("::"))
+                        typeName = errText + typeName;
+                    else
+                        typeName = errText + "::" + typeName;
+                }
+            }
             
             auto paramSym = std::make_shared<Symbol>();
             paramSym->kind       = SymbolKind::Parameter;
             paramSym->name       = name;
             paramSym->typeInfo   = typeName;
             paramSym->selectionRange = GetRange(nameNode, doc);
-            paramSym->fullRange      = GetRange(child, doc);
+            
+            // Set fullRange to the function block, so FindLocalByNameAt works
+            TSNode parentFunc = ts_node_parent(paramListNode);
+            if (!ts_node_is_null(parentFunc)) {
+                paramSym->fullRange = GetRange(parentFunc, doc);
+            } else {
+                paramSym->fullRange = GetRange(child, doc);
+            }
+            
             table.AddLocal(paramSym);
         }
     }
@@ -631,7 +673,18 @@ namespace analysis
                     {
                         auto sym = std::make_shared<Symbol>();
                         sym->kind = SymbolKind::Variable;
-                        sym->fullRange = GetRange(node, doc);
+                        
+                        // Set fullRange to the enclosing block so FindLocalByNameAt works for the rest of the block
+                        TSNode blockNode = ts_node_parent(node);
+                        while (!ts_node_is_null(blockNode) && std::string_view(ts_node_type(blockNode)) != "statement_block") {
+                            blockNode = ts_node_parent(blockNode);
+                        }
+                        if (!ts_node_is_null(blockNode)) {
+                            sym->fullRange = GetRange(blockNode, doc);
+                        } else {
+                            sym->fullRange = GetRange(node, doc);
+                        }
+                        
                         sym->typeInfo = typeInfo;
 
                         TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);

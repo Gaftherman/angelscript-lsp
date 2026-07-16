@@ -49,36 +49,61 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
     std::string dynamicDisplayName = "";
     if (sym != nullptr && (sym->kind == analysis::SymbolKind::Class || sym->kind == analysis::SymbolKind::Enum || 
                            sym->kind == analysis::SymbolKind::Interface || sym->kind == analysis::SymbolKind::Mixin || 
-                           sym->kind == analysis::SymbolKind::Typedef)) 
+                           sym->kind == analysis::SymbolKind::Typedef || sym->kind == analysis::SymbolKind::Parameter ||
+                           sym->kind == analysis::SymbolKind::Variable)) 
     {
         TSNode nodeUnder = doc.NodeAt(line, col);
         if (!ts_node_is_null(nodeUnder)) {
             TSNode current = nodeUnder;
-            // Climb up to `type` or similar to find preceding `scope` or `ERROR` nodes
-            while (!ts_node_is_null(current)) {
-                std::string_view typeStr = ts_node_type(current);
-                if (typeStr == "type" || typeStr == "datatype") {
-                    TSNode prevSibling = ts_node_prev_sibling(current);
-                    if (!ts_node_is_null(prevSibling)) {
-                        std::string_view prevType = ts_node_type(prevSibling);
-                        if (prevType == "scope" || prevType == "ERROR") {
-                            std::string_view scopeSv = doc.SourceAt(prevSibling);
-                            std::string scopeStr(scopeSv.begin(), scopeSv.end());
-                            std::string_view typeSv = doc.SourceAt(current);
-                            std::string typeStrText(typeSv.begin(), typeSv.end());
-                            // Some AST paths might put the `::` inside the type, some in the scope.
-                            if (!scopeStr.empty()) {
-                                if (typeStrText.starts_with("::")) {
-                                    dynamicDisplayName = scopeStr + typeStrText;
+            
+            if (sym->kind == analysis::SymbolKind::Parameter || sym->kind == analysis::SymbolKind::Variable) {
+                // Climb up to `parameter` or `variable_declaration`
+                while (!ts_node_is_null(current)) {
+                    std::string_view typeStr = ts_node_type(current);
+                    if (typeStr == "parameter" || typeStr == "declaration") {
+                        TSNode prevSibling = ts_node_prev_sibling(current);
+                        if (!ts_node_is_null(prevSibling) && std::string_view(ts_node_type(prevSibling)) == "ERROR") {
+                            std::string_view errSv = doc.SourceAt(prevSibling);
+                            std::string errStr(errSv.begin(), errSv.end());
+                            if (!errStr.empty()) {
+                                if (sym->typeInfo.starts_with("::")) {
+                                    dynamicDisplayName = errStr + sym->typeInfo;
                                 } else {
-                                    dynamicDisplayName = scopeStr + (scopeStr.ends_with("::") ? "" : "::") + typeStrText;
+                                    dynamicDisplayName = errStr + "::" + sym->typeInfo;
                                 }
                             }
                         }
+                        break;
                     }
-                    break;
+                    current = ts_node_parent(current);
                 }
-                current = ts_node_parent(current);
+            } else {
+                // Climb up to `type` or similar to find preceding `scope` or `ERROR` nodes
+                while (!ts_node_is_null(current)) {
+                    std::string_view typeStr = ts_node_type(current);
+                    if (typeStr == "type" || typeStr == "datatype") {
+                        TSNode prevSibling = ts_node_prev_sibling(current);
+                        if (!ts_node_is_null(prevSibling)) {
+                            std::string_view prevType = ts_node_type(prevSibling);
+                            if (prevType == "scope" || prevType == "ERROR") {
+                                std::string_view scopeSv = doc.SourceAt(prevSibling);
+                                std::string scopeStr(scopeSv.begin(), scopeSv.end());
+                                std::string_view typeSv = doc.SourceAt(current);
+                                std::string typeStrText(typeSv.begin(), typeSv.end());
+                                // Some AST paths might put the `::` inside the type, some in the scope.
+                                if (!scopeStr.empty()) {
+                                    if (typeStrText.starts_with("::")) {
+                                        dynamicDisplayName = scopeStr + typeStrText;
+                                    } else {
+                                        dynamicDisplayName = scopeStr + (scopeStr.ends_with("::") ? "" : "::") + typeStrText;
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    current = ts_node_parent(current);
+                }
             }
         }
     }

@@ -34,6 +34,7 @@ namespace analysis
         std::vector<const Symbol*> FindHostClassesOf(const std::string& mixinName) const;
 
         Symbol* FindLocalByName(const std::string& name) const;
+        const Symbol* FindLocalByNameAt(const std::string& name, uint32_t line, uint32_t col) const;
 
         // Find all symbols with the exact name (e.g. overloads)
         std::vector<const Symbol*> FindByName(const std::string& name) const;
