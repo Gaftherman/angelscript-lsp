@@ -1,0 +1,22 @@
+{
+  "grammars": [
+    {
+      "name": "angelscript",
+      "camelCase": false,
+      "scope": "source.angelscript",
+      "file-types": ["as"],
+      "highlights": "queries/highlights.scm",
+      "locals": "queries/locals.scm",
+      "tags": "queries/tags.scm",
+      "injection-regex": "^angelscript$"
+    }
+  ],
+  "metadata": {
+    "version": "0.3.0",
+    "license": "BSD-3-Clause",
+    "description": "AngelScript grammar for tree-sitter",
+    "links": {
+      "repository": "https://github.com/user/tree-sitter-angelscript"
+    }
+  }
+}

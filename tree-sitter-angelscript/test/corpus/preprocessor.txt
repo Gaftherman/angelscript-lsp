@@ -1,0 +1,140 @@
+==================
+Include directive at top level
+==================
+
+#include "utils.as"
+
+int x;
+
+---
+
+(script
+  (preproc_directive)
+  (variable_declaration
+    var_type: (type (datatype (primitive_type)))
+    (variable_declarator name: (identifier))))
+
+==================
+Pragma and include between declarations
+==================
+
+#pragma once
+int a;
+#include "b.as"
+int b;
+
+---
+
+(script
+  (preproc_directive)
+  (variable_declaration
+    var_type: (type (datatype (primitive_type)))
+    (variable_declarator name: (identifier)))
+  (preproc_directive)
+  (variable_declaration
+    var_type: (type (datatype (primitive_type)))
+    (variable_declarator name: (identifier))))
+
+==================
+Conditional compilation around class members
+==================
+
+class Foo {
+#if EDITORONLY_DATA
+    private int EditorOnly;
+#endif // EDITORONLY_DATA
+    int Always;
+}
+
+---
+
+(script
+  (class_declaration
+    name: (identifier)
+    body: (class_body
+      (preproc_directive)
+      (variable_declaration
+        var_type: (type (datatype (primitive_type)))
+        (variable_declarator name: (identifier)))
+      (preproc_directive)
+      (variable_declaration
+        var_type: (type (datatype (primitive_type)))
+        (variable_declarator name: (identifier))))))
+
+==================
+Ifdef around statements in function body
+==================
+
+void f() {
+#ifdef WITH_SERVER
+    DoServer();
+#endif
+}
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (preproc_directive)
+      (expression_statement
+        (call_expression
+          function: (identifier)
+          arguments: (argument_list)))
+      (preproc_directive))))
+
+==================
+If-else conditional compilation in class
+==================
+
+class A {
+#if !RELEASE
+    void Debug() {}
+#else
+    void Release() {}
+#endif
+}
+
+---
+
+(script
+  (class_declaration
+    name: (identifier)
+    body: (class_body
+      (preproc_directive)
+      (func_declaration
+        return_type: (type (datatype (primitive_type)))
+        name: (identifier)
+        parameters: (parameter_list)
+        body: (statement_block))
+      (preproc_directive)
+      (func_declaration
+        return_type: (type (datatype (primitive_type)))
+        name: (identifier)
+        parameters: (parameter_list)
+        body: (statement_block))
+      (preproc_directive))))
+
+==================
+Nested conditional directives
+==================
+
+#ifdef GAME_PIONEER
+#if EDITOR
+int editorOnly;
+#endif
+#endif // GAME_PIONEER
+
+---
+
+(script
+  (preproc_directive)
+  (preproc_directive)
+  (variable_declaration
+    var_type: (type (datatype (primitive_type)))
+    (variable_declarator name: (identifier)))
+  (preproc_directive)
+  (preproc_directive))

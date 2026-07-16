@@ -1,0 +1,228 @@
+==================
+Simple function
+==================
+
+void main() { }
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block)))
+
+==================
+Function with parameters
+==================
+
+int add(int a, int b) { }
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        param_type: (type (datatype (primitive_type)))
+        name: (identifier))
+      (parameter
+        param_type: (type (datatype (primitive_type)))
+        name: (identifier)))
+    body: (statement_block)))
+
+==================
+Function with return statement
+==================
+
+int getValue() { return 42; }
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (return_statement (number_literal)))))
+
+==================
+Const function
+==================
+
+int getValue() const { }
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block)))
+
+==================
+Function with modifiers
+==================
+
+shared private void foo() { }
+
+---
+
+(script
+  (func_declaration
+    modifier: (declaration_modifier)
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block)))
+
+==================
+Function with attributes
+==================
+
+void bar() override final { }
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    (func_attributes)
+    body: (statement_block)))
+
+==================
+Forward declaration
+==================
+
+void baz();
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)))
+
+==================
+Constructor
+==================
+
+MyClass() { }
+
+---
+
+(script
+  (func_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block)))
+
+==================
+Destructor
+==================
+
+~MyClass() { }
+
+---
+
+(script
+  (func_declaration
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block)))
+
+==================
+Parameters with type modifiers
+==================
+
+void foo(int &in a, float &out b) { }
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        param_type: (type (datatype (primitive_type)))
+        name: (identifier))
+      (parameter
+        param_type: (type (datatype (primitive_type)))
+        name: (identifier)))
+    body: (statement_block)))
+
+==================
+Default parameter values
+==================
+
+void foo(int x = 0) { }
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        param_type: (type (datatype (primitive_type)))
+        name: (identifier)
+        default_value: (number_literal)))
+    body: (statement_block)))
+
+==================
+Variadic parameter
+==================
+
+void foo(int ...) { }
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        param_type: (type (datatype (primitive_type)))))
+    body: (statement_block)))
+
+==================
+Empty parameter list
+==================
+
+void foo() { }
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block)))
+
+==================
+Property attribute function
+==================
+
+int get_Value() const property { }
+
+---
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    (func_attributes)
+    body: (statement_block)))

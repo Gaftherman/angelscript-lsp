@@ -1,0 +1,12 @@
+{
+  "name": "tree-sitter-angelscript",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "tree-sitter generate && tree-sitter build",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  },
+  "devDependencies": {
+    "tree-sitter-cli": "^0.26.6"
+  }
+}

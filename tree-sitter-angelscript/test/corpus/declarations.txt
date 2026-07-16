@@ -1,0 +1,789 @@
+==================
+Enum with members
+==================
+
+enum Color { RED, GREEN, BLUE }
+
+---
+
+(script
+  (enum_declaration
+    name: (identifier)
+    (enum_member
+      name: (identifier))
+    (enum_member
+      name: (identifier))
+    (enum_member
+      name: (identifier))))
+
+==================
+Enum with assigned values
+==================
+
+enum Priority { LOW = 0, MEDIUM = 1, HIGH = 2 }
+
+---
+
+(script
+  (enum_declaration
+    name: (identifier)
+    (enum_member
+      name: (identifier)
+      value: (number_literal))
+    (enum_member
+      name: (identifier)
+      value: (number_literal))
+    (enum_member
+      name: (identifier)
+      value: (number_literal))))
+
+==================
+Shared enum
+==================
+
+shared enum Flags { NONE, ALL }
+
+---
+
+(script
+  (enum_declaration
+    modifier: (declaration_modifier)
+    name: (identifier)
+    (enum_member
+      name: (identifier))
+    (enum_member
+      name: (identifier))))
+
+==================
+Forward-declared enum
+==================
+
+enum Color;
+
+---
+
+(script
+  (enum_declaration
+    name: (identifier)))
+
+==================
+Typedef
+==================
+
+typedef int EntityId;
+
+---
+
+(script
+  (typedef_declaration
+    base_type: (primitive_type)
+    name: (identifier)))
+
+==================
+Empty class
+==================
+
+class Foo { }
+
+---
+
+(script
+  (class_declaration
+    name: (identifier)
+    body: (class_body)))
+
+==================
+Class with inheritance
+==================
+
+class Bar : Base { }
+
+---
+
+(script
+  (class_declaration
+    name: (identifier)
+    (base_class_list
+      base: (identifier))
+    body: (class_body)))
+
+==================
+Class with multiple base classes
+==================
+
+class Entity : Serializable, Updateable { }
+
+---
+
+(script
+  (class_declaration
+    name: (identifier)
+    (base_class_list
+      base: (identifier)
+      base: (identifier))
+    body: (class_body)))
+
+==================
+Class with modifiers
+==================
+
+shared abstract class Entity { }
+
+---
+
+(script
+  (class_declaration
+    modifier: (declaration_modifier)
+    modifier: (declaration_modifier)
+    name: (identifier)
+    body: (class_body)))
+
+==================
+Forward-declared class
+==================
+
+class Foo;
+
+---
+
+(script
+  (class_declaration
+    name: (identifier)))
+
+==================
+Class with members
+==================
+
+class Player : Entity {
+    private int health;
+    string name;
+    void Update() { }
+}
+
+---
+
+(script
+  (class_declaration
+    name: (identifier)
+    (base_class_list
+      base: (identifier))
+    body: (class_body
+      (variable_declaration
+        var_type: (type
+          (datatype
+            (primitive_type)))
+        (variable_declarator
+          name: (identifier)))
+      (variable_declaration
+        var_type: (type
+          (datatype
+            (identifier)))
+        (variable_declarator
+          name: (identifier)))
+      (func_declaration
+        return_type: (type
+          (datatype
+            (primitive_type)))
+        name: (identifier)
+        parameters: (parameter_list)
+        body: (statement_block)))))
+
+==================
+Mixin class
+==================
+
+mixin class Helpers { }
+
+---
+
+(script
+  (mixin_declaration
+    name: (identifier)
+    body: (class_body)))
+
+==================
+Empty interface
+==================
+
+interface IDrawable { }
+
+---
+
+(script
+  (interface_declaration
+    name: (identifier)
+    body: (interface_body)))
+
+==================
+Interface with methods
+==================
+
+interface IRenderable {
+    void Render();
+    int GetLayer();
+}
+
+---
+
+(script
+  (interface_declaration
+    name: (identifier)
+    body: (interface_body
+      (interface_method
+        return_type: (type
+          (datatype
+            (primitive_type)))
+        name: (identifier)
+        parameters: (parameter_list))
+      (interface_method
+        return_type: (type
+          (datatype
+            (primitive_type)))
+        name: (identifier)
+        parameters: (parameter_list)))))
+
+==================
+Interface with inheritance
+==================
+
+interface IRenderable : IDrawable { }
+
+---
+
+(script
+  (interface_declaration
+    name: (identifier)
+    (base_class_list
+      base: (identifier))
+    body: (interface_body)))
+
+==================
+Forward-declared interface
+==================
+
+interface IFoo;
+
+---
+
+(script
+  (interface_declaration
+    name: (identifier)))
+
+==================
+Funcdef
+==================
+
+funcdef void Callback(int);
+
+---
+
+(script
+  (funcdef_declaration
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        param_type: (type
+          (datatype
+            (primitive_type)))))))
+
+==================
+Shared funcdef
+==================
+
+shared funcdef bool Predicate(int, int);
+
+---
+
+(script
+  (funcdef_declaration
+    modifier: (declaration_modifier)
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        param_type: (type
+          (datatype
+            (primitive_type))))
+      (parameter
+        param_type: (type
+          (datatype
+            (primitive_type)))))))
+
+==================
+Import declaration
+==================
+
+import void init(int x) from "module";
+
+---
+
+(script
+  (import_declaration
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        param_type: (type
+          (datatype
+            (primitive_type)))
+        name: (identifier)))
+    source: (string_literal)))
+
+==================
+Using declaration
+==================
+
+using namespace Core::Utils;
+
+---
+
+(script
+  (using_declaration
+    (scoped_identifier
+      (identifier)
+      (identifier))))
+
+==================
+Simple namespace
+==================
+
+namespace Game { }
+
+---
+
+(script
+  (namespace_declaration
+    name: (identifier)
+    body: (namespace_body)))
+
+==================
+Nested namespace
+==================
+
+namespace A::B { }
+
+---
+
+(script
+  (namespace_declaration
+    name: (scoped_identifier
+      (identifier)
+      (identifier))
+    body: (namespace_body)))
+
+==================
+Namespace with contents
+==================
+
+namespace Game {
+    int score;
+    void Reset() { }
+}
+
+---
+
+(script
+  (namespace_declaration
+    name: (identifier)
+    body: (namespace_body
+      (variable_declaration
+        var_type: (type
+          (datatype
+            (primitive_type)))
+        (variable_declarator
+          name: (identifier)))
+      (func_declaration
+        return_type: (type
+          (datatype
+            (primitive_type)))
+        name: (identifier)
+        parameters: (parameter_list)
+        body: (statement_block)))))
+
+==================
+Virtual property with get and set
+==================
+
+int myProp { get { } set { } }
+
+---
+
+(script
+  (virtual_property
+    prop_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    (accessor
+      body: (statement_block))
+    (accessor
+      body: (statement_block))))
+
+==================
+Virtual property with const get
+==================
+
+int myProp { get const { } }
+
+---
+
+(script
+  (virtual_property
+    prop_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    (accessor
+      body: (statement_block))))
+
+==================
+Private virtual property
+==================
+
+private int value { get { } set { } }
+
+---
+
+(script
+  (virtual_property
+    prop_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    (accessor
+      body: (statement_block))
+    (accessor
+      body: (statement_block))))
+
+==================
+Variable with initializer
+==================
+
+int x = 5;
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (primitive_type)))
+    (variable_declarator
+      name: (identifier)
+      (number_literal))))
+
+==================
+Variable with constructor-style init
+==================
+
+Foo obj(1, 2);
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (identifier)))
+    (variable_declarator
+      name: (identifier)
+      (argument_list
+        (number_literal)
+        (number_literal)))))
+
+==================
+Variable with initializer list
+==================
+
+int x = {1, 2, 3};
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (primitive_type)))
+    (variable_declarator
+      name: (identifier)
+      (initializer_list
+        (number_literal)
+        (number_literal)
+        (number_literal)))))
+
+==================
+Const type variable
+==================
+
+const int MAX = 100;
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (primitive_type)))
+    (variable_declarator
+      name: (identifier)
+      (number_literal))))
+
+==================
+Scoped type variable
+==================
+
+A::B obj;
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (scoped_type
+        (identifier)
+        (identifier)))
+    (variable_declarator
+      name: (identifier))))
+
+==================
+Handle type variable
+==================
+
+Foo@ handle;
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (identifier)))
+    (variable_declarator
+      name: (identifier))))
+
+==================
+Array type variable
+==================
+
+int[] arr;
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (primitive_type)))
+    (variable_declarator
+      name: (identifier))))
+
+==================
+Auto type variable
+==================
+
+auto x = 42;
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype))
+    (variable_declarator
+      name: (identifier)
+      (number_literal))))
+
+==================
+Multiple variable declarators
+==================
+
+int a = 1, b = 2, c;
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (primitive_type)))
+    (variable_declarator
+      name: (identifier)
+      (number_literal))
+    (variable_declarator
+      name: (identifier)
+      (number_literal))
+    (variable_declarator
+      name: (identifier))))
+
+==================
+Multiple declarators with constructor init
+==================
+
+Foo a(1), b(2, 3);
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (identifier)))
+    (variable_declarator
+      name: (identifier)
+      (argument_list
+        (number_literal)))
+    (variable_declarator
+      name: (identifier)
+      (argument_list
+        (number_literal)
+        (number_literal)))))
+
+==================
+Multiple declarators with mixed init
+==================
+
+int a = 1, b, c = 3;
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (primitive_type)))
+    (variable_declarator
+      name: (identifier)
+      (number_literal))
+    (variable_declarator
+      name: (identifier))
+    (variable_declarator
+      name: (identifier)
+      (number_literal))))
+
+==================
+Triple-quoted heredoc string
+==================
+
+string s = """hello world""";
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (identifier)))
+    (variable_declarator
+      name: (identifier)
+      (string_literal))))
+
+==================
+Typedef with user-defined type
+==================
+
+typedef MyClass AliasName;
+
+---
+
+(script
+  (typedef_declaration
+    base_type: (identifier)
+    name: (identifier)))
+
+==================
+Mixin class with modifiers
+==================
+
+mixin shared class Helper { }
+
+---
+
+(script
+  (mixin_declaration
+    modifier: (declaration_modifier)
+    name: (identifier)
+    body: (class_body)))
+
+==================
+External funcdef
+==================
+
+external funcdef void NativeCallback();
+
+---
+
+(script
+  (funcdef_declaration
+    modifier: (declaration_modifier)
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)))
+
+==================
+Protected virtual property with accessor declarations
+==================
+
+class A {
+    protected float Health { get const; set; }
+}
+
+---
+
+(script
+  (class_declaration
+    name: (identifier)
+    body: (class_body
+      (virtual_property
+        prop_type: (type
+          (datatype
+            (primitive_type)))
+        name: (identifier)
+        (accessor)
+        (accessor)))))
+
+==================
+Handle-type virtual property
+==================
+
+class A {
+    Foo@ Prop { get; }
+}
+
+---
+
+(script
+  (class_declaration
+    name: (identifier)
+    body: (class_body
+      (virtual_property
+        prop_type: (type
+          (datatype
+            (identifier)))
+        name: (identifier)
+        (accessor)))))
+
+==================
+Handle variable with null initializer
+==================
+
+Foo@ f = null;
+
+---
+
+(script
+  (variable_declaration
+    var_type: (type
+      (datatype
+        (identifier)))
+    (variable_declarator
+      name: (identifier)
+      (null_literal))))

@@ -1,0 +1,716 @@
+================================================================================
+Simple if statement
+================================================================================
+
+void f() {
+  if (x) {
+    return;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (if_statement
+        (identifier)
+        consequence: (statement_block
+          (return_statement))))))
+
+================================================================================
+If-else statement
+================================================================================
+
+void f() {
+  if (x) {
+    a;
+  } else {
+    b;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (if_statement
+        (identifier)
+        consequence: (statement_block
+          (expression_statement (identifier)))
+        alternative: (statement_block
+          (expression_statement (identifier)))))))
+
+================================================================================
+If-else-if chain
+================================================================================
+
+void f() {
+  if (a) {
+    x;
+  } else if (b) {
+    y;
+  } else {
+    z;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (if_statement
+        (identifier)
+        consequence: (statement_block
+          (expression_statement (identifier)))
+        alternative: (if_statement
+          (identifier)
+          consequence: (statement_block
+            (expression_statement (identifier)))
+          alternative: (statement_block
+            (expression_statement (identifier))))))))
+
+================================================================================
+If with single statement (no block)
+================================================================================
+
+void f() {
+  if (x) return;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (if_statement
+        (identifier)
+        consequence: (return_statement)))))
+
+================================================================================
+For loop with variable init
+================================================================================
+
+void f() {
+  for (int i = 0; i < 10; i++) {
+    x;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (for_statement
+        init: (variable_declaration
+          var_type: (type (datatype (primitive_type)))
+          (variable_declarator
+            name: (identifier)
+            (number_literal)))
+        condition: (expression_statement
+          (binary_expression
+            left: (identifier)
+            right: (number_literal)))
+        update: (postfix_expression operand: (identifier))
+        body: (statement_block
+          (expression_statement (identifier)))))))
+
+================================================================================
+For loop with multiple increments
+================================================================================
+
+void f() {
+  for (int i = 0; i < 10; i++, j++) {
+    x;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (for_statement
+        init: (variable_declaration
+          var_type: (type (datatype (primitive_type)))
+          (variable_declarator
+            name: (identifier)
+            (number_literal)))
+        condition: (expression_statement
+          (binary_expression
+            left: (identifier)
+            right: (number_literal)))
+        update: (postfix_expression operand: (identifier))
+        update: (postfix_expression operand: (identifier))
+        body: (statement_block
+          (expression_statement (identifier)))))))
+
+================================================================================
+For loop with empty sections
+================================================================================
+
+void f() {
+  for (;;) {
+    break;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (for_statement
+        body: (statement_block
+          (break_statement))))))
+
+================================================================================
+For loop with empty init
+================================================================================
+
+void f() {
+  for (; i < 10; i++) {
+    x;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (for_statement
+        condition: (expression_statement
+          (binary_expression
+            left: (identifier)
+            right: (number_literal)))
+        update: (postfix_expression operand: (identifier))
+        body: (statement_block
+          (expression_statement (identifier)))))))
+
+================================================================================
+For loop with expression init
+================================================================================
+
+void f() {
+  for (i = 0; i < 10; i++) {
+    x;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (for_statement
+        init: (expression_statement
+          (assignment_expression
+            left: (identifier)
+            right: (number_literal)))
+        condition: (expression_statement
+          (binary_expression
+            left: (identifier)
+            right: (number_literal)))
+        update: (postfix_expression operand: (identifier))
+        body: (statement_block
+          (expression_statement (identifier)))))))
+
+================================================================================
+Foreach single iterator
+================================================================================
+
+void f() {
+  foreach (int x : arr) {
+    x;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (foreach_statement
+        (foreach_variable
+          type: (type (datatype (primitive_type)))
+          name: (identifier))
+        collection: (identifier)
+        body: (statement_block
+          (expression_statement (identifier)))))))
+
+================================================================================
+Foreach multiple iterators
+================================================================================
+
+void f() {
+  foreach (int k, int v : dict) {
+    k;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (foreach_statement
+        (foreach_variable
+          type: (type (datatype (primitive_type)))
+          name: (identifier))
+        (foreach_variable
+          type: (type (datatype (primitive_type)))
+          name: (identifier))
+        collection: (identifier)
+        body: (statement_block
+          (expression_statement (identifier)))))))
+
+================================================================================
+While loop
+================================================================================
+
+void f() {
+  while (x > 0) {
+    x;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (while_statement
+        (binary_expression
+          left: (identifier)
+          right: (number_literal))
+        body: (statement_block
+          (expression_statement (identifier)))))))
+
+================================================================================
+While with single statement
+================================================================================
+
+void f() {
+  while (x > 0) x--;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (while_statement
+        (binary_expression
+          left: (identifier)
+          right: (number_literal))
+        body: (expression_statement
+          (postfix_expression operand: (identifier)))))))
+
+================================================================================
+Do-while loop
+================================================================================
+
+void f() {
+  do {
+    x;
+  } while (x > 0);
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (do_while_statement
+        body: (statement_block
+          (expression_statement (identifier)))
+        (binary_expression
+          left: (identifier)
+          right: (number_literal))))))
+
+================================================================================
+Switch statement
+================================================================================
+
+void f() {
+  switch (x) {
+  case 1:
+    a;
+    break;
+  case 2:
+    b;
+    break;
+  default:
+    c;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (switch_statement
+        (identifier)
+        (case_clause
+          (number_literal)
+          (expression_statement (identifier))
+          (break_statement))
+        (case_clause
+          (number_literal)
+          (expression_statement (identifier))
+          (break_statement))
+        (case_clause
+          (expression_statement (identifier)))))))
+
+================================================================================
+Switch with fallthrough
+================================================================================
+
+void f() {
+  switch (x) {
+  case 1:
+  case 2:
+    a;
+    break;
+  default:
+    b;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (switch_statement
+        (identifier)
+        (case_clause
+          (number_literal))
+        (case_clause
+          (number_literal)
+          (expression_statement (identifier))
+          (break_statement))
+        (case_clause
+          (expression_statement (identifier)))))))
+
+================================================================================
+Try-catch statement
+================================================================================
+
+void f() {
+  try {
+    a;
+  } catch {
+    b;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (try_statement
+        (statement_block
+          (expression_statement (identifier)))
+        (statement_block
+          (expression_statement (identifier)))))))
+
+================================================================================
+Return with expression
+================================================================================
+
+void f() {
+  return 42;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (return_statement (number_literal)))))
+
+================================================================================
+Return void
+================================================================================
+
+void f() {
+  return;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (return_statement))))
+
+================================================================================
+Break and continue
+================================================================================
+
+void f() {
+  while (true) {
+    if (x) break;
+    continue;
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (while_statement
+        (boolean_literal)
+        body: (statement_block
+          (if_statement
+            (identifier)
+            consequence: (break_statement))
+          (continue_statement))))))
+
+================================================================================
+Nested blocks
+================================================================================
+
+void f() {
+  {
+    {
+      x;
+    }
+  }
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (statement_block
+        (statement_block
+          (expression_statement (identifier)))))))
+
+================================================================================
+Expression statement with function call
+================================================================================
+
+void f() {
+  foo();
+  bar(1, 2);
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (call_expression
+          function: (identifier)
+          arguments: (argument_list)))
+      (expression_statement
+        (call_expression
+          function: (identifier)
+          arguments: (argument_list (number_literal) (number_literal)))))))
+
+================================================================================
+Expression statement with member access
+================================================================================
+
+void f() {
+  obj.method();
+  a.b.c;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (call_expression
+          function: (member_expression
+            object: (identifier)
+            member: (identifier))
+          arguments: (argument_list)))
+      (expression_statement
+        (member_expression
+          object: (member_expression
+            object: (identifier)
+            member: (identifier))
+          member: (identifier))))))
+
+================================================================================
+Expression statement with postfix increment
+================================================================================
+
+void f() {
+  x++;
+  y--;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (postfix_expression operand: (identifier)))
+      (expression_statement
+        (postfix_expression operand: (identifier))))))
+
+================================================================================
+Expression statement with assignment
+================================================================================
+
+void f() {
+  x = 5;
+  y += 1;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (assignment_expression
+          left: (identifier)
+          right: (number_literal)))
+      (expression_statement
+        (assignment_expression
+          left: (identifier)
+          right: (number_literal))))))
+
+================================================================================
+Empty statement in block
+================================================================================
+
+void f() {
+  ;
+  ;;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block)))
+
+================================================================================
+Boolean and null literals
+================================================================================
+
+void f() {
+  bool a = true;
+  bool b = false;
+  auto c = null;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (variable_declaration
+        var_type: (type (datatype (primitive_type)))
+        (variable_declarator
+          name: (identifier)
+          (boolean_literal)))
+      (variable_declaration
+        var_type: (type (datatype (primitive_type)))
+        (variable_declarator
+          name: (identifier)
+          (boolean_literal)))
+      (variable_declaration
+        var_type: (type (datatype))
+        (variable_declarator
+          name: (identifier)
+          (null_literal))))))

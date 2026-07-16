@@ -1,0 +1,426 @@
+==================
+Simple template type
+==================
+
+Array<int> a;
+
+---
+
+(script
+  (variable_declaration
+    (type
+      (datatype
+        (identifier))
+      (template_type_list
+        (type
+          (datatype
+            (primitive_type)))))
+    (variable_declarator
+      (identifier))))
+
+==================
+Nested template type
+==================
+
+Array<Array<int>> a;
+
+---
+
+(script
+  (variable_declaration
+    (type
+      (datatype
+        (identifier))
+      (template_type_list
+        (type
+          (datatype
+            (identifier))
+          (template_type_list
+            (type
+              (datatype
+                (primitive_type)))))))
+    (variable_declarator
+      (identifier))))
+
+==================
+Template with multiple params
+==================
+
+Dict<string, int> d;
+
+---
+
+(script
+  (variable_declaration
+    (type
+      (datatype
+        (identifier))
+      (template_type_list
+        (type
+          (datatype
+            (identifier)))
+        (type
+          (datatype
+            (primitive_type)))))
+    (variable_declarator
+      (identifier))))
+
+==================
+Triple-nested template
+==================
+
+Dict<string, Array<Array<int>>> d;
+
+---
+
+(script
+  (variable_declaration
+    (type
+      (datatype
+        (identifier))
+      (template_type_list
+        (type
+          (datatype
+            (identifier)))
+        (type
+          (datatype
+            (identifier))
+          (template_type_list
+            (type
+              (datatype
+                (identifier))
+              (template_type_list
+                (type
+                  (datatype
+                    (primitive_type)))))))))
+    (variable_declarator
+      (identifier))))
+
+==================
+Template in function parameter
+==================
+
+void foo(Array<int> a) {}
+
+---
+
+(script
+  (func_declaration
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        param_type: (type
+          (datatype
+            (identifier))
+          (template_type_list
+            (type
+              (datatype
+                (primitive_type)))))
+        name: (identifier)))
+    body: (statement_block)))
+
+==================
+Template in return type
+==================
+
+Array<int> getItems() {}
+
+---
+
+(script
+  (func_declaration
+    return_type: (type
+      (datatype
+        (identifier))
+      (template_type_list
+        (type
+          (datatype
+            (primitive_type)))))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block)))
+
+==================
+Cast with template (external scanner)
+==================
+
+void f() {
+  cast<int>(x);
+}
+
+---
+
+(script
+  (func_declaration
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (cast_expression
+          type: (type
+            (datatype
+              (primitive_type)))
+          value: (identifier))))))
+
+==================
+Cast with nested template type
+==================
+
+void f() {
+  cast<Array<int>>(y);
+}
+
+---
+
+(script
+  (func_declaration
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (cast_expression
+          type: (type
+            (datatype
+              (identifier))
+            (template_type_list
+              (type
+                (datatype
+                  (primitive_type)))))
+          value: (identifier))))))
+
+==================
+Scope with template
+==================
+
+NS::Array<int> a;
+
+---
+
+(script
+  (variable_declaration
+    (type
+      (scoped_type
+        (identifier)
+        (identifier)
+        (template_type_list
+          (type
+            (datatype
+              (primitive_type))))))
+    (variable_declarator
+      (identifier))))
+
+==================
+Const template type
+==================
+
+const Array<int> a;
+
+---
+
+(script
+  (variable_declaration
+    (type
+      (datatype
+        (identifier))
+      (template_type_list
+        (type
+          (datatype
+            (primitive_type)))))
+    (variable_declarator
+      (identifier))))
+
+==================
+Handle to template type
+==================
+
+Array<int>@ handle;
+
+---
+
+(script
+  (variable_declaration
+    (type
+      (datatype
+        (identifier))
+      (template_type_list
+        (type
+          (datatype
+            (primitive_type)))))
+    (variable_declarator
+      (identifier))))
+
+==================
+Comparison not confused with template
+==================
+
+void f() {
+  bool b = a < c;
+}
+
+---
+
+(script
+  (func_declaration
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (variable_declaration
+        var_type: (type
+          (datatype
+            (primitive_type)))
+        (variable_declarator
+          name: (identifier)
+          (binary_expression
+            left: (identifier)
+            right: (identifier)))))))
+
+==================
+Greater-than not confused with template close
+==================
+
+void f() {
+  bool c = a > d;
+}
+
+---
+
+(script
+  (func_declaration
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (variable_declaration
+        var_type: (type
+          (datatype
+            (primitive_type)))
+        (variable_declarator
+          name: (identifier)
+          (binary_expression
+            left: (identifier)
+            right: (identifier)))))))
+
+==================
+Shift operators not confused with template
+==================
+
+void f() {
+  int x = a >> 2;
+  int y = a >>> 2;
+  int z = a << 2;
+}
+
+---
+
+(script
+  (func_declaration
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (variable_declaration
+        var_type: (type
+          (datatype
+            (primitive_type)))
+        (variable_declarator
+          name: (identifier)
+          (binary_expression
+            left: (identifier)
+            right: (number_literal))))
+      (variable_declaration
+        var_type: (type
+          (datatype
+            (primitive_type)))
+        (variable_declarator
+          name: (identifier)
+          (binary_expression
+            left: (identifier)
+            right: (number_literal))))
+      (variable_declaration
+        var_type: (type
+          (datatype
+            (primitive_type)))
+        (variable_declarator
+          name: (identifier)
+          (binary_expression
+            left: (identifier)
+            right: (number_literal)))))))
+
+==================
+Mixed template and comparison in same function
+==================
+
+void f() {
+  Array<int> a;
+  bool b = x < y;
+}
+
+---
+
+(script
+  (func_declaration
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (variable_declaration
+        var_type: (type
+          (datatype
+            (identifier))
+          (template_type_list
+            (type
+              (datatype
+                (primitive_type)))))
+        (variable_declarator
+          name: (identifier)))
+      (variable_declaration
+        var_type: (type
+          (datatype
+            (primitive_type)))
+        (variable_declarator
+          name: (identifier)
+          (binary_expression
+            left: (identifier)
+            right: (identifier)))))))
+
+==================
+Funcdef with template type
+==================
+
+funcdef bool Callback(Array<int>@);
+
+---
+
+(script
+  (funcdef_declaration
+    return_type: (type
+      (datatype
+        (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list
+      (parameter
+        param_type: (type
+          (datatype
+            (identifier))
+          (template_type_list
+            (type
+              (datatype
+                (primitive_type)))))))))

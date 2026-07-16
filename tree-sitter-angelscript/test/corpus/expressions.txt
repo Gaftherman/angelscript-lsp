@@ -1,0 +1,1018 @@
+================================================================================
+Binary addition
+================================================================================
+
+void f() {
+  a + b;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier))))))
+
+================================================================================
+Binary multiplication binds tighter than addition
+================================================================================
+
+void f() {
+  a + b * c;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (binary_expression
+            left: (identifier)
+            right: (identifier)))))))
+
+================================================================================
+Exponentiation operator (right-associative)
+================================================================================
+
+void f() {
+  a ** b ** c;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (binary_expression
+            left: (identifier)
+            right: (identifier)))))))
+
+================================================================================
+Exponentiation binds tighter than multiplication
+================================================================================
+
+void f() {
+  a ** b * c + d;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (binary_expression
+            left: (binary_expression
+              left: (identifier)
+              right: (identifier))
+            right: (identifier))
+          right: (identifier))))))
+
+================================================================================
+Logical XOR operator (^^)
+================================================================================
+
+void f() {
+  a ^^ b;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier))))))
+
+================================================================================
+Keyword logical operators (and, or, xor)
+================================================================================
+
+void f() {
+  a and b;
+  c or d;
+  e xor f;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier)))
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier)))
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier))))))
+
+================================================================================
+Identity operators (is, !is)
+================================================================================
+
+void f() {
+  a is b;
+  a !is b;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier)))
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier))))))
+
+================================================================================
+Shift operators
+================================================================================
+
+void f() {
+  a << b;
+  a >> b;
+  a >>> b;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier)))
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier)))
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier))))))
+
+================================================================================
+Bitwise operators
+================================================================================
+
+void f() {
+  a & b;
+  a | b;
+  a ^ b;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier)))
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier)))
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (identifier))))))
+
+================================================================================
+Assignment expression (right-associative)
+================================================================================
+
+void f() {
+  a = b = c;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (assignment_expression
+          left: (identifier)
+          right: (assignment_expression
+            left: (identifier)
+            right: (identifier)))))))
+
+================================================================================
+Compound assignment operators
+================================================================================
+
+void f() {
+  a += b;
+  a -= b;
+  a *= b;
+  a /= b;
+  a %= b;
+  a **= b;
+  a &= b;
+  a |= b;
+  a ^= b;
+  a <<= b;
+  a >>= b;
+  a >>>= b;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (assignment_expression left: (identifier) right: (identifier))))))
+
+================================================================================
+Ternary expression
+================================================================================
+
+void f() {
+  a ? b : c;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (ternary_expression
+          condition: (identifier)
+          consequence: (identifier)
+          alternative: (identifier))))))
+
+================================================================================
+Nested ternary expression (right-associative)
+================================================================================
+
+void f() {
+  a ? b ? c : d : e;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (ternary_expression
+          condition: (identifier)
+          consequence: (ternary_expression
+            condition: (identifier)
+            consequence: (identifier)
+            alternative: (identifier))
+          alternative: (identifier))))))
+
+================================================================================
+Unary prefix operators
+================================================================================
+
+void f() {
+  -x;
+  +x;
+  !flag;
+  ~bits;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (unary_expression operand: (identifier)))
+      (expression_statement
+        (unary_expression operand: (identifier)))
+      (expression_statement
+        (unary_expression operand: (identifier)))
+      (expression_statement
+        (unary_expression operand: (identifier))))))
+
+================================================================================
+Handle-of operator (@)
+================================================================================
+
+void f() {
+  @obj;
+  @obj.member;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (unary_expression operand: (identifier)))
+      (expression_statement
+        (unary_expression
+          operand: (member_expression
+            object: (identifier)
+            member: (identifier)))))))
+
+================================================================================
+Prefix increment/decrement
+================================================================================
+
+void f() {
+  ++i;
+  --i;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (unary_expression operand: (identifier)))
+      (expression_statement
+        (unary_expression operand: (identifier))))))
+
+================================================================================
+Postfix increment/decrement
+================================================================================
+
+void f() {
+  x++;
+  x--;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (postfix_expression operand: (identifier)))
+      (expression_statement
+        (postfix_expression operand: (identifier))))))
+
+================================================================================
+Member access
+================================================================================
+
+void f() {
+  a.b;
+  a.b.c;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (member_expression object: (identifier) member: (identifier)))
+      (expression_statement
+        (member_expression
+          object: (member_expression
+            object: (identifier)
+            member: (identifier))
+          member: (identifier))))))
+
+================================================================================
+Index expression
+================================================================================
+
+void f() {
+  a[0];
+  a[b + c];
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (index_expression
+          object: (identifier)
+          index: (number_literal)))
+      (expression_statement
+        (index_expression
+          object: (identifier)
+          index: (binary_expression
+            left: (identifier)
+            right: (identifier)))))))
+
+================================================================================
+Named indexing
+================================================================================
+
+void f() {
+  a[key: val];
+  a[k1: v1, k2: v2];
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (index_expression
+          object: (identifier)
+          index_name: (identifier)
+          index: (identifier)))
+      (expression_statement
+        (index_expression
+          object: (identifier)
+          index_name: (identifier)
+          index: (identifier)
+          index_name: (identifier)
+          index: (identifier))))))
+
+================================================================================
+Function call
+================================================================================
+
+void f() {
+  foo();
+  bar(1, 2, 3);
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (call_expression
+          function: (identifier)
+          arguments: (argument_list)))
+      (expression_statement
+        (call_expression
+          function: (identifier)
+          arguments: (argument_list
+            (number_literal)
+            (number_literal)
+            (number_literal)))))))
+
+================================================================================
+Named arguments
+================================================================================
+
+void f() {
+  foo(arg1: 1, arg2: 2);
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (call_expression
+          function: (identifier)
+          arguments: (argument_list
+            arg_name: (identifier)
+            (number_literal)
+            arg_name: (identifier)
+            (number_literal)))))))
+
+================================================================================
+Method call
+================================================================================
+
+void f() {
+  a.foo();
+  a.b.bar(1);
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (call_expression
+          function: (member_expression
+            object: (identifier)
+            member: (identifier))
+          arguments: (argument_list)))
+      (expression_statement
+        (call_expression
+          function: (member_expression
+            object: (member_expression
+              object: (identifier)
+              member: (identifier))
+            member: (identifier))
+          arguments: (argument_list
+            (number_literal)))))))
+
+================================================================================
+Cast expression
+================================================================================
+
+void f() {
+  cast<int>(x);
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (cast_expression
+          type: (type (datatype (primitive_type)))
+          value: (identifier))))))
+
+================================================================================
+Lambda expression (no params)
+================================================================================
+
+void f() {
+  function() { };
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (lambda_expression
+          parameters: (parameter_list)
+          body: (statement_block))))))
+
+================================================================================
+Lambda expression with typed params
+================================================================================
+
+void f() {
+  function(int x, int y) { return x + y; };
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (lambda_expression
+          parameters: (parameter_list
+            (parameter
+              param_type: (type (datatype (primitive_type)))
+              name: (identifier))
+            (parameter
+              param_type: (type (datatype (primitive_type)))
+              name: (identifier)))
+          body: (statement_block
+            (return_statement
+              (binary_expression
+                left: (identifier)
+                right: (identifier)))))))))
+
+================================================================================
+Lambda as argument
+================================================================================
+
+void f() {
+  sort(function(int a, int b) { return a < b; });
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (call_expression
+          function: (identifier)
+          arguments: (argument_list
+            (lambda_expression
+              parameters: (parameter_list
+                (parameter
+                  param_type: (type (datatype (primitive_type)))
+                  name: (identifier))
+                (parameter
+                  param_type: (type (datatype (primitive_type)))
+                  name: (identifier)))
+              body: (statement_block
+                (return_statement
+                  (binary_expression
+                    left: (identifier)
+                    right: (identifier)))))))))))
+
+================================================================================
+Initializer list
+================================================================================
+
+void f() {
+  int[] a = {1, 2, 3};
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (variable_declaration
+        var_type: (type (datatype (primitive_type)))
+        (variable_declarator
+          name: (identifier)
+          (initializer_list
+            (number_literal)
+            (number_literal)
+            (number_literal)))))))
+
+================================================================================
+Nested initializer list
+================================================================================
+
+void f() {
+  auto a = {{1, 2}, {3, 4}};
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (variable_declaration
+        var_type: (type (datatype))
+        (variable_declarator
+          name: (identifier)
+          (initializer_list
+            (initializer_list
+              (number_literal)
+              (number_literal))
+            (initializer_list
+              (number_literal)
+              (number_literal))))))))
+
+================================================================================
+Parenthesized expression
+================================================================================
+
+void f() {
+  (a + b) * c;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (parenthesized_expression
+            (binary_expression
+              left: (identifier)
+              right: (identifier)))
+          right: (identifier))))))
+
+================================================================================
+Chained postfix operations
+================================================================================
+
+void f() {
+  a.b[0](x).c;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (member_expression
+          object: (call_expression
+            function: (index_expression
+              object: (member_expression
+                object: (identifier)
+                member: (identifier))
+              index: (number_literal))
+            arguments: (argument_list
+              (identifier)))
+          member: (identifier))))))
+
+================================================================================
+Assignment to member
+================================================================================
+
+void f() {
+  a.b = c;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (assignment_expression
+          left: (member_expression
+            object: (identifier)
+            member: (identifier))
+          right: (identifier))))))
+
+================================================================================
+Logical operator precedence: and binds tighter than or
+================================================================================
+
+void f() {
+  a or b and c;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression
+          left: (identifier)
+          right: (binary_expression
+            left: (identifier)
+            right: (identifier)))))))
+
+================================================================================
+Comparison operators
+================================================================================
+
+void f() {
+  a == b;
+  a != b;
+  a < b;
+  a > b;
+  a <= b;
+  a >= b;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (binary_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (binary_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (binary_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (binary_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (binary_expression left: (identifier) right: (identifier)))
+      (expression_statement
+        (binary_expression left: (identifier) right: (identifier))))))
+
+================================================================================
+Number literals with base prefixes
+================================================================================
+
+void f() {
+  0xFF;
+  0o77;
+  0b1010;
+  0d42;
+  3.14;
+  1e10;
+  2.5f;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement (number_literal))
+      (expression_statement (number_literal))
+      (expression_statement (number_literal))
+      (expression_statement (number_literal))
+      (expression_statement (number_literal))
+      (expression_statement (number_literal))
+      (expression_statement (number_literal)))))
+
+================================================================================
+Handle assignment (@ prefix with =)
+================================================================================
+
+void f() {
+  @a = b;
+  @handle = @obj;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (assignment_expression
+          left: (unary_expression operand: (identifier))
+          right: (identifier)))
+      (expression_statement
+        (assignment_expression
+          left: (unary_expression operand: (identifier))
+          right: (unary_expression operand: (identifier)))))))
+
+================================================================================
+Handle assignment operator (@=)
+================================================================================
+
+void f() {
+  a @= b;
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (expression_statement
+        (assignment_expression
+          left: (identifier)
+          right: (identifier))))))
+
+================================================================================
+Null handle comparison (is null, !is null)
+================================================================================
+
+void f() {
+  if (a is null) {}
+  if (b !is null) {}
+}
+
+--------------------------------------------------------------------------------
+
+(script
+  (func_declaration
+    return_type: (type (datatype (primitive_type)))
+    name: (identifier)
+    parameters: (parameter_list)
+    body: (statement_block
+      (if_statement
+        (binary_expression
+          left: (identifier)
+          right: (null_literal))
+        consequence: (statement_block))
+      (if_statement
+        (binary_expression
+          left: (identifier)
+          right: (null_literal))
+        consequence: (statement_block)))))

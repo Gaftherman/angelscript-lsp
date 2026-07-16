@@ -1,0 +1,215 @@
+==================
+Unclosed template at end of file
+==================
+
+array<int
+
+---
+
+(script
+  (ERROR
+    (identifier)
+    (template_type_list
+      (type
+        (datatype
+          (primitive_type))))))
+
+==================
+Unclosed nested template at end of file
+==================
+
+TArray<TArray<int
+
+---
+
+(script
+  (ERROR
+    (identifier)
+    (template_type_list
+      (type
+        (datatype
+          (identifier))
+        (template_type_list
+          (type
+            (datatype
+              (primitive_type))))))))
+
+==================
+Unclosed template before call statement
+==================
+
+void f() {
+    TArray<int
+    DoSomething();
+}
+
+---
+
+(script
+  (func_declaration
+    (type
+      (datatype
+        (primitive_type)))
+    (identifier)
+    (parameter_list)
+    (statement_block
+      (variable_declaration
+        (type
+          (datatype
+            (identifier))
+          (template_type_list
+            (type
+              (datatype
+                (primitive_type)))))
+        (variable_declarator
+          (identifier)
+          (argument_list))))))
+
+==================
+Unclosed template with following statements intact
+==================
+
+void f() {
+    TArray<FThing
+    a = 1;
+    b = 2;
+}
+
+---
+
+(script
+  (func_declaration
+    (type
+      (datatype
+        (primitive_type)))
+    (identifier)
+    (parameter_list)
+    (statement_block
+      (variable_declaration
+        (type
+          (datatype
+            (identifier))
+          (template_type_list
+            (type
+              (datatype
+                (identifier)))))
+        (variable_declarator
+          (identifier)
+          (number_literal)))
+      (expression_statement
+        (assignment_expression
+          (identifier)
+          (number_literal))))))
+
+==================
+Statement-start comparison not confused with template
+==================
+
+void f() {
+    x < y;
+}
+
+---
+
+(script
+  (func_declaration
+    (type
+      (datatype
+        (primitive_type)))
+    (identifier)
+    (parameter_list)
+    (statement_block
+      (expression_statement
+        (binary_expression
+          (identifier)
+          (identifier))))))
+
+==================
+Multi-line comparison in if condition
+==================
+
+void f() {
+    if (a <
+        b) {}
+}
+
+---
+
+(script
+  (func_declaration
+    (type
+      (datatype
+        (primitive_type)))
+    (identifier)
+    (parameter_list)
+    (statement_block
+      (if_statement
+        (binary_expression
+          (identifier)
+          (identifier))
+        (statement_block)))))
+
+==================
+Multi-line comparison in initializer
+==================
+
+void f() {
+    bool c = a <
+        b;
+}
+
+---
+
+(script
+  (func_declaration
+    (type
+      (datatype
+        (primitive_type)))
+    (identifier)
+    (parameter_list)
+    (statement_block
+      (variable_declaration
+        (type
+          (datatype
+            (primitive_type)))
+        (variable_declarator
+          (identifier)
+          (binary_expression
+            (identifier)
+            (identifier)))))))
+
+==================
+Multi-line template arguments after comma still parse
+==================
+
+TMap<FString,
+    int> M;
+
+---
+
+(script
+  (variable_declaration
+    (type
+      (datatype
+        (identifier))
+      (template_type_list
+        (type
+          (datatype
+            (identifier)))
+        (type
+          (datatype
+            (primitive_type)))))
+    (variable_declarator
+      (identifier))))
+
+==================
+Incomplete cast at end of file
+:error
+==================
+
+void f() {
+    x = cast<int
+
+---
+
+(script)
