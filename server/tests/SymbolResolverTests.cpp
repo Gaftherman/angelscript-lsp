@@ -339,7 +339,7 @@ class Troll : Entity, Regenerator {
         const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "GetSpeed");
-        CHECK(sym->kind == SymbolKind::Function);
+        CHECK(sym->kind == SymbolKind::Method);
         REQUIRE(sym->parent != nullptr);
         CHECK(sym->parent->name == "Actor");
     }
@@ -676,7 +676,7 @@ class Troll : Entity, Regenerator {
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
             CHECK(sym->name == "Tick");
-            CHECK(sym->kind == SymbolKind::Function); // Currently mixin methods might parse as Function, that's fine
+            CHECK(sym->kind == SymbolKind::Method); // Currently mixin methods might parse as Function, that's fine
             REQUIRE(sym->parent != nullptr);
             CHECK(sym->parent->name == "Regen");
         }

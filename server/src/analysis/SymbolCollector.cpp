@@ -59,19 +59,7 @@ namespace analysis
                 }
             }
 
-            // Workaround: check if the `parameter` node has a preceding ERROR sibling
-            // containing the namespace prefix (e.g. "Engine::Math::").
-            TSNode paramPrev = ts_node_prev_sibling(child);
-            if (!ts_node_is_null(paramPrev) && std::string_view(ts_node_type(paramPrev)) == "ERROR") {
-                std::string errText = SymbolCollector::GetNodeText(paramPrev, doc);
-                if (!errText.empty()) {
-                    if (!param.typeName.empty() && param.typeName.starts_with("::"))
-                        param.typeName = errText + param.typeName;
-                    else
-                        param.typeName = errText + "::" + param.typeName;
-                }
-            }
-            
+
             sym.params.push_back(param);
             
             if (table && !param.name.empty()) {
@@ -143,19 +131,7 @@ namespace analysis
                 }
             }
 
-            // Workaround: check if the `parameter` node has a preceding ERROR sibling
-            // containing the namespace prefix (e.g. "Engine::Math::").
-            TSNode paramPrev = ts_node_prev_sibling(child);
-            if (!ts_node_is_null(paramPrev) && std::string_view(ts_node_type(paramPrev)) == "ERROR") {
-                std::string errText = SymbolCollector::GetNodeText(paramPrev, doc);
-                if (!errText.empty()) {
-                    if (!typeName.empty() && typeName.starts_with("::"))
-                        typeName = errText + typeName;
-                    else
-                        typeName = errText + "::" + typeName;
-                }
-            }
-            
+
             auto paramSym = std::make_shared<Symbol>();
             paramSym->kind       = SymbolKind::Parameter;
             paramSym->name       = name;
@@ -250,7 +226,10 @@ namespace analysis
             TSNode returnTypeNode = ts_node_child_by_field_name(node, "return_type", 11);
             if (!ts_node_is_null(returnTypeNode)) {
                 sym->typeInfo = GetNodeText(returnTypeNode, doc);
-            } else if (parentScope && parentScope->kind == SymbolKind::Class) {
+                if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin)) {
+                    sym->kind = SymbolKind::Method;
+                }
+            } else if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin)) {
                 sym->kind = isDestructor ? SymbolKind::Destructor : SymbolKind::Constructor;
             }
 
@@ -312,18 +291,6 @@ namespace analysis
                 }
             }
 
-            // Workaround for Engine::Math::Vector3 pos; where Engine::Math:: is an ERROR node sibling
-            TSNode prevSibling = ts_node_prev_sibling(node);
-            if (!ts_node_is_null(prevSibling) && std::string_view(ts_node_type(prevSibling)) == "ERROR") {
-                std::string errText = GetNodeText(prevSibling, doc);
-                if (!errText.empty()) {
-                    if (!typeInfo.empty() && typeInfo.starts_with("::")) {
-                        typeInfo = errText + typeInfo;
-                    } else {
-                        typeInfo = errText + "::" + typeInfo;
-                    }
-                }
-            }
 
             for (uint32_t i = 0; i < ts_node_child_count(node); i++)
             {
@@ -625,15 +592,6 @@ namespace analysis
 
         if (type == "variable_declaration")
         {
-            // Workaround: Tree-sitter parses `Engine::Math::Lerp()` as a variable_declaration containing an ERROR node `::`.
-            // If it contains an ERROR node, it is likely a misparsed function call, so we skip adding it as a local variable.
-            bool hasErrorNode = false;
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
-                if (std::string_view(ts_node_type(ts_node_child(node, i))) == "ERROR") {
-                    hasErrorNode = true;
-                    break;
-                }
-            }
 
             TSNode varTypeNode = ts_node_child_by_field_name(node, "var_type", 8);
             std::string typeInfo;
@@ -649,27 +607,10 @@ namespace analysis
                     }
                 }
             }
-            
-            // Workaround for Engine::Math::Vector3 pos2;
-            // Tree-sitter parses `Engine::Math::` as an ERROR node that is a PREVIOUS sibling of `variable_declaration`.
-            // The `type` inside `variable_declaration` will only contain `::Vector3`.
-            TSNode prevSibling = ts_node_prev_sibling(node);
-            if (!ts_node_is_null(prevSibling) && std::string_view(ts_node_type(prevSibling)) == "ERROR") {
-                std::string errText = GetNodeText(prevSibling, doc);
-                if (!errText.empty()) {
-                    if (!typeInfo.empty() && typeInfo.starts_with("::")) {
-                        typeInfo = errText + typeInfo;
-                    } else {
-                        typeInfo = errText + "::" + typeInfo;
-                    }
-                }
-            }
-
-            if (!hasErrorNode) {
-                for (uint32_t i = 0; i < ts_node_child_count(node); i++)
-                {
-                    TSNode child = ts_node_child(node, i);
-                    if (std::string_view(ts_node_type(child)) == "variable_declarator")
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+            {
+                TSNode child = ts_node_child(node, i);
+                if (std::string_view(ts_node_type(child)) == "variable_declarator")
                     {
                         auto sym = std::make_shared<Symbol>();
                         sym->kind = SymbolKind::Variable;
@@ -700,7 +641,6 @@ namespace analysis
                         table.AddLocal(sym);
                     }
                 }
-            }
             
             // Note: We still fall through to traverse the children of this node, 
             // because even if it's a misparsed call, its arguments might contain local variables!

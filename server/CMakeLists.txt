@@ -67,12 +67,7 @@ if(MSVC)
 endif()
 
 # ── 1.6 Tree-Sitter AngelScript Grammar ───────────────────────────────────────
-FetchContent_Declare(
-    tree_sitter_angelscript
-    GIT_REPOSITORY https://github.com/Relrin/tree-sitter-angelscript.git
-    GIT_TAG master
-)
-FetchContent_MakeAvailable(tree_sitter_angelscript)
+set(tree_sitter_angelscript_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tree-sitter-angelscript")
 
 # ---------------------------------------------------------
 # lsp-framework (Language Server Protocol C++20 Framework)

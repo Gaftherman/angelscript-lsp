@@ -37,6 +37,26 @@ namespace analysis
 
     static std::optional<SymbolKind> InferExpectedKind(TSNode node, TSNode parent, std::string_view parentType)
     {
+        // Climb out of recursive scoped_identifiers to see what the entire scope is being used for
+        while (parentType == "scoped_identifier" || parentType == "scoped_type") {
+            // Wait, if we are evaluating the LEFT side of a scope (e.g. `Engine` in `Engine::Math`), we know it expects a Namespace or Enum.
+            // But we can check that by seeing if the hovered node is the LAST node in the topmost scope.
+            // For now, let's just climb up.
+            TSNode p = ts_node_parent(parent);
+            if (ts_node_is_null(p)) break;
+            std::string_view pType = ts_node_type(p);
+            if (pType == "scoped_identifier" || pType == "scoped_type") {
+                node = parent;
+                parent = p;
+                parentType = pType;
+            } else {
+                node = parent;
+                parent = p;
+                parentType = pType;
+                break;
+            }
+        }
+
         if (parentType == "type" || parentType == "datatype") {
             TSNode gp = ts_node_parent(parent);
             if (!ts_node_is_null(gp)) {
@@ -49,40 +69,52 @@ namespace analysis
                     }
                 }
             }
-            // Un identificador usado como tipo (ej. `MyClass c;`)
-            return SymbolKind::Class; // También podría ser Typedef o Enum, filtraremos por jerarquía
+            return SymbolKind::Class; 
         }
         if (parentType == "call_expression" || parentType == "func_call") {
-            return SymbolKind::Function; // También Method
+            return SymbolKind::Function; 
         }
         
-        // Also check if the next sibling is an argument_list (which means this is a call)
         TSNode nextSibling = ts_node_next_sibling(node);
         if (!ts_node_is_null(nextSibling) && std::string_view(ts_node_type(nextSibling)) == "argument_list") {
             return SymbolKind::Function;
         }
         
         if (parentType == "base_class_list" || parentType == "inheritance_specifier") {
-            return SymbolKind::Class; // También Interface, Mixin
+            return SymbolKind::Class; 
         }
-        if (parentType == "scoped_identifier") {
-            TSNode firstChild = ts_node_child(parent, 0);
-            if (ts_node_eq(node, firstChild)) {
-                return SymbolKind::Namespace; // También Enum
-            } else {
-                TSNode grandParent = ts_node_parent(parent);
-                if (!ts_node_is_null(grandParent)) {
-                    std::string_view gpType = ts_node_type(grandParent);
-                    return InferExpectedKind(parent, grandParent, gpType);
-                }
-            }
-        }
+
+        if (parentType == "class_declaration") return SymbolKind::Class;
+        if (parentType == "enum_declaration") return SymbolKind::Enum;
+        if (parentType == "typedef_declaration") return SymbolKind::Typedef;
+        if (parentType == "funcdef_declaration") return SymbolKind::Funcdef;
+        if (parentType == "func_declaration") return SymbolKind::Function;
+        if (parentType == "interface_declaration") return SymbolKind::Interface;
+        if (parentType == "mixin_declaration") return SymbolKind::Mixin;
+        if (parentType == "namespace_declaration") return SymbolKind::Namespace;
+        
         return std::nullopt;
     }
 
     // Returns argument count if this node is the callee of a call expression
     static std::optional<uint32_t> GetCallArgumentCount(TSNode node, TSNode parent, std::string_view parentType)
     {
+        while (parentType == "scoped_identifier" || parentType == "scoped_type") {
+            TSNode p = ts_node_parent(parent);
+            if (ts_node_is_null(p)) break;
+            std::string_view pType = ts_node_type(p);
+            if (pType == "scoped_identifier" || pType == "scoped_type") {
+                node = parent;
+                parent = p;
+                parentType = pType;
+            } else {
+                node = parent;
+                parent = p;
+                parentType = pType;
+                break;
+            }
+        }
+
         TSNode argList = {0};
         
         if (parentType == "call_expression" || parentType == "func_call") {
@@ -155,7 +187,7 @@ namespace analysis
         TSNode parent = ts_node_parent(node);
         std::string_view parentType = ts_node_is_null(parent) ? "" : ts_node_type(parent);
 
-        // Member resolution: myObject.Prop
+        // Check if we are hovering a constructor or destructor
         if (parentType == "member_expression")
         {
             TSNode memberNode = ts_node_child_by_field_name(parent, "member", 6);
@@ -294,94 +326,69 @@ namespace analysis
             }
         };
 
-        // Namespace resolution (Valid scoped_identifier)
-        if (parentType == "scoped_identifier")
+        // Namespace resolution (Valid scoped_identifier or scoped_type)
+        if (parentType == "scoped_identifier" || parentType == "scoped_type")
         {
-            uint32_t count = ts_node_child_count(parent);
-            if (count >= 3)
+            TSNode topmostScope = parent;
+            while (!ts_node_is_null(ts_node_parent(topmostScope)))
             {
-                TSNode lastId = ts_node_child(parent, count - 1);
-                if (ts_node_eq(node, lastId))
-                {
-                    TSNode nsNode = ts_node_child(parent, 0);
-                    std::string_view nsSv = doc.SourceAt(nsNode);
-                    collectFromNamespace(std::string(nsSv.begin(), nsSv.end()));
-                    isScoped = true;
+                std::string_view pType = ts_node_type(ts_node_parent(topmostScope));
+                if (pType == "scoped_identifier" || pType == "scoped_type") {
+                    topmostScope = ts_node_parent(topmostScope);
+                } else {
+                    break;
                 }
-                else
-                {
-                    // Intermediate namespace token (Bug 4)
-                    std::string path = "";
-                    for (uint32_t i = 0; i < count; i++) {
-                        TSNode child = ts_node_child(parent, i);
-                        std::string_view childType = ts_node_type(child);
-                        if (childType == "::") continue;
-                        std::string_view childText = doc.SourceAt(child);
-                        if (ts_node_eq(child, node)) break;
-                        if (!path.empty()) path += "::";
-                        path += std::string(childText.begin(), childText.end());
+            }
+
+            std::vector<std::pair<std::string, TSNode>> pathNodes;
+            auto collectScopedIdentifiers = [&](TSNode scopedNode, auto& self) -> void {
+                uint32_t count = ts_node_child_count(scopedNode);
+                for (uint32_t i = 0; i < count; i++) {
+                    TSNode child = ts_node_child(scopedNode, i);
+                    std::string_view childType = ts_node_type(child);
+                    if (childType == "identifier" || childType == "type_identifier") {
+                        std::string_view text = doc.SourceAt(child);
+                        pathNodes.push_back({std::string(text.begin(), text.end()), child});
+                    } else if (childType == "scoped_identifier" || childType == "scoped_type") {
+                        self(child, self);
                     }
-                    path += (path.empty() ? "" : "::") + identText;
-                    
-                    const Symbol* nsSym = FindNamespace(table, path);
+                }
+            };
+            collectScopedIdentifiers(topmostScope, collectScopedIdentifiers);
+
+            int hoveredIndex = -1;
+            for (size_t i = 0; i < pathNodes.size(); i++) {
+                if (ts_node_eq(pathNodes[i].second, node)) {
+                    hoveredIndex = i;
+                    break;
+                }
+            }
+
+            if (hoveredIndex != -1) {
+                if (hoveredIndex == (int)pathNodes.size() - 1) {
+                    std::string nsPath = "";
+                    for (int i = 0; i < hoveredIndex; i++) {
+                        if (!nsPath.empty()) nsPath += "::";
+                        nsPath += pathNodes[i].first;
+                    }
+                    if (!nsPath.empty()) {
+                        collectFromNamespace(nsPath);
+                        isScoped = true;
+                    }
+                } else {
+                    // Hovering over an intermediate namespace, e.g. `Engine` or `Math`
+                    std::string nsPath = "";
+                    for (int i = 0; i <= hoveredIndex; i++) {
+                        if (!nsPath.empty()) nsPath += "::";
+                        nsPath += pathNodes[i].first;
+                    }
+                    const Symbol* nsSym = FindNamespace(table, nsPath);
                     if (nsSym) {
                         if (outMultipleResults) outMultipleResults->push_back(nsSym);
                         return nsSym;
                     }
+                    return nullptr;
                 }
-            }
-        }
-
-        // Namespace resolution (Tree-sitter ERROR workaround for expressions like Math::PI)
-        if (!isScoped) {
-            TSNode prevSibling = ts_node_prev_sibling(node);
-            if (!ts_node_is_null(prevSibling) && std::string_view(ts_node_type(prevSibling)) == "ERROR")
-            {
-                uint32_t errCount = ts_node_child_count(prevSibling);
-                if (errCount >= 2)
-                {
-                    TSNode colonNode = ts_node_child(prevSibling, errCount - 1);
-                    if (std::string_view(ts_node_type(colonNode)) == "::")
-                    {
-                        TSNode nsNode = ts_node_child(prevSibling, 0);
-                        std::string_view nsSv = doc.SourceAt(nsNode);
-                        collectFromNamespace(std::string(nsSv.begin(), nsSv.end()));
-                        isScoped = true;
-                    }
-                }
-            }
-        }
-
-        // Namespace resolution for identifiers INSIDE an ERROR node.
-        // Example: `Engine::Math::Vector3(0,0,0)` inside a function body generates:
-        //   ERROR
-        //     scoped_identifier "Engine::Math"   ← (or scope nodes)
-        //     identifier "Vector3"  / call_expression...
-        // When hovering `Math`, its parent is a `scoped_identifier` (handled above) OR an ERROR node.
-        // When hovering `Engine` whose parent is the ERROR node, handle it here.
-        if (!isScoped && (parentType == "ERROR" || parentType == "scoped_identifier"))
-        {
-            // Build the full path from root of the enclosing scoped_identifier/ERROR chain up to this token
-            // by checking if identText is a known namespace
-            const Symbol* directNs = FindNamespace(table, identText);
-            if (directNs && directNs->kind == SymbolKind::Namespace)
-            {
-                if (outMultipleResults) outMultipleResults->push_back(directNs);
-                return directNs;
-            }
-        }
-        
-        // Namespace resolution workaround for Combat::Fire() which produces `ERROR -> type -> scope + datatype -> identifier`
-        if (!isScoped && parentType == "datatype")
-        {
-            TSNode datatypePrevSibling = ts_node_prev_sibling(parent);
-            if (!ts_node_is_null(datatypePrevSibling) && std::string_view(ts_node_type(datatypePrevSibling)) == "scope")
-            {
-                // Child 0 of scope should be the namespace identifier
-                TSNode nsNode = ts_node_child(datatypePrevSibling, 0);
-                std::string_view nsSv = doc.SourceAt(nsNode);
-                collectFromNamespace(std::string(nsSv.begin(), nsSv.end()));
-                isScoped = true;
             }
         }
 
@@ -498,6 +505,10 @@ namespace analysis
                 
                 // If we have an expected kind, boost its priority massively if it matches the category
                 if (expected.has_value()) {
+                    if (expected.value() == cand->kind) {
+                        candPriority += 500; // Exact match of expected kind gets highest priority
+                    }
+
                     if (expected.value() == SymbolKind::Class) {
                         if (cand->kind == SymbolKind::Class || cand->kind == SymbolKind::Typedef || cand->kind == SymbolKind::Enum) {
                             candPriority += 100;

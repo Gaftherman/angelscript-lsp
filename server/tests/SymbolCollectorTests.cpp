@@ -271,7 +271,7 @@ TEST_SUITE("SymbolCollector")
         CHECK(cls->children[0]->kind == SymbolKind::Variable);
         CHECK(cls->children[0]->typeInfo == "int");
         CHECK(cls->children[1]->name == "Heal");
-        CHECK(cls->children[1]->kind == SymbolKind::Function);
+        CHECK(cls->children[1]->kind == SymbolKind::Method);
     }
 
     TEST_CASE("C2: Clase con herencia")

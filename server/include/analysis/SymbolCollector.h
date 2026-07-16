@@ -25,7 +25,6 @@ namespace analysis
         // Factory for symbol ranges
         static lsp::Range GetRange(TSNode node, const Document& doc);
         
-    private:
         // Recursive helper to traverse AST for globals
         static void TraverseGlobals(TSNode node, const Document& doc, SymbolTable& table, Symbol* parentScope);
     };
