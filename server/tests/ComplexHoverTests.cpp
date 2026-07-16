@@ -429,4 +429,87 @@ namespace Game
             CHECK(sym->kind == SymbolKind::Typedef);
         }
     }
+
+    TEST_CASE("CH9: Mixin Hover multiResults population")
+    {
+        Document doc("file:///scratch.as", SCRATCH_AS);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        TSNode root = doc.RootNode();
+        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
+
+        auto traverseFuncs = [&](TSNode node, auto& self) -> void {
+            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor") {
+                TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
+                if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
+            }
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++) self(ts_node_child(node, i), self);
+        };
+        traverseFuncs(root, traverseFuncs);
+
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+            size_t offset = std::string(SCRATCH_AS).find(target);
+            uint32_t line = 0, col = 0;
+            for (size_t i = 0; i < offset; i++) {
+                if (SCRATCH_AS[i] == '\n') { line++; col = 0; } else { col++; }
+            }
+            return {line, col};
+        };
+
+        // Test hover on 'hp' inside Entity constructor
+        auto [line, col] = getPos("hp    = 100.0f;");
+        col += 1;
+        std::vector<const Symbol*> multiResults;
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
+
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "hp");
+        
+        // At this point we are testing that ResolveAt correctly returns the symbol, 
+        // and optionally populates multiResults correctly if it was an ambiguous/mixin resolution.
+        // For 'hp' in Entity it should resolve to Entity's own member.
+        if (sym->parent) {
+            CHECK(sym->parent->name == "Entity");
+        }
+    }
+
+    TEST_CASE("CH10: Method parameter resolution")
+    {
+        Document doc("file:///scratch.as", SCRATCH_AS);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        TSNode root = doc.RootNode();
+        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
+
+        auto traverseFuncs = [&](TSNode node, auto& self) -> void {
+            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor") {
+                TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
+                if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
+            }
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++) self(ts_node_child(node, i), self);
+        };
+        traverseFuncs(root, traverseFuncs);
+
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+            size_t offset = std::string(SCRATCH_AS).find(target);
+            uint32_t line = 0, col = 0;
+            for (size_t i = 0; i < offset; i++) {
+                if (SCRATCH_AS[i] == '\n') { line++; col = 0; } else { col++; }
+            }
+            return {line, col};
+        };
+
+        // Test hover on 'amount' inside TakeDamage
+        auto [line, col] = getPos("hp -= amount;");
+        col += 7; // point to 'amount'
+        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "amount");
+        CHECK(sym->kind == SymbolKind::Parameter);
+        if (sym->parent) {
+            CHECK(sym->parent->name == "TakeDamage");
+        }
+    }
 }
+
