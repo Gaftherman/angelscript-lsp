@@ -115,12 +115,14 @@ lsp::requests::TextDocument_Completion::Result ProcessCompletion(
     CompletionContext ctx = AnalyzeContext(doc.GetText(), req.position.line, req.position.character);
     
     if (ctx.type == CompletionContextType::Global) {
-        for (const auto& [name, sym] : table.GetGlobals()) {
-            lsp::CompletionItem item;
-            item.label = sym->name;
-            item.kind = SymbolKindToCompletionKind(sym->kind);
-            item.detail = !sym->signature.empty() ? sym->signature : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
-            items.push_back(item);
+        for (const auto& [name, syms] : table.GetGlobals()) {
+            for (const auto& sym : syms) {
+                lsp::CompletionItem item;
+                item.label = sym->name;
+                item.kind = SymbolKindToCompletionKind(sym->kind);
+                item.detail = !sym->signature.empty() ? sym->signature : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
+                items.push_back(item);
+            }
         }
         AddEngineCompletionItems(engine, items);
         

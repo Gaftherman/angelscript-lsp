@@ -6,102 +6,78 @@
 namespace angel_lsp {
 namespace features {
 
-static std::string KindName(analysis::SymbolKind kind) {
-    switch (kind) {
-        case analysis::SymbolKind::Variable: return "Variable";
-        case analysis::SymbolKind::Function: return "Function";
-        case analysis::SymbolKind::Class: return "Class";
-        case analysis::SymbolKind::Namespace: return "Namespace";
-        case analysis::SymbolKind::Parameter: return "Parameter";
-        case analysis::SymbolKind::Property: return "Property";
-        case analysis::SymbolKind::Method: return "Method";
-        case analysis::SymbolKind::Enum: return "Enum";
-        case analysis::SymbolKind::EnumMember: return "Enum Member";
-        case analysis::SymbolKind::Interface: return "Interface";
-        case analysis::SymbolKind::Funcdef: return "Funcdef";
-        case analysis::SymbolKind::Mixin: return "Mixin";
-        case analysis::SymbolKind::Typedef: return "Typedef";
-        default: return "Symbol";
-    }
-}
 
-static std::string QueryEngineFunction(const asIScriptEngine* engine, const std::string& name) {
-    if (!engine) return "";
-    for (asUINT i = 0; i < engine->GetGlobalFunctionCount(); i++) {
-        asIScriptFunction* func = engine->GetGlobalFunctionByIndex(i);
-        if (func && std::string(func->GetName()) == name) {
-            std::string decl = func->GetDeclaration(true, true, true);
-            return "```angelscript\n" + decl + "\n```\n**" + name + "** — Built-in Function";
-        }
-    }
-    return "";
-}
 
-static std::string QueryEngineType(const asIScriptEngine* engine, const std::string& name) {
-    if (!engine) return "";
-    int typeId = engine->GetTypeIdByDecl(name.c_str());
-    if (typeId >= 0) {
-        asITypeInfo* type = engine->GetTypeInfoById(typeId);
-        if (type) {
-            return "```angelscript\nclass " + std::string(type->GetName()) + "\n```\n**" + name + "** — Built-in Type";
-        }
-    }
-    return "";
-}
-
-lsp::requests::TextDocument_Hover::Result ProcessHover(
-    const lsp::requests::TextDocument_Hover::Params& req,
-    const Document& doc,
-    const analysis::SymbolTable& table,
-    const asIScriptEngine* engine
-) {
-    lsp::requests::TextDocument_Hover::Result res;
-    
+void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
+                  const lsp::requests::TextDocument_Hover::Params& req,
+                  const Document& doc,
+                  const analysis::SymbolTable& table,
+                  const analysis::DiagnosticCache* diagCache,
+                  i18n::Locale locale,
+                  const asIScriptEngine* engine)
+{
     uint32_t line = req.position.line;
     uint32_t col = req.position.character;
     
     std::string markdown = "";
+    const auto& s = i18n::GetStrings(locale);
+    
+    auto getKindName = [&](analysis::SymbolKind kind) {
+        switch (kind) {
+            case analysis::SymbolKind::Variable: return s.kindVariable;
+            case analysis::SymbolKind::Function: return s.kindFunction;
+            case analysis::SymbolKind::Class: return s.kindClass;
+            case analysis::SymbolKind::Namespace: return s.kindNamespace;
+            case analysis::SymbolKind::Parameter: return s.kindParameter;
+            case analysis::SymbolKind::Property: return s.kindProperty;
+            case analysis::SymbolKind::Method: return s.kindMethod;
+            case analysis::SymbolKind::Enum: return s.kindEnum;
+            case analysis::SymbolKind::EnumMember: return s.kindEnumMember;
+            case analysis::SymbolKind::Interface: return s.kindInterface;
+            case analysis::SymbolKind::Funcdef: return s.kindFuncdef;
+            case analysis::SymbolKind::Mixin: return s.kindMixin;
+            case analysis::SymbolKind::Typedef: return s.kindTypedef;
+            default: return s.kindUnknown;
+        }
+    };
     
     std::vector<const analysis::Symbol*> multiResults;
     const analysis::Symbol* sym = analysis::SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
+    
     if (sym != nullptr)
     {
-        auto getFullName = [](const analysis::Symbol* s) -> std::string {
-            if (!s || !s->parent) return "";
-            std::string name = s->parent->name;
-            const analysis::Symbol* p = s->parent->parent;
-            while (p && !p->name.empty()) {
-                name = p->name + "::" + name;
-                p = p->parent;
+        bool multipleDistinctKinds = false;
+        if (multiResults.size() > 1) {
+            analysis::SymbolKind firstKind = multiResults[0]->kind;
+            for (auto r : multiResults) {
+                if (r->kind != firstKind) {
+                    multipleDistinctKinds = true;
+                    break;
+                }
             }
-            return name;
+        }
+
+        auto renderSymbol = [&](const analysis::Symbol* renderSym) {
+            std::string sig = !renderSym->signature.empty() ? renderSym->signature : (renderSym->typeInfo + (renderSym->typeInfo.empty() ? "" : " ") + renderSym->name);
+            std::string contextStr = renderSym->parent ? renderSym->parent->name : "";
+            
+            std::string md = "```angelscript\n" + sig + "\n```\n"
+                           + "**" + renderSym->name + "** — " + getKindName(renderSym->kind)
+                           + (!contextStr.empty() ? " " + std::string(s.hoverIn) + " `" + contextStr + "`" : "");
+            
+            if (!renderSym->docComment.empty()) {
+                md += "\n\n" + renderSym->docComment;
+            }
+            return md;
         };
 
-        std::string sig = !sym->signature.empty() ? sym->signature : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
-        
-        std::string contextStr = sym->parent ? sym->parent->name : "";
-        std::vector<std::string> uniqueNames;
-        std::set<std::string> seen;
-        for (auto s : multiResults) {
-            if (s->parent && seen.find(s->parent->name) == seen.end()) {
-                uniqueNames.push_back(s->parent->name);
-                seen.insert(s->parent->name);
+        if (multipleDistinctKinds) {
+            for (size_t i = 0; i < multiResults.size(); i++) {
+                if (i > 0) markdown += "\n\n---\n\n";
+                markdown += renderSymbol(multiResults[i]);
             }
-        }
-        if (uniqueNames.size() > 1) {
-            contextStr = "";
-            for (size_t i = 0; i < uniqueNames.size(); i++) {
-                if (i > 0) contextStr += ", ";
-                contextStr += uniqueNames[i];
-            }
-        }
-        
-        markdown = "```angelscript\n" + sig + "\n```\n"
-                 + "**" + sym->name + "** — " + KindName(sym->kind)
-                 + (!contextStr.empty() ? " in `" + contextStr + "`" : "");
-                 
-        if (!sym->docComment.empty()) {
-            markdown += "\n\n" + sym->docComment;
+        } else {
+            markdown = renderSymbol(sym);
         }
     }
     else
@@ -112,23 +88,46 @@ lsp::requests::TextDocument_Hover::Result ProcessHover(
             std::string_view sv = doc.SourceAt(nodeUnder);
             std::string name(sv.begin(), sv.end());
             
-            markdown = QueryEngineFunction(engine, name);
-            if (markdown.empty()) {
-                markdown = QueryEngineType(engine, name);
+            if (engine) {
+                for (asUINT i = 0; i < engine->GetGlobalFunctionCount(); i++) {
+                    asIScriptFunction* func = engine->GetGlobalFunctionByIndex(i);
+                    if (func && std::string(func->GetName()) == name) {
+                        std::string decl = func->GetDeclaration(true, true, true);
+                        markdown = "```angelscript\n" + decl + "\n```\n**" + name + "** — " + s.hoverBuiltinFunc;
+                        break;
+                    }
+                }
+                if (markdown.empty()) {
+                    int typeId = engine->GetTypeIdByDecl(name.c_str());
+                    if (typeId >= 0) {
+                        asITypeInfo* type = engine->GetTypeInfoById(typeId);
+                        if (type) {
+                            markdown = "```angelscript\nclass " + std::string(type->GetName()) + "\n```\n**" + name + "** — " + s.hoverBuiltinType;
+                        }
+                    }
+                }
             }
         }
     }
 
-    if (markdown.empty()) return {};
+    // Append Engine Diagnostics
+    if (diagCache) {
+        auto diags = diagCache->GetAt(req.textDocument.uri.toString(), line, col);
+        for (const auto* d : diags) {
+            if (!markdown.empty()) markdown += "\n\n---\n\n";
+            std::string prefix = d->severity == lsp::DiagnosticSeverity::Error ? "⛔ **" + std::string(s.hoverEngineError) + "**" : "⚠️ **" + std::string(s.hoverEngineWarn) + "**";
+            markdown += prefix + " `" + d->message + "`";
+        }
+    }
 
-    res = lsp::Hover{};
-    auto& hover = *res;
+    if (markdown.empty()) return;
+
+    result = lsp::Hover{};
+    auto& hover = *result;
     lsp::MarkupContent markup;
     markup.kind = lsp::MarkupKind::Markdown;
     markup.value = markdown;
     hover.contents = markup;
-    
-    return res;
 }
 
 }

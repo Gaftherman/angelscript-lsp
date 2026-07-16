@@ -54,8 +54,10 @@ lsp::requests::TextDocument_SemanticTokens_Full::Result ProcessSemanticTokensFul
     };
 
     // Iterate over globals
-    for (const auto& [name, sym] : table.GetGlobals()) {
-        processSymbol(processSymbol, sym.get());
+    for (const auto& [name, syms] : table.GetGlobals()) {
+        for (const auto& sym : syms) {
+            processSymbol(processSymbol, sym.get());
+        }
     }
 
     // Iterate over locals

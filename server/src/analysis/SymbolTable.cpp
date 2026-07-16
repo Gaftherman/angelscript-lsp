@@ -9,7 +9,7 @@ namespace analysis
     void SymbolTable::AddGlobal(std::shared_ptr<Symbol> symbol)
     {
         if (!symbol) return;
-        m_globalSymbols[symbol->name] = std::move(symbol);
+        m_globalSymbols[symbol->name].push_back(std::move(symbol));
     }
 
     void SymbolTable::AddLocal(std::shared_ptr<Symbol> symbol)
@@ -21,11 +21,24 @@ namespace analysis
     Symbol* SymbolTable::FindGlobalByName(const std::string& name) const
     {
         auto it = m_globalSymbols.find(name);
-        if (it != m_globalSymbols.end())
+        if (it != m_globalSymbols.end() && !it->second.empty())
         {
-            return it->second.get();
+            return it->second.front().get();
         }
         return nullptr;
+    }
+
+    std::vector<Symbol*> SymbolTable::FindAllGlobalsByName(const std::string& name) const
+    {
+        std::vector<Symbol*> results;
+        auto it = m_globalSymbols.find(name);
+        if (it != m_globalSymbols.end())
+        {
+            for (const auto& sym : it->second) {
+                results.push_back(sym.get());
+            }
+        }
+        return results;
     }
 
     const Symbol* SymbolTable::FindByNameDeep(const std::string& name) const
@@ -37,9 +50,11 @@ namespace analysis
         }
 
         // 2. Deep search inside namespaces
-        for (const auto& [nsName, nsSym] : m_globalSymbols)
+        for (const auto& [nsName, nsSyms] : m_globalSymbols)
         {
-            if (nsSym->kind == SymbolKind::Namespace)
+            for (const auto& nsSym : nsSyms)
+            {
+                if (nsSym->kind == SymbolKind::Namespace)
             {
                 // Recursive lambda to search inside a namespace
                 auto searchChildren = [&](auto& self, const Symbol* currentNs) -> const Symbol* {
@@ -70,6 +85,7 @@ namespace analysis
                     return found;
                 }
             }
+            }
         }
         return nullptr;
     }
@@ -77,12 +93,15 @@ namespace analysis
     std::vector<const Symbol*> SymbolTable::FindHostClassesOf(const std::string& mixinName) const
     {
         std::vector<const Symbol*> result;
-        for (const auto& [name, sym] : m_globalSymbols)
+        for (const auto& [name, syms] : m_globalSymbols)
         {
-            if (sym->kind != SymbolKind::Class) continue;
-            for (const auto& base : sym->baseClasses)
+            for (const auto& sym : syms)
             {
-                if (base == mixinName) { result.push_back(sym.get()); break; }
+                if (sym->kind != SymbolKind::Class) continue;
+                for (const auto& base : sym->baseClasses)
+                {
+                    if (base == mixinName) { result.push_back(sym.get()); break; }
+                }
             }
         }
         return result;
@@ -107,7 +126,9 @@ namespace analysis
         }
         auto it = m_globalSymbols.find(name);
         if (it != m_globalSymbols.end()) {
-            results.push_back(it->second.get());
+            for (const auto& sym : it->second) {
+                results.push_back(sym.get());
+            }
         }
         return results;
     }
@@ -153,11 +174,14 @@ namespace analysis
         }
 
         // Then globals
-        for (const auto& [name, sym] : m_globalSymbols)
+        for (const auto& [name, syms] : m_globalSymbols)
         {
-            if (isInside(sym->fullRange, line, col))
+            for (const auto& sym : syms)
             {
-                return sym.get();
+                if (isInside(sym->fullRange, line, col))
+                {
+                    return sym.get();
+                }
             }
         }
 

@@ -1,5 +1,7 @@
 #include "analysis/SymbolResolver.h"
 #include <string_view>
+#include <optional>
+#include <algorithm>
 
 namespace analysis
 {
@@ -31,6 +33,57 @@ namespace analysis
             if (!current) break;
         }
         return current;
+    }
+
+    static std::optional<SymbolKind> InferExpectedKind(TSNode node, TSNode parent, std::string_view parentType)
+    {
+        if (parentType == "type" || parentType == "datatype") {
+            TSNode gp = ts_node_parent(parent);
+            if (!ts_node_is_null(gp)) {
+                TSNode ggp = ts_node_parent(gp);
+                if (!ts_node_is_null(ggp) && std::string_view(ts_node_type(ggp)) == "ERROR") {
+                    for (uint32_t i = 0; i < ts_node_child_count(ggp); i++) {
+                        if (std::string_view(ts_node_type(ts_node_child(ggp, i))) == "argument_list") {
+                            return SymbolKind::Function;
+                        }
+                    }
+                }
+            }
+            // Un identificador usado como tipo (ej. `MyClass c;`)
+            return SymbolKind::Class; // También podría ser Typedef o Enum, filtraremos por jerarquía
+        }
+        if (parentType == "call_expression" || parentType == "func_call") {
+            // Llamada a función `Func();`
+            return SymbolKind::Function; // También Method
+        }
+        if (parentType == "base_class_list" || parentType == "inheritance_specifier") {
+            return SymbolKind::Class; // También Interface, Mixin
+        }
+        if (parentType == "scoped_identifier") {
+            TSNode firstChild = ts_node_child(parent, 0);
+            if (ts_node_eq(node, firstChild)) {
+                return SymbolKind::Namespace; // También Enum
+            } else {
+                TSNode grandParent = ts_node_parent(parent);
+                if (!ts_node_is_null(grandParent)) {
+                    std::string_view gpType = ts_node_type(grandParent);
+                    return InferExpectedKind(parent, grandParent, gpType);
+                }
+            }
+        }
+        return std::nullopt;
+    }
+
+    static int GetKindPriority(SymbolKind kind)
+    {
+        switch (kind) {
+            case SymbolKind::Typedef: return 6;
+            case SymbolKind::Class: return 5;
+            case SymbolKind::Enum: return 4;
+            case SymbolKind::Function: return 3;
+            case SymbolKind::Method: return 2;
+            default: return 1;
+        }
     }
 
     const Symbol* SymbolResolver::ResolveAt(const Document& doc, const SymbolTable& table, uint32_t line, uint32_t character, std::vector<const Symbol*>* outMultipleResults)
@@ -109,6 +162,29 @@ namespace analysis
                 }
         }
 
+        bool isScoped = false;
+        std::vector<const Symbol*> globalCandidates;
+
+        auto collectFromNamespace = [&](const std::string& nsText) {
+            const Symbol* nsSym = FindNamespace(table, nsText);
+            if (nsSym) {
+                if (nsSym->kind == SymbolKind::Namespace) {
+                    for (const auto& child : nsSym->children) {
+                        if (child->name == identText) globalCandidates.push_back(child.get());
+                        if (child->kind == SymbolKind::Enum) {
+                            for (const auto& eMem : child->children) {
+                                if (eMem->name == identText) globalCandidates.push_back(eMem.get());
+                            }
+                        }
+                    }
+                } else if (nsSym->kind == SymbolKind::Enum) {
+                    for (const auto& child : nsSym->children) {
+                        if (child->name == identText) globalCandidates.push_back(child.get());
+                    }
+                }
+            }
+        };
+
         // Namespace resolution (Valid scoped_identifier)
         if (parentType == "scoped_identifier")
         {
@@ -120,50 +196,34 @@ namespace analysis
                 {
                     TSNode nsNode = ts_node_child(parent, 0);
                     std::string_view nsSv = doc.SourceAt(nsNode);
-                    std::string nsText(nsSv.begin(), nsSv.end());
-                    
-                    const Symbol* nsSym = FindNamespace(table, nsText);
-                    if (nsSym && nsSym->kind == SymbolKind::Namespace)
-                    {
-                        for (const auto& child : nsSym->children)
-                        {
-                            if (child->name == identText) return child.get();
-                        }
-                    }
-                    return nullptr;
+                    collectFromNamespace(std::string(nsSv.begin(), nsSv.end()));
+                    isScoped = true;
                 }
             }
         }
 
         // Namespace resolution (Tree-sitter ERROR workaround for expressions like Math::PI)
-        TSNode prevSibling = ts_node_prev_sibling(node);
-        if (!ts_node_is_null(prevSibling) && std::string_view(ts_node_type(prevSibling)) == "ERROR")
-        {
-            uint32_t errCount = ts_node_child_count(prevSibling);
-            if (errCount >= 2)
+        if (!isScoped) {
+            TSNode prevSibling = ts_node_prev_sibling(node);
+            if (!ts_node_is_null(prevSibling) && std::string_view(ts_node_type(prevSibling)) == "ERROR")
             {
-                TSNode colonNode = ts_node_child(prevSibling, errCount - 1);
-                if (std::string_view(ts_node_type(colonNode)) == "::")
+                uint32_t errCount = ts_node_child_count(prevSibling);
+                if (errCount >= 2)
                 {
-                    TSNode nsNode = ts_node_child(prevSibling, 0);
-                    std::string_view nsSv = doc.SourceAt(nsNode);
-                    std::string nsText(nsSv.begin(), nsSv.end());
-                    
-                    const Symbol* nsSym = FindNamespace(table, nsText);
-                    if (nsSym && nsSym->kind == SymbolKind::Namespace)
+                    TSNode colonNode = ts_node_child(prevSibling, errCount - 1);
+                    if (std::string_view(ts_node_type(colonNode)) == "::")
                     {
-                        for (const auto& child : nsSym->children)
-                        {
-                            if (child->name == identText) return child.get();
-                        }
+                        TSNode nsNode = ts_node_child(prevSibling, 0);
+                        std::string_view nsSv = doc.SourceAt(nsNode);
+                        collectFromNamespace(std::string(nsSv.begin(), nsSv.end()));
+                        isScoped = true;
                     }
-                    // Fallthrough
                 }
             }
         }
         
         // Namespace resolution workaround for Combat::Fire() which produces `ERROR -> type -> scope + datatype -> identifier`
-        if (parentType == "datatype")
+        if (!isScoped && parentType == "datatype")
         {
             TSNode datatypePrevSibling = ts_node_prev_sibling(parent);
             if (!ts_node_is_null(datatypePrevSibling) && std::string_view(ts_node_type(datatypePrevSibling)) == "scope")
@@ -171,27 +231,16 @@ namespace analysis
                 // Child 0 of scope should be the namespace identifier
                 TSNode nsNode = ts_node_child(datatypePrevSibling, 0);
                 std::string_view nsSv = doc.SourceAt(nsNode);
-                std::string nsText(nsSv.begin(), nsSv.end());
-                
-                const Symbol* nsSym = FindNamespace(table, nsText);
-                if (nsSym && nsSym->kind == SymbolKind::Namespace)
-                {
-                    for (const auto& child : nsSym->children)
-                    {
-                        if (child->name == identText) return child.get();
-                    }
-                }
-                return nullptr;
+                collectFromNamespace(std::string(nsSv.begin(), nsSv.end()));
+                isScoped = true;
             }
         }
 
-        // Namespace resolution workaround for `Engine::Math::Lerp()` which parses as variable_declaration with an ERROR node for `::`
-        if (parentType == "variable_declarator")
+        if (!isScoped && parentType == "variable_declarator")
         {
             TSNode varDecl = ts_node_parent(parent);
             if (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) == "variable_declaration")
             {
-                // Find the `type` node of the variable declaration
                 TSNode tNode = ts_node_child_by_field_name(varDecl, "var_type", 8);
                 if (ts_node_is_null(tNode)) {
                     for (uint32_t j = 0; j < ts_node_child_count(varDecl); j++) {
@@ -207,66 +256,122 @@ namespace analysis
                 {
                     std::string_view nsSv = doc.SourceAt(tNode);
                     std::string nsText(nsSv.begin(), nsSv.end());
-                    
-                    const Symbol* nsSym = FindNamespace(table, nsText);
-                    if (nsSym && nsSym->kind == SymbolKind::Namespace)
-                    {
-                        for (const auto& child : nsSym->children)
-                        {
-                            if (child->name == identText) return child.get();
-                        }
+                    if (nsText.find("::") != std::string::npos || FindNamespace(table, nsText) != nullptr) {
+                        collectFromNamespace(nsText);
+                        isScoped = true;
                     }
-                    // What if nsSym is an Enum? Let's check that too for Engine::Math::Lerp vs State::IDLE?
-                    // No, `State s = IDLE` has type `State`. nsSym is `State` (Enum).
-                    // Wait, if it IS an Enum, and the child matches, we could return it!
-                    if (nsSym && nsSym->kind == SymbolKind::Enum)
-                    {
-                        for (const auto& child : nsSym->children)
-                        {
-                            if (child->name == identText) return child.get();
-                        }
-                    }
-                    // Fallthrough
                 }
             }
         }
 
-        // Local resolution
-        if (const Symbol* localSym = table.FindLocalByName(identText))
+        if (!isScoped)
         {
-            return localSym;
-        }
-
-        // Check in using namespaces
-        for (const std::string& usingNs : table.GetUsingNamespaces())
-        {
-            const Symbol* nsSym = FindNamespace(table, usingNs);
-            if (nsSym && nsSym->kind == SymbolKind::Namespace) {
-                for (const auto& child : nsSym->children) {
-                    if (child->name == identText) return child.get();
-                }
-            }
-        }
-
-        // Fallback to global search (deep)
-        if (const Symbol* globalSym = table.FindByNameDeep(identText))
-        {
-            return globalSym;
-        }
-
-        // Deep search for Enum members (AngelScript allows un-prefixed enum members)
-        for (const auto& [name, sym] : table.GetGlobals())
-        {
-            if (sym->kind == SymbolKind::Enum)
+            // Local resolution
+            if (const Symbol* localSym = table.FindLocalByName(identText))
             {
-                for (const auto& child : sym->children)
-                {
-                    if (child->name == identText)
-                    {
-                        return child.get();
+                if (outMultipleResults) outMultipleResults->push_back(localSym);
+                return localSym;
+            }
+
+            // Check in using namespaces
+            for (const std::string& usingNs : table.GetUsingNamespaces())
+            {
+                const Symbol* nsSym = FindNamespace(table, usingNs);
+                if (nsSym && nsSym->kind == SymbolKind::Namespace) {
+                    for (const auto& child : nsSym->children) {
+                        if (child->name == identText) globalCandidates.push_back(child.get());
                     }
                 }
             }
+
+            // Global search (deep) - find ALL matching globals
+            std::vector<Symbol*> allGlobals = table.FindAllGlobalsByName(identText);
+            for (Symbol* s : allGlobals) globalCandidates.push_back(s);
+            
+            for (const auto& [nsName, nsSyms] : table.GetGlobals())
+            {
+                for (const auto& nsSym : nsSyms)
+                {
+                    if (nsSym->kind == SymbolKind::Namespace)
+                    {
+                        auto searchChildren = [&](auto& self, const Symbol* currentNs) -> void {
+                            for (const auto& child : currentNs->children)
+                            {
+                                if (child->name == identText) globalCandidates.push_back(child.get());
+                            }
+                            for (const auto& child : currentNs->children)
+                            {
+                                if (child->kind == SymbolKind::Namespace) self(self, child.get());
+                            }
+                        };
+                        searchChildren(searchChildren, nsSym.get());
+                    }
+                }
+            }
+
+            // Deep search for Enum members (AngelScript allows un-prefixed enum members)
+            for (const auto& [name, syms] : table.GetGlobals())
+            {
+                for (const auto& sym : syms)
+                {
+                    if (sym->kind == SymbolKind::Enum)
+                    {
+                        for (const auto& child : sym->children)
+                        {
+                            if (child->name == identText)
+                            {
+                                globalCandidates.push_back(child.get());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (!globalCandidates.empty())
+        {
+            std::optional<SymbolKind> expected = InferExpectedKind(node, parent, parentType);
+            const Symbol* bestMatch = nullptr;
+            int bestPriority = -1;
+
+            // Remove duplicates (same pointer)
+            std::sort(globalCandidates.begin(), globalCandidates.end());
+            globalCandidates.erase(std::unique(globalCandidates.begin(), globalCandidates.end()), globalCandidates.end());
+
+            for (const Symbol* cand : globalCandidates)
+            {
+                if (outMultipleResults) outMultipleResults->push_back(cand);
+                
+                int candPriority = GetKindPriority(cand->kind);
+                
+                // If we have an expected kind, boost its priority massively if it matches the category
+                if (expected.has_value()) {
+                    if (expected.value() == SymbolKind::Class) {
+                        if (cand->kind == SymbolKind::Class || cand->kind == SymbolKind::Typedef || cand->kind == SymbolKind::Enum) {
+                            candPriority += 100;
+                        }
+                    } else if (expected.value() == SymbolKind::Function) {
+                        if (cand->kind == SymbolKind::Function || cand->kind == SymbolKind::Method) {
+                            candPriority += 100;
+                        }
+                    } else if (expected.value() == SymbolKind::Namespace) {
+                        if (cand->kind == SymbolKind::Namespace || cand->kind == SymbolKind::Enum) {
+                            candPriority += 100;
+                        }
+                    }
+                }
+
+                if (candPriority > bestPriority) {
+                    bestPriority = candPriority;
+                    bestMatch = cand;
+                }
+            }
+            
+            // If outMultipleResults is null (meaning caller only wants 1 result like Goto Definition)
+            // we return bestMatch right away. If it's Hover, we might still return bestMatch but populate outMultipleResults.
+            // Wait, we need to continue with scope-aware deep search if globals didn't give us a clear definitive answer?
+            // Usually if we find a global we stop.
+            return bestMatch;
         }
         
         // Scope-aware Deep member search
@@ -340,13 +445,15 @@ namespace analysis
         }
 
         // Generic Deep member search (fallback for when not inside a class, e.g. for globals or namespaces)
-        for (const auto& [name, sym] : table.GetGlobals()) {
-            if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Namespace) {
-                for (const auto& child : sym->children) {
-                    if (child->name == identText) return child.get();
-                    // Buscar también en hijos de hijos (métodos dentro de clases)
-                    for (const auto& grandchild : child->children) {
-                        if (grandchild->name == identText) return grandchild.get();
+        for (const auto& [name, syms] : table.GetGlobals()) {
+            for (const auto& sym : syms) {
+                if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Namespace) {
+                    for (const auto& child : sym->children) {
+                        if (child->name == identText) return child.get();
+                        // Buscar también en hijos de hijos (métodos dentro de clases)
+                        for (const auto& grandchild : child->children) {
+                            if (grandchild->name == identText) return grandchild.get();
+                        }
                     }
                 }
             }

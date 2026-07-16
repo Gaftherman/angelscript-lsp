@@ -23,8 +23,10 @@ namespace analysis
         // Usually for finding what scope we are currently inside.
         Symbol* FindScopeByPosition(uint32_t line, uint32_t col) const;
 
-        // Find a symbol by exact name at global scope
+        // Find a symbol by exact name at global scope (returns the first one)
         Symbol* FindGlobalByName(const std::string& name) const;
+        // Find all symbols with the exact name at global scope
+        std::vector<Symbol*> FindAllGlobalsByName(const std::string& name) const;
         const Symbol* FindByNameDeep(const std::string& name) const;
         
         // Find a symbol by exact name at local scope
@@ -42,7 +44,7 @@ namespace analysis
         // Find symbols inside a specific container (e.g. class or namespace)
         std::vector<const Symbol*> FindInContainer(const std::string& containerName) const;
 
-        const ankerl::unordered_dense::map<std::string, std::shared_ptr<Symbol>>& GetGlobals() const { return m_globalSymbols; }
+        const ankerl::unordered_dense::map<std::string, std::vector<std::shared_ptr<Symbol>>>& GetGlobals() const { return m_globalSymbols; }
         const std::vector<std::shared_ptr<Symbol>>& GetLocals() const { return m_localSymbols; }
 
         // Clears only local symbols (e.g. before re-parsing a function body)
@@ -53,7 +55,7 @@ namespace analysis
 
     private:
         // unordered_dense is extremely fast for lookups and insertions
-        ankerl::unordered_dense::map<std::string, std::shared_ptr<Symbol>> m_globalSymbols;
+        ankerl::unordered_dense::map<std::string, std::vector<std::shared_ptr<Symbol>>> m_globalSymbols;
         
         // Locals are typically small in number and ordered by appearance
         std::vector<std::shared_ptr<Symbol>> m_localSymbols;

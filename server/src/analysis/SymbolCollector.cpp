@@ -390,9 +390,13 @@ namespace analysis
                     Symbol* existing = table.FindGlobalByName(part);
                     if (existing && existing->kind == SymbolKind::Namespace) {
                         auto it = table.GetGlobals().find(part);
-                        if (it != table.GetGlobals().end()) {
-                            sym = it->second;
-                            found = true;
+                        if (it != table.GetGlobals().end() && !it->second.empty()) {
+                            // Si hay múltiples, tomamos el primero para el using (comportamiento legacy/fallback)
+                            const Symbol* nsSym = it->second.front().get();
+                            if (nsSym->kind == SymbolKind::Namespace) {
+                                sym = it->second.front();
+                                found = true;
+                            }
                         }
                     }
                 }

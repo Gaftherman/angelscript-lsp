@@ -218,4 +218,19 @@ namespace Collision {
         printTree(root, 0, nullptr);
         printf("=== END AST ===\n\n");
     }
+
+    TEST_CASE("AST Sandbox") {
+        std::string source3 = "void Main() { Collider::Collider(); }";
+        TSParser *parser = ts_parser_new();
+        ts_parser_set_language(parser, tree_sitter_angelscript());
+        TSTree *tree3 = ts_parser_parse_string(parser, NULL, source3.c_str(), source3.length());
+        TSNode root3 = ts_tree_root_node(tree3);
+        printf("\n=== AST: Collider ===\n");
+        extern void printTree(TSNode node, int depth, const char* field);
+        // We can't reuse printTree easily if it's a lambda. Just use PrintAST.
+        extern void PrintAST(TSNode node, const std::string& source, int depth = 0);
+        // We'll just skip the print for now and run tests
+        ts_tree_delete(tree3);
+        ts_parser_delete(parser);
+    }
 }

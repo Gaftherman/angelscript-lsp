@@ -71,6 +71,7 @@ Server::Server()
 {
     asEngine = asCreateScriptEngine();
     oracle = std::make_unique<analysis::ValidationOracle>(asEngine);
+    m_diagCache = std::make_unique<analysis::DiagnosticCache>();
     
     m_connection = std::make_unique<lsp::Connection>(lsp::io::standardIO());
     messageHandler = std::make_unique<lsp::MessageHandler>(*m_connection);
@@ -98,6 +99,10 @@ void Server::RegisterHandlers()
     messageHandler->add<lsp::requests::Initialize>(
         [this](lsp::requests::Initialize::Params&& params)
         {
+            if (params.locale.has_value()) {
+                m_locale = i18n::ParseLocale(params.locale.value());
+            }
+
             lsp::requests::Initialize::Result result;
             result.serverInfo = lsp::InitializeResultServerInfo{
                 .name = "AngelScript LSP",
@@ -216,7 +221,9 @@ void Server::RegisterHandlers()
                 auto& table = m_symbolTables[uri];
                 table.ClearLocals();
                 CollectLocalsForDocument(*m_documents[uri], table);
-                return features::ProcessHover(req, *m_documents[uri], table, asEngine);
+                lsp::requests::TextDocument_Hover::Result result;
+                features::ProcessHover(result, req, *m_documents[uri], table, m_diagCache.get(), m_locale, asEngine);
+                return result;
             }
             return lsp::requests::TextDocument_Hover::Result{};
         }
@@ -318,6 +325,8 @@ void Server::ValidationWorkerLoop(std::stop_token st)
         lock.unlock();
 
         auto diagnostics = oracle->ValidateSync(text);
+        
+        m_diagCache->Update(uri, diagnostics);
 
         lsp::notifications::TextDocument_PublishDiagnostics::Params params;
         params.uri = lsp::DocumentUri::parse(uri);

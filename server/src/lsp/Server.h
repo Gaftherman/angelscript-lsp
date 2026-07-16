@@ -6,10 +6,12 @@
 #include "document/Document.h"
 #include "analysis/ValidationOracle.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/DiagnosticCache.h"
 #include <shared_mutex>
 #include <thread>
 #include <condition_variable>
 #include <ankerl/unordered_dense.h>
+#include "i18n/LspStrings.h"
 
 namespace lsp
 {
@@ -40,6 +42,7 @@ namespace angel_lsp
         std::shared_mutex m_docMutex;
         ankerl::unordered_dense::map<std::string, std::unique_ptr<Document>> m_documents;
         ankerl::unordered_dense::map<std::string, analysis::SymbolTable> m_symbolTables;
+        std::unique_ptr<analysis::DiagnosticCache> m_diagCache;
 
         class asIScriptEngine *asEngine;
         std::unique_ptr<analysis::ValidationOracle> oracle;
@@ -51,6 +54,8 @@ namespace angel_lsp
         bool m_validationPending = false;
         std::string m_pendingUri;
         std::string m_pendingText;
+        
+        i18n::Locale m_locale = i18n::Locale::EN;
     };
 
 } // namespace angel_lsp
