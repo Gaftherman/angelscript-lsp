@@ -47,12 +47,16 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
     if (sym != nullptr)
     {
         bool multipleDistinctKinds = false;
+        bool multipleDistinctParents = false;
         if (multiResults.size() > 1) {
             analysis::SymbolKind firstKind = multiResults[0]->kind;
+            const analysis::Symbol* firstParent = multiResults[0]->parent;
             for (auto r : multiResults) {
                 if (r->kind != firstKind) {
                     multipleDistinctKinds = true;
-                    break;
+                }
+                if (r->parent != firstParent) {
+                    multipleDistinctParents = true;
                 }
             }
         }
@@ -71,7 +75,7 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             return md;
         };
 
-        if (multipleDistinctKinds) {
+        if (multipleDistinctKinds || multipleDistinctParents) {
             for (size_t i = 0; i < multiResults.size(); i++) {
                 if (i > 0) markdown += "\n\n---\n\n";
                 markdown += renderSymbol(multiResults[i]);

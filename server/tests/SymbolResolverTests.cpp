@@ -805,6 +805,11 @@ interface IMovable { void Move(); }
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
             CHECK(sym->name == "IMovable");
+        SUBCASE("Group F: Interface is correctly resolved as Interface") {
+            auto [line, col] = getPos("IMovable");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "IMovable");
             CHECK(sym->kind == SymbolKind::Interface);
         }
 
@@ -842,6 +847,94 @@ interface IMovable { void Move(); }
             CHECK(sym->name == "regenRate");
             REQUIRE(sym->parent != nullptr);
             CHECK(sym->parent->name == "Regenerator");
+        }
+    }
+    }
+
+    TEST_CASE("Variable Declaration Hover Bugs") {
+        analysis::SymbolTable table;
+        std::string code = R"(
+namespace Engine { namespace Math { class Vector3 {} } }
+enum GameState { PLAYING }
+funcdef void NetworkCallback();
+class NetworkManager { NetworkCallback@ onReceive; }
+class Troll { void TakeDamage(float a) {} }
+
+void Main() {
+    Troll myEnemy;
+    Engine::Math::Vector3 pos2;
+    GameState state = PLAYING;
+    NetworkManager net;
+    Player p; // Unknown class, should still resolve as local variable
+}
+        )";
+
+        Document doc("file:///test.as", code);
+        analysis::SymbolCollector::CollectGlobals(doc, table);
+
+        // Run TraverseLocals on Main
+        TSNode root = doc.RootNode();
+        for (uint32_t i = 0; i < ts_node_child_count(root); i++) {
+            TSNode child = ts_node_child(root, i);
+            if (std::string_view(ts_node_type(child)) == "func_declaration") {
+                TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
+                if (!ts_node_is_null(nameNode) && std::string_view(doc.SourceAt(nameNode)) == "Main") {
+                    TSNode body = ts_node_child_by_field_name(child, "body", 4);
+                    analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
+                    break;
+                }
+            }
+        }
+
+        auto getPos = [&](const std::string& match) -> std::pair<uint32_t, uint32_t> {
+            size_t idx = code.find(match);
+            REQUIRE(idx != std::string::npos);
+            uint32_t line = 0, col = 0;
+            for (size_t i = 0; i < idx; i++) {
+                if (code[i] == '\n') { line++; col = 0; }
+                else { col++; }
+            }
+            return {line, col};
+        };
+
+        SUBCASE("Hover over standard class local variable declaration") {
+            auto [line, col] = getPos("myEnemy;");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "myEnemy");
+            CHECK(sym->typeInfo == "Troll");
+        }
+
+        SUBCASE("Hover over enum local variable declaration") {
+            auto [line, col] = getPos("state = PLAYING");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "state");
+            CHECK(sym->typeInfo == "GameState");
+        }
+
+        SUBCASE("Hover over funcdef local variable declaration") {
+            auto [line, col] = getPos("net;");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "net");
+            CHECK(sym->typeInfo == "NetworkManager");
+        }
+
+        SUBCASE("Hover over unknown class local variable declaration") {
+            auto [line, col] = getPos("p;");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "p");
+            CHECK(sym->typeInfo == "Player");
+        }
+
+        SUBCASE("Hover over namespace qualified local variable declaration") {
+            auto [line, col] = getPos("pos2;");
+            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            REQUIRE(sym != nullptr);
+            CHECK(sym->name == "pos2");
+            CHECK(sym->typeInfo == "Engine::Math::Vector3"); // Full type correctly rebuilt
         }
     }
 }

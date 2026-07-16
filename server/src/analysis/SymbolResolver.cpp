@@ -256,7 +256,8 @@ namespace analysis
                 {
                     std::string_view nsSv = doc.SourceAt(tNode);
                     std::string nsText(nsSv.begin(), nsSv.end());
-                    if (nsText.find("::") != std::string::npos || FindNamespace(table, nsText) != nullptr) {
+                    const Symbol* maybeSym = FindNamespace(table, nsText);
+                    if (maybeSym && maybeSym->kind == SymbolKind::Namespace) {
                         collectFromNamespace(nsText);
                         isScoped = true;
                     }

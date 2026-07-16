@@ -220,17 +220,37 @@ namespace Collision {
     }
 
     TEST_CASE("AST Sandbox") {
-        std::string source3 = "void Main() { Collider::Collider(); }";
         TSParser *parser = ts_parser_new();
         ts_parser_set_language(parser, tree_sitter_angelscript());
-        TSTree *tree3 = ts_parser_parse_string(parser, NULL, source3.c_str(), source3.length());
-        TSNode root3 = ts_tree_root_node(tree3);
-        printf("\n=== AST: Collider ===\n");
-        extern void printTree(TSNode node, int depth, const char* field);
-        // We can't reuse printTree easily if it's a lambda. Just use PrintAST.
-        extern void PrintAST(TSNode node, const std::string& source, int depth = 0);
-        // We'll just skip the print for now and run tests
-        ts_tree_delete(tree3);
+        
+        auto printTree = [](auto& self, TSNode node, const std::string& source, int depth) -> void {
+            if (ts_node_is_null(node)) return;
+            for (int i=0; i<depth; i++) printf("  ");
+            
+            uint32_t start = ts_node_start_byte(node);
+            uint32_t end = ts_node_end_byte(node);
+            std::string text = source.substr(start, end - start);
+            
+            printf("[%s] '%s'\n", ts_node_type(node), text.c_str());
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+                self(self, ts_node_child(node, i), source, depth + 1);
+            }
+        };
+
+        std::string source1 = "void Main() { Engine::Math::Lerp(0.0f, 10.0f, 0.5f); }";
+        TSTree *tree1 = ts_parser_parse_string(parser, NULL, source1.c_str(), source1.length());
+        printf("\n=== AST: Lerp ===\n");
+        printTree(printTree, ts_tree_root_node(tree1), source1, 0);
+        printf("=== END AST ===\n\n");
+        
+        std::string source2 = "void Main() { Engine::Math::Vector3 pos2; }";
+        TSTree *tree2 = ts_parser_parse_string(parser, NULL, source2.c_str(), source2.length());
+        printf("\n=== AST: Vector3 ===\n");
+        printTree(printTree, ts_tree_root_node(tree2), source2, 0);
+        printf("=== END AST ===\n\n");
+        
+        ts_tree_delete(tree1);
+        ts_tree_delete(tree2);
         ts_parser_delete(parser);
     }
 }

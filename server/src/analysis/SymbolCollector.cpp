@@ -572,6 +572,21 @@ namespace analysis
                     }
                 }
             }
+            
+            // Workaround for Engine::Math::Vector3 pos2;
+            // Tree-sitter parses `Engine::Math::` as an ERROR node that is a PREVIOUS sibling of `variable_declaration`.
+            // The `type` inside `variable_declaration` will only contain `::Vector3`.
+            TSNode prevSibling = ts_node_prev_sibling(node);
+            if (!ts_node_is_null(prevSibling) && std::string_view(ts_node_type(prevSibling)) == "ERROR") {
+                std::string errText = GetNodeText(prevSibling, doc);
+                if (!errText.empty()) {
+                    if (!typeInfo.empty() && typeInfo.starts_with("::")) {
+                        typeInfo = errText + typeInfo;
+                    } else {
+                        typeInfo = errText + "::" + typeInfo;
+                    }
+                }
+            }
 
             if (!hasErrorNode) {
                 for (uint32_t i = 0; i < ts_node_child_count(node); i++)
