@@ -229,16 +229,6 @@ namespace analysis
             TSNode returnTypeNode = ts_node_child_by_field_name(node, "return_type", 11);
             if (!ts_node_is_null(returnTypeNode)) {
                 sym->typeInfo = GetNodeText(returnTypeNode, doc);
-                if (!ts_node_is_null(nameNode)) {
-                    uint32_t endByte = ts_node_end_byte(returnTypeNode);
-                    uint32_t startByte = ts_node_start_byte(nameNode);
-                    if (startByte > endByte && startByte <= doc.GetText().length()) {
-                        std::string gap = doc.GetText().substr(endByte, startByte - endByte);
-                        if (gap.find('&') != std::string::npos) {
-                            sym->typeInfo += "&";
-                        }
-                    }
-                }
                 
                 if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin)) {
                     sym->kind = SymbolKind::Method;

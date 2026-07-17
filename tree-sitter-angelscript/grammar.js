@@ -34,7 +34,7 @@ module.exports = grammar({
     $._error_sentinel,
   ],
 
-  conflicts: $ => [
+    conflicts: $ => [
     // argument_list vs parameter_list: both match '(' ... ')'
     [$.parameter_list, $.argument_list],
     // identifier in argument/parameter context can be expression or type
@@ -43,6 +43,8 @@ module.exports = grammar({
     [$._scope_resolution, $.datatype],
     // scope and types vs scoped identifier conflicts
     [$.scoped_identifier, $.scoped_type],
+    // type reference conflict with parameter reference
+    [$.type],
   ],
 
   rules: {
@@ -244,7 +246,6 @@ module.exports = grammar({
 
     interface_method: $ => seq(
       field("return_type", $.type),
-      optional("&"),
       field("name", $.identifier),
       field("parameters", $.parameter_list),
       optional("const"),
@@ -272,7 +273,7 @@ module.exports = grammar({
       optional(choice("private", "protected")),
       optional(
         choice(
-          seq(field("return_type", $.type), optional("&")),
+          field("return_type", $.type),
           "~",
         ),
       ),
@@ -467,6 +468,7 @@ module.exports = grammar({
         seq("[", "]"),
         seq("@", optional("const")),
       )),
+      optional("&")
     ),
 
     scoped_type: $ => seq(
