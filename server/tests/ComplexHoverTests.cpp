@@ -585,3 +585,61 @@ void Main() {
         }
     }
 }
+
+TEST_CASE("CH12: Array instantiations and hover resolution") {
+    const char* PREDEFINED = R"(
+class Animal { void Speak(); }
+class array<class T> {
+    uint length() const;
+    void resize(uint);
+}
+    )";
+
+    const char* SRC = R"(
+void Main() {
+    array<int> varName = {1, 2, 3};
+    array<array<array<int>>> multiDim;
+    array<Animal> animals;
+}
+    )";
+
+    SymbolTable table;
+    Document doc_pre("file:///as.predefined", PREDEFINED);
+    SymbolCollector::CollectGlobals(doc_pre, table);
+
+    Document doc("file:///main.as", SRC);
+    SymbolCollector::CollectGlobals(doc, table);
+
+    TSNode root = doc.RootNode();
+    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
+    SymbolCollector::TraverseLocals(root, doc, table, nullptr);
+
+    auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol* {
+        return SymbolResolver::ResolveAt(doc, table, line, col, nullptr);
+    };
+
+    // Hover over 'array' in 'array<int> varName'
+    // Line 2: array<int> varName = {1, 2, 3};
+    auto hover1 = getHover(2, 7); 
+    REQUIRE(hover1 != nullptr);
+    CHECK(hover1->name == "array");
+    
+    // Hover over 'varName'
+    auto hover2 = getHover(2, 17);
+    REQUIRE(hover2 != nullptr);
+    CHECK(hover2->name == "varName");
+    CHECK(hover2->typeInfo == "array<int>");
+
+    // Hover over 'multiDim'
+    auto hover3 = getHover(3, 31);
+    REQUIRE(hover3 != nullptr);
+    CHECK(hover3->name == "multiDim");
+    CHECK(hover3->typeInfo == "array<array<array<int>>>");
+
+    // Hover over 'animals'
+    auto hover4 = getHover(4, 20);
+    REQUIRE(hover4 != nullptr);
+    CHECK(hover4->name == "animals");
+    CHECK(hover4->typeInfo == "array<Animal>");
+}
+
