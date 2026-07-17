@@ -184,7 +184,7 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                             }
                             engine->RegisterObjectMethod(declName.c_str(), child->signature.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                         }
-                        else if (child->kind == SymbolKind::Property)
+                        else if (child->kind == SymbolKind::Property || child->kind == SymbolKind::Variable)
                         {
                             engine->RegisterObjectProperty(declName.c_str(), child->signature.c_str(), 0);
                         }

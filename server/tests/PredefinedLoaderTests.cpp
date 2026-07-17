@@ -245,9 +245,14 @@ namespace ThisIsANamespace
         
         bool hasErrors = false;
         
+        static std::string g_testMessages;
+        g_testMessages.clear();
+        
         struct Local {
             static void Callback(const asSMessageInfo *msg, void *param) {
-                printf("AS MESSAGE: %s (Row: %d)\n", msg->message, msg->row);
+                char buf[1024];
+                snprintf(buf, sizeof(buf), "%s (Row: %d, Col: %d)\n", msg->message, msg->row, msg->col);
+                g_testMessages += buf;
                 if (msg->type == asMSGTYPE_ERROR) {
                     bool* hasErrorsPtr = static_cast<bool*>(param);
                     *hasErrorsPtr = true;
@@ -263,20 +268,47 @@ namespace ThisIsANamespace
         CHECK(loaded == true);
         CHECK(hasErrors == false);
 
+        // Restore our callback because LoadFromSource overwrites it!
+        engine->SetMessageCallback(asFUNCTION(Local::Callback), &hasErrors, asCALL_CDECL);
+
         asIScriptModule* mod = engine->GetModule("user", asGM_ALWAYS_CREATE);
         mod->AddScriptSection("user", R"(
             void Main() {
+                // Typedef usage
+                size_t mySize = 10;
+
+                // String initialization and methods
                 string s = "hola";
+                s = s + " mundo";
+                uint len = s.Length();
+
+                // Array initialization and methods
                 array<int>@ arr;
+                // Note: we can't instantiate array<int> by value if it's asOBJ_REF without a factory,
+                // but since it has a dummy factory registered, we might be able to.
+                // However, handles always work for array<int>@.
+                
+                // Custom class instantiation and member usage
                 CCustomClass obj;
+                obj.thisIsACCustomClassVariable = 42;
                 obj.ThisIsACCustomClassMemberFunction();
+
+                // Namespace class and enum
                 ThisIsANamespace::NameSpaceClass nsObj;
+                nsObj.thisIsANameSpaceClassVariable = 3.14f;
                 nsObj.ThisIsANameSpaceClassFunction();
+                
                 String::CompareType comp = String::DEFAULT_COMPARE;
+                if (comp == String::CaseInsensitive) {
+                    s.Clear();
+                }
             }
         )");
         int r = mod->Build();
-        // CHECK(r >= 0); // Removed: Dummy classes won't compile without exact C++ behaviors
+        if (r < 0) {
+            MESSAGE("Build failed. Messages:\n" << g_testMessages);
+        }
+        CHECK(r >= 0); // Verify that Dummy classes compile correctly
 
         engine->ShutDownAndRelease();
     }
