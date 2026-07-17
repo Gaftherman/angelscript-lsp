@@ -23,7 +23,7 @@ namespace analysis
             } else {
                 const Symbol* next = nullptr;
                 for (const auto& child : current->children) {
-                    if (child->name == part && child->kind == SymbolKind::Namespace) {
+                    if (child->name == part) {
                         next = child.get();
                         break;
                     }
@@ -208,13 +208,13 @@ namespace analysis
                         // 2. Clean the type name ("Enemy@" -> "Enemy")
                         std::string typeName = CleanTypeName(objSym->typeInfo);
                         
-                        size_t colonPos = typeName.rfind("::");
-                        if (colonPos != std::string::npos) {
-                            typeName = typeName.substr(colonPos + 2);
-                        }
-                        
                         // 3. Find the type (class) symbol
-                        const Symbol* classSym = table.FindByNameDeep(typeName);
+                        const Symbol* classSym = nullptr;
+                        if (typeName.find("::") != std::string::npos) {
+                            classSym = FindNamespace(table, typeName);
+                        } else {
+                            classSym = table.FindByNameDeep(typeName);
+                        }
                         if (classSym)
                         {
                             // 4. Find the member inside the class or its base classes

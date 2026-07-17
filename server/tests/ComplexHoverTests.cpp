@@ -511,5 +511,77 @@ namespace Game
             CHECK(sym->parent->name == "TakeDamage");
         }
     }
-}
 
+    TEST_CASE("CH11: Resolve symbols from predefined namespaces")
+    {
+        const char* PREDEFINED = R"(
+namespace Outer {
+    namespace Inner {
+        class Inner {
+            float var;
+        }
+    }
+}
+        )";
+
+        const char* USER_CODE = R"(
+void Main() {
+    Outer::Inner::Inner obj;
+    obj.var = 3.14f;
+}
+        )";
+
+        Document docPre("file:///as.predefined", PREDEFINED);
+        Document docUser("file:///user.as", USER_CODE);
+
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(docPre, table);
+        SymbolCollector::TraverseGlobals(docPre.RootNode(), docPre, table, nullptr);
+
+        SymbolCollector::CollectGlobals(docUser, table);
+        SymbolCollector::TraverseGlobals(docUser.RootNode(), docUser, table, nullptr);
+
+        auto traverseFuncs = [&](TSNode node, auto& self) -> void {
+            if (std::string_view(ts_node_type(node)) == "func_declaration") {
+                TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
+                if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, docUser, table, nullptr);
+            }
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++) self(ts_node_child(node, i), self);
+        };
+        traverseFuncs(docUser.RootNode(), traverseFuncs);
+
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+            size_t offset = std::string(USER_CODE).find(target);
+            uint32_t line = 0, col = 0;
+            for (size_t i = 0; i < offset; i++) {
+                if (USER_CODE[i] == '\n') { line++; col = 0; } else { col++; }
+            }
+            return {line, col};
+        };
+
+        // Hover on 'obj.var'
+        auto [line, col] = getPos("obj.var = 3.14f;");
+        col += 5; // point to 'var'
+        
+        // Hover on 'obj' first
+        auto [lineObj, colObj] = getPos("obj.var = 3.14f;");
+        const Symbol* objSym = SymbolResolver::ResolveAt(docUser, table, lineObj, colObj);
+        REQUIRE(objSym != nullptr);
+
+        const Symbol* sym = SymbolResolver::ResolveAt(docUser, table, line, col);
+
+        REQUIRE(sym != nullptr);
+        CHECK(sym->name == "var");
+        CHECK(sym->kind == SymbolKind::Variable); // Since it was extracted as a class field (variable) in Predefined
+        
+        if (sym->parent) {
+            CHECK(sym->parent->name == "Inner");
+            if (sym->parent->parent) {
+                CHECK(sym->parent->parent->name == "Inner");
+                if (sym->parent->parent->parent) {
+                    CHECK(sym->parent->parent->parent->name == "Outer");
+                }
+            }
+        }
+    }
+}
