@@ -356,4 +356,96 @@ namespace ThisIsANamespace
 
         engine->ShutDownAndRelease();
     }
+
+    TEST_CASE("PL1.7: Complex AST extraction and compilation")
+    {
+        const char* PREDEFINED = R"(
+funcdef void MyCallback(int a, float b);
+
+abstract class Animal {
+    void Speak();
+    int age;
+}
+
+final class Dog : Animal {
+    void Speak();
+}
+
+mixin class Flyable {
+    void Fly();
+}
+
+namespace Outer {
+    funcdef void OuterCallback();
+
+    namespace Inner {
+        class Inner {
+            float var;
+        }
+    }
+}
+
+namespace Files {
+    float FirstVar;
+}
+
+namespace Files {
+    float SecondVar;
+}
+        )";
+
+        asIScriptEngine* engine = asCreateScriptEngine();
+        
+        bool hasErrors = false;
+        static std::string g_testMessages2;
+        g_testMessages2.clear();
+        
+        struct Local {
+            static void Callback(const asSMessageInfo *msg, void *param) {
+                char buf[1024];
+                snprintf(buf, sizeof(buf), "%s (Row: %d, Col: %d)\n", msg->message, msg->row, msg->col);
+                g_testMessages2 += buf;
+                if (msg->type == asMSGTYPE_ERROR) {
+                    bool* hasErrorsPtr = static_cast<bool*>(param);
+                    *hasErrorsPtr = true;
+                }
+            }
+        };
+        
+        engine->SetMessageCallback(asFUNCTION(Local::Callback), &hasErrors, asCALL_CDECL);
+        REQUIRE(engine != nullptr);
+
+        SymbolTable table;
+        bool loaded = PredefinedLoader::LoadFromSource(PREDEFINED, engine, table, "string", "array");
+        CHECK(loaded == true);
+        CHECK(hasErrors == false);
+
+        engine->SetMessageCallback(asFUNCTION(Local::Callback), &hasErrors, asCALL_CDECL);
+
+        asIScriptModule* mod = engine->GetModule("user", asGM_ALWAYS_CREATE);
+        mod->AddScriptSection("user", R"(
+            void Main() {
+                MyCallback@ cb;
+                Outer::OuterCallback@ ocb;
+                Animal a;
+                a.age = 5;
+                a.Speak();
+                Dog d;
+                d.Speak();
+                Flyable f;
+                f.Fly();
+                Outer::Inner::Inner obj;
+                obj.var = 3.14f;
+                Files::FirstVar = 1.0f;
+                Files::SecondVar = 2.0f;
+            }
+        )");
+        int r = mod->Build();
+        if (r < 0) {
+            MESSAGE("Build failed. Messages:\n" << g_testMessages2);
+        }
+        CHECK(r >= 0);
+
+        engine->ShutDownAndRelease();
+    }
 }
