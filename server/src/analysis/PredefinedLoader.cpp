@@ -23,6 +23,21 @@ public:
 };
 static DummyStringFactory g_dummyStringFactory;
 
+static int g_dummyObj = 1;
+static void DummyGeneric(asIScriptGeneric *gen)
+{
+    // Return a dummy pointer for any object return types to prevent crashes
+    int typeId = gen->GetReturnTypeId();
+    if (typeId != asTYPEID_VOID) {
+        if ((typeId & asTYPEID_OBJHANDLE) || (typeId & asTYPEID_SCRIPTOBJECT) || (typeId & asTYPEID_MASK_OBJECT)) {
+            gen->SetReturnAddress(&g_dummyObj);
+        } else {
+            asQWORD zero = 0;
+            gen->SetReturnQWord(zero);
+        }
+    }
+}
+
 static void PredefinedMessageCallback(const asSMessageInfo *msg, void *param)
 {
     auto* logger = static_cast<std::function<void(const std::string&, int)>*>(param);
@@ -31,8 +46,9 @@ static void PredefinedMessageCallback(const asSMessageInfo *msg, void *param)
     int severity = 2;
     if (msg->type == asMSGTYPE_ERROR) {
         formatted += "ERROR";
-        severity = 1; // Error in LSP
-        spdlog::error("AS PREDEFINED ERROR: {} (Row: {})", msg->message, msg->row);
+        // Downgrade to warning in LSP so we don't spam errors for invalid predefined files
+        severity = 2; 
+        spdlog::warn("AS PREDEFINED ERROR: {} (Row: {})", msg->message, msg->row);
     } else if (msg->type == asMSGTYPE_WARNING) {
         formatted += "WARN";
         severity = 2; // Warn in LSP
@@ -92,22 +108,47 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                 else if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
                 {
                     if (registeredTypes.find(sym->name) != registeredTypes.end()) continue;
-                    registeredTypes.insert(sym->name);
                     
                     int flags = asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CDAK | asOBJ_APP_CLASS_ALLINTS | asOBJ_APP_CLASS_ALLFLOATS;
                     int size = 4;
                     std::string declName = sym->name;
-                    std::string registerName = declName;
+                    std::string registerName = sym->name;
                     
                     if (sym->name == arrayType || sym->name == arrayType + "<T>") {
                         declName = arrayType + "<T>";
                         registerName = arrayType + "<class T>";
-                        flags = asOBJ_REF | asOBJ_NOCOUNT | asOBJ_TEMPLATE;
+                        flags = asOBJ_REF | asOBJ_TEMPLATE;
+                        size = 0;
+                    }
+                    else if (sym->name == stringType) {
+                        flags = asOBJ_REF | asOBJ_NOCOUNT;
+                        size = 0;
+                    }
+                    else {
+                        flags = asOBJ_REF;
                         size = 0;
                     }
                     
-                    engine->RegisterObjectType(registerName.c_str(), size, flags);
+                    int r = engine->RegisterObjectType(registerName.c_str(), size, flags);
+                    if (r < 0) continue;
                     
+                    registeredTypes.insert(sym->name);
+                    
+                    if (!(flags & asOBJ_NOCOUNT)) {
+                        // Register dummy memory management so handles and factories work
+                        engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_ADDREF, "void f()", asFUNCTION(DummyGeneric), asCALL_GENERIC);
+                        engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_RELEASE, "void f()", asFUNCTION(DummyGeneric), asCALL_GENERIC);
+                        
+                        // Register a dummy factory so we can instantiate this type locally by value
+                        std::string factorySig;
+                        if (flags & asOBJ_TEMPLATE) {
+                            factorySig = declName + "@ f(int&in)";
+                        } else {
+                            factorySig = declName + "@ f()";
+                        }
+                        engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_FACTORY, factorySig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
+                    }
+
                     if (sym->name == stringType) {
                         engine->RegisterStringFactory(stringType.c_str(), &g_dummyStringFactory);
                     }
@@ -126,6 +167,8 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
             {
                 if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
                 {
+                    if (registeredTypes.find(sym->name) == registeredTypes.end()) continue;
+
                     std::string declName = sym->name;
                     if (sym->name == arrayType || sym->name == arrayType + "<T>") {
                         declName = arrayType + "<T>";
@@ -135,7 +178,7 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                     {
                         if (child->kind == SymbolKind::Method)
                         {
-                            engine->RegisterObjectMethod(declName.c_str(), child->signature.c_str(), asFUNCTION(0), asCALL_GENERIC);
+                            engine->RegisterObjectMethod(declName.c_str(), child->signature.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                         }
                         else if (child->kind == SymbolKind::Property)
                         {
@@ -145,7 +188,7 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                 }
                 else if (sym->kind == SymbolKind::Function)
                 {
-                    engine->RegisterGlobalFunction(sym->signature.c_str(), asFUNCTION(0), asCALL_GENERIC);
+                    engine->RegisterGlobalFunction(sym->signature.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                 }
                 else if (sym->kind == SymbolKind::Variable)
                 {

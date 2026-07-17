@@ -1,1 +1,1 @@
-void func(const T &in param);
+string globalString = "Hello, World!";
