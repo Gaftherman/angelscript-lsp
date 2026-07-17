@@ -120,13 +120,14 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                         flags = asOBJ_REF | asOBJ_TEMPLATE;
                         size = 0;
                     }
-                    else if (sym->name == stringType) {
-                        flags = asOBJ_REF | asOBJ_NOCOUNT;
-                        size = 0;
-                    }
                     else {
-                        flags = asOBJ_REF;
-                        size = 0;
+                        // NOTE: We MUST register non-templates (like string, char, custom classes)
+                        // as asOBJ_VALUE. If we register them as asOBJ_REF, any dummy methods that return
+                        // them by value (e.g. `string opAdd(...) const`) will be rejected by AngelScript
+                        // with asINVALID_DECLARATION, which permanently invalidates the engine configuration
+                        // and breaks all subsequent LSP compilation.
+                        flags = asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CDAK | asOBJ_APP_CLASS_ALLINTS | asOBJ_APP_CLASS_ALLFLOATS;
+                        size = 4;
                     }
                     
                     int r = engine->RegisterObjectType(registerName.c_str(), size, flags);
@@ -134,18 +135,13 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                     
                     registeredTypes.insert(sym->name);
                     
-                    if (!(flags & asOBJ_NOCOUNT)) {
-                        // Register dummy memory management so handles and factories work
+                    if (flags & asOBJ_TEMPLATE) {
+                        // Register dummy memory management so handles and factories work for templates
                         engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_ADDREF, "void f()", asFUNCTION(DummyGeneric), asCALL_GENERIC);
                         engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_RELEASE, "void f()", asFUNCTION(DummyGeneric), asCALL_GENERIC);
                         
                         // Register a dummy factory so we can instantiate this type locally by value
-                        std::string factorySig;
-                        if (flags & asOBJ_TEMPLATE) {
-                            factorySig = declName + "@ f(int&in)";
-                        } else {
-                            factorySig = declName + "@ f()";
-                        }
+                        std::string factorySig = declName + "@ f(int&in)";
                         engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_FACTORY, factorySig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                     }
 
