@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include "i18n/LspStrings.h"
 
 namespace analysis {
 
@@ -13,7 +14,7 @@ namespace analysis {
 // and intercepts any AngelScript compiler messages to translate them to LSP Diagnostics.
 class ValidationOracle {
 public:
-    ValidationOracle(asIScriptEngine* engine);
+    ValidationOracle(asIScriptEngine* engine, i18n::Locale locale = i18n::Locale::EN);
     ~ValidationOracle();
 
     // Prevent copy/move because we register this instance as the message callback
@@ -24,9 +25,13 @@ public:
     // NOTE: This uses the AS compiler synchronously. If called from an LSP thread,
     // it will block that thread.
     std::vector<lsp::Diagnostic> ValidateSync(const std::string& code);
+    
+    // Updates the locale used for diagnostic translation
+    void SetLocale(i18n::Locale locale) { m_locale = locale; }
 
 private:
     asIScriptEngine* m_engine;
+    i18n::Locale m_locale;
     std::vector<lsp::Diagnostic> m_diagnostics;
     std::mutex m_mutex;
 

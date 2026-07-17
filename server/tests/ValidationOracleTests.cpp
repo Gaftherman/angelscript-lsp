@@ -68,4 +68,53 @@ TEST_SUITE("ValidationOracle")
         }
         CHECK(result.IsClean());
     }
+
+    TEST_CASE("Translates diagnostics when locale is ES")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        
+        // ValidationOracle defaults to EN, but we inject ES for this test
+        analysis::ValidationOracle oracle(engine, i18n::Locale::ES);
+        
+        // This will trigger "Expected expression value" (syntax error)
+        std::string code = "void Main() { int x = ; }"; 
+        auto result = oracle.ValidateSync(code);
+        
+        CHECK(result.size() > 0);
+        
+        bool foundTranslated = false;
+        for (const auto& d : result) {
+            if (d.message == "Se esperaba un valor de expresión" || d.message.find("Se esperaba") != std::string::npos) {
+                foundTranslated = true;
+                break;
+            }
+        }
+        CHECK(foundTranslated);
+    }
+
+    TEST_CASE("Translates regex parameterized diagnostics when locale is ES")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        engine->RegisterGlobalFunction("void Print(int)", asFUNCTION(0), asCALL_CDECL);
+        
+        analysis::ValidationOracle oracle(engine, i18n::Locale::ES);
+        
+        // This will trigger "No matching signatures to 'Print(const int)'"
+        // And should be translated via regex to "No hay firmas coincidentes para la función 'Print(const int)'"
+        std::string code = "void Main() { Print(1, 2); }";
+        auto result = oracle.ValidateSync(code);
+        
+        CHECK(result.size() > 0);
+        
+        bool foundRegexTranslated = false;
+        for (const auto& d : result) {
+            std::cout << "DIAG: " << d.message << "\n";
+            if (d.message.find("No hay firmas coincidentes para la función") != std::string::npos && 
+                d.message.find("Print") != std::string::npos) {
+                foundRegexTranslated = true;
+                break;
+            }
+        }
+        CHECK(foundRegexTranslated);
+    }
 }

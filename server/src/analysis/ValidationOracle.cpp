@@ -1,12 +1,13 @@
 #include "ValidationOracle.h"
 #include <spdlog/spdlog.h>
+#include "i18n/DiagnosticI18n.h"
 
 namespace analysis {
 
-ValidationOracle::ValidationOracle(asIScriptEngine* engine) : m_engine(engine)
+ValidationOracle::ValidationOracle(asIScriptEngine* engine, i18n::Locale locale) : m_engine(engine), m_locale(locale)
 {
-    // We do not set the global message callback here because multiple things might use the engine.
-    // We'll attach it locally when building the module.
+    // Ensure engine has message callback configured initially if needed, 
+    // though we override it per ValidateSync call.
 }
 
 ValidationOracle::~ValidationOracle()
@@ -83,7 +84,7 @@ void ValidationOracle::HandleMessage(const asSMessageInfo *msg)
     d.range.end.character = d.range.start.character + 1;
 
     d.source = "angelscript";
-    d.message = msg->message;
+    d.message = i18n::DiagnosticI18n::Translate(msg->message, m_locale);
 
     switch (msg->type)
     {

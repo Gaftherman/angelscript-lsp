@@ -102,6 +102,7 @@ void Server::RegisterHandlers()
         {
             if (params.locale.has_value()) {
                 m_locale = i18n::ParseLocale(params.locale.value());
+                if (oracle) oracle->SetLocale(m_locale);
             }
             if (!params.rootUri.isNull()) {
                 m_workspaceRoot = std::string(params.rootUri.value().path());
