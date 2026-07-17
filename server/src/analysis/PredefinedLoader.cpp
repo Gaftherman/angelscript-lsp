@@ -5,6 +5,15 @@
 #include <spdlog/spdlog.h>
 #include "document/Document.h"
 #include "analysis/SymbolCollector.h"
+#include <as_objecttype.h>
+
+#ifdef max
+#undef max
+#endif
+
+#ifdef min
+#undef min
+#endif
 
 namespace analysis
 {
@@ -81,7 +90,8 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
             if (sym->kind == SymbolKind::Namespace)
             {
                 std::string oldNs = engine->GetDefaultNamespace();
-                engine->SetDefaultNamespace(sym->name.c_str());
+                std::string newNs = oldNs.empty() ? sym->name : oldNs + "::" + sym->name;
+                engine->SetDefaultNamespace(newNs.c_str());
                 self(self, sym->children, pass);
                 engine->SetDefaultNamespace(oldNs.c_str());
             }
@@ -114,7 +124,11 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                     std::string declName = sym->name;
                     std::string registerName = sym->name;
                     
-                    if (sym->name == arrayType || sym->name == arrayType + "<T>") {
+                    if (sym->isAbstract || sym->isShared || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface) {
+                        // Skip C++ registration for abstract/shared/mixin/interface types.
+                        // They will be dynamically compiled as script classes in ValidationOracle.
+                        continue;
+                    } else if (sym->name == arrayType || sym->name == arrayType + "<T>") {
                         declName = arrayType + "<T>";
                         registerName = arrayType + "<class T>";
                         flags = asOBJ_REF | asOBJ_TEMPLATE;
@@ -134,6 +148,12 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                     if (r < 0) continue;
                     
                     registeredTypes.insert(sym->name);
+                    
+                    // --- INHERITANCE NOTE ---
+                    // Natively, AngelScript compiler forbids inheritance from C++ registered types.
+                    // We previously injected asOBJ_SCRIPT_OBJECT here, but that causes SIGSEGV 
+                    // in vanilla AngelScript when building derived classes. 
+                    // We must leave it as a native type to prevent crashes.
                     
                     if (flags & asOBJ_TEMPLATE) {
                         // Register dummy memory management so handles and factories work for templates
@@ -239,6 +259,63 @@ bool PredefinedLoader::LoadFromSource(const std::string& source, asIScriptEngine
 
     // Call RegisterSymbols passing the logger pointer
     RegisterSymbols(table, engine, stringType, arrayType, &logger);
+
+    // Generate script code for abstract/shared/mixin classes
+    std::string scriptCode;
+    auto processAbstracts = [&](auto self, const std::vector<std::shared_ptr<Symbol>>& symbols, const std::string& currentNs) -> void {
+        for (const auto& sym : symbols) {
+            if (sym->kind == SymbolKind::Namespace) {
+                std::string newNs = currentNs.empty() ? sym->name : currentNs + "::" + sym->name;
+                scriptCode += "namespace " + sym->name + " {\n";
+                self(self, sym->children, newNs);
+                scriptCode += "}\n";
+            }
+            else if ((sym->kind == SymbolKind::Class && (sym->isAbstract || sym->isShared || sym->isMixin)) || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface) {
+                if (sym->kind == SymbolKind::Interface) {
+                    if (sym->isShared) scriptCode += "shared ";
+                    scriptCode += "interface " + sym->name;
+                } else {
+                    if (sym->isShared) scriptCode += "shared ";
+                    if (sym->isAbstract) scriptCode += "abstract ";
+                    if (sym->kind == SymbolKind::Mixin || sym->isMixin) scriptCode += "mixin ";
+                    scriptCode += "class " + sym->name;
+                }
+                
+                if (!sym->baseClasses.empty()) {
+                    scriptCode += " : ";
+                    for (size_t i = 0; i < sym->baseClasses.size(); ++i) {
+                        scriptCode += sym->baseClasses[i];
+                        if (i + 1 < sym->baseClasses.size()) scriptCode += ", ";
+                    }
+                }
+                scriptCode += " {\n";
+                
+                for (const auto& child : sym->children) {
+                    if (child->kind == SymbolKind::Method) {
+                        scriptCode += "  " + child->signature + " {}\n";
+                    }
+                    else if (child->kind == SymbolKind::Variable) {
+                        scriptCode += "  " + child->typeInfo + " " + child->name + ";\n";
+                    }
+                }
+                scriptCode += "}\n";
+            }
+        }
+    };
+    
+    std::vector<std::shared_ptr<Symbol>> globals;
+    for (const auto& kv : table.GetGlobals()) {
+        for (const auto& sym : kv.second) {
+            globals.push_back(sym);
+        }
+    }
+    
+    processAbstracts(processAbstracts, globals, "");
+    
+    // Store it in the engine user data
+    std::string* previousCode = static_cast<std::string*>(engine->GetUserData(2000));
+    if (previousCode) delete previousCode;
+    engine->SetUserData(new std::string(scriptCode), 2000);
 
     return true;
 }

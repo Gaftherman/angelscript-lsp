@@ -376,17 +376,23 @@ namespace analysis
                 sym->selectionRange = GetRange(nameNode, doc);
             }
             
-            // Extract base classes and mixins
+            // Extract base classes, mixins, and modifiers
             for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
                 TSNode child = ts_node_child(node, i);
-                if (std::string_view(ts_node_type(child)) == "base_class_list") {
+                std::string_view childType = ts_node_type(child);
+                
+                if (childType == "declaration_modifier") {
+                    std::string modStr = GetNodeText(child, doc);
+                    if (modStr == "shared") sym->isShared = true;
+                    else if (modStr == "abstract") sym->isAbstract = true;
+                }
+                else if (childType == "base_class_list") {
                     for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
                         TSNode baseChild = ts_node_child(child, j);
                         if (std::string_view(ts_node_type(baseChild)) == "identifier") {
                             sym->baseClasses.push_back(GetNodeText(baseChild, doc));
                         }
                     }
-                    break;
                 }
             }
 

@@ -35,6 +35,11 @@ std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string& c
     
     if (mod)
     {
+        std::string* abstractCode = static_cast<std::string*>(m_engine->GetUserData(2000));
+        if (abstractCode && !abstractCode->empty()) {
+            mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
+        }
+        
         mod->AddScriptSection("LSP_Doc", code.c_str(), code.size());
         
         // Build the module
@@ -63,6 +68,10 @@ void ValidationOracle::MessageCallback(const asSMessageInfo *msg, void *param)
 
 void ValidationOracle::HandleMessage(const asSMessageInfo *msg)
 {
+    if (msg->section != nullptr && std::string(msg->section) == "Abstracts") {
+        return; // Ignore any errors generated from our injected abstract classes
+    }
+
     lsp::Diagnostic d;
     
     // AngelScript uses 1-based lines and columns

@@ -41,6 +41,9 @@ namespace analysis
         std::string signature;    // e.g. "void DoThing(int)"
         std::string docComment;   // Extracted documentation if any
         bool isConstMethod = false;
+        bool isAbstract = false;
+        bool isShared = false;
+        bool isMixin = false;
         
         std::vector<SymbolParam> params; // For functions/methods/funcdefs
         std::vector<std::string> baseClasses; // For inheritance and mixins

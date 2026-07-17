@@ -305,6 +305,9 @@ namespace ThisIsANamespace
             }
         )");
         int r = mod->Build();
+
+
+
         if (r < 0) {
             MESSAGE("Build failed. Messages:\n" << g_testMessages);
         }
@@ -423,16 +426,27 @@ namespace Files {
         engine->SetMessageCallback(asFUNCTION(Local::Callback), &hasErrors, asCALL_CDECL);
 
         asIScriptModule* mod = engine->GetModule("user", asGM_ALWAYS_CREATE);
+        
+        std::string* abstractCode = static_cast<std::string*>(engine->GetUserData(2000));
+        if (abstractCode && !abstractCode->empty()) {
+            mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
+        }
+        
         mod->AddScriptSection("user", R"(
+            class Bird : Flyable {
+            }
+            class MyAnimal : Animal {
+                void Speak() {}
+            }
             void Main() {
                 MyCallback@ cb;
                 Outer::OuterCallback@ ocb;
-                Animal a;
+                MyAnimal a;
                 a.age = 5;
                 a.Speak();
                 Dog d;
                 d.Speak();
-                Flyable f;
+                Bird f;
                 f.Fly();
                 Outer::Inner::Inner obj;
                 obj.var = 3.14f;
@@ -441,10 +455,80 @@ namespace Files {
             }
         )");
         int r = mod->Build();
+
         if (r < 0) {
             MESSAGE("Build failed. Messages:\n" << g_testMessages2);
         }
         CHECK(r >= 0);
+
+        engine->ShutDownAndRelease();
+    }
+
+static std::string g_testMessages3;
+static void PL18Callback(const asSMessageInfo* msg, void* param) {
+    bool* hasErr = static_cast<bool*>(param);
+    if (msg->type == asMSGTYPE_ERROR || msg->type == asMSGTYPE_WARNING) {
+        *hasErr = true;
+        g_testMessages3 += msg->message;
+        g_testMessages3 += "\n";
+    }
+}
+
+    TEST_CASE("PL1.8: Final and non-abstract classes block inheritance")
+    {
+        const char* src = R"(
+final class CFinalEntity {
+    void FinalMethod();
+}
+
+class CRegularEntity {
+    void RegularMethod();
+}
+
+abstract class CAbstractEntity {
+    void AbstractMethod();
+}
+        )";
+
+        asIScriptEngine* engine = asCreateScriptEngine();
+        
+        bool hasErrors = false;
+        g_testMessages3.clear();
+
+        engine->SetMessageCallback(asFUNCTION(PL18Callback), &hasErrors, asCALL_CDECL);
+
+        SymbolTable table;
+        PredefinedLoader::LoadFromSource(src, engine, table);
+
+        // Try to inherit from the classes
+        asIScriptModule* mod1 = engine->GetModule("user1", asGM_ALWAYS_CREATE);
+        mod1->AddScriptSection("user_final", R"(
+            class MyFinalDerived : CFinalEntity { }
+        )");
+        int rFinal = mod1->Build();
+        CHECK(rFinal < 0);
+        
+        g_testMessages3.clear();
+        asIScriptModule* mod2 = engine->GetModule("user2", asGM_ALWAYS_CREATE);
+        mod2->AddScriptSection("user_regular", R"(
+            class MyRegularDerived : CRegularEntity { }
+        )");
+        int rReg = mod2->Build();
+        CHECK(rReg < 0);
+        
+        g_testMessages3.clear();
+        asIScriptModule* mod3 = engine->GetModule("user3", asGM_ALWAYS_CREATE);
+        
+        std::string* abstractCode = static_cast<std::string*>(engine->GetUserData(2000));
+        if (abstractCode && !abstractCode->empty()) {
+            mod3->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
+        }
+        
+        mod3->AddScriptSection("user_abstract", R"(
+            class MyAbstractDerived : CAbstractEntity { }
+        )");
+        int rAbs = mod3->Build();
+        CHECK(rAbs >= 0);
 
         engine->ShutDownAndRelease();
     }
