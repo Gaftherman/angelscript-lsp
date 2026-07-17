@@ -7,6 +7,7 @@
 #include "analysis/ValidationOracle.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/SymbolCollector.h"
+#include "analysis/PredefinedLoader.h"
 
 #include "features/hover/HoverHandler.h"
 #include "features/definition/DefinitionHandler.h"
@@ -102,6 +103,9 @@ void Server::RegisterHandlers()
             if (params.locale.has_value()) {
                 m_locale = i18n::ParseLocale(params.locale.value());
             }
+            if (!params.rootUri.isNull()) {
+                m_workspaceRoot = std::string(params.rootUri.value().path());
+            }
 
             lsp::requests::Initialize::Result result;
             result.serverInfo = lsp::InitializeResultServerInfo{
@@ -142,9 +146,33 @@ void Server::RegisterHandlers()
     );
 
     messageHandler->add<lsp::notifications::Initialized>(
-        [](lsp::notifications::Initialized::Params&&)
+        [this](lsp::notifications::Initialized::Params&&)
         {
             spdlog::info("Client initialized.");
+            
+            if (!m_workspaceRoot.empty()) {
+                m_predefinedThread = std::jthread([this](std::stop_token st) {
+                    analysis::PredefinedLoader loader;
+                    
+                    std::lock_guard<std::mutex> engineLock(m_engineMutex);
+                    
+                    auto logger = [this](const std::string& msg, int severity) {
+                        lsp::notifications::Window_LogMessage::Params p;
+                        if (severity == 1) p.type = lsp::MessageType::Error;
+                        else if (severity == 2) p.type = lsp::MessageType::Warning;
+                        else p.type = lsp::MessageType::Info;
+                        p.message = msg;
+                        messageHandler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(p));
+                    };
+                    
+                    bool loaded = loader.FindInWorkspace(m_workspaceRoot, asEngine, m_globalSymbolTable, "string", "array", logger);
+                    if (loaded) {
+                        spdlog::info("Loaded as.predefined successfully.");
+                    } else {
+                        spdlog::warn("as.predefined not found or failed to load.");
+                    }
+                });
+            }
         }
     );
 
@@ -163,6 +191,85 @@ void Server::RegisterHandlers()
         }
     );
 
+    messageHandler->add<lsp::notifications::Workspace_DidChangeConfiguration>(
+        [this](lsp::notifications::Workspace_DidChangeConfiguration::Params&& params)
+        {
+            lsp::requests::Window_ShowMessageRequest::Params p;
+            p.type = lsp::MessageType::Info;
+            p.message = "AngelScript configuration changed. Reload server to apply changes?";
+            
+            lsp::MessageActionItem action;
+            action.title = "Reload Window";
+            p.actions = std::vector<lsp::MessageActionItem>{action};
+            
+            messageHandler->sendRequest<lsp::requests::Window_ShowMessageRequest>(
+                std::move(p),
+                [this](lsp::requests::Window_ShowMessageRequest::Result&& res) {
+                    if (!res.isNull() && res.value().title == "Reload Window") {
+                        std::lock_guard<std::mutex> engineLock(m_engineMutex);
+                        if (asEngine) asEngine->ShutDownAndRelease();
+                        asEngine = asCreateScriptEngine();
+                        oracle = std::make_unique<analysis::ValidationOracle>(asEngine);
+                        m_globalSymbolTable.ClearAll();
+                        
+                        analysis::PredefinedLoader loader;
+                        auto logger = [this](const std::string& msg, int severity) {
+                            lsp::notifications::Window_LogMessage::Params p;
+                            if (severity == 1) p.type = lsp::MessageType::Error;
+                            else if (severity == 2) p.type = lsp::MessageType::Warning;
+                            else p.type = lsp::MessageType::Info;
+                            p.message = msg;
+                            messageHandler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(p));
+                        };
+                        loader.FindInWorkspace(m_workspaceRoot, asEngine, m_globalSymbolTable, "string", "array", logger);
+                        spdlog::info("Server reloaded from configuration change.");
+                    }
+                }
+            );
+        }
+    );
+
+    messageHandler->add<lsp::notifications::TextDocument_DidSave>(
+        [this](lsp::notifications::TextDocument_DidSave::Params&& params)
+        {
+            std::string uri = params.textDocument.uri.toString();
+            if (uri.find("as.predefined") != std::string::npos) {
+                lsp::requests::Window_ShowMessageRequest::Params p;
+                p.type = lsp::MessageType::Info;
+                p.message = "as.predefined was modified. Reload server to apply changes?";
+                
+                lsp::MessageActionItem action;
+                action.title = "Reload Window";
+                p.actions = std::vector<lsp::MessageActionItem>{action};
+                
+                messageHandler->sendRequest<lsp::requests::Window_ShowMessageRequest>(
+                    std::move(p),
+                    [this](lsp::requests::Window_ShowMessageRequest::Result&& res) {
+                        if (!res.isNull() && res.value().title == "Reload Window") {
+                            std::lock_guard<std::mutex> engineLock(m_engineMutex);
+                            if (asEngine) asEngine->ShutDownAndRelease();
+                            asEngine = asCreateScriptEngine();
+                            oracle = std::make_unique<analysis::ValidationOracle>(asEngine);
+                            m_globalSymbolTable.ClearAll();
+                            
+                            analysis::PredefinedLoader loader;
+                            auto logger = [this](const std::string& msg, int severity) {
+                                lsp::notifications::Window_LogMessage::Params p;
+                                if (severity == 1) p.type = lsp::MessageType::Error;
+                                else if (severity == 2) p.type = lsp::MessageType::Warning;
+                                else p.type = lsp::MessageType::Info;
+                                p.message = msg;
+                                messageHandler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(p));
+                            };
+                            loader.FindInWorkspace(m_workspaceRoot, asEngine, m_globalSymbolTable, "string", "array", logger);
+                            spdlog::info("Server reloaded due to as.predefined save.");
+                        }
+                    }
+                );
+            }
+        }
+    );
+
     messageHandler->add<lsp::notifications::TextDocument_DidOpen>(
         [this](lsp::notifications::TextDocument_DidOpen::Params&& params)
         {
@@ -177,6 +284,7 @@ void Server::RegisterHandlers()
             
             auto& table = m_symbolTables[uri];
             table.ClearAll();
+            table.MergeGlobals(m_globalSymbolTable);
             analysis::SymbolCollector::CollectGlobals(*m_documents[uri], table);
             CollectLocalsForDocument(*m_documents[uri], table);
         }
@@ -201,6 +309,7 @@ void Server::RegisterHandlers()
                     
                     auto& table = m_symbolTables[uri];
                     table.ClearAll();
+                    table.MergeGlobals(m_globalSymbolTable);
                     analysis::SymbolCollector::CollectGlobals(*it->second, table);
                     CollectLocalsForDocument(*it->second, table);
                     
@@ -285,6 +394,7 @@ void Server::RegisterHandlers()
     );
 }
 
+
 void Server::Run()
 {
     while(running)
@@ -324,7 +434,11 @@ void Server::ValidationWorkerLoop(std::stop_token st)
         
         lock.unlock();
 
-        auto diagnostics = oracle->ValidateSync(text);
+        std::vector<lsp::Diagnostic> diagnostics;
+        {
+            std::lock_guard<std::mutex> engineLock(m_engineMutex);
+            diagnostics = oracle->ValidateSync(text);
+        }
         
         m_diagCache->Update(uri, diagnostics);
 

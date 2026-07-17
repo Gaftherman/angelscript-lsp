@@ -15,6 +15,8 @@ namespace analysis
 
         void AddGlobal(std::shared_ptr<Symbol> symbol);
         void AddLocal(std::shared_ptr<Symbol> symbol);
+        
+        void MergeGlobals(const SymbolTable& other);
 
         void AddUsingNamespace(const std::string& ns);
         const std::vector<std::string>& GetUsingNamespaces() const;

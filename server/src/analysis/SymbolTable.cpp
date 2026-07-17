@@ -18,6 +18,17 @@ namespace analysis
         m_localSymbols.push_back(std::move(symbol));
     }
 
+    void SymbolTable::MergeGlobals(const SymbolTable& other)
+    {
+        for (const auto& [name, symbols] : other.GetGlobals())
+        {
+            for (const auto& sym : symbols)
+            {
+                m_globalSymbols[name].push_back(sym);
+            }
+        }
+    }
+
     Symbol* SymbolTable::FindGlobalByName(const std::string& name) const
     {
         auto it = m_globalSymbols.find(name);

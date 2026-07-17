@@ -42,9 +42,11 @@ namespace angel_lsp
         std::shared_mutex m_docMutex;
         ankerl::unordered_dense::map<std::string, std::unique_ptr<Document>> m_documents;
         ankerl::unordered_dense::map<std::string, analysis::SymbolTable> m_symbolTables;
+        analysis::SymbolTable m_globalSymbolTable;
         std::unique_ptr<analysis::DiagnosticCache> m_diagCache;
 
         class asIScriptEngine *asEngine;
+        std::mutex m_engineMutex;
         std::unique_ptr<analysis::ValidationOracle> oracle;
         bool running = true;
 
@@ -55,7 +57,10 @@ namespace angel_lsp
         std::string m_pendingUri;
         std::string m_pendingText;
         
+        std::jthread m_predefinedThread;
+
         i18n::Locale m_locale = i18n::Locale::EN;
+        std::string m_workspaceRoot;
     };
 
 } // namespace angel_lsp
