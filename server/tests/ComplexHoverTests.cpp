@@ -643,3 +643,45 @@ void Main() {
     CHECK(hover4->typeInfo == "array<Animal>");
 }
 
+TEST_CASE("CH13: Auto type resolution") {
+    const char* PREDEFINED = R"(
+class classA {}
+    )";
+
+    const char* SRC = R"(
+void Main() {
+    float f;
+    auto i1 = f;
+    classA a;
+    auto i2 = a;
+}
+    )";
+
+    SymbolTable table;
+    Document doc_pre("file:///as.predefined", PREDEFINED);
+    SymbolCollector::CollectGlobals(doc_pre, table);
+
+    Document doc("file:///main.as", SRC);
+    SymbolCollector::CollectGlobals(doc, table);
+
+    TSNode root = doc.RootNode();
+    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
+    SymbolCollector::TraverseLocals(root, doc, table, nullptr);
+
+    auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol* {
+        return SymbolResolver::ResolveAt(doc, table, line, col, nullptr);
+    };
+
+    // Hover over 'i1' (line 3)
+    auto hover1 = getHover(3, 10); 
+    REQUIRE(hover1 != nullptr);
+    CHECK(hover1->name == "i1");
+    CHECK(hover1->typeInfo == "float"); // auto resolves to float
+    
+    // Hover over 'i2' (line 5)
+    auto hover2 = getHover(5, 10);
+    REQUIRE(hover2 != nullptr);
+    CHECK(hover2->name == "i2");
+    CHECK(hover2->typeInfo == "classA"); // auto resolves to classA
+}
+

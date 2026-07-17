@@ -336,6 +336,24 @@ namespace analysis
                     sym->fullRange = GetRange(node, doc);
                     sym->typeInfo = typeInfo;
 
+                    if (typeInfo == "auto") {
+                        uint32_t ccount = ts_node_child_count(child);
+                        for (uint32_t c = 0; c < ccount; c++) {
+                            TSNode valNode = ts_node_child(child, c);
+                            std::string_view valType = ts_node_type(valNode);
+                            if (valType == "identifier" && ts_node_is_named(valNode) && ts_node_child_by_field_name(child, "name", 4).id != valNode.id) {
+                                std::string varName = GetNodeText(valNode, doc);
+                                if (const Symbol* s = table.FindGlobalByName(varName)) {
+                                    sym->typeInfo = s->typeInfo;
+                                }
+                                break;
+                            } else if (valType == "anonymous_function") {
+                                sym->typeInfo = "function";
+                                break;
+                            }
+                        }
+                    }
+
                     TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
                     if (!ts_node_is_null(nameNode)) {
                         sym->name = GetNodeText(nameNode, doc);
@@ -657,6 +675,26 @@ namespace analysis
                         }
                         
                         sym->typeInfo = typeInfo;
+
+                        if (typeInfo == "auto") {
+                            uint32_t ccount = ts_node_child_count(child);
+                            for (uint32_t c = 0; c < ccount; c++) {
+                                TSNode valNode = ts_node_child(child, c);
+                                std::string_view valType = ts_node_type(valNode);
+                                if (valType == "identifier" && ts_node_is_named(valNode) && ts_node_child_by_field_name(child, "name", 4).id != valNode.id) {
+                                    std::string varName = GetNodeText(valNode, doc);
+                                    if (const Symbol* s = table.FindLocalByName(varName)) {
+                                        sym->typeInfo = s->typeInfo;
+                                    } else if (const Symbol* s = table.FindGlobalByName(varName)) {
+                                        sym->typeInfo = s->typeInfo;
+                                    }
+                                    break;
+                                } else if (valType == "anonymous_function") {
+                                    sym->typeInfo = "function";
+                                    break;
+                                }
+                            }
+                        }
 
                         TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
                         if (!ts_node_is_null(nameNode)) {
