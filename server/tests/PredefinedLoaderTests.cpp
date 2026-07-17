@@ -103,49 +103,176 @@ TEST_SUITE("PredefinedLoader")
     TEST_CASE("PL1.4: Full as.predefined script loads with 0 engine errors")
     {
         const char* PREDEFINED = R"(
-            typedef uint32 size_t;
-            class array<T> {
-                uint length() const;
-                void insertAt(uint index, const T& in value);
-            }
-            class string {
-                uint Length() const;
-                bool IsEmpty() const;
-                string opAdd(const string& in s) const;
-            }
-            class CCustomClass {
-                void ThisIsACCustomClassMemberFunction();
-                int thisIsACCustomClassVariable;
-            }
-            namespace ThisIsANamespace {
-                class NameSpaceClass {
-                    void ThisIsANameSpaceClassFunction();
-                    float thisIsANameSpaceClassVariable;
-                }
-            }
+typedef uint32 size_t;
+
+funcdef bool less(const ?&in a, const ?&in b);
+class array<T> {
+    uint length() const;
+    void resize(uint length);
+    void reserve(uint length);
+    bool isEmpty() const;
+
+    T& opIndex(uint index);
+    const T& opIndex(uint index) const;
+
+    void insertAt(uint index, const T& in value);
+    void insertAt(uint index, const array<T>& in arr);
+    void insertLast(const T& in value);
+    void removeAt(uint index);
+    void removeLast();
+    void removeRange(uint start, uint count);
+
+    void reverse();
+    void sortAsc();
+    void sortAsc(uint startAt, uint count);
+    void sortDesc();
+    void sortDesc(uint startAt, uint count);
+    void sort(const less &in compareFunc, uint startAt = 0, uint count = uint(-1));
+    
+    int find(const T& in if_handle_then_const value) const;
+    int find(uint startAt, const T& in if_handle_then_const value) const;
+    int findByRef(const T& in if_handle_then_const value) const;
+    int findByRef(uint startAt, const T& in if_handle_then_const value) const;
+
+    array<T>& opAssign(const array<T>& in);
+    bool opEquals(const array<T>& in) const;
+
+    uint opForBegin() const;
+    bool opForEnd(uint iter) const;
+    uint opForNext(uint iter) const;
+    const T& opForValue0(uint index) const;
+    uint opForValue1(uint index) const;
+}
+
+class char {
+	bool opEquals(const string& in szString) const;
+	char opAssign(const string& in szString);
+	uint32 opImplConv() const;
+	char opAssign(const char& in character);
+	void char(const string& in szString);
+	void char(const char& in character);
+	void char();
+}
+
+namespace String {
+    enum CompareType {
+        CaseInsensitive = 1,
+        CaseSensitive = 0 
+    }
+
+    const size_t NO_MORE_TOKENS;
+    const size_t INVALID_INDEX;
+    const string WHITESPACE_CHARACTERS;
+    const string EMPTY_STRING;
+    const CompareType DEFAULT_COMPARE;
+}
+
+class string {
+	array<string>@ Split(const string& in szDelimiter) const;
+	string opAdd(char character) const;
+	string opAdd(bool bValue) const;
+	string opAdd(uint64 uiValue) const;
+	string opAdd(int64 iValue) const;
+	string opAdd(double flValue) const;
+	string opAdd(const string& in szString) const;
+	void Truncate(const size_t uiMaxLength);
+	string& Replace(const string& in szSubstring, const string& in szReplacement, const String::CompareType compareType = String::DEFAULT_COMPARE);
+	string SubString(uint startIndex = 0, uint count = String::INVALID_INDEX) const;
+	string& ToUppercase();
+	string& ToLowercase();
+	string Tokenize(const string& in delimiter) const;
+	uint FindLastNotOf(const string& in szString, uint startIndex = String::INVALID_INDEX, const String::CompareType compareType = String::DEFAULT_COMPARE) const;
+	uint FindFirstNotOf(const string& in szString, uint startIndex = 0, const String::CompareType compareType = String::DEFAULT_COMPARE) const;
+	uint FindLastOf(const string& in szString, const uint startIndex = 0, const String::CompareType compareType = String::DEFAULT_COMPARE) const;
+	uint FindFirstOf(const string& in szString, const uint startIndex = 0, const String::CompareType compareType = String::DEFAULT_COMPARE) const;
+	uint RFind(const string& in szString, uint startIndex = String::INVALID_INDEX, const String::CompareType compareType = String::DEFAULT_COMPARE) const;
+	uint Find(const string& in szString, const uint startIndex = 0, const String::CompareType compareType = String::DEFAULT_COMPARE) const;
+	bool EndsWith(const string& in szString, const String::CompareType compareType = String::DEFAULT_COMPARE) const;
+	bool StartsWith(const string& in szString, const String::CompareType compareType = String::DEFAULT_COMPARE) const;
+	void Trim(const string& in szCharacter = ' ');
+	bool opEquals(const string& in szString) const;
+	int ICompareN(const string& in szString, const uint amount) const;
+	int ICompare(const string& in szString) const;
+	int CompareN(const string& in szString, const uint amount) const;
+	int Compare(const string& in szString) const;
+	int opCmp(const string& in szString) const;
+	string& opAddAssign(char character);
+	string& opAddAssign(bool bValue);
+	string& opAddAssign(uint64 uiValue);
+	string& opAddAssign(int64 iValue);
+	string& opAddAssign(double flValue);
+	string& opAddAssign(const string& in szString);
+	void SetCharAt(uint uiIndex, char character);
+	char opIndex(uint uiIndex) const;
+	void Clear();
+	void Reserve(uint iMinimum, bool bKeepData = true);
+	void Resize(uint uiSize, bool bKeepData = true);
+	bool IsEmpty() const;
+	uint Length() const;
+	string& opAssign(char character);
+	string& opAssign(bool bValue);
+	string& opAssign(uint64 uiValue);
+	string& opAssign(int64 iValue);
+	string& opAssign(double flValue);
+	string& opAssign(const string& in szString);
+	string& Assign(const string& in szString, uint uiBegin, uint uiCount);
+	void string(char character);
+	void string(bool bValue);
+	void string(uint64 uiValue);
+	void string(int64 iValue);
+	void string(double flValue);
+	void string(const string& in szString);
+	void string();
+}
+
+class CCustomClass
+{
+    void ThisIsACCustomClassMemberFunction();
+    int thisIsACCustomClassVariable;
+}
+
+namespace ThisIsANamespace
+{
+    class NameSpaceClass
+    {
+        void ThisIsANameSpaceClassFunction();
+        float thisIsANameSpaceClassVariable;
+    }
+}
         )";
 
         asIScriptEngine* engine = asCreateScriptEngine();
-        engine->SetMessageCallback(asFUNCTION(MessageCallback), 0, asCALL_CDECL);
+        
+        bool hasErrors = false;
+        
+        struct Local {
+            static void Callback(const asSMessageInfo *msg, void *param) {
+                printf("AS MESSAGE: %s (Row: %d)\n", msg->message, msg->row);
+                if (msg->type == asMSGTYPE_ERROR) {
+                    bool* hasErrorsPtr = static_cast<bool*>(param);
+                    *hasErrorsPtr = true;
+                }
+            }
+        };
+        
+        engine->SetMessageCallback(asFUNCTION(Local::Callback), &hasErrors, asCALL_CDECL);
         REQUIRE(engine != nullptr);
 
         SymbolTable table;
         bool loaded = PredefinedLoader::LoadFromSource(PREDEFINED, engine, table, "string", "array");
         CHECK(loaded == true);
+        CHECK(hasErrors == false);
 
-        // We can't really call this custom function because we used asFUNCTION(0), 
-        // but compiling a reference to it shouldn't crash if we don't execute.
-        // Wait, AngelScript doesn't execute anything in Build(), it just compiles.
-        // BUT calling a function might generate bytecode. Does generating bytecode for asFUNCTION(0) crash?
-        // Let's test that!
         asIScriptModule* mod = engine->GetModule("user", asGM_ALWAYS_CREATE);
         mod->AddScriptSection("user", R"(
             void Main() {
                 string s = "hola";
                 array<int>@ arr;
                 CCustomClass obj;
-                // We should test compiling a function call!
                 obj.ThisIsACCustomClassMemberFunction();
+                ThisIsANamespace::NameSpaceClass nsObj;
+                nsObj.ThisIsANameSpaceClassFunction();
+                String::CompareType comp = String::DEFAULT_COMPARE;
             }
         )");
         int r = mod->Build();

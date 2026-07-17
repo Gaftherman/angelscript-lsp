@@ -58,150 +58,126 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
 
     std::unordered_set<std::string> registeredTypes;
 
-    // Step 1: Register all enums, classes, and interfaces FIRST
-    for (const auto& [name, overloads] : table.GetGlobals())
-    {
-        for (const auto& sym : overloads)
+    // Helper for recursive processing
+    auto processSymbols = [&](auto self, const std::vector<std::shared_ptr<Symbol>>& symbols, int pass) -> void {
+        for (const auto& sym : symbols)
         {
-            if (sym->kind == SymbolKind::Enum)
+            if (sym->kind == SymbolKind::Namespace)
             {
-                if (registeredTypes.find(sym->name) != registeredTypes.end()) continue;
-                registeredTypes.insert(sym->name);
-                engine->RegisterEnum(sym->name.c_str());
+                std::string oldNs = engine->GetDefaultNamespace();
+                engine->SetDefaultNamespace(sym->name.c_str());
+                self(self, sym->children, pass);
+                engine->SetDefaultNamespace(oldNs.c_str());
             }
-            else if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
+            else if (pass == 1)
             {
-                if (registeredTypes.find(sym->name) != registeredTypes.end()) continue;
-                registeredTypes.insert(sym->name);
-                
-                // Register as a value type with a dummy size so it can be instantiated by value
-                int flags = asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CDAK | asOBJ_APP_CLASS_ALLINTS | asOBJ_APP_CLASS_ALLFLOATS;
-                int size = 4;
-                std::string declName = sym->name;
-                
-                std::string registerName = declName;
-                if (sym->name == arrayType || sym->name == arrayType + "<T>") {
-                    declName = arrayType + "<T>";
-                    registerName = arrayType + "<class T>";
-                    // Templates cannot be POD, so they must be reference types.
-                    flags = asOBJ_REF | asOBJ_NOCOUNT | asOBJ_TEMPLATE;
-                    size = 0;
-                }
-
-                engine->RegisterObjectType(registerName.c_str(), size, flags);
-
-                // If this is the string type, register the dummy string factory
-                if (sym->name == stringType) {
-                    engine->RegisterStringFactory(stringType.c_str(), &g_dummyStringFactory);
-                }
-            }
-        }
-    }
-
-    // Register Default Array ONLY if it was registered
-    if (engine->GetTypeInfoByName((arrayType + "<T>").c_str()) != nullptr || 
-        engine->GetTypeInfoByName(arrayType.c_str()) != nullptr) {
-        engine->RegisterDefaultArrayType((arrayType + "<T>").c_str());
-    }
-
-    // Step 2: Register funcdefs (now that all types exist)
-    for (const auto& [name, overloads] : table.GetGlobals())
-    {
-        for (const auto& sym : overloads)
-        {
-            if (sym->kind == SymbolKind::Funcdef)
-            {
-                if (registeredTypes.find(sym->name) != registeredTypes.end()) continue;
-                registeredTypes.insert(sym->name);
-                engine->RegisterFuncdef(sym->signature.c_str());
-            }
-        }
-    }
-
-    // Step 3: Register methods, properties, and global functions
-
-    for (const auto& [name, overloads] : table.GetGlobals())
-    {
-        for (const auto& sym : overloads)
-        {
-            if (sym->kind == SymbolKind::Enum)
-            {
-                engine->RegisterEnum(sym->name.c_str());
-            }
-            else if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
-            {
-                // Register as a value type with a dummy size so it can be instantiated by value
-                // e.g. `string s;` instead of `string@ s;`
-                int flags = asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CDAK;
-                int size = 4;
-                std::string declName = sym->name;
-                
-                std::string registerName = declName;
-                if (sym->name == arrayType || sym->name == arrayType + "<T>") {
-                    declName = arrayType + "<T>";
-                    registerName = arrayType + "<class T>";
-                    // Templates cannot be POD, so they must be reference types.
-                    flags = asOBJ_REF | asOBJ_NOCOUNT | asOBJ_TEMPLATE;
-                    size = 0;
-                }
-
-                engine->RegisterObjectType(registerName.c_str(), size, flags);
-
-                // If this is the string type, register the dummy string factory
-                if (sym->name == stringType) {
-                    engine->RegisterStringFactory(stringType.c_str(), &g_dummyStringFactory);
-                }
-            }
-        }
-    }
-
-    // Register Default Array ONLY if it was registered
-    if (engine->GetTypeInfoByName((arrayType + "<T>").c_str()) != nullptr || 
-        engine->GetTypeInfoByName(arrayType.c_str()) != nullptr) {
-        engine->RegisterDefaultArrayType((arrayType + "<T>").c_str());
-    }
-
-    // Step 2: Register methods and properties for all classes
-    for (const auto& [name, overloads] : table.GetGlobals())
-    {
-        for (const auto& sym : overloads)
-        {
-            if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
-            {
-                std::string declName = sym->name;
-                if (sym->name == arrayType || sym->name == arrayType + "<T>") {
-                    declName = arrayType + "<T>";
-                }
-
-                for (const auto& child : sym->children)
+                if (sym->kind == SymbolKind::Enum)
                 {
-                    if (child->kind == SymbolKind::Method)
-                    {
-                        engine->RegisterObjectMethod(
-                            declName.c_str(),
-                            child->signature.c_str(),
-                            asFUNCTION(0),
-                            asCALL_CDECL_OBJFIRST
-                        );
+                    if (registeredTypes.find(sym->name) != registeredTypes.end()) continue;
+                    registeredTypes.insert(sym->name);
+                    engine->RegisterEnum(sym->name.c_str());
+                    // Register enum members
+                    for (const auto& child : sym->children) {
+                        if (child->kind == SymbolKind::EnumMember) {
+                            engine->RegisterEnumValue(sym->name.c_str(), child->name.c_str(), 0);
+                        }
                     }
-                    else if (child->kind == SymbolKind::Property)
-                    {
-                        engine->RegisterObjectProperty(declName.c_str(), child->signature.c_str(), 0);
+                }
+                else if (sym->kind == SymbolKind::Typedef)
+                {
+                    if (registeredTypes.find(sym->name) != registeredTypes.end()) continue;
+                    registeredTypes.insert(sym->name);
+                    engine->RegisterTypedef(sym->name.c_str(), sym->typeInfo.c_str());
+                }
+                else if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
+                {
+                    if (registeredTypes.find(sym->name) != registeredTypes.end()) continue;
+                    registeredTypes.insert(sym->name);
+                    
+                    int flags = asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CDAK | asOBJ_APP_CLASS_ALLINTS | asOBJ_APP_CLASS_ALLFLOATS;
+                    int size = 4;
+                    std::string declName = sym->name;
+                    std::string registerName = declName;
+                    
+                    if (sym->name == arrayType || sym->name == arrayType + "<T>") {
+                        declName = arrayType + "<T>";
+                        registerName = arrayType + "<class T>";
+                        flags = asOBJ_REF | asOBJ_NOCOUNT | asOBJ_TEMPLATE;
+                        size = 0;
+                    }
+                    
+                    engine->RegisterObjectType(registerName.c_str(), size, flags);
+                    
+                    if (sym->name == stringType) {
+                        engine->RegisterStringFactory(stringType.c_str(), &g_dummyStringFactory);
                     }
                 }
             }
-            else if (sym->kind == SymbolKind::Function)
+            else if (pass == 2)
             {
-                engine->RegisterGlobalFunction(sym->signature.c_str(), asFUNCTION(0), asCALL_CDECL);
+                if (sym->kind == SymbolKind::Funcdef)
+                {
+                    if (registeredTypes.find(sym->name) != registeredTypes.end()) continue;
+                    registeredTypes.insert(sym->name);
+                    engine->RegisterFuncdef(sym->signature.c_str());
+                }
             }
-            else if (sym->kind == SymbolKind::Variable)
+            else if (pass == 3)
             {
-                // Variables as global properties
-                static int dummyVar = 0;
-                engine->RegisterGlobalProperty(sym->signature.c_str(), &dummyVar);
+                if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
+                {
+                    std::string declName = sym->name;
+                    if (sym->name == arrayType || sym->name == arrayType + "<T>") {
+                        declName = arrayType + "<T>";
+                    }
+
+                    for (const auto& child : sym->children)
+                    {
+                        if (child->kind == SymbolKind::Method)
+                        {
+                            engine->RegisterObjectMethod(declName.c_str(), child->signature.c_str(), asFUNCTION(0), asCALL_GENERIC);
+                        }
+                        else if (child->kind == SymbolKind::Property)
+                        {
+                            engine->RegisterObjectProperty(declName.c_str(), child->signature.c_str(), 0);
+                        }
+                    }
+                }
+                else if (sym->kind == SymbolKind::Function)
+                {
+                    engine->RegisterGlobalFunction(sym->signature.c_str(), asFUNCTION(0), asCALL_GENERIC);
+                }
+                else if (sym->kind == SymbolKind::Variable)
+                {
+                    static int dummyVar = 0;
+                    engine->RegisterGlobalProperty(sym->signature.c_str(), &dummyVar);
+                }
             }
         }
+    };
+
+    // Flatten globals
+    std::vector<std::shared_ptr<Symbol>> globals;
+    for (const auto& [name, overloads] : table.GetGlobals()) {
+        for (const auto& sym : overloads) {
+            globals.push_back(sym);
+        }
     }
+
+    // Pass 1: Types
+    processSymbols(processSymbols, globals, 1);
+    
+    // Register Default Array ONLY if it was registered
+    if (engine->GetTypeInfoByName((arrayType + "<T>").c_str()) != nullptr || 
+        engine->GetTypeInfoByName(arrayType.c_str()) != nullptr) {
+        engine->RegisterDefaultArrayType((arrayType + "<T>").c_str());
+    }
+
+    // Pass 2: Funcdefs
+    processSymbols(processSymbols, globals, 2);
+
+    // Pass 3: Methods, properties, functions
+    processSymbols(processSymbols, globals, 3);
 
     engine->ClearMessageCallback();
 }

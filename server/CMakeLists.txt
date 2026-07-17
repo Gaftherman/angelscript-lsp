@@ -112,6 +112,7 @@ target_include_directories(angel_lsp_core PUBLIC
     src 
     "${tree_sitter_angelscript_SOURCE_DIR}/src" 
     "${tree_sitter_runtime_SOURCE_DIR}/lib/include"
+    "${angelscript_repo_SOURCE_DIR}/sdk/angelscript/source"
 )
 target_link_libraries(angel_lsp_core PUBLIC 
     tree_sitter_angelscript_lib

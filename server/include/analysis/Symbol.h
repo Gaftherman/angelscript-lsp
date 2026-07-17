@@ -40,6 +40,7 @@ namespace analysis
         std::string typeInfo;     // e.g. "int", "Player@"
         std::string signature;    // e.g. "void DoThing(int)"
         std::string docComment;   // Extracted documentation if any
+        bool isConstMethod = false;
         
         std::vector<SymbolParam> params; // For functions/methods/funcdefs
         std::vector<std::string> baseClasses; // For inheritance and mixins
