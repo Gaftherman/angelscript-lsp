@@ -174,6 +174,14 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                     {
                         if (child->kind == SymbolKind::Method)
                         {
+                            // Do not register constructors or destructors as object methods.
+                            // In AngelScript, they must be registered via RegisterObjectBehaviour,
+                            // but since our dummy types are asOBJ_POD, they don't even need them to be
+                            // registered for compilation to succeed. Passing them to RegisterObjectMethod
+                            // will cause asINVALID_DECLARATION and kill the engine.
+                            if (child->name == sym->name || (!child->name.empty() && child->name[0] == '~')) {
+                                continue;
+                            }
                             engine->RegisterObjectMethod(declName.c_str(), child->signature.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                         }
                         else if (child->kind == SymbolKind::Property)
