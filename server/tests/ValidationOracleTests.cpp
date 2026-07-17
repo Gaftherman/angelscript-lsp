@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 #include "helpers/TestFixtures.h"
+#include <iostream>
+#include "analysis/PredefinedLoader.h"
+#include "analysis/SymbolTable.h"
 
 TEST_SUITE("ValidationOracle")
 {
@@ -44,6 +47,25 @@ TEST_SUITE("ValidationOracle")
 
         std::string code = "void Main() { Print(); }"; // Clean code
         auto result = fixtures::Validate(engine, code);
+        CHECK(result.IsClean());
+    }
+
+    TEST_CASE("Validates array initialization list using predefined loader list factory")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        analysis::SymbolTable table;
+        // Load the dummy array type using PredefinedLoader so it registers the list factory
+        bool ok = analysis::PredefinedLoader::LoadFromSource("class array<T> { uint length() const; }", engine, table, "string", "array");
+        CHECK(ok);
+
+        std::string code = "void Main() { array<int> a = {1, 2, 3}; }";
+        auto result = fixtures::Validate(engine, code);
+        
+        if (!result.IsClean()) {
+            for (auto& diag : result.diags) {
+                std::cout << "Diag: " << diag.message << "\n";
+            }
+        }
         CHECK(result.IsClean());
     }
 }

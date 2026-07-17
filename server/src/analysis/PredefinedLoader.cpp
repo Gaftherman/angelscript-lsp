@@ -163,6 +163,10 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                         // Register a dummy factory so we can instantiate this type locally by value
                         std::string factorySig = declName + "@ f(int&in)";
                         engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_FACTORY, factorySig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
+
+                        // Register dummy list factory for initialization lists like array<int> a = {1, 2, 3};
+                        std::string listFactorySig = declName + "@ f(int&in, int&in) {repeat T}";
+                        engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_LIST_FACTORY, listFactorySig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                     }
 
                     if (sym->name == stringType) {
