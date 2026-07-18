@@ -58,7 +58,7 @@ target_include_directories(AngelScriptLib PUBLIC
 
 # ── 1.5 Tree-Sitter Runtime ───────────────────────────────────────────────────
 FetchContent_Declare(tree_sitter_runtime GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter.git GIT_TAG v0.26.11)
-FetchContent_Populate(tree_sitter_runtime)
+FetchContent_MakeAvailable(tree_sitter_runtime)
 add_library(tree_sitter_runtime STATIC "${tree_sitter_runtime_SOURCE_DIR}/lib/src/lib.c")
 target_include_directories(tree_sitter_runtime PUBLIC "${tree_sitter_runtime_SOURCE_DIR}/lib/include")
 set_target_properties(tree_sitter_runtime PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
