@@ -1143,3 +1143,204 @@ mixin class MyMixin {}
         CHECK(markup.value.find("A documented mixin") != std::string::npos);
     }
 }
+
+TEST_CASE("CH17: Comprehensive Hover for All Documented Features")
+{
+    const char* SRC = R"(
+namespace App {
+    /**
+     * @brief Math typedef
+     */
+    typedef float Real;
+
+    /**
+     * @brief A callback funcdef
+     * @param a First arg
+     * @param b Second arg
+     */
+    funcdef void Callback(Real a, Real b);
+
+    /**
+     * @brief A generic interface
+     */
+    interface IWorker {
+        /**
+         * @brief Do work
+         */
+        void Work();
+    }
+
+    /**
+     * @brief A useful mixin
+     */
+    mixin class Mixin {
+        /**
+         * @brief Mixin property
+         */
+        int mixinProp;
+    }
+
+    /**
+     * @brief Abstract base class
+     */
+    abstract class Base {
+        /**
+         * @brief Virtual method
+         * @param force The amount of force
+         */
+        void Apply(float force) {}
+    }
+
+    /**
+     * @brief Final entity class
+     */
+    final class Entity : Base, IWorker {
+        /**
+         * @brief Entity health
+         */
+        int health;
+
+        void Work() {}
+    }
+
+    /**
+     * @brief A global array variable
+     */
+    array<Entity> entities;
+}
+    )";
+
+    SymbolTable table;
+    Document doc("file:///main.as", SRC);
+    SymbolCollector::CollectGlobals(doc, table);
+    TSNode root = doc.RootNode();
+    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
+
+    auto getHover = [&](const std::string& searchStr, int offsetFromStart = 0) {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        return result;
+    };
+
+    // 1. Namespace
+    {
+        auto result = getHover("namespace App", 10);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("namespace App") != std::string::npos);
+    }
+
+    // 2. Typedef
+    {
+        auto result = getHover("typedef float Real;", 14);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("typedef float Real") != std::string::npos);
+        CHECK(markup.value.find("Math typedef") != std::string::npos);
+    }
+
+    // 3. Funcdef
+    {
+        auto result = getHover("Callback(Real", 0);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("void Callback(Real a, Real b)") != std::string::npos);
+        CHECK(markup.value.find("A callback funcdef") != std::string::npos);
+    }
+
+    // 4. Funcdef Parameter
+    {
+        auto result = getHover("Real a", 5);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("void Callback(Real a, Real b)") != std::string::npos);
+        bool hasParamA = markup.value.find("**a** \\— Parámetro") != std::string::npos || markup.value.find("**a** — Parámetro") != std::string::npos;
+        CHECK(hasParamA);
+        CHECK(markup.value.find("`a` \\- First arg") != std::string::npos);
+    }
+
+    // 5. Interface
+    {
+        auto result = getHover("interface IWorker", 10);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("interface IWorker") != std::string::npos);
+        CHECK(markup.value.find("A generic interface") != std::string::npos);
+    }
+
+    // 6. Interface Method
+    {
+        auto result = getHover("void Work();", 5);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("void IWorker::Work()") != std::string::npos);
+        CHECK(markup.value.find("Do work") != std::string::npos);
+    }
+
+    // 7. Mixin
+    {
+        auto result = getHover("mixin class Mixin", 12);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("mixin Mixin") != std::string::npos);
+        CHECK(markup.value.find("A useful mixin") != std::string::npos);
+    }
+
+    // 8. Abstract Class
+    {
+        auto result = getHover("abstract class Base", 15);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("class Base") != std::string::npos);
+        CHECK(markup.value.find("Abstract base class") != std::string::npos);
+    }
+
+    // 9. Class Method
+    {
+        auto result = getHover("void Apply", 5);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("void Base::Apply(float force)") != std::string::npos);
+        CHECK(markup.value.find("Virtual method") != std::string::npos);
+    }
+
+    // 10. Class Method Parameter
+    {
+        auto result = getHover("float force", 6);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("void Base::Apply(float force)") != std::string::npos);
+        bool hasParamForce = markup.value.find("**force** \\— Parámetro") != std::string::npos || markup.value.find("**force** — Parámetro") != std::string::npos;
+        CHECK(hasParamForce);
+        CHECK(markup.value.find("`force` \\- The amount of force") != std::string::npos);
+    }
+
+    // 11. Final Class
+    {
+        auto result = getHover("final class Entity", 12);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("class Entity") != std::string::npos);
+        CHECK(markup.value.find("Final entity class") != std::string::npos);
+    }
+
+    // 12. Class Property
+    {
+        auto result = getHover("int health;", 4);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("int health") != std::string::npos);
+        CHECK(markup.value.find("Entity health") != std::string::npos);
+    }
+}
