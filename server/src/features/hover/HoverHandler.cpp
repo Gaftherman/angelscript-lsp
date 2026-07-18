@@ -36,7 +36,12 @@ static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale, co
             hasTags = true;
             size_t tagEnd = line.find_first_of(" \t\r\n", firstNonSpace);
             std::string tag = line.substr(firstNonSpace + 1, tagEnd - firstNonSpace - 1);
-            std::string content = (tagEnd != std::string::npos) ? line.substr(line.find_first_not_of(" \t\r\n", tagEnd)) : "";
+            std::string content = "";
+            if (tagEnd != std::string::npos)
+            {
+                size_t contentStart = line.find_first_not_of(" \t\r\n", tagEnd);
+                if (contentStart != std::string::npos) content = line.substr(contentStart);
+            }
 
             if (tag == "brief")
             {
@@ -48,7 +53,11 @@ static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale, co
             {
                 size_t space = content.find_first_of(" \t");
                 if (space != std::string::npos)
-                    tparams.push_back("`" + content.substr(0, space) + "` \\- " + content.substr(content.find_first_not_of(" \t", space)));
+                {
+                    size_t descStart = content.find_first_not_of(" \t", space);
+                    std::string desc = (descStart != std::string::npos) ? content.substr(descStart) : "";
+                    tparams.push_back("`" + content.substr(0, space) + "` \\- " + desc);
+                }
                 else
                     tparams.push_back("`" + content + "`");
                 activeStr = &tparams.back();
@@ -64,9 +73,10 @@ static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale, co
                 size_t space = content.find_first_of(" \t");
                 if (space != std::string::npos)
                 {
+                    size_t descStart = content.find_first_not_of(" \t", space);
+                    std::string desc = (descStart != std::string::npos) ? content.substr(descStart) : "";
                     std::string pName = "`" + content.substr(0, space) + "`";
-                    std::string pDesc = content.substr(content.find_first_not_of(" \t", space));
-                    params.push_back(pName + " \\- " + (inOutStr.empty() ? "" : inOutStr + " ") + pDesc);
+                    params.push_back(pName + " \\- " + (inOutStr.empty() ? "" : inOutStr + " ") + desc);
                 }
                 else
                 {

@@ -1397,3 +1397,44 @@ void OnDataReceived(int c) {
         CHECK(markup.value.find("Callback implementation") != std::string::npos);
     }
 }
+
+TEST_CASE("CH19: Hover Crash with Empty Doc Comments")
+{
+    const char* SRC = R"(
+/**
+ * @brief 
+ * @param a 
+ * @tparam T 
+ */
+void EmptyTags(int a) {}
+    )";
+
+    SymbolTable table;
+    Document doc("file:///main.as", SRC);
+    SymbolCollector::CollectGlobals(doc, table);
+    TSNode root = doc.RootNode();
+    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
+
+    auto getHover = [&](const std::string& searchStr, int offsetFromStart = 0) {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        return result;
+    };
+
+    // This should not throw std::out_of_range
+    auto result = getHover("EmptyTags", 0);
+    REQUIRE(!result.isNull());
+    auto markup = std::get<lsp::MarkupContent>((*result).contents);
+    CHECK(markup.value.find("EmptyTags") != std::string::npos);
+}
