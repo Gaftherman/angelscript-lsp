@@ -114,6 +114,70 @@ namespace analysis
         sym.signature = ss.str();
     }
 
+    static std::string ExtractDocComments(TSNode declNode, const Document& doc)
+    {
+        std::vector<std::string> lines;
+        TSNode current = ts_node_prev_sibling(declNode);
+        
+        while (!ts_node_is_null(current))
+        {
+            std::string_view type = ts_node_type(current);
+            if (type == "comment")
+            {
+                std::string text = SymbolCollector::GetNodeText(current, doc);
+                lines.insert(lines.begin(), text);
+            }
+            else
+            {
+                break;
+            }
+            current = ts_node_prev_sibling(current);
+        }
+
+        if (lines.empty()) return "";
+
+        std::string cleanDocs;
+        for (const std::string& line : lines)
+        {
+            std::istringstream iss(line);
+            std::string subline;
+            while (std::getline(iss, subline))
+            {
+                size_t start = subline.find_first_not_of(" \t");
+                if (start != std::string::npos) subline = subline.substr(start);
+                else subline = "";
+
+                size_t endComment = subline.find("*/");
+                if (endComment != std::string::npos) subline = subline.substr(0, endComment);
+
+                if (subline.starts_with("///")) subline = subline.substr(3);
+                else if (subline.starts_with("//")) subline = subline.substr(2);
+                else if (subline.starts_with("/**")) subline = subline.substr(3);
+                else if (subline.starts_with("/*")) subline = subline.substr(2);
+                else if (subline.starts_with("*")) subline = subline.substr(1);
+
+                start = subline.find_first_not_of(" \t");
+                if (start != std::string::npos) subline = subline.substr(start);
+                else subline = "";
+                
+                size_t end = subline.find_last_not_of(" \t\r");
+                if (end != std::string::npos) subline = subline.substr(0, end + 1);
+
+                if (!cleanDocs.empty()) cleanDocs += "\n";
+                cleanDocs += subline;
+            }
+        }
+
+        size_t firstNonNewline = cleanDocs.find_first_not_of("\n\r \t");
+        if (firstNonNewline != std::string::npos) cleanDocs = cleanDocs.substr(firstNonNewline);
+        else return "";
+
+        size_t lastNonNewline = cleanDocs.find_last_not_of("\n\r \t");
+        if (lastNonNewline != std::string::npos) cleanDocs = cleanDocs.substr(0, lastNonNewline + 1);
+
+        return cleanDocs;
+    }
+
     void SymbolCollector::RegisterParamsAsLocals(TSNode paramListNode, const Document& doc, SymbolTable& table)
     {
         if (ts_node_is_null(paramListNode)) return;
@@ -197,6 +261,7 @@ namespace analysis
             sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Typedef;
             sym->fullRange = GetRange(node, doc);
+            sym->docComment = ExtractDocComments(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
             if (!ts_node_is_null(nameNode))
@@ -229,6 +294,7 @@ namespace analysis
             sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Function;
             sym->fullRange = GetRange(node, doc);
+            sym->docComment = ExtractDocComments(node, doc);
             
             bool isDestructor = false;
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
@@ -308,6 +374,7 @@ namespace analysis
             sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Method;
             sym->fullRange = GetRange(node, doc);
+            sym->docComment = ExtractDocComments(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
             if (!ts_node_is_null(nameNode))
@@ -389,6 +456,7 @@ namespace analysis
             sym->uri = doc.GetUri();
                     sym->kind = hasParamList ? SymbolKind::Function : SymbolKind::Variable;
                     sym->fullRange = GetRange(node, doc);
+                    sym->docComment = ExtractDocComments(node, doc);
                     sym->typeInfo = typeInfo;
 
                     if (typeInfo == "auto")
@@ -454,6 +522,7 @@ namespace analysis
             else sym->kind = SymbolKind::Mixin;
             
             sym->fullRange = GetRange(node, doc);
+            sym->docComment = ExtractDocComments(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
             if (!ts_node_is_null(nameNode))
@@ -628,6 +697,7 @@ namespace analysis
             sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Enum;
             sym->fullRange = GetRange(node, doc);
+            sym->docComment = ExtractDocComments(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
             if (!ts_node_is_null(nameNode))
@@ -645,6 +715,7 @@ namespace analysis
                     memberSym->kind = SymbolKind::EnumMember;
                     memberSym->parent = sym.get();
                     memberSym->fullRange = GetRange(child, doc);
+                    memberSym->docComment = ExtractDocComments(child, doc);
                     
                     TSNode mNameNode = ts_node_child_by_field_name(child, "name", 4);
                     if (!ts_node_is_null(mNameNode))
@@ -674,6 +745,7 @@ namespace analysis
             sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Funcdef;
             sym->fullRange = GetRange(node, doc);
+            sym->docComment = ExtractDocComments(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
             if (!ts_node_is_null(nameNode))
@@ -709,6 +781,7 @@ namespace analysis
             sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Property;
             sym->fullRange = GetRange(node, doc);
+            sym->docComment = ExtractDocComments(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
             if (!ts_node_is_null(nameNode))

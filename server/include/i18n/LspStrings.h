@@ -46,6 +46,14 @@ struct LspStrings
     const char *hoverEngineWarn;
     const char *hoverUnresolved;
     const char *hoverAmbiguous;
+
+    // --- Hover Doxygen ---
+    const char *hoverTemplateParams;
+    const char *hoverParams;
+    const char *hoverReturns;
+    const char *hoverNote;
+    const char *hoverWarning;
+    const char *hoverDeprecated;
 };
 
 /**

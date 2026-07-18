@@ -3,12 +3,172 @@
 #include <angelscript.h>
 #include <set>
 
+#include <sstream>
+
 namespace angel_lsp
 {
 namespace features
 {
 
+static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale)
+{
+    if (raw.empty()) return raw;
+    std::istringstream iss(raw);
+    std::string line;
 
+    std::string brief;
+    std::vector<std::string> tparams;
+    std::vector<std::string> params;
+    std::string returns;
+    std::vector<std::string> notes;
+    std::vector<std::string> warnings;
+    std::vector<std::string> deprecated;
+
+    // Track the active string being appended to (so multiline descriptions work)
+    std::string* activeStr = nullptr;
+    bool hasTags = false;
+
+    while (std::getline(iss, line))
+    {
+        size_t firstNonSpace = line.find_first_not_of(" \t\r\n*");
+        if (firstNonSpace != std::string::npos && line[firstNonSpace] == '@')
+        {
+            hasTags = true;
+            size_t tagEnd = line.find_first_of(" \t\r\n", firstNonSpace);
+            std::string tag = line.substr(firstNonSpace + 1, tagEnd - firstNonSpace - 1);
+            std::string content = (tagEnd != std::string::npos) ? line.substr(line.find_first_not_of(" \t\r\n", tagEnd)) : "";
+
+            if (tag == "brief")
+            {
+                if (!brief.empty()) brief += "\n\n";
+                brief += content;
+                activeStr = &brief;
+            }
+            else if (tag == "tparam")
+            {
+                size_t space = content.find_first_of(" \t");
+                if (space != std::string::npos)
+                    tparams.push_back("`" + content.substr(0, space) + "` \\- " + content.substr(content.find_first_not_of(" \t", space)));
+                else
+                    tparams.push_back("`" + content + "`");
+                activeStr = &tparams.back();
+            }
+            else if (tag == "param" || tag.starts_with("param[")) // Handle @param and @param[in]
+            {
+                std::string inOutStr = "";
+                if (tag.starts_with("param["))
+                {
+                    inOutStr = "[" + tag.substr(6);
+                }
+                
+                size_t space = content.find_first_of(" \t");
+                if (space != std::string::npos)
+                {
+                    std::string pName = "`" + content.substr(0, space) + "`";
+                    std::string pDesc = content.substr(content.find_first_not_of(" \t", space));
+                    params.push_back(pName + " \\- " + (inOutStr.empty() ? "" : inOutStr + " ") + pDesc);
+                }
+                else
+                {
+                    params.push_back("`" + content + "`" + (inOutStr.empty() ? "" : " \\- " + inOutStr));
+                }
+                activeStr = &params.back();
+            }
+            else if (tag == "return" || tag == "returns")
+            {
+                if (!returns.empty()) returns += " ";
+                returns += content;
+                activeStr = &returns;
+            }
+            else if (tag == "note")
+            {
+                notes.push_back(content);
+                activeStr = &notes.back();
+            }
+            else if (tag == "warning")
+            {
+                warnings.push_back(content);
+                activeStr = &warnings.back();
+            }
+            else if (tag == "deprecated")
+            {
+                deprecated.push_back(content);
+                activeStr = &deprecated.back();
+            }
+            else
+            {
+                // Ignore metadata tags like @details, @file, @author, @version, @date, @copyright, @see
+                activeStr = nullptr;
+                continue;
+            }
+        }
+        else
+        {
+            if (line.empty()) continue;
+            
+            // Try to extract pure text if there are no tags
+            size_t textStart = line.find_first_not_of(" \t\r\n*/");
+            if (textStart == std::string::npos) continue; // Empty line with just stars
+            
+            std::string pureText = line.substr(textStart);
+
+            if (activeStr)
+            {
+                *activeStr += " " + pureText;
+            }
+            else if (!hasTags) // No tags at all? Just dump everything into brief
+            {
+                if (!brief.empty()) brief += "\n";
+                brief += pureText;
+            }
+        }
+    }
+    
+    std::string out = "";
+    if (!brief.empty()) out += brief;
+
+    const auto& s = i18n::GetStrings(locale);
+
+    if (!tparams.empty())
+    {
+        if (!out.empty()) out += "\n\n";
+        out += "**" + std::string(s.hoverTemplateParams) + "**\n\n";
+        for (const auto& p : tparams) out += p + "\n\n";
+        out.pop_back(); out.pop_back(); // remove trailing \n\n
+    }
+    
+    if (!params.empty())
+    {
+        if (!out.empty()) out += "\n\n";
+        out += "**" + std::string(s.hoverParams) + "**\n\n";
+        for (const auto& p : params) out += p + "\n\n";
+        out.pop_back(); out.pop_back();
+    }
+    
+    if (!returns.empty())
+    {
+        if (!out.empty()) out += "\n\n";
+        out += "**" + std::string(s.hoverReturns) + "**\n\n" + returns;
+    }
+
+    for (const auto& note : notes)
+    {
+        if (!out.empty()) out += "\n\n";
+        out += "**" + std::string(s.hoverNote) + "**\n\n" + note;
+    }
+    for (const auto& warn : warnings)
+    {
+        if (!out.empty()) out += "\n\n";
+        out += "**" + std::string(s.hoverWarning) + "**\n\n" + warn;
+    }
+    for (const auto& dep : deprecated)
+    {
+        if (!out.empty()) out += "\n\n";
+        out += "**" + std::string(s.hoverDeprecated) + "**\n\n" + dep;
+    }
+
+    return out;
+}
 
 void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
                   const lsp::requests::TextDocument_Hover::Params& req,
@@ -151,6 +311,29 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             std::string sig = !renderSym->signature.empty()
                                 ? renderSym->signature
                                 : (renderSym->typeInfo + (renderSym->typeInfo.empty() ? "" : " ") + dispName);
+                                
+            if (renderSym->signature.empty())
+            {
+                if (renderSym->kind == analysis::SymbolKind::Class) sig = "class " + dispName;
+                else if (renderSym->kind == analysis::SymbolKind::Interface) sig = "interface " + dispName;
+                else if (renderSym->kind == analysis::SymbolKind::Mixin) sig = "mixin " + dispName;
+                else if (renderSym->kind == analysis::SymbolKind::Enum) sig = "enum " + dispName;
+                else if (renderSym->kind == analysis::SymbolKind::Namespace) sig = "namespace " + dispName;
+                
+                if (renderSym->isShared) sig = "shared " + sig;
+            }
+            else if (renderSym->parent && (renderSym->kind == analysis::SymbolKind::Method || renderSym->kind == analysis::SymbolKind::Constructor || renderSym->kind == analysis::SymbolKind::Destructor))
+            {
+                size_t paren = sig.find('(');
+                if (paren != std::string::npos)
+                {
+                    size_t namePos = sig.rfind(renderSym->name, paren);
+                    if (namePos != std::string::npos)
+                    {
+                        sig.insert(namePos, renderSym->parent->name + "::");
+                    }
+                }
+            }
             
             std::string contextStr = "";
             for (size_t i = 0; i < gr.parents.size(); i++)
@@ -165,7 +348,7 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             
             if (!renderSym->docComment.empty())
             {
-                md += "\n\n" + renderSym->docComment;
+                md += "\n\n---\n" + FormatDoxygen(renderSym->docComment, locale);
             }
             return md;
         };

@@ -739,3 +739,140 @@ void Main()
     CHECK(hover2->typeInfo == "classA"); // auto resolves to classA
 }
 
+#include "features/hover/HoverHandler.h"
+#include "i18n/LspStrings.h"
+#include <lsp/messages.h>
+#include <variant>
+
+TEST_CASE("CH14: HoverHandler Doxygen formatting and filtering (clangd style)")
+{
+    const char* SRC = R"(
+/**
+ * @class ThreadSafeQueue
+ * @brief A first-in, first-out (FIFO) queue with blocking pop operations.
+ *
+ * @details The class wraps a standard std::queue container. It enforces thread
+ * safety by guarding all internal modifications with an internal mutex.
+ *
+ * ### Usage Example
+ * @code{.cpp}
+ * concurrent::ThreadSafeQueue<int> queue;
+ * queue.push(42);
+ *
+ * int value;
+ * if (queue.try_pop(value)) {
+ *     // Process value
+ * }
+ * @endcode
+ *
+ * @tparam T The type of the elements stored in the queue. Must be move-constructible.
+ */
+class IEntity
+{
+    /**
+     * @brief Spawns an entity in the game world.
+     * @details This method is responsible for creating and placing an entity in the game world at the specified position.
+     *
+     * @param[in] pos The position where the entity should be spawned.
+     */
+    void Spawn(Vector3 pos);
+
+    /**
+     * @brief Pushes a new element into the back of the queue.
+     * @details Takes ownership of the provided element via rvalue reference,
+     * safely locks the internal data array, and signals exactly one waiting thread.
+     *
+     * @param[in] new_value The item to add. The element is moved into the container.
+     * @return true If an element was successfully popped.
+     * @return false If the queue was empty at the exact millisecond of evaluation.
+     *
+     * @note This operation is non-blocking and provides a strong exception guarantee.
+     */
+    void Update(float deltaTime);
+};
+    )";
+
+    SymbolTable table;
+    Document doc("file:///main.as", SRC);
+    SymbolCollector::CollectGlobals(doc, table);
+
+    // Test hovering over 'IEntity'
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find("class IEntity");
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col + 8; // point to 'IEntity'
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markdown = markup.value;
+
+        CHECK(markdown.find("A first-in, first-out (FIFO) queue") != std::string::npos);
+        CHECK(markdown.find("The class wraps a standard") == std::string::npos);
+        CHECK(markdown.find("**Parámetros de plantilla:**") != std::string::npos);
+        CHECK(markdown.find("`T` \\- The type of the elements") != std::string::npos);
+    }
+
+    // Test hovering over 'Spawn'
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find("Spawn(");
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markdown = markup.value;
+
+        CHECK(markdown.find("Spawns an entity in the game world.") != std::string::npos);
+        CHECK(markdown.find("This method is responsible for creating") == std::string::npos);
+        CHECK(markdown.find("**Parámetros:**") != std::string::npos);
+        CHECK(markdown.find("`pos` \\- [in] The position where") != std::string::npos);
+    }
+
+    // Test hovering over 'Update'
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find("Update(");
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markdown = markup.value;
+
+        CHECK(markdown.find("Pushes a new element") != std::string::npos);
+        CHECK(markdown.find("**Parámetros:**") != std::string::npos);
+        CHECK(markdown.find("`new_value` \\- [in] The item to add.") != std::string::npos);
+        CHECK(markdown.find("**Devuelve:**") != std::string::npos);
+        CHECK(markdown.find("true If an element was successfully popped. false If the queue") != std::string::npos);
+        CHECK(markdown.find("**Nota:**") != std::string::npos);
+        CHECK(markdown.find("This operation is non-blocking") != std::string::npos);
+    }
+}
+
+

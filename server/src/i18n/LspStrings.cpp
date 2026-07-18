@@ -28,7 +28,14 @@ static const LspStrings EN_STRINGS =
     .hoverEngineError = "Engine Error:",
     .hoverEngineWarn = "Engine Warning:",
     .hoverUnresolved = "Unresolved symbol",
-    .hoverAmbiguous = "Ambiguous symbol"
+    .hoverAmbiguous = "Ambiguous symbol",
+
+    .hoverTemplateParams = "Template parameters:",
+    .hoverParams = "Parameters:",
+    .hoverReturns = "Returns:",
+    .hoverNote = "Note:",
+    .hoverWarning = "Warning:",
+    .hoverDeprecated = "Deprecated:"
 };
 
 static const LspStrings ES_STRINGS =
@@ -56,7 +63,14 @@ static const LspStrings ES_STRINGS =
     .hoverEngineError = "Error del Motor:",
     .hoverEngineWarn = "Advertencia del Motor:",
     .hoverUnresolved = "Símbolo no resuelto",
-    .hoverAmbiguous = "Símbolo ambiguo"
+    .hoverAmbiguous = "Símbolo ambiguo",
+
+    .hoverTemplateParams = "Parámetros de plantilla:",
+    .hoverParams = "Parámetros:",
+    .hoverReturns = "Devuelve:",
+    .hoverNote = "Nota:",
+    .hoverWarning = "Advertencia:",
+    .hoverDeprecated = "Obsoleto:"
 };
 
 Locale ParseLocale(const std::string& localeStr)

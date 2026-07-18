@@ -619,4 +619,30 @@ TEST_SUITE("SymbolCollector")
         REQUIRE(sym->children.size() == 2);
         CHECK(sym->children[0]->selectionRange.start.character == 13);
     }
+
+    // ==========================================
+    // Grupo I: Doxygen / Doc Comments
+    // ==========================================
+    TEST_CASE("I1: Extraccion de comentarios Doxygen")
+    {
+        Document doc("file:///test.as", 
+            "/**\n"
+            " * @brief Spawns a player\n"
+            " * @param id The player ID\n"
+            " */\n"
+            "void SpawnPlayer(int id) {}\n"
+            "/// Line comment docs\n"
+            "int g_score = 0;"
+        );
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        
+        Symbol* func = table.FindGlobalByName("SpawnPlayer");
+        REQUIRE(func != nullptr);
+        CHECK(func->docComment == "@brief Spawns a player\n@param id The player ID");
+
+        Symbol* var = table.FindGlobalByName("g_score");
+        REQUIRE(var != nullptr);
+        CHECK(var->docComment == "Line comment docs");
+    }
 }
