@@ -162,5 +162,6 @@ target_link_libraries(angel_lsp_tests PRIVATE
     angel_lsp_core
     doctest::doctest
 )
+target_include_directories(angel_lsp_tests PRIVATE "tests")
 enable_testing()
 add_test(NAME AngelLSPTests COMMAND angel_lsp_tests)

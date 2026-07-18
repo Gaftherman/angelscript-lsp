@@ -71,6 +71,7 @@ namespace analysis
             if (table && !param.name.empty())
             {
                 auto paramSym = std::make_shared<Symbol>();
+                paramSym->uri = doc.GetUri();
                 paramSym->kind       = SymbolKind::Parameter;
                 paramSym->name       = param.name;
                 paramSym->typeInfo   = param.typeName;
@@ -155,6 +156,7 @@ namespace analysis
 
 
             auto paramSym = std::make_shared<Symbol>();
+                paramSym->uri = doc.GetUri();
             paramSym->kind       = SymbolKind::Parameter;
             paramSym->name       = name;
             paramSym->typeInfo   = typeName;
@@ -191,6 +193,8 @@ namespace analysis
         if (type == "typedef_declaration")
         {
             auto sym = std::make_shared<Symbol>();
+                    sym->uri = doc.GetUri();
+            sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Typedef;
             sym->fullRange = GetRange(node, doc);
             
@@ -221,6 +225,8 @@ namespace analysis
         else if (type == "func_declaration")
         {
             auto sym = std::make_shared<Symbol>();
+                    sym->uri = doc.GetUri();
+            sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Function;
             sym->fullRange = GetRange(node, doc);
             
@@ -298,6 +304,8 @@ namespace analysis
         else if (type == "interface_method")
         {
             auto sym = std::make_shared<Symbol>();
+                    sym->uri = doc.GetUri();
+            sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Method;
             sym->fullRange = GetRange(node, doc);
             
@@ -377,6 +385,8 @@ namespace analysis
                     }
 
                     auto sym = std::make_shared<Symbol>();
+                    sym->uri = doc.GetUri();
+            sym->uri = doc.GetUri();
                     sym->kind = hasParamList ? SymbolKind::Function : SymbolKind::Variable;
                     sym->fullRange = GetRange(node, doc);
                     sym->typeInfo = typeInfo;
@@ -437,6 +447,8 @@ namespace analysis
         else if (type == "class_declaration" || type == "interface_declaration" || type == "mixin_declaration")
         {
             auto sym = std::make_shared<Symbol>();
+                    sym->uri = doc.GetUri();
+            sym->uri = doc.GetUri();
             if (type == "class_declaration") sym->kind = SymbolKind::Class;
             else if (type == "interface_declaration") sym->kind = SymbolKind::Interface;
             else sym->kind = SymbolKind::Mixin;
@@ -578,6 +590,7 @@ namespace analysis
                 if (!found)
                 {
                     sym = std::make_shared<Symbol>();
+                    sym->uri = doc.GetUri();
                     sym->kind = SymbolKind::Namespace;
                     sym->name = part;
                     sym->fullRange = GetRange(node, doc);
@@ -611,6 +624,8 @@ namespace analysis
         else if (type == "enum_declaration")
         {
             auto sym = std::make_shared<Symbol>();
+                    sym->uri = doc.GetUri();
+            sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Enum;
             sym->fullRange = GetRange(node, doc);
             
@@ -655,6 +670,8 @@ namespace analysis
         else if (type == "funcdef_declaration")
         {
             auto sym = std::make_shared<Symbol>();
+                    sym->uri = doc.GetUri();
+            sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Funcdef;
             sym->fullRange = GetRange(node, doc);
             
@@ -688,6 +705,8 @@ namespace analysis
         else if (type == "virtual_property")
         {
             auto sym = std::make_shared<Symbol>();
+                    sym->uri = doc.GetUri();
+            sym->uri = doc.GetUri();
             sym->kind = SymbolKind::Property;
             sym->fullRange = GetRange(node, doc);
             
@@ -757,6 +776,8 @@ namespace analysis
                 if (std::string_view(ts_node_type(child)) == "variable_declarator")
                     {
                         auto sym = std::make_shared<Symbol>();
+                    sym->uri = doc.GetUri();
+            sym->uri = doc.GetUri();
                         sym->kind = SymbolKind::Variable;
                         
                         // Set fullRange to the enclosing block so FindLocalByNameAt works for the rest of the block

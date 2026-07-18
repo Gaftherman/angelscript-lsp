@@ -62,6 +62,7 @@ namespace analysis
         std::vector<std::string> baseClasses; // For inheritance and mixins
         
         // Where is it defined in the AST?
+        std::string uri;           // The document URI where this symbol is defined
         size_t definitionStartByte = 0;
         size_t definitionEndByte = 0;
         lsp::Range selectionRange; // The identifier range
