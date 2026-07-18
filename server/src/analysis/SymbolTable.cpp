@@ -215,10 +215,12 @@ namespace analysis
         return result;
     }
 
-    Symbol* SymbolTable::FindScopeByPosition(uint32_t line, uint32_t col) const
+    Symbol* SymbolTable::FindScopeByPosition(const std::string& uri, uint32_t line, uint32_t col) const
     {
-        auto isInside = [](const lsp::Range& r, uint32_t l, uint32_t c)
+        auto isInside = [&uri](const Symbol* s, uint32_t l, uint32_t c)
         {
+            if (!s->uri.empty() && s->uri != uri) return false;
+            const lsp::Range& r = s->fullRange;
             if (l < r.start.line || l > r.end.line) return false;
             if (l == r.start.line && c < r.start.character) return false;
             if (l == r.end.line && c > r.end.character) return false;
@@ -228,7 +230,7 @@ namespace analysis
         // Check locals first
         for (auto it = m_localSymbols.rbegin(); it != m_localSymbols.rend(); ++it)
         {
-            if (isInside((*it)->fullRange, line, col))
+            if (isInside(it->get(), line, col))
             {
                 return it->get();
             }
@@ -237,7 +239,7 @@ namespace analysis
         // Helper to find deepest match
         std::function<Symbol*(Symbol*)> findDeepest = [&](Symbol* current) -> Symbol* {
             for (const auto& child : current->children) {
-                if (isInside(child->fullRange, line, col)) {
+                if (isInside(child.get(), line, col)) {
                     Symbol* deeper = findDeepest(child.get());
                     return deeper ? deeper : child.get();
                 }
@@ -250,7 +252,7 @@ namespace analysis
         {
             for (const auto& sym : syms)
             {
-                if (isInside(sym->fullRange, line, col))
+                if (isInside(sym.get(), line, col))
                 {
                     Symbol* deeper = findDeepest(sym.get());
                     return deeper ? deeper : sym.get();

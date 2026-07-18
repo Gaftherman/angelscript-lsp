@@ -47,17 +47,17 @@ TEST_SUITE("SymbolTable")
         table.AddLocal(localSym);
         
         // Position exactly on line 3 should find the local symbol
-        Symbol* insideLocal = table.FindScopeByPosition(3, 5);
+        Symbol* insideLocal = table.FindScopeByPosition("",3, 5);
         REQUIRE(insideLocal != nullptr);
         CHECK(insideLocal->name == "LocalVar");
         
         // Position on line 8 is outside local, should find global function
-        Symbol* insideGlobal = table.FindScopeByPosition(8, 0);
+        Symbol* insideGlobal = table.FindScopeByPosition("",8, 0);
         REQUIRE(insideGlobal != nullptr);
         CHECK(insideGlobal->name == "MyFunc");
         
         // Position on line 12 is completely outside, should find nothing
-        Symbol* outside = table.FindScopeByPosition(12, 0);
+        Symbol* outside = table.FindScopeByPosition("",12, 0);
         CHECK(outside == nullptr);
     }
 
@@ -78,14 +78,14 @@ TEST_SUITE("SymbolTable")
         table.ClearLocals();
         
         CHECK(table.FindGlobalByName("Global") != nullptr);
-        CHECK(table.FindScopeByPosition(5, 5) == nullptr);
+        CHECK(table.FindScopeByPosition("",5, 5) == nullptr);
         // It will find Global if Global had a range covering 5,5, but Global has no range here (all zeros).
         // Let's set Global range to cover everything
         globalSym->fullRange.start = {0,0};
         globalSym->fullRange.end = {100,0};
         
         // Now it should find Global
-        Symbol* found = table.FindScopeByPosition(5, 5);
+        Symbol* found = table.FindScopeByPosition("",5, 5);
         REQUIRE(found != nullptr);
         CHECK(found->name == "Global");
     }

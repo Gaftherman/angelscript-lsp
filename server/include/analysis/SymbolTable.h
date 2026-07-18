@@ -61,7 +61,7 @@ namespace analysis
          * @param col The 0-indexed column.
          * @return The containing scope symbol, or nullptr if none.
          */
-        Symbol *FindScopeByPosition(uint32_t line, uint32_t col) const;
+        Symbol *FindScopeByPosition(const std::string& uri, uint32_t line, uint32_t col) const;
 
         /**
          * @brief Finds the first global symbol matching a specific name.
