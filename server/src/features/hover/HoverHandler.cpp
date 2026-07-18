@@ -331,6 +331,7 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
                 else if (renderSym->kind == analysis::SymbolKind::Mixin) sig = "mixin " + dispName;
                 else if (renderSym->kind == analysis::SymbolKind::Enum) sig = "enum " + dispName;
                 else if (renderSym->kind == analysis::SymbolKind::Namespace) sig = "namespace " + dispName;
+                else if (renderSym->kind == analysis::SymbolKind::Typedef) sig = "typedef " + renderSym->typeInfo + " " + dispName;
                 
                 if (renderSym->isShared) sig = "shared " + sig;
             }

@@ -232,7 +232,7 @@ namespace analysis
             {
                 paramSym->fullRange = GetRange(parentFunc, doc);
                 Symbol* scope = table.FindScopeByPosition(doc.GetUri(), paramSym->fullRange.start.line, paramSym->fullRange.start.character);
-                if (scope && (scope->kind == SymbolKind::Function || scope->kind == SymbolKind::Method || scope->kind == SymbolKind::Constructor || scope->kind == SymbolKind::Destructor))
+                if (scope && (scope->kind == SymbolKind::Function || scope->kind == SymbolKind::Method || scope->kind == SymbolKind::Constructor || scope->kind == SymbolKind::Destructor || scope->kind == SymbolKind::Funcdef || scope->kind == SymbolKind::Property))
                 {
                     paramSym->parent = scope;
                 }
@@ -682,6 +682,11 @@ namespace analysis
                 }
                 
                 currentParent = sym.get();
+            }
+
+            if (currentParent)
+            {
+                currentParent->docComment = ExtractDocComments(node, doc);
             }
 
             TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);

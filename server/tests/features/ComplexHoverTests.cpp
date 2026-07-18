@@ -905,3 +905,128 @@ class IEntity
     }
 }
 
+TEST_CASE("CH15: Hover for Typedef, Funcdef, and Namespace")
+{
+    const char* SRC = R"(
+/**
+ * @brief Custom integer type
+ */
+typedef int MyInt;
+
+/**
+ * @brief Function definition for a callback
+ * @param[in] data The callback data
+ */
+funcdef void MyCallback(MyInt data);
+
+/**
+ * @brief Math namespace
+ */
+namespace Math {
+    /**
+     * @brief A nested function
+     */
+    void Calculate() {}
+}
+    )";
+
+    SymbolTable table;
+    Document doc("file:///main.as", SRC);
+    SymbolCollector::CollectGlobals(doc, table);
+
+    // Test hovering over 'MyInt' typedef
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find("MyInt;");
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markdown = markup.value;
+
+        CHECK(markdown.find("typedef int MyInt") != std::string::npos);
+        CHECK(markdown.find("Custom integer type") != std::string::npos);
+    }
+
+    // Test hovering over 'MyCallback' funcdef
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find("MyCallback(");
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markdown = markup.value;
+
+        CHECK(markdown.find("void MyCallback(MyInt data)") != std::string::npos);
+        CHECK(markdown.find("Function definition for a callback") != std::string::npos);
+    }
+
+    // Test hovering over 'data' parameter inside 'MyCallback'
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find("MyInt data") + 6; // pointing inside "data"
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markdown = markup.value;
+
+        CHECK(markdown.find("void MyCallback(MyInt data)") != std::string::npos);
+        CHECK(markdown.find("**data** — Parámetro") != std::string::npos);
+        CHECK(markdown.find("`data` \\- [in] The callback data") != std::string::npos);
+    }
+
+    // Test hovering over 'Math' namespace
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find("namespace Math") + 10;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markdown = markup.value;
+
+        CHECK(markdown.find("namespace Math") != std::string::npos);
+        if (markdown.find("Math namespace") == std::string::npos) {
+            std::cout << "MARKDOWN:\n" << markdown << "\n";
+        }
+        CHECK(markdown.find("Math namespace") != std::string::npos);
+    }
+}
