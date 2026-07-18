@@ -1,25 +1,31 @@
 #include "SemanticTokensHandler.h"
 #include <angelscript.h>
 
-namespace angel_lsp {
-namespace features {
+namespace angel_lsp
+{
+namespace features
+{
 
 lsp::requests::TextDocument_SemanticTokens_Full::Result ProcessSemanticTokensFull(
     const lsp::requests::TextDocument_SemanticTokens_Full::Params& req,
     const Document& doc,
     const analysis::SymbolTable& table
-) {
+)
+{
     lsp::requests::TextDocument_SemanticTokens_Full::Result res;
     res = lsp::SemanticTokens{};
     auto& tokens = *res;
     
-    struct RawToken {
+    struct RawToken
+    {
         uint32_t line, col, len, tokenType, tokenModifiers;
     };
     std::vector<RawToken> rawTokens;
 
-    auto getTokenType = [](analysis::SymbolKind kind) -> uint32_t {
-        switch (kind) {
+    auto getTokenType = [](analysis::SymbolKind kind) -> uint32_t
+    {
+        switch (kind)
+        {
             case analysis::SymbolKind::Namespace: return 0;
             case analysis::SymbolKind::Class: return 2;
             case analysis::SymbolKind::Enum: return 3;
@@ -36,7 +42,8 @@ lsp::requests::TextDocument_SemanticTokens_Full::Result ProcessSemanticTokensFul
         return 0; // fallback
     };
 
-    auto processSymbol = [&](auto& self, const analysis::Symbol* sym) -> void {
+    auto processSymbol = [&](auto& self, const analysis::Symbol* sym) -> void
+    {
         if (!sym) return;
 
         uint32_t line = sym->selectionRange.start.line;
@@ -44,29 +51,35 @@ lsp::requests::TextDocument_SemanticTokens_Full::Result ProcessSemanticTokensFul
         uint32_t len = sym->selectionRange.end.character - sym->selectionRange.start.character;
         uint32_t tokenType = getTokenType(sym->kind);
 
-        if (len > 0) {
+        if (len > 0)
+        {
             rawTokens.push_back({line, col, len, tokenType, 0});
         }
 
-        for (const auto& child : sym->children) {
+        for (const auto& child : sym->children)
+        {
             self(self, child.get());
         }
     };
 
     // Iterate over globals
-    for (const auto& [name, syms] : table.GetGlobals()) {
-        for (const auto& sym : syms) {
+    for (const auto& [name, syms] : table.GetGlobals())
+    {
+        for (const auto& sym : syms)
+        {
             processSymbol(processSymbol, sym.get());
         }
     }
 
     // Iterate over locals
-    for (const auto& sym : table.GetLocals()) {
+    for (const auto& sym : table.GetLocals())
+    {
         processSymbol(processSymbol, sym.get());
     }
 
     // Sort by line, then col
-    std::sort(rawTokens.begin(), rawTokens.end(), [](const RawToken& a, const RawToken& b) {
+    std::sort(rawTokens.begin(), rawTokens.end(), [](const RawToken& a, const RawToken& b)
+    {
         if (a.line != b.line) return a.line < b.line;
         return a.col < b.col;
     });
@@ -74,7 +87,8 @@ lsp::requests::TextDocument_SemanticTokens_Full::Result ProcessSemanticTokensFul
     uint32_t prevLine = 0;
     uint32_t prevCol = 0;
 
-    for (const auto& tok : rawTokens) {
+    for (const auto& tok : rawTokens)
+    {
         uint32_t deltaLine = tok.line - prevLine;
         uint32_t deltaCol = (deltaLine == 0) ? tok.col - prevCol : tok.col;
 

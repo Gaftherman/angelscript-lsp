@@ -19,43 +19,55 @@
 #include <lsp/connection.h>
 #include <lsp/io/standardio.h>
 #include <lsp/messagehandler.h>
+#include "utils/LspLogger.h"
 
-namespace angel_lsp {
+namespace angel_lsp
+{
 
 static void CollectLocalsFunctions(TSNode node, const Document& doc, analysis::SymbolTable& table)
 {
     uint32_t count = ts_node_child_count(node);
-    for (uint32_t i = 0; i < count; i++) {
+    for (uint32_t i = 0; i < count; i++)
+    {
         TSNode child = ts_node_child(node, i);
         std::string_view t = ts_node_type(child);
         
-        if (t == "func_declaration") {
+        if (t == "func_declaration")
+        {
             TSNode params = ts_node_child_by_field_name(child, "parameters", 10);
             analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table);
             
             TSNode body = ts_node_child_by_field_name(child, "body", 4);
-            if (!ts_node_is_null(body)) {
+            if (!ts_node_is_null(body))
+            {
                 analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
             }
         }
-        else if (t == "funcdef_declaration") {
+        else if (t == "funcdef_declaration")
+        {
             TSNode params = ts_node_child_by_field_name(child, "parameters", 10);
             analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table);
         }
-        else if (t == "virtual_property") {
-            for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+        else if (t == "virtual_property")
+        {
+            for (uint32_t j = 0; j < ts_node_child_count(child); j++)
+            {
                 TSNode acc = ts_node_child(child, j);
-                if (std::string_view(ts_node_type(acc)) == "accessor") {
+                if (std::string_view(ts_node_type(acc)) == "accessor")
+                {
                     TSNode body = ts_node_child_by_field_name(acc, "body", 4);
-                    if (!ts_node_is_null(body)) {
+                    if (!ts_node_is_null(body))
+                    {
                         analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
                     }
                 }
             }
         }
-        else if (t == "namespace_declaration" || t == "class_declaration" || t == "interface_declaration" || t == "mixin_declaration") {
+        else if (t == "namespace_declaration" || t == "class_declaration" || t == "interface_declaration" || t == "mixin_declaration")
+        {
             TSNode body = ts_node_child_by_field_name(child, "body", 4);
-            if (!ts_node_is_null(body)) {
+            if (!ts_node_is_null(body))
+            {
                 CollectLocalsFunctions(body, doc, table);
             }
         }
@@ -77,9 +89,12 @@ Server::Server()
     m_connection = std::make_unique<lsp::Connection>(lsp::io::standardIO());
     messageHandler = std::make_unique<lsp::MessageHandler>(*m_connection);
     
+    LspLogger::Initialize(messageHandler.get());
+    
     RegisterHandlers();
 
-    m_validationThread = std::jthread([this](std::stop_token st) {
+    m_validationThread = std::jthread([this](std::stop_token st)
+    {
         ValidationWorkerLoop(std::move(st));
     });
 }
@@ -100,16 +115,19 @@ void Server::RegisterHandlers()
     messageHandler->add<lsp::requests::Initialize>(
         [this](lsp::requests::Initialize::Params&& params)
         {
-            if (params.locale.has_value()) {
+            if (params.locale.has_value())
+            {
                 m_locale = i18n::ParseLocale(params.locale.value());
                 if (oracle) oracle->SetLocale(m_locale);
             }
-            if (!params.rootUri.isNull()) {
+            if (!params.rootUri.isNull())
+            {
                 m_workspaceRoot = std::string(params.rootUri.value().path());
             }
 
             lsp::requests::Initialize::Result result;
-            result.serverInfo = lsp::InitializeResultServerInfo{
+            result.serverInfo = lsp::InitializeResultServerInfo
+            {
                 .name = "AngelScript LSP",
                 .version = "1.0.0"
             };
@@ -129,7 +147,8 @@ void Server::RegisterHandlers()
             result.capabilities.definitionProvider = true;
 
             lsp::SemanticTokensOptions semantic_options;
-            semantic_options.legend.tokenTypes = {
+            semantic_options.legend.tokenTypes =
+            {
                 "namespace", "type", "class", "enum", "interface", "struct", "typeParameter",
                 "parameter", "variable", "property", "enumMember", "event", "function",
                 "method", "macro", "keyword", "modifier", "comment", "string", "number",
@@ -149,28 +168,31 @@ void Server::RegisterHandlers()
     messageHandler->add<lsp::notifications::Initialized>(
         [this](lsp::notifications::Initialized::Params&&)
         {
-            spdlog::info("Client initialized.");
+            LspLogger::Info("Client initialized.");
             
-            if (!m_workspaceRoot.empty()) {
-                m_predefinedThread = std::jthread([this](std::stop_token st) {
+            if (!m_workspaceRoot.empty())
+            {
+                m_predefinedThread = std::jthread([this](std::stop_token st)
+                {
                     analysis::PredefinedLoader loader;
                     
                     std::lock_guard<std::mutex> engineLock(m_engineMutex);
                     
-                    auto logger = [this](const std::string& msg, int severity) {
-                        lsp::notifications::Window_LogMessage::Params p;
-                        if (severity == 1) p.type = lsp::MessageType::Error;
-                        else if (severity == 2) p.type = lsp::MessageType::Warning;
-                        else p.type = lsp::MessageType::Info;
-                        p.message = msg;
-                        messageHandler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(p));
+                    auto logger = [](const std::string& msg, int severity)
+                    {
+                        if (severity == 1) LspLogger::Error(msg);
+                        else if (severity == 2) LspLogger::Warn(msg);
+                        else LspLogger::Info(msg);
                     };
                     
                     bool loaded = loader.FindInWorkspace(m_workspaceRoot, asEngine, m_globalSymbolTable, "string", "array", logger);
-                    if (loaded) {
-                        spdlog::info("Loaded as.predefined successfully.");
-                    } else {
-                        spdlog::warn("as.predefined not found or failed to load.");
+                    if (loaded)
+                    {
+                        LspLogger::Info("Loaded as.predefined successfully.");
+                    }
+                    else
+                    {
+                        LspLogger::Warn("as.predefined not found or failed to load.");
                     }
                 });
             }
@@ -205,8 +227,10 @@ void Server::RegisterHandlers()
             
             messageHandler->sendRequest<lsp::requests::Window_ShowMessageRequest>(
                 std::move(p),
-                [this](lsp::requests::Window_ShowMessageRequest::Result&& res) {
-                    if (!res.isNull() && res.value().title == "Reload Window") {
+                [this](lsp::requests::Window_ShowMessageRequest::Result&& res)
+                {
+                    if (!res.isNull() && res.value().title == "Reload Window")
+                    {
                         std::lock_guard<std::mutex> engineLock(m_engineMutex);
                         if (asEngine) asEngine->ShutDownAndRelease();
                         asEngine = asCreateScriptEngine();
@@ -214,16 +238,14 @@ void Server::RegisterHandlers()
                         m_globalSymbolTable.ClearAll();
                         
                         analysis::PredefinedLoader loader;
-                        auto logger = [this](const std::string& msg, int severity) {
-                            lsp::notifications::Window_LogMessage::Params p;
-                            if (severity == 1) p.type = lsp::MessageType::Error;
-                            else if (severity == 2) p.type = lsp::MessageType::Warning;
-                            else p.type = lsp::MessageType::Info;
-                            p.message = msg;
-                            messageHandler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(p));
+                        auto logger = [](const std::string& msg, int severity)
+                        {
+                            if (severity == 1) LspLogger::Error(msg);
+                            else if (severity == 2) LspLogger::Warn(msg);
+                            else LspLogger::Info(msg);
                         };
                         loader.FindInWorkspace(m_workspaceRoot, asEngine, m_globalSymbolTable, "string", "array", logger);
-                        spdlog::info("Server reloaded from configuration change.");
+                        LspLogger::Info("Server reloaded from configuration change.");
                     }
                 }
             );
@@ -234,7 +256,8 @@ void Server::RegisterHandlers()
         [this](lsp::notifications::TextDocument_DidSave::Params&& params)
         {
             std::string uri = params.textDocument.uri.toString();
-            if (uri.find("as.predefined") != std::string::npos) {
+            if (uri.find("as.predefined") != std::string::npos)
+            {
                 lsp::requests::Window_ShowMessageRequest::Params p;
                 p.type = lsp::MessageType::Info;
                 p.message = "as.predefined was modified. Reload server to apply changes?";
@@ -245,8 +268,10 @@ void Server::RegisterHandlers()
                 
                 messageHandler->sendRequest<lsp::requests::Window_ShowMessageRequest>(
                     std::move(p),
-                    [this](lsp::requests::Window_ShowMessageRequest::Result&& res) {
-                        if (!res.isNull() && res.value().title == "Reload Window") {
+                    [this](lsp::requests::Window_ShowMessageRequest::Result&& res)
+                    {
+                        if (!res.isNull() && res.value().title == "Reload Window")
+                        {
                             std::lock_guard<std::mutex> engineLock(m_engineMutex);
                             if (asEngine) asEngine->ShutDownAndRelease();
                             asEngine = asCreateScriptEngine();
@@ -254,16 +279,14 @@ void Server::RegisterHandlers()
                             m_globalSymbolTable.ClearAll();
                             
                             analysis::PredefinedLoader loader;
-                            auto logger = [this](const std::string& msg, int severity) {
-                                lsp::notifications::Window_LogMessage::Params p;
-                                if (severity == 1) p.type = lsp::MessageType::Error;
-                                else if (severity == 2) p.type = lsp::MessageType::Warning;
-                                else p.type = lsp::MessageType::Info;
-                                p.message = msg;
-                                messageHandler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(p));
+                            auto logger = [](const std::string& msg, int severity)
+                            {
+                                if (severity == 1) LspLogger::Error(msg);
+                                else if (severity == 2) LspLogger::Warn(msg);
+                                else LspLogger::Info(msg);
                             };
                             loader.FindInWorkspace(m_workspaceRoot, asEngine, m_globalSymbolTable, "string", "array", logger);
-                            spdlog::info("Server reloaded due to as.predefined save.");
+                            LspLogger::Info("Server reloaded due to as.predefined save.");
                         }
                     }
                 );

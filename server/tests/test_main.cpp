@@ -3,7 +3,8 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     // Set up console logger for tests
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     auto logger = std::make_shared<spdlog::logger>("test_logger", console_sink);
@@ -15,7 +16,8 @@ int main(int argc, char** argv) {
     
     int res = context.run(); // run
     
-    if(context.shouldExit()) {
+    if(context.shouldExit())
+    {
         return res;
     }
     

@@ -22,9 +22,15 @@ namespace lsp
 namespace angel_lsp
 {
 
+    /**
+     * @brief The main LSP Server class orchestrating all language intelligence.
+     */
     class Server
     {
     public:
+        /**
+         * @brief Constructs the LSP server and initializes internal resources.
+         */
         Server();
         ~Server();
 

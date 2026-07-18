@@ -3,8 +3,10 @@
 #include <angelscript.h>
 #include <set>
 
-namespace angel_lsp {
-namespace features {
+namespace angel_lsp
+{
+namespace features
+{
 
 
 
@@ -22,8 +24,10 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
     std::string markdown = "";
     const auto& s = i18n::GetStrings(locale);
     
-    auto getKindName = [&](analysis::SymbolKind kind) {
-        switch (kind) {
+    auto getKindName = [&](analysis::SymbolKind kind)
+    {
+        switch (kind)
+        {
             case analysis::SymbolKind::Variable: return s.kindVariable;
             case analysis::SymbolKind::Function: return s.kindFunction;
             case analysis::SymbolKind::Class: return s.kindClass;
@@ -53,25 +57,34 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
                            sym->kind == analysis::SymbolKind::Typedef)) 
     {
         TSNode nodeUnder = doc.NodeAt(line, col);
-        if (!ts_node_is_null(nodeUnder)) {
+        if (!ts_node_is_null(nodeUnder))
+        {
             TSNode current = nodeUnder;
             // Climb up to `type` or similar to find preceding `scope` or `ERROR` nodes
-            while (!ts_node_is_null(current)) {
+            while (!ts_node_is_null(current))
+            {
                 std::string_view typeStr = ts_node_type(current);
-                if (typeStr == "type" || typeStr == "datatype") {
+                if (typeStr == "type" || typeStr == "datatype")
+                {
                     TSNode prevSibling = ts_node_prev_sibling(current);
-                    if (!ts_node_is_null(prevSibling)) {
+                    if (!ts_node_is_null(prevSibling))
+                    {
                         std::string_view prevType = ts_node_type(prevSibling);
-                        if (prevType == "scope" || prevType == "ERROR") {
+                        if (prevType == "scope" || prevType == "ERROR")
+                        {
                             std::string_view scopeSv = doc.SourceAt(prevSibling);
                             std::string scopeStr(scopeSv.begin(), scopeSv.end());
                             std::string_view typeSv = doc.SourceAt(current);
                             std::string typeStrText(typeSv.begin(), typeSv.end());
                             // Some AST paths might put the `::` inside the type, some in the scope.
-                            if (!scopeStr.empty()) {
-                                if (typeStrText.starts_with("::")) {
+                            if (!scopeStr.empty())
+                            {
+                                if (typeStrText.starts_with("::"))
+                                {
                                     dynamicDisplayName = scopeStr + typeStrText;
-                                } else {
+                                }
+                                else
+                                {
                                     dynamicDisplayName = scopeStr + (scopeStr.ends_with("::") ? "" : "::") + typeStrText;
                                 }
                             }
@@ -86,22 +99,28 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
 
     if (sym != nullptr)
     {
-        struct GroupedResult {
+        struct GroupedResult
+        {
             const analysis::Symbol* sym;
             std::vector<std::string> parents;
         };
         std::vector<GroupedResult> grouped;
 
-        for (const analysis::Symbol* r : multiResults) {
+        for (const analysis::Symbol* r : multiResults)
+        {
             bool foundGroup = false;
-            for (auto& g : grouped) {
+            for (auto& g : grouped)
+            {
                 // To group, they must have same kind, name, and signature/type
                 bool sameSignature = r->signature == g.sym->signature;
                 bool sameTypeInfo = r->typeInfo == g.sym->typeInfo;
-                if (r->kind == g.sym->kind && r->name == g.sym->name && sameSignature && sameTypeInfo) {
-                    if (r->parent) {
+                if (r->kind == g.sym->kind && r->name == g.sym->name && sameSignature && sameTypeInfo)
+                {
+                    if (r->parent)
+                    {
                         // avoid duplicate parent names
-                        if (std::find(g.parents.begin(), g.parents.end(), r->parent->name) == g.parents.end()) {
+                        if (std::find(g.parents.begin(), g.parents.end(), r->parent->name) == g.parents.end())
+                        {
                             g.parents.push_back(r->parent->name);
                         }
                     }
@@ -109,7 +128,8 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
                     break;
                 }
             }
-            if (!foundGroup) {
+            if (!foundGroup)
+            {
                 GroupedResult gr;
                 gr.sym = r;
                 if (r->parent) gr.parents.push_back(r->parent->name);
@@ -117,7 +137,8 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             }
         }
 
-        auto renderGrouped = [&](const GroupedResult& gr, const analysis::Symbol* originalSym) {
+        auto renderGrouped = [&](const GroupedResult& gr, const analysis::Symbol* originalSym)
+        {
             const analysis::Symbol* renderSym = originalSym ? originalSym : gr.sym;
             // For Parameters/Variables: dispName is always the identifier name (e.g. "target").
             // For types (Class/Enum etc.): dispName can be the full qualified name from the source.
@@ -132,7 +153,8 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
                                 : (renderSym->typeInfo + (renderSym->typeInfo.empty() ? "" : " ") + dispName);
             
             std::string contextStr = "";
-            for (size_t i = 0; i < gr.parents.size(); i++) {
+            for (size_t i = 0; i < gr.parents.size(); i++)
+            {
                 if (i > 0) contextStr += ", ";
                 contextStr += gr.parents[i];
             }
@@ -141,18 +163,23 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
                            + "**" + dispName + "** — " + getKindName(renderSym->kind)
                            + (!contextStr.empty() ? " " + std::string(s.hoverIn) + " `" + contextStr + "`" : "");
             
-            if (!renderSym->docComment.empty()) {
+            if (!renderSym->docComment.empty())
+            {
                 md += "\n\n" + renderSym->docComment;
             }
             return md;
         };
 
-        if (grouped.size() > 1 || (!grouped.empty() && grouped[0].parents.size() > 1)) {
-            for (size_t i = 0; i < grouped.size(); i++) {
+        if (grouped.size() > 1 || (!grouped.empty() && grouped[0].parents.size() > 1))
+        {
+            for (size_t i = 0; i < grouped.size(); i++)
+            {
                 if (i > 0) markdown += "\n\n---\n\n";
                 markdown += renderGrouped(grouped[i], nullptr);
             }
-        } else {
+        }
+        else
+        {
             GroupedResult gr;
             gr.sym = sym;
             if (sym->parent) gr.parents.push_back(sym->parent->name);
@@ -167,20 +194,26 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             std::string_view sv = doc.SourceAt(nodeUnder);
             std::string name(sv.begin(), sv.end());
             
-            if (engine) {
-                for (asUINT i = 0; i < engine->GetGlobalFunctionCount(); i++) {
+            if (engine)
+            {
+                for (asUINT i = 0; i < engine->GetGlobalFunctionCount(); i++)
+                {
                     asIScriptFunction* func = engine->GetGlobalFunctionByIndex(i);
-                    if (func && std::string(func->GetName()) == name) {
+                    if (func && std::string(func->GetName()) == name)
+                    {
                         std::string decl = func->GetDeclaration(true, true, true);
                         markdown = "```angelscript\n" + decl + "\n```\n**" + name + "** — " + s.hoverBuiltinFunc;
                         break;
                     }
                 }
-                if (markdown.empty()) {
+                if (markdown.empty())
+                {
                     int typeId = engine->GetTypeIdByDecl(name.c_str());
-                    if (typeId >= 0) {
+                    if (typeId >= 0)
+                    {
                         asITypeInfo* type = engine->GetTypeInfoById(typeId);
-                        if (type) {
+                        if (type)
+                        {
                             markdown = "```angelscript\nclass " + std::string(type->GetName()) + "\n```\n**" + name + "** — " + s.hoverBuiltinType;
                         }
                     }
@@ -190,9 +223,11 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
     }
 
     // Append Engine Diagnostics
-    if (diagCache) {
+    if (diagCache)
+    {
         auto diags = diagCache->GetAt(req.textDocument.uri.toString(), line, col);
-        for (const auto* d : diags) {
+        for (const auto* d : diags)
+        {
             if (!markdown.empty()) markdown += "\n\n---\n\n";
             std::string prefix = d->severity == lsp::DiagnosticSeverity::Error ? "⛔ **" + std::string(s.hoverEngineError) + "**" : "⚠️ **" + std::string(s.hoverEngineWarn) + "**";
             markdown += prefix + " `" + d->message + "`";

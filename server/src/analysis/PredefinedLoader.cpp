@@ -2,7 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <unordered_set>
-#include <spdlog/spdlog.h>
+#include "utils/LspLogger.h"
 #include "document/Document.h"
 #include "analysis/SymbolCollector.h"
 #include <as_objecttype.h>
@@ -18,14 +18,17 @@
 namespace analysis
 {
 
-class DummyStringFactory : public asIStringFactory {
+class DummyStringFactory : public asIStringFactory
+{
 public:
-    const void* GetStringConstant(const char*, asUINT) override { 
+    const void* GetStringConstant(const char*, asUINT) override
+    { 
         static int dummyVal = 1;
         return &dummyVal; 
     }
     int ReleaseStringConstant(const void*) override { return 0; }
-    int GetRawStringData(const void*, char*, asUINT* length) const override { 
+    int GetRawStringData(const void*, char*, asUINT* length) const override
+    { 
         if (length) *length = 0;
         return 0; 
     }
@@ -37,10 +40,14 @@ static void DummyGeneric(asIScriptGeneric *gen)
 {
     // Return a dummy pointer for any object return types to prevent crashes
     int typeId = gen->GetReturnTypeId();
-    if (typeId != asTYPEID_VOID) {
-        if ((typeId & asTYPEID_OBJHANDLE) || (typeId & asTYPEID_SCRIPTOBJECT) || (typeId & asTYPEID_MASK_OBJECT)) {
+    if (typeId != asTYPEID_VOID)
+    {
+        if ((typeId & asTYPEID_OBJHANDLE) || (typeId & asTYPEID_SCRIPTOBJECT) || (typeId & asTYPEID_MASK_OBJECT))
+        {
             gen->SetReturnAddress(&g_dummyObj);
-        } else {
+        }
+        else
+        {
             asQWORD zero = 0;
             gen->SetReturnQWord(zero);
         }
@@ -53,24 +60,30 @@ static void PredefinedMessageCallback(const asSMessageInfo *msg, void *param)
     
     std::string formatted = "AS PREDEFINED ";
     int severity = 2;
-    if (msg->type == asMSGTYPE_ERROR) {
+    if (msg->type == asMSGTYPE_ERROR)
+    {
         formatted += "ERROR";
         // Downgrade to warning in LSP so we don't spam errors for invalid predefined files
         severity = 2; 
-        spdlog::warn("AS PREDEFINED ERROR: {} (Row: {})", msg->message, msg->row);
-    } else if (msg->type == asMSGTYPE_WARNING) {
+        angel_lsp::LspLogger::Warn("AS PREDEFINED ERROR: " + std::string(msg->message) + " (Row: " + std::to_string(msg->row) + ")");
+    }
+    else if (msg->type == asMSGTYPE_WARNING)
+    {
         formatted += "WARN";
         severity = 2; // Warn in LSP
-        spdlog::warn("AS PREDEFINED WARN: {} (Row: {})", msg->message, msg->row);
-    } else {
+        angel_lsp::LspLogger::Warn("AS PREDEFINED WARN: " + std::string(msg->message) + " (Row: " + std::to_string(msg->row) + ")");
+    }
+    else
+    {
         formatted += "INFO";
         severity = 3; // Info in LSP
-        spdlog::info("AS PREDEFINED INFO: {} (Row: {})", msg->message, msg->row);
+        angel_lsp::LspLogger::Info("AS PREDEFINED INFO: " + std::string(msg->message) + " (Row: " + std::to_string(msg->row) + ")");
     }
     
     formatted += ": " + std::string(msg->message) + " (Row: " + std::to_string(msg->row) + ")";
     
-    if (logger && *logger) {
+    if (logger && *logger)
+    {
         (*logger)(formatted, severity);
     }
 }
@@ -84,7 +97,8 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
     std::unordered_set<std::string> registeredTypes;
 
     // Helper for recursive processing
-    auto processSymbols = [&](auto self, const std::vector<std::shared_ptr<Symbol>>& symbols, int pass) -> void {
+    auto processSymbols = [&](auto self, const std::vector<std::shared_ptr<Symbol>>& symbols, int pass) -> void
+    {
         for (const auto& sym : symbols)
         {
             if (sym->kind == SymbolKind::Namespace)
@@ -103,8 +117,10 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                     registeredTypes.insert(sym->name);
                     engine->RegisterEnum(sym->name.c_str());
                     // Register enum members
-                    for (const auto& child : sym->children) {
-                        if (child->kind == SymbolKind::EnumMember) {
+                    for (const auto& child : sym->children)
+                    {
+                        if (child->kind == SymbolKind::EnumMember)
+                        {
                             engine->RegisterEnumValue(sym->name.c_str(), child->name.c_str(), 0);
                         }
                     }
@@ -124,17 +140,21 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                     std::string declName = sym->name;
                     std::string registerName = sym->name;
                     
-                    if (sym->isAbstract || sym->isShared || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface) {
+                    if (sym->isAbstract || sym->isShared || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface)
+                    {
                         // Skip C++ registration for abstract/shared/mixin/interface types.
                         // They will be dynamically compiled as script classes in ValidationOracle.
                         continue;
-                    } else if (sym->name == arrayType || sym->name == arrayType + "<T>") {
+                    }
+                    else if (sym->name == arrayType || sym->name == arrayType + "<T>")
+                    {
                         declName = arrayType + "<T>";
                         registerName = arrayType + "<class T>";
                         flags = asOBJ_REF | asOBJ_TEMPLATE;
                         size = 0;
                     }
-                    else {
+                    else
+                    {
                         // NOTE: We MUST register non-templates (like string, char, custom classes)
                         // as asOBJ_VALUE. If we register them as asOBJ_REF, any dummy methods that return
                         // them by value (e.g. `string opAdd(...) const`) will be rejected by AngelScript
@@ -155,7 +175,8 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                     // in vanilla AngelScript when building derived classes. 
                     // We must leave it as a native type to prevent crashes.
                     
-                    if (flags & asOBJ_TEMPLATE) {
+                    if (flags & asOBJ_TEMPLATE)
+                    {
                         // Register dummy memory management so handles and factories work for templates
                         engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_ADDREF, "void f()", asFUNCTION(DummyGeneric), asCALL_GENERIC);
                         engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_RELEASE, "void f()", asFUNCTION(DummyGeneric), asCALL_GENERIC);
@@ -169,7 +190,8 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                         engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_LIST_FACTORY, listFactorySig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                     }
 
-                    if (sym->name == stringType) {
+                    if (sym->name == stringType)
+                    {
                         engine->RegisterStringFactory(stringType.c_str(), &g_dummyStringFactory);
                     }
                 }
@@ -190,7 +212,8 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                     if (registeredTypes.find(sym->name) == registeredTypes.end()) continue;
 
                     std::string declName = sym->name;
-                    if (sym->name == arrayType || sym->name == arrayType + "<T>") {
+                    if (sym->name == arrayType || sym->name == arrayType + "<T>")
+                    {
                         declName = arrayType + "<T>";
                     }
 
@@ -203,7 +226,8 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                             // but since our dummy types are asOBJ_POD, they don't even need them to be
                             // registered for compilation to succeed. Passing them to RegisterObjectMethod
                             // will cause asINVALID_DECLARATION and kill the engine.
-                            if (child->name == sym->name || (!child->name.empty() && child->name[0] == '~')) {
+                            if (child->name == sym->name || (!child->name.empty() && child->name[0] == '~'))
+                            {
                                 continue;
                             }
                             engine->RegisterObjectMethod(declName.c_str(), child->signature.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
@@ -229,8 +253,10 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
 
     // Flatten globals
     std::vector<std::shared_ptr<Symbol>> globals;
-    for (const auto& [name, overloads] : table.GetGlobals()) {
-        for (const auto& sym : overloads) {
+    for (const auto& [name, overloads] : table.GetGlobals())
+    {
+        for (const auto& sym : overloads)
+        {
             globals.push_back(sym);
         }
     }
@@ -240,7 +266,8 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
     
     // Register Default Array ONLY if it was registered
     if (engine->GetTypeInfoByName((arrayType + "<T>").c_str()) != nullptr || 
-        engine->GetTypeInfoByName(arrayType.c_str()) != nullptr) {
+        engine->GetTypeInfoByName(arrayType.c_str()) != nullptr)
+    {
         engine->RegisterDefaultArrayType((arrayType + "<T>").c_str());
     }
 
@@ -266,39 +293,51 @@ bool PredefinedLoader::LoadFromSource(const std::string& source, asIScriptEngine
 
     // Generate script code for abstract/shared/mixin classes
     std::string scriptCode;
-    auto processAbstracts = [&](auto self, const std::vector<std::shared_ptr<Symbol>>& symbols, const std::string& currentNs) -> void {
-        for (const auto& sym : symbols) {
-            if (sym->kind == SymbolKind::Namespace) {
+    auto processAbstracts = [&](auto self, const std::vector<std::shared_ptr<Symbol>>& symbols, const std::string& currentNs) -> void
+    {
+        for (const auto& sym : symbols)
+        {
+            if (sym->kind == SymbolKind::Namespace)
+            {
                 std::string newNs = currentNs.empty() ? sym->name : currentNs + "::" + sym->name;
                 scriptCode += "namespace " + sym->name + " {\n";
                 self(self, sym->children, newNs);
                 scriptCode += "}\n";
             }
-            else if ((sym->kind == SymbolKind::Class && (sym->isAbstract || sym->isShared || sym->isMixin)) || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface) {
-                if (sym->kind == SymbolKind::Interface) {
+            else if ((sym->kind == SymbolKind::Class && (sym->isAbstract || sym->isShared || sym->isMixin)) || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface)
+            {
+                if (sym->kind == SymbolKind::Interface)
+                {
                     if (sym->isShared) scriptCode += "shared ";
                     scriptCode += "interface " + sym->name;
-                } else {
+                }
+                else
+                {
                     if (sym->isShared) scriptCode += "shared ";
                     if (sym->isAbstract) scriptCode += "abstract ";
                     if (sym->kind == SymbolKind::Mixin || sym->isMixin) scriptCode += "mixin ";
                     scriptCode += "class " + sym->name;
                 }
                 
-                if (!sym->baseClasses.empty()) {
+                if (!sym->baseClasses.empty())
+                {
                     scriptCode += " : ";
-                    for (size_t i = 0; i < sym->baseClasses.size(); ++i) {
+                    for (size_t i = 0; i < sym->baseClasses.size(); ++i)
+                    {
                         scriptCode += sym->baseClasses[i];
                         if (i + 1 < sym->baseClasses.size()) scriptCode += ", ";
                     }
                 }
                 scriptCode += " {\n";
                 
-                for (const auto& child : sym->children) {
-                    if (child->kind == SymbolKind::Method) {
+                for (const auto& child : sym->children)
+                {
+                    if (child->kind == SymbolKind::Method)
+                    {
                         scriptCode += "  " + child->signature + " {}\n";
                     }
-                    else if (child->kind == SymbolKind::Variable) {
+                    else if (child->kind == SymbolKind::Variable)
+                    {
                         scriptCode += "  " + child->typeInfo + " " + child->name + ";\n";
                     }
                 }
@@ -308,8 +347,10 @@ bool PredefinedLoader::LoadFromSource(const std::string& source, asIScriptEngine
     };
     
     std::vector<std::shared_ptr<Symbol>> globals;
-    for (const auto& kv : table.GetGlobals()) {
-        for (const auto& sym : kv.second) {
+    for (const auto& kv : table.GetGlobals())
+    {
+        for (const auto& sym : kv.second)
+        {
             globals.push_back(sym);
         }
     }

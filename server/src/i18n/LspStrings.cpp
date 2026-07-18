@@ -1,8 +1,10 @@
 #include "i18n/LspStrings.h"
 
-namespace i18n {
+namespace i18n
+{
 
-static const LspStrings EN_STRINGS = {
+static const LspStrings EN_STRINGS =
+{
     .kindVariable = "Variable",
     .kindFunction = "Function",
     .kindClass = "Class",
@@ -29,7 +31,8 @@ static const LspStrings EN_STRINGS = {
     .hoverAmbiguous = "Ambiguous symbol"
 };
 
-static const LspStrings ES_STRINGS = {
+static const LspStrings ES_STRINGS =
+{
     .kindVariable = "Variable",
     .kindFunction = "Función",
     .kindClass = "Clase",
@@ -58,10 +61,12 @@ static const LspStrings ES_STRINGS = {
 
 Locale ParseLocale(const std::string& localeStr)
 {
-    if (localeStr.starts_with("es")) {
+    if (localeStr.starts_with("es"))
+    {
         return Locale::ES;
     }
-    if (localeStr.starts_with("en")) {
+    if (localeStr.starts_with("en"))
+    {
         return Locale::EN;
     }
     return Locale::UNKNOWN;
@@ -69,7 +74,8 @@ Locale ParseLocale(const std::string& localeStr)
 
 const LspStrings& GetStrings(Locale locale)
 {
-    switch (locale) {
+    switch (locale)
+    {
         case Locale::ES: return ES_STRINGS;
         case Locale::EN:
         default:

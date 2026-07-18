@@ -61,8 +61,10 @@ TEST_SUITE("ValidationOracle")
         std::string code = "void Main() { array<int> a = {1, 2, 3}; }";
         auto result = fixtures::Validate(engine, code);
         
-        if (!result.IsClean()) {
-            for (auto& diag : result.diags) {
+        if (!result.IsClean())
+        {
+            for (auto& diag : result.diags)
+            {
                 std::cout << "Diag: " << diag.message << "\n";
             }
         }
@@ -83,8 +85,10 @@ TEST_SUITE("ValidationOracle")
         CHECK(result.size() > 0);
         
         bool foundTranslated = false;
-        for (const auto& d : result) {
-            if (d.message == "Se esperaba un valor de expresión" || d.message.find("Se esperaba") != std::string::npos) {
+        for (const auto& d : result)
+        {
+            if (d.message == "Se esperaba un valor de expresión" || d.message.find("Se esperaba") != std::string::npos)
+            {
                 foundTranslated = true;
                 break;
             }
@@ -107,10 +111,12 @@ TEST_SUITE("ValidationOracle")
         CHECK(result.size() > 0);
         
         bool foundRegexTranslated = false;
-        for (const auto& d : result) {
+        for (const auto& d : result)
+        {
             std::cout << "DIAG: " << d.message << "\n";
             if (d.message.find("No hay firmas coincidentes para la función") != std::string::npos && 
-                d.message.find("Print") != std::string::npos) {
+                d.message.find("Print") != std::string::npos)
+                {
                 foundRegexTranslated = true;
                 break;
             }

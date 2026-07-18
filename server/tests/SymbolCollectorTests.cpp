@@ -48,8 +48,10 @@ TEST_SUITE("SymbolCollector")
 
         bool foundMath = false;
         Symbol* mathSym = nullptr;
-        for (auto& child : engineSym->children) {
-            if (child->name == "Math") {
+        for (auto& child : engineSym->children)
+        {
+            if (child->name == "Math")
+            {
                 foundMath = true;
                 mathSym = child.get();
                 break;
@@ -58,8 +60,10 @@ TEST_SUITE("SymbolCollector")
         REQUIRE(foundMath);
         
         bool foundLerp = false;
-        for (auto& child : mathSym->children) {
-            if (child->name == "Lerp") {
+        for (auto& child : mathSym->children)
+        {
+            if (child->name == "Lerp")
+            {
                 foundLerp = true;
                 // Bug 2 fix ensures this is a Function, not a Variable!
                 CHECK(child->kind == SymbolKind::Function);
@@ -288,7 +292,8 @@ TEST_SUITE("SymbolCollector")
         CHECK(notCls == nullptr); // Ensure "Entity" is not mistakenly collected
     }
 
-    TEST_CASE("C3: Constructores y Destructores detectados correctamente") {
+    TEST_CASE("C3: Constructores y Destructores detectados correctamente")
+    {
         Document doc("file:///test.as", "class Vec { Vec() {} ~Vec() {} Vec(float x) {} }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
@@ -298,7 +303,8 @@ TEST_SUITE("SymbolCollector")
 
         int constructors = 0;
         int destructors = 0;
-        for (const auto& child : vecClass->children) {
+        for (const auto& child : vecClass->children)
+        {
             if (child->kind == SymbolKind::Constructor && child->name == "Vec") constructors++;
             if (child->kind == SymbolKind::Destructor && child->name == "~Vec") destructors++;
         }
@@ -307,7 +313,8 @@ TEST_SUITE("SymbolCollector")
         CHECK(destructors == 1);
     }
 
-    TEST_CASE("C4: Campos de clase con namespace tienen typeInfo cualificado") {
+    TEST_CASE("C4: Campos de clase con namespace tienen typeInfo cualificado")
+    {
         Document doc("file:///test.as", "class Body { Engine::Math::Vector3 pos; }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
@@ -316,7 +323,8 @@ TEST_SUITE("SymbolCollector")
         REQUIRE(bodyClass != nullptr);
 
         const Symbol* posField = nullptr;
-        for (const auto& child : bodyClass->children) {
+        for (const auto& child : bodyClass->children)
+        {
             if (child->name == "pos") posField = child.get();
         }
 

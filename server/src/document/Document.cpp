@@ -111,7 +111,8 @@ void Document::ApplyEdit(const lsp::TextEdit& edit)
     
     TSPoint newEndPoint = ByteToPoint(newEndByte);
 
-    TSInputEdit tsEdit {
+    TSInputEdit tsEdit
+    {
         .start_byte = (uint32_t)startByte,
         .old_end_byte = (uint32_t)oldEndByte,
         .new_end_byte = (uint32_t)newEndByte,

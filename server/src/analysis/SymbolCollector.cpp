@@ -25,10 +25,12 @@ namespace analysis
         return r;
     }
 
-    static void ReadParams(TSNode paramListNode, const Document& doc, Symbol& sym, SymbolTable* table = nullptr, Symbol* parentFunc = nullptr) {
+    static void ReadParams(TSNode paramListNode, const Document& doc, Symbol& sym, SymbolTable* table = nullptr, Symbol* parentFunc = nullptr)
+    {
         if (ts_node_is_null(paramListNode)) return;
         
-        for (uint32_t i = 0; i < ts_node_child_count(paramListNode); i++) {
+        for (uint32_t i = 0; i < ts_node_child_count(paramListNode); i++)
+        {
             TSNode child = ts_node_child(paramListNode, i);
             if (std::string_view(ts_node_type(child)) != "parameter") continue;
             
@@ -40,20 +42,24 @@ namespace analysis
             // Extract the full type (everything before the name or default value)
             TSNode firstChild = ts_node_child(child, 0);
             TSNode lastTypeChild = firstChild;
-            for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+            for (uint32_t j = 0; j < ts_node_child_count(child); j++)
+            {
                 TSNode paramChild = ts_node_child(child, j);
                 if (!ts_node_is_null(nameNode) && ts_node_eq(paramChild, nameNode)) break;
                 if (std::string_view(ts_node_type(paramChild)) == "=") break;
                 lastTypeChild = paramChild;
             }
             
-            if (!ts_node_is_null(firstChild) && !ts_node_is_null(lastTypeChild)) {
+            if (!ts_node_is_null(firstChild) && !ts_node_is_null(lastTypeChild))
+            {
                 uint32_t startByte = ts_node_start_byte(firstChild);
                 uint32_t endByte = ts_node_end_byte(lastTypeChild);
-                if (endByte > startByte) {
+                if (endByte > startByte)
+                {
                     param.typeName = doc.GetText().substr(startByte, endByte - startByte);
                     // Trim trailing spaces
-                    while (!param.typeName.empty() && param.typeName.back() == ' ') {
+                    while (!param.typeName.empty() && param.typeName.back() == ' ')
+                    {
                         param.typeName.pop_back();
                     }
                 }
@@ -62,7 +68,8 @@ namespace analysis
 
             sym.params.push_back(param);
             
-            if (table && !param.name.empty()) {
+            if (table && !param.name.empty())
+            {
                 auto paramSym = std::make_shared<Symbol>();
                 paramSym->kind       = SymbolKind::Parameter;
                 paramSym->name       = param.name;
@@ -72,9 +79,12 @@ namespace analysis
                 paramSym->selectionRange = SymbolCollector::GetRange(nameNode, doc);
                 
                 // fullRange is the entire function so FindLocalByNameAt filters correctly by cursor position
-                if (parentFunc) {
+                if (parentFunc)
+                {
                     paramSym->fullRange = parentFunc->fullRange;
-                } else {
+                }
+                else
+                {
                     paramSym->fullRange = SymbolCollector::GetRange(child, doc);
                 }
                 
@@ -86,24 +96,29 @@ namespace analysis
         std::stringstream ss;
         if (!sym.typeInfo.empty()) ss << sym.typeInfo << " ";
         ss << sym.name << "(";
-        for (size_t i = 0; i < sym.params.size(); i++) {
+        for (size_t i = 0; i < sym.params.size(); i++)
+        {
             ss << sym.params[i].typeName;
-            if (!sym.params[i].name.empty()) {
+            if (!sym.params[i].name.empty())
+            {
                 ss << " " << sym.params[i].name;
             }
             if (i < sym.params.size() - 1) ss << ", ";
         }
         ss << ")";
-        if (sym.isConstMethod) {
+        if (sym.isConstMethod)
+        {
             ss << " const";
         }
         sym.signature = ss.str();
     }
 
-    void SymbolCollector::RegisterParamsAsLocals(TSNode paramListNode, const Document& doc, SymbolTable& table) {
+    void SymbolCollector::RegisterParamsAsLocals(TSNode paramListNode, const Document& doc, SymbolTable& table)
+    {
         if (ts_node_is_null(paramListNode)) return;
         
-        for (uint32_t i = 0; i < ts_node_child_count(paramListNode); i++) {
+        for (uint32_t i = 0; i < ts_node_child_count(paramListNode); i++)
+        {
             TSNode child = ts_node_child(paramListNode, i);
             if (std::string_view(ts_node_type(child)) != "parameter") continue;
             
@@ -116,19 +131,23 @@ namespace analysis
             std::string typeName;
             TSNode firstChild = ts_node_child(child, 0);
             TSNode lastTypeChild = firstChild;
-            for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+            for (uint32_t j = 0; j < ts_node_child_count(child); j++)
+            {
                 TSNode paramChild = ts_node_child(child, j);
                 if (ts_node_eq(paramChild, nameNode)) break;
                 if (std::string_view(ts_node_type(paramChild)) == "=") break;
                 lastTypeChild = paramChild;
             }
             
-            if (!ts_node_is_null(firstChild) && !ts_node_is_null(lastTypeChild)) {
+            if (!ts_node_is_null(firstChild) && !ts_node_is_null(lastTypeChild))
+            {
                 uint32_t startByte = ts_node_start_byte(firstChild);
                 uint32_t endByte = ts_node_end_byte(lastTypeChild);
-                if (endByte > startByte) {
+                if (endByte > startByte)
+                {
                     typeName = doc.GetText().substr(startByte, endByte - startByte);
-                    while (!typeName.empty() && typeName.back() == ' ') {
+                    while (!typeName.empty() && typeName.back() == ' ')
+                    {
                         typeName.pop_back();
                     }
                 }
@@ -143,9 +162,12 @@ namespace analysis
             
             // Set fullRange to the function block, so FindLocalByNameAt works
             TSNode parentFunc = ts_node_parent(paramListNode);
-            if (!ts_node_is_null(parentFunc)) {
+            if (!ts_node_is_null(parentFunc))
+            {
                 paramSym->fullRange = GetRange(parentFunc, doc);
-            } else {
+            }
+            else
+            {
                 paramSym->fullRange = GetRange(child, doc);
             }
             
@@ -173,13 +195,15 @@ namespace analysis
             sym->fullRange = GetRange(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-            if (!ts_node_is_null(nameNode)) {
+            if (!ts_node_is_null(nameNode))
+            {
                 sym->name = GetNodeText(nameNode, doc);
                 sym->selectionRange = GetRange(nameNode, doc);
             }
 
             TSNode baseTypeNode = ts_node_child_by_field_name(node, "base_type", 9);
-            if (!ts_node_is_null(baseTypeNode)) {
+            if (!ts_node_is_null(baseTypeNode))
+            {
                 sym->typeInfo = GetNodeText(baseTypeNode, doc);
             }
 
@@ -202,24 +226,29 @@ namespace analysis
             
             bool isDestructor = false;
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-            if (ts_node_is_null(nameNode)) {
+            if (ts_node_is_null(nameNode))
+            {
                 // If it's a destructor, the name might not be neatly under a 'name' field, or we might need to find the identifier.
                 // Let's just find the identifier child and check if there's a ~ before it.
-                for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+                for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+                {
                     TSNode child = ts_node_child(node, i);
-                    if (std::string_view(ts_node_type(child)) == "identifier") {
+                    if (std::string_view(ts_node_type(child)) == "identifier")
+                    {
                         nameNode = child;
                         break;
                     }
                 }
             }
 
-            if (!ts_node_is_null(nameNode)) {
+            if (!ts_node_is_null(nameNode))
+            {
                 sym->name = GetNodeText(nameNode, doc);
                 sym->selectionRange = GetRange(nameNode, doc);
                 
                 TSNode prev = ts_node_prev_sibling(nameNode);
-                if (!ts_node_is_null(prev) && std::string_view(ts_node_type(prev)) == "~") {
+                if (!ts_node_is_null(prev) && std::string_view(ts_node_type(prev)) == "~")
+                {
                     isDestructor = true;
                     sym->name = "~" + sym->name;
                     sym->selectionRange = GetRange(prev, doc); // maybe include ~ in selection
@@ -227,21 +256,27 @@ namespace analysis
             }
 
             TSNode returnTypeNode = ts_node_child_by_field_name(node, "return_type", 11);
-            if (!ts_node_is_null(returnTypeNode)) {
+            if (!ts_node_is_null(returnTypeNode))
+            {
                 sym->typeInfo = GetNodeText(returnTypeNode, doc);
                 
-                if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin)) {
+                if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin))
+                {
                     sym->kind = SymbolKind::Method;
                 }
-            } else if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin)) {
+            }
+            else if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin))
+            {
                 sym->kind = isDestructor ? SymbolKind::Destructor : SymbolKind::Constructor;
             }
 
             TSNode parametersNode = ts_node_child_by_field_name(node, "parameters", 10);
             
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+            {
                 TSNode child = ts_node_child(node, i);
-                if (std::string_view(ts_node_type(child)) == "const") {
+                if (std::string_view(ts_node_type(child)) == "const")
+                {
                     sym->isConstMethod = true;
                     break;
                 }
@@ -267,21 +302,25 @@ namespace analysis
             sym->fullRange = GetRange(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-            if (!ts_node_is_null(nameNode)) {
+            if (!ts_node_is_null(nameNode))
+            {
                 sym->name = GetNodeText(nameNode, doc);
                 sym->selectionRange = GetRange(nameNode, doc);
             }
 
             TSNode returnTypeNode = ts_node_child_by_field_name(node, "return_type", 11);
-            if (!ts_node_is_null(returnTypeNode)) {
+            if (!ts_node_is_null(returnTypeNode))
+            {
                 sym->typeInfo = GetNodeText(returnTypeNode, doc);
             }
 
             TSNode parametersNode = ts_node_child_by_field_name(node, "parameters", 10);
             
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+            {
                 TSNode child = ts_node_child(node, i);
-                if (std::string_view(ts_node_type(child)) == "const") {
+                if (std::string_view(ts_node_type(child)) == "const")
+                {
                     sym->isConstMethod = true;
                     break;
                 }
@@ -300,13 +339,17 @@ namespace analysis
         {
             TSNode varTypeNode = ts_node_child_by_field_name(node, "var_type", 8);
             std::string typeInfo;
-            if (!ts_node_is_null(varTypeNode)) {
+            if (!ts_node_is_null(varTypeNode))
+            {
                 typeInfo = GetNodeText(varTypeNode, doc);
             }
-            else {
-                for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+            else
+            {
+                for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+                {
                     TSNode child = ts_node_child(node, i);
-                    if (std::string_view(ts_node_type(child)) == "type") {
+                    if (std::string_view(ts_node_type(child)) == "type")
+                    {
                         typeInfo = GetNodeText(child, doc);
                         break;
                     }
@@ -321,10 +364,12 @@ namespace analysis
                 {
                     bool hasParamList = false;
                     TSNode paramListNode;
-                    for (uint32_t k = 0; k < ts_node_child_count(child); k++) {
+                    for (uint32_t k = 0; k < ts_node_child_count(child); k++)
+                    {
                         TSNode grandchild = ts_node_child(child, k);
                         std::string_view gtype = ts_node_type(grandchild);
-                        if (gtype == "parameter_list" || gtype == "parameter_list_decl") {
+                        if (gtype == "parameter_list" || gtype == "parameter_list_decl")
+                        {
                             hasParamList = true;
                             paramListNode = grandchild;
                             break;
@@ -336,18 +381,24 @@ namespace analysis
                     sym->fullRange = GetRange(node, doc);
                     sym->typeInfo = typeInfo;
 
-                    if (typeInfo == "auto") {
+                    if (typeInfo == "auto")
+                    {
                         uint32_t ccount = ts_node_child_count(child);
-                        for (uint32_t c = 0; c < ccount; c++) {
+                        for (uint32_t c = 0; c < ccount; c++)
+                        {
                             TSNode valNode = ts_node_child(child, c);
                             std::string_view valType = ts_node_type(valNode);
-                            if (valType == "identifier" && ts_node_is_named(valNode) && ts_node_child_by_field_name(child, "name", 4).id != valNode.id) {
+                            if (valType == "identifier" && ts_node_is_named(valNode) && ts_node_child_by_field_name(child, "name", 4).id != valNode.id)
+                            {
                                 std::string varName = GetNodeText(valNode, doc);
-                                if (const Symbol* s = table.FindGlobalByName(varName)) {
+                                if (const Symbol* s = table.FindGlobalByName(varName))
+                                {
                                     sym->typeInfo = s->typeInfo;
                                 }
                                 break;
-                            } else if (valType == "anonymous_function") {
+                            }
+                            else if (valType == "anonymous_function")
+                            {
                                 sym->typeInfo = "function";
                                 break;
                             }
@@ -355,14 +406,18 @@ namespace analysis
                     }
 
                     TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
-                    if (!ts_node_is_null(nameNode)) {
+                    if (!ts_node_is_null(nameNode))
+                    {
                         sym->name = GetNodeText(nameNode, doc);
                         sym->selectionRange = GetRange(nameNode, doc);
                     }
 
-                    if (hasParamList) {
+                    if (hasParamList)
+                    {
                         ReadParams(paramListNode, doc, *sym, parentScope ? nullptr : &table, sym.get());
-                    } else {
+                    }
+                    else
+                    {
                         sym->signature = sym->typeInfo + " " + sym->name;
                     }
 
@@ -389,25 +444,40 @@ namespace analysis
             sym->fullRange = GetRange(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-            if (!ts_node_is_null(nameNode)) {
-                sym->name = GetNodeText(nameNode, doc);
+            if (!ts_node_is_null(nameNode))
+            {
+                std::string rawName = GetNodeText(nameNode, doc);
+                size_t templatePos = rawName.find('<');
+                if (templatePos != std::string::npos)
+                {
+                    sym->name = rawName.substr(0, templatePos);
+                }
+                else
+                {
+                    sym->name = rawName;
+                }
                 sym->selectionRange = GetRange(nameNode, doc);
             }
             
             // Extract base classes, mixins, and modifiers
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+            {
                 TSNode child = ts_node_child(node, i);
                 std::string_view childType = ts_node_type(child);
                 
-                if (childType == "declaration_modifier") {
+                if (childType == "declaration_modifier")
+                {
                     std::string modStr = GetNodeText(child, doc);
                     if (modStr == "shared") sym->isShared = true;
                     else if (modStr == "abstract") sym->isAbstract = true;
                 }
-                else if (childType == "base_class_list") {
-                    for (uint32_t j = 0; j < ts_node_child_count(child); j++) {
+                else if (childType == "base_class_list")
+                {
+                    for (uint32_t j = 0; j < ts_node_child_count(child); j++)
+                    {
                         TSNode baseChild = ts_node_child(child, j);
-                        if (std::string_view(ts_node_type(baseChild)) == "identifier") {
+                        if (std::string_view(ts_node_type(baseChild)) == "identifier")
+                        {
                             sym->baseClasses.push_back(GetNodeText(baseChild, doc));
                         }
                     }
@@ -439,10 +509,12 @@ namespace analysis
         {
             TSNode nsNode = ts_node_child_by_field_name(node, "namespace", 9); // usually it's just 'namespace' or we can find scoped_identifier
             // Let's just find the scoped_identifier or identifier
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+            {
                 TSNode child = ts_node_child(node, i);
                 std::string_view childType = ts_node_type(child);
-                if (childType == "scoped_identifier" || childType == "identifier") {
+                if (childType == "scoped_identifier" || childType == "identifier")
+                {
                     table.AddUsingNamespace(GetNodeText(child, doc));
                     break;
                 }
@@ -457,7 +529,8 @@ namespace analysis
             std::vector<std::string> parts;
             size_t start = 0;
             size_t end = fullName.find("::");
-            while (end != std::string::npos) {
+            while (end != std::string::npos)
+            {
                 parts.push_back(fullName.substr(start, end - start));
                 start = end + 2;
                 end = fullName.find("::", start);
@@ -466,26 +539,35 @@ namespace analysis
 
             Symbol* currentParent = parentScope;
 
-            for (const std::string& part : parts) {
+            for (const std::string& part : parts)
+            {
                 std::shared_ptr<Symbol> sym;
                 bool found = false;
 
-                if (currentParent) {
-                    for (auto& child : currentParent->children) {
-                        if (child->name == part && child->kind == SymbolKind::Namespace) {
+                if (currentParent)
+                {
+                    for (auto& child : currentParent->children)
+                    {
+                        if (child->name == part && child->kind == SymbolKind::Namespace)
+                        {
                             sym = child;
                             found = true;
                             break;
                         }
                     }
-                } else {
+                }
+                else
+                {
                     Symbol* existing = table.FindGlobalByName(part);
-                    if (existing && existing->kind == SymbolKind::Namespace) {
+                    if (existing && existing->kind == SymbolKind::Namespace)
+                    {
                         auto it = table.GetGlobals().find(part);
-                        if (it != table.GetGlobals().end() && !it->second.empty()) {
+                        if (it != table.GetGlobals().end() && !it->second.empty())
+                        {
                             // Si hay múltiples, tomamos el primero para el using (comportamiento legacy/fallback)
                             const Symbol* nsSym = it->second.front().get();
-                            if (nsSym->kind == SymbolKind::Namespace) {
+                            if (nsSym->kind == SymbolKind::Namespace)
+                            {
                                 sym = it->second.front();
                                 found = true;
                             }
@@ -493,17 +575,21 @@ namespace analysis
                     }
                 }
 
-                if (!found) {
+                if (!found)
+                {
                     sym = std::make_shared<Symbol>();
                     sym->kind = SymbolKind::Namespace;
                     sym->name = part;
                     sym->fullRange = GetRange(node, doc);
                     sym->selectionRange = GetRange(nameNode, doc); // Approximate for intermediate parts
                     
-                    if (currentParent) {
+                    if (currentParent)
+                    {
                         sym->parent = currentParent;
                         currentParent->children.push_back(sym);
-                    } else {
+                    }
+                    else
+                    {
                         table.AddGlobal(sym);
                     }
                 }
@@ -529,7 +615,8 @@ namespace analysis
             sym->fullRange = GetRange(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-            if (!ts_node_is_null(nameNode)) {
+            if (!ts_node_is_null(nameNode))
+            {
                 sym->name = GetNodeText(nameNode, doc);
                 sym->selectionRange = GetRange(nameNode, doc);
             }
@@ -545,7 +632,8 @@ namespace analysis
                     memberSym->fullRange = GetRange(child, doc);
                     
                     TSNode mNameNode = ts_node_child_by_field_name(child, "name", 4);
-                    if (!ts_node_is_null(mNameNode)) {
+                    if (!ts_node_is_null(mNameNode))
+                    {
                         memberSym->name = GetNodeText(mNameNode, doc);
                         memberSym->selectionRange = GetRange(mNameNode, doc);
                     }
@@ -571,13 +659,15 @@ namespace analysis
             sym->fullRange = GetRange(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-            if (!ts_node_is_null(nameNode)) {
+            if (!ts_node_is_null(nameNode))
+            {
                 sym->name = GetNodeText(nameNode, doc);
                 sym->selectionRange = GetRange(nameNode, doc);
             }
 
             TSNode returnTypeNode = ts_node_child_by_field_name(node, "return_type", 11);
-            if (!ts_node_is_null(returnTypeNode)) {
+            if (!ts_node_is_null(returnTypeNode))
+            {
                 sym->typeInfo = GetNodeText(returnTypeNode, doc);
             }
 
@@ -602,13 +692,15 @@ namespace analysis
             sym->fullRange = GetRange(node, doc);
             
             TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-            if (!ts_node_is_null(nameNode)) {
+            if (!ts_node_is_null(nameNode))
+            {
                 sym->name = GetNodeText(nameNode, doc);
                 sym->selectionRange = GetRange(nameNode, doc);
             }
 
             TSNode typeNode = ts_node_child_by_field_name(node, "prop_type", 9);
-            if (!ts_node_is_null(typeNode)) {
+            if (!ts_node_is_null(typeNode))
+            {
                 sym->typeInfo = GetNodeText(typeNode, doc);
             }
             
@@ -643,13 +735,17 @@ namespace analysis
 
             TSNode varTypeNode = ts_node_child_by_field_name(node, "var_type", 8);
             std::string typeInfo;
-            if (!ts_node_is_null(varTypeNode)) {
+            if (!ts_node_is_null(varTypeNode))
+            {
                 typeInfo = GetNodeText(varTypeNode, doc);
             }
-            else {
-                for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+            else
+            {
+                for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+                {
                     TSNode child = ts_node_child(node, i);
-                    if (std::string_view(ts_node_type(child)) == "type") {
+                    if (std::string_view(ts_node_type(child)) == "type")
+                    {
                         typeInfo = GetNodeText(child, doc);
                         break;
                     }
@@ -665,31 +761,43 @@ namespace analysis
                         
                         // Set fullRange to the enclosing block so FindLocalByNameAt works for the rest of the block
                         TSNode blockNode = ts_node_parent(node);
-                        while (!ts_node_is_null(blockNode) && std::string_view(ts_node_type(blockNode)) != "statement_block") {
+                        while (!ts_node_is_null(blockNode) && std::string_view(ts_node_type(blockNode)) != "statement_block")
+                        {
                             blockNode = ts_node_parent(blockNode);
                         }
-                        if (!ts_node_is_null(blockNode)) {
+                        if (!ts_node_is_null(blockNode))
+                        {
                             sym->fullRange = GetRange(blockNode, doc);
-                        } else {
+                        }
+                        else
+                        {
                             sym->fullRange = GetRange(node, doc);
                         }
                         
                         sym->typeInfo = typeInfo;
 
-                        if (typeInfo == "auto") {
+                        if (typeInfo == "auto")
+                        {
                             uint32_t ccount = ts_node_child_count(child);
-                            for (uint32_t c = 0; c < ccount; c++) {
+                            for (uint32_t c = 0; c < ccount; c++)
+                            {
                                 TSNode valNode = ts_node_child(child, c);
                                 std::string_view valType = ts_node_type(valNode);
-                                if (valType == "identifier" && ts_node_is_named(valNode) && ts_node_child_by_field_name(child, "name", 4).id != valNode.id) {
+                                if (valType == "identifier" && ts_node_is_named(valNode) && ts_node_child_by_field_name(child, "name", 4).id != valNode.id)
+                                {
                                     std::string varName = GetNodeText(valNode, doc);
-                                    if (const Symbol* s = table.FindLocalByName(varName)) {
+                                    if (const Symbol* s = table.FindLocalByName(varName))
+                                    {
                                         sym->typeInfo = s->typeInfo;
-                                    } else if (const Symbol* s = table.FindGlobalByName(varName)) {
+                                    }
+                                    else if (const Symbol* s = table.FindGlobalByName(varName))
+                                    {
                                         sym->typeInfo = s->typeInfo;
                                     }
                                     break;
-                                } else if (valType == "anonymous_function") {
+                                }
+                                else if (valType == "anonymous_function")
+                                {
                                     sym->typeInfo = "function";
                                     break;
                                 }
@@ -697,7 +805,8 @@ namespace analysis
                         }
 
                         TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
-                        if (!ts_node_is_null(nameNode)) {
+                        if (!ts_node_is_null(nameNode))
+                        {
                             sym->name = GetNodeText(nameNode, doc);
                             sym->selectionRange = GetRange(nameNode, doc);
                         }

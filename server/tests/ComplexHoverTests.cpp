@@ -111,7 +111,8 @@ TEST_SUITE("ComplexHover")
         
         uint32_t line = 0;
         uint32_t col = 0;
-        for (size_t i = 0; i < offset; i++) {
+        for (size_t i = 0; i < offset; i++)
+        {
             if (code[i] == '\n') { line++; col = 0; }
             else { col++; }
         }
@@ -139,7 +140,8 @@ TEST_SUITE("ComplexHover")
         
         uint32_t line = 0;
         uint32_t col = 0;
-        for (size_t i = 0; i < offset; i++) {
+        for (size_t i = 0; i < offset; i++)
+        {
             if (code[i] == '\n') { line++; col = 0; }
             else { col++; }
         }
@@ -167,25 +169,31 @@ TEST_SUITE("ComplexHover")
         size_t offset = code.find("force)", code.find("ApplyForce"));
         
         // Force the function's scope into the table by parsing locals
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void {
-            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "method_declaration") {
+        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        {
+            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "method_declaration")
+            {
                 TSNode paramList = ts_node_child_by_field_name(node, "parameters", 10);
-                if (!ts_node_is_null(paramList)) {
+                if (!ts_node_is_null(paramList))
+                {
                     SymbolCollector::RegisterParamsAsLocals(paramList, doc, table);
                 }
                 TSNode body = ts_node_child_by_field_name(node, "body", 4);
-                if (!ts_node_is_null(body)) {
+                if (!ts_node_is_null(body))
+                {
                     SymbolCollector::TraverseLocals(body, doc, table, nullptr);
                 }
             }
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+            {
                 self(ts_node_child(node, i), self);
             }
         };
         traverseFuncs(root, traverseFuncs);
         
         uint32_t line = 0, col = 0;
-        for (size_t i = 0; i < offset; i++) {
+        for (size_t i = 0; i < offset; i++)
+        {
             if (code[i] == '\n') { line++; col = 0; }
             else { col++; }
         }
@@ -208,7 +216,8 @@ TEST_SUITE("ComplexHover")
         
         uint32_t line = 0;
         uint32_t col = 0;
-        for (size_t i = 0; i < offset; i++) {
+        for (size_t i = 0; i < offset; i++)
+        {
             if (code[i] == '\n') { line++; col = 0; }
             else { col++; }
         }
@@ -231,18 +240,23 @@ TEST_SUITE("ComplexHover")
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
         
         // Populate ALL locals from ALL functions, which would normally cause shadowing collisions
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void {
-            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "method_declaration") {
+        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        {
+            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "method_declaration")
+            {
                 TSNode paramList = ts_node_child_by_field_name(node, "parameters", 10);
-                if (!ts_node_is_null(paramList)) {
+                if (!ts_node_is_null(paramList))
+                {
                     SymbolCollector::RegisterParamsAsLocals(paramList, doc, table);
                 }
                 TSNode body = ts_node_child_by_field_name(node, "body", 4);
-                if (!ts_node_is_null(body)) {
+                if (!ts_node_is_null(body))
+                {
                     SymbolCollector::TraverseLocals(body, doc, table, nullptr);
                 }
             }
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+            {
                 self(ts_node_child(node, i), self);
             }
         };
@@ -255,7 +269,8 @@ TEST_SUITE("ComplexHover")
         // We get line and col for ResolveAt so FindLocalByNameAt can do its job
         uint32_t line = 0;
         uint32_t col = 0;
-        for (size_t i = 0; i < offset; i++) {
+        for (size_t i = 0; i < offset; i++)
+        {
             if (code[i] == '\n') { line++; col = 0; }
             else { col++; }
         }
@@ -268,7 +283,8 @@ TEST_SUITE("ComplexHover")
         CHECK(sym->typeInfo == "Engine::Math::Vector3");
     }
 
-    TEST_CASE("CH6: Resolving global function from inside a class in the same namespace") {
+    TEST_CASE("CH6: Resolving global function from inside a class in the same namespace")
+    {
         std::string code = SCRATCH_AS;
         Document doc("file:///scratch.as", code);
         SymbolTable table;
@@ -280,7 +296,8 @@ TEST_SUITE("ComplexHover")
         size_t offset = code.find("Lerp(a.x");
         uint32_t line = 0;
         uint32_t col = 0;
-        for (size_t i = 0; i < offset; i++) {
+        for (size_t i = 0; i < offset; i++)
+        {
             if (code[i] == '\n') { line++; col = 0; }
             else { col++; }
         }
@@ -290,7 +307,8 @@ TEST_SUITE("ComplexHover")
         CHECK(sym->kind == SymbolKind::Function);
     }
 
-    TEST_CASE("CH7: Method resolution on local variable with scoped_type") {
+    TEST_CASE("CH7: Method resolution on local variable with scoped_type")
+    {
         std::string code = SCRATCH_AS;
         Document doc("file:///scratch.as", code);
         SymbolTable table;
@@ -299,8 +317,10 @@ TEST_SUITE("ComplexHover")
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void {
-            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor") {
+        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        {
+            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor")
+            {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
                 if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
             }
@@ -311,7 +331,8 @@ TEST_SUITE("ComplexHover")
         size_t offset = code.find("ApplyForce", code.find("body.ApplyForce"));
         uint32_t line = 0;
         uint32_t col = 0;
-        for (size_t i = 0; i < offset; i++) {
+        for (size_t i = 0; i < offset; i++)
+        {
             if (code[i] == '\n') { line++; col = 0; }
             else { col++; }
         }
@@ -321,7 +342,8 @@ TEST_SUITE("ComplexHover")
         CHECK(sym->kind == SymbolKind::Method);
     }
 
-    TEST_CASE("CH8: Name collisions inside namespace") {
+    TEST_CASE("CH8: Name collisions inside namespace")
+    {
         std::string code = R"(
 namespace Game
 {
@@ -363,8 +385,10 @@ namespace Game
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void {
-            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor") {
+        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        {
+            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor")
+            {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
                 if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
             }
@@ -372,10 +396,12 @@ namespace Game
         };
         traverseFuncs(root, traverseFuncs);
 
-        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+        {
             size_t offset = code.find(target);
             uint32_t line = 0, col = 0;
-            for (size_t i = 0; i < offset; i++) {
+            for (size_t i = 0; i < offset; i++)
+            {
                 if (code[i] == '\n') { line++; col = 0; } else { col++; }
             }
             return {line, col};
@@ -438,8 +464,10 @@ namespace Game
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void {
-            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor") {
+        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        {
+            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor")
+            {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
                 if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
             }
@@ -447,10 +475,12 @@ namespace Game
         };
         traverseFuncs(root, traverseFuncs);
 
-        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+        {
             size_t offset = std::string(SCRATCH_AS).find(target);
             uint32_t line = 0, col = 0;
-            for (size_t i = 0; i < offset; i++) {
+            for (size_t i = 0; i < offset; i++)
+            {
                 if (SCRATCH_AS[i] == '\n') { line++; col = 0; } else { col++; }
             }
             return {line, col};
@@ -468,7 +498,8 @@ namespace Game
         // At this point we are testing that ResolveAt correctly returns the symbol, 
         // and optionally populates multiResults correctly if it was an ambiguous/mixin resolution.
         // For 'hp' in Entity it should resolve to Entity's own member.
-        if (sym->parent) {
+        if (sym->parent)
+        {
             CHECK(sym->parent->name == "Entity");
         }
     }
@@ -481,8 +512,10 @@ namespace Game
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void {
-            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor") {
+        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        {
+            if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor")
+            {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
                 if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
             }
@@ -490,10 +523,12 @@ namespace Game
         };
         traverseFuncs(root, traverseFuncs);
 
-        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+        {
             size_t offset = std::string(SCRATCH_AS).find(target);
             uint32_t line = 0, col = 0;
-            for (size_t i = 0; i < offset; i++) {
+            for (size_t i = 0; i < offset; i++)
+            {
                 if (SCRATCH_AS[i] == '\n') { line++; col = 0; } else { col++; }
             }
             return {line, col};
@@ -507,7 +542,8 @@ namespace Game
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "amount");
         CHECK(sym->kind == SymbolKind::Parameter);
-        if (sym->parent) {
+        if (sym->parent)
+        {
             CHECK(sym->parent->name == "TakeDamage");
         }
     }
@@ -515,9 +551,12 @@ namespace Game
     TEST_CASE("CH11: Resolve symbols from predefined namespaces")
     {
         const char* PREDEFINED = R"(
-namespace Outer {
-    namespace Inner {
-        class Inner {
+namespace Outer
+{
+    namespace Inner
+    {
+        class Inner
+        {
             float var;
         }
     }
@@ -525,7 +564,8 @@ namespace Outer {
         )";
 
         const char* USER_CODE = R"(
-void Main() {
+void Main()
+{
     Outer::Inner::Inner obj;
     obj.var = 3.14f;
 }
@@ -541,8 +581,10 @@ void Main() {
         SymbolCollector::CollectGlobals(docUser, table);
         SymbolCollector::TraverseGlobals(docUser.RootNode(), docUser, table, nullptr);
 
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void {
-            if (std::string_view(ts_node_type(node)) == "func_declaration") {
+        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        {
+            if (std::string_view(ts_node_type(node)) == "func_declaration")
+            {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
                 if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, docUser, table, nullptr);
             }
@@ -550,10 +592,12 @@ void Main() {
         };
         traverseFuncs(docUser.RootNode(), traverseFuncs);
 
-        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+        {
             size_t offset = std::string(USER_CODE).find(target);
             uint32_t line = 0, col = 0;
-            for (size_t i = 0; i < offset; i++) {
+            for (size_t i = 0; i < offset; i++)
+            {
                 if (USER_CODE[i] == '\n') { line++; col = 0; } else { col++; }
             }
             return {line, col};
@@ -574,11 +618,14 @@ void Main() {
         CHECK(sym->name == "var");
         CHECK(sym->kind == SymbolKind::Variable); // Since it was extracted as a class field (variable) in Predefined
         
-        if (sym->parent) {
+        if (sym->parent)
+        {
             CHECK(sym->parent->name == "Inner");
-            if (sym->parent->parent) {
+            if (sym->parent->parent)
+            {
                 CHECK(sym->parent->parent->name == "Inner");
-                if (sym->parent->parent->parent) {
+                if (sym->parent->parent->parent)
+                {
                     CHECK(sym->parent->parent->parent->name == "Outer");
                 }
             }
@@ -586,17 +633,20 @@ void Main() {
     }
 }
 
-TEST_CASE("CH12: Array instantiations and hover resolution") {
+TEST_CASE("CH12: Array instantiations and hover resolution")
+{
     const char* PREDEFINED = R"(
 class Animal { void Speak(); }
-class array<class T> {
+class array<class T>
+{
     uint length() const;
     void resize(uint);
 }
     )";
 
     const char* SRC = R"(
-void Main() {
+void Main()
+{
     array<int> varName = {1, 2, 3};
     array<array<array<int>>> multiDim;
     array<Animal> animals;
@@ -614,42 +664,45 @@ void Main() {
     SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
     SymbolCollector::TraverseLocals(root, doc, table, nullptr);
 
-    auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol* {
+    auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol*
+    {
         return SymbolResolver::ResolveAt(doc, table, line, col, nullptr);
     };
 
     // Hover over 'array' in 'array<int> varName'
-    // Line 2: array<int> varName = {1, 2, 3};
-    auto hover1 = getHover(2, 7); 
+    // Line 3: array<int> varName = {1, 2, 3};
+    auto hover1 = getHover(3, 7); 
     REQUIRE(hover1 != nullptr);
     CHECK(hover1->name == "array");
     
     // Hover over 'varName'
-    auto hover2 = getHover(2, 17);
+    auto hover2 = getHover(3, 17);
     REQUIRE(hover2 != nullptr);
     CHECK(hover2->name == "varName");
     CHECK(hover2->typeInfo == "array<int>");
 
     // Hover over 'multiDim'
-    auto hover3 = getHover(3, 31);
+    auto hover3 = getHover(4, 31);
     REQUIRE(hover3 != nullptr);
     CHECK(hover3->name == "multiDim");
     CHECK(hover3->typeInfo == "array<array<array<int>>>");
 
     // Hover over 'animals'
-    auto hover4 = getHover(4, 20);
+    auto hover4 = getHover(5, 20);
     REQUIRE(hover4 != nullptr);
     CHECK(hover4->name == "animals");
     CHECK(hover4->typeInfo == "array<Animal>");
 }
 
-TEST_CASE("CH13: Auto type resolution") {
+TEST_CASE("CH13: Auto type resolution")
+{
     const char* PREDEFINED = R"(
 class classA {}
     )";
 
     const char* SRC = R"(
-void Main() {
+void Main()
+{
     float f;
     auto i1 = f;
     classA a;
@@ -668,18 +721,19 @@ void Main() {
     SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
     SymbolCollector::TraverseLocals(root, doc, table, nullptr);
 
-    auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol* {
+    auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol*
+    {
         return SymbolResolver::ResolveAt(doc, table, line, col, nullptr);
     };
 
-    // Hover over 'i1' (line 3)
-    auto hover1 = getHover(3, 10); 
+    // Hover over 'i1' (line 4)
+    auto hover1 = getHover(4, 10); 
     REQUIRE(hover1 != nullptr);
     CHECK(hover1->name == "i1");
     CHECK(hover1->typeInfo == "float"); // auto resolves to float
     
-    // Hover over 'i2' (line 5)
-    auto hover2 = getHover(5, 10);
+    // Hover over 'i2' (line 6)
+    auto hover2 = getHover(6, 10);
     REQUIRE(hover2 != nullptr);
     CHECK(hover2->name == "i2");
     CHECK(hover2->typeInfo == "classA"); // auto resolves to classA

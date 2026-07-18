@@ -45,7 +45,8 @@ namespace analysis
         auto it = m_globalSymbols.find(name);
         if (it != m_globalSymbols.end())
         {
-            for (const auto& sym : it->second) {
+            for (const auto& sym : it->second)
+            {
                 results.push_back(sym.get());
             }
         }
@@ -66,36 +67,37 @@ namespace analysis
             for (const auto& nsSym : nsSyms)
             {
                 if (nsSym->kind == SymbolKind::Namespace)
-            {
-                // Recursive lambda to search inside a namespace
-                auto searchChildren = [&](auto& self, const Symbol* currentNs) -> const Symbol* {
-                    // Check direct children
-                    for (const auto& child : currentNs->children)
+                {
+                    // Recursive lambda to search inside a namespace
+                    auto searchChildren = [&](auto& self, const Symbol* currentNs) -> const Symbol*
                     {
-                        if (child->name == name)
+                        // Check direct children
+                        for (const auto& child : currentNs->children)
                         {
-                            return child.get();
-                        }
-                    }
-                    // Recurse into nested namespaces
-                    for (const auto& child : currentNs->children)
-                    {
-                        if (child->kind == SymbolKind::Namespace)
-                        {
-                            if (const Symbol* found = self(self, child.get()))
+                            if (child->name == name)
                             {
-                                return found;
+                                return child.get();
                             }
                         }
+                        // Recurse into nested namespaces
+                        for (const auto& child : currentNs->children)
+                        {
+                            if (child->kind == SymbolKind::Namespace)
+                            {
+                                if (const Symbol* found = self(self, child.get()))
+                                {
+                                    return found;
+                                }
+                            }
+                        }
+                        return nullptr;
+                    };
+    
+                    if (const Symbol* found = searchChildren(searchChildren, nsSym.get()))
+                    {
+                        return found;
                     }
-                    return nullptr;
-                };
-
-                if (const Symbol* found = searchChildren(searchChildren, nsSym.get()))
-                {
-                    return found;
                 }
-            }
             }
         }
         return nullptr;
@@ -111,7 +113,11 @@ namespace analysis
                 if (sym->kind != SymbolKind::Class) continue;
                 for (const auto& base : sym->baseClasses)
                 {
-                    if (base == mixinName) { result.push_back(sym.get()); break; }
+                    if (base == mixinName)
+                    {
+                        result.push_back(sym.get());
+                        break;
+                    }
                 }
             }
         }
@@ -131,7 +137,8 @@ namespace analysis
 
     const Symbol* SymbolTable::FindLocalByNameAt(const std::string& name, uint32_t line, uint32_t col) const
     {
-        auto isInside = [](const lsp::Range& r, uint32_t l, uint32_t c) {
+        auto isInside = [](const lsp::Range& r, uint32_t l, uint32_t c)
+        {
             if (l < r.start.line || l > r.end.line) return false;
             if (l == r.start.line && c < r.start.character) return false;
             if (l == r.end.line && c > r.end.character) return false;
@@ -148,7 +155,8 @@ namespace analysis
                 uint32_t lineSpan = sym->fullRange.end.line - sym->fullRange.start.line;
                 // Add column difference to break ties
                 uint32_t colSpan = 0;
-                if (lineSpan == 0) {
+                if (lineSpan == 0)
+                {
                     colSpan = sym->fullRange.end.character - sym->fullRange.start.character;
                 }
                 
@@ -166,12 +174,19 @@ namespace analysis
     std::vector<const Symbol*> SymbolTable::FindByName(const std::string& name) const
     {
         std::vector<const Symbol*> results;
-        for (const auto& sym : m_localSymbols) {
-            if (sym->name == name) results.push_back(sym.get());
+        for (const auto& sym : m_localSymbols)
+        {
+            if (sym->name == name)
+            {
+                results.push_back(sym.get());
+            }
         }
+        
         auto it = m_globalSymbols.find(name);
-        if (it != m_globalSymbols.end()) {
-            for (const auto& sym : it->second) {
+        if (it != m_globalSymbols.end())
+        {
+            for (const auto& sym : it->second)
+            {
                 results.push_back(sym.get());
             }
         }
@@ -189,8 +204,10 @@ namespace analysis
     {
         std::vector<const Symbol*> result;
         Symbol* container = FindGlobalByName(containerName);
-        if (container) {
-            for (const auto& child : container->children) {
+        if (container)
+        {
+            for (const auto& child : container->children)
+            {
                 result.push_back(child.get());
             }
         }
@@ -202,7 +219,8 @@ namespace analysis
         // Currently we don't have line/col in Symbol struct directly (we have fullRange which is an lsp::Range).
         // A simple linear scan through locals, then globals, checking if the position falls inside fullRange.
         
-        auto isInside = [](const lsp::Range& r, uint32_t l, uint32_t c) {
+        auto isInside = [](const lsp::Range& r, uint32_t l, uint32_t c)
+        {
             if (l < r.start.line || l > r.end.line) return false;
             if (l == r.start.line && c < r.start.character) return false;
             if (l == r.end.line && c > r.end.character) return false;

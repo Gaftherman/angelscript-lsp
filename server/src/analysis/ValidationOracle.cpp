@@ -1,10 +1,12 @@
 #include "ValidationOracle.h"
-#include <spdlog/spdlog.h>
+#include "utils/LspLogger.h"
 #include "i18n/DiagnosticI18n.h"
 
-namespace analysis {
+namespace analysis
+{
 
-ValidationOracle::ValidationOracle(asIScriptEngine* engine, i18n::Locale locale) : m_engine(engine), m_locale(locale)
+ValidationOracle::ValidationOracle(asIScriptEngine *engine, i18n::Locale locale) 
+    : m_engine(engine), m_locale(locale)
 {
     // Ensure engine has message callback configured initially if needed, 
     // though we override it per ValidateSync call.
@@ -14,7 +16,7 @@ ValidationOracle::~ValidationOracle()
 {
 }
 
-std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string& code)
+std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string &code)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_diagnostics.clear();
@@ -28,16 +30,17 @@ std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string& c
     m_engine->SetMessageCallback(asFUNCTION(MessageCallback), this, asCALL_CDECL);
 
     // Discard any previous module with this name
-    const char* moduleName = "ValidationModule";
+    const char *moduleName = "ValidationModule";
     m_engine->DiscardModule(moduleName);
 
     // Create a new module and add the script section
-    asIScriptModule* mod = m_engine->GetModule(moduleName, asGM_ALWAYS_CREATE);
+    asIScriptModule *mod = m_engine->GetModule(moduleName, asGM_ALWAYS_CREATE);
     
     if (mod)
     {
-        std::string* abstractCode = static_cast<std::string*>(m_engine->GetUserData(2000));
-        if (abstractCode && !abstractCode->empty()) {
+        std::string *abstractCode = static_cast<std::string *>(m_engine->GetUserData(2000));
+        if (abstractCode && !abstractCode->empty())
+        {
             mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
         }
         
@@ -50,7 +53,7 @@ std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string& c
         if (r < 0)
         {
             // Compilation failed (diagnostics already populated by MessageCallback)
-            spdlog::debug("Validation module build returned {}", r);
+            angel_lsp::LspLogger::Info("Validation module build returned " + std::to_string(r));
         }
     }
 
@@ -63,13 +66,14 @@ std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string& c
 
 void ValidationOracle::MessageCallback(const asSMessageInfo *msg, void *param)
 {
-    ValidationOracle* oracle = static_cast<ValidationOracle*>(param);
+    ValidationOracle *oracle = static_cast<ValidationOracle *>(param);
     oracle->HandleMessage(msg);
 }
 
 void ValidationOracle::HandleMessage(const asSMessageInfo *msg)
 {
-    if (msg->section != nullptr && std::string(msg->section) == "Abstracts") {
+    if (msg->section != nullptr && std::string(msg->section) == "Abstracts")
+    {
         return; // Ignore any errors generated from our injected abstract classes
     }
 

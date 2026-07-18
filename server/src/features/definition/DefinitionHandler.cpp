@@ -2,15 +2,18 @@
 #include "analysis/SymbolResolver.h"
 #include <angelscript.h>
 
-namespace angel_lsp {
-namespace features {
+namespace angel_lsp
+{
+namespace features
+{
 
 lsp::requests::TextDocument_Definition::Result ProcessDefinition(
     const lsp::requests::TextDocument_Definition::Params& req,
     const Document& doc,
     const analysis::SymbolTable& table,
     const asIScriptEngine* engine
-) {
+)
+{
     lsp::requests::TextDocument_Definition::Result res;
     
     const analysis::Symbol* sym = analysis::SymbolResolver::ResolveAt(doc, table, req.position.line, req.position.character);

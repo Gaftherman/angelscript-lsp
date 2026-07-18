@@ -7,28 +7,72 @@
 #include <stdexcept>
 #include <unordered_map>
 
-struct TSQueryDeleter {
-    void operator()(TSQuery* q) const { if(q) ts_query_delete(q); }
+/**
+ * @brief Deleter for Tree-Sitter queries to be used with smart pointers.
+ */
+struct TSQueryDeleter
+{
+    void operator()(TSQuery *q) const
+    {
+        if (q) ts_query_delete(q);
+    }
 };
 
-struct TSQueryCursorDeleter {
-    void operator()(TSQueryCursor* qc) const { if(qc) ts_query_cursor_delete(qc); }
+/**
+ * @brief Deleter for Tree-Sitter query cursors to be used with smart pointers.
+ */
+struct TSQueryCursorDeleter
+{
+    void operator()(TSQueryCursor *qc) const
+    {
+        if (qc) ts_query_cursor_delete(qc);
+    }
 };
 
-struct QueryMatch {
+/**
+ * @brief Represents a single match from a Tree-Sitter query execution.
+ */
+struct QueryMatch
+{
     uint32_t pattern_index;
     std::unordered_map<std::string, TSNode> captures;
 };
 
-class QueryRunner {
+/**
+ * @brief A singleton utility to compile, store, and execute Tree-Sitter queries.
+ * 
+ * Centralizes query execution to avoid recompiling the same query strings repeatedly.
+ */
+class QueryRunner
+{
 public:
-    static QueryRunner& GetInstance();
+    /**
+     * @brief Gets the singleton instance of the QueryRunner.
+     * 
+     * @return The QueryRunner instance.
+     */
+    static QueryRunner &GetInstance();
 
-    // Compila y almacena una query. Si ya existe, no hace nada.
-    bool RegisterQuery(const std::string& name, const std::string& source, std::string& out_error);
+    /**
+     * @brief Compiles and registers a Tree-Sitter query.
+     * 
+     * If the query is already registered, it does nothing and returns true.
+     * 
+     * @param name The unique name to assign to the query.
+     * @param source The Tree-Sitter query string.
+     * @param out_error Output parameter that will contain the parse error if compilation fails.
+     * @return true if the query was compiled or already exists, false on syntax error.
+     */
+    bool RegisterQuery(const std::string &name, const std::string &source, std::string &out_error);
 
-    // Ejecuta una query registrada sobre un nodo (ej. la raíz del árbol).
-    std::vector<QueryMatch> ExecuteQuery(const std::string& name, TSNode root_node);
+    /**
+     * @brief Executes a previously registered query against a given syntax node.
+     * 
+     * @param name The name of the registered query.
+     * @param root_node The Tree-Sitter node to query against.
+     * @return A list of query matches and their named captures.
+     */
+    std::vector<QueryMatch> ExecuteQuery(const std::string &name, TSNode root_node);
 
 private:
     QueryRunner() = default;

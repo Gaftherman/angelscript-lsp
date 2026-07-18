@@ -5,27 +5,65 @@
 
 namespace analysis
 {
+    /**
+     * @brief Utility class to traverse the AST and populate a SymbolTable.
+     */
     class SymbolCollector
     {
     public:
-        // Collects global symbols (functions, classes, namespaces, globals) and adds them to the global table.
-        // It should traverse the AST starting from the root node.
+        /**
+         * @brief Collects global symbols (functions, classes, namespaces, globals) and adds them to the global table.
+         * 
+         * @param doc The document containing the source code.
+         * @param table The symbol table to populate.
+         */
         static void CollectGlobals(const Document& doc, SymbolTable& table);
 
-        // Collects local symbols (local variables inside function bodies) and adds them to the local table.
-        // Traverse the AST starting from a specific block node.
+        /**
+         * @brief Collects local symbols (local variables inside function bodies) and adds them to the local table.
+         * 
+         * @param node The AST node to traverse from.
+         * @param doc The document containing the source code.
+         * @param table The symbol table to populate.
+         * @param currentScope The current scope symbol, if any.
+         */
         static void TraverseLocals(TSNode node, const Document& doc, SymbolTable& table, Symbol* currentScope = nullptr);
 
-        // Utility to register parameters as local variables
+        /**
+         * @brief Utility to register parameters as local variables.
+         * 
+         * @param paramListNode The AST node representing the parameter list.
+         * @param doc The document containing the source code.
+         * @param table The symbol table to populate.
+         */
         static void RegisterParamsAsLocals(TSNode paramListNode, const Document& doc, SymbolTable& table);
 
-        // Utility to extract text from a node
+        /**
+         * @brief Utility to extract text from an AST node.
+         * 
+         * @param node The AST node.
+         * @param doc The document containing the source code.
+         * @return The extracted text.
+         */
         static std::string GetNodeText(TSNode node, const Document& doc);
         
-        // Factory for symbol ranges
+        /**
+         * @brief Factory for symbol ranges based on AST nodes.
+         * 
+         * @param node The AST node.
+         * @param doc The document containing the source code.
+         * @return The range of the node.
+         */
         static lsp::Range GetRange(TSNode node, const Document& doc);
         
-        // Recursive helper to traverse AST for globals
+        /**
+         * @brief Recursive helper to traverse AST for globals.
+         * 
+         * @param node The AST node to traverse.
+         * @param doc The document containing the source code.
+         * @param table The symbol table to populate.
+         * @param parentScope The parent scope symbol.
+         */
         static void TraverseGlobals(TSNode node, const Document& doc, SymbolTable& table, Symbol* parentScope);
     };
 }

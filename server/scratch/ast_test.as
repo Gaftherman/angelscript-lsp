@@ -1,1 +1,0 @@
-void Main() { Collider::Collider(); }

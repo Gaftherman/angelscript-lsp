@@ -119,12 +119,15 @@ TEST_SUITE("SymbolResolver")
 
         size_t offset = code.rfind("IDLE;");
         const Symbol* sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
-        if (!sym) {
-            auto dump = [&](auto& self, TSNode n, int depth) -> void {
+        if (!sym)
+        {
+            auto dump = [&](auto& self, TSNode n, int depth) -> void
+            {
                 if (ts_node_is_null(n)) return;
                 std::string indent(depth * 2, ' ');
                 printf("%s%s (%s)\n", indent.c_str(), ts_node_type(n), std::string(doc.SourceAt(n)).c_str());
-                for (uint32_t i=0; i<ts_node_child_count(n); i++) {
+                for (uint32_t i=0; i<ts_node_child_count(n); i++)
+                {
                     self(self, ts_node_child(n, i), depth + 1);
                 }
             };
@@ -143,14 +146,16 @@ TEST_SUITE("SymbolResolver")
 typedef float MyFloat;
 class MyFloat {}
 
-namespace Collider {
+namespace Collider
+{
     class Collider {}
     void Collider() {}
     enum Collider { COLLIDER_VAL }
     MyFloat Collider;
 }
 
-void Main() {
+void Main()
+{
     MyFloat f;
     Collider::Collider c;
 }
@@ -159,7 +164,8 @@ void Main() {
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
 
-        auto resolveAndCheck = [&](const std::string& searchStr, SymbolKind expectedKind) {
+        auto resolveAndCheck = [&](const std::string& searchStr, SymbolKind expectedKind)
+        {
             size_t offset = code.rfind(searchStr);
             uint32_t line = 0;
             for (size_t i = 0; i < offset; i++) if (code[i] == '\n') line++;
@@ -197,14 +203,18 @@ void Main() {
     TEST_CASE("R21: Lerp namespace call resolution")
     {
         std::string code = R"(
-namespace Engine {
-    namespace Math {
-        float Lerp(float a, float b, float t) {
+namespace Engine
+{
+    namespace Math
+    {
+        float Lerp(float a, float b, float t)
+        {
             return a + (b - a) * t;
         }
     }
 }
-void Main() {
+void Main()
+{
     float val = Engine::Math::Lerp(0, 1, 0.5f);
 }
 )";
@@ -228,8 +238,10 @@ void Main() {
         std::string code = R"(
 class Entity { float hp; }
 mixin class Regenerator { float regenRate; }
-class Troll : Entity, Regenerator {
-    void Enrage() {
+class Troll : Entity, Regenerator
+{
+    void Enrage()
+    {
         regenRate = 5.0f;
     }
 }
@@ -434,9 +446,11 @@ class Troll : Entity, Regenerator {
         TSNode bodyNode = ts_node_child_by_field_name(nsNode, "body", 4);
         
         TSNode funcNode;
-        for (uint32_t i = 0; i < ts_node_child_count(bodyNode); i++) {
+        for (uint32_t i = 0; i < ts_node_child_count(bodyNode); i++)
+        {
             TSNode child = ts_node_child(bodyNode, i);
-            if (std::string_view(ts_node_type(child)) == "func_declaration") {
+            if (std::string_view(ts_node_type(child)) == "func_declaration")
+            {
                 funcNode = child;
                 break;
             }
@@ -485,9 +499,11 @@ class Troll : Entity, Regenerator {
         size_t offsetMain = code.find("Main");
         TSNode root = doc.RootNode();
         TSNode mainFunc;
-        for (uint32_t i = 0; i < ts_node_child_count(root); i++) {
+        for (uint32_t i = 0; i < ts_node_child_count(root); i++)
+        {
             TSNode child = ts_node_child(root, i);
-            if (std::string_view(ts_node_type(child)) == "func_declaration") {
+            if (std::string_view(ts_node_type(child)) == "func_declaration")
+            {
                 mainFunc = child;
                 break;
             }
@@ -527,10 +543,12 @@ class Troll : Entity, Regenerator {
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
 
-        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+        {
             size_t offset = code.rfind(target);
             uint32_t line = 0, col = 0;
-            for (size_t i = 0; i < offset; i++) {
+            for (size_t i = 0; i < offset; i++)
+            {
                 if (code[i] == '\n') { line++; col = 0; } else { col++; }
             }
             return {line, col};
@@ -539,11 +557,14 @@ class Troll : Entity, Regenerator {
         size_t offsetMain = code.find("Main");
         TSNode root = doc.RootNode();
         TSNode mainFunc;
-        for (uint32_t i = 0; i < ts_node_child_count(root); i++) {
+        for (uint32_t i = 0; i < ts_node_child_count(root); i++)
+        {
             TSNode child = ts_node_child(root, i);
-            if (std::string_view(ts_node_type(child)) == "func_declaration") {
+            if (std::string_view(ts_node_type(child)) == "func_declaration")
+            {
                 TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
-                if (!ts_node_is_null(nameNode) && std::string_view(doc.SourceAt(nameNode)) == "Main") {
+                if (!ts_node_is_null(nameNode) && std::string_view(doc.SourceAt(nameNode)) == "Main")
+                {
                     mainFunc = child;
                     break;
                 }
@@ -552,7 +573,8 @@ class Troll : Entity, Regenerator {
         TSNode blockNode = ts_node_child_by_field_name(mainFunc, "body", 4);
         SymbolCollector::TraverseLocals(blockNode, doc, table, nullptr);
 
-        SUBCASE("Namespace Shadowing") {
+        SUBCASE("Namespace Shadowing")
+        {
             auto [line, col] = getPos("Foo f;");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -562,7 +584,8 @@ class Troll : Entity, Regenerator {
             CHECK(sym->parent->name == "Foo"); // Parent is namespace Foo
         }
 
-        SUBCASE("Shared Class") {
+        SUBCASE("Shared Class")
+        {
             auto [line, col] = getPos("Bar b;");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -570,7 +593,8 @@ class Troll : Entity, Regenerator {
             CHECK(sym->kind == SymbolKind::Class);
         }
 
-        SUBCASE("External Shared Class") {
+        SUBCASE("External Shared Class")
+        {
             auto [line, col] = getPos("ExtBar eb;");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -578,7 +602,8 @@ class Troll : Entity, Regenerator {
             CHECK(sym->kind == SymbolKind::Class);
         }
 
-        SUBCASE("Shared Function") {
+        SUBCASE("Shared Function")
+        {
             auto [line, col] = getPos("GlobalFunc(");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -586,7 +611,8 @@ class Troll : Entity, Regenerator {
             CHECK(sym->kind == SymbolKind::Function);
         }
 
-        SUBCASE("External Shared Function") {
+        SUBCASE("External Shared Function")
+        {
             auto [line, col] = getPos("ExtFunc(");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -594,12 +620,14 @@ class Troll : Entity, Regenerator {
             CHECK(sym->kind == SymbolKind::Function);
         }
 
-        SUBCASE("Auto variable") {
+        SUBCASE("Auto variable")
+        {
             auto [line, col] = getPos("auto a");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             
             // DUMP LOCALS
-            for (auto& l : table.GetLocals()) {
+            for (auto& l : table.GetLocals())
+            {
                 printf("Local: %s (type: %s)\n", l->name.c_str(), l->typeInfo.c_str());
             }
 
@@ -611,7 +639,8 @@ class Troll : Entity, Regenerator {
             CHECK(varSym->typeInfo == "auto");
         }
         
-        SUBCASE("Auto handle variable") {
+        SUBCASE("Auto handle variable")
+        {
             auto [line, col] = getPos("ptr =");
             const Symbol* varSym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(varSym != nullptr);
@@ -642,9 +671,11 @@ class Troll : Entity, Regenerator {
         size_t offsetMain = code.find("Main");
         TSNode root = doc.RootNode();
         TSNode mainFunc;
-        for (uint32_t i = 0; i < ts_node_child_count(root); i++) {
+        for (uint32_t i = 0; i < ts_node_child_count(root); i++)
+        {
             TSNode child = ts_node_child(root, i);
-            if (std::string_view(ts_node_type(child)) == "func_declaration") {
+            if (std::string_view(ts_node_type(child)) == "func_declaration")
+            {
                 mainFunc = child;
                 break;
             }
@@ -652,16 +683,19 @@ class Troll : Entity, Regenerator {
         TSNode blockNode = ts_node_child_by_field_name(mainFunc, "body", 4);
         SymbolCollector::TraverseLocals(blockNode, doc, table, nullptr);
 
-        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+        {
             size_t offset = code.rfind(target);
             uint32_t line = 0, col = 0;
-            for (size_t i = 0; i < offset; i++) {
+            for (size_t i = 0; i < offset; i++)
+            {
                 if (code[i] == '\n') { line++; col = 0; } else { col++; }
             }
             return {line, col};
         };
 
-        SUBCASE("Hover over inherited method") {
+        SUBCASE("Hover over inherited method")
+        {
             auto [line, col] = getPos("TakeDamage(");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -671,7 +705,8 @@ class Troll : Entity, Regenerator {
             CHECK(sym->parent->name == "IDam");
         }
 
-        SUBCASE("Hover over mixin method") {
+        SUBCASE("Hover over mixin method")
+        {
             auto [line, col] = getPos("Tick()");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -681,7 +716,8 @@ class Troll : Entity, Regenerator {
             CHECK(sym->parent->name == "Regen");
         }
 
-        SUBCASE("Hover over type from using namespace") {
+        SUBCASE("Hover over type from using namespace")
+        {
             auto [line, col] = getPos("Vector3 pos");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -692,7 +728,8 @@ class Troll : Entity, Regenerator {
         }
     }
 
-    TEST_CASE("Mixin Scope and Host-Class Search") {
+    TEST_CASE("Mixin Scope and Host-Class Search")
+    {
         analysis::SymbolTable table;
         std::string code = R"(
 class Entity { float hp; float speed; }
@@ -718,20 +755,28 @@ interface IMovable { void Move(); }
         analysis::SymbolCollector::CollectGlobals(doc, table);
         TSNode root = doc.RootNode();
 
-        auto parseLocalsIn = [&](const std::string& className, const std::string& funcName) {
-            for (uint32_t i = 0; i < ts_node_child_count(root); i++) {
+        auto parseLocalsIn = [&](const std::string& className, const std::string& funcName)
+        {
+            for (uint32_t i = 0; i < ts_node_child_count(root); i++)
+            {
                 TSNode child = ts_node_child(root, i);
                 std::string_view type = ts_node_type(child);
-                if (type == "class_declaration" || type == "mixin_declaration") {
+                if (type == "class_declaration" || type == "mixin_declaration")
+                {
                     TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
-                    if (!ts_node_is_null(nameNode) && std::string_view(doc.SourceAt(nameNode)) == className) {
+                    if (!ts_node_is_null(nameNode) && std::string_view(doc.SourceAt(nameNode)) == className)
+                    {
                         TSNode body = ts_node_child_by_field_name(child, "body", 4);
-                        if (!ts_node_is_null(body)) {
-                            for (uint32_t j = 0; j < ts_node_child_count(body); j++) {
+                        if (!ts_node_is_null(body))
+                        {
+                            for (uint32_t j = 0; j < ts_node_child_count(body); j++)
+                            {
                                 TSNode m = ts_node_child(body, j);
-                                if (std::string_view(ts_node_type(m)) == "func_declaration") {
+                                if (std::string_view(ts_node_type(m)) == "func_declaration")
+                                {
                                     TSNode mNameNode = ts_node_child_by_field_name(m, "name", 4);
-                                    if (!ts_node_is_null(mNameNode) && std::string_view(doc.SourceAt(mNameNode)) == funcName) {
+                                    if (!ts_node_is_null(mNameNode) && std::string_view(doc.SourceAt(mNameNode)) == funcName)
+                                    {
                                         TSNode fbody = ts_node_child_by_field_name(m, "body", 4);
                                         analysis::SymbolCollector::TraverseLocals(fbody, doc, table, nullptr);
                                         return;
@@ -744,18 +789,21 @@ interface IMovable { void Move(); }
             }
         };
 
-        auto getPos = [&](const std::string& match) -> std::pair<uint32_t, uint32_t> {
+        auto getPos = [&](const std::string& match) -> std::pair<uint32_t, uint32_t>
+        {
             size_t idx = code.find(match);
             REQUIRE(idx != std::string::npos);
             uint32_t line = 0, col = 0;
-            for (size_t i = 0; i < idx; i++) {
+            for (size_t i = 0; i < idx; i++)
+            {
                 if (code[i] == '\n') { line++; col = 0; }
                 else { col++; }
             }
             return {line, col};
         };
 
-        SUBCASE("Group A: Mixin Hover") {
+        SUBCASE("Group A: Mixin Hover")
+        {
             auto [line, col] = getPos("Regenerator");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -763,7 +811,8 @@ interface IMovable { void Move(); }
             CHECK(sym->kind == SymbolKind::Mixin);
         }
 
-        SUBCASE("Group B: Mixin own member") {
+        SUBCASE("Group B: Mixin own member")
+        {
             parseLocalsIn("Regenerator", "Regen");
             auto [line, col] = getPos("regenRate;"); // inside Regen
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
@@ -773,7 +822,8 @@ interface IMovable { void Move(); }
             CHECK(sym->parent->name == "Regenerator");
         }
 
-        SUBCASE("Group C: Host-Class Search") {
+        SUBCASE("Group C: Host-Class Search")
+        {
             parseLocalsIn("Regenerator", "Regen");
             auto [line, col] = getPos("hp = hp"); // inside Regen
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
@@ -783,14 +833,16 @@ interface IMovable { void Move(); }
             CHECK(sym->parent->name == "Entity");
         }
 
-        SUBCASE("Group D: Orphan Mixin (No Host)") {
+        SUBCASE("Group D: Orphan Mixin (No Host)")
+        {
             parseLocalsIn("OrphanMixin", "Foo");
             auto [line, col] = getPos("nonExistentVar");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             CHECK(sym == nullptr);
         }
 
-        SUBCASE("Group E: Shadowing (Mixin has priority over Host)") {
+        SUBCASE("Group E: Shadowing (Mixin has priority over Host)")
+        {
             parseLocalsIn("Mover", "Move");
             auto [line, col] = getPos("speed = 1.0f");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
@@ -800,12 +852,14 @@ interface IMovable { void Move(); }
             CHECK(sym->parent->name == "Mover"); // not Entity
         }
 
-        SUBCASE("Group F: Interface is correctly resolved as Interface") {
+        SUBCASE("Group F: Interface is correctly resolved as Interface")
+        {
             auto [line, col] = getPos("IMovable");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
             CHECK(sym->name == "IMovable");
-        SUBCASE("Group F: Interface is correctly resolved as Interface") {
+        SUBCASE("Group F: Interface is correctly resolved as Interface")
+        {
             auto [line, col] = getPos("IMovable");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -813,7 +867,8 @@ interface IMovable { void Move(); }
             CHECK(sym->kind == SymbolKind::Interface);
         }
 
-        SUBCASE("Group G: Multi-Host Search") {
+        SUBCASE("Group G: Multi-Host Search")
+        {
             parseLocalsIn("Regenerator", "Regen");
             auto [line, col] = getPos("hp = hp"); // inside Regen
             std::vector<const Symbol*> multiResults;
@@ -827,7 +882,8 @@ interface IMovable { void Move(); }
             bool foundEntity = false;
             bool foundMonster = false;
             bool foundBoss = false;
-            for (const auto& res : multiResults) {
+            for (const auto& res : multiResults)
+            {
                 if (res->parent && res->parent->name == "Entity") foundEntity = true;
                 if (res->parent && res->parent->name == "Monster") foundMonster = true;
                 if (res->parent && res->parent->name == "Boss") foundBoss = true;
@@ -837,7 +893,8 @@ interface IMovable { void Move(); }
             CHECK(foundBoss);
         }
 
-        SUBCASE("Group H: Host -> Mixin Search (Bug 1)") {
+        SUBCASE("Group H: Host -> Mixin Search (Bug 1)")
+        {
             parseLocalsIn("Troll", "Enrage");
             auto [line, col] = getPos("regenRate = 5.0f"); // inside Enrage
             std::vector<const Symbol*> multiResults;
@@ -851,7 +908,8 @@ interface IMovable { void Move(); }
     }
     }
 
-    TEST_CASE("Variable Declaration Hover Bugs") {
+    TEST_CASE("Variable Declaration Hover Bugs")
+    {
         analysis::SymbolTable table;
         std::string code = R"(
 namespace Engine { namespace Math { class Vector3 {} } }
@@ -860,7 +918,8 @@ funcdef void NetworkCallback();
 class NetworkManager { NetworkCallback@ onReceive; }
 class Troll { void TakeDamage(float a) {} }
 
-void Main() {
+void Main()
+{
     Troll myEnemy;
     Engine::Math::Vector3 pos2;
     GameState state = PLAYING;
@@ -874,11 +933,14 @@ void Main() {
 
         // Run TraverseLocals on Main
         TSNode root = doc.RootNode();
-        for (uint32_t i = 0; i < ts_node_child_count(root); i++) {
+        for (uint32_t i = 0; i < ts_node_child_count(root); i++)
+        {
             TSNode child = ts_node_child(root, i);
-            if (std::string_view(ts_node_type(child)) == "func_declaration") {
+            if (std::string_view(ts_node_type(child)) == "func_declaration")
+            {
                 TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
-                if (!ts_node_is_null(nameNode) && std::string_view(doc.SourceAt(nameNode)) == "Main") {
+                if (!ts_node_is_null(nameNode) && std::string_view(doc.SourceAt(nameNode)) == "Main")
+                {
                     TSNode body = ts_node_child_by_field_name(child, "body", 4);
                     analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
                     break;
@@ -886,18 +948,21 @@ void Main() {
             }
         }
 
-        auto getPos = [&](const std::string& match) -> std::pair<uint32_t, uint32_t> {
+        auto getPos = [&](const std::string& match) -> std::pair<uint32_t, uint32_t>
+        {
             size_t idx = code.find(match);
             REQUIRE(idx != std::string::npos);
             uint32_t line = 0, col = 0;
-            for (size_t i = 0; i < idx; i++) {
+            for (size_t i = 0; i < idx; i++)
+            {
                 if (code[i] == '\n') { line++; col = 0; }
                 else { col++; }
             }
             return {line, col};
         };
 
-        SUBCASE("Hover over standard class local variable declaration") {
+        SUBCASE("Hover over standard class local variable declaration")
+        {
             auto [line, col] = getPos("myEnemy;");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -905,7 +970,8 @@ void Main() {
             CHECK(sym->typeInfo == "Troll");
         }
 
-        SUBCASE("Hover over enum local variable declaration") {
+        SUBCASE("Hover over enum local variable declaration")
+        {
             auto [line, col] = getPos("state = PLAYING");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -913,7 +979,8 @@ void Main() {
             CHECK(sym->typeInfo == "GameState");
         }
 
-        SUBCASE("Hover over funcdef local variable declaration") {
+        SUBCASE("Hover over funcdef local variable declaration")
+        {
             auto [line, col] = getPos("net;");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -921,7 +988,8 @@ void Main() {
             CHECK(sym->typeInfo == "NetworkManager");
         }
 
-        SUBCASE("Hover over unknown class local variable declaration") {
+        SUBCASE("Hover over unknown class local variable declaration")
+        {
             auto [line, col] = getPos("p;");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -929,7 +997,8 @@ void Main() {
             CHECK(sym->typeInfo == "Player");
         }
 
-        SUBCASE("Hover over namespace qualified local variable declaration") {
+        SUBCASE("Hover over namespace qualified local variable declaration")
+        {
             auto [line, col] = getPos("pos2;");
             const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
@@ -938,23 +1007,28 @@ void Main() {
         }
     }
 
-    TEST_SUITE("Hover Context and Constructors") {
-        TEST_CASE("Hover over constructor and destructor") {
+    TEST_SUITE("Hover Context and Constructors")
+    {
+        TEST_CASE("Hover over constructor and destructor")
+        {
             std::string code = "class Vec { Vec() {} ~Vec() {} Vec(float x) {} }\nvoid Main() { Vec v; }";
             Document doc("file:///test.as", code);
             SymbolTable table;
             SymbolCollector::CollectGlobals(doc, table);
 
-            auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t> {
+            auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+            {
                 size_t offset = code.rfind(target);
                 uint32_t line = 0, col = 0;
-                for (size_t i = 0; i < offset; i++) {
+                for (size_t i = 0; i < offset; i++)
+                {
                     if (code[i] == '\n') { line++; col = 0; } else { col++; }
                 }
                 return {line, col};
             };
 
-            SUBCASE("Default Constructor") {
+            SUBCASE("Default Constructor")
+            {
                 auto [line, col] = getPos(" Vec() {}");
                 const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col + 1); // +1 because we added a space
                 REQUIRE(sym != nullptr);
@@ -962,7 +1036,8 @@ void Main() {
                 CHECK(sym->name == "Vec");
             }
 
-            SUBCASE("Destructor") {
+            SUBCASE("Destructor")
+            {
                 auto [line, col] = getPos("~Vec() {}");
                 const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col + 1); // +1 to hit 'Vec'
                 REQUIRE(sym != nullptr);
@@ -970,7 +1045,8 @@ void Main() {
                 CHECK(sym->name == "~Vec");
             }
 
-            SUBCASE("Constructor with params") {
+            SUBCASE("Constructor with params")
+            {
                 auto [line, col] = getPos("Vec(float x)");
                 const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
                 REQUIRE(sym != nullptr);
@@ -978,7 +1054,8 @@ void Main() {
                 CHECK(sym->name == "Vec");
             }
 
-            SUBCASE("Class type in variable declaration") {
+            SUBCASE("Class type in variable declaration")
+            {
                 auto [line, col] = getPos("Vec v;");
                 const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
                 REQUIRE(sym != nullptr);

@@ -6,6 +6,9 @@
 
 namespace analysis
 {
+    /**
+     * @brief Represents the kind of an AngelScript symbol.
+     */
     enum class SymbolKind
     {
         Unknown,
@@ -26,11 +29,21 @@ namespace analysis
         Destructor
     };
 
-    struct SymbolParam {
+    /**
+     * @brief Represents a parameter for functions, methods, or funcdefs.
+     */
+    struct SymbolParam
+    {
         std::string typeName; // "int", "Player@", "const float &in"
         std::string name;     // "amount", "target", ""
     };
 
+    /**
+     * @brief A generic symbol in the AngelScript AST.
+     * 
+     * Stores contextual information, ranges, and hierarchical relationships
+     * used for Hover, Go To Definition, and Signature Help.
+     */
     struct Symbol
     {
         std::string name;
@@ -56,10 +69,15 @@ namespace analysis
 
         // For nested scopes/symbols (e.g. methods inside classes, locals inside functions)
         std::vector<std::shared_ptr<Symbol>> children;
-        Symbol* parent = nullptr; // Weak reference to parent
+        Symbol *parent = nullptr; // Weak reference to parent
     };
 
-    // Helper to map our SymbolKind to the LSP protocol's SymbolKind
+    /**
+     * @brief Converts an internal SymbolKind to the LSP protocol SymbolKind.
+     * 
+     * @param kind The internal symbol kind.
+     * @return The corresponding LSP SymbolKind.
+     */
     inline lsp::SymbolKind ToLspSymbolKind(SymbolKind kind)
     {
         switch (kind)
@@ -68,14 +86,14 @@ namespace analysis
             case SymbolKind::Function:   return lsp::SymbolKind::Function;
             case SymbolKind::Class:      return lsp::SymbolKind::Class;
             case SymbolKind::Namespace:  return lsp::SymbolKind::Namespace;
-            case SymbolKind::Parameter:  return lsp::SymbolKind::Variable; // LSP doesn't have a Parameter enum, Variable is often used
+            case SymbolKind::Parameter:  return lsp::SymbolKind::Variable;
             case SymbolKind::Property:   return lsp::SymbolKind::Property;
             case SymbolKind::Method:     return lsp::SymbolKind::Method;
             case SymbolKind::Enum:       return lsp::SymbolKind::Enum;
             case SymbolKind::EnumMember: return lsp::SymbolKind::EnumMember;
             case SymbolKind::Interface:  return lsp::SymbolKind::Interface;
-            case SymbolKind::Funcdef:    return lsp::SymbolKind::Function; // Funcdefs act like function pointers
-            case SymbolKind::Mixin:      return lsp::SymbolKind::Class; // Mixins act like classes
+            case SymbolKind::Funcdef:    return lsp::SymbolKind::Function;
+            case SymbolKind::Mixin:      return lsp::SymbolKind::Class;
             default:                     return lsp::SymbolKind::Null;
         }
     }

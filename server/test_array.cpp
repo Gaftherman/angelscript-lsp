@@ -4,7 +4,8 @@
 
 using namespace analysis;
 
-int main() {
+int main()
+{
     asIScriptEngine* engine = asCreateScriptEngine();
     SymbolTable table;
     const char* src = "class array<T> { uint length() const; }";

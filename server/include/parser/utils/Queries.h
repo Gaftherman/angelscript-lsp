@@ -1,8 +1,12 @@
 #pragma once
 #include <string>
 
-namespace queries {
+namespace queries
+{
 
+/**
+ * @brief Tree-Sitter query string for syntax highlighting tokens.
+ */
 const std::string HIGHLIGHTS = R"(
     [
         "class" "interface" "namespace" "enum" "struct" "mixin" "funcdef"
@@ -28,6 +32,9 @@ const std::string HIGHLIGHTS = R"(
     (comment) @comment
 )";
 
+/**
+ * @brief Tree-Sitter query string for local variable definitions and references.
+ */
 const std::string LOCALS = R"(
     (variable_declaration
         name: (identifier) @local.definition

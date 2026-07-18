@@ -7,7 +7,8 @@
 
 using namespace analysis;
 
-void MessageCallback(const asSMessageInfo *msg, void *param) {
+void MessageCallback(const asSMessageInfo *msg, void *param)
+{
     printf("AS MESSAGE: %s (Row: %d)\n", msg->message, msg->row);
 }
 
@@ -106,7 +107,8 @@ TEST_SUITE("PredefinedLoader")
 typedef uint32 size_t;
 
 funcdef bool less(const ?&in a, const ?&in b);
-class array<T> {
+class array<T>
+{
     uint length() const;
     void resize(uint length);
     void reserve(uint length);
@@ -144,7 +146,8 @@ class array<T> {
     uint opForValue1(uint index) const;
 }
 
-class char {
+class char
+{
 	bool opEquals(const string& in szString) const;
 	char opAssign(const string& in szString);
 	uint32 opImplConv() const;
@@ -154,8 +157,10 @@ class char {
 	void char();
 }
 
-namespace String {
-    enum CompareType {
+namespace String
+{
+    enum CompareType
+    {
         CaseInsensitive = 1,
         CaseSensitive = 0 
     }
@@ -167,7 +172,8 @@ namespace String {
     const CompareType DEFAULT_COMPARE;
 }
 
-class string {
+class string
+{
 	array<string>@ Split(const string& in szDelimiter) const;
 	string opAdd(char character) const;
 	string opAdd(bool bValue) const;
@@ -248,12 +254,15 @@ namespace ThisIsANamespace
         static std::string g_testMessages;
         g_testMessages.clear();
         
-        struct Local {
-            static void Callback(const asSMessageInfo *msg, void *param) {
+        struct Local
+        {
+            static void Callback(const asSMessageInfo *msg, void *param)
+            {
                 char buf[1024];
                 snprintf(buf, sizeof(buf), "%s (Row: %d, Col: %d)\n", msg->message, msg->row, msg->col);
                 g_testMessages += buf;
-                if (msg->type == asMSGTYPE_ERROR) {
+                if (msg->type == asMSGTYPE_ERROR)
+                {
                     bool* hasErrorsPtr = static_cast<bool*>(param);
                     *hasErrorsPtr = true;
                 }
@@ -273,7 +282,8 @@ namespace ThisIsANamespace
 
         asIScriptModule* mod = engine->GetModule("user", asGM_ALWAYS_CREATE);
         mod->AddScriptSection("user", R"(
-            void Main() {
+            void Main()
+            {
                 // Typedef usage
                 size_t mySize = 10;
 
@@ -299,7 +309,8 @@ namespace ThisIsANamespace
                 nsObj.ThisIsANameSpaceClassFunction();
                 
                 String::CompareType comp = String::DEFAULT_COMPARE;
-                if (comp == String::CaseInsensitive) {
+                if (comp == String::CaseInsensitive)
+                {
                     s.Clear();
                 }
             }
@@ -308,7 +319,8 @@ namespace ThisIsANamespace
 
 
 
-        if (r < 0) {
+        if (r < 0)
+        {
             MESSAGE("Build failed. Messages:\n" << g_testMessages);
         }
         CHECK(r >= 0); // Verify that Dummy classes compile correctly
@@ -337,7 +349,8 @@ namespace ThisIsANamespace
         CHECK(table.FindGlobalByName("Engine") != nullptr);
 
         auto* ns = table.FindGlobalByName("Engine");
-        if (ns) {
+        if (ns)
+        {
             CHECK(ns->children.size() > 0);
         }
     }
@@ -365,34 +378,42 @@ namespace ThisIsANamespace
         const char* PREDEFINED = R"(
 funcdef void MyCallback(int a, float b);
 
-abstract class Animal {
+abstract class Animal
+{
     void Speak();
     int age;
 }
 
-final class Dog : Animal {
+final class Dog : Animal
+{
     void Speak();
 }
 
-mixin class Flyable {
+mixin class Flyable
+{
     void Fly();
 }
 
-namespace Outer {
+namespace Outer
+{
     funcdef void OuterCallback();
 
-    namespace Inner {
-        class Inner {
+    namespace Inner
+    {
+        class Inner
+        {
             float var;
         }
     }
 }
 
-namespace Files {
+namespace Files
+{
     float FirstVar;
 }
 
-namespace Files {
+namespace Files
+{
     float SecondVar;
 }
         )";
@@ -403,12 +424,15 @@ namespace Files {
         static std::string g_testMessages2;
         g_testMessages2.clear();
         
-        struct Local {
-            static void Callback(const asSMessageInfo *msg, void *param) {
+        struct Local
+        {
+            static void Callback(const asSMessageInfo *msg, void *param)
+            {
                 char buf[1024];
                 snprintf(buf, sizeof(buf), "%s (Row: %d, Col: %d)\n", msg->message, msg->row, msg->col);
                 g_testMessages2 += buf;
-                if (msg->type == asMSGTYPE_ERROR) {
+                if (msg->type == asMSGTYPE_ERROR)
+                {
                     bool* hasErrorsPtr = static_cast<bool*>(param);
                     *hasErrorsPtr = true;
                 }
@@ -428,17 +452,21 @@ namespace Files {
         asIScriptModule* mod = engine->GetModule("user", asGM_ALWAYS_CREATE);
         
         std::string* abstractCode = static_cast<std::string*>(engine->GetUserData(2000));
-        if (abstractCode && !abstractCode->empty()) {
+        if (abstractCode && !abstractCode->empty())
+        {
             mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
         }
         
         mod->AddScriptSection("user", R"(
-            class Bird : Flyable {
+            class Bird : Flyable
+            {
             }
-            class MyAnimal : Animal {
+            class MyAnimal : Animal
+            {
                 void Speak() {}
             }
-            void Main() {
+            void Main()
+            {
                 MyCallback@ cb;
                 Outer::OuterCallback@ ocb;
                 MyAnimal a;
@@ -456,7 +484,8 @@ namespace Files {
         )");
         int r = mod->Build();
 
-        if (r < 0) {
+        if (r < 0)
+        {
             MESSAGE("Build failed. Messages:\n" << g_testMessages2);
         }
         CHECK(r >= 0);
@@ -465,9 +494,11 @@ namespace Files {
     }
 
 static std::string g_testMessages3;
-static void PL18Callback(const asSMessageInfo* msg, void* param) {
+static void PL18Callback(const asSMessageInfo* msg, void* param)
+{
     bool* hasErr = static_cast<bool*>(param);
-    if (msg->type == asMSGTYPE_ERROR || msg->type == asMSGTYPE_WARNING) {
+    if (msg->type == asMSGTYPE_ERROR || msg->type == asMSGTYPE_WARNING)
+    {
         *hasErr = true;
         g_testMessages3 += msg->message;
         g_testMessages3 += "\n";
@@ -477,15 +508,18 @@ static void PL18Callback(const asSMessageInfo* msg, void* param) {
     TEST_CASE("PL1.8: Final and non-abstract classes block inheritance")
     {
         const char* src = R"(
-final class CFinalEntity {
+final class CFinalEntity
+{
     void FinalMethod();
 }
 
-class CRegularEntity {
+class CRegularEntity
+{
     void RegularMethod();
 }
 
-abstract class CAbstractEntity {
+abstract class CAbstractEntity
+{
     void AbstractMethod();
 }
         )";
@@ -520,7 +554,8 @@ abstract class CAbstractEntity {
         asIScriptModule* mod3 = engine->GetModule("user3", asGM_ALWAYS_CREATE);
         
         std::string* abstractCode = static_cast<std::string*>(engine->GetUserData(2000));
-        if (abstractCode && !abstractCode->empty()) {
+        if (abstractCode && !abstractCode->empty())
+        {
             mod3->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
         }
         
