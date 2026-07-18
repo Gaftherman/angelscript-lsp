@@ -79,4 +79,6 @@ struct IEntity
     void Update(float deltaTime);
 
     float member; // Comment of the member
+
+    void Test(float test);
 };

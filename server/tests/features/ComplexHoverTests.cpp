@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <iostream>
+#include <fstream>
 #include "helpers/TestFixtures.h"
 #include "analysis/SymbolResolver.h"
 #include "analysis/SymbolCollector.h"
@@ -873,6 +874,34 @@ class IEntity
         CHECK(markdown.find("**Nota:**") != std::string::npos);
         CHECK(markdown.find("This operation is non-blocking") != std::string::npos);
     }
-}
+    // Test hovering over 'pos' parameter inside 'Spawn'
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find("Vector3 pos") + 8; // pointing inside "pos"
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
 
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markdown = markup.value;
+
+        // Should include parameter name/type/parent signature
+        CHECK(markdown.find("void IEntity::Spawn(Vector3 pos)") != std::string::npos);
+        CHECK(markdown.find("**pos** — Parámetro") != std::string::npos);
+        // Should include the brief of the parent function
+        CHECK(markdown.find("Spawns an entity in the game world.") != std::string::npos);
+        // Should include ONLY the specific parameter's docs
+        CHECK(markdown.find("**Parámetros:**") != std::string::npos);
+        CHECK(markdown.find("`pos` \\- [in] The position where") != std::string::npos);
+        // It should NOT include returns, notes, warnings, etc. if they existed on the parent function
+    }
+}
 

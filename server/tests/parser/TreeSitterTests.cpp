@@ -281,6 +281,53 @@ namespace Collision
     }
 }
 
+TEST_CASE("AST dump of interface")
+{
+    const char* SRC = R"(
+interface IEntity {
+    /**
+     * @brief Spawns an entity in the game world.
+     * @details This method is responsible for creating and placing an entity in the game world at the specified position.
+     *
+     * @param[in] pos The position where the entity should be spawned.
+     */
+    void Spawn(Vector3 pos);
+    /**
+     * @brief Removes an entity from the game world.
+     * @details This method is responsible for removing or deactivating an entity from the game world, ensuring that all associated resources are properly released and that the entity is no longer active in the simulation.
+     */
+    void Despawn();
+}
+)";
+
+    Parser p;
+    Tree tree(p.parse(SRC));
+    TSNode root = tree.root();
+
+    std::function<void(TSNode, int)> printTree = [&](TSNode node, int depth)
+    {
+        if (ts_node_is_null(node)) return;
+        std::string indent(depth * 2, ' ');
+        if (ts_node_is_named(node))
+        {
+            uint32_t start = ts_node_start_byte(node);
+            uint32_t end   = ts_node_end_byte(node);
+            std::string src = std::string(SRC).substr(start, end - start);
+            if (src.size() > 40) src = src.substr(0, 37) + "...";
+            for (auto& ch : src) if (ch == '\n') ch = ' ';
+            printf("%s[%s] \"%s\"\n", indent.c_str(), ts_node_type(node), src.c_str());
+        }
+        for (uint32_t i = 0; i < ts_node_child_count(node); ++i)
+        {
+            printTree(ts_node_child(node, i), depth + 1);
+        }
+    };
+
+    printf("\n=== AST: Interface ===\n");
+    printTree(root, 0);
+    printf("=== END AST ===\n\n");
+}
+
 TEST_CASE("AST dump of full_scratch.as")
 {
     Parser p;

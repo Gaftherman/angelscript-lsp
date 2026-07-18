@@ -10,7 +10,7 @@ namespace angel_lsp
 namespace features
 {
 
-static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale)
+static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale, const std::string& targetParam = "")
 {
     if (raw.empty()) return raw;
     std::istringstream iss(raw);
@@ -129,7 +129,7 @@ static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale)
 
     const auto& s = i18n::GetStrings(locale);
 
-    if (!tparams.empty())
+    if (targetParam.empty() && !tparams.empty())
     {
         if (!out.empty()) out += "\n\n";
         out += "**" + std::string(s.hoverTemplateParams) + "**\n\n";
@@ -137,34 +137,46 @@ static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale)
         out.pop_back(); out.pop_back(); // remove trailing \n\n
     }
     
-    if (!params.empty())
+    std::vector<std::string> filteredParams;
+    for (const auto& p : params)
+    {
+        if (targetParam.empty() || p.starts_with("`" + targetParam + "`"))
+        {
+            filteredParams.push_back(p);
+        }
+    }
+
+    if (!filteredParams.empty())
     {
         if (!out.empty()) out += "\n\n";
         out += "**" + std::string(s.hoverParams) + "**\n\n";
-        for (const auto& p : params) out += p + "\n\n";
+        for (const auto& p : filteredParams) out += p + "\n\n";
         out.pop_back(); out.pop_back();
     }
     
-    if (!returns.empty())
+    if (targetParam.empty())
     {
-        if (!out.empty()) out += "\n\n";
-        out += "**" + std::string(s.hoverReturns) + "**\n\n" + returns;
-    }
+        if (!returns.empty())
+        {
+            if (!out.empty()) out += "\n\n";
+            out += "**" + std::string(s.hoverReturns) + "**\n\n" + returns;
+        }
 
-    for (const auto& note : notes)
-    {
-        if (!out.empty()) out += "\n\n";
-        out += "**" + std::string(s.hoverNote) + "**\n\n" + note;
-    }
-    for (const auto& warn : warnings)
-    {
-        if (!out.empty()) out += "\n\n";
-        out += "**" + std::string(s.hoverWarning) + "**\n\n" + warn;
-    }
-    for (const auto& dep : deprecated)
-    {
-        if (!out.empty()) out += "\n\n";
-        out += "**" + std::string(s.hoverDeprecated) + "**\n\n" + dep;
+        for (const auto& note : notes)
+        {
+            if (!out.empty()) out += "\n\n";
+            out += "**" + std::string(s.hoverNote) + "**\n\n" + note;
+        }
+        for (const auto& warn : warnings)
+        {
+            if (!out.empty()) out += "\n\n";
+            out += "**" + std::string(s.hoverWarning) + "**\n\n" + warn;
+        }
+        for (const auto& dep : deprecated)
+        {
+            if (!out.empty()) out += "\n\n";
+            out += "**" + std::string(s.hoverDeprecated) + "**\n\n" + dep;
+        }
     }
 
     return out;
@@ -322,6 +334,22 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
                 
                 if (renderSym->isShared) sig = "shared " + sig;
             }
+            else if (renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
+            {
+                sig = renderSym->parent->signature;
+                if (renderSym->parent->parent && (renderSym->parent->kind == analysis::SymbolKind::Method || renderSym->parent->kind == analysis::SymbolKind::Constructor || renderSym->parent->kind == analysis::SymbolKind::Destructor))
+                {
+                    size_t paren = sig.find('(');
+                    if (paren != std::string::npos)
+                    {
+                        size_t namePos = sig.rfind(renderSym->parent->name, paren);
+                        if (namePos != std::string::npos)
+                        {
+                            sig.insert(namePos, renderSym->parent->parent->name + "::");
+                        }
+                    }
+                }
+            }
             else if (renderSym->parent && (renderSym->kind == analysis::SymbolKind::Method || renderSym->kind == analysis::SymbolKind::Constructor || renderSym->kind == analysis::SymbolKind::Destructor))
             {
                 size_t paren = sig.find('(');
@@ -346,9 +374,17 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
                            + "**" + dispName + "** — " + getKindName(renderSym->kind)
                            + (!contextStr.empty() ? " " + std::string(s.hoverIn) + " `" + contextStr + "`" : "");
             
-            if (!renderSym->docComment.empty())
+            std::string docToRender = renderSym->docComment;
+            std::string targetParam = "";
+            if (docToRender.empty() && renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
             {
-                md += "\n\n---\n" + FormatDoxygen(renderSym->docComment, locale);
+                docToRender = renderSym->parent->docComment;
+                targetParam = renderSym->name;
+            }
+
+            if (!docToRender.empty())
+            {
+                md += "\n\n---\n" + FormatDoxygen(docToRender, locale, targetParam);
             }
             return md;
         };
