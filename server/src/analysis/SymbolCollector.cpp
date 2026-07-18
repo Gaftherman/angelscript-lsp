@@ -231,6 +231,11 @@ namespace analysis
             if (!ts_node_is_null(parentFunc))
             {
                 paramSym->fullRange = GetRange(parentFunc, doc);
+                Symbol* scope = table.FindScopeByPosition(paramSym->fullRange.start.line, paramSym->fullRange.start.character);
+                if (scope && (scope->kind == SymbolKind::Function || scope->kind == SymbolKind::Method || scope->kind == SymbolKind::Constructor || scope->kind == SymbolKind::Destructor))
+                {
+                    paramSym->parent = scope;
+                }
             }
             else
             {

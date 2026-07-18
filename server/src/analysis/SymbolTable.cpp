@@ -1,4 +1,5 @@
 #include "analysis/SymbolTable.h"
+#include <functional>
 
 namespace analysis
 {
@@ -216,9 +217,6 @@ namespace analysis
 
     Symbol* SymbolTable::FindScopeByPosition(uint32_t line, uint32_t col) const
     {
-        // Currently we don't have line/col in Symbol struct directly (we have fullRange which is an lsp::Range).
-        // A simple linear scan through locals, then globals, checking if the position falls inside fullRange.
-        
         auto isInside = [](const lsp::Range& r, uint32_t l, uint32_t c)
         {
             if (l < r.start.line || l > r.end.line) return false;
@@ -227,7 +225,7 @@ namespace analysis
             return true;
         };
 
-        // Check locals first (more specific scopes usually added later or nested)
+        // Check locals first
         for (auto it = m_localSymbols.rbegin(); it != m_localSymbols.rend(); ++it)
         {
             if (isInside((*it)->fullRange, line, col))
@@ -236,14 +234,26 @@ namespace analysis
             }
         }
 
-        // Then globals
+        // Helper to find deepest match
+        std::function<Symbol*(Symbol*)> findDeepest = [&](Symbol* current) -> Symbol* {
+            for (const auto& child : current->children) {
+                if (isInside(child->fullRange, line, col)) {
+                    Symbol* deeper = findDeepest(child.get());
+                    return deeper ? deeper : child.get();
+                }
+            }
+            return nullptr;
+        };
+
+        Symbol* bestGlobal = nullptr;
         for (const auto& [name, syms] : m_globalSymbols)
         {
             for (const auto& sym : syms)
             {
                 if (isInside(sym->fullRange, line, col))
                 {
-                    return sym.get();
+                    Symbol* deeper = findDeepest(sym.get());
+                    return deeper ? deeper : sym.get();
                 }
             }
         }
