@@ -1030,3 +1030,116 @@ namespace Math {
         CHECK(markdown.find("Math namespace") != std::string::npos);
     }
 }
+
+TEST_CASE("CH16: Hover for Various Documented Symbols")
+{
+    const char* SRC = R"(
+/**
+ * @brief A documented class
+ */
+class MyClass {
+    /**
+     * @brief A documented property
+     */
+    int myProp;
+}
+
+/**
+ * @brief A documented enum
+ */
+enum MyEnum {
+    /**
+     * @brief A documented enum value
+     */
+    VALUE_A
+}
+
+/**
+ * @brief A documented interface
+ */
+interface IMyInterface {}
+
+/**
+ * @brief A documented mixin
+ */
+mixin class MyMixin {}
+    )";
+
+    SymbolTable table;
+    Document doc("file:///main.as", SRC);
+    SymbolCollector::CollectGlobals(doc, table);
+
+    TSNode root = doc.RootNode();
+    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
+
+    auto getHover = [&](const std::string& searchStr, int offsetFromStart = 0) {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        return result;
+    };
+
+    // Test MyClass
+    {
+        auto result = getHover("class MyClass", 6);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("class MyClass") != std::string::npos);
+        CHECK(markup.value.find("A documented class") != std::string::npos);
+    }
+
+    // Test myProp
+    {
+        auto result = getHover("int myProp", 4);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("int myProp") != std::string::npos);
+        CHECK(markup.value.find("A documented property") != std::string::npos);
+    }
+
+    // Test MyEnum
+    {
+        auto result = getHover("enum MyEnum", 5);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("enum MyEnum") != std::string::npos);
+        CHECK(markup.value.find("A documented enum") != std::string::npos);
+    }
+
+    // Test VALUE_A
+    {
+        auto result = getHover("VALUE_A", 0);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("VALUE_A") != std::string::npos);
+        CHECK(markup.value.find("A documented enum value") != std::string::npos);
+    }
+
+    // Test IMyInterface
+    {
+        auto result = getHover("interface IMyInterface", 10);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("interface IMyInterface") != std::string::npos);
+        CHECK(markup.value.find("A documented interface") != std::string::npos);
+    }
+
+    // Test MyMixin
+    {
+        auto result = getHover("mixin class MyMixin", 12);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("mixin MyMixin") != std::string::npos);
+        CHECK(markup.value.find("A documented mixin") != std::string::npos);
+    }
+}

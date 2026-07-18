@@ -436,7 +436,6 @@ namespace analysis
                 }
             }
 
-
             for (uint32_t i = 0; i < ts_node_child_count(node); i++)
             {
                 TSNode child = ts_node_child(node, i);
