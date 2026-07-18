@@ -1344,3 +1344,56 @@ namespace App {
         CHECK(markup.value.find("Entity health") != std::string::npos);
     }
 }
+
+TEST_CASE("CH18: Hover for Local Variables with Documentation")
+{
+    const char* SRC = R"(
+void OnDataReceived(int c) {
+    // Callback implementation
+    int f = 0;
+}
+    )";
+
+    SymbolTable table;
+    Document doc("file:///main.as", SRC);
+    SymbolCollector::CollectGlobals(doc, table);
+    TSNode root = doc.RootNode();
+    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
+
+    // Run TraverseLocals to collect the local variables!
+    auto traverseFuncs = [&](TSNode node, auto& self) -> void
+    {
+        if (std::string_view(ts_node_type(node)) == "func_declaration")
+        {
+            TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
+            if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
+        }
+        for (uint32_t i = 0; i < ts_node_child_count(node); i++) self(ts_node_child(node, i), self);
+    };
+    traverseFuncs(root, traverseFuncs);
+
+    auto getHover = [&](const std::string& searchStr, int offsetFromStart = 0) {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        return result;
+    };
+
+    {
+        auto result = getHover("int f = 0;", 4);
+        REQUIRE(!result.isNull());
+        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        CHECK(markup.value.find("int f") != std::string::npos);
+        CHECK(markup.value.find("Callback implementation") != std::string::npos);
+    }
+}

@@ -861,6 +861,7 @@ namespace analysis
                     sym->uri = doc.GetUri();
             sym->uri = doc.GetUri();
                         sym->kind = SymbolKind::Variable;
+                        sym->docComment = ExtractDocComments(node, doc);
                         
                         // Set fullRange to the enclosing block so FindLocalByNameAt works for the rest of the block
                         TSNode blockNode = ts_node_parent(node);
