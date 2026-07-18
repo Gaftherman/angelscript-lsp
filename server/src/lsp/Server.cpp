@@ -43,7 +43,7 @@ static void CollectLocalsFunctions(TSNode node, const Document& doc, analysis::S
                 analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
             }
         }
-        else if (t == "funcdef_declaration")
+        else if (t == "funcdef_declaration" || t == "interface_method")
         {
             TSNode params = ts_node_child_by_field_name(child, "parameters", 10);
             analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table);
