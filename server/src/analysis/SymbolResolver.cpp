@@ -222,19 +222,23 @@ namespace analysis
         {
             if (const Symbol *sym = ResolveConstructorOrDestructor(doc, table, node, parent, identText, line, outMultipleResults))
                 return sym;
-            if (const Symbol *sym = table.FindScopeByPosition(doc.GetUri(), line, character))
+
+            // The tree-sitter node tells us the EXACT line the identifier is on.
+            // Use that to find the matching overload by selectionRange start line.
+            uint32_t nodeStartLine = ts_node_start_point(node).row;
+            std::vector<Symbol *> allOverloads = table.FindAllGlobalsByName(identText);
+            if (!allOverloads.empty())
             {
-                if (sym->name == identText)
+                const Symbol *exactMatch = nullptr;
+                for (Symbol *globalSym : allOverloads)
                 {
                     if (outMultipleResults)
-                    {
-                        for (Symbol *globalSym : table.FindAllGlobalsByName(identText))
-                        {
-                            outMultipleResults->push_back(globalSym);
-                        }
-                    }
-                    return sym;
+                        outMultipleResults->push_back(globalSym);
+                    if (globalSym->selectionRange.start.line == nodeStartLine)
+                        exactMatch = globalSym;
                 }
+                // Return the exact overload under the cursor, or fall back to first
+                return exactMatch ? exactMatch : allOverloads.front();
             }
         }
 
