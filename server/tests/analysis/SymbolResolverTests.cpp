@@ -649,7 +649,7 @@ class Troll : Entity, Regenerator
             REQUIRE(varSym != nullptr);
             CHECK(varSym->name == "a");
             CHECK(varSym->kind == SymbolKind::Variable);
-            CHECK(varSym->typeInfo == "auto");
+            CHECK(varSym->typeInfo == "int");
         }
 
         SUBCASE("Auto handle variable")

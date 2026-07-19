@@ -227,6 +227,136 @@ namespace angel_lsp
             return out;
         }
 
+        
+        struct GroupedResult
+        {
+            const analysis::Symbol *sym;
+            std::vector<std::string> parents;
+        };
+        
+
+
+class HoverFormatter
+        {
+        public:
+            static const char* GetKindName(analysis::SymbolKind kind, const i18n::LspStrings& s)
+            {
+                switch (kind)
+                {
+                case analysis::SymbolKind::Variable: return s.kindVariable;
+                case analysis::SymbolKind::Function: return s.kindFunction;
+                case analysis::SymbolKind::Class: return s.kindClass;
+                case analysis::SymbolKind::Namespace: return s.kindNamespace;
+                case analysis::SymbolKind::Parameter: return s.kindParameter;
+                case analysis::SymbolKind::Property: return s.kindProperty;
+                case analysis::SymbolKind::Method: return s.kindMethod;
+                case analysis::SymbolKind::Enum: return s.kindEnum;
+                case analysis::SymbolKind::EnumMember: return s.kindEnumMember;
+                case analysis::SymbolKind::Interface: return s.kindInterface;
+                case analysis::SymbolKind::Mixin: return s.kindMixin;
+                case analysis::SymbolKind::Constructor: return s.kindConstructor;
+                case analysis::SymbolKind::Destructor: return s.kindDestructor;
+                case analysis::SymbolKind::Typedef: return s.kindTypedef;
+                default: return s.kindUnknown;
+                }
+            }
+
+            static std::string BuildSignature(const analysis::Symbol *renderSym, const analysis::Symbol *originalSym, const std::string& dynamicDisplayName)
+            {
+                bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
+                                 renderSym->kind == analysis::SymbolKind::Variable ||
+                                 renderSym->kind == analysis::SymbolKind::Property;
+                std::string dispName = (!isVarLike && !dynamicDisplayName.empty() && originalSym && renderSym->name == originalSym->name)
+                                           ? dynamicDisplayName
+                                           : renderSym->name;
+
+                bool needsParentClass = false;
+                if (originalSym && originalSym->parent && (originalSym->parent->kind == analysis::SymbolKind::Class || originalSym->parent->kind == analysis::SymbolKind::Interface || originalSym->parent->kind == analysis::SymbolKind::Mixin) &&
+                    (originalSym->kind == analysis::SymbolKind::Method || originalSym->kind == analysis::SymbolKind::Constructor || originalSym->kind == analysis::SymbolKind::Destructor))
+                {
+                    needsParentClass = true;
+                }
+                std::string sig = renderSym->BuildSignature(needsParentClass, dispName);
+
+                if (renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
+                {
+                    bool parentNeedsClass = false;
+                    if (renderSym->parent->parent && (renderSym->parent->parent->kind == analysis::SymbolKind::Class || renderSym->parent->parent->kind == analysis::SymbolKind::Interface || renderSym->parent->parent->kind == analysis::SymbolKind::Mixin) &&
+                        (renderSym->parent->kind == analysis::SymbolKind::Method || renderSym->parent->kind == analysis::SymbolKind::Constructor || renderSym->parent->kind == analysis::SymbolKind::Destructor))
+                    {
+                        parentNeedsClass = true;
+                    }
+                    sig = renderSym->parent->BuildSignature(parentNeedsClass, renderSym->parent->name);
+                }
+
+                if (originalSym && !originalSym->templateType.empty() && renderSym->parent && renderSym->parent->templateParam.length() > 0)
+                {
+                    std::string paramName = renderSym->parent->templateParam;
+                    size_t pos = sig.find(paramName);
+                    while (pos != std::string::npos)
+                    {
+                        bool match = true;
+                        if (pos > 0 && isalnum(sig[pos - 1]))
+                            match = false;
+                        if (pos + paramName.length() < sig.length() && isalnum(sig[pos + paramName.length()]))
+                            match = false;
+
+                        if (match)
+                        {
+                            sig.replace(pos, paramName.length(), originalSym->templateType);
+                            pos += originalSym->templateType.length();
+                        }
+                        else
+                        {
+                            pos += paramName.length();
+                        }
+                        pos = sig.find(paramName, pos);
+                    }
+                }
+                return sig;
+            }
+
+            static std::string Render(const GroupedResult &gr, const analysis::Symbol *originalSym, const i18n::LspStrings& s, i18n::Locale locale, const std::string& dynamicDisplayName)
+            {
+                const analysis::Symbol *renderSym = originalSym ? originalSym : gr.sym;
+                std::string sig = BuildSignature(renderSym, originalSym, dynamicDisplayName);
+
+                bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
+                                 renderSym->kind == analysis::SymbolKind::Variable ||
+                                 renderSym->kind == analysis::SymbolKind::Property;
+                std::string dispName = (!isVarLike && !dynamicDisplayName.empty() && originalSym && renderSym->name == originalSym->name)
+                                           ? dynamicDisplayName
+                                           : renderSym->name;
+
+                std::string contextStr = "";
+                for (size_t i = 0; i < gr.parents.size(); i++)
+                {
+                    if (i > 0)
+                        contextStr += ", ";
+                    contextStr += gr.parents[i];
+                }
+
+                std::string md = "```angelscript\n" + sig + "\n```\n" + "**" + dispName + "** — " + GetKindName(renderSym->kind, s) + (!contextStr.empty() ? " " + std::string(s.hoverIn) + " `" + contextStr + "`" : std::string(""));
+
+                std::string docToRender = renderSym->docComment;
+                std::string targetParam = "";
+                if (docToRender.empty() && renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
+                {
+                    docToRender = renderSym->parent->docComment;
+                    targetParam = renderSym->name;
+                }
+
+                if (!docToRender.empty())
+                {
+                    md += "\n\n---\n" + FormatDoxygen(docToRender, locale, targetParam);
+                }
+                return md;
+            }
+        };
+
+        
+
+    
         void ProcessHover(lsp::requests::TextDocument_Hover::Result &result,
                           const lsp::requests::TextDocument_Hover::Params &req,
                           const Document &doc,
@@ -240,43 +370,6 @@ namespace angel_lsp
 
             std::string markdown = "";
             const auto &s = i18n::GetStrings(locale);
-
-            auto getKindName = [&](analysis::SymbolKind kind)
-            {
-                switch (kind)
-                {
-                case analysis::SymbolKind::Variable:
-                    return s.kindVariable;
-                case analysis::SymbolKind::Function:
-                    return s.kindFunction;
-                case analysis::SymbolKind::Class:
-                    return s.kindClass;
-                case analysis::SymbolKind::Namespace:
-                    return s.kindNamespace;
-                case analysis::SymbolKind::Parameter:
-                    return s.kindParameter;
-                case analysis::SymbolKind::Property:
-                    return s.kindProperty;
-                case analysis::SymbolKind::Method:
-                    return s.kindMethod;
-                case analysis::SymbolKind::Enum:
-                    return s.kindEnum;
-                case analysis::SymbolKind::EnumMember:
-                    return s.kindEnumMember;
-                case analysis::SymbolKind::Interface:
-                    return s.kindInterface;
-                case analysis::SymbolKind::Funcdef:
-                    return s.kindFuncdef;
-                case analysis::SymbolKind::Mixin:
-                    return s.kindMixin;
-                case analysis::SymbolKind::Constructor:
-                    return s.kindConstructor;
-                case analysis::SymbolKind::Destructor:
-                    return s.kindDestructor;
-                default:
-                    return s.kindUnknown;
-                }
-            };
 
             std::vector<const analysis::Symbol *> multiResults;
             const analysis::Symbol *sym = analysis::SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
@@ -331,11 +424,6 @@ namespace angel_lsp
 
             if (sym != nullptr)
             {
-                struct GroupedResult
-                {
-                    const analysis::Symbol *sym;
-                    std::vector<std::string> parents;
-                };
                 std::vector<GroupedResult> grouped;
 
                 for (const analysis::Symbol *r : multiResults)
@@ -370,88 +458,6 @@ namespace angel_lsp
                     }
                 }
 
-                auto renderGrouped = [&](const GroupedResult &gr, const analysis::Symbol *originalSym)
-                {
-                    const analysis::Symbol *renderSym = originalSym ? originalSym : gr.sym;
-                    // For Parameters/Variables: dispName is always the identifier name (e.g. "target").
-                    // For types (Class/Enum etc.): dispName can be the full qualified name from the source.
-                    bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
-                                     renderSym->kind == analysis::SymbolKind::Variable ||
-                                     renderSym->kind == analysis::SymbolKind::Property;
-                    std::string dispName = (!isVarLike && !dynamicDisplayName.empty() && renderSym->name == sym->name)
-                                               ? dynamicDisplayName
-                                               : renderSym->name;
-                    bool needsParentClass = false;
-                    if (sym && sym->parent && (sym->parent->kind == analysis::SymbolKind::Class || sym->parent->kind == analysis::SymbolKind::Interface || sym->parent->kind == analysis::SymbolKind::Mixin) &&
-                        (sym->kind == analysis::SymbolKind::Method || sym->kind == analysis::SymbolKind::Constructor || sym->kind == analysis::SymbolKind::Destructor))
-                    {
-                        needsParentClass = true;
-                    }
-                    std::string sig = renderSym->BuildSignature(needsParentClass, dispName);
-
-                    if (renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
-                    {
-                        bool parentNeedsClass = false;
-                        if (renderSym->parent->parent && (renderSym->parent->parent->kind == analysis::SymbolKind::Class || renderSym->parent->parent->kind == analysis::SymbolKind::Interface || renderSym->parent->parent->kind == analysis::SymbolKind::Mixin) &&
-                            (renderSym->parent->kind == analysis::SymbolKind::Method || renderSym->parent->kind == analysis::SymbolKind::Constructor || renderSym->parent->kind == analysis::SymbolKind::Destructor))
-                        {
-                            parentNeedsClass = true;
-                        }
-                        sig = renderSym->parent->BuildSignature(parentNeedsClass, renderSym->parent->name);
-                    }
-
-                    // Very basic template substitution for display
-                    if (!sym->templateType.empty() && renderSym->parent && renderSym->parent->templateParam.length() > 0)
-                    {
-                        std::string paramName = renderSym->parent->templateParam;
-                        size_t pos = sig.find(paramName);
-                        while (pos != std::string::npos)
-                        {
-                            // Ensure we match a whole word
-                            bool match = true;
-                            if (pos > 0 && isalnum(sig[pos - 1]))
-                                match = false;
-                            if (pos + paramName.length() < sig.length() && isalnum(sig[pos + paramName.length()]))
-                                match = false;
-
-                            if (match)
-                            {
-                                sig.replace(pos, paramName.length(), sym->templateType);
-                                pos += sym->templateType.length();
-                            }
-                            else
-                            {
-                                pos += paramName.length();
-                            }
-                            pos = sig.find(paramName, pos);
-                        }
-                    }
-
-                    std::string contextStr = "";
-                    for (size_t i = 0; i < gr.parents.size(); i++)
-                    {
-                        if (i > 0)
-                            contextStr += ", ";
-                        contextStr += gr.parents[i];
-                    }
-
-                    std::string md = "```angelscript\n" + sig + "\n```\n" + "**" + dispName + "** — " + getKindName(renderSym->kind) + (!contextStr.empty() ? " " + std::string(s.hoverIn) + " `" + contextStr + "`" : "");
-
-                    std::string docToRender = renderSym->docComment;
-                    std::string targetParam = "";
-                    if (docToRender.empty() && renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
-                    {
-                        docToRender = renderSym->parent->docComment;
-                        targetParam = renderSym->name;
-                    }
-
-                    if (!docToRender.empty())
-                    {
-                        md += "\n\n---\n" + FormatDoxygen(docToRender, locale, targetParam);
-                    }
-                    return md;
-                };
-
                 if (grouped.size() > 1)
                 {
                     int activeIndex = 0;
@@ -466,13 +472,13 @@ namespace angel_lsp
                             }
                         }
                     }
-                    markdown = renderGrouped(grouped[activeIndex], sym);
+                    markdown = HoverFormatter::Render(grouped[activeIndex], sym, s, locale, dynamicDisplayName);
                     int extra = (int)grouped.size() - 1;
                     markdown += "\n\n*+" + std::to_string(extra) + " " + std::string(s.hoverOverloads) + "*";
                 }
                 else if (!grouped.empty() && grouped[0].parents.size() > 1)
                 {
-                    markdown = renderGrouped(grouped[0], sym);
+                    markdown = HoverFormatter::Render(grouped[0], sym, s, locale, dynamicDisplayName);
                 }
                 else
                 {
@@ -480,7 +486,7 @@ namespace angel_lsp
                     gr.sym = sym;
                     if (sym->parent)
                         gr.parents.push_back(sym->parent->name);
-                    markdown = renderGrouped(gr, sym);
+                    markdown = HoverFormatter::Render(gr, sym, s, locale, dynamicDisplayName);
                 }
             }
             else
@@ -542,6 +548,5 @@ namespace angel_lsp
             markup.value = markdown;
             hover.contents = markup;
         }
-
     }
 }

@@ -3,6 +3,11 @@
 #include <optional>
 #include <algorithm>
 
+static inline TSNode FieldChild(TSNode node, const char* field)
+{
+    return ts_node_child_by_field_name(node, field, (uint32_t)strlen(field));
+}
+
 namespace analysis
 {
     static const Symbol *FindNamespace(const SymbolTable &table, const std::string &path)
@@ -44,28 +49,22 @@ namespace analysis
         return current;
     }
 
-    static std::optional<SymbolKind> InferExpectedKind(TSNode node, TSNode parent, std::string_view parentType)
+    static void ResolveOutermostContext(TSNode &node, TSNode &parent, std::string_view &parentType)
     {
         while (parentType == "scoped_identifier" || parentType == "scoped_type")
         {
             TSNode p = ts_node_parent(parent);
             if (ts_node_is_null(p))
                 break;
-            std::string_view pType = ts_node_type(p);
-            if (pType == "scoped_identifier" || pType == "scoped_type")
-            {
-                node = parent;
-                parent = p;
-                parentType = pType;
-            }
-            else
-            {
-                node = parent;
-                parent = p;
-                parentType = pType;
-                break;
-            }
+            node = parent;
+            parent = p;
+            parentType = ts_node_type(p);
         }
+    }
+
+    static std::optional<SymbolKind> InferExpectedKind(TSNode node, TSNode parent, std::string_view parentType)
+    {
+        ResolveOutermostContext(node, parent, parentType);
 
         if (parentType == "type" || parentType == "datatype")
         {
@@ -121,32 +120,13 @@ namespace analysis
 
     static std::optional<uint32_t> GetCallArgumentCount(TSNode node, TSNode parent, std::string_view parentType)
     {
-        while (parentType == "scoped_identifier" || parentType == "scoped_type")
-        {
-            TSNode p = ts_node_parent(parent);
-            if (ts_node_is_null(p))
-                break;
-            std::string_view pType = ts_node_type(p);
-            if (pType == "scoped_identifier" || pType == "scoped_type")
-            {
-                node = parent;
-                parent = p;
-                parentType = pType;
-            }
-            else
-            {
-                node = parent;
-                parent = p;
-                parentType = pType;
-                break;
-            }
-        }
+        ResolveOutermostContext(node, parent, parentType);
 
         TSNode argList = {0};
 
         if (parentType == "call_expression" || parentType == "func_call")
         {
-            argList = ts_node_child_by_field_name(parent, "arguments", 9);
+            argList = FieldChild(parent, "arguments");
             if (ts_node_is_null(argList))
             {
                 for (uint32_t i = 0; i < ts_node_child_count(parent); i++)
@@ -276,7 +256,7 @@ namespace analysis
             TSNode varDecl = ts_node_parent(parent);
             if (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) == "variable_declaration")
             {
-                TSNode tNode = ts_node_child_by_field_name(varDecl, "var_type", 8);
+                TSNode tNode = FieldChild(varDecl, "var_type");
                 if (ts_node_is_null(tNode))
                 {
                     for (uint32_t j = 0; j < ts_node_child_count(varDecl); j++)
@@ -419,8 +399,8 @@ namespace analysis
 
     const Symbol *SymbolResolver::ResolveMemberAccess(const Document &doc, const SymbolTable &table, TSNode node, TSNode parent, const std::string &identText)
     {
-        TSNode memberNode = ts_node_child_by_field_name(parent, "member", 6);
-        TSNode objectNode = ts_node_child_by_field_name(parent, "object", 6);
+        TSNode memberNode = FieldChild(parent, "member");
+        TSNode objectNode = FieldChild(parent, "object");
 
         if (!ts_node_is_null(memberNode) && ts_node_eq(node, memberNode))
         {
@@ -509,7 +489,7 @@ namespace analysis
             {
                 if (std::string_view(ts_node_type(scopeNode)) == "class_declaration")
                 {
-                    TSNode classNameNode = ts_node_child_by_field_name(scopeNode, "name", 4);
+                    TSNode classNameNode = FieldChild(scopeNode, "name");
                     if (!ts_node_is_null(classNameNode))
                     {
                         std::string_view cNameSv = doc.SourceAt(classNameNode);
@@ -667,7 +647,7 @@ namespace analysis
             std::string_view ct = ts_node_type(climb);
             if (ct == "class_declaration" || ct == "mixin_declaration" || ct == "interface_declaration")
             {
-                TSNode nameNode = ts_node_child_by_field_name(climb, "name", 4);
+                TSNode nameNode = FieldChild(climb, "name");
                 if (!ts_node_is_null(nameNode))
                 {
                     std::string_view sv = doc.SourceAt(nameNode);
@@ -791,13 +771,6 @@ namespace analysis
                         if (argCount.has_value() && cand->params.size() == argCount.value())
                         {
                             candPriority += 200;
-                        }
-                        if (cand->kind == SymbolKind::Constructor && argCount.has_value())
-                        {
-                            if (cand->params.size() == argCount.value())
-                            {
-                                candPriority += 200;
-                            }
                         }
                     }
                 }
@@ -931,7 +904,7 @@ namespace analysis
                 TSPoint pos = ts_node_start_point(funcNode);
                 if (std::string_view(ts_node_type(funcNode)) == "member_expression")
                 {
-                    TSNode fieldNode = ts_node_child_by_field_name(funcNode, "field", 5);
+                    TSNode fieldNode = FieldChild(funcNode, "field");
                     if (!ts_node_is_null(fieldNode))
                     {
                         pos = ts_node_start_point(fieldNode);
@@ -949,7 +922,7 @@ namespace analysis
         }
         if (type == "member_expression")
         {
-            TSNode fieldNode = ts_node_child_by_field_name(exprNode, "field", 5);
+            TSNode fieldNode = FieldChild(exprNode, "field");
             if (!ts_node_is_null(fieldNode))
             {
                 TSPoint pos = ts_node_start_point(fieldNode);
@@ -962,7 +935,7 @@ namespace analysis
         }
         if (type == "cast_expression")
         {
-            TSNode typeNode = ts_node_child_by_field_name(exprNode, "type", 4);
+            TSNode typeNode = FieldChild(exprNode, "type");
             if (!ts_node_is_null(typeNode))
             {
                 std::string_view castType = doc.SourceAt(typeNode);

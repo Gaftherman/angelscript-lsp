@@ -103,9 +103,7 @@ TEST_SUITE("ComplexHover")
         Document doc("file:///scratch.as", code);
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-
         TSNode root = doc.RootNode();
-        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
         // Find "body.ApplyForce(Engine::Math::Vector3(0, -9.8f, 0));"
         size_t offset = code.find("Vector3(0, -9.8f, 0)");
@@ -142,7 +140,6 @@ TEST_SUITE("ComplexHover")
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
         TSNode root = doc.RootNode();
-        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
         size_t offset = code.find("Vector3() { x = 0; y = 0; z = 0; }");
 
@@ -178,7 +175,6 @@ TEST_SUITE("ComplexHover")
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
         TSNode root = doc.RootNode();
-        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
         // find "ApplyForce(Engine::Math::Vector3 force)"
         size_t offset = code.find("force)", code.find("ApplyForce"));
@@ -266,7 +262,6 @@ TEST_SUITE("ComplexHover")
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
         TSNode root = doc.RootNode();
-        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
         // Populate ALL locals from ALL functions, which would normally cause shadowing collisions
         auto traverseFuncs = [&](TSNode node, auto &self) -> void
@@ -325,9 +320,7 @@ TEST_SUITE("ComplexHover")
         Document doc("file:///scratch.as", code);
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-
         TSNode root = doc.RootNode();
-        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
         size_t offset = code.find("Lerp(a.x");
         uint32_t line = 0;
@@ -356,9 +349,7 @@ TEST_SUITE("ComplexHover")
         Document doc("file:///scratch.as", code);
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-
         TSNode root = doc.RootNode();
-        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
         auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
@@ -433,9 +424,7 @@ namespace Game
         Document doc("file:///scratch.as", code);
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-
         TSNode root = doc.RootNode();
-        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
         auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
@@ -524,7 +513,6 @@ namespace Game
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
         TSNode root = doc.RootNode();
-        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
         auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
@@ -582,7 +570,6 @@ namespace Game
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
         TSNode root = doc.RootNode();
-        SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
         auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
@@ -658,10 +645,7 @@ void Main()
 
         SymbolTable table;
         SymbolCollector::CollectGlobals(docPre, table);
-        SymbolCollector::TraverseGlobals(docPre.RootNode(), docPre, table, nullptr);
-
         SymbolCollector::CollectGlobals(docUser, table);
-        SymbolCollector::TraverseGlobals(docUser.RootNode(), docUser, table, nullptr);
 
         auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
@@ -753,7 +737,6 @@ void Main()
     SymbolCollector::CollectGlobals(doc, table);
 
     TSNode root = doc.RootNode();
-    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
     SymbolCollector::TraverseLocals(root, doc, table, nullptr);
 
     auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol *
@@ -810,7 +793,6 @@ void Main()
     SymbolCollector::CollectGlobals(doc, table);
 
     TSNode root = doc.RootNode();
-    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
     SymbolCollector::TraverseLocals(root, doc, table, nullptr);
 
     auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol *
@@ -1227,7 +1209,6 @@ mixin class MyMixin {}
     SymbolCollector::CollectGlobals(doc, table);
 
     TSNode root = doc.RootNode();
-    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
     auto getHover = [&](const std::string &searchStr, int offsetFromStart = 0)
     {
@@ -1380,7 +1361,6 @@ namespace App {
     Document doc("file:///main.as", SRC);
     SymbolCollector::CollectGlobals(doc, table);
     TSNode root = doc.RootNode();
-    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
     auto getHover = [&](const std::string &searchStr, int offsetFromStart = 0)
     {
@@ -1533,7 +1513,6 @@ void OnDataReceived(int c) {
     Document doc("file:///main.as", SRC);
     SymbolCollector::CollectGlobals(doc, table);
     TSNode root = doc.RootNode();
-    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
     // Run TraverseLocals to collect the local variables!
     auto traverseFuncs = [&](TSNode node, auto &self) -> void
@@ -1599,7 +1578,6 @@ void EmptyTags(int a) {}
     Document doc("file:///main.as", SRC);
     SymbolCollector::CollectGlobals(doc, table);
     TSNode root = doc.RootNode();
-    SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
     auto getHover = [&](const std::string &searchStr, int offsetFromStart = 0)
     {
