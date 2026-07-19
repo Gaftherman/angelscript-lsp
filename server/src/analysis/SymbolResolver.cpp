@@ -220,7 +220,17 @@ namespace analysis
             if (const Symbol *sym = ResolveConstructorOrDestructor(doc, table, node, parent, identText, line, outMultipleResults)) return sym;
             if (const Symbol *sym = table.FindScopeByPosition(doc.GetUri(), line, character))
             {
-                if (sym->name == identText) return sym;
+                if (sym->name == identText)
+                {
+                    if (outMultipleResults)
+                    {
+                        for (Symbol* globalSym : table.FindAllGlobalsByName(identText))
+                        {
+                            outMultipleResults->push_back(globalSym);
+                        }
+                    }
+                    return sym;
+                }
             }
         }
 
