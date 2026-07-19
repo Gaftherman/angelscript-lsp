@@ -102,5 +102,15 @@ target_link_libraries(angel_lsp_tests PRIVATE
     doctest::doctest
 )
 target_include_directories(angel_lsp_tests PRIVATE "tests")
+
+if(WIN32)
+    add_custom_command(TARGET angel_lsp_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:angel_lsp_tests>
+            $<TARGET_FILE_DIR:angel_lsp_tests>
+        COMMAND_EXPAND_LISTS
+        COMMENT "Copying runtime DLLs to test directory..."
+    )
+endif()
 enable_testing()
 add_test(NAME AngelLSPTests COMMAND angel_lsp_tests)
