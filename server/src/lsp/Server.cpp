@@ -352,8 +352,7 @@ void Server::RegisterHandlers()
             if (m_documents.find(uri) != m_documents.end())
             {
                 auto& table = m_symbolTables[uri];
-                table.ClearLocals();
-                CollectLocalsForDocument(*m_documents[uri], table);
+
                 lsp::requests::TextDocument_Hover::Result result;
                 features::ProcessHover(result, req, *m_documents[uri], table, m_diagCache.get(), m_locale, asEngine);
                 return result;
@@ -370,8 +369,7 @@ void Server::RegisterHandlers()
             if (m_documents.find(uri) != m_documents.end())
             {
                 auto& table = m_symbolTables[uri];
-                table.ClearLocals();
-                CollectLocalsForDocument(*m_documents[uri], table);
+
                 return features::ProcessDefinition(req, *m_documents[uri], table, asEngine);
             }
             return lsp::requests::TextDocument_Definition::Result{};

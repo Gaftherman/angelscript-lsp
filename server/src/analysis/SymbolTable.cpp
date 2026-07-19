@@ -247,7 +247,6 @@ namespace analysis
             return nullptr;
         };
 
-        Symbol* bestGlobal = nullptr;
         for (const auto& [name, syms] : m_globalSymbols)
         {
             for (const auto& sym : syms)

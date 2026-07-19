@@ -28,6 +28,16 @@ namespace analysis
          */
         static const Symbol *ResolveAt(const Document &doc, const SymbolTable &table, uint32_t line, uint32_t character, std::vector<const Symbol *> *outMultipleResults = nullptr);
         
+        /**
+         * @brief Evaluates the actual type of an AST expression node (used for auto type inference).
+         * 
+         * @param doc The document being analyzed.
+         * @param table The symbol table.
+         * @param exprNode The Tree-sitter expression node.
+         * @return A string representing the inferred type (e.g., "float", "Vector3"), or empty if unknown.
+         */
+        static std::string EvaluateExpressionType(const Document &doc, const SymbolTable &table, TSNode exprNode);
+        
     private:
         /**
          * @brief Cleans a raw AngelScript type string (e.g. "const Player@ in") into a pure type name ("Player").

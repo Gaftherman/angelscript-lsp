@@ -20,7 +20,7 @@ TEST_SUITE("SymbolCollector")
         REQUIRE(sym != nullptr);
         CHECK(sym->kind == SymbolKind::Function);
         CHECK(sym->typeInfo == "void");
-        CHECK(sym->signature == "void Main()");
+        CHECK(sym->BuildSignature() == "void Main()");
     }
 
     TEST_CASE("A1.1: Funcion disfrazada como variable_declaration en namespace (Bug 2)")
@@ -67,7 +67,7 @@ TEST_SUITE("SymbolCollector")
                 foundLerp = true;
                 // Bug 2 fix ensures this is a Function, not a Variable!
                 CHECK(child->kind == SymbolKind::Function);
-                CHECK(child->signature == "float Lerp(float a, float b, float t)");
+                CHECK(child->BuildSignature() == "float Lerp(float a, float b, float t)");
                 CHECK(child->typeInfo == "float");
                 break;
             }
@@ -89,7 +89,7 @@ TEST_SUITE("SymbolCollector")
         CHECK(sym->params[0].name == "a");
         CHECK(sym->params[1].typeName == "int");
         CHECK(sym->params[1].name == "b");
-        CHECK(sym->signature == "int Add(int a, int b)");
+        CHECK(sym->BuildSignature() == "int Add(int a, int b)");
     }
 
     TEST_CASE("A3: Funcion con handle y referencia (sintaxis real del lenguaje)")
@@ -105,7 +105,7 @@ TEST_SUITE("SymbolCollector")
         CHECK(sym->params[0].name == "target");
         CHECK(sym->params[1].typeName == "int &out");
         CHECK(sym->params[1].name == "actualDamage");
-        CHECK(sym->signature == "void DealDamage(Player@ target, int &out actualDamage)");
+        CHECK(sym->BuildSignature() == "void DealDamage(Player@ target, int &out actualDamage)");
     }
 
     TEST_CASE("A4: Funcion con const (metodo const)")
@@ -428,7 +428,7 @@ TEST_SUITE("SymbolCollector")
         REQUIRE(ns != nullptr);
         REQUIRE(ns->children.size() == 1);
         CHECK(ns->children[0]->name == "Log");
-        CHECK(ns->children[0]->signature == "void Log(string msg)");
+        CHECK(ns->children[0]->BuildSignature() == "void Log(string msg)");
     }
 
     TEST_CASE("D3: Namespace anidado con sintaxis :: - modelo C++/C#")
@@ -450,7 +450,7 @@ TEST_SUITE("SymbolCollector")
         auto lerpFunc = mathNs->children[0];
         CHECK(lerpFunc->name == "Lerp");
         CHECK(lerpFunc->kind == SymbolKind::Function);
-        CHECK(lerpFunc->signature == "float Lerp(float a, float b, float t)");
+        CHECK(lerpFunc->BuildSignature() == "float Lerp(float a, float b, float t)");
     }
 
     TEST_CASE("D4: Namespaces separados (mismo nombre)")
@@ -537,7 +537,7 @@ TEST_SUITE("SymbolCollector")
         Symbol* fd = table.FindGlobalByName("MathOp");
         REQUIRE(fd != nullptr);
         CHECK(fd->typeInfo == "float");
-        CHECK(fd->signature == "float MathOp(float a, float b)");
+        CHECK(fd->BuildSignature() == "float MathOp(float a, float b)");
     }
 
     // ==========================================

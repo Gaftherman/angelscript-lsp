@@ -202,7 +202,7 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                 {
                     if (registeredTypes.find(sym->name) != registeredTypes.end()) continue;
                     registeredTypes.insert(sym->name);
-                    engine->RegisterFuncdef(sym->signature.c_str());
+                    engine->RegisterFuncdef(sym->BuildSignature().c_str());
                 }
             }
             else if (pass == 3)
@@ -230,22 +230,22 @@ static void RegisterSymbols(const SymbolTable& table, asIScriptEngine* engine, c
                             {
                                 continue;
                             }
-                            engine->RegisterObjectMethod(declName.c_str(), child->signature.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
+                            engine->RegisterObjectMethod(declName.c_str(), child->BuildSignature().c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                         }
                         else if (child->kind == SymbolKind::Property || child->kind == SymbolKind::Variable)
                         {
-                            engine->RegisterObjectProperty(declName.c_str(), child->signature.c_str(), 0);
+                            engine->RegisterObjectProperty(declName.c_str(), child->BuildSignature().c_str(), 0);
                         }
                     }
                 }
                 else if (sym->kind == SymbolKind::Function)
                 {
-                    engine->RegisterGlobalFunction(sym->signature.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
+                    engine->RegisterGlobalFunction(sym->BuildSignature().c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                 }
                 else if (sym->kind == SymbolKind::Variable)
                 {
                     static int dummyVar = 0;
-                    engine->RegisterGlobalProperty(sym->signature.c_str(), &dummyVar);
+                    engine->RegisterGlobalProperty(sym->BuildSignature().c_str(), &dummyVar);
                 }
             }
         }
@@ -304,7 +304,7 @@ bool PredefinedLoader::LoadFromSource(const std::string& source, asIScriptEngine
                 self(self, sym->children, newNs);
                 scriptCode += "}\n";
             }
-            else if ((sym->kind == SymbolKind::Class && (sym->isAbstract || sym->isShared || sym->isMixin)) || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface)
+            else if ((sym->kind == SymbolKind::Class && (sym->isAbstract || sym->isShared)) || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface)
             {
                 if (sym->kind == SymbolKind::Interface)
                 {
@@ -315,7 +315,7 @@ bool PredefinedLoader::LoadFromSource(const std::string& source, asIScriptEngine
                 {
                     if (sym->isShared) scriptCode += "shared ";
                     if (sym->isAbstract) scriptCode += "abstract ";
-                    if (sym->kind == SymbolKind::Mixin || sym->isMixin) scriptCode += "mixin ";
+                    if (sym->kind == SymbolKind::Mixin) scriptCode += "mixin ";
                     scriptCode += "class " + sym->name;
                 }
                 
@@ -334,7 +334,7 @@ bool PredefinedLoader::LoadFromSource(const std::string& source, asIScriptEngine
                 {
                     if (child->kind == SymbolKind::Method)
                     {
-                        scriptCode += "  " + child->signature + " {}\n";
+                        scriptCode += "  " + child->BuildSignature() + " {}\n";
                     }
                     else if (child->kind == SymbolKind::Variable)
                     {

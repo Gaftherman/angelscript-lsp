@@ -144,7 +144,7 @@ lsp::requests::TextDocument_Completion::Result ProcessCompletion(
                 lsp::CompletionItem item;
                 item.label = sym->name;
                 item.kind = SymbolKindToCompletionKind(sym->kind);
-                item.detail = !sym->signature.empty() ? sym->signature : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
+                item.detail = !sym->BuildSignature().empty() ? sym->BuildSignature() : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
                 items.push_back(item);
             }
         }
@@ -180,7 +180,7 @@ lsp::requests::TextDocument_Completion::Result ProcessCompletion(
                 lsp::CompletionItem item;
                 item.label = sym->name;
                 item.kind = SymbolKindToCompletionKind(sym->kind);
-                item.detail = !sym->signature.empty() ? sym->signature : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
+                item.detail = !sym->BuildSignature().empty() ? sym->BuildSignature() : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
                 items.push_back(item);
             }
             
@@ -231,7 +231,7 @@ lsp::requests::TextDocument_Completion::Result ProcessCompletion(
             lsp::CompletionItem item;
             item.label = sym->name;
             item.kind = SymbolKindToCompletionKind(sym->kind);
-            item.detail = !sym->signature.empty() ? sym->signature : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
+            item.detail = !sym->BuildSignature().empty() ? sym->BuildSignature() : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name);
             items.push_back(item);
         }
     }

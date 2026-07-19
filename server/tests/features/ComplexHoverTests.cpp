@@ -125,7 +125,7 @@ TEST_SUITE("ComplexHover")
         CHECK(sym->name == "Vector3");
         CHECK(sym->kind == SymbolKind::Constructor);
         CHECK(sym->params.size() == 3);
-        CHECK(sym->signature == "Vector3(float ax, float ay, float az)");
+        CHECK( sym->BuildSignature() == "Vector3(float ax, float ay, float az)" );
     }
     
     TEST_CASE("CH2: Constructor resolution (no arguments)")
@@ -154,7 +154,7 @@ TEST_SUITE("ComplexHover")
         CHECK(sym->name == "Vector3");
         CHECK(sym->kind == SymbolKind::Constructor);
         CHECK(sym->params.size() == 0);
-        CHECK(sym->signature == "Vector3()");
+        CHECK( sym->BuildSignature() == "Vector3()" );
     }
     
     TEST_CASE("CH3: Parameter resolution correctly resolves full typeInfo")
@@ -1438,3 +1438,5 @@ void EmptyTags(int a) {}
     auto markup = std::get<lsp::MarkupContent>((*result).contents);
     CHECK(markup.value.find("EmptyTags") != std::string::npos);
 }
+
+

@@ -29,13 +29,18 @@ static const LspStrings EN_STRINGS =
     .hoverEngineWarn = "Engine Warning:",
     .hoverUnresolved = "Unresolved symbol",
     .hoverAmbiguous = "Ambiguous symbol",
+    .hoverDefinedIn = "Defined in",
+    .hoverAliasTo = "Alias to",
 
     .hoverTemplateParams = "Template parameters:",
     .hoverParams = "Parameters:",
     .hoverReturns = "Returns:",
+    .hoverThrows = "Throws:",
     .hoverNote = "Note:",
     .hoverWarning = "Warning:",
-    .hoverDeprecated = "Deprecated:"
+    .hoverDeprecated = "Deprecated:",
+    .hoverOverloads = "overloads available",
+    .hoverNeverUsed = "This symbol is never used locally"
 };
 
 static const LspStrings ES_STRINGS =
@@ -64,13 +69,18 @@ static const LspStrings ES_STRINGS =
     .hoverEngineWarn = "Advertencia del Motor:",
     .hoverUnresolved = "Símbolo no resuelto",
     .hoverAmbiguous = "Símbolo ambiguo",
+    .hoverDefinedIn = "Definido en",
+    .hoverAliasTo = "Alias de",
 
     .hoverTemplateParams = "Parámetros de plantilla:",
     .hoverParams = "Parámetros:",
     .hoverReturns = "Devuelve:",
+    .hoverThrows = "Excepciones:",
     .hoverNote = "Nota:",
     .hoverWarning = "Advertencia:",
-    .hoverDeprecated = "Obsoleto:"
+    .hoverDeprecated = "En desuso:",
+    .hoverOverloads = "sobrecargas disponibles",
+    .hoverNeverUsed = "Este símbolo nunca se usa localmente"
 };
 
 Locale ParseLocale(const std::string& localeStr)

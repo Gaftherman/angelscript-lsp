@@ -808,4 +808,90 @@ namespace analysis
 
         return result;
     }
+
+    std::string SymbolResolver::EvaluateExpressionType(const Document &doc, const SymbolTable &table, TSNode exprNode)
+    {
+        if (ts_node_is_null(exprNode)) return "";
+
+        std::string_view type = ts_node_type(exprNode);
+
+        if (type == "number_literal")
+        {
+            std::string_view val = doc.SourceAt(exprNode);
+            if (val.find('.') != std::string_view::npos || val.find('f') != std::string_view::npos)
+                return "float";
+            return "int";
+        }
+        if (type == "string_literal")
+        {
+            return "string";
+        }
+        if (type == "true" || type == "false")
+        {
+            return "bool";
+        }
+        if (type == "identifier")
+        {
+            TSPoint pos = ts_node_start_point(exprNode);
+            if (const Symbol* sym = ResolveAt(doc, table, pos.row, pos.column))
+            {
+                if (sym->kind == SymbolKind::Variable || sym->kind == SymbolKind::Property || sym->kind == SymbolKind::Parameter)
+                {
+                    return sym->typeInfo;
+                }
+                else if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Enum)
+                {
+                    return sym->name;
+                }
+            }
+        }
+        if (type == "call_expression")
+        {
+            TSNode funcNode = ts_node_child(exprNode, 0);
+            if (!ts_node_is_null(funcNode))
+            {
+                TSPoint pos = ts_node_start_point(funcNode);
+                if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+                {
+                    TSNode fieldNode = ts_node_child_by_field_name(funcNode, "field", 5);
+                    if (!ts_node_is_null(fieldNode))
+                    {
+                        pos = ts_node_start_point(fieldNode);
+                    }
+                }
+
+                if (const Symbol* sym = ResolveAt(doc, table, pos.row, pos.column))
+                {
+                    if (sym->kind == SymbolKind::Method || sym->kind == SymbolKind::Function)
+                    {
+                        return CleanTypeName(sym->typeInfo);
+                    }
+                }
+            }
+        }
+        if (type == "member_expression")
+        {
+            TSNode fieldNode = ts_node_child_by_field_name(exprNode, "field", 5);
+            if (!ts_node_is_null(fieldNode))
+            {
+                TSPoint pos = ts_node_start_point(fieldNode);
+                if (const Symbol* sym = ResolveAt(doc, table, pos.row, pos.column))
+                {
+                    if (sym->kind == SymbolKind::Property || sym->kind == SymbolKind::Variable)
+                        return sym->typeInfo;
+                }
+            }
+        }
+        if (type == "cast_expression")
+        {
+            TSNode typeNode = ts_node_child_by_field_name(exprNode, "type", 4);
+            if (!ts_node_is_null(typeNode))
+            {
+                std::string_view castType = doc.SourceAt(typeNode);
+                return std::string(castType.begin(), castType.end());
+            }
+        }
+
+        return "";
+    }
 }

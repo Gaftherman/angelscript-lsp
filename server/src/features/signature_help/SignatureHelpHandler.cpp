@@ -129,7 +129,7 @@ lsp::requests::TextDocument_SignatureHelp::Result ProcessSignatureHelp(
         if (sym->kind == analysis::SymbolKind::Function || sym->kind == analysis::SymbolKind::Method)
         {
             lsp::SignatureInformation sig;
-            sig.label = !sym->signature.empty() ? sym->signature : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name + "()");
+            sig.label = !sym->BuildSignature().empty() ? sym->BuildSignature() : (sym->typeInfo + (sym->typeInfo.empty() ? "" : " ") + sym->name + "()");
             help.signatures.push_back(sig);
         }
     }

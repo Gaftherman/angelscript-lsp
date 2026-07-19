@@ -20,6 +20,7 @@ static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale, co
     std::vector<std::string> tparams;
     std::vector<std::string> params;
     std::string returns;
+    std::vector<std::string> exceptions;
     std::vector<std::string> notes;
     std::vector<std::string> warnings;
     std::vector<std::string> deprecated;
@@ -89,6 +90,11 @@ static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale, co
                 if (!returns.empty()) returns += " ";
                 returns += content;
                 activeStr = &returns;
+            }
+            else if (tag == "throws" || tag == "throw" || tag == "exception")
+            {
+                exceptions.push_back(content);
+                activeStr = &exceptions.back();
             }
             else if (tag == "note")
             {
@@ -170,6 +176,14 @@ static std::string FormatDoxygen(const std::string& raw, i18n::Locale locale, co
         {
             if (!out.empty()) out += "\n\n";
             out += "**" + std::string(s.hoverReturns) + "**\n\n" + returns;
+        }
+
+        if (!exceptions.empty())
+        {
+            if (!out.empty()) out += "\n\n";
+            out += "**" + std::string(s.hoverThrows) + "**\n\n";
+            for (const auto& exc : exceptions) out += exc + "\n\n";
+            out.pop_back(); out.pop_back();
         }
 
         for (const auto& note : notes)
@@ -330,47 +344,47 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             std::string dispName = (!isVarLike && !dynamicDisplayName.empty() && renderSym->name == sym->name)
                                         ? dynamicDisplayName
                                         : renderSym->name;
-            std::string sig = !renderSym->signature.empty()
-                                ? renderSym->signature
-                                : (renderSym->typeInfo + (renderSym->typeInfo.empty() ? "" : " ") + dispName);
-                                
-            if (renderSym->signature.empty())
+            bool needsParentClass = false;
+            if (sym && sym->parent && (sym->parent->kind == analysis::SymbolKind::Class || sym->parent->kind == analysis::SymbolKind::Interface || sym->parent->kind == analysis::SymbolKind::Mixin) && 
+                (sym->kind == analysis::SymbolKind::Method || sym->kind == analysis::SymbolKind::Constructor || sym->kind == analysis::SymbolKind::Destructor))
             {
-                if (renderSym->kind == analysis::SymbolKind::Class) sig = "class " + dispName;
-                else if (renderSym->kind == analysis::SymbolKind::Interface) sig = "interface " + dispName;
-                else if (renderSym->kind == analysis::SymbolKind::Mixin) sig = "mixin " + dispName;
-                else if (renderSym->kind == analysis::SymbolKind::Enum) sig = "enum " + dispName;
-                else if (renderSym->kind == analysis::SymbolKind::Namespace) sig = "namespace " + dispName;
-                else if (renderSym->kind == analysis::SymbolKind::Typedef) sig = "typedef " + renderSym->typeInfo + " " + dispName;
-                
-                if (renderSym->isShared) sig = "shared " + sig;
+                needsParentClass = true;
             }
-            else if (renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
+            std::string sig = renderSym->BuildSignature(needsParentClass, dispName);
+
+            if (renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
             {
-                sig = renderSym->parent->signature;
-                if (renderSym->parent->parent && (renderSym->parent->kind == analysis::SymbolKind::Method || renderSym->parent->kind == analysis::SymbolKind::Constructor || renderSym->parent->kind == analysis::SymbolKind::Destructor))
+                bool parentNeedsClass = false;
+                if (renderSym->parent->parent && (renderSym->parent->parent->kind == analysis::SymbolKind::Class || renderSym->parent->parent->kind == analysis::SymbolKind::Interface || renderSym->parent->parent->kind == analysis::SymbolKind::Mixin) &&
+                    (renderSym->parent->kind == analysis::SymbolKind::Method || renderSym->parent->kind == analysis::SymbolKind::Constructor || renderSym->parent->kind == analysis::SymbolKind::Destructor))
                 {
-                    size_t paren = sig.find('(');
-                    if (paren != std::string::npos)
-                    {
-                        size_t namePos = sig.rfind(renderSym->parent->name, paren);
-                        if (namePos != std::string::npos)
-                        {
-                            sig.insert(namePos, renderSym->parent->parent->name + "::");
-                        }
-                    }
+                    parentNeedsClass = true;
                 }
+                sig = renderSym->parent->BuildSignature(parentNeedsClass, renderSym->parent->name);
             }
-            else if (renderSym->parent && (renderSym->kind == analysis::SymbolKind::Method || renderSym->kind == analysis::SymbolKind::Constructor || renderSym->kind == analysis::SymbolKind::Destructor))
+
+            // Very basic template substitution for display
+            if (!sym->templateType.empty() && renderSym->parent && renderSym->parent->templateParam.length() > 0)
             {
-                size_t paren = sig.find('(');
-                if (paren != std::string::npos)
+                std::string paramName = renderSym->parent->templateParam;
+                size_t pos = sig.find(paramName);
+                while (pos != std::string::npos)
                 {
-                    size_t namePos = sig.rfind(renderSym->name, paren);
-                    if (namePos != std::string::npos)
+                    // Ensure we match a whole word
+                    bool match = true;
+                    if (pos > 0 && isalnum(sig[pos - 1])) match = false;
+                    if (pos + paramName.length() < sig.length() && isalnum(sig[pos + paramName.length()])) match = false;
+                    
+                    if (match)
                     {
-                        sig.insert(namePos, renderSym->parent->name + "::");
+                        sig.replace(pos, paramName.length(), sym->templateType);
+                        pos += sym->templateType.length();
                     }
+                    else
+                    {
+                        pos += paramName.length();
+                    }
+                    pos = sig.find(paramName, pos);
                 }
             }
             
@@ -459,7 +473,7 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
         for (const auto* d : diags)
         {
             if (!markdown.empty()) markdown += "\n\n---\n\n";
-            std::string prefix = d->severity == lsp::DiagnosticSeverity::Error ? "⛔ **" + std::string(s.hoverEngineError) + "**" : "⚠️ **" + std::string(s.hoverEngineWarn) + "**";
+            std::string prefix = d->severity == lsp::DiagnosticSeverity::Error ? "**" + std::string(s.hoverEngineError) + "**" : "**" + std::string(s.hoverEngineWarn) + "**";
             markdown += prefix + " `" + d->message + "`";
         }
     }
