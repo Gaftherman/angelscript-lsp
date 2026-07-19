@@ -10,7 +10,7 @@ TEST_SUITE("ValidationOracle")
     {
         fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
         std::string code = "void Main() { int x = ; }"; // Syntax error
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.HasError());
         CHECK(!result.IsClean());
@@ -22,14 +22,14 @@ TEST_SUITE("ValidationOracle")
         engine->RegisterGlobalFunction("void Print(int)", asFUNCTION(0), asCALL_CDECL);
 
         std::string code = "void Main() { Print(1, 2); }"; // Semantic error
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.HasError());
         CHECK(result.HasMessage("No matching signatures"));
-        
+
         // Check range extraction
         bool foundSemanticError = false;
-        for (const auto& d : result.diags)
+        for (const auto &d : result.diags)
         {
             if (d.message.find("No matching signatures") != std::string::npos)
             {
@@ -60,10 +60,10 @@ TEST_SUITE("ValidationOracle")
 
         std::string code = "void Main() { array<int> a = {1, 2, 3}; }";
         auto result = fixtures::Validate(engine, code);
-        
+
         if (!result.IsClean())
         {
-            for (auto& diag : result.diags)
+            for (auto &diag : result.diags)
             {
                 std::cout << "Diag: " << diag.message << "\n";
             }
@@ -74,18 +74,18 @@ TEST_SUITE("ValidationOracle")
     TEST_CASE("Translates diagnostics when locale is ES")
     {
         fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
-        
+
         // ValidationOracle defaults to EN, but we inject ES for this test
         analysis::ValidationOracle oracle(engine, i18n::Locale::ES);
-        
+
         // This will trigger "Expected expression value" (syntax error)
-        std::string code = "void Main() { int x = ; }"; 
+        std::string code = "void Main() { int x = ; }";
         auto result = oracle.ValidateSync(code);
-        
+
         CHECK(result.size() > 0);
-        
+
         bool foundTranslated = false;
-        for (const auto& d : result)
+        for (const auto &d : result)
         {
             if (d.message == "Se esperaba un valor de expresión" || d.message.find("Se esperaba") != std::string::npos)
             {
@@ -100,23 +100,23 @@ TEST_SUITE("ValidationOracle")
     {
         fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
         engine->RegisterGlobalFunction("void Print(int)", asFUNCTION(0), asCALL_CDECL);
-        
+
         analysis::ValidationOracle oracle(engine, i18n::Locale::ES);
-        
+
         // This will trigger "No matching signatures to 'Print(const int)'"
         // And should be translated via regex to "No hay firmas coincidentes para la función 'Print(const int)'"
         std::string code = "void Main() { Print(1, 2); }";
         auto result = oracle.ValidateSync(code);
-        
+
         CHECK(result.size() > 0);
-        
+
         bool foundRegexTranslated = false;
-        for (const auto& d : result)
+        for (const auto &d : result)
         {
             std::cout << "DIAG: " << d.message << "\n";
-            if (d.message.find("No hay firmas coincidentes para la función") != std::string::npos && 
+            if (d.message.find("No hay firmas coincidentes para la función") != std::string::npos &&
                 d.message.find("Print") != std::string::npos)
-                {
+            {
                 foundRegexTranslated = true;
                 break;
             }

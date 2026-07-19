@@ -16,7 +16,7 @@ TEST_SUITE("Script - Namespaces")
                 Combat::DealDamage(50);
             }
         )";
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.IsClean());
     }
@@ -37,7 +37,7 @@ TEST_SUITE("Script - Namespaces")
                 float val = Engine::Math::Lerp(0.0f, 10.0f, 0.5f);
             }
         )";
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.IsClean());
     }
@@ -55,7 +55,7 @@ TEST_SUITE("Script - Namespaces")
                 Combat::DealDamage("50"); // Error: string instead of int
             }
         )";
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.HasError());
     }

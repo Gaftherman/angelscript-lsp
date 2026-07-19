@@ -14,7 +14,8 @@ struct TSQueryDeleter
 {
     void operator()(TSQuery *q) const
     {
-        if (q) ts_query_delete(q);
+        if (q)
+            ts_query_delete(q);
     }
 };
 
@@ -25,7 +26,8 @@ struct TSQueryCursorDeleter
 {
     void operator()(TSQueryCursor *qc) const
     {
-        if (qc) ts_query_cursor_delete(qc);
+        if (qc)
+            ts_query_cursor_delete(qc);
     }
 };
 
@@ -40,7 +42,7 @@ struct QueryMatch
 
 /**
  * @brief A singleton utility to compile, store, and execute Tree-Sitter queries.
- * 
+ *
  * Centralizes query execution to avoid recompiling the same query strings repeatedly.
  */
 class QueryRunner
@@ -48,16 +50,16 @@ class QueryRunner
 public:
     /**
      * @brief Gets the singleton instance of the QueryRunner.
-     * 
+     *
      * @return The QueryRunner instance.
      */
     static QueryRunner &GetInstance();
 
     /**
      * @brief Compiles and registers a Tree-Sitter query.
-     * 
+     *
      * If the query is already registered, it does nothing and returns true.
-     * 
+     *
      * @param name The unique name to assign to the query.
      * @param source The Tree-Sitter query string.
      * @param out_error Output parameter that will contain the parse error if compilation fails.
@@ -67,7 +69,7 @@ public:
 
     /**
      * @brief Executes a previously registered query against a given syntax node.
-     * 
+     *
      * @param name The name of the registered query.
      * @param root_node The Tree-Sitter node to query against.
      * @return A list of query matches and their named captures.

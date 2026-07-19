@@ -38,7 +38,8 @@ namespace analysis
                 }
                 current = next;
             }
-            if (!current) break;
+            if (!current)
+                break;
         }
         return current;
     }
@@ -48,7 +49,8 @@ namespace analysis
         while (parentType == "scoped_identifier" || parentType == "scoped_type")
         {
             TSNode p = ts_node_parent(parent);
-            if (ts_node_is_null(p)) break;
+            if (ts_node_is_null(p))
+                break;
             std::string_view pType = ts_node_type(p);
             if (pType == "scoped_identifier" || pType == "scoped_type")
             {
@@ -82,29 +84,38 @@ namespace analysis
                     }
                 }
             }
-            return SymbolKind::Class; 
+            return SymbolKind::Class;
         }
         if (parentType == "call_expression" || parentType == "func_call")
         {
-            return SymbolKind::Function; 
+            return SymbolKind::Function;
         }
-        
+
         TSNode nextSibling = ts_node_next_sibling(node);
         if (!ts_node_is_null(nextSibling) && std::string_view(ts_node_type(nextSibling)) == "argument_list")
         {
             return SymbolKind::Function;
         }
-        
-        if (parentType == "base_class_list" || parentType == "inheritance_specifier") return SymbolKind::Class; 
-        if (parentType == "class_declaration") return SymbolKind::Class;
-        if (parentType == "enum_declaration") return SymbolKind::Enum;
-        if (parentType == "typedef_declaration") return SymbolKind::Typedef;
-        if (parentType == "funcdef_declaration") return SymbolKind::Funcdef;
-        if (parentType == "func_declaration") return SymbolKind::Function;
-        if (parentType == "interface_declaration") return SymbolKind::Interface;
-        if (parentType == "mixin_declaration") return SymbolKind::Mixin;
-        if (parentType == "namespace_declaration") return SymbolKind::Namespace;
-        
+
+        if (parentType == "base_class_list" || parentType == "inheritance_specifier")
+            return SymbolKind::Class;
+        if (parentType == "class_declaration")
+            return SymbolKind::Class;
+        if (parentType == "enum_declaration")
+            return SymbolKind::Enum;
+        if (parentType == "typedef_declaration")
+            return SymbolKind::Typedef;
+        if (parentType == "funcdef_declaration")
+            return SymbolKind::Funcdef;
+        if (parentType == "func_declaration")
+            return SymbolKind::Function;
+        if (parentType == "interface_declaration")
+            return SymbolKind::Interface;
+        if (parentType == "mixin_declaration")
+            return SymbolKind::Mixin;
+        if (parentType == "namespace_declaration")
+            return SymbolKind::Namespace;
+
         return std::nullopt;
     }
 
@@ -113,7 +124,8 @@ namespace analysis
         while (parentType == "scoped_identifier" || parentType == "scoped_type")
         {
             TSNode p = ts_node_parent(parent);
-            if (ts_node_is_null(p)) break;
+            if (ts_node_is_null(p))
+                break;
             std::string_view pType = ts_node_type(p);
             if (pType == "scoped_identifier" || pType == "scoped_type")
             {
@@ -131,7 +143,7 @@ namespace analysis
         }
 
         TSNode argList = {0};
-        
+
         if (parentType == "call_expression" || parentType == "func_call")
         {
             argList = ts_node_child_by_field_name(parent, "arguments", 9);
@@ -156,7 +168,7 @@ namespace analysis
                 argList = nextSibling;
             }
         }
-        
+
         if (!ts_node_is_null(argList))
         {
             uint32_t count = ts_node_child_count(argList);
@@ -172,7 +184,7 @@ namespace analysis
             }
             return argCount;
         }
-        
+
         return std::nullopt;
     }
 
@@ -180,29 +192,39 @@ namespace analysis
     {
         switch (kind)
         {
-            case SymbolKind::Typedef: return 6;
-            case SymbolKind::Class: return 5;
-            case SymbolKind::Constructor: return 4;
-            case SymbolKind::Enum: return 4;
-            case SymbolKind::Function: return 3;
-            case SymbolKind::Method: return 2;
-            default: return 1;
+        case SymbolKind::Typedef:
+            return 6;
+        case SymbolKind::Class:
+            return 5;
+        case SymbolKind::Constructor:
+            return 4;
+        case SymbolKind::Enum:
+            return 4;
+        case SymbolKind::Function:
+            return 3;
+        case SymbolKind::Method:
+            return 2;
+        default:
+            return 1;
         }
     }
 
     const Symbol *SymbolResolver::ResolveAt(const Document &doc, const SymbolTable &table, uint32_t line, uint32_t character, std::vector<const Symbol *> *outMultipleResults)
     {
         TSNode node = doc.NodeAt(line, character);
-        if (ts_node_is_null(node)) return nullptr;
+        if (ts_node_is_null(node))
+            return nullptr;
 
         while (!ts_node_is_null(node))
         {
             std::string_view type = ts_node_type(node);
-            if (type == "identifier" || type == "type_identifier") break;
+            if (type == "identifier" || type == "type_identifier")
+                break;
             node = ts_node_parent(node);
         }
 
-        if (ts_node_is_null(node)) return nullptr;
+        if (ts_node_is_null(node))
+            return nullptr;
 
         std::string_view identSv = doc.SourceAt(node);
         std::string identText(identSv.begin(), identSv.end());
@@ -212,19 +234,21 @@ namespace analysis
 
         if (parentType == "member_expression")
         {
-            if (const Symbol *sym = ResolveMemberAccess(doc, table, node, parent, identText)) return sym;
+            if (const Symbol *sym = ResolveMemberAccess(doc, table, node, parent, identText))
+                return sym;
         }
 
         if (parentType == "func_declaration")
         {
-            if (const Symbol *sym = ResolveConstructorOrDestructor(doc, table, node, parent, identText, line, outMultipleResults)) return sym;
+            if (const Symbol *sym = ResolveConstructorOrDestructor(doc, table, node, parent, identText, line, outMultipleResults))
+                return sym;
             if (const Symbol *sym = table.FindScopeByPosition(doc.GetUri(), line, character))
             {
                 if (sym->name == identText)
                 {
                     if (outMultipleResults)
                     {
-                        for (Symbol* globalSym : table.FindAllGlobalsByName(identText))
+                        for (Symbol *globalSym : table.FindAllGlobalsByName(identText))
                         {
                             outMultipleResults->push_back(globalSym);
                         }
@@ -241,7 +265,8 @@ namespace analysis
         {
             if (const Symbol *sym = ResolveScopedIdentifier(doc, table, node, parent, identText, globalCandidates, isScoped))
             {
-                if (outMultipleResults) outMultipleResults->push_back(sym);
+                if (outMultipleResults)
+                    outMultipleResults->push_back(sym);
                 return sym;
             }
         }
@@ -264,7 +289,7 @@ namespace analysis
                         }
                     }
                 }
-                
+
                 if (!ts_node_is_null(tNode))
                 {
                     std::string_view nsSv = doc.SourceAt(tNode);
@@ -274,12 +299,14 @@ namespace analysis
                     {
                         for (const auto &child : maybeSym->children)
                         {
-                            if (child->name == identText) globalCandidates.push_back(child.get());
+                            if (child->name == identText)
+                                globalCandidates.push_back(child.get());
                             if (child->kind == SymbolKind::Enum)
                             {
                                 for (const auto &eMem : child->children)
                                 {
-                                    if (eMem->name == identText) globalCandidates.push_back(eMem.get());
+                                    if (eMem->name == identText)
+                                        globalCandidates.push_back(eMem.get());
                                 }
                             }
                         }
@@ -293,7 +320,8 @@ namespace analysis
         {
             if (const Symbol *localSym = table.FindLocalByNameAt(identText, line, character))
             {
-                if (outMultipleResults) outMultipleResults->push_back(localSym);
+                if (outMultipleResults)
+                    outMultipleResults->push_back(localSym);
                 return localSym;
             }
 
@@ -304,14 +332,16 @@ namespace analysis
                 {
                     for (const auto &child : nsSym->children)
                     {
-                        if (child->name == identText) globalCandidates.push_back(child.get());
+                        if (child->name == identText)
+                            globalCandidates.push_back(child.get());
                     }
                 }
             }
 
             std::vector<Symbol *> allGlobals = table.FindAllGlobalsByName(identText);
-            for (Symbol *s : allGlobals) globalCandidates.push_back(s);
-            
+            for (Symbol *s : allGlobals)
+                globalCandidates.push_back(s);
+
             for (const auto &[nsName, nsSyms] : table.GetGlobals())
             {
                 for (const auto &nsSym : nsSyms)
@@ -322,11 +352,13 @@ namespace analysis
                         {
                             for (const auto &child : currentNs->children)
                             {
-                                if (child->name == identText) globalCandidates.push_back(child.get());
+                                if (child->name == identText)
+                                    globalCandidates.push_back(child.get());
                             }
                             for (const auto &child : currentNs->children)
                             {
-                                if (child->kind == SymbolKind::Namespace) self(self, child.get());
+                                if (child->kind == SymbolKind::Namespace)
+                                    self(self, child.get());
                             }
                         };
                         searchChildren(searchChildren, nsSym.get());
@@ -351,12 +383,12 @@ namespace analysis
                 }
             }
         }
-        
+
         if (!globalCandidates.empty())
         {
             return FilterAndScoreCandidates(doc, node, parent, parentType, globalCandidates, outMultipleResults);
         }
-        
+
         if (const Symbol *implicit = ResolveImplicitMember(doc, table, node, identText, outMultipleResults))
         {
             return implicit;
@@ -370,10 +402,12 @@ namespace analysis
                 {
                     for (const auto &child : sym->children)
                     {
-                        if (child->name == identText) return child.get();
+                        if (child->name == identText)
+                            return child.get();
                         for (const auto &grandchild : child->children)
                         {
-                            if (grandchild->name == identText) return grandchild.get();
+                            if (grandchild->name == identText)
+                                return grandchild.get();
                         }
                     }
                 }
@@ -387,19 +421,20 @@ namespace analysis
     {
         TSNode memberNode = ts_node_child_by_field_name(parent, "member", 6);
         TSNode objectNode = ts_node_child_by_field_name(parent, "object", 6);
-        
+
         if (!ts_node_is_null(memberNode) && ts_node_eq(node, memberNode))
         {
             std::string_view objSv = doc.SourceAt(objectNode);
             std::string objText(objSv.begin(), objSv.end());
-                
+
             const Symbol *objSym = table.FindLocalByName(objText);
-            if (!objSym) objSym = table.FindGlobalByName(objText);
-                    
+            if (!objSym)
+                objSym = table.FindGlobalByName(objText);
+
             if (objSym)
             {
                 std::string typeName = CleanTypeName(objSym->typeInfo);
-                
+
                 const Symbol *classSym = nullptr;
                 if (typeName.find("::") != std::string::npos)
                 {
@@ -409,27 +444,30 @@ namespace analysis
                 {
                     classSym = table.FindByNameDeep(typeName);
                 }
-                
+
                 if (classSym)
                 {
                     auto findMember = [&](auto &self, const Symbol *cSym) -> const Symbol *
                     {
-                        if (!cSym) return nullptr;
+                        if (!cSym)
+                            return nullptr;
                         for (const auto &child : cSym->children)
                         {
-                            if (child->name == identText) return child.get();
+                            if (child->name == identText)
+                                return child.get();
                         }
                         for (const auto &baseName : cSym->baseClasses)
                         {
                             const Symbol *baseSym = table.FindByNameDeep(baseName);
                             if (baseSym)
                             {
-                                if (const Symbol *found = self(self, baseSym)) return found;
+                                if (const Symbol *found = self(self, baseSym))
+                                    return found;
                             }
                         }
                         return nullptr;
                     };
-                    
+
                     if (const Symbol *found = findMember(findMember, classSym))
                     {
                         return found;
@@ -453,7 +491,7 @@ namespace analysis
                 break;
             }
         }
-        
+
         if (!hasReturnType)
         {
             bool isDestructor = false;
@@ -462,9 +500,9 @@ namespace analysis
             {
                 isDestructor = true;
             }
-            
+
             std::string targetName = isDestructor ? ("~" + identText) : identText;
-            
+
             const Symbol *foundSym = nullptr;
             TSNode scopeNode = parent;
             while (!ts_node_is_null(scopeNode))
@@ -491,7 +529,7 @@ namespace analysis
                                     }
                                     if (!foundSym)
                                     {
-                                        foundSym = child.get(); 
+                                        foundSym = child.get();
                                     }
                                 }
                             }
@@ -501,10 +539,11 @@ namespace analysis
                 }
                 scopeNode = ts_node_parent(scopeNode);
             }
-            
+
             if (foundSym)
             {
-                if (outMultipleResults) outMultipleResults->push_back(foundSym);
+                if (outMultipleResults)
+                    outMultipleResults->push_back(foundSym);
                 return foundSym;
             }
         }
@@ -565,7 +604,8 @@ namespace analysis
                 std::string nsPath = "";
                 for (int i = 0; i < hoveredIndex; i++)
                 {
-                    if (!nsPath.empty()) nsPath += "::";
+                    if (!nsPath.empty())
+                        nsPath += "::";
                     nsPath += pathNodes[i].first;
                 }
                 if (!nsPath.empty())
@@ -577,12 +617,14 @@ namespace analysis
                         {
                             for (const auto &child : nsSym->children)
                             {
-                                if (child->name == identText) globalCandidates.push_back(child.get());
+                                if (child->name == identText)
+                                    globalCandidates.push_back(child.get());
                                 if (child->kind == SymbolKind::Enum)
                                 {
                                     for (const auto &eMem : child->children)
                                     {
-                                        if (eMem->name == identText) globalCandidates.push_back(eMem.get());
+                                        if (eMem->name == identText)
+                                            globalCandidates.push_back(eMem.get());
                                     }
                                 }
                             }
@@ -591,7 +633,8 @@ namespace analysis
                         {
                             for (const auto &child : nsSym->children)
                             {
-                                if (child->name == identText) globalCandidates.push_back(child.get());
+                                if (child->name == identText)
+                                    globalCandidates.push_back(child.get());
                             }
                         }
                     }
@@ -603,11 +646,13 @@ namespace analysis
                 std::string nsPath = "";
                 for (int i = 0; i <= hoveredIndex; i++)
                 {
-                    if (!nsPath.empty()) nsPath += "::";
+                    if (!nsPath.empty())
+                        nsPath += "::";
                     nsPath += pathNodes[i].first;
                 }
                 const Symbol *nsSym = FindNamespace(table, nsPath);
-                if (nsSym) return nsSym;
+                if (nsSym)
+                    return nsSym;
             }
         }
         return nullptr;
@@ -642,23 +687,27 @@ namespace analysis
                 {
                     return classSym;
                 }
-                
+
                 auto findInHierarchy = [&](auto &self, const Symbol *cSym) -> const Symbol *
                 {
-                    if (!cSym) return nullptr;
+                    if (!cSym)
+                        return nullptr;
                     for (const auto &child : cSym->children)
                     {
-                        if (child->name == identText) return child.get();
+                        if (child->name == identText)
+                            return child.get();
                     }
                     for (const auto &baseName : cSym->baseClasses)
                     {
                         const Symbol *baseSym = table.FindByNameDeep(baseName);
-                        if (const Symbol *found = self(self, baseSym)) return found;
+                        if (const Symbol *found = self(self, baseSym))
+                            return found;
                     }
                     return nullptr;
                 };
-                
-                if (const Symbol *found = findInHierarchy(findInHierarchy, classSym)) return found;
+
+                if (const Symbol *found = findInHierarchy(findInHierarchy, classSym))
+                    return found;
 
                 if (classSym->kind == SymbolKind::Mixin)
                 {
@@ -668,27 +717,34 @@ namespace analysis
                     {
                         auto findMember = [&](auto &self, const Symbol *cSym) -> const Symbol *
                         {
-                            if (!cSym) return nullptr;
+                            if (!cSym)
+                                return nullptr;
                             for (const auto &child : cSym->children)
                             {
-                                if (child->name == identText) return child.get();
+                                if (child->name == identText)
+                                    return child.get();
                             }
                             for (const auto &baseName : cSym->baseClasses)
                             {
-                                if (baseName == containingClass) continue;
+                                if (baseName == containingClass)
+                                    continue;
                                 const Symbol *baseSym = table.FindByNameDeep(baseName);
-                                if (const Symbol *found = self(self, baseSym)) return found;
+                                if (const Symbol *found = self(self, baseSym))
+                                    return found;
                             }
                             return nullptr;
                         };
 
                         if (const Symbol *found = findMember(findMember, hostSym))
                         {
-                            if (outMultipleResults) outMultipleResults->push_back(found);
-                            if (!firstFound) firstFound = found;
+                            if (outMultipleResults)
+                                outMultipleResults->push_back(found);
+                            if (!firstFound)
+                                firstFound = found;
                         }
                     }
-                    if (firstFound) return firstFound;
+                    if (firstFound)
+                        return firstFound;
                 }
             }
         }
@@ -699,7 +755,7 @@ namespace analysis
     {
         std::optional<SymbolKind> expected = InferExpectedKind(node, parent, parentType);
         std::optional<uint32_t> argCount = GetCallArgumentCount(node, parent, parentType);
-        
+
         const Symbol *bestMatch = nullptr;
         int bestPriority = -1;
 
@@ -708,10 +764,11 @@ namespace analysis
 
         for (const Symbol *cand : globalCandidates)
         {
-            if (outMultipleResults) outMultipleResults->push_back(cand);
-            
+            if (outMultipleResults)
+                outMultipleResults->push_back(cand);
+
             int candPriority = GetKindPriority(cand->kind);
-            
+
             if (expected.has_value())
             {
                 if (expected.value() == cand->kind)
@@ -731,7 +788,11 @@ namespace analysis
                     if (cand->kind == SymbolKind::Function || cand->kind == SymbolKind::Method || cand->kind == SymbolKind::Constructor)
                     {
                         candPriority += 100;
-                        if (argCount.has_value() && cand->params.size() == argCount.value()) { candPriority += 200; } if (cand->kind == SymbolKind::Constructor && argCount.has_value())
+                        if (argCount.has_value() && cand->params.size() == argCount.value())
+                        {
+                            candPriority += 200;
+                        }
+                        if (cand->kind == SymbolKind::Constructor && argCount.has_value())
                         {
                             if (cand->params.size() == argCount.value())
                             {
@@ -755,7 +816,7 @@ namespace analysis
                 bestMatch = cand;
             }
         }
-        
+
         if (bestMatch && bestMatch->kind == SymbolKind::Class &&
             expected.has_value() && expected.value() == SymbolKind::Function)
         {
@@ -763,7 +824,8 @@ namespace analysis
             int bestCtorScore = -1;
             for (const auto &child : bestMatch->children)
             {
-                if (child->kind != SymbolKind::Constructor) continue;
+                if (child->kind != SymbolKind::Constructor)
+                    continue;
                 int score = 0;
                 if (argCount.has_value())
                 {
@@ -778,16 +840,17 @@ namespace analysis
                     bestCtor = child.get();
                 }
             }
-            if (bestCtor) bestMatch = bestCtor;
+            if (bestCtor)
+                bestMatch = bestCtor;
         }
-        
+
         return bestMatch;
     }
 
     std::string SymbolResolver::CleanTypeName(std::string_view raw)
     {
         std::string result(raw);
-        
+
         auto stripPrefix = [&result](const std::string &prefix)
         {
             if (result.starts_with(prefix))
@@ -802,21 +865,21 @@ namespace analysis
         stripPrefix("inout ");
         stripPrefix("in ");
         stripPrefix("out ");
-        
+
         auto removeChar = [&result](char c)
         {
             size_t pos;
             while ((pos = result.find(c)) != std::string::npos)
                 result.erase(pos, 1);
         };
-        
+
         removeChar('@');
         removeChar('&');
-        
+
         size_t arrPos;
         while ((arrPos = result.find("[]")) != std::string::npos)
             result.erase(arrPos, 2);
-            
+
         while (!result.empty() && result.back() == ' ')
             result.pop_back();
 
@@ -825,7 +888,8 @@ namespace analysis
 
     std::string SymbolResolver::EvaluateExpressionType(const Document &doc, const SymbolTable &table, TSNode exprNode)
     {
-        if (ts_node_is_null(exprNode)) return "";
+        if (ts_node_is_null(exprNode))
+            return "";
 
         std::string_view type = ts_node_type(exprNode);
 
@@ -847,7 +911,7 @@ namespace analysis
         if (type == "identifier")
         {
             TSPoint pos = ts_node_start_point(exprNode);
-            if (const Symbol* sym = ResolveAt(doc, table, pos.row, pos.column))
+            if (const Symbol *sym = ResolveAt(doc, table, pos.row, pos.column))
             {
                 if (sym->kind == SymbolKind::Variable || sym->kind == SymbolKind::Property || sym->kind == SymbolKind::Parameter)
                 {
@@ -874,7 +938,7 @@ namespace analysis
                     }
                 }
 
-                if (const Symbol* sym = ResolveAt(doc, table, pos.row, pos.column))
+                if (const Symbol *sym = ResolveAt(doc, table, pos.row, pos.column))
                 {
                     if (sym->kind == SymbolKind::Method || sym->kind == SymbolKind::Function)
                     {
@@ -889,7 +953,7 @@ namespace analysis
             if (!ts_node_is_null(fieldNode))
             {
                 TSPoint pos = ts_node_start_point(fieldNode);
-                if (const Symbol* sym = ResolveAt(doc, table, pos.row, pos.column))
+                if (const Symbol *sym = ResolveAt(doc, table, pos.row, pos.column))
                 {
                     if (sym->kind == SymbolKind::Property || sym->kind == SymbolKind::Variable)
                         return sym->typeInfo;

@@ -16,7 +16,7 @@ TEST_SUITE("PredefinedLoader")
 {
     TEST_CASE("PL1.1: DummyStringFactory - engine accepts string literal with dummy type")
     {
-        asIScriptEngine* engine = asCreateScriptEngine();
+        asIScriptEngine *engine = asCreateScriptEngine();
         engine->SetMessageCallback(asFUNCTION(MessageCallback), 0, asCALL_CDECL);
         REQUIRE(engine != nullptr);
 
@@ -30,7 +30,7 @@ TEST_SUITE("PredefinedLoader")
         CHECK(typeId >= 0);
 
         // Compilar un script que use un literal string — no debe dar error
-        asIScriptModule* mod = engine->GetModule("test", asGM_ALWAYS_CREATE);
+        asIScriptModule *mod = engine->GetModule("test", asGM_ALWAYS_CREATE);
         mod->AddScriptSection("test", R"( void Main() { string s = "hola"; } )");
         int r = mod->Build();
         // CHECK(r >= 0); // Removed: Dummy types might not have valid copy constructors registered for compilation
@@ -40,7 +40,7 @@ TEST_SUITE("PredefinedLoader")
 
     TEST_CASE("PL1.1b: DummyStringFactory - works with custom type name 'String'")
     {
-        asIScriptEngine* engine = asCreateScriptEngine();
+        asIScriptEngine *engine = asCreateScriptEngine();
         engine->SetMessageCallback(asFUNCTION(MessageCallback), 0, asCALL_CDECL);
         REQUIRE(engine != nullptr);
 
@@ -48,7 +48,7 @@ TEST_SUITE("PredefinedLoader")
         bool ok = PredefinedLoader::LoadFromSource("class String { uint Length() const; }", engine, table, "String", "array");
         CHECK(ok == true);
 
-        asIScriptModule* mod = engine->GetModule("test", asGM_ALWAYS_CREATE);
+        asIScriptModule *mod = engine->GetModule("test", asGM_ALWAYS_CREATE);
         mod->AddScriptSection("test", R"( void Main() { String s = "hello"; } )");
         int r = mod->Build();
         // CHECK(r >= 0); // Removed: Dummy string won't have copy constructors
@@ -58,7 +58,7 @@ TEST_SUITE("PredefinedLoader")
 
     TEST_CASE("PL1.2: RegisterDefaultArrayType - engine accepts array syntax with dummy type")
     {
-        asIScriptEngine* engine = asCreateScriptEngine();
+        asIScriptEngine *engine = asCreateScriptEngine();
         engine->SetMessageCallback(asFUNCTION(MessageCallback), 0, asCALL_CDECL);
         REQUIRE(engine != nullptr);
 
@@ -67,7 +67,7 @@ TEST_SUITE("PredefinedLoader")
         CHECK(ok == true);
 
         // Verificar que int[] es sintaxis válida
-        asIScriptModule* mod = engine->GetModule("test", asGM_ALWAYS_CREATE);
+        asIScriptModule *mod = engine->GetModule("test", asGM_ALWAYS_CREATE);
         mod->AddScriptSection("test", R"( void Main() { array<int>@ arr; } )");
         int r = mod->Build();
         CHECK(r >= 0);
@@ -77,24 +77,23 @@ TEST_SUITE("PredefinedLoader")
 
     TEST_CASE("PL1.3: asFUNCTION(0) safety - does engine accept null func pointer in Build()")
     {
-        asIScriptEngine* engine = asCreateScriptEngine();
+        asIScriptEngine *engine = asCreateScriptEngine();
         REQUIRE(engine != nullptr);
 
         engine->RegisterObjectType("MyClass", 0, asOBJ_REF | asOBJ_NOCOUNT);
 
         int r = engine->RegisterObjectMethod(
             "MyClass", "void DoSomething()",
-            asFUNCTION(0), asCALL_CDECL_OBJFIRST
-        );
+            asFUNCTION(0), asCALL_CDECL_OBJFIRST);
         MESSAGE("asFUNCTION(0) register result: " << r);
 
-        asIScriptModule* mod = engine->GetModule("test", asGM_ALWAYS_CREATE);
+        asIScriptModule *mod = engine->GetModule("test", asGM_ALWAYS_CREATE);
         mod->AddScriptSection("test", R"( void Main() { MyClass@ c; } )");
         int buildResult = mod->Build();
         MESSAGE("Build result with asFUNCTION(0) method: " << buildResult);
-        
+
         // Let's assert it succeeds because we want to know if it fails.
-        // Actually it might fail on some platforms if the engine verifies the pointer, 
+        // Actually it might fail on some platforms if the engine verifies the pointer,
         // but AS usually only verifies it if executing or if strict checking is enabled.
         CHECK(buildResult >= 0);
 
@@ -103,7 +102,7 @@ TEST_SUITE("PredefinedLoader")
 
     TEST_CASE("PL1.4: Full as.predefined script loads with 0 engine errors")
     {
-        const char* PREDEFINED = R"(
+        const char *PREDEFINED = R"(
 typedef uint32 size_t;
 
 funcdef bool less(const ?&in a, const ?&in b);
@@ -247,13 +246,13 @@ namespace ThisIsANamespace
 }
         )";
 
-        asIScriptEngine* engine = asCreateScriptEngine();
-        
+        asIScriptEngine *engine = asCreateScriptEngine();
+
         bool hasErrors = false;
-        
+
         static std::string g_testMessages;
         g_testMessages.clear();
-        
+
         struct Local
         {
             static void Callback(const asSMessageInfo *msg, void *param)
@@ -263,12 +262,12 @@ namespace ThisIsANamespace
                 g_testMessages += buf;
                 if (msg->type == asMSGTYPE_ERROR)
                 {
-                    bool* hasErrorsPtr = static_cast<bool*>(param);
+                    bool *hasErrorsPtr = static_cast<bool *>(param);
                     *hasErrorsPtr = true;
                 }
             }
         };
-        
+
         engine->SetMessageCallback(asFUNCTION(Local::Callback), &hasErrors, asCALL_CDECL);
         REQUIRE(engine != nullptr);
 
@@ -280,7 +279,7 @@ namespace ThisIsANamespace
         // Restore our callback because LoadFromSource overwrites it!
         engine->SetMessageCallback(asFUNCTION(Local::Callback), &hasErrors, asCALL_CDECL);
 
-        asIScriptModule* mod = engine->GetModule("user", asGM_ALWAYS_CREATE);
+        asIScriptModule *mod = engine->GetModule("user", asGM_ALWAYS_CREATE);
         mod->AddScriptSection("user", R"(
             void Main()
             {
@@ -317,11 +316,10 @@ namespace ThisIsANamespace
         )");
         int r = mod->Build();
 
-
-
         if (r < 0)
         {
-            MESSAGE("Build failed. Messages:\n" << g_testMessages);
+            MESSAGE("Build failed. Messages:\n"
+                    << g_testMessages);
         }
         CHECK(r >= 0); // Verify that Dummy classes compile correctly
 
@@ -330,7 +328,7 @@ namespace ThisIsANamespace
 
     TEST_CASE("PL1.5: SymbolCollector extracts all types from as.predefined source")
     {
-        const char* src = R"(
+        const char *src = R"(
             class string { uint Length() const; }
             class array<T> { uint length() const; }
             namespace Engine { class RigidBody { float mass; } }
@@ -348,7 +346,7 @@ namespace ThisIsANamespace
         CHECK(foundArray == true);
         CHECK(table.FindGlobalByName("Engine") != nullptr);
 
-        auto* ns = table.FindGlobalByName("Engine");
+        auto *ns = table.FindGlobalByName("Engine");
         if (ns)
         {
             CHECK(ns->children.size() > 0);
@@ -357,7 +355,7 @@ namespace ThisIsANamespace
 
     TEST_CASE("PL1.6: Instantiate array by value")
     {
-        asIScriptEngine* engine = asCreateScriptEngine();
+        asIScriptEngine *engine = asCreateScriptEngine();
         engine->SetMessageCallback(asFUNCTION(MessageCallback), 0, asCALL_CDECL);
         REQUIRE(engine != nullptr);
 
@@ -365,7 +363,7 @@ namespace ThisIsANamespace
         bool ok = PredefinedLoader::LoadFromSource("class array<T> { uint length() const; }", engine, table, "string", "array");
         CHECK(ok == true);
 
-        asIScriptModule* mod = engine->GetModule("test", asGM_ALWAYS_CREATE);
+        asIScriptModule *mod = engine->GetModule("test", asGM_ALWAYS_CREATE);
         mod->AddScriptSection("test", R"( void Main() { array<int> arra; } )");
         int r = mod->Build();
         CHECK(r >= 0);
@@ -375,7 +373,7 @@ namespace ThisIsANamespace
 
     TEST_CASE("PL1.7: Complex AST extraction and compilation")
     {
-        const char* PREDEFINED = R"(
+        const char *PREDEFINED = R"(
 funcdef void MyCallback(int a, float b);
 
 abstract class Animal
@@ -418,12 +416,12 @@ namespace Files
 }
         )";
 
-        asIScriptEngine* engine = asCreateScriptEngine();
-        
+        asIScriptEngine *engine = asCreateScriptEngine();
+
         bool hasErrors = false;
         static std::string g_testMessages2;
         g_testMessages2.clear();
-        
+
         struct Local
         {
             static void Callback(const asSMessageInfo *msg, void *param)
@@ -433,12 +431,12 @@ namespace Files
                 g_testMessages2 += buf;
                 if (msg->type == asMSGTYPE_ERROR)
                 {
-                    bool* hasErrorsPtr = static_cast<bool*>(param);
+                    bool *hasErrorsPtr = static_cast<bool *>(param);
                     *hasErrorsPtr = true;
                 }
             }
         };
-        
+
         engine->SetMessageCallback(asFUNCTION(Local::Callback), &hasErrors, asCALL_CDECL);
         REQUIRE(engine != nullptr);
 
@@ -449,14 +447,14 @@ namespace Files
 
         engine->SetMessageCallback(asFUNCTION(Local::Callback), &hasErrors, asCALL_CDECL);
 
-        asIScriptModule* mod = engine->GetModule("user", asGM_ALWAYS_CREATE);
-        
-        std::string* abstractCode = static_cast<std::string*>(engine->GetUserData(2000));
+        asIScriptModule *mod = engine->GetModule("user", asGM_ALWAYS_CREATE);
+
+        std::string *abstractCode = static_cast<std::string *>(engine->GetUserData(2000));
         if (abstractCode && !abstractCode->empty())
         {
             mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
         }
-        
+
         mod->AddScriptSection("user", R"(
             class Bird : Flyable
             {
@@ -486,28 +484,29 @@ namespace Files
 
         if (r < 0)
         {
-            MESSAGE("Build failed. Messages:\n" << g_testMessages2);
+            MESSAGE("Build failed. Messages:\n"
+                    << g_testMessages2);
         }
         CHECK(r >= 0);
 
         engine->ShutDownAndRelease();
     }
 
-static std::string g_testMessages3;
-static void PL18Callback(const asSMessageInfo* msg, void* param)
-{
-    bool* hasErr = static_cast<bool*>(param);
-    if (msg->type == asMSGTYPE_ERROR || msg->type == asMSGTYPE_WARNING)
+    static std::string g_testMessages3;
+    static void PL18Callback(const asSMessageInfo *msg, void *param)
     {
-        *hasErr = true;
-        g_testMessages3 += msg->message;
-        g_testMessages3 += "\n";
+        bool *hasErr = static_cast<bool *>(param);
+        if (msg->type == asMSGTYPE_ERROR || msg->type == asMSGTYPE_WARNING)
+        {
+            *hasErr = true;
+            g_testMessages3 += msg->message;
+            g_testMessages3 += "\n";
+        }
     }
-}
 
     TEST_CASE("PL1.8: Final and non-abstract classes block inheritance")
     {
-        const char* src = R"(
+        const char *src = R"(
 final class CFinalEntity
 {
     void FinalMethod();
@@ -524,8 +523,8 @@ abstract class CAbstractEntity
 }
         )";
 
-        asIScriptEngine* engine = asCreateScriptEngine();
-        
+        asIScriptEngine *engine = asCreateScriptEngine();
+
         bool hasErrors = false;
         g_testMessages3.clear();
 
@@ -535,30 +534,30 @@ abstract class CAbstractEntity
         PredefinedLoader::LoadFromSource(src, engine, table);
 
         // Try to inherit from the classes
-        asIScriptModule* mod1 = engine->GetModule("user1", asGM_ALWAYS_CREATE);
+        asIScriptModule *mod1 = engine->GetModule("user1", asGM_ALWAYS_CREATE);
         mod1->AddScriptSection("user_final", R"(
             class MyFinalDerived : CFinalEntity { }
         )");
         int rFinal = mod1->Build();
         CHECK(rFinal < 0);
-        
+
         g_testMessages3.clear();
-        asIScriptModule* mod2 = engine->GetModule("user2", asGM_ALWAYS_CREATE);
+        asIScriptModule *mod2 = engine->GetModule("user2", asGM_ALWAYS_CREATE);
         mod2->AddScriptSection("user_regular", R"(
             class MyRegularDerived : CRegularEntity { }
         )");
         int rReg = mod2->Build();
         CHECK(rReg < 0);
-        
+
         g_testMessages3.clear();
-        asIScriptModule* mod3 = engine->GetModule("user3", asGM_ALWAYS_CREATE);
-        
-        std::string* abstractCode = static_cast<std::string*>(engine->GetUserData(2000));
+        asIScriptModule *mod3 = engine->GetModule("user3", asGM_ALWAYS_CREATE);
+
+        std::string *abstractCode = static_cast<std::string *>(engine->GetUserData(2000));
         if (abstractCode && !abstractCode->empty())
         {
             mod3->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
         }
-        
+
         mod3->AddScriptSection("user_abstract", R"(
             class MyAbstractDerived : CAbstractEntity { }
         )");

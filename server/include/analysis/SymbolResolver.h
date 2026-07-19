@@ -9,8 +9,8 @@ namespace analysis
 {
     /**
      * @brief Resolves identifiers in the AST to their corresponding Symbols.
-     * 
-     * Handles complex scoping rules, namespaces, member access, inheritance, 
+     *
+     * Handles complex scoping rules, namespaces, member access, inheritance,
      * mixins, constructors, and method overloading resolution.
      */
     class SymbolResolver
@@ -18,7 +18,7 @@ namespace analysis
     public:
         /**
          * @brief Resolves the symbol under the given cursor position.
-         * 
+         *
          * @param doc The document being analyzed.
          * @param table The symbol table for the document.
          * @param line The 0-indexed line of the cursor.
@@ -27,17 +27,17 @@ namespace analysis
          * @return The best matching Symbol, or nullptr if none found.
          */
         static const Symbol *ResolveAt(const Document &doc, const SymbolTable &table, uint32_t line, uint32_t character, std::vector<const Symbol *> *outMultipleResults = nullptr);
-        
+
         /**
          * @brief Evaluates the actual type of an AST expression node (used for auto type inference).
-         * 
+         *
          * @param doc The document being analyzed.
          * @param table The symbol table.
          * @param exprNode The Tree-sitter expression node.
          * @return A string representing the inferred type (e.g., "float", "Vector3"), or empty if unknown.
          */
         static std::string EvaluateExpressionType(const Document &doc, const SymbolTable &table, TSNode exprNode);
-        
+
     private:
         /**
          * @brief Cleans a raw AngelScript type string (e.g. "const Player@ in") into a pure type name ("Player").

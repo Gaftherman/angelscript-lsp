@@ -4,10 +4,10 @@
 namespace queries
 {
 
-/**
- * @brief Tree-Sitter query string for syntax highlighting tokens.
- */
-const std::string HIGHLIGHTS = R"(
+    /**
+     * @brief Tree-Sitter query string for syntax highlighting tokens.
+     */
+    const std::string HIGHLIGHTS = R"(
     [
         "class" "interface" "namespace" "enum" "struct" "mixin" "funcdef"
     ] @keyword
@@ -32,10 +32,10 @@ const std::string HIGHLIGHTS = R"(
     (comment) @comment
 )";
 
-/**
- * @brief Tree-Sitter query string for local variable definitions and references.
- */
-const std::string LOCALS = R"(
+    /**
+     * @brief Tree-Sitter query string for local variable definitions and references.
+     */
+    const std::string LOCALS = R"(
     (variable_declaration
         name: (identifier) @local.definition
     )

@@ -20,7 +20,7 @@ TEST_SUITE("Script - Classes")
                 Player p;
             }
         )";
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.IsClean());
     }
@@ -43,7 +43,7 @@ TEST_SUITE("Script - Classes")
                 p.TakeDamage(10);
             }
         )";
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.IsClean());
     }
@@ -62,7 +62,7 @@ TEST_SUITE("Script - Classes")
                 p.mp = 50; // Error: mp does not exist
             }
         )";
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.HasError());
     }
@@ -88,7 +88,7 @@ TEST_SUITE("Script - Classes")
                 p.Move();
             }
         )";
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.IsClean());
     }

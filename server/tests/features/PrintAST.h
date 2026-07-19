@@ -3,15 +3,20 @@
 #include "document/Document.h"
 #include "analysis/SymbolCollector.h"
 
-void PrintASTNode(TSNode node, const Document& doc, int depth)
+using namespace angel_lsp;
+
+void PrintASTNode(TSNode node, const Document &doc, int depth)
 {
     std::string indent(depth * 2, ' ');
     std::string type = ts_node_type(node);
     std::string text = analysis::SymbolCollector::GetNodeText(node, doc);
-    
+
     // Replace newlines in text with space to keep it single line
-    for (char& c : text) if (c == '\n' || c == '\r') c = ' ';
-    if (text.length() > 50) text = text.substr(0, 47) + "...";
+    for (char &c : text)
+        if (c == '\n' || c == '\r')
+            c = ' ';
+    if (text.length() > 50)
+        text = text.substr(0, 47) + "...";
 
     std::cout << indent << "[" << type << "] '" << text << "'\n";
 

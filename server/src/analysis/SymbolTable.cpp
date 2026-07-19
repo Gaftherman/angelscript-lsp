@@ -4,33 +4,35 @@
 namespace analysis
 {
     SymbolTable::SymbolTable() = default;
-    
+
     SymbolTable::~SymbolTable() = default;
 
     void SymbolTable::AddGlobal(std::shared_ptr<Symbol> symbol)
     {
-        if (!symbol) return;
+        if (!symbol)
+            return;
         m_globalSymbols[symbol->name].push_back(std::move(symbol));
     }
 
     void SymbolTable::AddLocal(std::shared_ptr<Symbol> symbol)
     {
-        if (!symbol) return;
+        if (!symbol)
+            return;
         m_localSymbols.push_back(std::move(symbol));
     }
 
-    void SymbolTable::MergeGlobals(const SymbolTable& other)
+    void SymbolTable::MergeGlobals(const SymbolTable &other)
     {
-        for (const auto& [name, symbols] : other.GetGlobals())
+        for (const auto &[name, symbols] : other.GetGlobals())
         {
-            for (const auto& sym : symbols)
+            for (const auto &sym : symbols)
             {
                 m_globalSymbols[name].push_back(sym);
             }
         }
     }
 
-    Symbol* SymbolTable::FindGlobalByName(const std::string& name) const
+    Symbol *SymbolTable::FindGlobalByName(const std::string &name) const
     {
         auto it = m_globalSymbols.find(name);
         if (it != m_globalSymbols.end() && !it->second.empty())
@@ -40,13 +42,13 @@ namespace analysis
         return nullptr;
     }
 
-    std::vector<Symbol*> SymbolTable::FindAllGlobalsByName(const std::string& name) const
+    std::vector<Symbol *> SymbolTable::FindAllGlobalsByName(const std::string &name) const
     {
-        std::vector<Symbol*> results;
+        std::vector<Symbol *> results;
         auto it = m_globalSymbols.find(name);
         if (it != m_globalSymbols.end())
         {
-            for (const auto& sym : it->second)
+            for (const auto &sym : it->second)
             {
                 results.push_back(sym.get());
             }
@@ -54,26 +56,26 @@ namespace analysis
         return results;
     }
 
-    const Symbol* SymbolTable::FindByNameDeep(const std::string& name) const
+    const Symbol *SymbolTable::FindByNameDeep(const std::string &name) const
     {
         // 1. Search in globals first
-        if (Symbol* global = FindGlobalByName(name))
+        if (Symbol *global = FindGlobalByName(name))
         {
             return global;
         }
 
         // 2. Deep search inside namespaces
-        for (const auto& [nsName, nsSyms] : m_globalSymbols)
+        for (const auto &[nsName, nsSyms] : m_globalSymbols)
         {
-            for (const auto& nsSym : nsSyms)
+            for (const auto &nsSym : nsSyms)
             {
                 if (nsSym->kind == SymbolKind::Namespace)
                 {
                     // Recursive lambda to search inside a namespace
-                    auto searchChildren = [&](auto& self, const Symbol* currentNs) -> const Symbol*
+                    auto searchChildren = [&](auto &self, const Symbol *currentNs) -> const Symbol *
                     {
                         // Check direct children
-                        for (const auto& child : currentNs->children)
+                        for (const auto &child : currentNs->children)
                         {
                             if (child->name == name)
                             {
@@ -81,11 +83,11 @@ namespace analysis
                             }
                         }
                         // Recurse into nested namespaces
-                        for (const auto& child : currentNs->children)
+                        for (const auto &child : currentNs->children)
                         {
                             if (child->kind == SymbolKind::Namespace)
                             {
-                                if (const Symbol* found = self(self, child.get()))
+                                if (const Symbol *found = self(self, child.get()))
                                 {
                                     return found;
                                 }
@@ -93,8 +95,8 @@ namespace analysis
                         }
                         return nullptr;
                     };
-    
-                    if (const Symbol* found = searchChildren(searchChildren, nsSym.get()))
+
+                    if (const Symbol *found = searchChildren(searchChildren, nsSym.get()))
                     {
                         return found;
                     }
@@ -104,15 +106,16 @@ namespace analysis
         return nullptr;
     }
 
-    std::vector<const Symbol*> SymbolTable::FindHostClassesOf(const std::string& mixinName) const
+    std::vector<const Symbol *> SymbolTable::FindHostClassesOf(const std::string &mixinName) const
     {
-        std::vector<const Symbol*> result;
-        for (const auto& [name, syms] : m_globalSymbols)
+        std::vector<const Symbol *> result;
+        for (const auto &[name, syms] : m_globalSymbols)
         {
-            for (const auto& sym : syms)
+            for (const auto &sym : syms)
             {
-                if (sym->kind != SymbolKind::Class) continue;
-                for (const auto& base : sym->baseClasses)
+                if (sym->kind != SymbolKind::Class)
+                    continue;
+                for (const auto &base : sym->baseClasses)
                 {
                     if (base == mixinName)
                     {
@@ -125,7 +128,7 @@ namespace analysis
         return result;
     }
 
-    Symbol* SymbolTable::FindLocalByName(const std::string& name) const
+    Symbol *SymbolTable::FindLocalByName(const std::string &name) const
     {
         // Search backwards to return the most recently declared local (shadowing)
         for (auto it = m_localSymbols.rbegin(); it != m_localSymbols.rend(); ++it)
@@ -136,20 +139,23 @@ namespace analysis
         return nullptr;
     }
 
-    const Symbol* SymbolTable::FindLocalByNameAt(const std::string& name, uint32_t line, uint32_t col) const
+    const Symbol *SymbolTable::FindLocalByNameAt(const std::string &name, uint32_t line, uint32_t col) const
     {
-        auto isInside = [](const lsp::Range& r, uint32_t l, uint32_t c)
+        auto isInside = [](const lsp::Range &r, uint32_t l, uint32_t c)
         {
-            if (l < r.start.line || l > r.end.line) return false;
-            if (l == r.start.line && c < r.start.character) return false;
-            if (l == r.end.line && c > r.end.character) return false;
+            if (l < r.start.line || l > r.end.line)
+                return false;
+            if (l == r.start.line && c < r.start.character)
+                return false;
+            if (l == r.end.line && c > r.end.character)
+                return false;
             return true;
         };
 
-        const Symbol* bestMatch = nullptr;
+        const Symbol *bestMatch = nullptr;
         uint32_t bestScore = 0xFFFFFFFF; // Smaller score = tighter scope
 
-        for (const auto& sym : m_localSymbols)
+        for (const auto &sym : m_localSymbols)
         {
             if (sym->name == name && isInside(sym->fullRange, line, col))
             {
@@ -160,7 +166,7 @@ namespace analysis
                 {
                     colSpan = sym->fullRange.end.character - sym->fullRange.start.character;
                 }
-                
+
                 uint32_t score = (lineSpan << 16) | (colSpan & 0xFFFF);
                 if (score < bestScore)
                 {
@@ -172,21 +178,21 @@ namespace analysis
         return bestMatch;
     }
 
-    std::vector<const Symbol*> SymbolTable::FindByName(const std::string& name) const
+    std::vector<const Symbol *> SymbolTable::FindByName(const std::string &name) const
     {
-        std::vector<const Symbol*> results;
-        for (const auto& sym : m_localSymbols)
+        std::vector<const Symbol *> results;
+        for (const auto &sym : m_localSymbols)
         {
             if (sym->name == name)
             {
                 results.push_back(sym.get());
             }
         }
-        
+
         auto it = m_globalSymbols.find(name);
         if (it != m_globalSymbols.end())
         {
-            for (const auto& sym : it->second)
+            for (const auto &sym : it->second)
             {
                 results.push_back(sym.get());
             }
@@ -194,20 +200,21 @@ namespace analysis
         return results;
     }
 
-    Symbol* SymbolTable::FindFirst(const std::string& name) const
+    Symbol *SymbolTable::FindFirst(const std::string &name) const
     {
-        Symbol* local = FindLocalByName(name);
-        if (local) return local;
+        Symbol *local = FindLocalByName(name);
+        if (local)
+            return local;
         return FindGlobalByName(name);
     }
 
-    std::vector<const Symbol*> SymbolTable::FindInContainer(const std::string& containerName) const
+    std::vector<const Symbol *> SymbolTable::FindInContainer(const std::string &containerName) const
     {
-        std::vector<const Symbol*> result;
-        Symbol* container = FindGlobalByName(containerName);
+        std::vector<const Symbol *> result;
+        Symbol *container = FindGlobalByName(containerName);
         if (container)
         {
-            for (const auto& child : container->children)
+            for (const auto &child : container->children)
             {
                 result.push_back(child.get());
             }
@@ -215,15 +222,19 @@ namespace analysis
         return result;
     }
 
-    Symbol* SymbolTable::FindScopeByPosition(const std::string& uri, uint32_t line, uint32_t col) const
+    Symbol *SymbolTable::FindScopeByPosition(const std::string &uri, uint32_t line, uint32_t col) const
     {
-        auto isInside = [&uri](const Symbol* s, uint32_t l, uint32_t c)
+        auto isInside = [&uri](const Symbol *s, uint32_t l, uint32_t c)
         {
-            if (!s->uri.empty() && s->uri != uri) return false;
-            const lsp::Range& r = s->fullRange;
-            if (l < r.start.line || l > r.end.line) return false;
-            if (l == r.start.line && c < r.start.character) return false;
-            if (l == r.end.line && c > r.end.character) return false;
+            if (!s->uri.empty() && s->uri != uri)
+                return false;
+            const lsp::Range &r = s->fullRange;
+            if (l < r.start.line || l > r.end.line)
+                return false;
+            if (l == r.start.line && c < r.start.character)
+                return false;
+            if (l == r.end.line && c > r.end.character)
+                return false;
             return true;
         };
 
@@ -237,23 +248,26 @@ namespace analysis
         }
 
         // Helper to find deepest match
-        std::function<Symbol*(Symbol*)> findDeepest = [&](Symbol* current) -> Symbol* {
-            for (const auto& child : current->children) {
-                if (isInside(child.get(), line, col)) {
-                    Symbol* deeper = findDeepest(child.get());
+        std::function<Symbol *(Symbol *)> findDeepest = [&](Symbol *current) -> Symbol *
+        {
+            for (const auto &child : current->children)
+            {
+                if (isInside(child.get(), line, col))
+                {
+                    Symbol *deeper = findDeepest(child.get());
                     return deeper ? deeper : child.get();
                 }
             }
             return nullptr;
         };
 
-        for (const auto& [name, syms] : m_globalSymbols)
+        for (const auto &[name, syms] : m_globalSymbols)
         {
-            for (const auto& sym : syms)
+            for (const auto &sym : syms)
             {
                 if (isInside(sym.get(), line, col))
                 {
-                    Symbol* deeper = findDeepest(sym.get());
+                    Symbol *deeper = findDeepest(sym.get());
                     return deeper ? deeper : sym.get();
                 }
             }
@@ -267,16 +281,16 @@ namespace analysis
         m_localSymbols.clear();
     }
 
-    void SymbolTable::AddUsingNamespace(const std::string& ns)
+    void SymbolTable::AddUsingNamespace(const std::string &ns)
     {
         m_usingNamespaces.push_back(ns);
     }
 
-    const std::vector<std::string>& SymbolTable::GetUsingNamespaces() const
+    const std::vector<std::string> &SymbolTable::GetUsingNamespaces() const
     {
         return m_usingNamespaces;
     }
-    
+
     void SymbolTable::ClearAll()
     {
         m_localSymbols.clear();

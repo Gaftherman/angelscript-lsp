@@ -4,29 +4,29 @@
 
 namespace angel_lsp
 {
-namespace features
-{
+    namespace features
+    {
 
-lsp::requests::TextDocument_Definition::Result ProcessDefinition(
-    const lsp::requests::TextDocument_Definition::Params& req,
-    const Document& doc,
-    const analysis::SymbolTable& table,
-    const asIScriptEngine* engine
-)
-{
-    lsp::requests::TextDocument_Definition::Result res;
-    
-    const analysis::Symbol* sym = analysis::SymbolResolver::ResolveAt(doc, table, req.position.line, req.position.character);
-    if (!sym) return {};
+        lsp::requests::TextDocument_Definition::Result ProcessDefinition(
+            const lsp::requests::TextDocument_Definition::Params &req,
+            const Document &doc,
+            const analysis::SymbolTable &table,
+            const asIScriptEngine *engine)
+        {
+            lsp::requests::TextDocument_Definition::Result res;
 
-    lsp::Location loc;
-    std::string targetUri = sym->uri.empty() ? doc.GetUri() : sym->uri;
-    loc.uri = lsp::DocumentUri::parse(targetUri);
-    loc.range = sym->selectionRange;
+            const analysis::Symbol *sym = analysis::SymbolResolver::ResolveAt(doc, table, req.position.line, req.position.character);
+            if (!sym)
+                return {};
 
-    res = loc;
-    return res;
-}
+            lsp::Location loc;
+            std::string targetUri = sym->uri.empty() ? doc.GetUri() : sym->uri;
+            loc.uri = lsp::DocumentUri::parse(targetUri);
+            loc.range = sym->selectionRange;
 
-}
+            res = loc;
+            return res;
+        }
+
+    }
 }

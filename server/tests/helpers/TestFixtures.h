@@ -14,8 +14,8 @@ namespace fixtures
     // ─── RAII Engine Guard ─────────────────────────────────────────────────────
     struct EngineGuard
     {
-        asIScriptEngine* engine;
-        explicit EngineGuard(asIScriptEngine* e) : engine(e) {}
+        asIScriptEngine *engine;
+        explicit EngineGuard(asIScriptEngine *e) : engine(e) {}
         ~EngineGuard()
         {
             if (engine)
@@ -23,25 +23,25 @@ namespace fixtures
                 engine->ShutDownAndRelease();
             }
         }
-        operator asIScriptEngine*() const { return engine; }
-        asIScriptEngine* operator->() const { return engine; }
+        operator asIScriptEngine *() const { return engine; }
+        asIScriptEngine *operator->() const { return engine; }
     };
 
     // ─── Engine Factories ─────────────────────────────────────────────────────
-    inline asIScriptEngine* CreateBaseEngine()
+    inline asIScriptEngine *CreateBaseEngine()
     {
-        asIScriptEngine* engine = asCreateScriptEngine();
+        asIScriptEngine *engine = asCreateScriptEngine();
         engine->SetEngineProperty(asEP_SCRIPT_SCANNER, 1);
         return engine;
     }
 
-    inline void DummyPrint(std::string&) {}
-    inline void DummyPrintln(std::string&) {}
+    inline void DummyPrint(std::string &) {}
+    inline void DummyPrintln(std::string &) {}
     inline float DummyMath(float a) { return a; }
 
-    inline asIScriptEngine* CreateGameEngine()
+    inline asIScriptEngine *CreateGameEngine()
     {
-        asIScriptEngine* engine = CreateBaseEngine();
+        asIScriptEngine *engine = CreateBaseEngine();
         // Mock functions so we can test with game-like code
         engine->RegisterGlobalFunction("void print(const string& in)", asFUNCTION(DummyPrint), asCALL_CDECL);
         engine->RegisterGlobalFunction("void println(const string& in)", asFUNCTION(DummyPrintln), asCALL_CDECL);
@@ -58,7 +58,7 @@ namespace fixtures
 
         bool HasError() const
         {
-            for (const auto& d : diags)
+            for (const auto &d : diags)
             {
                 if (d.severity == lsp::DiagnosticSeverity::Error)
                 {
@@ -68,9 +68,9 @@ namespace fixtures
             return false;
         }
 
-        bool HasMessage(const std::string& fragment) const
+        bool HasMessage(const std::string &fragment) const
         {
-            for (const auto& d : diags)
+            for (const auto &d : diags)
             {
                 if (d.message.find(fragment) != std::string::npos)
                 {
@@ -88,14 +88,14 @@ namespace fixtures
         // Print all diagnostics (for debugging failing tests)
         void Dump() const
         {
-            for (const auto& d : diags)
+            for (const auto &d : diags)
             {
                 spdlog::debug("  [{},{}] {}", d.range.start.line, d.range.start.character, d.message);
             }
         }
     };
 
-    inline DiagResult Validate(asIScriptEngine* engine, const std::string& code)
+    inline DiagResult Validate(asIScriptEngine *engine, const std::string &code)
     {
         analysis::ValidationOracle oracle(engine);
         DiagResult result;
@@ -105,8 +105,8 @@ namespace fixtures
     }
 
     // ─── Document Helper ───────────────────────────────────────────────────────
-    inline Document MakeDoc(const std::string& code,
-                            const std::string& uri = "file:///test.as")
+    inline Document MakeDoc(const std::string &code,
+                            const std::string &uri = "file:///test.as")
     {
         return Document(uri, code);
     }

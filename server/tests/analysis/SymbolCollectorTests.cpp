@@ -15,8 +15,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "void Main() {}");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("Main");
+
+        Symbol *sym = table.FindGlobalByName("Main");
         REQUIRE(sym != nullptr);
         CHECK(sym->kind == SymbolKind::Function);
         CHECK(sym->typeInfo == "void");
@@ -32,23 +32,22 @@ TEST_SUITE("SymbolCollector")
         // We will construct a code snippet that forces a variable_declaration parsing or tests
         // the fix directly. Wait, if it parses as func_declaration naturally, we should just
         // test the natural parse inside a namespace.
-        Document doc("file:///test.as", 
-            "namespace Engine {\n"
-            "    namespace Math {\n"
-            "        float Lerp(float a, float b, float t) { return a + (b - a) * t; }\n"
-            "    }\n"
-            "}\n"
-        );
+        Document doc("file:///test.as",
+                     "namespace Engine {\n"
+                     "    namespace Math {\n"
+                     "        float Lerp(float a, float b, float t) { return a + (b - a) * t; }\n"
+                     "    }\n"
+                     "}\n");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* engineSym = table.FindGlobalByName("Engine");
+
+        Symbol *engineSym = table.FindGlobalByName("Engine");
         REQUIRE(engineSym != nullptr);
         CHECK(engineSym->kind == SymbolKind::Namespace);
 
         bool foundMath = false;
-        Symbol* mathSym = nullptr;
-        for (auto& child : engineSym->children)
+        Symbol *mathSym = nullptr;
+        for (auto &child : engineSym->children)
         {
             if (child->name == "Math")
             {
@@ -58,9 +57,9 @@ TEST_SUITE("SymbolCollector")
             }
         }
         REQUIRE(foundMath);
-        
+
         bool foundLerp = false;
-        for (auto& child : mathSym->children)
+        for (auto &child : mathSym->children)
         {
             if (child->name == "Lerp")
             {
@@ -80,8 +79,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "int Add(int a, int b) { return a + b; }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("Add");
+
+        Symbol *sym = table.FindGlobalByName("Add");
         REQUIRE(sym != nullptr);
         CHECK(sym->typeInfo == "int");
         REQUIRE(sym->params.size() == 2);
@@ -97,8 +96,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "void DealDamage(Player@ target, int &out actualDamage) {}");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("DealDamage");
+
+        Symbol *sym = table.FindGlobalByName("DealDamage");
         REQUIRE(sym != nullptr);
         REQUIRE(sym->params.size() == 2);
         CHECK(sym->params[0].typeName == "Player@");
@@ -113,8 +112,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "class Actor { float GetSpeed() const { return m_speed; } }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* cls = table.FindGlobalByName("Actor");
+
+        Symbol *cls = table.FindGlobalByName("Actor");
         REQUIRE(cls != nullptr);
         REQUIRE(cls->children.size() == 1);
         CHECK(cls->children[0]->name == "GetSpeed");
@@ -126,8 +125,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "void Process(int, float) {}");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("Process");
+
+        Symbol *sym = table.FindGlobalByName("Process");
         REQUIRE(sym != nullptr);
         REQUIRE(sym->params.size() == 2);
         CHECK(sym->params[0].typeName == "int");
@@ -141,8 +140,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "array<int> GetItems() { return m_items; }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("GetItems");
+
+        Symbol *sym = table.FindGlobalByName("GetItems");
         REQUIRE(sym != nullptr);
         CHECK(sym->typeInfo == "array<int>");
         CHECK(sym->name == "GetItems");
@@ -153,8 +152,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "void Spawn(int count = 1, bool active = true) {}");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("Spawn");
+
+        Symbol *sym = table.FindGlobalByName("Spawn");
         REQUIRE(sym != nullptr);
         REQUIRE(sym->params.size() == 2);
         CHECK(sym->params[0].typeName == "int");
@@ -171,8 +170,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "int g_score = 0;");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("g_score");
+
+        Symbol *sym = table.FindGlobalByName("g_score");
         REQUIRE(sym != nullptr);
         CHECK(sym->kind == SymbolKind::Variable);
         CHECK(sym->typeInfo == "int");
@@ -183,8 +182,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "Player@ g_player;");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("g_player");
+
+        Symbol *sym = table.FindGlobalByName("g_player");
         REQUIRE(sym != nullptr);
         CHECK(sym->kind == SymbolKind::Variable);
         CHECK(sym->typeInfo == "Player@");
@@ -195,8 +194,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "const Enemy@ g_boss = null;");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("g_boss");
+
+        Symbol *sym = table.FindGlobalByName("g_boss");
         REQUIRE(sym != nullptr);
         CHECK(sym->typeInfo == "const Enemy@");
     }
@@ -206,10 +205,10 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "int x = 0, y = 0, z = 0;");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* x = table.FindGlobalByName("x");
-        Symbol* y = table.FindGlobalByName("y");
-        Symbol* z = table.FindGlobalByName("z");
+
+        Symbol *x = table.FindGlobalByName("x");
+        Symbol *y = table.FindGlobalByName("y");
+        Symbol *z = table.FindGlobalByName("z");
         REQUIRE(x != nullptr);
         REQUIRE(y != nullptr);
         REQUIRE(z != nullptr);
@@ -223,8 +222,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "Player player('Hero');");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("player");
+
+        Symbol *sym = table.FindGlobalByName("player");
         REQUIRE(sym != nullptr);
         CHECK(sym->typeInfo == "Player");
     }
@@ -234,8 +233,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "array<float> m_weights;");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("m_weights");
+
+        Symbol *sym = table.FindGlobalByName("m_weights");
         REQUIRE(sym != nullptr);
         CHECK(sym->typeInfo == "array<float>");
     }
@@ -245,14 +244,14 @@ TEST_SUITE("SymbolCollector")
         std::string code = "void Main() { int localVar = 5; }";
         Document doc("file:///test.as", code);
         SymbolTable table;
-        
+
         TSNode root = doc.RootNode();
         TSNode funcNode = ts_node_child(root, 0); // func_declaration
         TSNode blockNode = ts_node_child_by_field_name(funcNode, "body", 4);
-        
+
         SymbolCollector::TraverseLocals(blockNode, doc, table, nullptr);
-        
-        Symbol* sym = table.FindLocalByName("localVar");
+
+        Symbol *sym = table.FindLocalByName("localVar");
         REQUIRE(sym != nullptr);
         // "int localVar = 5;" starts at character 14 inside the code line
         CHECK(sym->selectionRange.start.character == 18); // Actually it's 18 because "void Main() { int localVar"
@@ -266,8 +265,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "class Player { int hp; void Heal() {} }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* cls = table.FindGlobalByName("Player");
+
+        Symbol *cls = table.FindGlobalByName("Player");
         REQUIRE(cls != nullptr);
         CHECK(cls->kind == SymbolKind::Class);
         REQUIRE(cls->children.size() == 2);
@@ -283,12 +282,12 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "class Enemy : Entity { void Attack() {} }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* cls = table.FindGlobalByName("Enemy");
+
+        Symbol *cls = table.FindGlobalByName("Enemy");
         REQUIRE(cls != nullptr);
         CHECK(cls->baseClasses[0] == "Entity");
 
-        Symbol* notCls = table.FindGlobalByName("Entity");
+        Symbol *notCls = table.FindGlobalByName("Entity");
         CHECK(notCls == nullptr); // Ensure "Entity" is not mistakenly collected
     }
 
@@ -298,15 +297,17 @@ TEST_SUITE("SymbolCollector")
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
 
-        const Symbol* vecClass = table.FindGlobalByName("Vec");
+        const Symbol *vecClass = table.FindGlobalByName("Vec");
         REQUIRE(vecClass != nullptr);
 
         int constructors = 0;
         int destructors = 0;
-        for (const auto& child : vecClass->children)
+        for (const auto &child : vecClass->children)
         {
-            if (child->kind == SymbolKind::Constructor && child->name == "Vec") constructors++;
-            if (child->kind == SymbolKind::Destructor && child->name == "~Vec") destructors++;
+            if (child->kind == SymbolKind::Constructor && child->name == "Vec")
+                constructors++;
+            if (child->kind == SymbolKind::Destructor && child->name == "~Vec")
+                destructors++;
         }
 
         CHECK(constructors == 2);
@@ -319,13 +320,14 @@ TEST_SUITE("SymbolCollector")
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
 
-        const Symbol* bodyClass = table.FindGlobalByName("Body");
+        const Symbol *bodyClass = table.FindGlobalByName("Body");
         REQUIRE(bodyClass != nullptr);
 
-        const Symbol* posField = nullptr;
-        for (const auto& child : bodyClass->children)
+        const Symbol *posField = nullptr;
+        for (const auto &child : bodyClass->children)
         {
-            if (child->name == "pos") posField = child.get();
+            if (child->name == "pos")
+                posField = child.get();
         }
 
         REQUIRE(posField != nullptr);
@@ -337,8 +339,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "shared abstract class BaseActor { void Update() {} }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* cls = table.FindGlobalByName("BaseActor");
+
+        Symbol *cls = table.FindGlobalByName("BaseActor");
         REQUIRE(cls != nullptr);
     }
 
@@ -347,8 +349,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "class Window { int width { get { return 0; } set {} } }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* cls = table.FindGlobalByName("Window");
+
+        Symbol *cls = table.FindGlobalByName("Window");
         REQUIRE(cls != nullptr);
         REQUIRE(cls->children.size() == 1);
         CHECK(cls->children[0]->name == "width");
@@ -361,8 +363,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "class Scene { Player@ activePlayer; }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* cls = table.FindGlobalByName("Scene");
+
+        Symbol *cls = table.FindGlobalByName("Scene");
         REQUIRE(cls != nullptr);
         REQUIRE(cls->children.size() == 1);
         CHECK(cls->children[0]->name == "activePlayer");
@@ -374,8 +376,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "class Timer { funcdef void Callback(); Callback@ onTick; }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* cls = table.FindGlobalByName("Timer");
+
+        Symbol *cls = table.FindGlobalByName("Timer");
         REQUIRE(cls != nullptr);
         REQUIRE(cls->children.size() == 2);
         CHECK(cls->children[0]->name == "Callback");
@@ -389,8 +391,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "class Combat { void Fire(int damage, Player@ target) {} }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* cls = table.FindGlobalByName("Combat");
+
+        Symbol *cls = table.FindGlobalByName("Combat");
         REQUIRE(cls != nullptr);
         REQUIRE(cls->children.size() == 1);
         CHECK(cls->children[0]->name == "Fire");
@@ -409,8 +411,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "namespace Math { float PI = 3.14f; }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* ns = table.FindGlobalByName("Math");
+
+        Symbol *ns = table.FindGlobalByName("Math");
         REQUIRE(ns != nullptr);
         CHECK(ns->kind == SymbolKind::Namespace);
         REQUIRE(ns->children.size() == 1);
@@ -423,8 +425,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "namespace Utils { void Log(string msg) {} }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* ns = table.FindGlobalByName("Utils");
+
+        Symbol *ns = table.FindGlobalByName("Utils");
         REQUIRE(ns != nullptr);
         REQUIRE(ns->children.size() == 1);
         CHECK(ns->children[0]->name == "Log");
@@ -436,17 +438,17 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "namespace Engine::Math { float Lerp(float a, float b, float t) {} }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* engineNs = table.FindGlobalByName("Engine");
+
+        Symbol *engineNs = table.FindGlobalByName("Engine");
         REQUIRE(engineNs != nullptr);
         CHECK(engineNs->kind == SymbolKind::Namespace);
         REQUIRE(engineNs->children.size() == 1);
-        
+
         auto mathNs = engineNs->children[0];
         CHECK(mathNs->name == "Math");
         CHECK(mathNs->kind == SymbolKind::Namespace);
         REQUIRE(mathNs->children.size() == 1);
-        
+
         auto lerpFunc = mathNs->children[0];
         CHECK(lerpFunc->name == "Lerp");
         CHECK(lerpFunc->kind == SymbolKind::Function);
@@ -458,8 +460,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "namespace A { int x; } namespace A { int y; }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* ns = table.FindGlobalByName("A");
+
+        Symbol *ns = table.FindGlobalByName("A");
         REQUIRE(ns != nullptr);
         // Currently it merges namespaces with the same name, so it will have both 'x' and 'y'
         REQUIRE(ns->children.size() == 2);
@@ -475,8 +477,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "enum State { IDLE, RUN, ATTACK, DEAD }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* enm = table.FindGlobalByName("State");
+
+        Symbol *enm = table.FindGlobalByName("State");
         REQUIRE(enm != nullptr);
         CHECK(enm->kind == SymbolKind::Enum);
         REQUIRE(enm->children.size() == 4);
@@ -491,8 +493,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "enum Priority { LOW = 0, MEDIUM = 5, HIGH = 10 }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* enm = table.FindGlobalByName("Priority");
+
+        Symbol *enm = table.FindGlobalByName("Priority");
         REQUIRE(enm != nullptr);
         REQUIRE(enm->children.size() == 3);
         CHECK(enm->children[0]->name == "LOW");
@@ -505,8 +507,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "shared enum Color { RED, GREEN, BLUE }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* enm = table.FindGlobalByName("Color");
+
+        Symbol *enm = table.FindGlobalByName("Color");
         REQUIRE(enm != nullptr);
     }
 
@@ -518,8 +520,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "funcdef void EventCallback(int eventId);");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* fd = table.FindGlobalByName("EventCallback");
+
+        Symbol *fd = table.FindGlobalByName("EventCallback");
         REQUIRE(fd != nullptr);
         CHECK(fd->kind == SymbolKind::Funcdef);
         CHECK(fd->typeInfo == "void");
@@ -533,8 +535,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "funcdef float MathOp(float a, float b);");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* fd = table.FindGlobalByName("MathOp");
+
+        Symbol *fd = table.FindGlobalByName("MathOp");
         REQUIRE(fd != nullptr);
         CHECK(fd->typeInfo == "float");
         CHECK(fd->BuildSignature() == "float MathOp(float a, float b)");
@@ -548,8 +550,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "class Actor { float speed { get { return m_speed; } set { m_speed = value; } } }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* cls = table.FindGlobalByName("Actor");
+
+        Symbol *cls = table.FindGlobalByName("Actor");
         REQUIRE(cls != nullptr);
         REQUIRE(cls->children.size() == 1);
         CHECK(cls->children[0]->name == "speed");
@@ -562,8 +564,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "class Scene { Player@ player { get { return m_player; } } }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* cls = table.FindGlobalByName("Scene");
+
+        Symbol *cls = table.FindGlobalByName("Scene");
         REQUIRE(cls != nullptr);
         REQUIRE(cls->children.size() == 1);
         CHECK(cls->children[0]->name == "player");
@@ -578,8 +580,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "void MyFunc() {}");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("MyFunc");
+
+        Symbol *sym = table.FindGlobalByName("MyFunc");
         REQUIRE(sym != nullptr);
         CHECK(sym->selectionRange.start.character == 5);
         CHECK(sym->selectionRange.end.character == 11);
@@ -591,8 +593,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "int g_counter = 0;");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("g_counter");
+
+        Symbol *sym = table.FindGlobalByName("g_counter");
         REQUIRE(sym != nullptr);
         CHECK(sym->selectionRange.start.character == 4);
     }
@@ -602,8 +604,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "class Enemy : Entity {}");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("Enemy");
+
+        Symbol *sym = table.FindGlobalByName("Enemy");
         REQUIRE(sym != nullptr);
         CHECK(sym->selectionRange.start.character == 6);
     }
@@ -613,8 +615,8 @@ TEST_SUITE("SymbolCollector")
         Document doc("file:///test.as", "enum State { IDLE, RUN }");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* sym = table.FindGlobalByName("State");
+
+        Symbol *sym = table.FindGlobalByName("State");
         REQUIRE(sym != nullptr);
         REQUIRE(sym->children.size() == 2);
         CHECK(sym->children[0]->selectionRange.start.character == 13);
@@ -625,23 +627,22 @@ TEST_SUITE("SymbolCollector")
     // ==========================================
     TEST_CASE("I1: Extraccion de comentarios Doxygen")
     {
-        Document doc("file:///test.as", 
-            "/**\n"
-            " * @brief Spawns a player\n"
-            " * @param id The player ID\n"
-            " */\n"
-            "void SpawnPlayer(int id) {}\n"
-            "/// Line comment docs\n"
-            "int g_score = 0;"
-        );
+        Document doc("file:///test.as",
+                     "/**\n"
+                     " * @brief Spawns a player\n"
+                     " * @param id The player ID\n"
+                     " */\n"
+                     "void SpawnPlayer(int id) {}\n"
+                     "/// Line comment docs\n"
+                     "int g_score = 0;");
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
-        Symbol* func = table.FindGlobalByName("SpawnPlayer");
+
+        Symbol *func = table.FindGlobalByName("SpawnPlayer");
         REQUIRE(func != nullptr);
         CHECK(func->docComment == "@brief Spawns a player\n@param id The player ID");
 
-        Symbol* var = table.FindGlobalByName("g_score");
+        Symbol *var = table.FindGlobalByName("g_score");
         REQUIRE(var != nullptr);
         CHECK(var->docComment == "Line comment docs");
     }

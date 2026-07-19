@@ -17,16 +17,16 @@ TEST_SUITE("Localization")
 
     TEST_CASE("L5-L6: GetStrings retrieves correct translation")
     {
-        const auto& enStrings = GetStrings(Locale::EN);
+        const auto &enStrings = GetStrings(Locale::EN);
         CHECK(std::string(enStrings.kindFunction) == "Function");
         CHECK(std::string(enStrings.hoverIn) == "in");
-        
-        const auto& esStrings = GetStrings(Locale::ES);
+
+        const auto &esStrings = GetStrings(Locale::ES);
         CHECK(std::string(esStrings.kindFunction) == "Función");
         CHECK(std::string(esStrings.hoverIn) == "en");
-        
+
         // UNKNOWN falls back to EN
-        const auto& unknownStrings = GetStrings(Locale::UNKNOWN);
+        const auto &unknownStrings = GetStrings(Locale::UNKNOWN);
         CHECK(std::string(unknownStrings.kindFunction) == "Function");
     }
 }

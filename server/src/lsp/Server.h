@@ -62,7 +62,7 @@ namespace angel_lsp
         bool m_validationPending = false;
         std::string m_pendingUri;
         std::string m_pendingText;
-        
+
         std::jthread m_predefinedThread;
 
         i18n::Locale m_locale = i18n::Locale::EN;

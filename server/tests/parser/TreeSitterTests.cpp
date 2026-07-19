@@ -5,25 +5,25 @@
 #include <vector>
 #include <functional>
 
-extern "C" TSLanguage* tree_sitter_angelscript();
+extern "C" TSLanguage *tree_sitter_angelscript();
 
 struct Parser
 {
-    TSParser* raw = nullptr;
+    TSParser *raw = nullptr;
     Parser()
     {
         raw = ts_parser_new();
         printf("ts_parser_new returned %p\n", raw);
-        TSLanguage* lang = tree_sitter_angelscript();
+        TSLanguage *lang = tree_sitter_angelscript();
         printf("tree_sitter_angelscript returned %p\n", lang);
         bool ok = ts_parser_set_language(raw, lang);
         printf("ts_parser_set_language returned %d\n", ok);
     }
     ~Parser() { ts_parser_delete(raw); }
-    TSTree* parse(const std::string& code, TSTree* oldTree = nullptr) const
+    TSTree *parse(const std::string &code, TSTree *oldTree = nullptr) const
     {
         printf("parsing string...\n");
-        TSTree* res = ts_parser_parse_string(raw, oldTree, code.c_str(), (uint32_t)code.size());
+        TSTree *res = ts_parser_parse_string(raw, oldTree, code.c_str(), (uint32_t)code.size());
         printf("parsed string, res=%p\n", res);
         return res;
     }
@@ -31,11 +31,15 @@ struct Parser
 
 struct Tree
 {
-    TSTree* raw = nullptr;
-    explicit Tree(TSTree* t) : raw(t) {}
-    ~Tree() { if (raw) ts_tree_delete(raw); }
-    Tree(const Tree&) = delete;
-    Tree& operator=(const Tree&) = delete;
+    TSTree *raw = nullptr;
+    explicit Tree(TSTree *t) : raw(t) {}
+    ~Tree()
+    {
+        if (raw)
+            ts_tree_delete(raw);
+    }
+    Tree(const Tree &) = delete;
+    Tree &operator=(const Tree &) = delete;
     TSNode root() const { return ts_tree_root_node(raw); }
 };
 
@@ -66,15 +70,19 @@ TEST_SUITE("TreeSitter - Basic Parsing")
 
         std::function<void(TSNode, int)> printTree = [&](TSNode node, int depth)
         {
-            if (ts_node_is_null(node)) return;
+            if (ts_node_is_null(node))
+                return;
             std::string indent(depth * 2, ' ');
             if (ts_node_is_named(node))
             {
                 uint32_t start = ts_node_start_byte(node);
-                uint32_t end   = ts_node_end_byte(node);
+                uint32_t end = ts_node_end_byte(node);
                 std::string src = code.substr(start, end - start);
-                if (src.size() > 40) src = src.substr(0, 37) + "...";
-                for (auto& ch : src) if (ch == '\n') ch = ' ';
+                if (src.size() > 40)
+                    src = src.substr(0, 37) + "...";
+                for (auto &ch : src)
+                    if (ch == '\n')
+                        ch = ' ';
                 printf("%s[%s] \"%s\"\n", indent.c_str(), ts_node_type(node), src.c_str());
             }
             for (uint32_t i = 0; i < ts_node_child_count(node); ++i)
@@ -111,13 +119,17 @@ TEST_SUITE("TreeSitter - Basic Parsing")
 
         std::function<void(TSNode, int)> printTree = [&](TSNode node, int depth)
         {
-            if (ts_node_is_null(node)) return;
+            if (ts_node_is_null(node))
+                return;
             std::string indent(depth * 2, ' ');
             uint32_t start = ts_node_start_byte(node);
-            uint32_t end   = ts_node_end_byte(node);
+            uint32_t end = ts_node_end_byte(node);
             std::string src = code.substr(start, end - start);
-            if (src.size() > 50) src = src.substr(0, 47) + "...";
-            for (auto& ch : src) if (ch == '\n') ch = ' ';
+            if (src.size() > 50)
+                src = src.substr(0, 47) + "...";
+            for (auto &ch : src)
+                if (ch == '\n')
+                    ch = ' ';
             // Only print named nodes to reduce noise
             if (ts_node_is_named(node))
                 printf("%s[%s] \"%s\"\n", indent.c_str(), ts_node_type(node), src.c_str());
@@ -135,7 +147,7 @@ TEST_SUITE("TreeSitter - Basic Parsing")
     TEST_CASE("AST dump: broken namespace from user")
     {
         Parser p;
-        std::string code = 
+        std::string code =
             "namespace Engine {\n"
             "    namespace Math {\n"
             "        float Lerp(float a, float b, float t) { // El hover lo detecta como variable \n"
@@ -147,13 +159,17 @@ TEST_SUITE("TreeSitter - Basic Parsing")
 
         std::function<void(TSNode, int)> printTree = [&](TSNode node, int depth)
         {
-            if (ts_node_is_null(node)) return;
+            if (ts_node_is_null(node))
+                return;
             std::string indent(depth * 2, ' ');
             uint32_t start = ts_node_start_byte(node);
-            uint32_t end   = ts_node_end_byte(node);
+            uint32_t end = ts_node_end_byte(node);
             std::string src = code.substr(start, end - start);
-            if (src.size() > 50) src = src.substr(0, 47) + "...";
-            for (auto& ch : src) if (ch == '\n') ch = ' ';
+            if (src.size() > 50)
+                src = src.substr(0, 47) + "...";
+            for (auto &ch : src)
+                if (ch == '\n')
+                    ch = ' ';
             if (ts_node_is_named(node))
                 printf("%s[%s] \"%s\"\n", indent.c_str(), ts_node_type(node), src.c_str());
             for (uint32_t i = 0; i < ts_node_child_count(node); i++)
@@ -174,13 +190,17 @@ TEST_SUITE("TreeSitter - Basic Parsing")
 
         std::function<void(TSNode, int)> printTree = [&](TSNode node, int depth)
         {
-            if (ts_node_is_null(node)) return;
+            if (ts_node_is_null(node))
+                return;
             std::string indent(depth * 2, ' ');
             uint32_t start = ts_node_start_byte(node);
-            uint32_t end   = ts_node_end_byte(node);
+            uint32_t end = ts_node_end_byte(node);
             std::string src = code.substr(start, end - start);
-            if (src.size() > 50) src = src.substr(0, 47) + "...";
-            for (auto& ch : src) if (ch == '\n') ch = ' ';
+            if (src.size() > 50)
+                src = src.substr(0, 47) + "...";
+            for (auto &ch : src)
+                if (ch == '\n')
+                    ch = ' ';
             if (ts_node_is_named(node))
                 printf("%s[%s] \"%s\"\n", indent.c_str(), ts_node_type(node), src.c_str());
             else
@@ -208,28 +228,33 @@ namespace Collision
         Tree tree(p.parse(code));
         TSNode root = tree.root();
 
-        std::function<void(TSNode, int, const char*)> printTree = [&](TSNode node, int depth, const char* fieldName)
+        std::function<void(TSNode, int, const char *)> printTree = [&](TSNode node, int depth, const char *fieldName)
         {
-            if (ts_node_is_null(node)) return;
+            if (ts_node_is_null(node))
+                return;
             std::string indent(depth * 2, ' ');
-            if (fieldName) indent += std::string(fieldName) + ": ";
+            if (fieldName)
+                indent += std::string(fieldName) + ": ";
             uint32_t start = ts_node_start_byte(node);
-            uint32_t end   = ts_node_end_byte(node);
+            uint32_t end = ts_node_end_byte(node);
             std::string src = code.substr(start, end - start);
-            if (src.size() > 50) src = src.substr(0, 47) + "...";
-            for (auto& ch : src) if (ch == '\n') ch = ' ';
+            if (src.size() > 50)
+                src = src.substr(0, 47) + "...";
+            for (auto &ch : src)
+                if (ch == '\n')
+                    ch = ' ';
             if (ts_node_is_named(node))
                 printf("%s[%s] \"%s\"\n", indent.c_str(), ts_node_type(node), src.c_str());
             else
                 printf("%s(%s)\n", indent.c_str(), ts_node_type(node));
-                
+
             TSTreeCursor cursor = ts_tree_cursor_new(node);
             if (ts_tree_cursor_goto_first_child(&cursor))
             {
                 do
                 {
                     TSNode child = ts_tree_cursor_current_node(&cursor);
-                    const char* child_field = ts_tree_cursor_current_field_name(&cursor);
+                    const char *child_field = ts_tree_cursor_current_field_name(&cursor);
                     printTree(child, depth + 1, child_field);
                 } while (ts_tree_cursor_goto_next_sibling(&cursor));
                 ts_tree_cursor_goto_parent(&cursor);
@@ -246,16 +271,18 @@ namespace Collision
     {
         TSParser *parser = ts_parser_new();
         ts_parser_set_language(parser, tree_sitter_angelscript());
-        
-        auto printTree = [](auto& self, TSNode node, const std::string& source, int depth) -> void
+
+        auto printTree = [](auto &self, TSNode node, const std::string &source, int depth) -> void
         {
-            if (ts_node_is_null(node)) return;
-            for (int i=0; i<depth; i++) printf("  ");
-            
+            if (ts_node_is_null(node))
+                return;
+            for (int i = 0; i < depth; i++)
+                printf("  ");
+
             uint32_t start = ts_node_start_byte(node);
             uint32_t end = ts_node_end_byte(node);
             std::string text = source.substr(start, end - start);
-            
+
             printf("[%s] '%s'\n", ts_node_type(node), text.c_str());
             for (uint32_t i = 0; i < ts_node_child_count(node); i++)
             {
@@ -268,13 +295,13 @@ namespace Collision
         printf("\n=== AST: Constructors ===\n");
         printTree(printTree, ts_tree_root_node(tree1), source1, 0);
         printf("=== END AST ===\n\n");
-        
+
         std::string source2 = "class RigidBody { Engine::Math::Vector3 position; }";
         TSTree *tree2 = ts_parser_parse_string(parser, NULL, source2.c_str(), source2.length());
         printf("\n=== AST: Field ===\n");
         printTree(printTree, ts_tree_root_node(tree2), source2, 0);
         printf("=== END AST ===\n\n");
-        
+
         ts_tree_delete(tree1);
         ts_tree_delete(tree2);
         ts_parser_delete(parser);
@@ -283,7 +310,7 @@ namespace Collision
 
 TEST_CASE("AST dump of interface")
 {
-    const char* SRC = R"(
+    const char *SRC = R"(
 interface IEntity {
     /**
      * @brief Spawns an entity in the game world.
@@ -306,15 +333,19 @@ interface IEntity {
 
     std::function<void(TSNode, int)> printTree = [&](TSNode node, int depth)
     {
-        if (ts_node_is_null(node)) return;
+        if (ts_node_is_null(node))
+            return;
         std::string indent(depth * 2, ' ');
         if (ts_node_is_named(node))
         {
             uint32_t start = ts_node_start_byte(node);
-            uint32_t end   = ts_node_end_byte(node);
+            uint32_t end = ts_node_end_byte(node);
             std::string src = std::string(SRC).substr(start, end - start);
-            if (src.size() > 40) src = src.substr(0, 37) + "...";
-            for (auto& ch : src) if (ch == '\n') ch = ' ';
+            if (src.size() > 40)
+                src = src.substr(0, 37) + "...";
+            for (auto &ch : src)
+                if (ch == '\n')
+                    ch = ' ';
             printf("%s[%s] \"%s\"\n", indent.c_str(), ts_node_type(node), src.c_str());
         }
         for (uint32_t i = 0; i < ts_node_child_count(node); ++i)
@@ -332,8 +363,9 @@ TEST_CASE("AST dump of full_scratch.as")
 {
     Parser p;
     // read file
-    FILE* f = fopen("tests/full_scratch.as", "rb");
-    if (!f) return;
+    FILE *f = fopen("tests/full_scratch.as", "rb");
+    if (!f)
+        return;
     fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -344,57 +376,61 @@ TEST_CASE("AST dump of full_scratch.as")
 
     Tree tree(p.parse(code));
     TSNode root = tree.root();
-        FILE* out = fopen("ast_dump_out.txt", "w");
-        
-        struct Context
-        {
-            std::string prefix;
-            bool isLast;
-        };
+    FILE *out = fopen("ast_dump_out.txt", "w");
 
-        std::function<void(TSNode, const std::string&, bool, const char*)> printTree = 
-        [&](TSNode node, const std::string& prefix, bool isLast, const char* fieldName)
-        {
-            if (ts_node_is_null(node)) return;
-            
-            // Print current node
-            std::string branch = isLast ? "└── " : "├── ";
-            fprintf(out, "%s%s", prefix.c_str(), branch.c_str());
-            
-            if (fieldName)
-            {
-                fprintf(out, "%s: ", fieldName);
-            }
-            
-            fprintf(out, "[%s]", ts_node_type(node));
-            
-            // Only print source text for leaf nodes or specific named nodes to avoid clutter
-            bool isLeaf = ts_node_child_count(node) == 0;
-            if (isLeaf || std::string_view(ts_node_type(node)) == "identifier" || std::string_view(ts_node_type(node)) == "type_identifier" || std::string_view(ts_node_type(node)) == "primitive_type")
-            {
-                uint32_t start = ts_node_start_byte(node);
-                uint32_t end   = ts_node_end_byte(node);
-                std::string src = code.substr(start, end - start);
-                if (src.size() > 40) src = src.substr(0, 37) + "...";
-                for (auto& ch : src) if (ch == '\n' || ch == '\r') ch = ' ';
-                fprintf(out, " \"%s\"", src.c_str());
-            }
-            fprintf(out, "\n");
+    struct Context
+    {
+        std::string prefix;
+        bool isLast;
+    };
 
-            // Print children
-            uint32_t childCount = ts_node_child_count(node);
-            std::string childPrefix = prefix + (isLast ? "    " : "│   ");
-            for (uint32_t i = 0; i < childCount; ++i)
-            {
-                TSNode child = ts_node_child(node, i);
-                const char* childField = ts_node_field_name_for_child(node, i);
-                printTree(child, childPrefix, i == childCount - 1, childField);
-            }
-        };
-        
-        fprintf(out, "AST ROOT:\n");
-        printTree(root, "", true, nullptr);
-        fclose(out);
+    std::function<void(TSNode, const std::string &, bool, const char *)> printTree =
+        [&](TSNode node, const std::string &prefix, bool isLast, const char *fieldName)
+    {
+        if (ts_node_is_null(node))
+            return;
+
+        // Print current node
+        std::string branch = isLast ? "└── " : "├── ";
+        fprintf(out, "%s%s", prefix.c_str(), branch.c_str());
+
+        if (fieldName)
+        {
+            fprintf(out, "%s: ", fieldName);
+        }
+
+        fprintf(out, "[%s]", ts_node_type(node));
+
+        // Only print source text for leaf nodes or specific named nodes to avoid clutter
+        bool isLeaf = ts_node_child_count(node) == 0;
+        if (isLeaf || std::string_view(ts_node_type(node)) == "identifier" || std::string_view(ts_node_type(node)) == "type_identifier" || std::string_view(ts_node_type(node)) == "primitive_type")
+        {
+            uint32_t start = ts_node_start_byte(node);
+            uint32_t end = ts_node_end_byte(node);
+            std::string src = code.substr(start, end - start);
+            if (src.size() > 40)
+                src = src.substr(0, 37) + "...";
+            for (auto &ch : src)
+                if (ch == '\n' || ch == '\r')
+                    ch = ' ';
+            fprintf(out, " \"%s\"", src.c_str());
+        }
+        fprintf(out, "\n");
+
+        // Print children
+        uint32_t childCount = ts_node_child_count(node);
+        std::string childPrefix = prefix + (isLast ? "    " : "│   ");
+        for (uint32_t i = 0; i < childCount; ++i)
+        {
+            TSNode child = ts_node_child(node, i);
+            const char *childField = ts_node_field_name_for_child(node, i);
+            printTree(child, childPrefix, i == childCount - 1, childField);
+        }
+    };
+
+    fprintf(out, "AST ROOT:\n");
+    printTree(root, "", true, nullptr);
+    fclose(out);
 }
 
 TEST_CASE("AST dump: full_scratch")
@@ -889,10 +925,11 @@ void LoadAssets()
     bool hasError = false;
     std::function<void(TSNode)> checkError = [&](TSNode node)
     {
-        if (std::string_view(ts_node_type(node)) == "ERROR") hasError = true;
-        for (uint32_t i = 0; i < ts_node_child_count(node); i++) checkError(ts_node_child(node, i));
+        if (std::string_view(ts_node_type(node)) == "ERROR")
+            hasError = true;
+        for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+            checkError(ts_node_child(node, i));
     };
     checkError(root);
     CHECK_FALSE(hasError);
 }
-

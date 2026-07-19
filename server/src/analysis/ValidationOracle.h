@@ -11,8 +11,8 @@ namespace analysis
 {
     /**
      * @brief Compiles AngelScript code dynamically to intercept compiler messages.
-     * 
-     * Uses the asIScriptEngine (populated by PredefinedLoader) to compile a 
+     *
+     * Uses the asIScriptEngine (populated by PredefinedLoader) to compile a
      * temporary module and intercepts any AngelScript syntax or semantic errors
      * to translate them into LSP Diagnostics.
      */
@@ -21,12 +21,12 @@ namespace analysis
     public:
         /**
          * @brief Constructs a new Validation Oracle.
-         * 
+         *
          * @param engine Pointer to the active AngelScript engine.
          * @param locale The locale used for diagnostic translation.
          */
         ValidationOracle(asIScriptEngine *engine, i18n::Locale locale = i18n::Locale::EN);
-        
+
         ~ValidationOracle();
 
         // Prevent copy/move because we register this instance as the message callback
@@ -35,15 +35,15 @@ namespace analysis
 
         /**
          * @brief Synchronously validates a code string, returning diagnostics.
-         * 
+         *
          * @param code The AngelScript source code to validate.
          * @return A list of LSP diagnostics (errors/warnings).
          */
         std::vector<lsp::Diagnostic> ValidateSync(const std::string &code);
-        
+
         /**
          * @brief Updates the locale used for diagnostic translation.
-         * 
+         *
          * @param locale The new locale.
          */
         void SetLocale(i18n::Locale locale) { m_locale = locale; }
@@ -58,7 +58,7 @@ namespace analysis
          * @brief Static callback provided to the AngelScript engine.
          */
         static void MessageCallback(const asSMessageInfo *msg, void *param);
-        
+
         /**
          * @brief Internal handler that processes and translates the raw engine message.
          */

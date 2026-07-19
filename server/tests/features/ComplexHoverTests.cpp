@@ -8,7 +8,7 @@
 using namespace analysis;
 
 // rigorous test based on scratch.as
-const char* SCRATCH_AS = R"(
+const char *SCRATCH_AS = R"(
 shared class string {}
 
 namespace Engine
@@ -103,31 +103,38 @@ TEST_SUITE("ComplexHover")
         Document doc("file:///scratch.as", code);
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
+
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
-        
+
         // Find "body.ApplyForce(Engine::Math::Vector3(0, -9.8f, 0));"
         size_t offset = code.find("Vector3(0, -9.8f, 0)");
-        
+
         uint32_t line = 0;
         uint32_t col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (code[i] == '\n') { line++; col = 0; }
-            else { col++; }
+            if (code[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
-        
-        std::vector<const Symbol*> results;
-        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col, &results);
-        
+
+        std::vector<const Symbol *> results;
+        const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col, &results);
+
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "Vector3");
         CHECK(sym->kind == SymbolKind::Constructor);
         CHECK(sym->params.size() == 3);
-        CHECK( sym->BuildSignature() == "Vector3(float ax, float ay, float az)" );
+        CHECK(sym->BuildSignature() == "Vector3(float ax, float ay, float az)");
     }
-    
+
     TEST_CASE("CH2: Constructor resolution (no arguments)")
     {
         std::string code = SCRATCH_AS;
@@ -136,27 +143,34 @@ TEST_SUITE("ComplexHover")
         SymbolCollector::CollectGlobals(doc, table);
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
-        
+
         size_t offset = code.find("Vector3() { x = 0; y = 0; z = 0; }");
-        
+
         uint32_t line = 0;
         uint32_t col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (code[i] == '\n') { line++; col = 0; }
-            else { col++; }
+            if (code[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
-        
-        std::vector<const Symbol*> results;
-        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col, &results);
-        
+
+        std::vector<const Symbol *> results;
+        const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col, &results);
+
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "Vector3");
         CHECK(sym->kind == SymbolKind::Constructor);
         CHECK(sym->params.size() == 0);
-        CHECK( sym->BuildSignature() == "Vector3()" );
+        CHECK(sym->BuildSignature() == "Vector3()");
     }
-    
+
     TEST_CASE("CH3: Parameter resolution correctly resolves full typeInfo")
     {
         std::string code = SCRATCH_AS;
@@ -165,12 +179,12 @@ TEST_SUITE("ComplexHover")
         SymbolCollector::CollectGlobals(doc, table);
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
-        
+
         // find "ApplyForce(Engine::Math::Vector3 force)"
         size_t offset = code.find("force)", code.find("ApplyForce"));
-        
+
         // Force the function's scope into the table by parsing locals
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
             if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "method_declaration")
             {
@@ -191,46 +205,60 @@ TEST_SUITE("ComplexHover")
             }
         };
         traverseFuncs(root, traverseFuncs);
-        
+
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (code[i] == '\n') { line++; col = 0; }
-            else { col++; }
+            if (code[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
-        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
-        
+        const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
+
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "force");
         CHECK(sym->kind == SymbolKind::Parameter);
         CHECK(sym->typeInfo == "Engine::Math::Vector3");
     }
-    
+
     TEST_CASE("CH4: Intermediate namespace resolution in scoped_identifier")
     {
         std::string code = SCRATCH_AS;
         Document doc("file:///scratch.as", code);
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        
+
         size_t offset = code.find("Math::Vector3(0, -9.8f, 0)");
-        
+
         uint32_t line = 0;
         uint32_t col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (code[i] == '\n') { line++; col = 0; }
-            else { col++; }
+            if (code[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
-        
-        std::vector<const Symbol*> results;
-        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col, &results);
-        
+
+        std::vector<const Symbol *> results;
+        const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col, &results);
+
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "Math");
         CHECK(sym->kind == SymbolKind::Namespace);
     }
-    
+
     TEST_CASE("CH5: Avoid parameter collisions using LocalByNameAt")
     {
         std::string code = SCRATCH_AS;
@@ -239,9 +267,9 @@ TEST_SUITE("ComplexHover")
         SymbolCollector::CollectGlobals(doc, table);
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
-        
+
         // Populate ALL locals from ALL functions, which would normally cause shadowing collisions
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
             if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "method_declaration")
             {
@@ -262,22 +290,29 @@ TEST_SUITE("ComplexHover")
             }
         };
         traverseFuncs(root, traverseFuncs);
-        
+
         // Find "target" in "position = target" (inside MoveTo)
         // MoveTo is inside Spatial
         size_t offset = code.find("target;", code.find("position = target;"));
-        
+
         // We get line and col for ResolveAt so FindLocalByNameAt can do its job
         uint32_t line = 0;
         uint32_t col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (code[i] == '\n') { line++; col = 0; }
-            else { col++; }
+            if (code[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
-        
-        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
-        
+
+        const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
+
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "target");
         CHECK(sym->kind == SymbolKind::Parameter);
@@ -299,10 +334,17 @@ TEST_SUITE("ComplexHover")
         uint32_t col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (code[i] == '\n') { line++; col = 0; }
-            else { col++; }
+            if (code[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
-        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+        const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "Lerp");
         CHECK(sym->kind == SymbolKind::Function);
@@ -318,14 +360,16 @@ TEST_SUITE("ComplexHover")
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
             if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor")
             {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
-                if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
+                if (!ts_node_is_null(bodyNode))
+                    SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
             }
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) self(ts_node_child(node, i), self);
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+                self(ts_node_child(node, i), self);
         };
         traverseFuncs(root, traverseFuncs);
 
@@ -334,10 +378,17 @@ TEST_SUITE("ComplexHover")
         uint32_t col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (code[i] == '\n') { line++; col = 0; }
-            else { col++; }
+            if (code[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
-        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+        const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "ApplyForce");
         CHECK(sym->kind == SymbolKind::Method);
@@ -386,24 +437,34 @@ namespace Game
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
             if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor")
             {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
-                if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
+                if (!ts_node_is_null(bodyNode))
+                    SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
             }
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) self(ts_node_child(node, i), self);
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+                self(ts_node_child(node, i), self);
         };
         traverseFuncs(root, traverseFuncs);
 
-        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+        auto getPos = [&](const std::string &target) -> std::pair<uint32_t, uint32_t>
         {
             size_t offset = code.find(target);
             uint32_t line = 0, col = 0;
             for (size_t i = 0; i < offset; i++)
             {
-                if (code[i] == '\n') { line++; col = 0; } else { col++; }
+                if (code[i] == '\n')
+                {
+                    line++;
+                    col = 0;
+                }
+                else
+                {
+                    col++;
+                }
             }
             return {line, col};
         };
@@ -411,7 +472,7 @@ namespace Game
         // Test hover on 'Player gamePlayer;'
         {
             auto [line, col] = getPos("Player gamePlayer;");
-            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
             CHECK(sym->name == "Player");
             CHECK(sym->kind == SymbolKind::Class);
@@ -420,37 +481,37 @@ namespace Game
         // Test hover on 'FinalBoss finalBoss;'
         {
             auto [line, col] = getPos("FinalBoss finalBoss;");
-            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
             CHECK(sym->name == "FinalBoss");
             CHECK(sym->kind == SymbolKind::Class);
         }
-        
+
         // Let's check hover on Game as the class declaration
         {
             auto [line, col] = getPos("class Game");
             col += 6; // pointing at 'Game'
-            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
             CHECK(sym->name == "Game");
             CHECK(sym->kind == SymbolKind::Class);
         }
-        
+
         // Let's check hover on Game as the enum declaration
         {
             auto [line, col] = getPos("enum Game");
             col += 5; // pointing at 'Game'
-            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
             CHECK(sym->name == "Game");
             CHECK(sym->kind == SymbolKind::Enum);
         }
-        
+
         // Let's check hover on Game as the typedef
         {
             auto [line, col] = getPos("typedef int Game;");
             col += 12; // pointing at 'Game'
-            const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+            const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
             REQUIRE(sym != nullptr);
             CHECK(sym->name == "Game");
             CHECK(sym->kind == SymbolKind::Typedef);
@@ -465,24 +526,34 @@ namespace Game
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
             if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor")
             {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
-                if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
+                if (!ts_node_is_null(bodyNode))
+                    SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
             }
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) self(ts_node_child(node, i), self);
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+                self(ts_node_child(node, i), self);
         };
         traverseFuncs(root, traverseFuncs);
 
-        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+        auto getPos = [&](const std::string &target) -> std::pair<uint32_t, uint32_t>
         {
             size_t offset = std::string(SCRATCH_AS).find(target);
             uint32_t line = 0, col = 0;
             for (size_t i = 0; i < offset; i++)
             {
-                if (SCRATCH_AS[i] == '\n') { line++; col = 0; } else { col++; }
+                if (SCRATCH_AS[i] == '\n')
+                {
+                    line++;
+                    col = 0;
+                }
+                else
+                {
+                    col++;
+                }
             }
             return {line, col};
         };
@@ -490,13 +561,13 @@ namespace Game
         // Test hover on 'hp' inside Entity constructor
         auto [line, col] = getPos("hp    = 100.0f;");
         col += 1;
-        std::vector<const Symbol*> multiResults;
-        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
+        std::vector<const Symbol *> multiResults;
+        const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
 
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "hp");
-        
-        // At this point we are testing that ResolveAt correctly returns the symbol, 
+
+        // At this point we are testing that ResolveAt correctly returns the symbol,
         // and optionally populates multiResults correctly if it was an ambiguous/mixin resolution.
         // For 'hp' in Entity it should resolve to Entity's own member.
         if (sym->parent)
@@ -513,24 +584,34 @@ namespace Game
         TSNode root = doc.RootNode();
         SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
             if (std::string_view(ts_node_type(node)) == "func_declaration" || std::string_view(ts_node_type(node)) == "constructor")
             {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
-                if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
+                if (!ts_node_is_null(bodyNode))
+                    SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
             }
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) self(ts_node_child(node, i), self);
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+                self(ts_node_child(node, i), self);
         };
         traverseFuncs(root, traverseFuncs);
 
-        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+        auto getPos = [&](const std::string &target) -> std::pair<uint32_t, uint32_t>
         {
             size_t offset = std::string(SCRATCH_AS).find(target);
             uint32_t line = 0, col = 0;
             for (size_t i = 0; i < offset; i++)
             {
-                if (SCRATCH_AS[i] == '\n') { line++; col = 0; } else { col++; }
+                if (SCRATCH_AS[i] == '\n')
+                {
+                    line++;
+                    col = 0;
+                }
+                else
+                {
+                    col++;
+                }
             }
             return {line, col};
         };
@@ -538,7 +619,7 @@ namespace Game
         // Test hover on 'amount' inside TakeDamage
         auto [line, col] = getPos("hp -= amount;");
         col += 7; // point to 'amount'
-        const Symbol* sym = SymbolResolver::ResolveAt(doc, table, line, col);
+        const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
 
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "amount");
@@ -551,7 +632,7 @@ namespace Game
 
     TEST_CASE("CH11: Resolve symbols from predefined namespaces")
     {
-        const char* PREDEFINED = R"(
+        const char *PREDEFINED = R"(
 namespace Outer
 {
     namespace Inner
@@ -564,7 +645,7 @@ namespace Outer
 }
         )";
 
-        const char* USER_CODE = R"(
+        const char *USER_CODE = R"(
 void Main()
 {
     Outer::Inner::Inner obj;
@@ -582,24 +663,34 @@ void Main()
         SymbolCollector::CollectGlobals(docUser, table);
         SymbolCollector::TraverseGlobals(docUser.RootNode(), docUser, table, nullptr);
 
-        auto traverseFuncs = [&](TSNode node, auto& self) -> void
+        auto traverseFuncs = [&](TSNode node, auto &self) -> void
         {
             if (std::string_view(ts_node_type(node)) == "func_declaration")
             {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
-                if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, docUser, table, nullptr);
+                if (!ts_node_is_null(bodyNode))
+                    SymbolCollector::TraverseLocals(bodyNode, docUser, table, nullptr);
             }
-            for (uint32_t i = 0; i < ts_node_child_count(node); i++) self(ts_node_child(node, i), self);
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+                self(ts_node_child(node, i), self);
         };
         traverseFuncs(docUser.RootNode(), traverseFuncs);
 
-        auto getPos = [&](const std::string& target) -> std::pair<uint32_t, uint32_t>
+        auto getPos = [&](const std::string &target) -> std::pair<uint32_t, uint32_t>
         {
             size_t offset = std::string(USER_CODE).find(target);
             uint32_t line = 0, col = 0;
             for (size_t i = 0; i < offset; i++)
             {
-                if (USER_CODE[i] == '\n') { line++; col = 0; } else { col++; }
+                if (USER_CODE[i] == '\n')
+                {
+                    line++;
+                    col = 0;
+                }
+                else
+                {
+                    col++;
+                }
             }
             return {line, col};
         };
@@ -607,18 +698,18 @@ void Main()
         // Hover on 'obj.var'
         auto [line, col] = getPos("obj.var = 3.14f;");
         col += 5; // point to 'var'
-        
+
         // Hover on 'obj' first
         auto [lineObj, colObj] = getPos("obj.var = 3.14f;");
-        const Symbol* objSym = SymbolResolver::ResolveAt(docUser, table, lineObj, colObj);
+        const Symbol *objSym = SymbolResolver::ResolveAt(docUser, table, lineObj, colObj);
         REQUIRE(objSym != nullptr);
 
-        const Symbol* sym = SymbolResolver::ResolveAt(docUser, table, line, col);
+        const Symbol *sym = SymbolResolver::ResolveAt(docUser, table, line, col);
 
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "var");
         CHECK(sym->kind == SymbolKind::Variable); // Since it was extracted as a class field (variable) in Predefined
-        
+
         if (sym->parent)
         {
             CHECK(sym->parent->name == "Inner");
@@ -636,7 +727,7 @@ void Main()
 
 TEST_CASE("CH12: Array instantiations and hover resolution")
 {
-    const char* PREDEFINED = R"(
+    const char *PREDEFINED = R"(
 class Animal { void Speak(); }
 class array<class T>
 {
@@ -645,7 +736,7 @@ class array<class T>
 }
     )";
 
-    const char* SRC = R"(
+    const char *SRC = R"(
 void Main()
 {
     array<int> varName = {1, 2, 3};
@@ -665,17 +756,17 @@ void Main()
     SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
     SymbolCollector::TraverseLocals(root, doc, table, nullptr);
 
-    auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol*
+    auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol *
     {
         return SymbolResolver::ResolveAt(doc, table, line, col, nullptr);
     };
 
     // Hover over 'array' in 'array<int> varName'
     // Line 3: array<int> varName = {1, 2, 3};
-    auto hover1 = getHover(3, 7); 
+    auto hover1 = getHover(3, 7);
     REQUIRE(hover1 != nullptr);
     CHECK(hover1->name == "array");
-    
+
     // Hover over 'varName'
     auto hover2 = getHover(3, 17);
     REQUIRE(hover2 != nullptr);
@@ -697,11 +788,11 @@ void Main()
 
 TEST_CASE("CH13: Auto type resolution")
 {
-    const char* PREDEFINED = R"(
+    const char *PREDEFINED = R"(
 class classA {}
     )";
 
-    const char* SRC = R"(
+    const char *SRC = R"(
 void Main()
 {
     float f;
@@ -722,17 +813,17 @@ void Main()
     SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
     SymbolCollector::TraverseLocals(root, doc, table, nullptr);
 
-    auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol*
+    auto getHover = [&](uint32_t line, uint32_t col) -> const Symbol *
     {
         return SymbolResolver::ResolveAt(doc, table, line, col, nullptr);
     };
 
     // Hover over 'i1' (line 4)
-    auto hover1 = getHover(4, 10); 
+    auto hover1 = getHover(4, 10);
     REQUIRE(hover1 != nullptr);
     CHECK(hover1->name == "i1");
     CHECK(hover1->typeInfo == "float"); // auto resolves to float
-    
+
     // Hover over 'i2' (line 6)
     auto hover2 = getHover(6, 10);
     REQUIRE(hover2 != nullptr);
@@ -747,7 +838,7 @@ void Main()
 
 TEST_CASE("CH14: HoverHandler Doxygen formatting and filtering (clangd style)")
 {
-    const char* SRC = R"(
+    const char *SRC = R"(
 /**
  * @class ThreadSafeQueue
  * @brief A first-in, first-out (FIFO) queue with blocking pop operations.
@@ -805,7 +896,15 @@ class IEntity
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col + 8; // point to 'IEntity'
@@ -830,7 +929,15 @@ class IEntity
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -855,7 +962,15 @@ class IEntity
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -882,7 +997,15 @@ class IEntity
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -907,7 +1030,7 @@ class IEntity
 
 TEST_CASE("CH15: Hover for Typedef, Funcdef, and Namespace")
 {
-    const char* SRC = R"(
+    const char *SRC = R"(
 /**
  * @brief Custom integer type
  */
@@ -942,7 +1065,15 @@ namespace Math {
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -965,7 +1096,15 @@ namespace Math {
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -988,7 +1127,15 @@ namespace Math {
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -1012,7 +1159,15 @@ namespace Math {
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -1024,8 +1179,10 @@ namespace Math {
         std::string markdown = markup.value;
 
         CHECK(markdown.find("namespace Math") != std::string::npos);
-        if (markdown.find("Math namespace") == std::string::npos) {
-            std::cout << "MARKDOWN:\n" << markdown << "\n";
+        if (markdown.find("Math namespace") == std::string::npos)
+        {
+            std::cout << "MARKDOWN:\n"
+                      << markdown << "\n";
         }
         CHECK(markdown.find("Math namespace") != std::string::npos);
     }
@@ -1033,7 +1190,7 @@ namespace Math {
 
 TEST_CASE("CH16: Hover for Various Documented Symbols")
 {
-    const char* SRC = R"(
+    const char *SRC = R"(
 /**
  * @brief A documented class
  */
@@ -1072,14 +1229,23 @@ mixin class MyMixin {}
     TSNode root = doc.RootNode();
     SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-    auto getHover = [&](const std::string& searchStr, int offsetFromStart = 0) {
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart = 0)
+    {
         lsp::requests::TextDocument_Hover::Params req;
         req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
         size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -1146,7 +1312,7 @@ mixin class MyMixin {}
 
 TEST_CASE("CH17: Comprehensive Hover for All Documented Features")
 {
-    const char* SRC = R"(
+    const char *SRC = R"(
 namespace App {
     /**
      * @brief Math typedef
@@ -1216,14 +1382,23 @@ namespace App {
     TSNode root = doc.RootNode();
     SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-    auto getHover = [&](const std::string& searchStr, int offsetFromStart = 0) {
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart = 0)
+    {
         lsp::requests::TextDocument_Hover::Params req;
         req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
         size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -1347,7 +1522,7 @@ namespace App {
 
 TEST_CASE("CH18: Hover for Local Variables with Documentation")
 {
-    const char* SRC = R"(
+    const char *SRC = R"(
 void OnDataReceived(int c) {
     // Callback implementation
     int f = 0;
@@ -1361,25 +1536,36 @@ void OnDataReceived(int c) {
     SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
     // Run TraverseLocals to collect the local variables!
-    auto traverseFuncs = [&](TSNode node, auto& self) -> void
+    auto traverseFuncs = [&](TSNode node, auto &self) -> void
     {
         if (std::string_view(ts_node_type(node)) == "func_declaration")
         {
             TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
-            if (!ts_node_is_null(bodyNode)) SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
+            if (!ts_node_is_null(bodyNode))
+                SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
         }
-        for (uint32_t i = 0; i < ts_node_child_count(node); i++) self(ts_node_child(node, i), self);
+        for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+            self(ts_node_child(node, i), self);
     };
     traverseFuncs(root, traverseFuncs);
 
-    auto getHover = [&](const std::string& searchStr, int offsetFromStart = 0) {
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart = 0)
+    {
         lsp::requests::TextDocument_Hover::Params req;
         req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
         size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -1400,7 +1586,7 @@ void OnDataReceived(int c) {
 
 TEST_CASE("CH19: Hover Crash with Empty Doc Comments")
 {
-    const char* SRC = R"(
+    const char *SRC = R"(
 /**
  * @brief 
  * @param a 
@@ -1415,14 +1601,23 @@ void EmptyTags(int a) {}
     TSNode root = doc.RootNode();
     SymbolCollector::TraverseGlobals(root, doc, table, nullptr);
 
-    auto getHover = [&](const std::string& searchStr, int offsetFromStart = 0) {
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart = 0)
+    {
         lsp::requests::TextDocument_Hover::Params req;
         req.textDocument.uri = lsp::DocumentUri::parse("file:///main.as");
         size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
         uint32_t line = 0, col = 0;
         for (size_t i = 0; i < offset; i++)
         {
-            if (SRC[i] == '\n') { line++; col = 0; } else { col++; }
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
         }
         req.position.line = line;
         req.position.character = col;
@@ -1438,5 +1633,3 @@ void EmptyTags(int a) {}
     auto markup = std::get<lsp::MarkupContent>((*result).contents);
     CHECK(markup.value.find("EmptyTags") != std::string::npos);
 }
-
-

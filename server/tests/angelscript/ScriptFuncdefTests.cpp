@@ -20,7 +20,7 @@ TEST_SUITE("Script - Funcdefs")
                 }
             }
         )";
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.IsClean());
     }
@@ -42,7 +42,7 @@ TEST_SUITE("Script - Funcdefs")
                 }
             }
         )";
-        
+
         auto result = fixtures::Validate(engine, code);
         CHECK(result.HasError());
     }
