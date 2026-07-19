@@ -308,7 +308,7 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             for (auto& g : grouped)
             {
                 // To group, they must have same kind, name, and signature/type
-                bool sameSignature = r->signature == g.sym->signature;
+                bool sameSignature = r->BuildSignature(false, "") == g.sym->BuildSignature(false, "");
                 bool sameTypeInfo = r->typeInfo == g.sym->typeInfo;
                 if (r->kind == g.sym->kind && r->name == g.sym->name && sameSignature && sameTypeInfo)
                 {
@@ -414,13 +414,23 @@ void ProcessHover(lsp::requests::TextDocument_Hover::Result& result,
             return md;
         };
 
-        if (grouped.size() > 1 || (!grouped.empty() && grouped[0].parents.size() > 1))
+        if (grouped.size() > 1)
         {
-            for (size_t i = 0; i < grouped.size(); i++)
-            {
-                if (i > 0) markdown += "\n\n---\n\n";
-                markdown += renderGrouped(grouped[i], nullptr);
+            int activeIndex = 0;
+            if (sym) {
+                for (size_t i = 0; i < grouped.size(); i++) {
+                    if (grouped[i].sym == sym || grouped[i].sym->BuildSignature(false, "") == sym->BuildSignature(false, "")) {
+                        activeIndex = (int)i; break;
+                    }
+                }
             }
+            markdown = renderGrouped(grouped[activeIndex], sym);
+            int extra = (int)grouped.size() - 1;
+            markdown += "\n\n*+" + std::to_string(extra) + " " + std::string(s.hoverOverloads) + "*";
+        }
+        else if (!grouped.empty() && grouped[0].parents.size() > 1)
+        {
+            markdown = renderGrouped(grouped[0], sym);
         }
         else
         {

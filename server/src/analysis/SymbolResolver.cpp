@@ -218,6 +218,10 @@ namespace analysis
         if (parentType == "func_declaration")
         {
             if (const Symbol *sym = ResolveConstructorOrDestructor(doc, table, node, parent, identText, line, outMultipleResults)) return sym;
+            if (const Symbol *sym = table.FindScopeByPosition(doc.GetUri(), line, character))
+            {
+                if (sym->name == identText) return sym;
+            }
         }
 
         bool isScoped = false;
@@ -717,7 +721,7 @@ namespace analysis
                     if (cand->kind == SymbolKind::Function || cand->kind == SymbolKind::Method || cand->kind == SymbolKind::Constructor)
                     {
                         candPriority += 100;
-                        if (cand->kind == SymbolKind::Constructor && argCount.has_value())
+                        if (argCount.has_value() && cand->params.size() == argCount.value()) { candPriority += 200; } if (cand->kind == SymbolKind::Constructor && argCount.has_value())
                         {
                             if (cand->params.size() == argCount.value())
                             {
