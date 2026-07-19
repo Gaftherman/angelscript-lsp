@@ -134,6 +134,17 @@ namespace angel_lsp
 
                     std::string pureText = line.substr(textStart);
 
+                    // Escape < and > so markdown doesn't swallow them as HTML tags
+                    std::string escapedText;
+                    escapedText.reserve(pureText.size());
+                    for (char c : pureText)
+                    {
+                        if (c == '<') escapedText += "&lt;";
+                        else if (c == '>') escapedText += "&gt;";
+                        else escapedText += c;
+                    }
+                    pureText = escapedText;
+
                     if (activeStr)
                     {
                         *activeStr += " " + pureText;
@@ -261,7 +272,7 @@ class HoverFormatter
                 }
             }
 
-            static std::string BuildSignature(const analysis::Symbol *renderSym, const analysis::Symbol *originalSym, const std::string& dynamicDisplayName)
+            static std::string BuildSignature(const analysis::Symbol *renderSym, const analysis::Symbol *originalSym, const std::string& dynamicDisplayName, const std::string& templateSubstitution)
             {
                 bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
                                  renderSym->kind == analysis::SymbolKind::Variable ||
@@ -289,37 +300,44 @@ class HoverFormatter
                     sig = renderSym->parent->BuildSignature(parentNeedsClass, renderSym->parent->name);
                 }
 
-                if (originalSym && !originalSym->templateType.empty() && renderSym->parent && renderSym->parent->templateParam.length() > 0)
+                if (renderSym->parent && renderSym->parent->templateParam.length() > 0)
                 {
-                    std::string paramName = renderSym->parent->templateParam;
-                    size_t pos = sig.find(paramName);
-                    while (pos != std::string::npos)
-                    {
-                        bool match = true;
-                        if (pos > 0 && isalnum(sig[pos - 1]))
-                            match = false;
-                        if (pos + paramName.length() < sig.length() && isalnum(sig[pos + paramName.length()]))
-                            match = false;
+                    std::string typeToSub = templateSubstitution;
+                    if (typeToSub.empty() && originalSym && !originalSym->templateType.empty())
+                        typeToSub = originalSym->templateType;
 
-                        if (match)
+                    if (!typeToSub.empty())
+                    {
+                        std::string paramName = renderSym->parent->templateParam;
+                        size_t pos = sig.find(paramName);
+                        while (pos != std::string::npos)
                         {
-                            sig.replace(pos, paramName.length(), originalSym->templateType);
-                            pos += originalSym->templateType.length();
+                            bool match = true;
+                            if (pos > 0 && isalnum(sig[pos - 1]))
+                                match = false;
+                            if (pos + paramName.length() < sig.length() && isalnum(sig[pos + paramName.length()]))
+                                match = false;
+    
+                            if (match)
+                            {
+                                sig.replace(pos, paramName.length(), typeToSub);
+                                pos += typeToSub.length();
+                            }
+                            else
+                            {
+                                pos += paramName.length();
+                            }
+                            pos = sig.find(paramName, pos);
                         }
-                        else
-                        {
-                            pos += paramName.length();
-                        }
-                        pos = sig.find(paramName, pos);
                     }
                 }
                 return sig;
             }
 
-            static std::string Render(const GroupedResult &gr, const analysis::Symbol *originalSym, const i18n::LspStrings& s, i18n::Locale locale, const std::string& dynamicDisplayName)
+            static std::string Render(const GroupedResult &gr, const analysis::Symbol *originalSym, const i18n::LspStrings& s, i18n::Locale locale, const std::string& dynamicDisplayName, const std::string& templateSubstitution)
             {
                 const analysis::Symbol *renderSym = originalSym ? originalSym : gr.sym;
-                std::string sig = BuildSignature(renderSym, originalSym, dynamicDisplayName);
+                std::string sig = BuildSignature(renderSym, originalSym, dynamicDisplayName, templateSubstitution);
 
                 bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
                                  renderSym->kind == analysis::SymbolKind::Variable ||
@@ -422,6 +440,42 @@ class HoverFormatter
                 }
             }
 
+            std::string templateSubstitution = "";
+            if (sym != nullptr && sym->kind == analysis::SymbolKind::Method)
+            {
+                TSNode nodeUnder = doc.NodeAt(line, col);
+                if (!ts_node_is_null(nodeUnder))
+                {
+                    TSNode parent = ts_node_parent(nodeUnder);
+                    if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "member_expression")
+                    {
+                        TSNode memberNode = ts_node_child_by_field_name(parent, "member", 6);
+                        if (!ts_node_is_null(memberNode) && ts_node_eq(nodeUnder, memberNode))
+                        {
+                            TSNode objectNode = ts_node_child_by_field_name(parent, "object", 6);
+                            if (!ts_node_is_null(objectNode))
+                            {
+                                std::string_view objSv = doc.SourceAt(objectNode);
+                                std::string objText(objSv.begin(), objSv.end());
+                                const analysis::Symbol *objSym = table.FindLocalByName(objText);
+                                if (!objSym)
+                                    objSym = table.FindGlobalByName(objText);
+
+                                if (objSym && !objSym->typeInfo.empty())
+                                {
+                                    size_t openT = objSym->typeInfo.find('<');
+                                    size_t closeT = objSym->typeInfo.rfind('>');
+                                    if (openT != std::string::npos && closeT != std::string::npos && closeT > openT)
+                                    {
+                                        templateSubstitution = objSym->typeInfo.substr(openT + 1, closeT - openT - 1);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (sym != nullptr)
             {
                 std::vector<GroupedResult> grouped;
@@ -472,13 +526,13 @@ class HoverFormatter
                             }
                         }
                     }
-                    markdown = HoverFormatter::Render(grouped[activeIndex], sym, s, locale, dynamicDisplayName);
+                    markdown = HoverFormatter::Render(grouped[activeIndex], sym, s, locale, dynamicDisplayName, templateSubstitution);
                     int extra = (int)grouped.size() - 1;
                     markdown += "\n\n*+" + std::to_string(extra) + " " + std::string(s.hoverOverloads) + "*";
                 }
                 else if (!grouped.empty() && grouped[0].parents.size() > 1)
                 {
-                    markdown = HoverFormatter::Render(grouped[0], sym, s, locale, dynamicDisplayName);
+                    markdown = HoverFormatter::Render(grouped[0], sym, s, locale, dynamicDisplayName, templateSubstitution);
                 }
                 else
                 {
@@ -486,7 +540,7 @@ class HoverFormatter
                     gr.sym = sym;
                     if (sym->parent)
                         gr.parents.push_back(sym->parent->name);
-                    markdown = HoverFormatter::Render(gr, sym, s, locale, dynamicDisplayName);
+                    markdown = HoverFormatter::Render(gr, sym, s, locale, dynamicDisplayName, templateSubstitution);
                 }
             }
             else
