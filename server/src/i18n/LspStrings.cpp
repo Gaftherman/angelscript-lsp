@@ -32,22 +32,16 @@ namespace i18n
             .hoverDefinedIn = "Defined in",
             .hoverAliasTo = "Alias to",
 
-            .hoverTemplateParams = "Template parameters:",
-            .hoverParams = "Parameters:",
-            .hoverReturns = "Returns:",
-            .hoverThrows = "Throws:",
-            .hoverNote = "Note:",
-            .hoverWarning = "Warning:",
-            .hoverDeprecated = "Deprecated:",
-            .hoverOverloads = "overloads available",
-            .hoverNeverUsed = "This symbol is never used locally",
-            
-            .hoverSectionBrief = "Brief",
-            .hoverSectionDetails = "Details",
-            .hoverSectionTemplateParams = "Template Parameters",
-            .hoverSectionParams = "Parameters",
-            .hoverSectionReturns = "Returns",
-            .hoverParamOf = "parameter of"};
+            .hoverTemplateParams = "Template Parameters",
+            .hoverParams = "Parameters",
+            .hoverReturns = "Returns",
+            .hoverThrows = "Throws",
+            .hoverNote = "Note",
+            .hoverWarning = "Warning",
+            .hoverDeprecated = "Deprecated",
+            .hoverOverloads = "overloads",
+            .hoverNeverUsed = "This symbol is never used locally"
+        };
 
     static const LspStrings ES_STRINGS =
         {
@@ -78,22 +72,16 @@ namespace i18n
             .hoverDefinedIn = "Definido en",
             .hoverAliasTo = "Alias de",
 
-            .hoverTemplateParams = "Parámetros de plantilla:",
-            .hoverParams = "Parámetros:",
-            .hoverReturns = "Devuelve:",
-            .hoverThrows = "Excepciones:",
-            .hoverNote = "Nota:",
-            .hoverWarning = "Advertencia:",
-            .hoverDeprecated = "En desuso:",
-            .hoverOverloads = "sobrecargas disponibles",
-            .hoverNeverUsed = "Este símbolo nunca se usa localmente",
-            
-            .hoverSectionBrief = "Descripción breve",
-            .hoverSectionDetails = "Detalles",
-            .hoverSectionTemplateParams = "Parámetros de plantilla",
-            .hoverSectionParams = "Parámetros",
-            .hoverSectionReturns = "Devuelve",
-            .hoverParamOf = "parámetro de"};
+            .hoverTemplateParams = "Parámetros de plantilla",
+            .hoverParams = "Parámetros",
+            .hoverReturns = "Devuelve",
+            .hoverThrows = "Excepciones",
+            .hoverNote = "Nota",
+            .hoverWarning = "Advertencia",
+            .hoverDeprecated = "En desuso",
+            .hoverOverloads = "sobrecargas",
+            .hoverNeverUsed = "Este símbolo nunca se usa localmente"
+        };
 
     Locale ParseLocale(const std::string &localeStr)
     {

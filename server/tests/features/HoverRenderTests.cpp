@@ -65,5 +65,5 @@ TEST_CASE("HoverInfo: overload count appended in italic")
     info.overloadCount = 2;
     
     std::string md = info.ToMarkdown(Locale::EN);
-    CHECK(md.find("*+2 overloads available*") != std::string::npos);
+    CHECK(md.find("*+2 overloads*") != std::string::npos);
 }

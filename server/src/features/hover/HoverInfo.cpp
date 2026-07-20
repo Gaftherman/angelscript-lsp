@@ -3,25 +3,6 @@
 namespace angel_lsp {
 namespace features {
 
-static const char* GetKindLabel(analysis::SymbolKind kind, const i18n::LspStrings& s) {
-    switch (kind) {
-        case analysis::SymbolKind::Variable: return s.kindVariable;
-        case analysis::SymbolKind::Function: return s.kindFunction;
-        case analysis::SymbolKind::Class: return s.kindClass;
-        case analysis::SymbolKind::Namespace: return s.kindNamespace;
-        case analysis::SymbolKind::Parameter: return s.kindParameter;
-        case analysis::SymbolKind::Property: return s.kindProperty;
-        case analysis::SymbolKind::Method: return s.kindMethod;
-        case analysis::SymbolKind::Enum: return s.kindEnum;
-        case analysis::SymbolKind::EnumMember: return s.kindEnumMember;
-        case analysis::SymbolKind::Interface: return s.kindInterface;
-        case analysis::SymbolKind::Mixin: return s.kindMixin;
-        case analysis::SymbolKind::Constructor: return s.kindConstructor;
-        case analysis::SymbolKind::Destructor: return s.kindDestructor;
-        case analysis::SymbolKind::Typedef: return s.kindTypedef;
-        default: return s.kindUnknown;
-    }
-}
 
 std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     const auto& s = i18n::GetStrings(locale);
@@ -50,9 +31,7 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
                           (returnType && returnType != "void" && !returnType->empty()) ||
                           !notes.empty() || !warnings.empty() || !deprecated.empty();
 
-    if ((!briefText.empty() || !detailsText.empty()) && hasDocSections) {
-        md += "\n\n---\n";
-    } else if (hasDocSections) {
+    if (hasDocSections) {
         md += "\n\n---\n";
     }
 
@@ -60,14 +39,14 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     if (!deprecated.empty()) {
         md += "\n**";
         md += s.hoverDeprecated;
-        md += "** ";
+        md += ":** ";
         md += deprecated;
     }
 
     // 5. TEMPLATE PARAMETERS
     if (templateParameters && !templateParameters->empty()) {
         md += "\n\n**";
-        md += s.hoverSectionTemplateParams;
+        md += s.hoverTemplateParams;
         md += "**\n\n";
         for (const auto& p : *templateParameters) {
             md += "- `";
@@ -84,7 +63,7 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     // 6. PARAMETERS
     if (parameters && !parameters->empty()) {
         md += "\n\n**";
-        md += s.hoverSectionParams;
+        md += s.hoverParams;
         md += "**\n\n";
         for (const auto& p : *parameters) {
             md += "- `";
@@ -111,7 +90,7 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     // 7. RETURNS
     if (returnType && *returnType != "void" && !returnType->empty()) {
         md += "\n\n**";
-        md += s.hoverSectionReturns;
+        md += s.hoverReturns;
         md += "**\n\n`";
         md += *returnType;
         md += "`";
@@ -124,17 +103,13 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     // 8. NOTES and WARNINGS
     for (const auto& note : notes) {
         md += "\n\n**";
-        std::string sNote = s.hoverNote;
-        if (sNote.ends_with(":")) sNote.pop_back();
-        md += sNote;
+        md += s.hoverNote;
         md += ":** ";
         md += note;
     }
     for (const auto& warn : warnings) {
         md += "\n\n**";
-        std::string sWarn = s.hoverWarning;
-        if (sWarn.ends_with(":")) sWarn.pop_back();
-        md += sWarn;
+        md += s.hoverWarning;
         md += ":** ";
         md += warn;
     }
