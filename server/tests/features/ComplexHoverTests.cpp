@@ -896,11 +896,6 @@ class IEntity
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         std::string markdown = markup.value;
-
-        
-        
-        
-        
     }
 
     // Test hovering over 'Spawn'
@@ -929,11 +924,6 @@ class IEntity
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         std::string markdown = markup.value;
-
-        
-        
-        
-        
     }
 
     // Test hovering over 'Update'
@@ -962,14 +952,6 @@ class IEntity
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         std::string markdown = markup.value;
-
-        
-        
-        
-        
-        
-        
-        
     }
     // Test hovering over 'pos' parameter inside 'Spawn'
     {
@@ -1002,10 +984,9 @@ class IEntity
         CHECK(markdown.find("void IEntity::Spawn(Vector3 pos)") != std::string::npos);
         CHECK(markdown.find("**pos** — Parámetro") != std::string::npos);
         // Should include the brief of the parent function
-        
+
         // Should include ONLY the specific parameter's docs
-        
-        
+
         // It should NOT include returns, notes, warnings, etc. if they existed on the parent function
     }
 }
@@ -1067,7 +1048,6 @@ namespace Math {
         std::string markdown = markup.value;
 
         CHECK(markdown.find("typedef int MyInt") != std::string::npos);
-        
     }
 
     // Test hovering over 'MyCallback' funcdef
@@ -1098,7 +1078,6 @@ namespace Math {
         std::string markdown = markup.value;
 
         CHECK(markdown.find("void MyCallback(MyInt data)") != std::string::npos);
-        
     }
 
     // Test hovering over 'data' parameter inside 'MyCallback'
@@ -1130,7 +1109,6 @@ namespace Math {
 
         CHECK(markdown.find("void MyCallback(MyInt data)") != std::string::npos);
         CHECK(markdown.find("**data** — Parámetro") != std::string::npos);
-        
     }
 
     // Test hovering over 'Math' namespace
@@ -1166,7 +1144,6 @@ namespace Math {
             std::cout << "MARKDOWN:\n"
                       << markdown << "\n";
         }
-        
     }
 }
 
@@ -1242,7 +1219,6 @@ mixin class MyMixin {}
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("class MyClass") != std::string::npos);
-        
     }
 
     // Test myProp
@@ -1251,7 +1227,6 @@ mixin class MyMixin {}
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("int myProp") != std::string::npos);
-        
     }
 
     // Test MyEnum
@@ -1260,7 +1235,6 @@ mixin class MyMixin {}
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("enum MyEnum") != std::string::npos);
-        
     }
 
     // Test VALUE_A
@@ -1269,7 +1243,6 @@ mixin class MyMixin {}
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("VALUE_A") != std::string::npos);
-        
     }
 
     // Test IMyInterface
@@ -1278,7 +1251,6 @@ mixin class MyMixin {}
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("interface IMyInterface") != std::string::npos);
-        
     }
 
     // Test MyMixin
@@ -1287,7 +1259,6 @@ mixin class MyMixin {}
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("mixin MyMixin") != std::string::npos);
-        
     }
 }
 
@@ -1402,7 +1373,6 @@ namespace App {
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("typedef float Real") != std::string::npos);
-        
     }
 
     // 3. Funcdef
@@ -1411,7 +1381,6 @@ namespace App {
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("void Callback(Real a, Real b)") != std::string::npos);
-        
     }
 
     // 4. Funcdef Parameter
@@ -1422,7 +1391,6 @@ namespace App {
         CHECK(markup.value.find("void Callback(Real a, Real b)") != std::string::npos);
         bool hasParamA = markup.value.find("**a** \\— Parámetro") != std::string::npos || markup.value.find("**a** — Parámetro") != std::string::npos;
         CHECK(hasParamA);
-        
     }
 
     // 5. Interface
@@ -1431,7 +1399,6 @@ namespace App {
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("interface IWorker") != std::string::npos);
-        
     }
 
     // 6. Interface Method
@@ -1440,7 +1407,6 @@ namespace App {
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("void IWorker::Work()") != std::string::npos);
-        
     }
 
     // 7. Mixin
@@ -1449,7 +1415,6 @@ namespace App {
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("mixin Mixin") != std::string::npos);
-        
     }
 
     // 8. Abstract Class
@@ -1458,7 +1423,6 @@ namespace App {
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("class Base") != std::string::npos);
-        
     }
 
     // 9. Class Method
@@ -1467,7 +1431,6 @@ namespace App {
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("void Base::Apply(float force)") != std::string::npos);
-        
     }
 
     // 10. Class Method Parameter
@@ -1478,7 +1441,6 @@ namespace App {
         CHECK(markup.value.find("void Base::Apply(float force)") != std::string::npos);
         bool hasParamForce = markup.value.find("**force** \\— Parámetro") != std::string::npos || markup.value.find("**force** — Parámetro") != std::string::npos;
         CHECK(hasParamForce);
-        
     }
 
     // 11. Final Class
@@ -1487,7 +1449,6 @@ namespace App {
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("class Entity") != std::string::npos);
-        
     }
 
     // 12. Class Property
@@ -1496,7 +1457,6 @@ namespace App {
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("int health") != std::string::npos);
-        
     }
 }
 
@@ -1559,7 +1519,6 @@ void OnDataReceived(int c) {
         REQUIRE(!result.isNull());
         auto markup = std::get<lsp::MarkupContent>((*result).contents);
         CHECK(markup.value.find("int f") != std::string::npos);
-        
     }
 }
 
