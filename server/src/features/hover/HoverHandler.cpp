@@ -1,381 +1,186 @@
 #include "HoverHandler.h"
+#include "features/hover/HoverInfo.h"
 #include "utils/DoxygenParser.h"
 #include "analysis/SymbolResolver.h"
 #include <angelscript.h>
 #include <set>
-
 #include <sstream>
 
 namespace angel_lsp
 {
     namespace features
     {
-
-        static std::string FormatDoxygen(const std::string &raw, i18n::Locale locale, const std::string &targetParam = "")
-        {
-            if (raw.empty())
-                return raw;
-            std::istringstream iss(raw);
-            std::string line;
-
-            std::string brief;
-            std::vector<std::string> tparams;
-            std::vector<std::string> params;
-            std::string returns;
-            std::vector<std::string> exceptions;
-            std::vector<std::string> notes;
-            std::vector<std::string> warnings;
-            std::vector<std::string> deprecated;
-
-            // Track the active string being appended to (so multiline descriptions work)
-            std::string *activeStr = nullptr;
-            bool hasTags = false;
-
-            while (std::getline(iss, line))
-            {
-                size_t firstNonSpace = line.find_first_not_of(" \t\r\n*");
-                if (firstNonSpace != std::string::npos && line[firstNonSpace] == '@')
-                {
-                    hasTags = true;
-                    size_t tagEnd = line.find_first_of(" \t\r\n", firstNonSpace);
-                    std::string tag = line.substr(firstNonSpace + 1, tagEnd - firstNonSpace - 1);
-                    std::string content = "";
-                    if (tagEnd != std::string::npos)
-                    {
-                        size_t contentStart = line.find_first_not_of(" \t\r\n", tagEnd);
-                        if (contentStart != std::string::npos)
-                            content = line.substr(contentStart);
-                    }
-
-                    if (tag == "brief")
-                    {
-                        if (!brief.empty())
-                            brief += "\n\n";
-                        brief += content;
-                        activeStr = &brief;
-                    }
-                    else if (tag == "tparam")
-                    {
-                        size_t space = content.find_first_of(" \t");
-                        if (space != std::string::npos)
-                        {
-                            size_t descStart = content.find_first_not_of(" \t", space);
-                            std::string desc = (descStart != std::string::npos) ? content.substr(descStart) : "";
-                            tparams.push_back("`" + content.substr(0, space) + "` \\- " + desc);
-                        }
-                        else
-                            tparams.push_back("`" + content + "`");
-                        activeStr = &tparams.back();
-                    }
-                    else if (tag == "param" || tag.starts_with("param[")) // Handle @param and @param[in]
-                    {
-                        std::string inOutStr = "";
-                        if (tag.starts_with("param["))
-                        {
-                            inOutStr = "[" + tag.substr(6);
-                        }
-
-                        size_t space = content.find_first_of(" \t");
-                        if (space != std::string::npos)
-                        {
-                            size_t descStart = content.find_first_not_of(" \t", space);
-                            std::string desc = (descStart != std::string::npos) ? content.substr(descStart) : "";
-                            std::string pName = "`" + content.substr(0, space) + "`";
-                            params.push_back(pName + " \\- " + (inOutStr.empty() ? "" : inOutStr + " ") + desc);
-                        }
-                        else
-                        {
-                            params.push_back("`" + content + "`" + (inOutStr.empty() ? "" : " \\- " + inOutStr));
-                        }
-                        activeStr = &params.back();
-                    }
-                    else if (tag == "return" || tag == "returns")
-                    {
-                        if (!returns.empty())
-                            returns += " ";
-                        returns += content;
-                        activeStr = &returns;
-                    }
-                    else if (tag == "throws" || tag == "throw" || tag == "exception")
-                    {
-                        exceptions.push_back(content);
-                        activeStr = &exceptions.back();
-                    }
-                    else if (tag == "note")
-                    {
-                        notes.push_back(content);
-                        activeStr = &notes.back();
-                    }
-                    else if (tag == "warning")
-                    {
-                        warnings.push_back(content);
-                        activeStr = &warnings.back();
-                    }
-                    else if (tag == "deprecated")
-                    {
-                        deprecated.push_back(content);
-                        activeStr = &deprecated.back();
-                    }
-                    else
-                    {
-                        // Ignore metadata tags like @details, @file, @author, @version, @date, @copyright, @see
-                        activeStr = nullptr;
-                        continue;
-                    }
-                }
-                else
-                {
-                    if (line.empty())
-                        continue;
-
-                    // Try to extract pure text if there are no tags
-                    size_t textStart = line.find_first_not_of(" \t\r\n*/");
-                    if (textStart == std::string::npos)
-                        continue; // Empty line with just stars
-
-                    std::string pureText = line.substr(textStart);
-
-                    // Escape < and > so markdown doesn't swallow them as HTML tags
-                    std::string escapedText;
-                    escapedText.reserve(pureText.size());
-                    for (char c : pureText)
-                    {
-                        if (c == '<') escapedText += "&lt;";
-                        else if (c == '>') escapedText += "&gt;";
-                        else escapedText += c;
-                    }
-                    pureText = escapedText;
-
-                    if (activeStr)
-                    {
-                        *activeStr += " " + pureText;
-                    }
-                    else if (!hasTags) // No tags at all? Just dump everything into brief
-                    {
-                        if (!brief.empty())
-                            brief += "\n";
-                        brief += pureText;
-                    }
-                }
+        static std::string BuildFullNamespace(const analysis::Symbol* nsSym) {
+            std::string ns = nsSym->name;
+            const analysis::Symbol* curr = nsSym->parent;
+            while (curr && curr->kind == analysis::SymbolKind::Namespace) {
+                ns = curr->name + "::" + ns;
+                curr = curr->parent;
             }
-
-            std::string out = "";
-            if (!brief.empty())
-                out += brief;
-
-            const auto &s = i18n::GetStrings(locale);
-
-            if (targetParam.empty() && !tparams.empty())
-            {
-                if (!out.empty())
-                    out += "\n\n";
-                out += "**" + std::string(s.hoverTemplateParams) + "**\n\n";
-                for (const auto &p : tparams)
-                    out += p + "\n\n";
-                out.pop_back();
-                out.pop_back(); // remove trailing \n\n
-            }
-
-            std::vector<std::string> filteredParams;
-            for (const auto &p : params)
-            {
-                if (targetParam.empty() || p.starts_with("`" + targetParam + "`"))
-                {
-                    filteredParams.push_back(p);
-                }
-            }
-
-            if (!filteredParams.empty())
-            {
-                if (!out.empty())
-                    out += "\n\n";
-                out += "**" + std::string(s.hoverParams) + "**\n\n";
-                for (const auto &p : filteredParams)
-                    out += p + "\n\n";
-                out.pop_back();
-                out.pop_back();
-            }
-
-            if (targetParam.empty())
-            {
-                if (!returns.empty())
-                {
-                    if (!out.empty())
-                        out += "\n\n";
-                    out += "**" + std::string(s.hoverReturns) + "**\n\n" + returns;
-                }
-
-                if (!exceptions.empty())
-                {
-                    if (!out.empty())
-                        out += "\n\n";
-                    out += "**" + std::string(s.hoverThrows) + "**\n\n";
-                    for (const auto &exc : exceptions)
-                        out += exc + "\n\n";
-                    out.pop_back();
-                    out.pop_back();
-                }
-
-                for (const auto &note : notes)
-                {
-                    if (!out.empty())
-                        out += "\n\n";
-                    out += "**" + std::string(s.hoverNote) + "**\n\n" + note;
-                }
-                for (const auto &warn : warnings)
-                {
-                    if (!out.empty())
-                        out += "\n\n";
-                    out += "**" + std::string(s.hoverWarning) + "**\n\n" + warn;
-                }
-                for (const auto &dep : deprecated)
-                {
-                    if (!out.empty())
-                        out += "\n\n";
-                    out += "**" + std::string(s.hoverDeprecated) + "**\n\n" + dep;
-                }
-            }
-
-            return out;
+            return ns;
         }
 
-        
-        struct GroupedResult
-        {
-            const analysis::Symbol *sym;
-            std::vector<std::string> parents;
-        };
-        
-
-
-class HoverFormatter
-        {
-        public:
-            static const char* GetKindName(analysis::SymbolKind kind, const i18n::LspStrings& s)
-            {
-                switch (kind)
-                {
-                case analysis::SymbolKind::Variable: return s.kindVariable;
-                case analysis::SymbolKind::Function: return s.kindFunction;
-                case analysis::SymbolKind::Class: return s.kindClass;
-                case analysis::SymbolKind::Namespace: return s.kindNamespace;
-                case analysis::SymbolKind::Parameter: return s.kindParameter;
-                case analysis::SymbolKind::Property: return s.kindProperty;
-                case analysis::SymbolKind::Method: return s.kindMethod;
-                case analysis::SymbolKind::Enum: return s.kindEnum;
-                case analysis::SymbolKind::EnumMember: return s.kindEnumMember;
-                case analysis::SymbolKind::Interface: return s.kindInterface;
-                case analysis::SymbolKind::Mixin: return s.kindMixin;
-                case analysis::SymbolKind::Constructor: return s.kindConstructor;
-                case analysis::SymbolKind::Destructor: return s.kindDestructor;
-                case analysis::SymbolKind::Typedef: return s.kindTypedef;
-                default: return s.kindUnknown;
+        static std::string BuildScopeContext(const analysis::Symbol* sym) {
+            if (!sym || !sym->parent) return "";
+            
+            if (sym->parent->kind == analysis::SymbolKind::Class || 
+                sym->parent->kind == analysis::SymbolKind::Interface || 
+                sym->parent->kind == analysis::SymbolKind::Mixin) {
+                std::string scope = sym->parent->name;
+                if (!sym->parent->templateParam.empty()) {
+                    scope += "<" + sym->parent->templateParam + ">";
                 }
+                if (sym->parent->parent && sym->parent->parent->kind == analysis::SymbolKind::Namespace) {
+                    scope = BuildFullNamespace(sym->parent->parent) + "::" + scope;
+                }
+                return scope;
+            }
+            
+            if (sym->parent->kind == analysis::SymbolKind::Namespace) {
+                return BuildFullNamespace(sym->parent);
+            }
+            
+            return "";
+        }
+        
+        static std::string BuildSignatureHelper(const analysis::Symbol *renderSym, const analysis::Symbol *originalSym, const std::string& dynamicDisplayName, const std::string& templateSubstitution)
+        {
+            bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
+                             renderSym->kind == analysis::SymbolKind::Variable ||
+                             renderSym->kind == analysis::SymbolKind::Property;
+            std::string dispName = (!isVarLike && !dynamicDisplayName.empty() && originalSym && renderSym->name == originalSym->name)
+                                       ? dynamicDisplayName
+                                       : renderSym->name;
+
+            bool needsParentClass = false;
+            if (originalSym && originalSym->parent && (originalSym->parent->kind == analysis::SymbolKind::Class || originalSym->parent->kind == analysis::SymbolKind::Interface || originalSym->parent->kind == analysis::SymbolKind::Mixin) &&
+                (originalSym->kind == analysis::SymbolKind::Method || originalSym->kind == analysis::SymbolKind::Constructor || originalSym->kind == analysis::SymbolKind::Destructor))
+            {
+                needsParentClass = true;
+            }
+            std::string sig = renderSym->BuildSignature(needsParentClass, dispName);
+
+            if (renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
+            {
+                bool parentNeedsClass = false;
+                if (renderSym->parent->parent && (renderSym->parent->parent->kind == analysis::SymbolKind::Class || renderSym->parent->parent->kind == analysis::SymbolKind::Interface || renderSym->parent->parent->kind == analysis::SymbolKind::Mixin) &&
+                    (renderSym->parent->kind == analysis::SymbolKind::Method || renderSym->parent->kind == analysis::SymbolKind::Constructor || renderSym->parent->kind == analysis::SymbolKind::Destructor))
+                {
+                    parentNeedsClass = true;
+                }
+                sig = renderSym->parent->BuildSignature(parentNeedsClass, renderSym->parent->name);
             }
 
-            static std::string BuildSignature(const analysis::Symbol *renderSym, const analysis::Symbol *originalSym, const std::string& dynamicDisplayName, const std::string& templateSubstitution)
+            if (renderSym->parent && renderSym->parent->templateParam.length() > 0)
             {
-                bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
-                                 renderSym->kind == analysis::SymbolKind::Variable ||
-                                 renderSym->kind == analysis::SymbolKind::Property;
-                std::string dispName = (!isVarLike && !dynamicDisplayName.empty() && originalSym && renderSym->name == originalSym->name)
-                                           ? dynamicDisplayName
-                                           : renderSym->name;
+                std::string typeToSub = templateSubstitution;
+                if (typeToSub.empty() && originalSym && !originalSym->templateType.empty())
+                    typeToSub = originalSym->templateType;
 
-                bool needsParentClass = false;
-                if (originalSym && originalSym->parent && (originalSym->parent->kind == analysis::SymbolKind::Class || originalSym->parent->kind == analysis::SymbolKind::Interface || originalSym->parent->kind == analysis::SymbolKind::Mixin) &&
-                    (originalSym->kind == analysis::SymbolKind::Method || originalSym->kind == analysis::SymbolKind::Constructor || originalSym->kind == analysis::SymbolKind::Destructor))
+                if (!typeToSub.empty())
                 {
-                    needsParentClass = true;
-                }
-                std::string sig = renderSym->BuildSignature(needsParentClass, dispName);
-
-                if (renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
-                {
-                    bool parentNeedsClass = false;
-                    if (renderSym->parent->parent && (renderSym->parent->parent->kind == analysis::SymbolKind::Class || renderSym->parent->parent->kind == analysis::SymbolKind::Interface || renderSym->parent->parent->kind == analysis::SymbolKind::Mixin) &&
-                        (renderSym->parent->kind == analysis::SymbolKind::Method || renderSym->parent->kind == analysis::SymbolKind::Constructor || renderSym->parent->kind == analysis::SymbolKind::Destructor))
+                    std::string paramName = renderSym->parent->templateParam;
+                    size_t pos = sig.find(paramName);
+                    while (pos != std::string::npos)
                     {
-                        parentNeedsClass = true;
-                    }
-                    sig = renderSym->parent->BuildSignature(parentNeedsClass, renderSym->parent->name);
-                }
+                        bool match = true;
+                        if (pos > 0 && isalnum(sig[pos - 1]))
+                            match = false;
+                        if (pos + paramName.length() < sig.length() && isalnum(sig[pos + paramName.length()]))
+                            match = false;
 
-                if (renderSym->parent && renderSym->parent->templateParam.length() > 0)
-                {
-                    std::string typeToSub = templateSubstitution;
-                    if (typeToSub.empty() && originalSym && !originalSym->templateType.empty())
-                        typeToSub = originalSym->templateType;
-
-                    if (!typeToSub.empty())
-                    {
-                        std::string paramName = renderSym->parent->templateParam;
-                        size_t pos = sig.find(paramName);
-                        while (pos != std::string::npos)
+                        if (match)
                         {
-                            bool match = true;
-                            if (pos > 0 && isalnum(sig[pos - 1]))
-                                match = false;
-                            if (pos + paramName.length() < sig.length() && isalnum(sig[pos + paramName.length()]))
-                                match = false;
-    
-                            if (match)
-                            {
-                                sig.replace(pos, paramName.length(), typeToSub);
-                                pos += typeToSub.length();
-                            }
-                            else
-                            {
-                                pos += paramName.length();
-                            }
-                            pos = sig.find(paramName, pos);
+                            sig.replace(pos, paramName.length(), typeToSub);
+                            pos += typeToSub.length();
                         }
+                        else
+                        {
+                            pos += paramName.length();
+                        }
+                        pos = sig.find(paramName, pos);
                     }
                 }
-                return sig;
             }
+            return sig;
+        }
 
-            static std::string Render(const GroupedResult &gr, const analysis::Symbol *originalSym, const i18n::LspStrings& s, i18n::Locale locale, const std::string& dynamicDisplayName, const std::string& templateSubstitution)
+        static HoverInfo BuildHoverInfo(
+            const analysis::Symbol* sym,
+            const analysis::Symbol* originalSym,
+            const std::vector<const analysis::Symbol*>& multiResults,
+            const Document& doc,
+            const analysis::SymbolTable& table,
+            const i18n::LspStrings& s,
+            i18n::Locale locale,
+            const std::string& dynamicDisplayName,
+            const std::string& templateSubstitution)
+        {
+            HoverInfo info;
+            info.name = sym->name;
+            info.kind = sym->kind;
+
+            // 1. rawSignature
+            info.rawSignature = BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
+
+            // 2. localScope
+            info.localScope = BuildScopeContext(sym);
+
+            // 3. parameters
+            if (sym->kind == analysis::SymbolKind::Function || sym->kind == analysis::SymbolKind::Method ||
+                sym->kind == analysis::SymbolKind::Constructor || sym->kind == analysis::SymbolKind::Destructor ||
+                sym->kind == analysis::SymbolKind::Funcdef)
             {
-                const analysis::Symbol *renderSym = originalSym ? originalSym : gr.sym;
-                std::string sig = BuildSignature(renderSym, originalSym, dynamicDisplayName, templateSubstitution);
-
-                bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
-                                 renderSym->kind == analysis::SymbolKind::Variable ||
-                                 renderSym->kind == analysis::SymbolKind::Property;
-                std::string dispName = (!isVarLike && !dynamicDisplayName.empty() && originalSym && renderSym->name == originalSym->name)
-                                           ? dynamicDisplayName
-                                           : renderSym->name;
-
-                std::string contextStr = "";
-                for (size_t i = 0; i < gr.parents.size(); i++)
-                {
-                    if (i > 0)
-                        contextStr += ", ";
-                    contextStr += gr.parents[i];
+                info.parameters.emplace();
+                for (const auto& p : sym->params) {
+                    HoverParam hp;
+                    hp.typeName     = p.typeName;
+                    hp.name         = p.name;
+                    hp.defaultValue = p.defaultValue;
+                    info.parameters->push_back(hp);
                 }
-
-                std::string md = "```angelscript\n" + sig + "\n```\n" + "**" + dispName + "** — " + GetKindName(renderSym->kind, s) + (!contextStr.empty() ? " " + std::string(s.hoverIn) + " `" + contextStr + "`" : std::string(""));
-
-                std::string docToRender = renderSym->docComment;
-                std::string targetParam = "";
-                if (docToRender.empty() && renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
-                {
-                    docToRender = renderSym->parent->docComment;
-                    targetParam = renderSym->name;
-                }
-
-                if (!docToRender.empty())
-                {
-                    md += "\n\n---\n" + utils::FormatDoxygenToMarkdown(docToRender, locale, targetParam);
-                }
-                return md;
+                info.returnType = sym->typeInfo;
             }
-        };
 
-        
+            // 4. template parameters
+            if (!sym->templateParam.empty()) {
+                info.templateParameters.emplace();
+                HoverParam tp;
+                tp.typeName = "class";
+                tp.name     = sym->templateParam;
+                info.templateParameters->push_back(tp);
+            }
 
-    
+            // 5. parse documentation
+            std::string docSource = sym->docComment;
+            std::string targetParam = "";
+            if (sym->kind == analysis::SymbolKind::Parameter && sym->parent) {
+                docSource    = sym->parent->docComment;
+                targetParam  = sym->name;
+            }
+            if (!docSource.empty()) {
+                utils::FillHoverInfoFromDoxygen(docSource, info, targetParam);
+            }
+
+            // 7. extras
+            if (sym->kind == analysis::SymbolKind::EnumMember && !sym->value.empty())
+                info.enumValue = sym->value;
+
+            // overloads
+            if (multiResults.size() > 1) {
+                // Determine how many unique overloads exist
+                std::set<std::string> uniqueSigs;
+                for (const auto* r : multiResults) {
+                    uniqueSigs.insert(BuildSignatureHelper(r, nullptr, "", ""));
+                }
+                if (uniqueSigs.size() > 1) {
+                    info.overloadCount = (int)uniqueSigs.size() - 1;
+                }
+            }
+
+            return info;
+        }
+
         void ProcessHover(lsp::requests::TextDocument_Hover::Result &result,
                           const lsp::requests::TextDocument_Hover::Params &req,
                           const Document &doc,
@@ -393,8 +198,6 @@ class HoverFormatter
             std::vector<const analysis::Symbol *> multiResults;
             const analysis::Symbol *sym = analysis::SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
 
-            // Dynamic Display Name logic: if we hover over a Class/Enum/Interface/Mixin/Typedef, try to find the full qualified name written by the user.
-            // For Parameters/Variables the signature already contains the fully-qualified type (fixed in SymbolCollector), so we don't need this.
             std::string dynamicDisplayName = "";
             if (sym != nullptr && (sym->kind == analysis::SymbolKind::Class || sym->kind == analysis::SymbolKind::Enum ||
                                    sym->kind == analysis::SymbolKind::Interface || sym->kind == analysis::SymbolKind::Mixin ||
@@ -404,7 +207,6 @@ class HoverFormatter
                 if (!ts_node_is_null(nodeUnder))
                 {
                     TSNode current = nodeUnder;
-                    // Climb up to `type` or similar to find preceding `scope` or `ERROR` nodes
                     while (!ts_node_is_null(current))
                     {
                         std::string_view typeStr = ts_node_type(current);
@@ -420,17 +222,12 @@ class HoverFormatter
                                     std::string scopeStr(scopeSv.begin(), scopeSv.end());
                                     std::string_view typeSv = doc.SourceAt(current);
                                     std::string typeStrText(typeSv.begin(), typeSv.end());
-                                    // Some AST paths might put the `::` inside the type, some in the scope.
                                     if (!scopeStr.empty())
                                     {
                                         if (typeStrText.starts_with("::"))
-                                        {
                                             dynamicDisplayName = scopeStr + typeStrText;
-                                        }
                                         else
-                                        {
                                             dynamicDisplayName = scopeStr + (scopeStr.ends_with("::") ? "" : "::") + typeStrText;
-                                        }
                                     }
                                 }
                             }
@@ -459,8 +256,7 @@ class HoverFormatter
                                 std::string_view objSv = doc.SourceAt(objectNode);
                                 std::string objText(objSv.begin(), objSv.end());
                                 const analysis::Symbol *objSym = table.FindLocalByName(objText);
-                                if (!objSym)
-                                    objSym = table.FindGlobalByName(objText);
+                                if (!objSym) objSym = table.FindGlobalByName(objText);
 
                                 if (objSym && !objSym->typeInfo.empty())
                                 {
@@ -479,70 +275,8 @@ class HoverFormatter
 
             if (sym != nullptr)
             {
-                std::vector<GroupedResult> grouped;
-
-                for (const analysis::Symbol *r : multiResults)
-                {
-                    bool foundGroup = false;
-                    for (auto &g : grouped)
-                    {
-                        // To group, they must have same kind, name, and signature/type
-                        bool sameSignature = r->BuildSignature(false, "") == g.sym->BuildSignature(false, "");
-                        bool sameTypeInfo = r->typeInfo == g.sym->typeInfo;
-                        if (r->kind == g.sym->kind && r->name == g.sym->name && sameSignature && sameTypeInfo)
-                        {
-                            if (r->parent)
-                            {
-                                // avoid duplicate parent names
-                                if (std::find(g.parents.begin(), g.parents.end(), r->parent->name) == g.parents.end())
-                                {
-                                    g.parents.push_back(r->parent->name);
-                                }
-                            }
-                            foundGroup = true;
-                            break;
-                        }
-                    }
-                    if (!foundGroup)
-                    {
-                        GroupedResult gr;
-                        gr.sym = r;
-                        if (r->parent)
-                            gr.parents.push_back(r->parent->name);
-                        grouped.push_back(gr);
-                    }
-                }
-
-                if (grouped.size() > 1)
-                {
-                    int activeIndex = 0;
-                    if (sym)
-                    {
-                        for (size_t i = 0; i < grouped.size(); i++)
-                        {
-                            if (grouped[i].sym == sym || grouped[i].sym->BuildSignature(false, "") == sym->BuildSignature(false, ""))
-                            {
-                                activeIndex = (int)i;
-                                break;
-                            }
-                        }
-                    }
-                    markdown = HoverFormatter::Render(grouped[activeIndex], sym, s, locale, dynamicDisplayName, templateSubstitution);
-                    int extra = (int)grouped.size() - 1;
-                    markdown += "\n\n*+" + std::to_string(extra) + " " + std::string(s.hoverOverloads) + "*";
-                }
-                else if (!grouped.empty() && grouped[0].parents.size() > 1)
-                {
-                    markdown = HoverFormatter::Render(grouped[0], sym, s, locale, dynamicDisplayName, templateSubstitution);
-                }
-                else
-                {
-                    GroupedResult gr;
-                    gr.sym = sym;
-                    if (sym->parent)
-                        gr.parents.push_back(sym->parent->name);
-                    markdown = HoverFormatter::Render(gr, sym, s, locale, dynamicDisplayName, templateSubstitution);
-                }
+                HoverInfo info = BuildHoverInfo(sym, sym, multiResults, doc, table, s, locale, dynamicDisplayName, templateSubstitution);
+                markdown = info.ToMarkdown(locale);
             }
             else
             {
@@ -560,7 +294,13 @@ class HoverFormatter
                             if (func && std::string(func->GetName()) == name)
                             {
                                 std::string decl = func->GetDeclaration(true, true, true);
-                                markdown = "```angelscript\n" + decl + "\n```\n**" + name + "** — " + s.hoverBuiltinFunc;
+                                HoverInfo info;
+                                info.name = name;
+                                info.kind = analysis::SymbolKind::Function;
+                                info.rawSignature = decl;
+                                info.builtinLabel = s.hoverBuiltinFunc;
+                                info.isBuiltin = true;
+                                markdown = info.ToMarkdown(locale);
                                 break;
                             }
                         }
@@ -572,7 +312,13 @@ class HoverFormatter
                                 asITypeInfo *type = engine->GetTypeInfoById(typeId);
                                 if (type)
                                 {
-                                    markdown = "```angelscript\nclass " + std::string(type->GetName()) + "\n```\n**" + name + "** — " + s.hoverBuiltinType;
+                                    HoverInfo info;
+                                    info.name = name;
+                                    info.kind = analysis::SymbolKind::Class;
+                                    info.rawSignature = "class " + std::string(type->GetName());
+                                    info.builtinLabel = s.hoverBuiltinType;
+                                    info.isBuiltin = true;
+                                    markdown = info.ToMarkdown(locale);
                                 }
                             }
                         }
