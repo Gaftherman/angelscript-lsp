@@ -11,8 +11,10 @@ namespace angel_lsp
 
     void LspLogger::Info(const std::string &msg)
     {
-        if (!s_handler)
+        if (!s_handler) {
+            fprintf(stderr, "[INFO] %s\n", msg.c_str());
             return;
+        }
 
         lsp::notifications::Window_LogMessage::Params p;
         p.type = lsp::MessageType::Info;
@@ -22,8 +24,10 @@ namespace angel_lsp
 
     void LspLogger::Warn(const std::string &msg)
     {
-        if (!s_handler)
+        if (!s_handler) {
+            fprintf(stderr, "[WARN] %s\n", msg.c_str());
             return;
+        }
 
         lsp::notifications::Window_LogMessage::Params p;
         p.type = lsp::MessageType::Warning;
@@ -33,8 +37,10 @@ namespace angel_lsp
 
     void LspLogger::Error(const std::string &msg)
     {
-        if (!s_handler)
+        if (!s_handler) {
+            fprintf(stderr, "[ERROR] %s\n", msg.c_str());
             return;
+        }
 
         lsp::notifications::Window_LogMessage::Params p;
         p.type = lsp::MessageType::Error;

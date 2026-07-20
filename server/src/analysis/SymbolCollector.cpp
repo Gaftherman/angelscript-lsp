@@ -566,14 +566,31 @@ namespace analysis
             if (!ts_node_is_null(nameNode))
             {
                 std::string rawName = GetNodeText(nameNode, doc);
-                size_t templatePos = rawName.find('<');
-                if (templatePos != std::string::npos)
+                
+                // tree-sitter-angelscript might parse `<T>` as an ERROR node after the identifier.
+                // We should extract the text from the start of nameNode to the start of the body or the end of the node.
+                TSNode bodyNode = FieldChild(node, "body");
+                uint32_t startByte = ts_node_start_byte(nameNode);
+                uint32_t endByte = ts_node_is_null(bodyNode) ? ts_node_end_byte(node) : ts_node_start_byte(bodyNode);
+                
+                if (endByte > startByte)
                 {
-                    sym->name = rawName.substr(0, templatePos);
-                    size_t endTemplate = rawName.find('>', templatePos);
-                    if (endTemplate != std::string::npos)
+                    std::string fullHeader = doc.GetText().substr(startByte, endByte - startByte);
+                    size_t templatePos = fullHeader.find('<');
+                    if (templatePos != std::string::npos)
                     {
-                        sym->templateParam = rawName.substr(templatePos + 1, endTemplate - templatePos - 1);
+                        sym->name = fullHeader.substr(0, templatePos);
+                        // trim trailing spaces of name
+                        sym->name.erase(sym->name.find_last_not_of(" \n\r\t") + 1);
+                        size_t endTemplate = fullHeader.find('>', templatePos);
+                        if (endTemplate != std::string::npos)
+                        {
+                            sym->templateParam = fullHeader.substr(templatePos + 1, endTemplate - templatePos - 1);
+                        }
+                    }
+                    else
+                    {
+                        sym->name = rawName;
                     }
                 }
                 else

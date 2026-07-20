@@ -42,6 +42,7 @@ target_include_directories(angel_lsp_core PUBLIC
 )
 target_link_libraries(angel_lsp_core PUBLIC 
     tree_sitter_angelscript_lib
+    tree_sitter_doxygen_lib
     spdlog::spdlog
     AngelScriptLib
     nlohmann_json::nlohmann_json
@@ -92,6 +93,7 @@ set(TEST_SOURCES
     tests/angelscript/ScriptNamespaceTests.cpp
     tests/document/DocumentTests.cpp
     tests/features/ComplexHoverTests.cpp
+    tests/features/HoverTemplateTest.cpp
     tests/i18n/LocalizationTests.cpp
     tests/parser/TreeSitterTests.cpp
     tests/test_main.cpp

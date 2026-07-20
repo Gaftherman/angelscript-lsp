@@ -18,3 +18,15 @@ add_library(tree_sitter_angelscript_lib STATIC
 target_include_directories(tree_sitter_angelscript_lib PUBLIC "${tree_sitter_angelscript_SOURCE_DIR}/src")
 target_link_libraries(tree_sitter_angelscript_lib PUBLIC tree_sitter_runtime)
 set_target_properties(tree_sitter_angelscript_lib PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+
+# ── Tree-Sitter Doxygen Grammar ───────────────────────────────────────────
+FetchContent_Declare(tree_sitter_doxygen GIT_REPOSITORY https://github.com/tree-sitter-grammars/tree-sitter-doxygen.git GIT_TAG master)
+FetchContent_MakeAvailable(tree_sitter_doxygen)
+
+add_library(tree_sitter_doxygen_lib STATIC 
+    "${tree_sitter_doxygen_SOURCE_DIR}/src/parser.c"
+    "${tree_sitter_doxygen_SOURCE_DIR}/src/scanner.c"
+)
+target_include_directories(tree_sitter_doxygen_lib PUBLIC "${tree_sitter_doxygen_SOURCE_DIR}/src")
+target_link_libraries(tree_sitter_doxygen_lib PUBLIC tree_sitter_runtime)
+set_target_properties(tree_sitter_doxygen_lib PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)

@@ -26,3 +26,11 @@ int main()
 
     return 0;
 }
+
+/**
+ * @param argc The number of command line arguments.
+ * @param argv The command line arguments.
+ */
+void funcT(int argc, char *argv[])
+{
+}
