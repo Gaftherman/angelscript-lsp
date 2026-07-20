@@ -94,6 +94,7 @@ set(TEST_SOURCES
     tests/document/DocumentTests.cpp
     tests/features/ComplexHoverTests.cpp
     tests/features/HoverTemplateTest.cpp
+    tests/features/HoverRenderTests.cpp
     tests/i18n/LocalizationTests.cpp
     tests/parser/TreeSitterTests.cpp
     tests/test_main.cpp
