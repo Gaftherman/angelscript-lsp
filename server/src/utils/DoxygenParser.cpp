@@ -69,26 +69,30 @@ namespace utils {
             const char* nodeType = ts_node_type(child);
 
             if (strcmp(nodeType, "text") == 0 || strcmp(nodeType, "text_block") == 0) {
-                std::string txt = CleanText(GetNodeText(child, wrappedDoxygen));
-                if (!txt.empty() && txt != "/" && txt != "/**" && txt != "*/") {
-                    if (!info.detailsText.empty()) info.detailsText += " ";
-                    info.detailsText += txt;
+                if (targetParam.empty()) {
+                    std::string txt = CleanText(GetNodeText(child, wrappedDoxygen));
+                    if (!txt.empty() && txt != "/" && txt != "/**" && txt != "*/") {
+                        if (!info.detailsText.empty()) info.detailsText += " ";
+                        info.detailsText += txt;
+                    }
                 }
             }
             else if (strcmp(nodeType, "brief_header") == 0) {
-                TSNode textNode = ts_node_child_by_field_name(child, "text", 4);
-                if (ts_node_is_null(textNode)) {
-                    // Try to find brief_description node manually
-                    uint32_t bc = ts_node_child_count(child);
-                    for (uint32_t j = 0; j < bc; ++j) {
-                        TSNode sub = ts_node_child(child, j);
-                        if (strcmp(ts_node_type(sub), "brief_description") == 0) {
-                            info.briefText = CleanText(GetNodeText(sub, wrappedDoxygen));
-                            break;
+                if (targetParam.empty()) {
+                    TSNode textNode = ts_node_child_by_field_name(child, "text", 4);
+                    if (ts_node_is_null(textNode)) {
+                        // Try to find brief_description node manually
+                        uint32_t bc = ts_node_child_count(child);
+                        for (uint32_t j = 0; j < bc; ++j) {
+                            TSNode sub = ts_node_child(child, j);
+                            if (strcmp(ts_node_type(sub), "brief_description") == 0) {
+                                info.briefText = CleanText(GetNodeText(sub, wrappedDoxygen));
+                                break;
+                            }
                         }
+                    } else {
+                        info.briefText = CleanText(GetNodeText(textNode, wrappedDoxygen));
                     }
-                } else {
-                    info.briefText = CleanText(GetNodeText(textNode, wrappedDoxygen));
                 }
             }
             else if (strcmp(nodeType, "tag") == 0) {
@@ -111,7 +115,7 @@ namespace utils {
                 }
 
                 if (tagName == "@tparam" || tagName == "\\tparam") {
-                    if (info.templateParameters) {
+                    if (targetParam.empty() && info.templateParameters) {
                         for (auto& p : *info.templateParameters) {
                             if (p.name == identifier) {
                                 p.docDescription = description;
@@ -120,34 +124,41 @@ namespace utils {
                         }
                     }
                 } else if (tagName == "@param" || tagName == "\\param") {
-                    if (!targetParam.empty() && identifier != targetParam) continue; // Filter if targetParam specified
-                    if (info.parameters) {
-                        for (auto& p : *info.parameters) {
-                            if (p.name == identifier) {
-                                p.docDescription = description;
-                                break;
+                    if (!targetParam.empty()) {
+                        if (identifier == targetParam) {
+                            info.briefText = description;
+                        }
+                    } else {
+                        if (info.parameters) {
+                            for (auto& p : *info.parameters) {
+                                if (p.name == identifier) {
+                                    p.docDescription = description;
+                                    break;
+                                }
                             }
                         }
                     }
-                } else if (tagName == "@return" || tagName == "\\return" || tagName == "@returns" || tagName == "\\returns") {
-                    info.returnDoc = description;
-                } else if (tagName == "@brief" || tagName == "\\brief") {
-                    info.briefText = description;
-                } else if (tagName == "@note" || tagName == "\\note") {
-                    info.notes.push_back(description);
-                } else if (tagName == "@warning" || tagName == "\\warning") {
-                    info.warnings.push_back(description);
-                } else if (tagName == "@deprecated" || tagName == "\\deprecated") {
-                    info.deprecated = description;
-                } else if (tagName == "@details" || tagName == "\\details") {
-                    info.detailsText = description;
-                } else {
-                    // Other tags
-                    if (tagName.length() > 1) {
-                        std::string tagLabel = tagName.substr(1);
-                        tagLabel[0] = toupper(tagLabel[0]);
-                        if (!info.detailsText.empty()) info.detailsText += "\n";
-                        info.detailsText += "> **" + tagLabel + ":** " + description;
+                } else if (targetParam.empty()) {
+                    if (tagName == "@return" || tagName == "\\return" || tagName == "@returns" || tagName == "\\returns") {
+                        info.returnDoc = description;
+                    } else if (tagName == "@brief" || tagName == "\\brief") {
+                        info.briefText = description;
+                    } else if (tagName == "@note" || tagName == "\\note") {
+                        info.notes.push_back(description);
+                    } else if (tagName == "@warning" || tagName == "\\warning") {
+                        info.warnings.push_back(description);
+                    } else if (tagName == "@deprecated" || tagName == "\\deprecated") {
+                        info.deprecated = description;
+                    } else if (tagName == "@details" || tagName == "\\details") {
+                        info.detailsText = description;
+                    } else {
+                        // Other tags
+                        if (tagName.length() > 1) {
+                            std::string tagLabel = tagName.substr(1);
+                            tagLabel[0] = toupper(tagLabel[0]);
+                            if (!info.detailsText.empty()) info.detailsText += "\n";
+                            info.detailsText += "> **" + tagLabel + ":** " + description;
+                        }
                     }
                 }
             }

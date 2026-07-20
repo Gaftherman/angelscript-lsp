@@ -27,17 +27,7 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     const auto& s = i18n::GetStrings(locale);
     std::string md;
 
-    // 1. HEADING H3
-    md += "### ";
-    md += GetKindLabel(kind, s);
-    md += " `";
-    md += name;
-    md += "`\n\n";
-
-    // 2. RULER
-    md += "---\n";
-
-    // 3. CODE BLOCK con scope
+    // 1. CODE BLOCK con scope
     md += "```angelscript\n";
     if (!localScope.empty()) {
         md += "// In ";
@@ -46,19 +36,18 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     }
     md += rawSignature;
     if (!enumValue.empty()) md += " = " + enumValue;
-    md += "\n```\n\n";
+    md += "\n```\n";
 
-    // 4. BRIEF TEXT
+    // 2. BRIEF TEXT
     if (!briefText.empty()) {
-        md += briefText;
         md += "\n";
+        md += briefText;
     }
 
-    // 5. DETAILS TEXT
+    // 3. DETAILS TEXT
     if (!detailsText.empty()) {
-        if (!briefText.empty()) md += "\n";
+        md += "\n\n";
         md += detailsText;
-        md += "\n";
     }
 
     bool hasDocSections = (parameters && !parameters->empty()) ||
@@ -67,23 +56,24 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
                           !notes.empty() || !warnings.empty() || !deprecated.empty();
 
     if ((!briefText.empty() || !detailsText.empty()) && hasDocSections) {
-        md += "\n---\n";
+        md += "\n\n---\n";
+    } else if (hasDocSections) {
+        md += "\n\n---\n";
     }
 
-    // 6. DEPRECATED
+    // 4. DEPRECATED
     if (!deprecated.empty()) {
-        md += "> **";
+        md += "\n**";
         md += s.hoverDeprecated;
         md += "** ";
         md += deprecated;
-        md += "\n\n";
     }
 
-    // 7. TEMPLATE PARAMETERS
+    // 5. TEMPLATE PARAMETERS
     if (templateParameters && !templateParameters->empty()) {
-        md += "### ";
+        md += "\n\n**";
         md += s.hoverSectionTemplateParams;
-        md += "\n";
+        md += "**\n\n";
         for (const auto& p : *templateParameters) {
             md += "- `";
             md += p.name;
@@ -94,22 +84,21 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
             }
             md += "\n";
         }
-        md += "\n---\n";
     }
 
-    // 8. PARAMETERS
+    // 6. PARAMETERS
     if (parameters && !parameters->empty()) {
-        md += "### ";
+        md += "\n\n**";
         md += s.hoverSectionParams;
-        md += "\n";
+        md += "**\n\n";
         for (const auto& p : *parameters) {
             md += "- `";
             md += p.name;
             md += "`";
             if (!p.typeName.empty()) {
-                md += " `";
+                md += " [`";
                 md += p.typeName;
-                md += "`";
+                md += "`]";
             }
             if (!p.defaultValue.empty()) {
                 md += " = `";
@@ -122,50 +111,49 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
             }
             md += "\n";
         }
-        md += "\n---\n";
     }
 
-    // 9. RETURNS
+    // 7. RETURNS
     if (returnType && *returnType != "void" && !returnType->empty()) {
-        md += "### ";
+        md += "\n\n**";
         md += s.hoverSectionReturns;
-        md += "\n`";
+        md += "**\n\n`";
         md += *returnType;
         md += "`";
         if (!returnDoc.empty()) {
             md += " — ";
             md += returnDoc;
         }
-        md += "\n\n---\n";
     }
 
-    // 10. NOTES y WARNINGS
+    // 8. NOTES y WARNINGS
     for (const auto& note : notes) {
-        md += "> **";
-        md += s.hoverNote;
-        md += "** ";
+        md += "\n\n**";
+        std::string sNote = s.hoverNote;
+        if (sNote.ends_with(":")) sNote.pop_back();
+        md += sNote;
+        md += ":** ";
         md += note;
-        md += "\n";
     }
     for (const auto& warn : warnings) {
-        md += "> **";
-        md += s.hoverWarning;
-        md += "** ";
+        md += "\n\n**";
+        std::string sWarn = s.hoverWarning;
+        if (sWarn.ends_with(":")) sWarn.pop_back();
+        md += sWarn;
+        md += ":** ";
         md += warn;
-        md += "\n";
     }
 
-    // 11. OVERLOADS
+    // 9. OVERLOADS
     if (overloadCount > 0) {
-        if (!notes.empty() || !warnings.empty()) md += "\n";
-        md += "*+";
+        md += "\n\n*+";
         md += std::to_string(overloadCount);
         md += " ";
         md += s.hoverOverloads;
-        md += "*\n";
+        md += "*";
     }
 
-    // Limpiar trailing whitespace
+    // Limpiar trailing whitespace (si los hay al final)
     while (!md.empty() && (md.back() == '\n' || md.back() == ' '))
         md.pop_back();
 

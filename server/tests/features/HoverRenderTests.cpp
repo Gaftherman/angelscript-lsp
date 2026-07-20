@@ -33,15 +33,15 @@ TEST_CASE("HoverInfo: function with full docs renders clangd-style")
     
     std::string md = info.ToMarkdown(Locale::EN);
     
-    CHECK(md.find("### Function `Lerp`") != std::string::npos);
     CHECK(md.find("```angelscript\n// In Math\nfloat Math::Lerp(float a, float b, float t)\n```") != std::string::npos);
     CHECK(md.find("Interpolates between a and b.") != std::string::npos);
     CHECK(md.find("Uses linear interpolation.") != std::string::npos);
-    CHECK(md.find("### Parameters") != std::string::npos);
-    CHECK(md.find("- `a` `float` — start") != std::string::npos);
-    CHECK(md.find("### Returns") != std::string::npos);
+    CHECK(md.find("**Parameters**") != std::string::npos);
+    CHECK(md.find("- `a` [`float`] — start") != std::string::npos);
+    CHECK(md.find("**Returns**") != std::string::npos);
     CHECK(md.find("`float` — The interpolated value.") != std::string::npos);
-    CHECK(md.find("> **Note:** Clamps t between 0 and 1.") != std::string::npos);
+    CHECK(md.find("**Note:** Clamps t between 0 and 1.") != std::string::npos);
+    CHECK(md.find("### ") == std::string::npos); // Should not contain any H3 tags
 }
 
 TEST_CASE("HoverInfo: void return is omitted from Returns section")
@@ -53,7 +53,7 @@ TEST_CASE("HoverInfo: void return is omitted from Returns section")
     info.returnType = "void";
     
     std::string md = info.ToMarkdown(Locale::EN);
-    CHECK(md.find("### Returns") == std::string::npos);
+    CHECK(md.find("**Returns**") == std::string::npos);
 }
 
 TEST_CASE("HoverInfo: overload count appended in italic")
