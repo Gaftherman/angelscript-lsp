@@ -27,13 +27,8 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     const auto& s = i18n::GetStrings(locale);
     std::string md;
 
-    // 1. CODE BLOCK con scope
+    // 1. CODE BLOCK with signature
     md += "```angelscript\n";
-    if (!localScope.empty()) {
-        md += "// In ";
-        md += localScope;
-        md += "\n";
-    }
     md += rawSignature;
     if (!enumValue.empty()) md += " = " + enumValue;
     md += "\n```\n";
@@ -126,7 +121,7 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
         }
     }
 
-    // 8. NOTES y WARNINGS
+    // 8. NOTES and WARNINGS
     for (const auto& note : notes) {
         md += "\n\n**";
         std::string sNote = s.hoverNote;
@@ -153,7 +148,7 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
         md += "*";
     }
 
-    // Limpiar trailing whitespace (si los hay al final)
+    // Clear trailing whitespace (if any)
     while (!md.empty() && (md.back() == '\n' || md.back() == ' '))
         md.pop_back();
 

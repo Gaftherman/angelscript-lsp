@@ -53,8 +53,8 @@ namespace angel_lsp
                                        : renderSym->name;
 
             bool needsParentClass = false;
-            if (originalSym && originalSym->parent && (originalSym->parent->kind == analysis::SymbolKind::Class || originalSym->parent->kind == analysis::SymbolKind::Interface || originalSym->parent->kind == analysis::SymbolKind::Mixin) &&
-                (originalSym->kind == analysis::SymbolKind::Method || originalSym->kind == analysis::SymbolKind::Constructor || originalSym->kind == analysis::SymbolKind::Destructor))
+            if (originalSym && originalSym->parent && (originalSym->parent->kind == analysis::SymbolKind::Class || originalSym->parent->kind == analysis::SymbolKind::Interface || originalSym->parent->kind == analysis::SymbolKind::Mixin || originalSym->parent->kind == analysis::SymbolKind::Enum) &&
+                (originalSym->kind == analysis::SymbolKind::Method || originalSym->kind == analysis::SymbolKind::Constructor || originalSym->kind == analysis::SymbolKind::Destructor || originalSym->kind == analysis::SymbolKind::Property || originalSym->kind == analysis::SymbolKind::EnumMember))
             {
                 needsParentClass = true;
             }

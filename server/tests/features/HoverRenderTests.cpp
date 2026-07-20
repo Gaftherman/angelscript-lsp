@@ -33,7 +33,7 @@ TEST_CASE("HoverInfo: function with full docs renders clangd-style")
     
     std::string md = info.ToMarkdown(Locale::EN);
     
-    CHECK(md.find("```angelscript\n// In Math\nfloat Math::Lerp(float a, float b, float t)\n```") != std::string::npos);
+    CHECK(md.find("```angelscript\nfloat Math::Lerp(float a, float b, float t)\n```") != std::string::npos);
     CHECK(md.find("Interpolates between a and b.") != std::string::npos);
     CHECK(md.find("Uses linear interpolation.") != std::string::npos);
     CHECK(md.find("**Parameters**") != std::string::npos);
