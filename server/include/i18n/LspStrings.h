@@ -59,6 +59,13 @@ namespace i18n
         const char *hoverDeprecated;
         const char *hoverOverloads;
         const char *hoverNeverUsed;
+        // --- Hover section headings ---
+        const char *hoverSectionBrief;
+        const char *hoverSectionDetails;
+        const char *hoverSectionTemplateParams;
+        const char *hoverSectionParams;
+        const char *hoverSectionReturns;
+        const char *hoverParamOf;
     };
 
     /**

@@ -40,7 +40,14 @@ namespace i18n
             .hoverWarning = "Warning:",
             .hoverDeprecated = "Deprecated:",
             .hoverOverloads = "overloads available",
-            .hoverNeverUsed = "This symbol is never used locally"};
+            .hoverNeverUsed = "This symbol is never used locally",
+            
+            .hoverSectionBrief = "Brief",
+            .hoverSectionDetails = "Details",
+            .hoverSectionTemplateParams = "Template Parameters",
+            .hoverSectionParams = "Parameters",
+            .hoverSectionReturns = "Returns",
+            .hoverParamOf = "parameter of"};
 
     static const LspStrings ES_STRINGS =
         {
@@ -79,7 +86,14 @@ namespace i18n
             .hoverWarning = "Advertencia:",
             .hoverDeprecated = "En desuso:",
             .hoverOverloads = "sobrecargas disponibles",
-            .hoverNeverUsed = "Este símbolo nunca se usa localmente"};
+            .hoverNeverUsed = "Este símbolo nunca se usa localmente",
+            
+            .hoverSectionBrief = "Descripción breve",
+            .hoverSectionDetails = "Detalles",
+            .hoverSectionTemplateParams = "Parámetros de plantilla",
+            .hoverSectionParams = "Parámetros",
+            .hoverSectionReturns = "Devuelve",
+            .hoverParamOf = "parámetro de"};
 
     Locale ParseLocale(const std::string &localeStr)
     {
