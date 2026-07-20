@@ -1,4 +1,5 @@
 #include "HoverHandler.h"
+#include "utils/DoxygenParser.h"
 #include "analysis/SymbolResolver.h"
 #include <angelscript.h>
 #include <set>
@@ -366,7 +367,7 @@ class HoverFormatter
 
                 if (!docToRender.empty())
                 {
-                    md += "\n\n---\n" + FormatDoxygen(docToRender, locale, targetParam);
+                    md += "\n\n---\n" + utils::FormatDoxygenToMarkdown(docToRender, locale, targetParam);
                 }
                 return md;
             }
