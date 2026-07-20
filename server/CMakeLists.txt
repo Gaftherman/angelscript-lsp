@@ -109,6 +109,7 @@ if(WIN32)
     add_custom_command(TARGET angel_lsp_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_RUNTIME_DLLS:angel_lsp_tests>
+            $<TARGET_FILE:angel_lsp_tests>
             $<TARGET_FILE_DIR:angel_lsp_tests>
         COMMAND_EXPAND_LISTS
         COMMENT "Copying runtime DLLs to test directory..."
