@@ -22,7 +22,7 @@ namespace i18n
             .kindDestructor = "Destructor",
             .kindUnknown = "Symbol",
 
-            .hoverIn = "in",
+            .hoverIn = "In",
             .hoverBuiltinFunc = "Built-in Function",
             .hoverBuiltinType = "Built-in Type",
             .hoverEngineError = "Engine Error:",
@@ -41,7 +41,11 @@ namespace i18n
             .hoverDeprecated = "Deprecated",
             .hoverOverloads = "overloads",
             .hoverParameterOf = "Parameter of",
-            .hoverNeverUsed = "This symbol is never used locally"
+            .hoverNeverUsed = "This symbol is never used locally",
+            
+            .hoverField         = "field",
+            .hoverLocalVariable = "local variable",
+            .hoverEnumMember    = "enum member"
         };
 
     static const LspStrings ES_STRINGS =
@@ -63,7 +67,7 @@ namespace i18n
             .kindDestructor = "Destructor",
             .kindUnknown = "Símbolo",
 
-            .hoverIn = "en",
+            .hoverIn = "En",
             .hoverBuiltinFunc = "Función Integrada",
             .hoverBuiltinType = "Tipo Integrado",
             .hoverEngineError = "Error del Motor:",
@@ -82,7 +86,11 @@ namespace i18n
             .hoverDeprecated = "En desuso",
             .hoverOverloads = "sobrecargas",
             .hoverParameterOf = "Parámetro de",
-            .hoverNeverUsed = "Este símbolo nunca se usa localmente"
+            .hoverNeverUsed = "Este símbolo nunca se usa localmente",
+            
+            .hoverField         = "campo",
+            .hoverLocalVariable = "variable local",
+            .hoverEnumMember    = "miembro de enum"
         };
 
     Locale ParseLocale(const std::string &localeStr)

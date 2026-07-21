@@ -168,7 +168,7 @@ namespace angel_lsp
                     info.localScope = std::string(s.hoverParameterOf) + " " + sym->parent->name + "()";
                 }
             } else if (sym->kind == analysis::SymbolKind::Property || sym->kind == analysis::SymbolKind::Variable) {
-                std::string prefix = (sym->kind == analysis::SymbolKind::Property) ? "(field) " : "(local variable) ";
+                std::string prefix = (sym->kind == analysis::SymbolKind::Property) ? "(" + std::string(s.hoverField) + ") " : "(" + std::string(s.hoverLocalVariable) + ") ";
                 if (sym->kind == analysis::SymbolKind::Property && !sym->accessors.empty()) {
                     prefix = "(property) ";
                 }
@@ -223,7 +223,7 @@ namespace angel_lsp
 
             // 7. extras
             if (sym->kind == analysis::SymbolKind::EnumMember) {
-                std::string enumPrefix = "(enum member) ";
+                std::string enumPrefix = "(" + std::string(s.hoverEnumMember) + ") ";
                 info.rawSignature = enumPrefix + sym->name;
                 if (!sym->value.empty()) {
                     info.rawSignature += " = " + sym->value;

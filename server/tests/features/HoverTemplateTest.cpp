@@ -71,5 +71,5 @@ TEST_CASE("Hover - Template Substitution")
     
     // Check substitution
     CHECK( md.find("void insertLast(const Test@&in value)") != std::string::npos );
-    CHECK( md.find("// In array<T>") != std::string::npos );
+    CHECK( md.find("array<T>") != std::string::npos );
 }

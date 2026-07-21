@@ -60,6 +60,11 @@ namespace i18n
         std::string_view hoverOverloads;
         std::string_view hoverParameterOf;
         std::string_view hoverNeverUsed;
+        
+        // --- Prefijos Semánticos para Hover ---
+        std::string_view hoverField;
+        std::string_view hoverLocalVariable;
+        std::string_view hoverEnumMember;
     };
 
     /**

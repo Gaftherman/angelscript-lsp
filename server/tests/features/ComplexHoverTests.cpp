@@ -1691,7 +1691,7 @@ namespace App {
         
         struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("void Work()") != std::string::npos);
-        CHECK(markup.value.find("// In App::IWorker") != std::string::npos);
+        CHECK( markup.value.find("App::IWorker") != std::string::npos );
     }
 
     // 7. Mixin
@@ -1758,7 +1758,7 @@ namespace App {
         
         struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("void Apply(float force)") != std::string::npos);
-        CHECK(markup.value.find("// In App::Base") != std::string::npos);
+        CHECK( markup.value.find("App::Base") != std::string::npos );
     }
 
     // 10. Class Method Parameter

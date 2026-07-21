@@ -1,4 +1,4 @@
-﻿#include <doctest/doctest.h>
+#include <doctest/doctest.h>
 #include <iostream>
 #include "features/hover/HoverInfo.h"
 #include "i18n/LspStrings.h"

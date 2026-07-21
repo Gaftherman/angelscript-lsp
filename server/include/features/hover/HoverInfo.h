@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <string>
 #include <vector>
 #include <optional>
@@ -66,6 +66,7 @@ struct HoverInfo {
     };
 
     /// Render to structured hover sections.
+    std::string ToMarkdown(i18n::Locale locale) const;
     std::vector<HoverSection> ToHoverSections(i18n::Locale locale) const;
 };
 

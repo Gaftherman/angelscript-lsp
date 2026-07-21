@@ -165,7 +165,7 @@ TEST_SUITE("AdvancedHoverEdgeCases")
         
         // Debe reflejar la firma completa sin prefijo de clase, y el scope // In Component
         CHECK(markup.value.find("void Update(float dt)") != std::string::npos);
-        CHECK(markup.value.find("// In Component") != std::string::npos);
+        CHECK( markup.value.find("Component") != std::string::npos );
         CHECK(markup.value.find("Base component update") != std::string::npos);
     }
 

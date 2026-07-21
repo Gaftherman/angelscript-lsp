@@ -4,48 +4,67 @@
 namespace angel_lsp {
 namespace features {
 
-std::vector<HoverInfo::HoverSection> HoverInfo::ToHoverSections(i18n::Locale locale) const {
+std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     const auto& s = i18n::GetStrings(locale);
     std::vector<std::string> blocks;
 
-    // Bloque 0: Deprecated
+    // BLOQUE 0: Depreciado (Formato de Cita sin Emojis)
     if (!deprecated.empty()) {
         blocks.push_back("> **" + std::string(s.hoverDeprecated) + ":** " + deprecated);
     }
 
-    // Bloque 1: Código + Ámbito
+    // BLOQUE 1: Código + Ámbito
     std::string codeBlock = "```angelscript\n";
     if (!localScope.empty()) {
         if (kind == analysis::SymbolKind::Parameter) {
+            // El contexto de parámetro se muestra como subtítulo formateado fuera o en comentario interno
             codeBlock += "// " + localScope + "\n";
         } else {
-            codeBlock += "// In " + localScope + "\n";
+            codeBlock += "// " + std::string(s.hoverIn) + " " + localScope + "\n";
         }
     }
     codeBlock += rawSignature;
-    if (!enumValue.empty()) codeBlock += " = " + enumValue;
+    if (!enumValue.empty() && kind != analysis::SymbolKind::EnumMember) {
+        codeBlock += " = " + enumValue;
+    }
     codeBlock += "\n```";
     blocks.push_back(codeBlock);
 
-    // Bloque 2: Breve / Descripción
+    // BLOQUE 2: Descripción (Brief + Details)
     if (!briefText.empty()) {
         std::string desc = briefText;
-        if (!detailsText.empty()) desc += "\n\n" + detailsText;
+        if (!detailsText.empty() && detailsText != briefText) {
+            desc += "\n\n" + detailsText;
+        }
         blocks.push_back(desc);
     }
 
-    // Bloque 3: Parámetros / Retornos
+    // BLOQUE 3: Parámetros de Plantilla
+    if (templateParameters && !templateParameters->empty()) {
+        std::string tpBlock = "### " + std::string(s.hoverTemplateParams) + "\n";
+        for (const auto& p : *templateParameters) {
+            tpBlock += "- `" + p.typeName + " " + p.name + "`";
+            if (!p.docDescription.empty()) tpBlock += " \xE2\x80\x94 " + p.docDescription; // Guion largo
+            tpBlock += "\n";
+        }
+        if (tpBlock.back() == '\n') tpBlock.pop_back();
+        blocks.push_back(tpBlock);
+    }
+
+    // BLOQUE 4: Parámetros de Función
     if (parameters && !parameters->empty()) {
         bool hasParamDocs = false;
         for (const auto& p : *parameters) {
             if (!p.docDescription.empty()) { hasParamDocs = true; break; }
         }
-        if (hasParamDocs) {
+        
+        // Renderizar la sección si existen explicaciones en Doxygen o es un método
+        if (hasParamDocs || kind == analysis::SymbolKind::Function || kind == analysis::SymbolKind::Method || kind == analysis::SymbolKind::Constructor || kind == analysis::SymbolKind::Destructor || kind == analysis::SymbolKind::Funcdef) {
             std::string pBlock = "### " + std::string(s.hoverParams) + "\n";
             for (const auto& p : *parameters) {
                 std::string signature = p.typeName.empty() ? p.name : (p.typeName + " " + p.name);
-                if (!p.defaultValue.empty()) signature += " = " + p.defaultValue;
                 pBlock += "- `" + signature + "`";
+                if (!p.defaultValue.empty()) pBlock += " = `" + p.defaultValue + "`";
                 if (!p.docDescription.empty()) pBlock += " \xE2\x80\x94 " + p.docDescription;
                 pBlock += "\n";
             }
@@ -54,46 +73,31 @@ std::vector<HoverInfo::HoverSection> HoverInfo::ToHoverSections(i18n::Locale loc
         }
     }
 
-    if (templateParameters && !templateParameters->empty()) {
-        bool hasTParamDocs = false;
-        for (const auto& p : *templateParameters) {
-            if (!p.docDescription.empty()) { hasTParamDocs = true; break; }
-        }
-        if (hasTParamDocs) {
-            std::string tpSection = "### " + std::string(s.hoverTemplateParams) + "\n";
-            for (const auto& p : *templateParameters) {
-                tpSection += "- `" + p.name + "`";
-                if (!p.docDescription.empty()) {
-                    tpSection += " \xE2\x80\x94 " + p.docDescription;
-                }
-                tpSection += "\n";
-            }
-            if (tpSection.back() == '\n') tpSection.pop_back();
-            blocks.push_back(tpSection);
-        }
-    }
-
+    // BLOQUE 5: Valor de Retorno
     if (returnType && *returnType != "void" && !returnType->empty()) {
+        std::string retBlock = "### " + std::string(s.hoverReturns) + "\n`" + *returnType + "`";
         if (!returnDoc.empty()) {
-            std::string retSection = "### " + std::string(s.hoverReturns) + "\n`" + *returnType + "` \xE2\x80\x94 " + returnDoc;
-            blocks.push_back(retSection);
+            retBlock += " \xE2\x80\x94 " + returnDoc;
         }
+        blocks.push_back(retBlock);
     }
 
-    // Bloque 4: Notas / Advertencias
+    // BLOQUE 6: Notas (Bloque de Cita sin Emojis)
     for (const auto& note : notes) {
         blocks.push_back("> **" + std::string(s.hoverNote) + ":** " + note);
     }
+
+    // BLOQUE 7: Advertencias (Bloque de Cita sin Emojis)
     for (const auto& warn : warnings) {
         blocks.push_back("> **" + std::string(s.hoverWarning) + ":** " + warn);
     }
 
-    // Bloque 5: Sobrecargas
+    // BLOQUE 8: Contador de Sobrecargas
     if (overloadCount > 0) {
         blocks.push_back("*+" + std::to_string(overloadCount) + " " + std::string(s.hoverOverloads) + "*");
     }
 
-    // Unión de bloques intercalando '---' de forma segura
+    // ENSAMBLADO FINAL: Une únicamente bloques no vacíos intercalando '---'
     std::string result;
     for (size_t i = 0; i < blocks.size(); ++i) {
         result += blocks[i];
@@ -101,15 +105,18 @@ std::vector<HoverInfo::HoverSection> HoverInfo::ToHoverSections(i18n::Locale loc
             result += "\n\n---\n\n";
         }
     }
+    return result;
+}
 
+std::vector<HoverInfo::HoverSection> HoverInfo::ToHoverSections(i18n::Locale locale) const {
     std::vector<HoverSection> resultSections;
-    if (!result.empty()) {
+    std::string md = ToMarkdown(locale);
+    if (!md.empty()) {
         HoverSection textSection;
         textSection.isCodeBlock = false;
-        textSection.content = result;
+        textSection.content = md;
         resultSections.push_back(textSection);
     }
-
     return resultSections;
 }
 

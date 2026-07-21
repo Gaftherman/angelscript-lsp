@@ -19,11 +19,11 @@ TEST_SUITE("Localization")
     {
         const auto &enStrings = GetStrings(Locale::EN);
         CHECK(std::string(enStrings.kindFunction) == "Function");
-        CHECK(std::string(enStrings.hoverIn) == "in");
+        CHECK(std::string(enStrings.hoverIn) == "In");
 
         const auto &esStrings = GetStrings(Locale::ES);
         CHECK(std::string(esStrings.kindFunction) == "Función");
-        CHECK(std::string(esStrings.hoverIn) == "en");
+        CHECK(std::string(esStrings.hoverIn) == "En");
 
         // UNKNOWN falls back to EN
         const auto &unknownStrings = GetStrings(Locale::UNKNOWN);
