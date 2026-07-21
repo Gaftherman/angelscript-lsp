@@ -61,7 +61,7 @@ namespace i18n
         std::string_view hoverParameterOf;
         std::string_view hoverNeverUsed;
         
-        // --- Prefijos Semánticos para Hover ---
+        // --- Semantic Hover Prefixes ---
         std::string_view hoverParameter;
         std::string_view hoverProperty;
         std::string_view hoverField;

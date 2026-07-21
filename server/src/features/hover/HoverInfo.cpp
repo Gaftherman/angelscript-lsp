@@ -8,16 +8,16 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     const auto& s = i18n::GetStrings(locale);
     std::vector<std::string> blocks;
 
-    // BLOQUE 0: Depreciado (Formato de Cita sin Emojis)
+    // BLOCK 0: Deprecated (Quote Format)
     if (!deprecated.empty()) {
         blocks.push_back("> **" + std::string(s.hoverDeprecated) + ":** " + deprecated);
     }
 
-    // BLOQUE 1: Código + Ámbito
+    // BLOCK 1: Code + Scope
     std::string codeBlock = "```angelscript\n";
     if (!localScope.empty()) {
         if (kind == analysis::SymbolKind::Parameter) {
-            // El contexto de parámetro se muestra como subtítulo formateado fuera o en comentario interno
+            // Parameter context displayed as formatted subtitle or internal comment
             codeBlock += "// " + localScope + "\n";
         } else {
             codeBlock += "// " + std::string(s.hoverIn) + " " + localScope + "\n";
@@ -32,7 +32,7 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     codeBlock += "\n```";
     blocks.push_back(codeBlock);
 
-    // BLOQUE 2: Descripción (Brief + Details)
+    // BLOCK 2: Description (Brief + Details)
     if (!briefText.empty()) {
         std::string desc = briefText;
         if (!detailsText.empty() && detailsText != briefText) {
@@ -41,26 +41,26 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
         blocks.push_back(desc);
     }
 
-    // BLOQUE 3: Parámetros de Plantilla
+    // BLOCK 3: Template Parameters
     if (templateParameters && !templateParameters->empty()) {
         std::string tpBlock = "### " + std::string(s.hoverTemplateParams) + "\n";
         for (const auto& p : *templateParameters) {
             tpBlock += "- `" + p.typeName + " " + p.name + "`";
-            if (!p.docDescription.empty()) tpBlock += " \xE2\x80\x94 " + p.docDescription; // Guion largo
+            if (!p.docDescription.empty()) tpBlock += " \xE2\x80\x94 " + p.docDescription; // Em-dash
             tpBlock += "\n";
         }
         if (tpBlock.back() == '\n') tpBlock.pop_back();
         blocks.push_back(tpBlock);
     }
 
-    // BLOQUE 4: Parámetros de Función
+    // BLOCK 4: Function Parameters
     if (parameters && !parameters->empty()) {
         bool hasParamDocs = false;
         for (const auto& p : *parameters) {
             if (!p.docDescription.empty()) { hasParamDocs = true; break; }
         }
         
-        // Renderizar la sección si existen explicaciones en Doxygen o es un método
+        // Render section if Doxygen docs exist or symbol is a function/method
         if (hasParamDocs || kind == analysis::SymbolKind::Function || kind == analysis::SymbolKind::Method || kind == analysis::SymbolKind::Constructor || kind == analysis::SymbolKind::Destructor || kind == analysis::SymbolKind::Funcdef) {
             std::string pBlock = "### " + std::string(s.hoverParams) + "\n";
             for (const auto& p : *parameters) {
@@ -75,7 +75,7 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
         }
     }
 
-    // BLOQUE 5: Valor de Retorno
+    // BLOCK 5: Return Value
     if (returnType && *returnType != "void" && !returnType->empty()) {
         std::string retBlock = "### " + std::string(s.hoverReturns) + "\n`" + *returnType + "`";
         if (!returnDoc.empty()) {
@@ -84,22 +84,22 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
         blocks.push_back(retBlock);
     }
 
-    // BLOQUE 6: Notas (Bloque de Cita sin Emojis)
+    // BLOCK 6: Notes (Quote Block)
     for (const auto& note : notes) {
         blocks.push_back("> **" + std::string(s.hoverNote) + ":** " + note);
     }
 
-    // BLOQUE 7: Advertencias (Bloque de Cita sin Emojis)
+    // BLOCK 7: Warnings (Quote Block)
     for (const auto& warn : warnings) {
         blocks.push_back("> **" + std::string(s.hoverWarning) + ":** " + warn);
     }
 
-    // BLOQUE 8: Contador de Sobrecargas
+    // BLOCK 8: Overloads Counter
     if (overloadCount > 0) {
         blocks.push_back("*+" + std::to_string(overloadCount) + " " + std::string(s.hoverOverloads) + "*");
     }
 
-    // ENSAMBLADO FINAL: Une únicamente bloques no vacíos intercalando '---'
+    // FINAL ASSEMBLY: Join non-empty blocks using '---' dividers
     std::string result;
     for (size_t i = 0; i < blocks.size(); ++i) {
         result += blocks[i];

@@ -773,7 +773,7 @@ namespace analysis
                         auto it = table.GetGlobals().find(part);
                         if (it != table.GetGlobals().end() && !it->second.empty())
                         {
-                            // Si hay múltiples, tomamos el primero para el using (comportamiento legacy/fallback)
+                            // If multiple exist, take the first one for using resolution (legacy fallback behavior)
                             const Symbol *nsSym = it->second.front().get();
                             if (nsSym->kind == SymbolKind::Namespace)
                             {
