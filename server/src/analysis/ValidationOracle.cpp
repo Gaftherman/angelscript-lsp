@@ -1,6 +1,7 @@
 #include "ValidationOracle.h"
 #include "utils/LspLogger.h"
 #include "i18n/DiagnosticI18n.h"
+#include <sstream>
 
 namespace analysis
 {
@@ -44,7 +45,29 @@ namespace analysis
                 mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
             }
 
-            mod->AddScriptSection("LSP_Doc", code.c_str(), code.size());
+            std::string sanitizedCode;
+            sanitizedCode.reserve(code.size());
+            std::stringstream ss(code);
+            std::string line;
+            bool first = true;
+            while (std::getline(ss, line))
+            {
+                if (!first) sanitizedCode += "\n";
+                first = false;
+
+                size_t firstNonSpace = line.find_first_not_of(" \t\r");
+                if (firstNonSpace != std::string::npos && line[firstNonSpace] == '#')
+                {
+                    std::string prefix = line.substr(0, firstNonSpace);
+                    sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
+                }
+                else
+                {
+                    sanitizedCode += line;
+                }
+            }
+
+            mod->AddScriptSection("LSP_Doc", sanitizedCode.c_str(), sanitizedCode.size());
 
             // Build the module
             // This will trigger MessageCallback for any syntax or semantic errors.
