@@ -16,8 +16,9 @@ namespace analysis
          *
          * @param doc The document containing the source code.
          * @param table The symbol table to populate.
+         * @param docResolver Optional callback to resolve documents already open in memory.
          */
-        static void CollectGlobals(const Document &doc, SymbolTable &table);
+        static void CollectGlobals(const Document &doc, SymbolTable &table, std::function<const Document *(const std::string &)> docResolver = nullptr);
 
         /**
          * @brief Collects local symbols (local variables inside function bodies) and adds them to the local table.

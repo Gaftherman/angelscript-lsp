@@ -386,12 +386,17 @@ namespace analysis
         }
     }
 
-    void SymbolCollector::CollectGlobals(const Document &doc, SymbolTable &table)
+    static thread_local std::function<const Document *(const std::string &)> g_docResolver = nullptr;
+
+    void SymbolCollector::CollectGlobals(const Document &doc, SymbolTable &table, std::function<const Document *(const std::string &)> docResolver)
     {
         TSNode root = doc.RootNode();
         if (ts_node_is_null(root))
             return;
+        auto prevResolver = g_docResolver;
+        g_docResolver = docResolver;
         TraverseGlobals(root, doc, table, nullptr);
+        g_docResolver = prevResolver;
     }
 
     static void ExtractModifiers(TSNode node, const Document &doc, Symbol &sym)
@@ -1179,20 +1184,28 @@ namespace analysis
 
                         if (visitedIncludes.insert(targetUri).second)
                         {
-                            std::string filePath = targetUri;
-                            if (filePath.starts_with("file:///"))
-                                filePath = filePath.substr(8);
-                            else if (filePath.starts_with("file://"))
-                                filePath = filePath.substr(7);
-
-                            std::ifstream infile(filePath);
-                            if (infile.is_open())
+                            const Document *openDoc = g_docResolver ? g_docResolver(targetUri) : nullptr;
+                            if (openDoc)
                             {
-                                std::stringstream buffer;
-                                buffer << infile.rdbuf();
-                                std::string incContent = buffer.str();
-                                Document incDoc(targetUri, incContent);
-                                CollectGlobals(incDoc, table);
+                                CollectGlobals(*openDoc, table, g_docResolver);
+                            }
+                            else
+                            {
+                                std::string filePath = targetUri;
+                                if (filePath.starts_with("file:///"))
+                                    filePath = filePath.substr(8);
+                                else if (filePath.starts_with("file://"))
+                                    filePath = filePath.substr(7);
+
+                                std::ifstream infile(filePath);
+                                if (infile.is_open())
+                                {
+                                    std::stringstream buffer;
+                                    buffer << infile.rdbuf();
+                                    std::string incContent = buffer.str();
+                                    Document incDoc(targetUri, incContent);
+                                    CollectGlobals(incDoc, table, g_docResolver);
+                                }
                             }
                         }
 

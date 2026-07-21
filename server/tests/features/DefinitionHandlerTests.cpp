@@ -719,3 +719,55 @@ void MainApp()
     auto netResult = features::ProcessDefinition(netReq, doc, table, nullptr);
     REQUIRE(!netResult.isNull());
 }
+
+TEST_CASE("DefinitionHandler - Open In-Memory Included File Resolution & Symbol Deduplication")
+{
+    const char *INCLUDED_OPEN_SRC = R"script(
+class OpenInEditorClass
+{
+    void LiveMethod() {}
+}
+)script";
+
+    const char *MAIN_SRC = R"script(
+#include "editor/open_file.as"
+
+void Main()
+{
+    OpenInEditorClass obj;
+    obj.LiveMethod();
+}
+)script";
+
+    std::string incUri = "file:///project/editor/open_file.as";
+    Document incDoc(incUri, INCLUDED_OPEN_SRC);
+
+    std::string mainUri = "file:///project/main.as";
+    Document mainDoc(mainUri, MAIN_SRC);
+
+    analysis::SymbolTable table;
+
+    auto resolver = [&](const std::string &uri) -> const Document * {
+        if (uri == incUri) return &incDoc;
+        return nullptr;
+    };
+
+    analysis::SymbolCollector::CollectGlobals(incDoc, table);
+    analysis::SymbolCollector::CollectGlobals(mainDoc, table, resolver);
+    analysis::SymbolCollector::TraverseLocals(mainDoc.RootNode(), mainDoc, table, nullptr);
+
+    auto overloads = table.FindAllGlobalsByName("OpenInEditorClass");
+    CHECK(overloads.size() == 1);
+
+    lsp::requests::TextDocument_Definition::Params classReq;
+    classReq.textDocument.uri = lsp::DocumentUri::parse(mainUri);
+    classReq.position.line = 5;
+    classReq.position.character = 4;
+
+    auto classResult = features::ProcessDefinition(classReq, mainDoc, table, nullptr);
+    REQUIRE(!classResult.isNull());
+    const auto &classDef = std::get<lsp::Definition>(*classResult);
+    const auto &classLoc = std::get<lsp::Location>(classDef);
+    CHECK(classLoc.uri.toString() == lsp::DocumentUri::parse(incUri).toString());
+    CHECK(classLoc.range.start.line == 1);
+}

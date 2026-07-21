@@ -11,6 +11,17 @@ namespace analysis
     {
         if (!symbol)
             return;
+        for (const auto &existing : m_globalSymbols[symbol->name])
+        {
+            if (existing.get() == symbol.get() ||
+                (existing->name == symbol->name &&
+                 existing->uri == symbol->uri &&
+                 existing->selectionRange.start.line == symbol->selectionRange.start.line &&
+                 existing->selectionRange.start.character == symbol->selectionRange.start.character))
+            {
+                return;
+            }
+        }
         m_globalSymbols[symbol->name].push_back(std::move(symbol));
     }
 
