@@ -233,7 +233,20 @@ namespace analysis
                                 // but since our dummy types are asOBJ_POD, they don't even need them to be
                                 // registered for compilation to succeed. Passing them to RegisterObjectMethod
                                 // will cause asINVALID_DECLARATION and kill the engine.
-                                if (child->name == sym->name || (!child->name.empty() && child->name[0] == '~'))
+                                if (child->name == sym->name)
+                                {
+                                    std::string paramList = "(";
+                                    for (size_t p = 0; p < child->params.size(); p++)
+                                    {
+                                        if (p > 0) paramList += ", ";
+                                        paramList += child->params[p].typeName + " " + child->params[p].name;
+                                    }
+                                    paramList += ")";
+                                    std::string behDecl = "void f" + paramList;
+                                    engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_CONSTRUCT, behDecl.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
+                                    continue;
+                                }
+                                else if (!child->name.empty() && child->name[0] == '~')
                                 {
                                     continue;
                                 }
