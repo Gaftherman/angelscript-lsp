@@ -55,9 +55,17 @@ namespace analysis
          */
         void SetLocale(i18n::Locale locale) { m_locale = locale; }
 
+        /**
+         * @brief Updates the set of preprocessor defined words (#if DEFINED / #endif).
+         *
+         * @param defines List of defined word tokens.
+         */
+        void SetDefinedWords(const std::vector<std::string> &defines);
+
     private:
         asIScriptEngine *m_engine;
         i18n::Locale m_locale;
+        std::unordered_set<std::string> m_definedWords = {"DEBUG_MODE"};
         std::vector<lsp::Diagnostic> m_diagnostics;
         std::mutex m_mutex;
 

@@ -30,13 +30,28 @@ static std::string UrlDecode(const std::string &in)
     return out;
 }
 
-static std::string SanitizeCodeForEngine(const std::string &code)
+static std::string SanitizeCodeForEngine(const std::string &code, const std::unordered_set<std::string> &definedWords)
 {
+    std::unordered_set<std::string> activeDefines = definedWords;
     std::string sanitizedCode;
     sanitizedCode.reserve(code.size());
+
     std::stringstream ss(code);
     std::string line;
     bool first = true;
+
+    struct IfState {
+        bool conditionMet;
+        bool branchTaken;
+    };
+    std::vector<IfState> ifStack;
+
+    auto currentActive = [&ifStack]() -> bool {
+        for (const auto &state : ifStack) {
+            if (!state.conditionMet) return false;
+        }
+        return true;
+    };
 
     while (std::getline(ss, line))
     {
@@ -46,12 +61,102 @@ static std::string SanitizeCodeForEngine(const std::string &code)
         size_t firstNonSpace = line.find_first_not_of(" \t\r");
         if (firstNonSpace != std::string::npos && line[firstNonSpace] == '#')
         {
+            std::string directiveLine = line.substr(firstNonSpace + 1);
+            std::stringstream lineSs(directiveLine);
+            std::string directive;
+            lineSs >> directive;
+
             std::string prefix = line.substr(0, firstNonSpace);
-            sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
+
+            if (directive == "if" || directive == "ifdef")
+            {
+                std::string word;
+                lineSs >> word;
+                bool isNegated = false;
+                if (word == "!" && lineSs >> word) {
+                    isNegated = true;
+                } else if (word.starts_with("!")) {
+                    isNegated = true;
+                    word = word.substr(1);
+                }
+
+                bool exists = activeDefines.contains(word);
+                bool cond = isNegated ? !exists : exists;
+                ifStack.push_back({ cond, cond });
+
+                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
+                continue;
+            }
+            else if (directive == "ifndef")
+            {
+                std::string word;
+                lineSs >> word;
+                bool exists = activeDefines.contains(word);
+                bool cond = !exists;
+                ifStack.push_back({ cond, cond });
+
+                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
+                continue;
+            }
+            else if (directive == "else")
+            {
+                if (!ifStack.empty()) {
+                    auto &top = ifStack.back();
+                    top.conditionMet = !top.branchTaken;
+                    top.branchTaken = true;
+                }
+                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
+                continue;
+            }
+            else if (directive == "endif")
+            {
+                if (!ifStack.empty()) {
+                    ifStack.pop_back();
+                }
+                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
+                continue;
+            }
+            else if (directive == "define")
+            {
+                if (currentActive()) {
+                    std::string word;
+                    lineSs >> word;
+                    if (!word.empty()) activeDefines.insert(word);
+                }
+                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
+                continue;
+            }
+            else if (directive == "undef")
+            {
+                if (currentActive()) {
+                    std::string word;
+                    lineSs >> word;
+                    if (!word.empty()) activeDefines.erase(word);
+                }
+                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
+                continue;
+            }
+            else
+            {
+                // Other directive e.g. #include, #pragma
+                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
+                continue;
+            }
+        }
+
+        // Regular code line
+        if (currentActive())
+        {
+            sanitizedCode += line;
         }
         else
         {
-            sanitizedCode += line;
+            size_t start = line.find_first_not_of(" \t\r");
+            if (start != std::string::npos) {
+                sanitizedCode += line.substr(0, start) + "// " + line.substr(start);
+            } else {
+                sanitizedCode += line;
+            }
         }
     }
     return sanitizedCode;
@@ -67,6 +172,15 @@ namespace analysis
 
     ValidationOracle::~ValidationOracle()
     {
+    }
+
+    void ValidationOracle::SetDefinedWords(const std::vector<std::string> &defines)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_definedWords.clear();
+        for (const auto &d : defines) {
+            if (!d.empty()) m_definedWords.insert(d);
+        }
     }
 
     std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string &code,
@@ -152,7 +266,7 @@ namespace analysis
                                         if (!incContent.empty())
                                         {
                                             loadIncludes(targetUri, incContent);
-                                            std::string sanitizedInc = SanitizeCodeForEngine(incContent);
+                                            std::string sanitizedInc = SanitizeCodeForEngine(incContent, m_definedWords);
                                             mod->AddScriptSection(targetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
                                             angel_lsp::LspLogger::Info("[Validation] Added script section '" + targetUri + "' to validation module");
                                         }
@@ -165,7 +279,7 @@ namespace analysis
                 loadIncludes(currentUri, code);
             }
 
-            std::string sanitizedMain = SanitizeCodeForEngine(code);
+            std::string sanitizedMain = SanitizeCodeForEngine(code, m_definedWords);
             mod->AddScriptSection("LSP_Doc", sanitizedMain.c_str(), sanitizedMain.size());
             angel_lsp::LspLogger::Info("[Validation] Added main script section 'LSP_Doc'");
 
