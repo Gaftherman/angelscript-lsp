@@ -3,6 +3,9 @@
 #include <string_view>
 #include <sstream>
 #include <iostream>
+#include <fstream>
+#include <algorithm>
+#include <unordered_set>
 
 static inline TSNode FieldChild(TSNode node, const char* field)
 {
@@ -11,6 +14,104 @@ static inline TSNode FieldChild(TSNode node, const char* field)
 
 namespace analysis
 {
+    std::string SymbolCollector::ExtractIncludePath(std::string_view text)
+    {
+        size_t firstQuote = text.find_first_of("\"<");
+        if (firstQuote == std::string_view::npos)
+        {
+            size_t incPos = text.find("include");
+            if (incPos != std::string_view::npos)
+            {
+                text.remove_prefix(incPos + 7);
+                size_t start = text.find_first_not_of(" \t");
+                if (start != std::string_view::npos)
+                    text.remove_prefix(start);
+                size_t end = text.find_last_not_of(" \t\r\n");
+                if (end != std::string_view::npos)
+                    text = text.substr(0, end + 1);
+                return std::string(text);
+            }
+            return "";
+        }
+        char closeChar = (text[firstQuote] == '<') ? '>' : '"';
+        size_t secondQuote = text.find(closeChar, firstQuote + 1);
+        if (secondQuote != std::string_view::npos)
+        {
+            return std::string(text.substr(firstQuote + 1, secondQuote - firstQuote - 1));
+        }
+        return std::string(text.substr(firstQuote + 1));
+    }
+
+    std::string SymbolCollector::ResolveIncludeUri(std::string_view baseUri, std::string_view relPath)
+    {
+        if (relPath.empty())
+            return "";
+
+        if (relPath.starts_with("file:///") || relPath.starts_with("file://"))
+            return std::string(relPath);
+
+        std::string base(baseUri);
+        size_t lastSlash = base.rfind('/');
+        if (lastSlash != std::string::npos)
+        {
+            base = base.substr(0, lastSlash + 1);
+        }
+        else
+        {
+            base += "/";
+        }
+
+        std::string fullPath = base + std::string(relPath);
+        std::replace(fullPath.begin(), fullPath.end(), '\\', '/');
+
+        size_t prefixEnd = fullPath.find("://");
+        std::string prefix;
+        std::string pathPart;
+        if (prefixEnd != std::string::npos)
+        {
+            if (fullPath.starts_with("file:///"))
+            {
+                prefix = "file:///";
+                pathPart = fullPath.substr(8);
+            }
+            else
+            {
+                prefix = fullPath.substr(0, prefixEnd + 3);
+                pathPart = fullPath.substr(prefixEnd + 3);
+            }
+        }
+        else
+        {
+            pathPart = fullPath;
+        }
+
+        std::stringstream ss(pathPart);
+        std::string seg;
+        std::vector<std::string> segs;
+        while (std::getline(ss, seg, '/'))
+        {
+            if (seg.empty() || seg == ".")
+                continue;
+            if (seg == "..")
+            {
+                if (!segs.empty())
+                    segs.pop_back();
+            }
+            else
+            {
+                segs.push_back(seg);
+            }
+        }
+
+        std::string result = prefix;
+        for (size_t i = 0; i < segs.size(); i++)
+        {
+            if (i > 0) result += "/";
+            result += segs[i];
+        }
+        return result;
+    }
+
     std::string SymbolCollector::GetNodeText(TSNode node, const Document &doc)
     {
         if (ts_node_is_null(node))
@@ -1015,6 +1116,62 @@ namespace analysis
             else
             {
                 table.AddGlobal(sym);
+            }
+            return;
+        }
+        else if (type == "preproc_directive")
+        {
+            std::string text = GetNodeText(node, doc);
+            if (text.starts_with("#include"))
+            {
+                std::string relPath = ExtractIncludePath(text);
+                if (!relPath.empty())
+                {
+                    std::string targetUri = ResolveIncludeUri(doc.GetUri(), relPath);
+                    if (!targetUri.empty())
+                    {
+                        auto sym = std::make_shared<Symbol>();
+                        sym->uri = targetUri;
+                        sym->name = relPath;
+                        sym->kind = SymbolKind::Variable;
+                        sym->typeInfo = "#include";
+                        sym->docComment = "Included script file: " + targetUri;
+                        sym->selectionRange = GetRange(node, doc);
+                        sym->fullRange = GetRange(node, doc);
+                        table.AddGlobal(sym);
+
+                        static thread_local std::unordered_set<std::string> visitedIncludes;
+                        bool isTopLevel = visitedIncludes.empty();
+                        if (isTopLevel)
+                        {
+                            visitedIncludes.insert(doc.GetUri());
+                        }
+
+                        if (visitedIncludes.insert(targetUri).second)
+                        {
+                            std::string filePath = targetUri;
+                            if (filePath.starts_with("file:///"))
+                                filePath = filePath.substr(8);
+                            else if (filePath.starts_with("file://"))
+                                filePath = filePath.substr(7);
+
+                            std::ifstream infile(filePath);
+                            if (infile.is_open())
+                            {
+                                std::stringstream buffer;
+                                buffer << infile.rdbuf();
+                                std::string incContent = buffer.str();
+                                Document incDoc(targetUri, incContent);
+                                CollectGlobals(incDoc, table);
+                            }
+                        }
+
+                        if (isTopLevel)
+                        {
+                            visitedIncludes.clear();
+                        }
+                    }
+                }
             }
             return;
         }

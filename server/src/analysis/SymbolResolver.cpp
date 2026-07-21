@@ -1,4 +1,5 @@
 #include "analysis/SymbolResolver.h"
+#include "analysis/SymbolCollector.h"
 #include <string_view>
 #include <optional>
 #include <algorithm>
@@ -224,10 +225,51 @@ namespace analysis
 
     const Symbol *SymbolResolver::ResolveAt(const Document &doc, const SymbolTable &table, uint32_t line, uint32_t character, std::vector<const Symbol *> *outMultipleResults)
     {
-        TSNode node = doc.NodeAt(line, character);
-        if (ts_node_is_null(node))
+        TSNode rawNode = doc.NodeAt(line, character);
+        if (ts_node_is_null(rawNode))
             return nullptr;
 
+        TSNode preprocNode = rawNode;
+        while (!ts_node_is_null(preprocNode))
+        {
+            if (std::string_view(ts_node_type(preprocNode)) == "preproc_directive")
+                break;
+            preprocNode = ts_node_parent(preprocNode);
+        }
+        if (!ts_node_is_null(preprocNode))
+        {
+            std::string text = SymbolCollector::GetNodeText(preprocNode, doc);
+            if (text.starts_with("#include"))
+            {
+                std::string relPath = SymbolCollector::ExtractIncludePath(text);
+                if (!relPath.empty())
+                {
+                    std::string targetUri = SymbolCollector::ResolveIncludeUri(doc.GetUri(), relPath);
+                    if (!targetUri.empty())
+                    {
+                        std::vector<const Symbol *> incSyms = table.FindByName(relPath);
+                        if (!incSyms.empty())
+                        {
+                            if (outMultipleResults) outMultipleResults->push_back(incSyms[0]);
+                            return incSyms[0];
+                        }
+
+                        static thread_local Symbol tempIncSym;
+                        tempIncSym.name = relPath;
+                        tempIncSym.uri = targetUri;
+                        tempIncSym.kind = SymbolKind::Variable;
+                        tempIncSym.typeInfo = "#include";
+                        tempIncSym.docComment = "Included script file: " + targetUri;
+                        tempIncSym.selectionRange = SymbolCollector::GetRange(preprocNode, doc);
+                        tempIncSym.fullRange = SymbolCollector::GetRange(preprocNode, doc);
+                        if (outMultipleResults) outMultipleResults->push_back(&tempIncSym);
+                        return &tempIncSym;
+                    }
+                }
+            }
+        }
+
+        TSNode node = rawNode;
         while (!ts_node_is_null(node))
         {
             std::string_view type = ts_node_type(node);

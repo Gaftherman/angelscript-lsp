@@ -57,6 +57,16 @@ namespace analysis
         static lsp::Range GetRange(TSNode node, const Document &doc);
 
         /**
+         * @brief Extracts the relative include path from a #include directive text.
+         */
+        static std::string ExtractIncludePath(std::string_view text);
+
+        /**
+         * @brief Resolves a relative include path against a base file URI into an absolute file URI.
+         */
+        static std::string ResolveIncludeUri(std::string_view baseUri, std::string_view relPath);
+
+        /**
          * @brief Recursive helper to traverse AST for globals.
          *
          * @param node The AST node to traverse.

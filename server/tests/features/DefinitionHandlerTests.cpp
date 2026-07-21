@@ -583,3 +583,75 @@ void Main()
     CHECK(typeLoc.uri.toString() == predefinedUri);
     CHECK(typeLoc.range.start.line == 1);
 }
+
+TEST_CASE("DefinitionHandler - #include Directives & Cross-File Symbol Resolution")
+{
+    const char *HEADER_SRC = R"script(
+namespace Engine
+{
+    class RenderDevice
+    {
+        void Present() {}
+    }
+}
+)script";
+
+    const char *MAIN_SRC = R"script(
+#include "engine/render.as"
+
+void AppMain()
+{
+    Engine::RenderDevice device;
+    device.Present();
+}
+)script";
+
+    std::string headerUri = "file:///project/engine/render.as";
+    Document headerDoc(headerUri, HEADER_SRC);
+
+    std::string mainUri = "file:///project/main.as";
+    Document mainDoc(mainUri, MAIN_SRC);
+
+    analysis::SymbolTable table;
+    analysis::SymbolCollector::CollectGlobals(headerDoc, table);
+    analysis::SymbolCollector::CollectGlobals(mainDoc, table);
+    analysis::SymbolCollector::TraverseLocals(mainDoc.RootNode(), mainDoc, table, nullptr);
+
+    // 1. Go to Definition on `#include "engine/render.as"` line in main.as -> file:///project/engine/render.as
+    lsp::requests::TextDocument_Definition::Params incReq;
+    incReq.textDocument.uri = lsp::DocumentUri::parse(mainUri);
+    incReq.position.line = 1;
+    incReq.position.character = 5; // On `#include`
+
+    auto incResult = features::ProcessDefinition(incReq, mainDoc, table, nullptr);
+    REQUIRE(!incResult.isNull());
+    const auto &incDef = std::get<lsp::Definition>(*incResult);
+    const auto &incLoc = std::get<lsp::Location>(incDef);
+    CHECK(incLoc.uri.toString() == lsp::DocumentUri::parse(headerUri).toString());
+
+    // 2. Go to Definition on `RenderDevice` in main.as -> class RenderDevice in engine/render.as
+    lsp::requests::TextDocument_Definition::Params classReq;
+    classReq.textDocument.uri = lsp::DocumentUri::parse(mainUri);
+    classReq.position.line = 5;
+    classReq.position.character = 14;
+
+    auto classResult = features::ProcessDefinition(classReq, mainDoc, table, nullptr);
+    REQUIRE(!classResult.isNull());
+    const auto &classDef = std::get<lsp::Definition>(*classResult);
+    const auto &classLoc = std::get<lsp::Location>(classDef);
+    CHECK(classLoc.uri.toString() == lsp::DocumentUri::parse(headerUri).toString());
+    CHECK(classLoc.range.start.line == 3);
+
+    // 3. Go to Definition on `device.Present()` in main.as -> void Present() in engine/render.as
+    lsp::requests::TextDocument_Definition::Params methodReq;
+    methodReq.textDocument.uri = lsp::DocumentUri::parse(mainUri);
+    methodReq.position.line = 6;
+    methodReq.position.character = 12; // `Present`
+
+    auto methodResult = features::ProcessDefinition(methodReq, mainDoc, table, nullptr);
+    REQUIRE(!methodResult.isNull());
+    const auto &methodDef = std::get<lsp::Definition>(*methodResult);
+    const auto &methodLoc = std::get<lsp::Location>(methodDef);
+    CHECK(methodLoc.uri.toString() == lsp::DocumentUri::parse(headerUri).toString());
+    CHECK(methodLoc.range.start.line == 5);
+}
