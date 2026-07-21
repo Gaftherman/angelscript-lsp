@@ -418,3 +418,168 @@ void EdgeCaseTest()
     REQUIRE(locsShadow.size() == 1);
     CHECK(locsShadow[0].range.start.line == 33);
 }
+
+TEST_CASE("DefinitionHandler - 5-Level Deep Namespaces & Complex Control Flow (Switch, Nested For, Do-While)")
+{
+    const char *SRC = R"script(
+namespace N1 {
+    namespace N2 {
+        namespace N3 {
+            namespace N4 {
+                namespace N5 {
+                    class DeepComponent
+                    {
+                        void Execute() {}
+                    }
+                }
+            }
+        }
+    }
+}
+
+enum ExecutionMode { MODE_INIT, MODE_RUN }
+
+void ControlFlowTest(ExecutionMode mode)
+{
+    N1::N2::N3::N4::N5::DeepComponent comp;
+    comp.Execute();
+
+    switch (mode)
+    {
+    case MODE_RUN:
+        int switchVar = 42;
+        int result = switchVar * 2;
+        break;
+    }
+
+    for (int i = 0; i < 10; i++)
+    {
+        for (int j = 0; j < 5; j++)
+        {
+            int sum = i + j;
+        }
+    }
+
+    int count = 0;
+    do
+    {
+        int step = count + 1;
+        count++;
+    } while (count < 5);
+}
+)script";
+
+    // 1. 5-level deep namespace N1 -> Line 1
+    auto locsN1 = GetDefinitionLocations(SRC, "N1::N2::N3::N4::N5::DeepComponent", 0);
+    REQUIRE(locsN1.size() == 1);
+    CHECK(locsN1[0].range.start.line == 1);
+
+    // 2. 5-level deep namespace N3 -> Line 3
+    auto locsN3 = GetDefinitionLocations(SRC, "N1::N2::N3::N4::N5::DeepComponent", 8);
+    REQUIRE(locsN3.size() == 1);
+    CHECK(locsN3[0].range.start.line == 3);
+
+    // 3. 5-level deep namespace N5 -> Line 5
+    auto locsN5 = GetDefinitionLocations(SRC, "N1::N2::N3::N4::N5::DeepComponent", 16);
+    REQUIRE(locsN5.size() == 1);
+    CHECK(locsN5[0].range.start.line == 5);
+
+    // 4. 5-level deep class DeepComponent -> Line 6
+    auto locsDeepClass = GetDefinitionLocations(SRC, "N1::N2::N3::N4::N5::DeepComponent", 20);
+    REQUIRE(locsDeepClass.size() == 1);
+    CHECK(locsDeepClass[0].range.start.line == 6);
+
+    // 5. Method call `comp.Execute()` -> Line 8
+    auto locsDeepMethod = GetDefinitionLocations(SRC, "comp.Execute();", 5);
+    REQUIRE(locsDeepMethod.size() == 1);
+    CHECK(locsDeepMethod[0].range.start.line == 8);
+
+    // 6. Switch-case variable `switchVar` -> Line 26
+    auto locsSwitchVar = GetDefinitionLocations(SRC, "switchVar * 2", 0);
+    REQUIRE(locsSwitchVar.size() == 1);
+    CHECK(locsSwitchVar[0].range.start.line == 26);
+
+    // 7. Nested for-loop outer variable `i` -> Line 31
+    auto locsOuterI = GetDefinitionLocations(SRC, "i + j;", 0);
+    REQUIRE(locsOuterI.size() == 1);
+    CHECK(locsOuterI[0].range.start.line == 31);
+
+    // 8. Nested for-loop inner variable `j` -> Line 33
+    auto locsInnerJ = GetDefinitionLocations(SRC, "i + j;", 4);
+    REQUIRE(locsInnerJ.size() == 1);
+    CHECK(locsInnerJ[0].range.start.line == 33);
+
+    // 9. Do-while loop variable `count` -> Line 39
+    auto locsDoWhileCount = GetDefinitionLocations(SRC, "count + 1", 0);
+    REQUIRE(locsDoWhileCount.size() == 1);
+    CHECK(locsDoWhileCount[0].range.start.line == 39);
+}
+
+TEST_CASE("DefinitionHandler - Cross-File Resolution & as.predefined Headers")
+{
+    const char *PREDEFINED_SRC = R"script(
+class string
+{
+    uint length() const;
+    string opAdd(const string &in) const;
+}
+
+class Vector3
+{
+    float x;
+    float y;
+    float z;
+
+    Vector3(float ax, float ay, float az);
+}
+)script";
+
+    const char *MAIN_SRC = R"script(
+void Main()
+{
+    string msg = "Hello AngelScript";
+    uint len = msg.length();
+    Vector3 vec(1.0f, 2.0f, 3.0f);
+}
+)script";
+
+    std::string predefinedUri = "file:///as.predefined";
+    Document predefinedDoc(predefinedUri, PREDEFINED_SRC);
+    
+    std::string mainUri = "file:///main.as";
+    Document mainDoc(mainUri, MAIN_SRC);
+
+    analysis::SymbolTable table;
+    analysis::SymbolCollector::CollectGlobals(predefinedDoc, table);
+    analysis::SymbolCollector::CollectGlobals(mainDoc, table);
+    analysis::SymbolCollector::TraverseLocals(mainDoc.RootNode(), mainDoc, table, nullptr);
+
+    // 1. Go to Definition on `msg.length()` from main.as -> length() in file:///as.predefined
+    size_t offset = std::string(MAIN_SRC).find("length()");
+    uint32_t line = 4, col = (uint32_t)(offset - std::string(MAIN_SRC).rfind('\n', offset) - 1);
+
+    lsp::requests::TextDocument_Definition::Params req;
+    req.textDocument.uri = lsp::DocumentUri::parse(mainUri);
+    req.position.line = line;
+    req.position.character = col;
+
+    auto result = features::ProcessDefinition(req, mainDoc, table, nullptr);
+    REQUIRE(!result.isNull());
+    const auto &def = std::get<lsp::Definition>(*result);
+    const auto &loc = std::get<lsp::Location>(def);
+    CHECK(loc.uri.toString() == predefinedUri);
+    CHECK(loc.range.start.line == 3);
+
+    // 2. Go to Type Definition on `msg` -> class string in file:///as.predefined
+    lsp::requests::TextDocument_TypeDefinition::Params typeReq;
+    typeReq.textDocument.uri = lsp::DocumentUri::parse(mainUri);
+    typeReq.position.line = 3;
+    typeReq.position.character = 11; // `msg`
+
+    auto typeResult = features::ProcessTypeDefinition(typeReq, mainDoc, table, nullptr);
+    REQUIRE(!typeResult.isNull());
+    const auto &typeDef = std::get<lsp::Definition>(*typeResult);
+    const auto &typeLoc = std::get<lsp::Location>(typeDef);
+    CHECK(typeLoc.uri.toString() == predefinedUri);
+    CHECK(typeLoc.range.start.line == 1);
+}
