@@ -45,6 +45,71 @@ namespace angel_lsp
             return "";
         }
         
+        static std::vector<std::string> SplitTemplateArgs(const std::string& str) {
+            std::vector<std::string> args;
+            int depth = 0;
+            std::string current;
+            for (char c : str) {
+                if (c == '<') depth++;
+                else if (c == '>') depth--;
+                else if (c == ',' && depth == 0) {
+                    size_t first = current.find_first_not_of(" \t");
+                    if (first != std::string::npos) {
+                        size_t last = current.find_last_not_of(" \t");
+                        args.push_back(current.substr(first, last - first + 1));
+                    } else {
+                        args.push_back("");
+                    }
+                    current.clear();
+                    continue;
+                }
+                current += c;
+            }
+            size_t first = current.find_first_not_of(" \t");
+            if (first != std::string::npos) {
+                size_t last = current.find_last_not_of(" \t");
+                args.push_back(current.substr(first, last - first + 1));
+            } else if (!current.empty() || args.size() > 0) {
+                if (current.find_first_not_of(" \t") == std::string::npos && current.length() > 0)
+                    args.push_back("");
+            }
+            return args;
+        }
+
+        static std::string ApplyTemplateSubstitution(std::string text, const std::string& templateParams, const std::string& subTypesStr) {
+            if (templateParams.empty() || subTypesStr.empty()) return text;
+            std::vector<std::string> paramNames = SplitTemplateArgs(templateParams);
+            std::vector<std::string> subTypes = SplitTemplateArgs(subTypesStr);
+
+            size_t count = std::min(paramNames.size(), subTypes.size());
+            for (size_t i = 0; i < count; i++) {
+                std::string paramName = paramNames[i];
+                std::string subType = subTypes[i];
+                
+                size_t pos = text.find(paramName);
+                while (pos != std::string::npos)
+                {
+                    bool match = true;
+                    if (pos > 0 && (isalnum(text[pos - 1]) || text[pos - 1] == '_'))
+                        match = false;
+                    if (pos + paramName.length() < text.length() && (isalnum(text[pos + paramName.length()]) || text[pos + paramName.length()] == '_'))
+                        match = false;
+
+                    if (match)
+                    {
+                        text.replace(pos, paramName.length(), subType);
+                        pos += subType.length();
+                    }
+                    else
+                    {
+                        pos += paramName.length();
+                    }
+                    pos = text.find(paramName, pos);
+                }
+            }
+            return text;
+        }
+
         static std::string BuildSignatureHelper(const analysis::Symbol *renderSym, const analysis::Symbol *originalSym, const std::string& dynamicDisplayName, const std::string& templateSubstitution)
         {
             bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
@@ -81,27 +146,7 @@ namespace angel_lsp
 
                 if (!typeToSub.empty())
                 {
-                    std::string paramName = renderSym->parent->templateParam;
-                    size_t pos = sig.find(paramName);
-                    while (pos != std::string::npos)
-                    {
-                        bool match = true;
-                        if (pos > 0 && (isalnum(sig[pos - 1]) || sig[pos - 1] == '_'))
-                            match = false;
-                        if (pos + paramName.length() < sig.length() && (isalnum(sig[pos + paramName.length()]) || sig[pos + paramName.length()] == '_'))
-                            match = false;
-
-                        if (match)
-                        {
-                            sig.replace(pos, paramName.length(), typeToSub);
-                            pos += typeToSub.length();
-                        }
-                        else
-                        {
-                            pos += paramName.length();
-                        }
-                        pos = sig.find(paramName, pos);
-                    }
+                    sig = ApplyTemplateSubstitution(sig, renderSym->parent->templateParam, typeToSub);
                 }
             }
             return sig;
@@ -139,9 +184,15 @@ namespace angel_lsp
                     hp.typeName     = p.typeName;
                     hp.name         = p.name;
                     hp.defaultValue = p.defaultValue;
+                    if (sym->parent && !sym->parent->templateParam.empty() && !templateSubstitution.empty()) {
+                        hp.typeName = ApplyTemplateSubstitution(hp.typeName, sym->parent->templateParam, templateSubstitution);
+                    }
                     info.parameters->push_back(hp);
                 }
                 info.returnType = sym->typeInfo;
+                if (sym->parent && !sym->parent->templateParam.empty() && !templateSubstitution.empty() && info.returnType.has_value()) {
+                    info.returnType = ApplyTemplateSubstitution(*info.returnType, sym->parent->templateParam, templateSubstitution);
+                }
             }
 
             // 4. template parameters
@@ -252,9 +303,14 @@ namespace angel_lsp
                 if (!ts_node_is_null(nodeUnder))
                 {
                     TSNode parent = ts_node_parent(nodeUnder);
-                    if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "member_expression")
+                    std::string_view parentType = ts_node_is_null(parent) ? "" : ts_node_type(parent);
+                    if (parentType == "member_expression" || parentType == "field_access")
                     {
                         TSNode memberNode = ts_node_child_by_field_name(parent, "member", sizeof("member") - 1);
+                        if (ts_node_is_null(memberNode) || !ts_node_eq(nodeUnder, memberNode)) {
+                            memberNode = ts_node_child_by_field_name(parent, "field", sizeof("field") - 1);
+                        }
+                        
                         if (!ts_node_is_null(memberNode) && ts_node_eq(nodeUnder, memberNode))
                         {
                             TSNode objectNode = ts_node_child_by_field_name(parent, "object", sizeof("object") - 1);
