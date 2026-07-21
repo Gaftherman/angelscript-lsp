@@ -1,4 +1,4 @@
-﻿#include "HoverHandler.h"
+#include "HoverHandler.h"
 #include "features/hover/HoverInfo.h"
 #include "utils/DoxygenParser.h"
 #include "analysis/SymbolResolver.h"
@@ -250,7 +250,7 @@ namespace angel_lsp
             uint32_t line = req.position.line;
             uint32_t col = req.position.character;
 
-            std::string markdown = "";
+            std::vector<HoverInfo::HoverSection> hoverSections;
             const auto &s = i18n::GetStrings(locale);
 
             std::vector<const analysis::Symbol *> multiResults;
@@ -339,7 +339,7 @@ namespace angel_lsp
             if (sym != nullptr)
             {
                 HoverInfo info = BuildHoverInfo(sym, sym, multiResults, doc, table, s, locale, dynamicDisplayName, templateSubstitution);
-                markdown = info.ToMarkdown(locale);
+                hoverSections = info.ToHoverSections(locale);
             }
             else
             {
@@ -363,11 +363,11 @@ namespace angel_lsp
                                 info.rawSignature = decl;
                                 info.builtinLabel = s.hoverBuiltinFunc;
                                 info.isBuiltin = true;
-                                markdown = info.ToMarkdown(locale);
+                                hoverSections = info.ToHoverSections(locale);
                                 break;
                             }
                         }
-                        if (markdown.empty())
+                        if (hoverSections.empty())
                         {
                             int typeId = engine->GetTypeIdByDecl(name.c_str());
                             if (typeId >= 0)
@@ -381,7 +381,7 @@ namespace angel_lsp
                                     info.rawSignature = "class " + std::string(type->GetName());
                                     info.builtinLabel = s.hoverBuiltinType;
                                     info.isBuiltin = true;
-                                    markdown = info.ToMarkdown(locale);
+                                    hoverSections = info.ToHoverSections(locale);
                                 }
                             }
                         }
@@ -395,22 +395,32 @@ namespace angel_lsp
                 auto diags = diagCache->GetAt(req.textDocument.uri.toString(), line, col);
                 for (const auto *d : diags)
                 {
-                    if (!markdown.empty())
-                        markdown += "\n\n---\n\n";
+                    HoverInfo::HoverSection diagSection;
+                    diagSection.isCodeBlock = false;
                     std::string prefix = d->severity == lsp::DiagnosticSeverity::Error ? "**" + std::string(s.hoverEngineError) + "**" : "**" + std::string(s.hoverEngineWarn) + "**";
-                    markdown += prefix + " `" + d->message + "`";
+                    diagSection.content = prefix + " `" + d->message + "`";
+                    hoverSections.push_back(diagSection);
                 }
             }
 
-            if (markdown.empty())
+            if (hoverSections.empty())
                 return;
 
             result = lsp::Hover{};
             auto &hover = *result;
-            lsp::MarkupContent markup;
-            markup.kind = lsp::MarkupKind::Markdown;
-            markup.value = markdown;
-            hover.contents = markup;
+            
+            lsp::Array<lsp::MarkedString> markedStrings;
+            for (const auto& section : hoverSections) {
+                if (section.isCodeBlock) {
+                    lsp::MarkedString_Language_Value ms;
+                    ms.language = section.language;
+                    ms.value = section.content;
+                    markedStrings.push_back(ms);
+                } else {
+                    markedStrings.push_back(lsp::String{section.content});
+                }
+            }
+            hover.contents = markedStrings;
         }
     }
 }

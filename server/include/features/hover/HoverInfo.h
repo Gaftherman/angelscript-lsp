@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <string>
 #include <vector>
 #include <optional>
@@ -59,8 +59,14 @@ struct HoverInfo {
     std::string diagnosticMessage;
     bool isDiagnosticError = false;
 
-    /// Render to markdown using the given locale for section labels.
-    std::string ToMarkdown(i18n::Locale locale) const;
+    struct HoverSection {
+        bool isCodeBlock = false;
+        std::string language;
+        std::string content;
+    };
+
+    /// Render to structured hover sections.
+    std::vector<HoverSection> ToHoverSections(i18n::Locale locale) const;
 };
 
 } // namespace features

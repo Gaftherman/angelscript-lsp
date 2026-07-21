@@ -1,4 +1,4 @@
-#include <doctest/doctest.h>
+﻿#include <doctest/doctest.h>
 #include <iostream>
 #include "features/hover/HoverInfo.h"
 #include "i18n/LspStrings.h"
@@ -34,7 +34,16 @@ TEST_CASE("HoverInfo: function with full docs renders clangd-style")
     
     info.notes.push_back("Clamps t between 0 and 1.");
     
-    std::string md = info.ToMarkdown(Locale::EN);
+    auto sections = info.ToHoverSections(Locale::EN);
+    std::string md = "";
+    for (const auto& sec : sections) {
+        if (sec.isCodeBlock) {
+            md += "```" + sec.language + "\n" + sec.content + "\n```";
+        } else {
+            if (!md.empty()) md += "\n\n---\n\n";
+            md += sec.content;
+        }
+    }
     std::cout << "GENERATED MD:\\n" << md << "\\nEND MD\\n";
     
     CHECK(md.find("```angelscript\n// In Engine::Math\nfloat Math::Lerp(float a, float b, float t)\n```") != std::string::npos);
@@ -56,7 +65,16 @@ TEST_CASE("HoverInfo: void return is omitted from Returns section")
     info.rawSignature = "void DoNothing()";
     info.returnType = "void";
     
-    std::string md = info.ToMarkdown(Locale::EN);
+    auto sections = info.ToHoverSections(Locale::EN);
+    std::string md = "";
+    for (const auto& sec : sections) {
+        if (sec.isCodeBlock) {
+            md += "```" + sec.language + "\n" + sec.content + "\n```";
+        } else {
+            if (!md.empty()) md += "\n\n---\n\n";
+            md += sec.content;
+        }
+    }
     CHECK(md.find("### Returns") == std::string::npos);
 }
 
@@ -68,6 +86,15 @@ TEST_CASE("HoverInfo: overload count appended in italic")
     info.rawSignature = "float Lerp()";
     info.overloadCount = 2;
     
-    std::string md = info.ToMarkdown(Locale::EN);
+    auto sections = info.ToHoverSections(Locale::EN);
+    std::string md = "";
+    for (const auto& sec : sections) {
+        if (sec.isCodeBlock) {
+            md += "```" + sec.language + "\n" + sec.content + "\n```";
+        } else {
+            if (!md.empty()) md += "\n\n---\n\n";
+            md += sec.content;
+        }
+    }
     CHECK(md.find("*+2 overloads*") != std::string::npos);
 }

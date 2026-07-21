@@ -239,12 +239,13 @@ namespace utils {
         // The legacy test expects just the doc output, not the code block.
         // We'll strip the heading and code block from ToMarkdown.
         info.kind = analysis::SymbolKind::Unknown; // Don't print heading
-        std::string md = info.ToMarkdown(locale);
-        
-        // Remove the top empty heading and rulers
-        size_t start = md.find("```angelscript\n\n```\n\n");
-        if (start != std::string::npos) {
-            md = md.substr(start + 22);
+        auto sections = info.ToHoverSections(locale);
+        std::string md = "";
+        for (const auto& sec : sections) {
+            if (!sec.isCodeBlock) {
+                if (!md.empty()) md += "\n\n---\n\n";
+                md += sec.content;
+            }
         }
         
         return md;

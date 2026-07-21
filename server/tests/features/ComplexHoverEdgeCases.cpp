@@ -1,4 +1,4 @@
-#include <doctest/doctest.h>
+﻿#include <doctest/doctest.h>
 #include <iostream>
 #include <variant>
 #include <string>
@@ -149,7 +149,19 @@ TEST_SUITE("AdvancedHoverEdgeCases")
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN, nullptr);
 
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         
         // Debe reflejar la firma completa con el scope de la clase base
         CHECK(markup.value.find("void Component::Update(float dt)") != std::string::npos);
@@ -209,7 +221,19 @@ void Main() {
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN, nullptr);
 
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         std::cout << "TEST 3 MARKUP:\\n" << markup.value << "\\nEND TEST 3\\n";
         
         // Reemplaza 'V' por 'array<Particle@>' en la firma retornada
@@ -250,7 +274,19 @@ void Main() {
         angel_lsp::features::ProcessHover(result, req, doc, table, &diagCache, i18n::Locale::EN, nullptr);
 
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         
         // Verifica que la sección de diagnóstico de motor esté correctamente agregada con formato
         CHECK(markup.value.find("Cannot implicitly convert 'string' to 'int'") != std::string::npos);
@@ -282,7 +318,19 @@ void Main() {
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN, nullptr);
 
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         
         // Existen 3 funciones ProcessData en total, por lo que debe mostrar "+2 overloads"
         CHECK(markup.value.find("*+2 overloads*") != std::string::npos);

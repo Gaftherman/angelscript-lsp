@@ -1,22 +1,24 @@
-#include "features/hover/HoverInfo.h"
+﻿#include "features/hover/HoverInfo.h"
 #include "i18n/LspStrings.h"
 
 namespace angel_lsp {
 namespace features {
 
-std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
+std::vector<HoverInfo::HoverSection> HoverInfo::ToHoverSections(i18n::Locale locale) const {
     const auto& s = i18n::GetStrings(locale);
     std::vector<std::string> sections;
 
     // 1. CODE BLOCK with signature
-    std::string codeBlock = "```angelscript\n";
+    std::vector<HoverSection> resultSections;
+    HoverSection codeBlock;
+    codeBlock.isCodeBlock = true;
+    codeBlock.language = "angelscript";
     if (!localScope.empty()) {
-        codeBlock += "// In " + localScope + "\n";
+        codeBlock.content += "// In " + localScope + "\n";
     }
-    codeBlock += rawSignature;
-    if (!enumValue.empty()) codeBlock += " = " + enumValue;
-    codeBlock += "\n```";
-    sections.push_back(codeBlock);
+    codeBlock.content += rawSignature;
+    if (!enumValue.empty()) codeBlock.content += " = " + enumValue;
+    resultSections.push_back(codeBlock);
 
     // 2. BRIEF & DETAILS TEXT
     std::string docText;
@@ -94,7 +96,7 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
         sections.push_back("*+" + std::to_string(overloadCount) + " " + s.hoverOverloads + "*");
     }
 
-    // JOIN SECTIONS WITH ---
+    // JOIN TEXT SECTIONS WITH ---
     std::string md;
     for (size_t i = 0; i < sections.size(); ++i) {
         md += sections[i];
@@ -107,7 +109,14 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     while (!md.empty() && (md.back() == '\n' || md.back() == ' '))
         md.pop_back();
 
-    return md;
+    if (!md.empty()) {
+        HoverSection textSection;
+        textSection.isCodeBlock = false;
+        textSection.content = md;
+        resultSections.push_back(textSection);
+    }
+
+    return resultSections;
 }
 
 } // namespace features
