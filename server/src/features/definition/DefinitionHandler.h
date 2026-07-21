@@ -26,5 +26,11 @@ namespace angel_lsp
             const analysis::SymbolTable &table,
             const asIScriptEngine *engine);
 
+        lsp::requests::TextDocument_TypeDefinition::Result ProcessTypeDefinition(
+            const lsp::requests::TextDocument_TypeDefinition::Params &req,
+            const Document &doc,
+            const analysis::SymbolTable &table,
+            const asIScriptEngine *engine);
+
     }
 }

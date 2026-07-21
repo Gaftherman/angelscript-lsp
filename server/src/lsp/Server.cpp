@@ -154,6 +154,7 @@ namespace angel_lsp
 
                 result.capabilities.hoverProvider = true;
                 result.capabilities.definitionProvider = true;
+                result.capabilities.typeDefinitionProvider = true;
 
                 lsp::SemanticTokensOptions semantic_options;
                 semantic_options.legend.tokenTypes =
@@ -378,6 +379,20 @@ namespace angel_lsp
                     return features::ProcessDefinition(req, *m_documents[uri], table, asEngine);
                 }
                 return lsp::requests::TextDocument_Definition::Result{};
+            });
+
+        messageHandler->add<lsp::requests::TextDocument_TypeDefinition>(
+            [this](lsp::requests::TextDocument_TypeDefinition::Params &&req)
+            {
+                std::string uri = req.textDocument.uri.toString();
+                std::unique_lock lock(m_docMutex);
+                if (m_documents.find(uri) != m_documents.end())
+                {
+                    auto &table = m_symbolTables[uri];
+
+                    return features::ProcessTypeDefinition(req, *m_documents[uri], table, asEngine);
+                }
+                return lsp::requests::TextDocument_TypeDefinition::Result{};
             });
 
         messageHandler->add<lsp::requests::TextDocument_Completion>(

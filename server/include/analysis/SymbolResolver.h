@@ -38,11 +38,12 @@ namespace analysis
          */
         static std::string EvaluateExpressionType(const Document &doc, const SymbolTable &table, TSNode exprNode);
 
-    private:
         /**
          * @brief Cleans a raw AngelScript type string (e.g. "const Player@ in") into a pure type name ("Player").
          */
         static std::string CleanTypeName(std::string_view raw);
+
+    private:
 
         /**
          * @brief Resolves a member access expression (e.g. `obj.member`).
