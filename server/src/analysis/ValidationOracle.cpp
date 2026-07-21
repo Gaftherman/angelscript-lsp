@@ -1,7 +1,62 @@
 #include "ValidationOracle.h"
 #include "utils/LspLogger.h"
 #include "i18n/DiagnosticI18n.h"
+#include "analysis/SymbolCollector.h"
+#include "document/Document.h"
 #include <sstream>
+#include <fstream>
+#include <unordered_set>
+
+static std::string SanitizeCodeForEngine(const std::string &code)
+{
+    std::string sanitizedCode;
+    sanitizedCode.reserve(code.size());
+    std::stringstream ss(code);
+    std::string line;
+    bool first = true;
+
+    int ifDepth = 0;
+    bool inInactiveElseBranch = false;
+
+    while (std::getline(ss, line))
+    {
+        if (!first) sanitizedCode += "\n";
+        first = false;
+
+        size_t firstNonSpace = line.find_first_not_of(" \t\r");
+        if (firstNonSpace != std::string::npos && line[firstNonSpace] == '#')
+        {
+            std::string prefix = line.substr(0, firstNonSpace);
+            std::string directive = line.substr(firstNonSpace);
+
+            if (directive.starts_with("#else") || directive.starts_with("#elif"))
+            {
+                inInactiveElseBranch = true;
+            }
+            else if (directive.starts_with("#endif"))
+            {
+                if (ifDepth > 0) ifDepth--;
+                if (ifDepth == 0) inInactiveElseBranch = false;
+            }
+            else if (directive.starts_with("#if"))
+            {
+                ifDepth++;
+            }
+
+            sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
+        }
+        else if (inInactiveElseBranch)
+        {
+            size_t indent = (firstNonSpace != std::string::npos) ? firstNonSpace : 0;
+            sanitizedCode += line.substr(0, indent) + "// " + line.substr(indent);
+        }
+        else
+        {
+            sanitizedCode += line;
+        }
+    }
+    return sanitizedCode;
+}
 
 namespace analysis
 {
@@ -9,15 +64,15 @@ namespace analysis
     ValidationOracle::ValidationOracle(asIScriptEngine *engine, i18n::Locale locale)
         : m_engine(engine), m_locale(locale)
     {
-        // Ensure engine has message callback configured initially if needed,
-        // though we override it per ValidateSync call.
     }
 
     ValidationOracle::~ValidationOracle()
     {
     }
 
-    std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string &code)
+    std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string &code,
+                                                               const std::string &currentUri,
+                                                               std::function<const Document *(const std::string &)> docResolver)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_diagnostics.clear();
@@ -27,14 +82,11 @@ namespace analysis
             return m_diagnostics;
         }
 
-        // Temporarily attach our message callback
         m_engine->SetMessageCallback(asFUNCTION(MessageCallback), this, asCALL_CDECL);
 
-        // Discard any previous module with this name
         const char *moduleName = "ValidationModule";
         m_engine->DiscardModule(moduleName);
 
-        // Create a new module and add the script section
         asIScriptModule *mod = m_engine->GetModule(moduleName, asGM_ALWAYS_CREATE);
 
         if (mod)
@@ -45,29 +97,64 @@ namespace analysis
                 mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
             }
 
-            std::string sanitizedCode;
-            sanitizedCode.reserve(code.size());
-            std::stringstream ss(code);
-            std::string line;
-            bool first = true;
-            while (std::getline(ss, line))
+            if (!currentUri.empty())
             {
-                if (!first) sanitizedCode += "\n";
-                first = false;
+                std::unordered_set<std::string> visited;
+                visited.insert(currentUri);
 
-                size_t firstNonSpace = line.find_first_not_of(" \t\r");
-                if (firstNonSpace != std::string::npos && line[firstNonSpace] == '#')
-                {
-                    std::string prefix = line.substr(0, firstNonSpace);
-                    sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
-                }
-                else
-                {
-                    sanitizedCode += line;
-                }
+                std::function<void(const std::string &, const std::string &)> loadIncludes =
+                    [&](const std::string &baseUri, const std::string &srcCode) {
+                        std::stringstream ss(srcCode);
+                        std::string line;
+                        while (std::getline(ss, line))
+                        {
+                            size_t firstNonSpace = line.find_first_not_of(" \t\r");
+                            if (firstNonSpace != std::string::npos && line.substr(firstNonSpace).starts_with("#include"))
+                            {
+                                std::string relPath = SymbolCollector::ExtractIncludePath(line.substr(firstNonSpace));
+                                if (!relPath.empty())
+                                {
+                                    std::string targetUri = SymbolCollector::ResolveIncludeUri(baseUri, relPath);
+                                    if (!targetUri.empty() && visited.insert(targetUri).second)
+                                    {
+                                        std::string incContent;
+                                        const Document *openDoc = docResolver ? docResolver(targetUri) : nullptr;
+                                        if (openDoc)
+                                        {
+                                            incContent = openDoc->GetText();
+                                        }
+                                        else
+                                        {
+                                            std::string filePath = targetUri;
+                                            if (filePath.starts_with("file:///")) filePath = filePath.substr(8);
+                                            else if (filePath.starts_with("file://")) filePath = filePath.substr(7);
+
+                                            std::ifstream infile(filePath);
+                                            if (infile.is_open())
+                                            {
+                                                std::stringstream buf;
+                                                buf << infile.rdbuf();
+                                                incContent = buf.str();
+                                            }
+                                        }
+
+                                        if (!incContent.empty())
+                                        {
+                                            loadIncludes(targetUri, incContent);
+                                            std::string sanitizedInc = SanitizeCodeForEngine(incContent);
+                                            mod->AddScriptSection(targetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    };
+
+                loadIncludes(currentUri, code);
             }
 
-            mod->AddScriptSection("LSP_Doc", sanitizedCode.c_str(), sanitizedCode.size());
+            std::string sanitizedMain = SanitizeCodeForEngine(code);
+            mod->AddScriptSection("LSP_Doc", sanitizedMain.c_str(), sanitizedMain.size());
 
             // Build the module
             // This will trigger MessageCallback for any syntax or semantic errors.

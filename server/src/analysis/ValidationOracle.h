@@ -5,7 +5,10 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <functional>
 #include "i18n/LspStrings.h"
+
+#include "document/Document.h"
 
 namespace analysis
 {
@@ -37,9 +40,13 @@ namespace analysis
          * @brief Synchronously validates a code string, returning diagnostics.
          *
          * @param code The AngelScript source code to validate.
+         * @param currentUri Optional document URI for include resolution.
+         * @param docResolver Optional callback to resolve documents open in memory.
          * @return A list of LSP diagnostics (errors/warnings).
          */
-        std::vector<lsp::Diagnostic> ValidateSync(const std::string &code);
+        std::vector<lsp::Diagnostic> ValidateSync(const std::string &code,
+                                                   const std::string &currentUri = "",
+                                                   std::function<const Document *(const std::string &)> docResolver = nullptr);
 
         /**
          * @brief Updates the locale used for diagnostic translation.

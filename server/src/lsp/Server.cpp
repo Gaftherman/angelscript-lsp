@@ -478,8 +478,16 @@ namespace angel_lsp
 
             std::vector<lsp::Diagnostic> diagnostics;
             {
+                auto docResolver = [this](const std::string &u) -> const Document * {
+                    std::shared_lock docLock(m_docMutex);
+                    auto it = m_documents.find(u);
+                    if (it != m_documents.end())
+                        return it->second.get();
+                    return nullptr;
+                };
+
                 std::lock_guard<std::mutex> engineLock(m_engineMutex);
-                diagnostics = oracle->ValidateSync(text);
+                diagnostics = oracle->ValidateSync(text, uri, docResolver);
             }
 
             m_diagCache->Update(uri, diagnostics);
