@@ -64,6 +64,57 @@ namespace analysis
             return global;
         }
 
+        // Handle scoped names like "Engine::Physics" or "Engine::Physics::BodyPriority"
+        if (name.find("::") != std::string::npos)
+        {
+            std::vector<std::string> parts;
+            size_t start = 0;
+            size_t end = name.find("::");
+            while (end != std::string::npos)
+            {
+                parts.push_back(name.substr(start, end - start));
+                start = end + 2;
+                end = name.find("::", start);
+            }
+            parts.push_back(name.substr(start));
+
+            const Symbol *current = nullptr;
+            for (const std::string &part : parts)
+            {
+                if (!current)
+                {
+                    current = FindGlobalByName(part);
+                }
+                else
+                {
+                    const Symbol *next = nullptr;
+                    for (const auto &child : current->children)
+                    {
+                        if (child->name == part)
+                        {
+                            next = child.get();
+                            break;
+                        }
+                        if (child->kind == SymbolKind::Enum)
+                        {
+                            for (const auto &eMem : child->children)
+                            {
+                                if (eMem->name == part)
+                                {
+                                    next = eMem.get();
+                                    break;
+                                }
+                            }
+                            if (next) break;
+                        }
+                    }
+                    current = next;
+                }
+                if (!current) break;
+            }
+            if (current) return current;
+        }
+
         // 2. Deep search inside namespaces
         for (const auto &[nsName, nsSyms] : m_globalSymbols)
         {
@@ -71,15 +122,24 @@ namespace analysis
             {
                 if (nsSym->kind == SymbolKind::Namespace)
                 {
-                    // Recursive lambda to search inside a namespace
                     auto searchChildren = [&](auto &self, const Symbol *currentNs) -> const Symbol *
                     {
-                        // Check direct children
+                        // Check direct children and enum members
                         for (const auto &child : currentNs->children)
                         {
                             if (child->name == name)
                             {
                                 return child.get();
+                            }
+                            if (child->kind == SymbolKind::Enum)
+                            {
+                                for (const auto &eMem : child->children)
+                                {
+                                    if (eMem->name == name)
+                                    {
+                                        return eMem.get();
+                                    }
+                                }
                             }
                         }
                         // Recurse into nested namespaces

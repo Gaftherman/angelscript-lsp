@@ -29,6 +29,10 @@ namespace analysis
             if (!current)
             {
                 current = table.FindGlobalByName(part);
+                if (!current)
+                {
+                    current = table.FindByNameDeep(part);
+                }
             }
             else
             {
@@ -39,6 +43,18 @@ namespace analysis
                     {
                         next = child.get();
                         break;
+                    }
+                    if (child->kind == SymbolKind::Enum)
+                    {
+                        for (const auto &eMem : child->children)
+                        {
+                            if (eMem->name == part)
+                            {
+                                next = eMem.get();
+                                break;
+                            }
+                        }
+                        if (next) break;
                     }
                 }
                 current = next;
