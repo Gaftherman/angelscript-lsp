@@ -63,8 +63,9 @@ namespace analysis
 
         /**
          * @brief Resolves a relative include path against a base file URI into an absolute file URI.
+         * Automatically checks for auto-appended extensions (e.g. .as) and search directories.
          */
-        static std::string ResolveIncludeUri(std::string_view baseUri, std::string_view relPath);
+        static std::string ResolveIncludeUri(std::string_view baseUri, std::string_view relPath, const std::vector<std::string> &searchDirs = {});
 
         /**
          * @brief Recursive helper to traverse AST for globals.

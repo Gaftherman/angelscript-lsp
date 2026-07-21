@@ -267,6 +267,26 @@ namespace analysis
                     }
                 }
             }
+            else
+            {
+                std::vector<const Symbol *> preprocSyms = table.FindByName(text);
+                if (!preprocSyms.empty())
+                {
+                    if (outMultipleResults) outMultipleResults->push_back(preprocSyms[0]);
+                    return preprocSyms[0];
+                }
+
+                static thread_local Symbol tempPreprocSym;
+                tempPreprocSym.name = text;
+                tempPreprocSym.uri = doc.GetUri();
+                tempPreprocSym.kind = SymbolKind::Variable;
+                tempPreprocSym.typeInfo = "#preproc";
+                tempPreprocSym.docComment = "Preprocessor directive: " + text;
+                tempPreprocSym.selectionRange = SymbolCollector::GetRange(preprocNode, doc);
+                tempPreprocSym.fullRange = SymbolCollector::GetRange(preprocNode, doc);
+                if (outMultipleResults) outMultipleResults->push_back(&tempPreprocSym);
+                return &tempPreprocSym;
+            }
         }
 
         TSNode node = rawNode;

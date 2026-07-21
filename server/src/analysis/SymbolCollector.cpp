@@ -42,7 +42,18 @@ namespace analysis
         return std::string(text.substr(firstQuote + 1));
     }
 
-    std::string SymbolCollector::ResolveIncludeUri(std::string_view baseUri, std::string_view relPath)
+    static bool FileExistsOnDisk(const std::string &uri)
+    {
+        std::string path = uri;
+        if (path.starts_with("file:///")) path = path.substr(8);
+        else if (path.starts_with("file://")) path = path.substr(7);
+        std::replace(path.begin(), path.end(), '/', '\\');
+        
+        std::ifstream f(path);
+        return f.good();
+    }
+
+    std::string SymbolCollector::ResolveIncludeUri(std::string_view baseUri, std::string_view relPath, const std::vector<std::string> &searchDirs)
     {
         if (relPath.empty())
             return "";
@@ -50,66 +61,85 @@ namespace analysis
         if (relPath.starts_with("file:///") || relPath.starts_with("file://"))
             return std::string(relPath);
 
-        std::string base(baseUri);
-        size_t lastSlash = base.rfind('/');
-        if (lastSlash != std::string::npos)
-        {
-            base = base.substr(0, lastSlash + 1);
-        }
-        else
-        {
-            base += "/";
-        }
+        auto tryNormalize = [](std::string_view base, std::string_view rel) -> std::string {
+            std::string b(base);
+            size_t lastSlash = b.rfind('/');
+            if (lastSlash != std::string::npos)
+                b = b.substr(0, lastSlash + 1);
+            else
+                b += "/";
 
-        std::string fullPath = base + std::string(relPath);
-        std::replace(fullPath.begin(), fullPath.end(), '\\', '/');
+            std::string fullPath = b + std::string(rel);
+            std::replace(fullPath.begin(), fullPath.end(), '\\', '/');
 
-        size_t prefixEnd = fullPath.find("://");
-        std::string prefix;
-        std::string pathPart;
-        if (prefixEnd != std::string::npos)
-        {
-            if (fullPath.starts_with("file:///"))
+            size_t prefixEnd = fullPath.find("://");
+            std::string prefix;
+            std::string pathPart;
+            if (prefixEnd != std::string::npos)
             {
-                prefix = "file:///";
-                pathPart = fullPath.substr(8);
+                if (fullPath.starts_with("file:///"))
+                {
+                    prefix = "file:///";
+                    pathPart = fullPath.substr(8);
+                }
+                else
+                {
+                    prefix = fullPath.substr(0, prefixEnd + 3);
+                    pathPart = fullPath.substr(prefixEnd + 3);
+                }
             }
             else
             {
-                prefix = fullPath.substr(0, prefixEnd + 3);
-                pathPart = fullPath.substr(prefixEnd + 3);
+                pathPart = fullPath;
             }
-        }
-        else
+
+            std::stringstream ss(pathPart);
+            std::string seg;
+            std::vector<std::string> segs;
+            while (std::getline(ss, seg, '/'))
+            {
+                if (seg.empty() || seg == ".")
+                    continue;
+                if (seg == "..")
+                {
+                    if (!segs.empty())
+                        segs.pop_back();
+                }
+                else
+                {
+                    segs.push_back(seg);
+                }
+            }
+
+            std::string result = prefix;
+            for (size_t i = 0; i < segs.size(); i++)
+            {
+                if (i > 0) result += "/";
+                result += segs[i];
+            }
+            return result;
+        };
+
+        std::string cand = tryNormalize(baseUri, relPath);
+        if (FileExistsOnDisk(cand))
+            return cand;
+        if (FileExistsOnDisk(cand + ".as"))
+            return cand + ".as";
+
+        for (const auto &searchDir : searchDirs)
         {
-            pathPart = fullPath;
+            std::string dirCand = tryNormalize(searchDir, relPath);
+            if (FileExistsOnDisk(dirCand))
+                return dirCand;
+            if (FileExistsOnDisk(dirCand + ".as"))
+                return dirCand + ".as";
         }
 
-        std::stringstream ss(pathPart);
-        std::string seg;
-        std::vector<std::string> segs;
-        while (std::getline(ss, seg, '/'))
+        if (!cand.ends_with(".as") && !cand.ends_with(".angelscript"))
         {
-            if (seg.empty() || seg == ".")
-                continue;
-            if (seg == "..")
-            {
-                if (!segs.empty())
-                    segs.pop_back();
-            }
-            else
-            {
-                segs.push_back(seg);
-            }
+            return cand + ".as";
         }
-
-        std::string result = prefix;
-        for (size_t i = 0; i < segs.size(); i++)
-        {
-            if (i > 0) result += "/";
-            result += segs[i];
-        }
-        return result;
+        return cand;
     }
 
     std::string SymbolCollector::GetNodeText(TSNode node, const Document &doc)
@@ -1172,6 +1202,18 @@ namespace analysis
                         }
                     }
                 }
+            }
+            else
+            {
+                auto sym = std::make_shared<Symbol>();
+                sym->uri = doc.GetUri();
+                sym->name = text;
+                sym->kind = SymbolKind::Variable;
+                sym->typeInfo = "#preproc";
+                sym->docComment = "Preprocessor directive: " + text;
+                sym->selectionRange = GetRange(node, doc);
+                sym->fullRange = GetRange(node, doc);
+                table.AddGlobal(sym);
             }
             return;
         }

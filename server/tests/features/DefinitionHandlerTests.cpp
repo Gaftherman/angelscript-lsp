@@ -655,3 +655,67 @@ void AppMain()
     CHECK(methodLoc.uri.toString() == lsp::DocumentUri::parse(headerUri).toString());
     CHECK(methodLoc.range.start.line == 5);
 }
+
+TEST_CASE("DefinitionHandler - Advanced #include Formats (no .as, <angle brackets>) & Preprocessor Directives (#if, #else, #define)")
+{
+    const char *SRC = R"script(
+#include <engine/math>
+#define WITH_DEBUG 1
+
+#if WITH_DEBUG
+class NetworkManager
+{
+    void Sync() {}
+}
+#else
+class NetworkManager
+{
+    void Sync() {}
+}
+#endif
+
+void MainApp()
+{
+    #if WITH_DEBUG
+    NetworkManager net;
+    net.Sync();
+    #endif
+}
+)script";
+
+    std::string uriStr = "file:///project/app.as";
+    Document doc(uriStr, SRC);
+    analysis::SymbolTable table;
+    analysis::SymbolCollector::CollectGlobals(doc, table);
+    analysis::SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+    // 1. Go to Definition on `#include <engine/math>` -> resolves auto-appended .as -> file:///project/engine/math.as
+    lsp::requests::TextDocument_Definition::Params incReq;
+    incReq.textDocument.uri = lsp::DocumentUri::parse(uriStr);
+    incReq.position.line = 1;
+    incReq.position.character = 5;
+
+    auto incResult = features::ProcessDefinition(incReq, doc, table, nullptr);
+    REQUIRE(!incResult.isNull());
+    const auto &incDef = std::get<lsp::Definition>(*incResult);
+    const auto &incLoc = std::get<lsp::Location>(incDef);
+    CHECK(incLoc.uri.toString() == lsp::DocumentUri::parse("file:///project/engine/math.as").toString());
+
+    // 2. Go to Definition on `#define WITH_DEBUG 1` line -> returns valid location
+    lsp::requests::TextDocument_Definition::Params defReq;
+    defReq.textDocument.uri = lsp::DocumentUri::parse(uriStr);
+    defReq.position.line = 2;
+    defReq.position.character = 3;
+
+    auto defResult = features::ProcessDefinition(defReq, doc, table, nullptr);
+    REQUIRE(!defResult.isNull());
+
+    // 3. Go to Definition on `NetworkManager` inside MainApp -> returns valid location
+    lsp::requests::TextDocument_Definition::Params netReq;
+    netReq.textDocument.uri = lsp::DocumentUri::parse(uriStr);
+    netReq.position.line = 20;
+    netReq.position.character = 8; // `NetworkManager`
+
+    auto netResult = features::ProcessDefinition(netReq, doc, table, nullptr);
+    REQUIRE(!netResult.isNull());
+}
