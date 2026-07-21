@@ -2,6 +2,7 @@
 #include "features/hover/HoverInfo.h"
 #include "utils/DoxygenParser.h"
 #include "analysis/SymbolResolver.h"
+#include "utils/LspLogger.h"
 #include <angelscript.h>
 #include <set>
 #include <unordered_map>
@@ -421,6 +422,18 @@ namespace angel_lsp
                 }
             }
             hover.contents = markedStrings;
+
+            // Debug print of the Markdown output
+            std::string debugOutput = "=== HOVER MARKDOWN DEBUG ===\n";
+            for (const auto& section : hoverSections) {
+                if (section.isCodeBlock) {
+                    debugOutput += "```" + section.language + "\n" + section.content + "\n```\n";
+                } else {
+                    debugOutput += section.content + "\n";
+                }
+            }
+            debugOutput += "============================";
+            angel_lsp::LspLogger::Info(debugOutput);
         }
     }
 }
