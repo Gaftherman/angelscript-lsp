@@ -15,9 +15,6 @@ static std::string SanitizeCodeForEngine(const std::string &code)
     std::string line;
     bool first = true;
 
-    int ifDepth = 0;
-    bool inInactiveElseBranch = false;
-
     while (std::getline(ss, line))
     {
         if (!first) sanitizedCode += "\n";
@@ -27,28 +24,7 @@ static std::string SanitizeCodeForEngine(const std::string &code)
         if (firstNonSpace != std::string::npos && line[firstNonSpace] == '#')
         {
             std::string prefix = line.substr(0, firstNonSpace);
-            std::string directive = line.substr(firstNonSpace);
-
-            if (directive.starts_with("#else") || directive.starts_with("#elif"))
-            {
-                inInactiveElseBranch = true;
-            }
-            else if (directive.starts_with("#endif"))
-            {
-                if (ifDepth > 0) ifDepth--;
-                if (ifDepth == 0) inInactiveElseBranch = false;
-            }
-            else if (directive.starts_with("#if"))
-            {
-                ifDepth++;
-            }
-
             sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
-        }
-        else if (inInactiveElseBranch)
-        {
-            size_t indent = (firstNonSpace != std::string::npos) ? firstNonSpace : 0;
-            sanitizedCode += line.substr(0, indent) + "// " + line.substr(indent);
         }
         else
         {
@@ -82,6 +58,8 @@ namespace analysis
             return m_diagnostics;
         }
 
+        angel_lsp::LspLogger::Info("[Validation] Validating URI: '" + currentUri + "'");
+
         m_engine->SetMessageCallback(asFUNCTION(MessageCallback), this, asCALL_CDECL);
 
         const char *moduleName = "ValidationModule";
@@ -114,7 +92,10 @@ namespace analysis
                                 std::string relPath = SymbolCollector::ExtractIncludePath(line.substr(firstNonSpace));
                                 if (!relPath.empty())
                                 {
+                                    angel_lsp::LspLogger::Info("[Validation] Found #include '" + relPath + "' in '" + baseUri + "'");
                                     std::string targetUri = SymbolCollector::ResolveIncludeUri(baseUri, relPath);
+                                    angel_lsp::LspLogger::Info("[Validation] Resolved include to: '" + targetUri + "'");
+
                                     if (!targetUri.empty() && visited.insert(targetUri).second)
                                     {
                                         std::string incContent;
@@ -122,12 +103,14 @@ namespace analysis
                                         if (openDoc)
                                         {
                                             incContent = openDoc->GetText();
+                                            angel_lsp::LspLogger::Info("[Validation] Using in-memory document content for '" + targetUri + "'");
                                         }
                                         else
                                         {
                                             std::string filePath = targetUri;
                                             if (filePath.starts_with("file:///")) filePath = filePath.substr(8);
                                             else if (filePath.starts_with("file://")) filePath = filePath.substr(7);
+                                            std::replace(filePath.begin(), filePath.end(), '/', '\\');
 
                                             std::ifstream infile(filePath);
                                             if (infile.is_open())
@@ -135,6 +118,11 @@ namespace analysis
                                                 std::stringstream buf;
                                                 buf << infile.rdbuf();
                                                 incContent = buf.str();
+                                                angel_lsp::LspLogger::Info("[Validation] Read file from disk: '" + filePath + "' (" + std::to_string(incContent.size()) + " bytes)");
+                                            }
+                                            else
+                                            {
+                                                angel_lsp::LspLogger::Warn("[Validation] FAILED to open file at path: '" + filePath + "'");
                                             }
                                         }
 
@@ -143,6 +131,7 @@ namespace analysis
                                             loadIncludes(targetUri, incContent);
                                             std::string sanitizedInc = SanitizeCodeForEngine(incContent);
                                             mod->AddScriptSection(targetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
+                                            angel_lsp::LspLogger::Info("[Validation] Added script section '" + targetUri + "' to validation module");
                                         }
                                     }
                                 }
@@ -155,19 +144,12 @@ namespace analysis
 
             std::string sanitizedMain = SanitizeCodeForEngine(code);
             mod->AddScriptSection("LSP_Doc", sanitizedMain.c_str(), sanitizedMain.size());
+            angel_lsp::LspLogger::Info("[Validation] Added main script section 'LSP_Doc'");
 
-            // Build the module
-            // This will trigger MessageCallback for any syntax or semantic errors.
             int r = mod->Build();
-
-            if (r < 0)
-            {
-                // Compilation failed (diagnostics already populated by MessageCallback)
-                angel_lsp::LspLogger::Info("Validation module build returned " + std::to_string(r));
-            }
+            angel_lsp::LspLogger::Info("[Validation] mod->Build() returned " + std::to_string(r));
         }
 
-        // Detach message callback to be safe
         m_engine->ClearMessageCallback();
         m_engine->DiscardModule(moduleName);
 
