@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include <iostream>
 #include "features/hover/HoverInfo.h"
 #include "i18n/LspStrings.h"
 #include "analysis/Symbol.h"
@@ -21,6 +22,8 @@ TEST_CASE("HoverInfo: function with full docs renders clangd-style")
     HoverParam pb; pb.name = "b"; pb.typeName = "float"; pb.docDescription = "end";
     HoverParam pt; pt.name = "t"; pt.typeName = "float"; pt.docDescription = "alpha";
     
+    info.localScope = "Engine::Math";
+    
     info.parameters.emplace();
     info.parameters->push_back(pa);
     info.parameters->push_back(pb);
@@ -32,16 +35,17 @@ TEST_CASE("HoverInfo: function with full docs renders clangd-style")
     info.notes.push_back("Clamps t between 0 and 1.");
     
     std::string md = info.ToMarkdown(Locale::EN);
+    std::cout << "GENERATED MD:\\n" << md << "\\nEND MD\\n";
     
-    CHECK(md.find("```angelscript\nfloat Math::Lerp(float a, float b, float t)\n```") != std::string::npos);
+    CHECK(md.find("```angelscript\n// In Engine::Math\nfloat Math::Lerp(float a, float b, float t)\n```") != std::string::npos);
     CHECK(md.find("Interpolates between a and b.") != std::string::npos);
     CHECK(md.find("Uses linear interpolation.") != std::string::npos);
-    CHECK(md.find("**Parameters**") != std::string::npos);
-    CHECK(md.find("- `a` [`float`] — start") != std::string::npos);
-    CHECK(md.find("**Returns**") != std::string::npos);
-    CHECK(md.find("`float` — The interpolated value.") != std::string::npos);
+    CHECK(md.find("### Parameters") != std::string::npos);
+    CHECK(md.find("- `float a` \xE2\x80\x94 start") != std::string::npos);
+    CHECK(md.find("### Returns") != std::string::npos);
+    CHECK(md.find("`float` \xE2\x80\x94 The interpolated value.") != std::string::npos);
     CHECK(md.find("**Note:** Clamps t between 0 and 1.") != std::string::npos);
-    CHECK(md.find("### ") == std::string::npos); // Should not contain any H3 tags
+    CHECK(md.find("### ") != std::string::npos);
 }
 
 TEST_CASE("HoverInfo: void return is omitted from Returns section")
@@ -53,7 +57,7 @@ TEST_CASE("HoverInfo: void return is omitted from Returns section")
     info.returnType = "void";
     
     std::string md = info.ToMarkdown(Locale::EN);
-    CHECK(md.find("**Returns**") == std::string::npos);
+    CHECK(md.find("### Returns") == std::string::npos);
 }
 
 TEST_CASE("HoverInfo: overload count appended in italic")

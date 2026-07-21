@@ -1,9 +1,11 @@
-#include "HoverHandler.h"
+﻿#include "HoverHandler.h"
 #include "features/hover/HoverInfo.h"
 #include "utils/DoxygenParser.h"
 #include "analysis/SymbolResolver.h"
 #include <angelscript.h>
 #include <set>
+#include <unordered_map>
+#include <mutex>
 #include <sstream>
 
 namespace angel_lsp
@@ -84,9 +86,9 @@ namespace angel_lsp
                     while (pos != std::string::npos)
                     {
                         bool match = true;
-                        if (pos > 0 && isalnum(sig[pos - 1]))
+                        if (pos > 0 && (isalnum(sig[pos - 1]) || sig[pos - 1] == '_'))
                             match = false;
-                        if (pos + paramName.length() < sig.length() && isalnum(sig[pos + paramName.length()]))
+                        if (pos + paramName.length() < sig.length() && (isalnum(sig[pos + paramName.length()]) || sig[pos + paramName.length()] == '_'))
                             match = false;
 
                         if (match)
@@ -181,6 +183,11 @@ namespace angel_lsp
             return info;
         }
 
+
+        static std::unordered_multimap<std::string, asIScriptFunction*> s_builtinFunctions;
+        static const asIScriptEngine* s_cachedEngine = nullptr;
+        static std::mutex s_engineCacheMutex;
+
         void ProcessHover(lsp::requests::TextDocument_Hover::Result &result,
                           const lsp::requests::TextDocument_Hover::Params &req,
                           const Document &doc,
@@ -212,7 +219,7 @@ namespace angel_lsp
                         std::string_view typeStr = ts_node_type(current);
                         if (typeStr == "type" || typeStr == "datatype")
                         {
-                            TSNode prevSibling = ts_node_prev_sibling(current);
+                            TSNode prevSibling = ts_node_prev_named_sibling(current);
                             if (!ts_node_is_null(prevSibling))
                             {
                                 std::string_view prevType = ts_node_type(prevSibling);
@@ -247,10 +254,10 @@ namespace angel_lsp
                     TSNode parent = ts_node_parent(nodeUnder);
                     if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "member_expression")
                     {
-                        TSNode memberNode = ts_node_child_by_field_name(parent, "member", 6);
+                        TSNode memberNode = ts_node_child_by_field_name(parent, "member", sizeof("member") - 1);
                         if (!ts_node_is_null(memberNode) && ts_node_eq(nodeUnder, memberNode))
                         {
-                            TSNode objectNode = ts_node_child_by_field_name(parent, "object", 6);
+                            TSNode objectNode = ts_node_child_by_field_name(parent, "object", sizeof("object") - 1);
                             if (!ts_node_is_null(objectNode))
                             {
                                 std::string_view objSv = doc.SourceAt(objectNode);
