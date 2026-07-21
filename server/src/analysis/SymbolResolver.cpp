@@ -542,8 +542,12 @@ namespace analysis
             std::string_view type = ts_node_type(child);
             if (type == "return_type" || type == "type" || type == "datatype")
             {
-                hasReturnType = true;
-                break;
+                std::string_view rTypeSv = doc.SourceAt(child);
+                if (rTypeSv != "explicit" && rTypeSv != "property")
+                {
+                    hasReturnType = true;
+                    break;
+                }
             }
         }
 

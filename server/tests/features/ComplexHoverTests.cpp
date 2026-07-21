@@ -2571,6 +2571,142 @@ void Runner()
     CHECK(hoverClassEN.find("// In Level1::Level2::Level3") != std::string::npos);
 }
 
+TEST_CASE("Advanced Modifiers and Overload Hover Test")
+{
+    const char *SRC = R"script(
+/** @brief Abstract base class */
+abstract class AbstractBase
+{
+    /** @brief Pure virtual method */
+    void Compute() {}
+}
+
+/** @brief Shared class manager */
+shared class SharedManager
+{
+}
+
+/** @brief Final component class */
+final class FinalComponent : AbstractBase
+{
+    /** @brief Overridden final method */
+    void Compute() override final {}
+
+    /** @brief Property accessor function */
+    void set_speed(float s) property {}
+
+    /** @brief Explicit constructor */
+    explicit FinalComponent(float initialVal) {}
+
+    /** @brief Deleted copy constructor */
+    FinalComponent(const FinalComponent &in) delete {}
+}
+
+void TestOverloads(int x) {}
+void TestOverloads(int x, float y) {}
+void TestOverloads(int x, float y, string z) {}
+
+void Exec()
+{
+    TestOverloads(10);
+    TestOverloads(10, 20.0f);
+}
+)script";
+
+    Document doc("file:///advanced_modifiers.as", SRC);
+    SymbolTable table;
+    SymbolCollector::CollectGlobals(doc, table);
+    SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart, i18n::Locale loc)
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///advanced_modifiers.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, loc, nullptr);
+        std::string markup_value;
+        if (!result.isNull()) {
+            if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+                auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+                for (const auto& ms : markedStrings) {
+                    if (std::holds_alternative<lsp::String>(ms)) {
+                        markup_value += std::get<lsp::String>(ms);
+                    } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                        markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                    }
+                }
+            } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+                markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+            }
+        }
+        return markup_value;
+    };
+
+    // 1. Abstract class hover
+    std::string hoverAbs = getHover("AbstractBase", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER AbstractBase:\n" << hoverAbs << "\n";
+    CHECK(hoverAbs.find("abstract class AbstractBase") != std::string::npos);
+
+    // 2. Shared class hover
+    std::string hoverShared = getHover("SharedManager", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER SharedManager:\n" << hoverShared << "\n";
+    CHECK(hoverShared.find("shared class SharedManager") != std::string::npos);
+
+    // 3. Final class hover
+    std::string hoverFinalCls = getHover("FinalComponent : AbstractBase", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER FinalComponent:\n" << hoverFinalCls << "\n";
+    CHECK(hoverFinalCls.find("final class FinalComponent : AbstractBase") != std::string::npos);
+
+    // 4. Override final method hover
+    std::string hoverMethodFinal = getHover("Compute() override final", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER Compute override final:\n" << hoverMethodFinal << "\n";
+    CHECK(hoverMethodFinal.find("void Compute() override final") != std::string::npos);
+
+    // 5. Property method hover
+    std::string hoverPropFunc = getHover("set_speed(float s)", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER set_speed property:\n" << hoverPropFunc << "\n";
+    CHECK(hoverPropFunc.find("void set_speed(float s) property") != std::string::npos);
+
+    // 6. Explicit constructor hover
+    std::string hoverExplicit = getHover("explicit FinalComponent", 9, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER explicit constructor:\n" << hoverExplicit << "\n";
+    CHECK(hoverExplicit.find("explicit FinalComponent(float initialVal)") != std::string::npos);
+
+    // 7. Deleted constructor hover
+    std::string hoverDelete = getHover("FinalComponent(const FinalComponent &in) delete", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER deleted constructor:\n" << hoverDelete << "\n";
+    CHECK(hoverDelete.find("FinalComponent(const FinalComponent & in) delete") != std::string::npos);
+
+    // 8. Overload matching at call site
+    std::string hoverOverload1 = getHover("TestOverloads(10);", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER Overload 1 param:\n" << hoverOverload1 << "\n";
+    CHECK(hoverOverload1.find("void TestOverloads(int x)") != std::string::npos);
+    CHECK(hoverOverload1.find("+2 sobrecargas") != std::string::npos);
+
+    std::string hoverOverload2 = getHover("TestOverloads(10, 20.0f);", 0, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER Overload 2 params:\n" << hoverOverload2 << "\n";
+    CHECK(hoverOverload2.find("void TestOverloads(int x, float y)") != std::string::npos);
+    CHECK(hoverOverload2.find("+2 overloads") != std::string::npos);
+}
+
+
 
 
 

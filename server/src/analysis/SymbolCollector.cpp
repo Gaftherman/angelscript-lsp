@@ -275,7 +275,7 @@ namespace analysis
                 ExtractModifiers(child, doc, sym);
                 continue;
             }
-            if (type == "modifier" || type == "declaration_modifier" || type == "private" || type == "protected" || type == "const" || type == "final" || type == "override" || type == "abstract" || type == "shared")
+            if (type == "modifier" || type == "declaration_modifier" || type == "private" || type == "protected" || type == "const" || type == "final" || type == "override" || type == "abstract" || type == "shared" || type == "explicit" || type == "property" || type == "delete")
             {
                 std::string modText = SymbolCollector::GetNodeText(child, doc);
                 if (modText == "private")
@@ -292,6 +292,12 @@ namespace analysis
                     sym.isAbstract = true;
                 else if (modText == "shared")
                     sym.isShared = true;
+                else if (modText == "property")
+                    sym.isPropertyFunc = true;
+                else if (modText == "explicit")
+                    sym.isExplicit = true;
+                else if (modText == "delete")
+                    sym.isDeleted = true;
             }
         }
     }
@@ -509,11 +515,23 @@ namespace analysis
             TSNode returnTypeNode = FieldChild(node, "return_type");
             if (!ts_node_is_null(returnTypeNode))
             {
-                sym->typeInfo = GetNodeText(returnTypeNode, doc);
-
-                if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin))
+                std::string typeStr = GetNodeText(returnTypeNode, doc);
+                if (typeStr == "explicit")
                 {
-                    sym->kind = SymbolKind::Method;
+                    sym->isExplicit = true;
+                    sym->typeInfo.clear();
+                    if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin))
+                    {
+                        sym->kind = isDestructor ? SymbolKind::Destructor : SymbolKind::Constructor;
+                    }
+                }
+                else
+                {
+                    sym->typeInfo = typeStr;
+                    if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin))
+                    {
+                        sym->kind = SymbolKind::Method;
+                    }
                 }
             }
             else if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin))

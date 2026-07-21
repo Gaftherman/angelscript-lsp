@@ -65,6 +65,9 @@ namespace analysis
         bool isProtected = false;
         bool isFinal = false;
         bool isOverride = false;
+        bool isPropertyFunc = false;
+        bool isExplicit = false;
+        bool isDeleted = false;
 
         std::vector<SymbolParam> params;      // For functions/methods/funcdefs
         std::vector<std::string> baseClasses; // For inheritance and mixins
@@ -97,6 +100,10 @@ namespace analysis
                 sig += "shared ";
             if (isAbstract)
                 sig += "abstract ";
+            if (isExplicit)
+                sig += "explicit ";
+            if (isFinal && (kind == SymbolKind::Class || kind == SymbolKind::Interface || kind == SymbolKind::Mixin))
+                sig += "final ";
 
             if (kind == SymbolKind::Class)
                 sig += "class ";
@@ -155,6 +162,10 @@ namespace analysis
                     sig += " override";
                 if (isFinal)
                     sig += " final";
+                if (isPropertyFunc)
+                    sig += " property";
+                if (isDeleted)
+                    sig += " delete";
             }
             else if (kind == SymbolKind::Class || kind == SymbolKind::Interface || kind == SymbolKind::Mixin)
             {
