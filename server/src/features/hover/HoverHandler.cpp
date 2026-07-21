@@ -39,6 +39,22 @@ namespace angel_lsp
                 return scope;
             }
             
+            if (sym->parent->kind == analysis::SymbolKind::Enum) {
+                std::string scope = sym->parent->name;
+                if (sym->parent->parent) {
+                    if (sym->parent->parent->kind == analysis::SymbolKind::Namespace) {
+                        scope = BuildFullNamespace(sym->parent->parent) + "::" + scope;
+                    } else if (sym->parent->parent->kind == analysis::SymbolKind::Class || 
+                               sym->parent->parent->kind == analysis::SymbolKind::Interface) {
+                        std::string parentScope = BuildScopeContext(sym->parent);
+                        if (!parentScope.empty()) {
+                            scope = parentScope + "::" + scope;
+                        }
+                    }
+                }
+                return scope;
+            }
+
             if (sym->parent->kind == analysis::SymbolKind::Namespace) {
                 return BuildFullNamespace(sym->parent);
             }
@@ -228,9 +244,7 @@ namespace angel_lsp
                 if (!sym->value.empty()) {
                     info.rawSignature += " = " + sym->value;
                 }
-                if (sym->parent) {
-                    info.localScope = sym->parent->name;
-                }
+                info.localScope = BuildScopeContext(sym);
             }
 
             // overloads

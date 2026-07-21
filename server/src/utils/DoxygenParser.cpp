@@ -48,11 +48,26 @@ namespace utils {
         return text;
     }
 
-    static std::string TrimString(const std::string& str) {
-        size_t first = str.find_first_not_of(" \t\n\r");
+    static std::string StripDoxygenTags(std::string text) {
+        static const std::vector<std::string> tags = {
+            "@brief", "\\brief", "@details", "\\details",
+            "@note", "\\note", "@warning", "\\warning",
+            "@deprecated", "\\deprecated", "@return", "\\return", "@returns", "\\returns"
+        };
+        for (const auto& tag : tags) {
+            if (text.starts_with(tag)) {
+                text = text.substr(tag.length());
+                break;
+            }
+        }
+        size_t first = text.find_first_not_of(" \t\n\r");
         if (first == std::string::npos) return "";
-        size_t last = str.find_last_not_of(" \t\n\r");
-        return str.substr(first, (last - first + 1));
+        size_t last = text.find_last_not_of(" \t\n\r");
+        return text.substr(first, (last - first + 1));
+    }
+
+    static std::string TrimString(const std::string& str) {
+        return StripDoxygenTags(str);
     }
 
 
@@ -117,7 +132,7 @@ namespace utils {
                     } else if (strcmp(subType, "identifier") == 0) {
                         identifier = CleanText(GetNodeText(sub, wrappedDoxygen));
                     } else if (strcmp(subType, "description") == 0) {
-                        description = CleanText(GetNodeText(sub, wrappedDoxygen));
+                        description = StripDoxygenTags(CleanText(GetNodeText(sub, wrappedDoxygen)));
                     }
                 }
 

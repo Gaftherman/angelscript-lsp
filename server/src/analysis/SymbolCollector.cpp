@@ -156,6 +156,32 @@ namespace analysis
         }
 
         if (lines.empty())
+        {
+            TSNode next = ts_node_next_sibling(declNode);
+            while (!ts_node_is_null(next))
+            {
+                std::string_view type = ts_node_type(next);
+                if (type == "comment")
+                {
+                    if (ts_node_start_point(next).row == ts_node_start_point(declNode).row)
+                    {
+                        lines.push_back(SymbolCollector::GetNodeText(next, doc));
+                    }
+                    break;
+                }
+                else if (!ts_node_is_named(next))
+                {
+                    // Skip punctuation like comma or semicolon
+                }
+                else
+                {
+                    break;
+                }
+                next = ts_node_next_sibling(next);
+            }
+        }
+
+        if (lines.empty())
             return "";
 
         std::string cleanDocs;
