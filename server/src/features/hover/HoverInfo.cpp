@@ -8,9 +8,9 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     const auto& s = i18n::GetStrings(locale);
     std::vector<std::string> blocks;
 
-    // BLOCK 0: Deprecated (Quote Format)
+    // BLOCK 0: Deprecated
     if (!deprecated.empty()) {
-        blocks.push_back("> **" + std::string(s.hoverDeprecated) + ":** " + deprecated);
+        blocks.push_back("**" + std::string(s.hoverDeprecated) + ":** " + deprecated);
     }
 
     // BLOCK 1: Code + Scope
@@ -84,14 +84,14 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
         blocks.push_back(retBlock);
     }
 
-    // BLOCK 6: Notes (Quote Block)
+    // BLOCK 6: Notes
     for (const auto& note : notes) {
-        blocks.push_back("> **" + std::string(s.hoverNote) + ":** " + note);
+        blocks.push_back("**" + std::string(s.hoverNote) + ":** " + note);
     }
 
-    // BLOCK 7: Warnings (Quote Block)
+    // BLOCK 7: Warnings
     for (const auto& warn : warnings) {
-        blocks.push_back("> **" + std::string(s.hoverWarning) + ":** " + warn);
+        blocks.push_back("**" + std::string(s.hoverWarning) + ":** " + warn);
     }
 
     // BLOCK 8: Overloads Counter
