@@ -4,6 +4,7 @@
 #include <angelscript.h>
 #include <string>
 #include <vector>
+#include <unordered_set>
 #include <mutex>
 #include <functional>
 #include "i18n/LspStrings.h"

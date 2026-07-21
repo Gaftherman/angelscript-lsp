@@ -123,4 +123,45 @@ TEST_SUITE("ValidationOracle")
         }
         CHECK(foundRegexTranslated);
     }
+
+    TEST_CASE("Preprocessor #if WORD conditional compilation validation")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        analysis::ValidationOracle oracle(engine);
+
+        // 1. Set defined words to {"DEBUG_MODE"}
+        oracle.SetDefinedWords({"DEBUG_MODE"});
+
+        std::string code = R"script(
+void Main()
+{
+    int baseVar = 1;
+    #if DEBUG_MODE
+    int debugVar = 100;
+    #endif
+
+    #if UNKNOWN_DEF
+    this is a broken syntax error line that must be ignored;
+    #endif
+}
+)script";
+
+        auto diags = oracle.ValidateSync(code);
+        CHECK(diags.empty());
+
+        // 2. Set defined words to empty
+        oracle.SetDefinedWords({});
+
+        std::string code2 = R"script(
+void Main()
+{
+    #if DEBUG_MODE
+    this is a broken syntax error line that must be ignored when DEBUG_MODE is undefined;
+    #endif
+}
+)script";
+
+        auto diags2 = oracle.ValidateSync(code2);
+        CHECK(diags2.empty());
+    }
 }
