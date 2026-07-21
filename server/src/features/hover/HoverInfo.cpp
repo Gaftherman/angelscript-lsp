@@ -8,11 +8,6 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     const auto& s = i18n::GetStrings(locale);
     std::vector<std::string> blocks;
 
-    // BLOCK 0: Deprecated
-    if (!deprecated.empty()) {
-        blocks.push_back("**" + std::string(s.hoverDeprecated) + ":** " + deprecated);
-    }
-
     // BLOCK 1: Code + Scope
     std::string codeBlock = "```angelscript\n";
     if (!localScope.empty()) {
@@ -94,7 +89,12 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
         blocks.push_back("**" + std::string(s.hoverWarning) + ":** " + warn);
     }
 
-    // BLOCK 8: Overloads Counter
+    // BLOCK 8: Deprecated
+    if (!deprecated.empty()) {
+        blocks.push_back("**" + std::string(s.hoverDeprecated) + ":** " + deprecated);
+    }
+
+    // BLOCK 9: Overloads Counter
     if (overloadCount > 0) {
         blocks.push_back("*+" + std::to_string(overloadCount) + " " + std::string(s.hoverOverloads) + "*");
     }
