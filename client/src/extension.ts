@@ -64,6 +64,9 @@ export async function activate(context: ExtensionContext) {
 
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: 'file', language: 'angelscript' }],
+        synchronize: {
+            configurationSection: 'angelscript'
+        },
         outputChannel: lspOutputChannel
     };
 

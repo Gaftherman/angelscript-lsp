@@ -39,6 +39,22 @@
         "editor.wordBasedSuggestions": "off",
         "editor.semanticHighlighting.enabled": true
       }
+    },
+    "configuration": {
+      "type": "object",
+      "title": "AngelScript Language Server",
+      "properties": {
+        "angelscript.preprocessorDefines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "DEBUG_MODE"
+          ],
+          "description": "Custom preprocessor definitions for conditional compilation (#if DEFINED / #endif)."
+        }
+      }
     }
   },
   "scripts": {
