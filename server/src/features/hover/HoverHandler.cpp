@@ -179,14 +179,14 @@ namespace angel_lsp
 
             // 1. rawSignature & localScope
             if (sym->kind == analysis::SymbolKind::Parameter) {
-                info.rawSignature = "(parameter) " + BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
+                info.rawSignature = "(" + std::string(s.hoverParameter) + ") " + BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
                 if (sym->parent) {
                     info.localScope = std::string(s.hoverParameterOf) + " " + sym->parent->name + "()";
                 }
             } else if (sym->kind == analysis::SymbolKind::Property || sym->kind == analysis::SymbolKind::Variable) {
                 std::string prefix = (sym->kind == analysis::SymbolKind::Property) ? "(" + std::string(s.hoverField) + ") " : "(" + std::string(s.hoverLocalVariable) + ") ";
                 if (sym->kind == analysis::SymbolKind::Property && !sym->accessors.empty()) {
-                    prefix = "(property) ";
+                    prefix = "(" + std::string(s.hoverProperty) + ") ";
                 }
                 info.rawSignature = prefix + BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
                 info.localScope = BuildScopeContext(sym);

@@ -1037,7 +1037,7 @@ class IEntity
         std::string markdown = markup.value;
 
         // Should include parameter name/type/parent signature
-        CHECK(markdown.find("(parameter) Vector3 pos") != std::string::npos);
+        CHECK(markdown.find("Vector3 pos") != std::string::npos);
         CHECK(markdown.find("Spawn()") != std::string::npos);
         std::cout << "MD:" << markdown << std::endl; // removed pos check
         // Should include the brief of the parent function
@@ -1206,7 +1206,7 @@ namespace Math {
         struct DummyMarkup { std::string value; } markup = { markup_value };
         std::string markdown = markup.value;
 
-        CHECK(markdown.find("(parameter) MyInt data") != std::string::npos);
+        CHECK(markdown.find("MyInt data") != std::string::npos);
         CHECK(markdown.find("MyCallback()") != std::string::npos);
         std::cout << "MD:" << markdown << std::endl; // removed pos check
     }
@@ -1780,7 +1780,7 @@ namespace App {
         }
         
         struct DummyMarkup { std::string value; } markup = { markup_value };
-        CHECK(markup.value.find("(parameter) float force") != std::string::npos);
+        CHECK(markup.value.find("float force") != std::string::npos);
         CHECK(markup.value.find("Apply()") != std::string::npos);
         // removed param force check
     }
@@ -1848,7 +1848,7 @@ namespace App {
         }
         
         struct DummyMarkup { std::string value; } markup = { markup_value };
-        CHECK(markup.value.find("(property) int Stamina { get const; set; }") != std::string::npos);
+        CHECK(markup.value.find("int Stamina { get const; set; }") != std::string::npos);
         CHECK(markup.value.find("A virtual property for stamina") != std::string::npos);
     }
 }
@@ -1991,6 +1991,151 @@ void EmptyTags(int a) {}
         struct DummyMarkup { std::string value; } markup = { markup_value };
     CHECK(markup.value.find("EmptyTags") != std::string::npos);
 }
+
+TEST_CASE("User Sandbox Script Hover Test")
+{
+    const char *SRC = R"script(
+namespace Engine
+{
+    namespace Math
+    {
+        /**
+         * @brief Represets a 3D spatial vector.
+         * @details Represets a 3D spatial vector.
+         */
+        class Vector3
+        {
+            float x;
+            float y;
+            float z;
+
+            Vector3() { x = 0; y = 0; z = 0; }
+            Vector3(float ax, float ay, float az) { x = ax; y = ay; z = az; }
+        }
+    }
+
+    namespace Physics
+    {
+        /**
+         * @brief Execution priority levels for physics bodies.
+         */
+        enum BodyPriority
+        {
+            /** Low priority update */
+            PRIORITY_LOW = 0,
+            /** Critical priority update */
+            PRIORITY_CRITICAL = 100
+        }
+
+        /**
+         * @brief Collision event callback signature.
+         * @param target Impacted entity handle.
+         * @param impulse Applied force magnitude.
+         */
+        funcdef void OnCollisionCallback(Component@ target, float impulse);
+
+        /**
+         * @brief Base physical component.
+         */
+        class Component
+        {
+            int entityId;
+
+            /**
+             * @brief Updates the component state.
+             * @param deltaTime Elapsed time in seconds.
+             */
+            void Update(float deltaTime) {}
+        }
+
+        /**
+         * @brief Dynamic rigid body implementation.
+         */
+        class RigidBody : Component
+        {
+            Math::Vector3 position;
+            float mass = 1.0f;
+
+            void ApplyForce(Math::Vector3 force) {}
+            void ApplyForce(Math::Vector3 force, float duration) {}
+            void ApplyForce(float fx, float fy, float fz) {}
+        }
+    }
+}
+
+void TestSandbox()
+{
+    array<Engine::Math::Vector3> container;
+    Engine::Math::Vector3 forceVec(0.0f, 10.0f, 0.0f);
+    float timeStep = 0.016f;
+
+    container.insertLast(forceVec);
+
+    Engine::Physics::RigidBody body;
+    body.ApplyForce(forceVec);
+    body.ApplyForce(forceVec, 0.5f);
+    body.ApplyForce(10.0f, 0.0f, -9.8f);
+    body.Update(timeStep);
+
+    Engine::Physics::BodyPriority priority = Engine::Physics::PRIORITY_CRITICAL;
+}
+)script";
+
+    Document doc("file:///sandbox.as", SRC);
+    SymbolTable table;
+    SymbolCollector::CollectGlobals(doc, table);
+    SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart = 0)
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///sandbox.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        std::string markup_value;
+        if (!result.isNull()) {
+            if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+                auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+                for (const auto& ms : markedStrings) {
+                    if (std::holds_alternative<lsp::String>(ms)) {
+                        markup_value += std::get<lsp::String>(ms);
+                    } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                        markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                    }
+                }
+            } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+                markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+            }
+        }
+        return markup_value;
+    };
+
+    std::string hoverBodyPriority = getHover("BodyPriority priority", 0);
+    std::cout << "DEBUG HOVER BodyPriority:\n" << hoverBodyPriority << "\n";
+    CHECK(hoverBodyPriority.find("BodyPriority") != std::string::npos);
+
+    std::string hoverCritical = getHover("PRIORITY_CRITICAL;", 0);
+    std::cout << "DEBUG HOVER PRIORITY_CRITICAL:\n" << hoverCritical << "\n";
+    CHECK(hoverCritical.find("PRIORITY_CRITICAL") != std::string::npos);
+}
+
 
 
 

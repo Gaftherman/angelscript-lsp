@@ -43,6 +43,8 @@ namespace i18n
             .hoverParameterOf = "Parameter of",
             .hoverNeverUsed = "This symbol is never used locally",
             
+            .hoverParameter     = "parameter",
+            .hoverProperty      = "property",
             .hoverField         = "field",
             .hoverLocalVariable = "local variable",
             .hoverEnumMember    = "enum member"
@@ -88,6 +90,8 @@ namespace i18n
             .hoverParameterOf = "Parámetro de",
             .hoverNeverUsed = "Este símbolo nunca se usa localmente",
             
+            .hoverParameter     = "parámetro",
+            .hoverProperty      = "propiedad",
             .hoverField         = "campo",
             .hoverLocalVariable = "variable local",
             .hoverEnumMember    = "miembro de enum"
