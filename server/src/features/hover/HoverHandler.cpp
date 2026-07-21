@@ -139,6 +139,10 @@ namespace angel_lsp
                 sig = "funcdef " + sig;
             }
 
+            if (!renderSym->accessors.empty()) {
+                sig += " " + renderSym->accessors;
+            }
+
             return sig;
         }
 
@@ -165,6 +169,9 @@ namespace angel_lsp
                 }
             } else if (sym->kind == analysis::SymbolKind::Property || sym->kind == analysis::SymbolKind::Variable) {
                 std::string prefix = (sym->kind == analysis::SymbolKind::Property) ? "(field) " : "(local variable) ";
+                if (sym->kind == analysis::SymbolKind::Property && !sym->accessors.empty()) {
+                    prefix = "(property) ";
+                }
                 info.rawSignature = prefix + BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
                 info.localScope = BuildScopeContext(sym);
             } else {

@@ -1516,6 +1516,11 @@ namespace App {
          */
         int health;
 
+        /**
+         * @brief A virtual property for stamina
+         */
+        int Stamina { get const; set; }
+
         void Work() {}
     }
 
@@ -1822,6 +1827,29 @@ namespace App {
         
         struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("int health") != std::string::npos);
+    }
+
+    // 13. Virtual Property
+    {
+        auto result = getHover("int Stamina", 5);
+        REQUIRE(!result.isNull());
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
+        CHECK(markup.value.find("(property) int Stamina { get const; set; }") != std::string::npos);
+        CHECK(markup.value.find("A virtual property for stamina") != std::string::npos);
     }
 }
 
