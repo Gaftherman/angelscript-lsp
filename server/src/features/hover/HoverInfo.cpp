@@ -22,6 +22,8 @@ std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
         } else {
             codeBlock += "// " + std::string(s.hoverIn) + " " + localScope + "\n";
         }
+    } else if (isBuiltin && !builtinLabel.empty()) {
+        codeBlock += "// " + std::string(builtinLabel) + "\n";
     }
     codeBlock += rawSignature;
     if (!enumValue.empty() && kind != analysis::SymbolKind::EnumMember) {

@@ -2461,6 +2461,117 @@ void TestFunction()
     CHECK(meEN.find("// In Game::Physics::RigidBody") != std::string::npos);
 }
 
+TEST_CASE("Deep Nested Namespace & Builtin Predefine Verification Test")
+{
+    const char *SRC = R"script(
+namespace Level1
+{
+    namespace Level2
+    {
+        namespace Level3
+        {
+            /**
+             * @brief Deeply nested function calculation.
+             * @param factor Multiplier factor.
+             */
+            float DeepCalculate(float factor)
+            {
+                return factor * 2.0f;
+            }
+
+            /**
+             * @brief Deeply nested class.
+             */
+            class DeepClass
+            {
+                void DeepMethod() {}
+            }
+        }
+    }
+}
+
+void Runner()
+{
+    float res = Level1::Level2::Level3::DeepCalculate(5.0f);
+}
+)script";
+
+    Document doc("file:///deep_nested.as", SRC);
+    SymbolTable table;
+    SymbolCollector::CollectGlobals(doc, table);
+    SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart, i18n::Locale loc)
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///deep_nested.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, loc, nullptr);
+        std::string markup_value;
+        if (!result.isNull()) {
+            if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+                auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+                for (const auto& ms : markedStrings) {
+                    if (std::holds_alternative<lsp::String>(ms)) {
+                        markup_value += std::get<lsp::String>(ms);
+                    } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                        markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                    }
+                }
+            } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+                markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+            }
+        }
+        return markup_value;
+    };
+
+    // 1. Hover on DeepCalculate definition (3 levels deep)
+    std::string hoverFuncDefES = getHover("DeepCalculate(float factor)", 0, i18n::Locale::ES);
+    std::string hoverFuncDefEN = getHover("DeepCalculate(float factor)", 0, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER DeepFuncDef ES:\n" << hoverFuncDefES << "\n";
+    std::cout << "DEBUG HOVER DeepFuncDef EN:\n" << hoverFuncDefEN << "\n";
+    CHECK(hoverFuncDefES.find("float DeepCalculate(float factor)") != std::string::npos);
+    CHECK(hoverFuncDefES.find("// En Level1::Level2::Level3") != std::string::npos);
+    CHECK(hoverFuncDefEN.find("// In Level1::Level2::Level3") != std::string::npos);
+    CHECK(hoverFuncDefES.find("Deeply nested function calculation.") != std::string::npos);
+
+    // 2. Hover on DeepCalculate call site (Level1::Level2::Level3::DeepCalculate)
+    std::string hoverFuncCallES = getHover("DeepCalculate(5.0f)", 0, i18n::Locale::ES);
+    std::string hoverFuncCallEN = getHover("DeepCalculate(5.0f)", 0, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER DeepFuncCall ES:\n" << hoverFuncCallES << "\n";
+    std::cout << "DEBUG HOVER DeepFuncCall EN:\n" << hoverFuncCallEN << "\n";
+    CHECK(hoverFuncCallES.find("float DeepCalculate(float factor)") != std::string::npos);
+    CHECK(hoverFuncCallES.find("// En Level1::Level2::Level3") != std::string::npos);
+    CHECK(hoverFuncCallEN.find("// In Level1::Level2::Level3") != std::string::npos);
+
+    // 3. Hover on DeepClass definition (3 levels deep)
+    std::string hoverClassES = getHover("DeepClass", 0, i18n::Locale::ES);
+    std::string hoverClassEN = getHover("DeepClass", 0, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER DeepClass ES:\n" << hoverClassES << "\n";
+    std::cout << "DEBUG HOVER DeepClass EN:\n" << hoverClassEN << "\n";
+    CHECK(hoverClassES.find("class DeepClass") != std::string::npos);
+    CHECK(hoverClassES.find("// En Level1::Level2::Level3") != std::string::npos);
+    CHECK(hoverClassEN.find("// In Level1::Level2::Level3") != std::string::npos);
+}
+
+
 
 
 
