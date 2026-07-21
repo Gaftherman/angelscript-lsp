@@ -7,6 +7,29 @@
 #include <fstream>
 #include <unordered_set>
 
+static std::string UrlDecode(const std::string &in)
+{
+    std::string out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); ++i)
+    {
+        if (in[i] == '%' && i + 2 < in.size())
+        {
+            int hexVal = 0;
+            std::stringstream ss;
+            ss << std::hex << in.substr(i + 1, 2);
+            if (ss >> hexVal)
+            {
+                out += static_cast<char>(hexVal);
+                i += 2;
+                continue;
+            }
+        }
+        out += in[i];
+    }
+    return out;
+}
+
 static std::string SanitizeCodeForEngine(const std::string &code)
 {
     std::string sanitizedCode;
@@ -107,7 +130,7 @@ namespace analysis
                                         }
                                         else
                                         {
-                                            std::string filePath = targetUri;
+                                            std::string filePath = UrlDecode(targetUri);
                                             if (filePath.starts_with("file:///")) filePath = filePath.substr(8);
                                             else if (filePath.starts_with("file://")) filePath = filePath.substr(7);
                                             std::replace(filePath.begin(), filePath.end(), '/', '\\');

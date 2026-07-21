@@ -42,9 +42,32 @@ namespace analysis
         return std::string(text.substr(firstQuote + 1));
     }
 
+    static std::string UrlDecode(const std::string &in)
+    {
+        std::string out;
+        out.reserve(in.size());
+        for (size_t i = 0; i < in.size(); ++i)
+        {
+            if (in[i] == '%' && i + 2 < in.size())
+            {
+                int hexVal = 0;
+                std::stringstream ss;
+                ss << std::hex << in.substr(i + 1, 2);
+                if (ss >> hexVal)
+                {
+                    out += static_cast<char>(hexVal);
+                    i += 2;
+                    continue;
+                }
+            }
+            out += in[i];
+        }
+        return out;
+    }
+
     static bool FileExistsOnDisk(const std::string &uri)
     {
-        std::string path = uri;
+        std::string path = UrlDecode(uri);
         if (path.starts_with("file:///")) path = path.substr(8);
         else if (path.starts_with("file://")) path = path.substr(7);
         std::replace(path.begin(), path.end(), '/', '\\');
