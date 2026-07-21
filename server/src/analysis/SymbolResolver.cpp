@@ -118,6 +118,8 @@ namespace analysis
             return SymbolKind::Class;
         if (parentType == "enum_declaration")
             return SymbolKind::Enum;
+        if (parentType == "enum_member")
+            return SymbolKind::EnumMember;
         if (parentType == "typedef_declaration")
             return SymbolKind::Typedef;
         if (parentType == "funcdef_declaration")
@@ -209,6 +211,7 @@ namespace analysis
         case SymbolKind::Constructor:
             return 4;
         case SymbolKind::Enum:
+        case SymbolKind::EnumMember:
             return 4;
         case SymbolKind::Function:
             return 3;
@@ -385,6 +388,15 @@ namespace analysis
                             {
                                 if (child->name == identText)
                                     globalCandidates.push_back(child.get());
+
+                                if (child->kind == SymbolKind::Enum)
+                                {
+                                    for (const auto &eMem : child->children)
+                                    {
+                                        if (eMem->name == identText)
+                                            globalCandidates.push_back(eMem.get());
+                                    }
+                                }
                             }
                             for (const auto &child : currentNs->children)
                             {
