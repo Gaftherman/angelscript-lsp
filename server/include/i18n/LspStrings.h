@@ -21,44 +21,45 @@ namespace i18n
     struct LspStrings
     {
         // --- Kind names ---
-        const char *kindVariable;
-        const char *kindFunction;
-        const char *kindClass;
-        const char *kindNamespace;
-        const char *kindParameter;
-        const char *kindProperty;
-        const char *kindMethod;
-        const char *kindEnum;
-        const char *kindEnumMember;
-        const char *kindInterface;
-        const char *kindFuncdef;
-        const char *kindMixin;
-        const char *kindTypedef;
-        const char *kindConstructor;
-        const char *kindDestructor;
-        const char *kindUnknown;
+        std::string_view kindVariable;
+        std::string_view kindFunction;
+        std::string_view kindClass;
+        std::string_view kindNamespace;
+        std::string_view kindParameter;
+        std::string_view kindProperty;
+        std::string_view kindMethod;
+        std::string_view kindEnum;
+        std::string_view kindEnumMember;
+        std::string_view kindInterface;
+        std::string_view kindFuncdef;
+        std::string_view kindMixin;
+        std::string_view kindTypedef;
+        std::string_view kindConstructor;
+        std::string_view kindDestructor;
+        std::string_view kindUnknown;
 
         // --- Hover labels ---
-        const char *hoverIn;
-        const char *hoverBuiltinFunc;
-        const char *hoverBuiltinType;
-        const char *hoverEngineError;
-        const char *hoverEngineWarn;
-        const char *hoverUnresolved;
-        const char *hoverAmbiguous;
-        const char *hoverDefinedIn;
-        const char *hoverAliasTo;
+        std::string_view hoverIn;
+        std::string_view hoverBuiltinFunc;
+        std::string_view hoverBuiltinType;
+        std::string_view hoverEngineError;
+        std::string_view hoverEngineWarn;
+        std::string_view hoverUnresolved;
+        std::string_view hoverAmbiguous;
+        std::string_view hoverDefinedIn;
+        std::string_view hoverAliasTo;
 
         // --- Hover Doxygen ---
-        const char *hoverTemplateParams;
-        const char *hoverParams;
-        const char *hoverReturns;
-        const char *hoverThrows;
-        const char *hoverNote;
-        const char *hoverWarning;
-        const char *hoverDeprecated;
-        const char *hoverOverloads;
-        const char *hoverNeverUsed;
+        std::string_view hoverTemplateParams;
+        std::string_view hoverParams;
+        std::string_view hoverReturns;
+        std::string_view hoverThrows;
+        std::string_view hoverNote;
+        std::string_view hoverWarning;
+        std::string_view hoverDeprecated;
+        std::string_view hoverOverloads;
+        std::string_view hoverParameterOf;
+        std::string_view hoverNeverUsed;
     };
 
     /**

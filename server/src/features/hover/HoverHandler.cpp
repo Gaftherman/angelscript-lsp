@@ -121,23 +121,7 @@ namespace angel_lsp
                                        : renderSym->name;
 
             bool needsParentClass = false;
-            if (originalSym && originalSym->parent && (originalSym->parent->kind == analysis::SymbolKind::Class || originalSym->parent->kind == analysis::SymbolKind::Interface || originalSym->parent->kind == analysis::SymbolKind::Mixin || originalSym->parent->kind == analysis::SymbolKind::Enum) &&
-                (originalSym->kind == analysis::SymbolKind::Method || originalSym->kind == analysis::SymbolKind::Constructor || originalSym->kind == analysis::SymbolKind::Destructor || originalSym->kind == analysis::SymbolKind::Property || originalSym->kind == analysis::SymbolKind::EnumMember))
-            {
-                needsParentClass = true;
-            }
             std::string sig = renderSym->BuildSignature(needsParentClass, dispName);
-
-            if (renderSym->kind == analysis::SymbolKind::Parameter && renderSym->parent)
-            {
-                bool parentNeedsClass = false;
-                if (renderSym->parent->parent && (renderSym->parent->parent->kind == analysis::SymbolKind::Class || renderSym->parent->parent->kind == analysis::SymbolKind::Interface || renderSym->parent->parent->kind == analysis::SymbolKind::Mixin) &&
-                    (renderSym->parent->kind == analysis::SymbolKind::Method || renderSym->parent->kind == analysis::SymbolKind::Constructor || renderSym->parent->kind == analysis::SymbolKind::Destructor))
-                {
-                    parentNeedsClass = true;
-                }
-                sig = renderSym->parent->BuildSignature(parentNeedsClass, renderSym->parent->name);
-            }
 
             if (renderSym->parent && renderSym->parent->templateParam.length() > 0)
             {
@@ -150,6 +134,11 @@ namespace angel_lsp
                     sig = ApplyTemplateSubstitution(sig, renderSym->parent->templateParam, typeToSub);
                 }
             }
+
+            if (renderSym->kind == analysis::SymbolKind::Funcdef) {
+                sig = "funcdef " + sig;
+            }
+
             return sig;
         }
 
@@ -168,11 +157,20 @@ namespace angel_lsp
             info.name = sym->name;
             info.kind = sym->kind;
 
-            // 1. rawSignature
-            info.rawSignature = BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
-
-            // 2. localScope
-            info.localScope = BuildScopeContext(sym);
+            // 1. rawSignature & localScope
+            if (sym->kind == analysis::SymbolKind::Parameter) {
+                info.rawSignature = "(parameter) " + BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
+                if (sym->parent) {
+                    info.localScope = std::string(s.hoverParameterOf) + " " + sym->parent->name + "()";
+                }
+            } else if (sym->kind == analysis::SymbolKind::Property || sym->kind == analysis::SymbolKind::Variable) {
+                std::string prefix = (sym->kind == analysis::SymbolKind::Property) ? "(field) " : "(local variable) ";
+                info.rawSignature = prefix + BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
+                info.localScope = BuildScopeContext(sym);
+            } else {
+                info.rawSignature = BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
+                info.localScope = BuildScopeContext(sym);
+            }
 
             // 3. parameters
             if (sym->kind == analysis::SymbolKind::Function || sym->kind == analysis::SymbolKind::Method ||

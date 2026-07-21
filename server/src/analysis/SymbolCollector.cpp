@@ -144,6 +144,10 @@ namespace analysis
                 lines.insert(lines.begin(), text);
                 lastStartRow = ts_node_start_point(current).row;
             }
+            else if (!ts_node_is_named(current))
+            {
+                // Skip anonymous nodes (like punctuation: comma, etc)
+            }
             else
             {
                 break;

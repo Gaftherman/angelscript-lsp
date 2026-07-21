@@ -1,4 +1,4 @@
-﻿#include "features/hover/HoverInfo.h"
+#include "features/hover/HoverInfo.h"
 #include "i18n/LspStrings.h"
 
 namespace angel_lsp {
@@ -6,113 +6,107 @@ namespace features {
 
 std::vector<HoverInfo::HoverSection> HoverInfo::ToHoverSections(i18n::Locale locale) const {
     const auto& s = i18n::GetStrings(locale);
-    std::vector<std::string> sections;
+    std::vector<std::string> blocks;
 
-    // 1. CODE BLOCK with signature
-    std::vector<HoverSection> resultSections;
-    HoverSection codeBlock;
-    codeBlock.isCodeBlock = true;
-    codeBlock.language = "angelscript";
-    if (!localScope.empty()) {
-        codeBlock.content += "// In " + localScope + "\n";
-    }
-    codeBlock.content += rawSignature;
-    if (!enumValue.empty()) codeBlock.content += " = " + enumValue;
-    resultSections.push_back(codeBlock);
-
-    // 2. BRIEF & DETAILS TEXT
-    std::string docText;
-    if (!briefText.empty()) {
-        docText += briefText;
-    }
-    if (!detailsText.empty()) {
-        if (!docText.empty()) docText += "\n\n";
-        docText += detailsText;
-    }
-    if (!docText.empty()) {
-        sections.push_back(docText);
-    }
-
-    // 4. DEPRECATED
+    // Bloque 0: Deprecated
     if (!deprecated.empty()) {
-        sections.push_back("**" + std::string(s.hoverDeprecated) + ":** " + deprecated);
+        blocks.push_back("⛔ **" + std::string(s.hoverDeprecated) + ":** " + deprecated);
     }
 
-    // 5. TEMPLATE PARAMETERS
-    if (templateParameters && !templateParameters->empty()) {
-        std::string tpSection = "### " + std::string(s.hoverTemplateParams) + "\n\n";
-        for (const auto& p : *templateParameters) {
-            tpSection += "- `" + p.name + "`";
-            if (!p.docDescription.empty()) {
-                tpSection += " \xE2\x80\x94 " + p.docDescription;
-            }
-            tpSection += "\n";
+    // Bloque 1: Código + Ámbito
+    std::string codeBlock = "```angelscript\n";
+    if (!localScope.empty()) {
+        if (kind == analysis::SymbolKind::Parameter) {
+            codeBlock += "// " + localScope + "\n";
+        } else {
+            codeBlock += "// In " + localScope + "\n";
         }
-        if (tpSection.back() == '\n') tpSection.pop_back();
-        sections.push_back(tpSection);
+    }
+    codeBlock += rawSignature;
+    if (!enumValue.empty()) codeBlock += " = " + enumValue;
+    codeBlock += "\n```";
+    blocks.push_back(codeBlock);
+
+    // Bloque 2: Breve / Descripción
+    if (!briefText.empty()) {
+        std::string desc = briefText;
+        if (!detailsText.empty()) desc += "\n\n" + detailsText;
+        blocks.push_back(desc);
     }
 
-    // 6. PARAMETERS
+    // Bloque 3: Parámetros / Retornos
     if (parameters && !parameters->empty()) {
-        std::string paramSection = "### " + std::string(s.hoverParams) + "\n\n";
+        bool hasParamDocs = false;
         for (const auto& p : *parameters) {
-            std::string signature = p.typeName.empty() ? p.name : (p.typeName + " " + p.name);
-            if (!p.defaultValue.empty()) signature += " = " + p.defaultValue;
-            paramSection += "- `" + signature + "`";
-            if (!p.docDescription.empty()) {
-                paramSection += " \xE2\x80\x94 " + p.docDescription;
+            if (!p.docDescription.empty()) { hasParamDocs = true; break; }
+        }
+        if (hasParamDocs) {
+            std::string pBlock = "### " + std::string(s.hoverParams) + "\n";
+            for (const auto& p : *parameters) {
+                std::string signature = p.typeName.empty() ? p.name : (p.typeName + " " + p.name);
+                if (!p.defaultValue.empty()) signature += " = " + p.defaultValue;
+                pBlock += "- `" + signature + "`";
+                if (!p.docDescription.empty()) pBlock += " \xE2\x80\x94 " + p.docDescription;
+                pBlock += "\n";
             }
-            paramSection += "\n";
+            if (pBlock.back() == '\n') pBlock.pop_back();
+            blocks.push_back(pBlock);
         }
-        if (paramSection.back() == '\n') paramSection.pop_back();
-        sections.push_back(paramSection);
     }
 
-    // 7. RETURNS
+    if (templateParameters && !templateParameters->empty()) {
+        bool hasTParamDocs = false;
+        for (const auto& p : *templateParameters) {
+            if (!p.docDescription.empty()) { hasTParamDocs = true; break; }
+        }
+        if (hasTParamDocs) {
+            std::string tpSection = "### " + std::string(s.hoverTemplateParams) + "\n";
+            for (const auto& p : *templateParameters) {
+                tpSection += "- `" + p.name + "`";
+                if (!p.docDescription.empty()) {
+                    tpSection += " \xE2\x80\x94 " + p.docDescription;
+                }
+                tpSection += "\n";
+            }
+            if (tpSection.back() == '\n') tpSection.pop_back();
+            blocks.push_back(tpSection);
+        }
+    }
+
     if (returnType && *returnType != "void" && !returnType->empty()) {
-        std::string retSection = "### " + std::string(s.hoverReturns) + "\n\n`" + *returnType + "`";
         if (!returnDoc.empty()) {
-            retSection += " \xE2\x80\x94 " + returnDoc;
+            std::string retSection = "### " + std::string(s.hoverReturns) + "\n`" + *returnType + "` \xE2\x80\x94 " + returnDoc;
+            blocks.push_back(retSection);
         }
-        sections.push_back(retSection);
     }
 
-    // 8. NOTES and WARNINGS
-    if (!notes.empty() || !warnings.empty()) {
-        std::string alerts;
-        for (const auto& note : notes) {
-            if (!alerts.empty()) alerts += "\n\n";
-            alerts += "**" + std::string(s.hoverNote) + ":** " + note;
-        }
-        for (const auto& warn : warnings) {
-            if (!alerts.empty()) alerts += "\n\n";
-            alerts += "**" + std::string(s.hoverWarning) + ":** " + warn;
-        }
-        sections.push_back(alerts);
+    // Bloque 4: Notas / Advertencias
+    for (const auto& note : notes) {
+        blocks.push_back("💡 **" + std::string(s.hoverNote) + ":** " + note);
+    }
+    for (const auto& warn : warnings) {
+        blocks.push_back("⚠️ **" + std::string(s.hoverWarning) + ":** " + warn);
     }
 
-    // 9. OVERLOADS
+    // Bloque 5: Sobrecargas
     if (overloadCount > 0) {
-        sections.push_back("*+" + std::to_string(overloadCount) + " " + s.hoverOverloads + "*");
+        blocks.push_back("*+" + std::to_string(overloadCount) + " " + std::string(s.hoverOverloads) + "*");
     }
 
-    // JOIN TEXT SECTIONS WITH ---
-    std::string md;
-    for (size_t i = 0; i < sections.size(); ++i) {
-        md += sections[i];
-        if (i < sections.size() - 1) {
-            md += "\n\n---\n\n";
-        } 
+    // Unión de bloques intercalando '---' de forma segura
+    std::string result;
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        result += blocks[i];
+        if (i + 1 < blocks.size()) {
+            result += "\n\n---\n\n";
+        }
     }
 
-    // Clear trailing whitespace
-    while (!md.empty() && (md.back() == '\n' || md.back() == ' '))
-        md.pop_back();
-
-    if (!md.empty()) {
+    std::vector<HoverSection> resultSections;
+    if (!result.empty()) {
         HoverSection textSection;
         textSection.isCodeBlock = false;
-        textSection.content = md;
+        textSection.content = result;
         resultSections.push_back(textSection);
     }
 

@@ -214,8 +214,25 @@ namespace analysis
 
         if (parentType == "member_expression")
         {
-            if (const Symbol *sym = ResolveMemberAccess(doc, table, node, parent, identText))
+            if (const Symbol *sym = ResolveMemberAccess(doc, table, node, parent, identText, outMultipleResults))
+            {
+                if (outMultipleResults && outMultipleResults->size() > 1)
+                {
+                    std::optional<uint32_t> argCount = GetCallArgumentCount(node, parent, parentType);
+                    if (argCount.has_value())
+                    {
+                        for (const Symbol *candidate : *outMultipleResults)
+                        {
+                            if (candidate->params.size() == argCount.value())
+                            {
+                                sym = candidate;
+                                break;
+                            }
+                        }
+                    }
+                }
                 return sym;
+            }
         }
 
         if (parentType == "func_declaration")
@@ -401,7 +418,7 @@ namespace analysis
         return nullptr;
     }
 
-    const Symbol *SymbolResolver::ResolveMemberAccess(const Document &doc, const SymbolTable &table, TSNode node, TSNode parent, const std::string &identText)
+    const Symbol *SymbolResolver::ResolveMemberAccess(const Document &doc, const SymbolTable &table, TSNode node, TSNode parent, const std::string &identText, std::vector<const Symbol *> *outMultipleResults)
     {
         TSNode memberNode = FieldChild(parent, "member");
         TSNode objectNode = FieldChild(parent, "object");
@@ -435,21 +452,33 @@ namespace analysis
                     {
                         if (!cSym)
                             return nullptr;
+                        
+                        const Symbol* firstMatch = nullptr;
+                        
                         for (const auto &child : cSym->children)
                         {
                             if (child->name == identText)
-                                return child.get();
+                            {
+                                if (!firstMatch) firstMatch = child.get();
+                                if (outMultipleResults) outMultipleResults->push_back(child.get());
+                            }
                         }
+                        
+                        if (firstMatch && !outMultipleResults) return firstMatch;
+
                         for (const auto &baseName : cSym->baseClasses)
                         {
                             const Symbol *baseSym = table.FindByNameDeep(baseName);
                             if (baseSym)
                             {
                                 if (const Symbol *found = self(self, baseSym))
-                                    return found;
+                                {
+                                    if (!firstMatch) firstMatch = found;
+                                    if (firstMatch && !outMultipleResults) return firstMatch;
+                                }
                             }
                         }
-                        return nullptr;
+                        return firstMatch;
                     };
 
                     if (const Symbol *found = findMember(findMember, classSym))

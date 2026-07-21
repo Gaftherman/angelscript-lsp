@@ -40,6 +40,7 @@ namespace i18n
             .hoverWarning = "Warning",
             .hoverDeprecated = "Deprecated",
             .hoverOverloads = "overloads",
+            .hoverParameterOf = "Parameter of",
             .hoverNeverUsed = "This symbol is never used locally"
         };
 
@@ -80,6 +81,7 @@ namespace i18n
             .hoverWarning = "Advertencia",
             .hoverDeprecated = "En desuso",
             .hoverOverloads = "sobrecargas",
+            .hoverParameterOf = "Parámetro de",
             .hoverNeverUsed = "Este símbolo nunca se usa localmente"
         };
 

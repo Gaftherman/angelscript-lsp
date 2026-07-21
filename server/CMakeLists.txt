@@ -93,6 +93,7 @@ set(TEST_SOURCES
     tests/angelscript/ScriptNamespaceTests.cpp
     tests/document/DocumentTests.cpp
     tests/features/ComplexHoverTests.cpp
+    tests/features/ComplexHoverEdgeCases.cpp
     tests/features/HoverTemplateTest.cpp
     tests/features/HoverRenderTests.cpp
     tests/i18n/LocalizationTests.cpp

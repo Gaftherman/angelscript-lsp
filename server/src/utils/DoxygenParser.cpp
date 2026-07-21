@@ -48,6 +48,13 @@ namespace utils {
         return text;
     }
 
+    static std::string TrimString(const std::string& str) {
+        size_t first = str.find_first_not_of(" \t\n\r");
+        if (first == std::string::npos) return "";
+        size_t last = str.find_last_not_of(" \t\n\r");
+        return str.substr(first, (last - first + 1));
+    }
+
 
     void FillHoverInfoFromDoxygen(const std::string& rawDoxygen, features::HoverInfo& info, const std::string& targetParam) {
         if (rawDoxygen.empty()) return;
@@ -162,6 +169,17 @@ namespace utils {
                     }
                 }
             }
+        }
+
+        std::string trimmedBrief = TrimString(info.briefText);
+        std::string trimmedDetails = TrimString(info.detailsText);
+
+        info.briefText = trimmedBrief;
+        
+        if (!trimmedDetails.empty() && trimmedDetails == trimmedBrief) {
+            info.detailsText = "";
+        } else {
+            info.detailsText = trimmedDetails;
         }
 
         ts_parser_delete(parser);

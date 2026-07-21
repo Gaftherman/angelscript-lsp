@@ -47,7 +47,7 @@ namespace analysis
         /**
          * @brief Resolves a member access expression (e.g. `obj.member`).
          */
-        static const Symbol *ResolveMemberAccess(const Document &doc, const SymbolTable &table, TSNode node, TSNode parent, const std::string &identText);
+        static const Symbol *ResolveMemberAccess(const Document &doc, const SymbolTable &table, TSNode node, TSNode parent, const std::string &identText, std::vector<const Symbol *> *outMultipleResults);
 
         /**
          * @brief Resolves a constructor or destructor call.
