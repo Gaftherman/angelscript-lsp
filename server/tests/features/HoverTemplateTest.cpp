@@ -1,4 +1,4 @@
-﻿#include <doctest/doctest.h>
+#include <doctest/doctest.h>
 #include "features/hover/HoverHandler.h"
 #include "analysis/SymbolTable.h"
 #include "features/hover/HoverHandler.h"
@@ -70,5 +70,6 @@ TEST_CASE("Hover - Template Substitution")
     printf("MARKDOWN OUT:\n%s\n", md.c_str());
     
     // Check substitution
-    CHECK( md.find("void array::insertLast(const Test@&in value)") != std::string::npos );
+    CHECK( md.find("void insertLast(const Test@&in value)") != std::string::npos );
+    CHECK( md.find("// In array<T>") != std::string::npos );
 }

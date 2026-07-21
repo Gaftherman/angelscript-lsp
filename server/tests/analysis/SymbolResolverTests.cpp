@@ -90,7 +90,7 @@ TEST_SUITE("SymbolResolver")
         const Symbol *sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "hp");
-        CHECK(sym->kind == SymbolKind::Variable);
+        CHECK(sym->kind == SymbolKind::Property);
         REQUIRE(sym->parent != nullptr);
         CHECK(sym->parent->name == "Actor");
     }
@@ -263,7 +263,7 @@ class Troll : Entity, Regenerator
         const Symbol *sym = SymbolResolver::ResolveAt(doc, table, line, col);
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "regenRate");
-        CHECK(sym->kind == SymbolKind::Variable);
+        CHECK(sym->kind == SymbolKind::Property);
         CHECK(sym->parent != nullptr);
         CHECK(sym->parent->name == "Regenerator");
     }
@@ -340,7 +340,7 @@ class Troll : Entity, Regenerator
         const Symbol *sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "m_speed");
-        CHECK(sym->kind == SymbolKind::Variable);
+        CHECK(sym->kind == SymbolKind::Property);
         REQUIRE(sym->parent != nullptr);
         CHECK(sym->parent->name == "Actor");
     }
@@ -488,7 +488,7 @@ class Troll : Entity, Regenerator
         const Symbol *symSpeed = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offsetSpeed);
         REQUIRE(symSpeed != nullptr);
         CHECK(symSpeed->name == "speed");
-        CHECK(symSpeed->kind == SymbolKind::Variable);
+        CHECK(symSpeed->kind == SymbolKind::Property);
         REQUIRE(symSpeed->parent != nullptr);
         CHECK(symSpeed->parent->name == "Entity");
     }
@@ -521,7 +521,7 @@ class Troll : Entity, Regenerator
         const Symbol *sym = SymbolResolver::ResolveAt(doc, table, 0, (uint32_t)offset);
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "speed");
-        CHECK(sym->kind == SymbolKind::Variable);
+        CHECK(sym->kind == SymbolKind::Property);
         REQUIRE(sym->parent != nullptr);
         CHECK(sym->parent->name == "Entity");
     }

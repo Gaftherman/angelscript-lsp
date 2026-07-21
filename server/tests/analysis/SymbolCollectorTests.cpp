@@ -271,7 +271,7 @@ TEST_SUITE("SymbolCollector")
         CHECK(cls->kind == SymbolKind::Class);
         REQUIRE(cls->children.size() == 2);
         CHECK(cls->children[0]->name == "hp");
-        CHECK(cls->children[0]->kind == SymbolKind::Variable);
+        CHECK(cls->children[0]->kind == SymbolKind::Property);
         CHECK(cls->children[0]->typeInfo == "int");
         CHECK(cls->children[1]->name == "Heal");
         CHECK(cls->children[1]->kind == SymbolKind::Method);
@@ -383,7 +383,7 @@ TEST_SUITE("SymbolCollector")
         CHECK(cls->children[0]->name == "Callback");
         CHECK(cls->children[0]->kind == SymbolKind::Funcdef);
         CHECK(cls->children[1]->name == "onTick");
-        CHECK(cls->children[1]->kind == SymbolKind::Variable);
+        CHECK(cls->children[1]->kind == SymbolKind::Property);
     }
 
     TEST_CASE("C7: Clase con metodo que tiene parametros")

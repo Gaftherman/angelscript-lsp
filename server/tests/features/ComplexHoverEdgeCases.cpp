@@ -1,4 +1,4 @@
-﻿#include <doctest/doctest.h>
+#include <doctest/doctest.h>
 #include <iostream>
 #include <variant>
 #include <string>
@@ -163,8 +163,9 @@ TEST_SUITE("AdvancedHoverEdgeCases")
         
         struct DummyMarkup { std::string value; } markup = { markup_value };
         
-        // Debe reflejar la firma completa con el scope de la clase base
-        CHECK(markup.value.find("void Component::Update(float dt)") != std::string::npos);
+        // Debe reflejar la firma completa sin prefijo de clase, y el scope // In Component
+        CHECK(markup.value.find("void Update(float dt)") != std::string::npos);
+        CHECK(markup.value.find("// In Component") != std::string::npos);
         CHECK(markup.value.find("Base component update") != std::string::npos);
     }
 

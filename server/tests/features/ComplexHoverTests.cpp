@@ -1,4 +1,4 @@
-﻿#include <doctest/doctest.h>
+#include <doctest/doctest.h>
 #include <iostream>
 #include <fstream>
 #include "helpers/TestFixtures.h"
@@ -692,7 +692,7 @@ void Main()
 
         REQUIRE(sym != nullptr);
         CHECK(sym->name == "var");
-        CHECK(sym->kind == SymbolKind::Variable); // Since it was extracted as a class field (variable) in Predefined
+        CHECK(sym->kind == SymbolKind::Property); // Since it was extracted as a class field (variable) in Predefined
 
         if (sym->parent)
         {
@@ -1037,7 +1037,8 @@ class IEntity
         std::string markdown = markup.value;
 
         // Should include parameter name/type/parent signature
-        CHECK(markdown.find("void IEntity::Spawn(Vector3 pos)") != std::string::npos);
+        CHECK(markdown.find("(parameter) Vector3 pos") != std::string::npos);
+        CHECK(markdown.find("Spawn()") != std::string::npos);
         std::cout << "MD:" << markdown << std::endl; // removed pos check
         // Should include the brief of the parent function
 
@@ -1205,7 +1206,8 @@ namespace Math {
         struct DummyMarkup { std::string value; } markup = { markup_value };
         std::string markdown = markup.value;
 
-        CHECK(markdown.find("void MyCallback(MyInt data)") != std::string::npos);
+        CHECK(markdown.find("(parameter) MyInt data") != std::string::npos);
+        CHECK(markdown.find("MyCallback()") != std::string::npos);
         std::cout << "MD:" << markdown << std::endl; // removed pos check
     }
 
@@ -1683,7 +1685,8 @@ namespace App {
         }
         
         struct DummyMarkup { std::string value; } markup = { markup_value };
-        CHECK(markup.value.find("void IWorker::Work()") != std::string::npos);
+        CHECK(markup.value.find("void Work()") != std::string::npos);
+        CHECK(markup.value.find("// In App::IWorker") != std::string::npos);
     }
 
     // 7. Mixin
@@ -1749,7 +1752,8 @@ namespace App {
         }
         
         struct DummyMarkup { std::string value; } markup = { markup_value };
-        CHECK(markup.value.find("void Base::Apply(float force)") != std::string::npos);
+        CHECK(markup.value.find("void Apply(float force)") != std::string::npos);
+        CHECK(markup.value.find("// In App::Base") != std::string::npos);
     }
 
     // 10. Class Method Parameter
@@ -1771,7 +1775,8 @@ namespace App {
         }
         
         struct DummyMarkup { std::string value; } markup = { markup_value };
-        CHECK(markup.value.find("void Base::Apply(float force)") != std::string::npos);
+        CHECK(markup.value.find("(parameter) float force") != std::string::npos);
+        CHECK(markup.value.find("Apply()") != std::string::npos);
         // removed param force check
     }
 

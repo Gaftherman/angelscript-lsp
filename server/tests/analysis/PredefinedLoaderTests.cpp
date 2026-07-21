@@ -452,6 +452,7 @@ namespace Files
         std::string *abstractCode = static_cast<std::string *>(engine->GetUserData(2000));
         if (abstractCode && !abstractCode->empty())
         {
+            printf("ABSTRACT CODE:\n%s\n", abstractCode->c_str());
             mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
         }
 

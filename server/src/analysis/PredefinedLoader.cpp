@@ -349,9 +349,9 @@ namespace analysis
                         {
                             scriptCode += "  " + child->BuildSignature() + " {}\n";
                         }
-                        else if (child->kind == SymbolKind::Variable)
+                        else if (child->kind == SymbolKind::Variable || child->kind == SymbolKind::Property)
                         {
-                            scriptCode += "  " + child->typeInfo + " " + child->name + ";\n";
+                            scriptCode += "  " + child->BuildSignature() + ";\n";
                         }
                     }
                     scriptCode += "}\n";
