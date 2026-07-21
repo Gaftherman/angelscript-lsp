@@ -345,3 +345,76 @@ void ProcessBody(RigidBody bodyArg)
     REQUIRE(locsTypeClass.size() == 1);
     CHECK(locsTypeClass[0].range.start.line == 8);
 }
+
+TEST_CASE("DefinitionHandler - Deep Edge Cases: Cast, Multi-Inheritance, Shadowing, This & Using Namespaces")
+{
+    const char *SRC = R"script(
+namespace Audio { class Sound {} }
+namespace Graphics { class Sprite {} }
+using namespace Audio;
+using namespace Graphics;
+
+class GrandParent
+{
+    void RootAction() {}
+}
+
+class Parent : GrandParent
+{
+}
+
+class Child : Parent
+{
+    float val = 1.0f;
+
+    void Perform()
+    {
+        this.val = 2.0f;
+        RootAction();
+    }
+}
+
+void EdgeCaseTest()
+{
+    Sound snd;
+    Sprite sp;
+    GrandParent@ gp = cast<GrandParent>(Child());
+
+    int x = 100;
+    for (int x = 0; x < 5; x++)
+    {
+        int y = x + 1;
+    }
+}
+)script";
+
+    // 1. Sound via using namespace Audio -> `class Sound` (Line 1)
+    auto locsSound = GetDefinitionLocations(SRC, "Sound snd;", 0);
+    REQUIRE(locsSound.size() == 1);
+    CHECK(locsSound[0].range.start.line == 1);
+
+    // 2. Sprite via using namespace Graphics -> `class Sprite` (Line 2)
+    auto locsSprite = GetDefinitionLocations(SRC, "Sprite sp;", 0);
+    REQUIRE(locsSprite.size() == 1);
+    CHECK(locsSprite[0].range.start.line == 2);
+
+    // 3. Cast target `GrandParent` -> `class GrandParent` (Line 6)
+    auto locsCast = GetDefinitionLocations(SRC, "cast<GrandParent>", 5);
+    REQUIRE(locsCast.size() == 1);
+    CHECK(locsCast[0].range.start.line == 6);
+
+    // 4. Member access on `this.val` -> `float val` (Line 17)
+    auto locsThisVal = GetDefinitionLocations(SRC, "this.val", 5);
+    REQUIRE(locsThisVal.size() == 1);
+    CHECK(locsThisVal[0].range.start.line == 17);
+
+    // 5. 3-Level Deep Inheritance `RootAction()` -> `void RootAction()` in GrandParent (Line 8)
+    auto locsGrandParentAction = GetDefinitionLocations(SRC, "RootAction();", 0);
+    REQUIRE(locsGrandParentAction.size() == 1);
+    CHECK(locsGrandParentAction[0].range.start.line == 8);
+
+    // 6. For-loop Variable Shadowing `x + 1` -> `for (int x = 0` (Line 33)
+    auto locsShadow = GetDefinitionLocations(SRC, "x + 1", 0);
+    REQUIRE(locsShadow.size() == 1);
+    CHECK(locsShadow[0].range.start.line == 33);
+}

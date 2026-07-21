@@ -360,8 +360,15 @@ namespace analysis
                 if (isLocal)
                 {
                     TSNode blockNode = ts_node_parent(node);
-                    while (!ts_node_is_null(blockNode) && std::string_view(ts_node_type(blockNode)) != "statement_block")
+                    while (!ts_node_is_null(blockNode))
                     {
+                        std::string_view pType = ts_node_type(blockNode);
+                        if (pType == "statement_block" || pType == "for_statement" || pType == "for_loop" ||
+                            pType == "while_statement" || pType == "do_statement" || pType == "switch_statement" ||
+                            pType == "if_statement")
+                        {
+                            break;
+                        }
                         blockNode = ts_node_parent(blockNode);
                     }
                     if (!ts_node_is_null(blockNode))

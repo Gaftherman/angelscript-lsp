@@ -228,7 +228,7 @@ namespace analysis
                 }
 
                 uint32_t score = (lineSpan << 16) | (colSpan & 0xFFFF);
-                if (score < bestScore)
+                if (score <= bestScore)
                 {
                     bestScore = score;
                     bestMatch = sym.get();
