@@ -120,33 +120,47 @@ namespace analysis
 
     static std::optional<uint32_t> GetCallArgumentCount(TSNode node, TSNode parent, std::string_view parentType)
     {
-        ResolveOutermostContext(node, parent, parentType);
-
         TSNode argList = {0};
+        TSNode curr = node;
 
-        if (parentType == "call_expression" || parentType == "func_call")
+        while (!ts_node_is_null(curr))
         {
-            argList = FieldChild(parent, "arguments");
-            if (ts_node_is_null(argList))
+            TSNode p = ts_node_parent(curr);
+            if (ts_node_is_null(p))
+                break;
+
+            std::string_view pType = ts_node_type(p);
+            if (pType == "call_expression" || pType == "func_call")
             {
-                for (uint32_t i = 0; i < ts_node_child_count(parent); i++)
+                argList = FieldChild(p, "arguments");
+                if (ts_node_is_null(argList))
                 {
-                    TSNode child = ts_node_child(parent, i);
-                    if (std::string_view(ts_node_type(child)) == "argument_list")
+                    for (uint32_t i = 0; i < ts_node_child_count(p); i++)
                     {
-                        argList = child;
-                        break;
+                        TSNode child = ts_node_child(p, i);
+                        if (std::string_view(ts_node_type(child)) == "argument_list")
+                        {
+                            argList = child;
+                            break;
+                        }
                     }
                 }
+                break;
             }
-        }
-        else
-        {
-            TSNode nextSibling = ts_node_next_sibling(node);
+
+            if (pType == "member_expression" || pType == "scoped_identifier" || pType == "ERROR")
+            {
+                curr = p;
+                continue;
+            }
+
+            TSNode nextSibling = ts_node_next_sibling(curr);
             if (!ts_node_is_null(nextSibling) && std::string_view(ts_node_type(nextSibling)) == "argument_list")
             {
                 argList = nextSibling;
+                break;
             }
+            break;
         }
 
         if (!ts_node_is_null(argList))

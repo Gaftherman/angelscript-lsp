@@ -222,8 +222,16 @@ namespace angel_lsp
             }
 
             // 7. extras
-            if (sym->kind == analysis::SymbolKind::EnumMember && !sym->value.empty())
-                info.enumValue = sym->value;
+            if (sym->kind == analysis::SymbolKind::EnumMember) {
+                std::string enumPrefix = "(enum member) ";
+                info.rawSignature = enumPrefix + sym->name;
+                if (!sym->value.empty()) {
+                    info.rawSignature += " = " + sym->value;
+                }
+                if (sym->parent) {
+                    info.localScope = sym->parent->name;
+                }
+            }
 
             // overloads
             if (multiResults.size() > 1) {
