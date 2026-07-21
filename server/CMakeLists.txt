@@ -77,10 +77,8 @@ set(LSP_BUILD_RELEASE_DEST "${CMAKE_CURRENT_SOURCE_DIR}/../build/Release")
 add_custom_command(TARGET angel_lsp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_DEST}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_DEST}/"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_BUILD_DEBUG_DEST}"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_BUILD_DEBUG_DEST}/"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_BUILD_RELEASE_DEST}"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_BUILD_RELEASE_DEST}/"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_BUILD_DEBUG_DEST}/" || ${CMAKE_COMMAND} -E echo "Skipped locked Debug target"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_BUILD_RELEASE_DEST}/" || ${CMAKE_COMMAND} -E echo "Skipped locked Release target"
     COMMENT "Deploying compiled LSP server binary to client and build outputs"
 )
 
