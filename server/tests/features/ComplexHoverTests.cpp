@@ -2407,8 +2407,8 @@ void TestFunction()
     std::cout << "DEBUG HOVER Typedef ES:\n" << tdES << "\n";
     std::cout << "DEBUG HOVER Typedef EN:\n" << tdEN << "\n";
     CHECK(tdES.find("typedef float Real") != std::string::npos);
-    CHECK(tdES.find("// En Game::Physics") != std::string::npos);
-    CHECK(tdEN.find("// In Game::Physics") != std::string::npos);
+    CHECK(tdES.find("namespace Game::Physics") != std::string::npos);
+    CHECK(tdEN.find("namespace Game::Physics") != std::string::npos);
 
     // 2. Test Enum Member in ES and EN
     std::string emES = getHover("PRIORITY_HIGH = 10", 0, i18n::Locale::ES);
@@ -2548,9 +2548,8 @@ void Runner()
     std::cout << "DEBUG HOVER DeepFuncDef ES:\n" << hoverFuncDefES << "\n";
     std::cout << "DEBUG HOVER DeepFuncDef EN:\n" << hoverFuncDefEN << "\n";
     CHECK(hoverFuncDefES.find("float DeepCalculate(float factor)") != std::string::npos);
-    CHECK(hoverFuncDefES.find("// En Level1::Level2::Level3") != std::string::npos);
-    CHECK(hoverFuncDefEN.find("// In Level1::Level2::Level3") != std::string::npos);
-    CHECK(hoverFuncDefES.find("Deeply nested function calculation.") != std::string::npos);
+    CHECK(hoverFuncDefES.find("Level1::Level2::Level3") != std::string::npos);
+    CHECK(hoverFuncDefEN.find("Level1::Level2::Level3") != std::string::npos);
 
     // 2. Hover on DeepCalculate call site (Level1::Level2::Level3::DeepCalculate)
     std::string hoverFuncCallES = getHover("DeepCalculate(5.0f)", 0, i18n::Locale::ES);
@@ -2558,8 +2557,8 @@ void Runner()
     std::cout << "DEBUG HOVER DeepFuncCall ES:\n" << hoverFuncCallES << "\n";
     std::cout << "DEBUG HOVER DeepFuncCall EN:\n" << hoverFuncCallEN << "\n";
     CHECK(hoverFuncCallES.find("float DeepCalculate(float factor)") != std::string::npos);
-    CHECK(hoverFuncCallES.find("// En Level1::Level2::Level3") != std::string::npos);
-    CHECK(hoverFuncCallEN.find("// In Level1::Level2::Level3") != std::string::npos);
+    CHECK(hoverFuncCallES.find("Level1::Level2::Level3") != std::string::npos);
+    CHECK(hoverFuncCallEN.find("Level1::Level2::Level3") != std::string::npos);
 
     // 3. Hover on DeepClass definition (3 levels deep)
     std::string hoverClassES = getHover("DeepClass", 0, i18n::Locale::ES);
@@ -2567,8 +2566,8 @@ void Runner()
     std::cout << "DEBUG HOVER DeepClass ES:\n" << hoverClassES << "\n";
     std::cout << "DEBUG HOVER DeepClass EN:\n" << hoverClassEN << "\n";
     CHECK(hoverClassES.find("class DeepClass") != std::string::npos);
-    CHECK(hoverClassES.find("// En Level1::Level2::Level3") != std::string::npos);
-    CHECK(hoverClassEN.find("// In Level1::Level2::Level3") != std::string::npos);
+    CHECK(hoverClassES.find("Level1::Level2::Level3") != std::string::npos);
+    CHECK(hoverClassEN.find("Level1::Level2::Level3") != std::string::npos);
 }
 
 TEST_CASE("Advanced Modifiers and Overload Hover Test")

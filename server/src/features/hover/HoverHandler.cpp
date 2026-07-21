@@ -57,7 +57,7 @@ namespace angel_lsp
             }
 
             if (sym->parent->kind == analysis::SymbolKind::Namespace) {
-                return BuildFullNamespace(sym->parent);
+                return "namespace " + BuildFullNamespace(sym->parent);
             }
             
             return "";

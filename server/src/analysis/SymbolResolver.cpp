@@ -248,6 +248,10 @@ namespace analysis
                     if (!targetUri.empty())
                     {
                         std::vector<const Symbol *> incSyms = table.FindByName(relPath);
+                        if (incSyms.empty() && !relPath.ends_with(".as"))
+                        {
+                            incSyms = table.FindByName(relPath + ".as");
+                        }
                         if (!incSyms.empty())
                         {
                             if (outMultipleResults) outMultipleResults->push_back(incSyms[0]);
@@ -259,7 +263,7 @@ namespace analysis
                         tempIncSym.uri = targetUri;
                         tempIncSym.kind = SymbolKind::Variable;
                         tempIncSym.typeInfo = "#include";
-                        tempIncSym.docComment = "**Included script file:** `" + relPath + "`";
+                        tempIncSym.docComment = "Included script file: `" + relPath + "`";
                         tempIncSym.selectionRange = SymbolCollector::GetRange(preprocNode, doc);
                         tempIncSym.fullRange = SymbolCollector::GetRange(preprocNode, doc);
                         if (outMultipleResults) outMultipleResults->push_back(&tempIncSym);
