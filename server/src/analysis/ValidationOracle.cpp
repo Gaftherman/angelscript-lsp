@@ -102,6 +102,44 @@ namespace analysis
                 std::unordered_set<std::string> visited;
                 visited.insert(currentUri);
 
+                // Auto-load as.predefined if present in the document folder
+                std::string baseFolder = currentUri;
+                size_t lastSlash = baseFolder.find_last_of("/\\");
+                if (lastSlash != std::string::npos)
+                {
+                    baseFolder = baseFolder.substr(0, lastSlash + 1);
+                }
+                std::string predefinedUri = baseFolder + "as.predefined";
+                std::string predefinedPath = predefinedUri;
+                if (predefinedPath.starts_with("file:///")) predefinedPath = predefinedPath.substr(8);
+                else if (predefinedPath.starts_with("file://")) predefinedPath = predefinedPath.substr(7);
+                std::replace(predefinedPath.begin(), predefinedPath.end(), '/', '\\');
+
+                if (visited.insert(predefinedUri).second)
+                {
+                    std::string predefinedContent;
+                    const Document *openDoc = docResolver ? docResolver(predefinedUri) : nullptr;
+                    if (openDoc)
+                    {
+                        predefinedContent = openDoc->GetText();
+                    }
+                    else
+                    {
+                        std::ifstream prefile(predefinedPath);
+                        if (prefile.is_open())
+                        {
+                            std::stringstream buf;
+                            buf << prefile.rdbuf();
+                            predefinedContent = buf.str();
+                        }
+                    }
+                    if (!predefinedContent.empty())
+                    {
+                        std::string sanitizedPredefined = SanitizeCodeForEngine(predefinedContent);
+                        mod->AddScriptSection("as.predefined", sanitizedPredefined.c_str(), sanitizedPredefined.size());
+                    }
+                }
+
                 std::function<void(const std::string &, const std::string &)> loadIncludes =
                     [&](const std::string &baseUri, const std::string &srcCode) {
                         std::stringstream ss(srcCode);
