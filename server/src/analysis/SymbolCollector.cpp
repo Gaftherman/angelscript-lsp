@@ -410,16 +410,34 @@ namespace analysis
     }
 
     static thread_local std::function<const Document *(const std::string &)> g_docResolver = nullptr;
+    static thread_local std::unordered_set<std::string> g_visitedIncludes;
 
     void SymbolCollector::CollectGlobals(const Document &doc, SymbolTable &table, std::function<const Document *(const std::string &)> docResolver)
     {
         TSNode root = doc.RootNode();
         if (ts_node_is_null(root))
             return;
-        auto prevResolver = g_docResolver;
-        g_docResolver = docResolver;
+
+        struct Guard
+        {
+            std::function<const Document *(const std::string &)> prevResolver;
+            bool isTop;
+            Guard(std::function<const Document *(const std::string &)> r, const std::string &uri)
+            {
+                prevResolver = g_docResolver;
+                g_docResolver = r;
+                isTop = g_visitedIncludes.empty();
+                g_visitedIncludes.insert(uri);
+            }
+            ~Guard()
+            {
+                g_docResolver = prevResolver;
+                if (isTop)
+                    g_visitedIncludes.clear();
+            }
+        } guard(docResolver, doc.GetUri());
+
         TraverseGlobals(root, doc, table, nullptr);
-        g_docResolver = prevResolver;
     }
 
     static void ExtractModifiers(TSNode node, const Document &doc, Symbol &sym)
@@ -1198,14 +1216,7 @@ namespace analysis
                         sym->fullRange = GetRange(node, doc);
                         table.AddGlobal(sym);
 
-                        static thread_local std::unordered_set<std::string> visitedIncludes;
-                        bool isTopLevel = visitedIncludes.empty();
-                        if (isTopLevel)
-                        {
-                            visitedIncludes.insert(doc.GetUri());
-                        }
-
-                        if (visitedIncludes.insert(targetUri).second)
+                        if (g_visitedIncludes.insert(targetUri).second)
                         {
                             const Document *openDoc = g_docResolver ? g_docResolver(targetUri) : nullptr;
                             if (openDoc)
@@ -1231,11 +1242,6 @@ namespace analysis
                                     CollectGlobals(incDoc, table, g_docResolver);
                                 }
                             }
-                        }
-
-                        if (isTopLevel)
-                        {
-                            visitedIncludes.clear();
                         }
                     }
                 }
