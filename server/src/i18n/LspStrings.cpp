@@ -47,7 +47,8 @@ namespace i18n
             .hoverProperty      = "property",
             .hoverField         = "field",
             .hoverLocalVariable = "local variable",
-            .hoverEnumMember    = "enum member"
+            .hoverEnumMember    = "enum member",
+            .hoverIncludedFile  = "Included script file:"
         };
 
     static const LspStrings ES_STRINGS =
@@ -94,7 +95,8 @@ namespace i18n
             .hoverProperty      = "propiedad",
             .hoverField         = "campo",
             .hoverLocalVariable = "variable local",
-            .hoverEnumMember    = "miembro de enum"
+            .hoverEnumMember    = "miembro de enum",
+            .hoverIncludedFile  = "Archivo de script incluido:"
         };
 
     Locale ParseLocale(const std::string &localeStr)

@@ -67,6 +67,7 @@ namespace i18n
         std::string_view hoverField;
         std::string_view hoverLocalVariable;
         std::string_view hoverEnumMember;
+        std::string_view hoverIncludedFile;
     };
 
     /**
