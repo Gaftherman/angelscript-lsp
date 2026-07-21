@@ -1,4 +1,4 @@
-#include <doctest/doctest.h>
+﻿#include <doctest/doctest.h>
 #include <iostream>
 #include <fstream>
 #include "helpers/TestFixtures.h"
@@ -894,7 +894,21 @@ class IEntity
         lsp::requests::TextDocument_Hover::Result result;
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         std::string markdown = markup.value;
     }
 
@@ -922,7 +936,21 @@ class IEntity
         lsp::requests::TextDocument_Hover::Result result;
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         std::string markdown = markup.value;
     }
 
@@ -950,7 +978,21 @@ class IEntity
         lsp::requests::TextDocument_Hover::Result result;
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         std::string markdown = markup.value;
     }
     // Test hovering over 'pos' parameter inside 'Spawn'
@@ -977,7 +1019,21 @@ class IEntity
         lsp::requests::TextDocument_Hover::Result result;
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         std::string markdown = markup.value;
 
         // Should include parameter name/type/parent signature
@@ -1044,7 +1100,21 @@ namespace Math {
         lsp::requests::TextDocument_Hover::Result result;
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         std::string markdown = markup.value;
 
         CHECK(markdown.find("typedef int MyInt") != std::string::npos);
@@ -1074,7 +1144,21 @@ namespace Math {
         lsp::requests::TextDocument_Hover::Result result;
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         std::string markdown = markup.value;
 
         CHECK(markdown.find("void MyCallback(MyInt data)") != std::string::npos);
@@ -1104,7 +1188,21 @@ namespace Math {
         lsp::requests::TextDocument_Hover::Result result;
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         std::string markdown = markup.value;
 
         CHECK(markdown.find("void MyCallback(MyInt data)") != std::string::npos);
@@ -1135,7 +1233,21 @@ namespace Math {
         lsp::requests::TextDocument_Hover::Result result;
         angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         std::string markdown = markup.value;
 
         CHECK(markdown.find("namespace Math") != std::string::npos);
@@ -1217,7 +1329,21 @@ mixin class MyMixin {}
     {
         auto result = getHover("class MyClass", 6);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("class MyClass") != std::string::npos);
     }
 
@@ -1225,7 +1351,21 @@ mixin class MyMixin {}
     {
         auto result = getHover("int myProp", 4);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("int myProp") != std::string::npos);
     }
 
@@ -1233,7 +1373,21 @@ mixin class MyMixin {}
     {
         auto result = getHover("enum MyEnum", 5);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("enum MyEnum") != std::string::npos);
     }
 
@@ -1241,7 +1395,21 @@ mixin class MyMixin {}
     {
         auto result = getHover("VALUE_A", 0);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("VALUE_A") != std::string::npos);
     }
 
@@ -1249,7 +1417,21 @@ mixin class MyMixin {}
     {
         auto result = getHover("interface IMyInterface", 10);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("interface IMyInterface") != std::string::npos);
     }
 
@@ -1257,7 +1439,21 @@ mixin class MyMixin {}
     {
         auto result = getHover("mixin class MyMixin", 12);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("mixin MyMixin") != std::string::npos);
     }
 }
@@ -1363,7 +1559,21 @@ namespace App {
     {
         auto result = getHover("namespace App", 10);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("namespace App") != std::string::npos);
     }
 
@@ -1371,7 +1581,21 @@ namespace App {
     {
         auto result = getHover("typedef float Real;", 14);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("typedef float Real") != std::string::npos);
     }
 
@@ -1379,7 +1603,21 @@ namespace App {
     {
         auto result = getHover("Callback(Real", 0);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("void Callback(Real a, Real b)") != std::string::npos);
     }
 
@@ -1387,14 +1625,42 @@ namespace App {
     {
         auto result = getHover("Real a", 5);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
     }
 
     // 5. Interface
     {
         auto result = getHover("interface IWorker", 10);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("interface IWorker") != std::string::npos);
     }
 
@@ -1402,7 +1668,21 @@ namespace App {
     {
         auto result = getHover("void Work();", 5);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("void IWorker::Work()") != std::string::npos);
     }
 
@@ -1410,7 +1690,21 @@ namespace App {
     {
         auto result = getHover("mixin class Mixin", 12);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("mixin Mixin") != std::string::npos);
     }
 
@@ -1418,7 +1712,21 @@ namespace App {
     {
         auto result = getHover("abstract class Base", 15);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("class Base") != std::string::npos);
     }
 
@@ -1426,7 +1734,21 @@ namespace App {
     {
         auto result = getHover("void Apply", 5);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("void Base::Apply(float force)") != std::string::npos);
     }
 
@@ -1434,7 +1756,21 @@ namespace App {
     {
         auto result = getHover("float force", 6);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("void Base::Apply(float force)") != std::string::npos);
         // removed param force check
     }
@@ -1443,7 +1779,21 @@ namespace App {
     {
         auto result = getHover("final class Entity", 12);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("class Entity") != std::string::npos);
     }
 
@@ -1451,7 +1801,21 @@ namespace App {
     {
         auto result = getHover("int health;", 4);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("int health") != std::string::npos);
     }
 }
@@ -1513,7 +1877,21 @@ void OnDataReceived(int c) {
     {
         auto result = getHover("int f = 0;", 4);
         REQUIRE(!result.isNull());
-        auto markup = std::get<lsp::MarkupContent>((*result).contents);
+        std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
         CHECK(markup.value.find("int f") != std::string::npos);
     }
 }
@@ -1563,7 +1941,21 @@ void EmptyTags(int a) {}
     // This should not throw std::out_of_range
     auto result = getHover("EmptyTags", 0);
     REQUIRE(!result.isNull());
-    auto markup = std::get<lsp::MarkupContent>((*result).contents);
+    std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
     CHECK(markup.value.find("EmptyTags") != std::string::npos);
 }
 

@@ -1,4 +1,4 @@
-#include <doctest/doctest.h>
+﻿#include <doctest/doctest.h>
 #include "features/hover/HoverHandler.h"
 #include "analysis/SymbolTable.h"
 #include "features/hover/HoverHandler.h"
@@ -49,7 +49,21 @@ TEST_CASE("Hover - Template Substitution")
     angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
     
     REQUIRE(!result.isNull());
-    auto markup = std::get<lsp::MarkupContent>((*result).contents);
+    std::string markup_value;
+        if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+            auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+            for (const auto& ms : markedStrings) {
+                if (std::holds_alternative<lsp::String>(ms)) {
+                    markup_value += std::get<lsp::String>(ms);
+                } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                    markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                }
+            }
+        } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+            markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+        }
+        
+        struct DummyMarkup { std::string value; } markup = { markup_value };
     std::string md = markup.value;
     
     // Output the markdown
