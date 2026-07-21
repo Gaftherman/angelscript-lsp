@@ -4,6 +4,7 @@
 #include "analysis/SymbolResolver.h"
 #include "utils/LspLogger.h"
 #include <angelscript.h>
+#include <ankerl/unordered_dense.h>
 #include <set>
 #include <unordered_map>
 #include <mutex>
@@ -250,7 +251,7 @@ namespace angel_lsp
             // overloads
             if (multiResults.size() > 1) {
                 // Determine how many unique overloads exist
-                std::set<std::string> uniqueSigs;
+                ankerl::unordered_dense::set<std::string> uniqueSigs;
                 for (const auto* r : multiResults) {
                     uniqueSigs.insert(BuildSignatureHelper(r, nullptr, "", ""));
                 }
