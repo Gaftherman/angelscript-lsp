@@ -1214,11 +1214,12 @@ namespace analysis
                             }
                             else
                             {
-                                std::string filePath = targetUri;
+                                std::string filePath = UrlDecode(targetUri);
                                 if (filePath.starts_with("file:///"))
                                     filePath = filePath.substr(8);
                                 else if (filePath.starts_with("file://"))
                                     filePath = filePath.substr(7);
+                                std::replace(filePath.begin(), filePath.end(), '/', '\\');
 
                                 std::ifstream infile(filePath);
                                 if (infile.is_open())

@@ -314,10 +314,17 @@ namespace angel_lsp
                 std::unique_lock lock(m_docMutex);
                 m_documents[uri] = std::move(doc);
 
+                auto docResolver = [this](const std::string &u) -> const Document * {
+                    auto it = m_documents.find(u);
+                    if (it != m_documents.end())
+                        return it->second.get();
+                    return nullptr;
+                };
+
                 auto &table = m_symbolTables[uri];
                 table.ClearAll();
                 table.MergeGlobals(m_globalSymbolTable);
-                analysis::SymbolCollector::CollectGlobals(*m_documents[uri], table);
+                analysis::SymbolCollector::CollectGlobals(*m_documents[uri], table, docResolver);
                 CollectLocalsForDocument(*m_documents[uri], table);
             });
 
@@ -339,10 +346,17 @@ namespace angel_lsp
                         std::string newText = change->text;
                         it->second = std::make_unique<Document>(uri, newText);
 
+                        auto docResolver = [this](const std::string &u) -> const Document * {
+                            auto dIt = m_documents.find(u);
+                            if (dIt != m_documents.end())
+                                return dIt->second.get();
+                            return nullptr;
+                        };
+
                         auto &table = m_symbolTables[uri];
                         table.ClearAll();
                         table.MergeGlobals(m_globalSymbolTable);
-                        analysis::SymbolCollector::CollectGlobals(*it->second, table);
+                        analysis::SymbolCollector::CollectGlobals(*it->second, table, docResolver);
                         CollectLocalsForDocument(*it->second, table);
 
                         ScheduleValidation(uri, newText);
