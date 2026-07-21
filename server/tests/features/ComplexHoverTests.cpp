@@ -2283,6 +2283,185 @@ void Main()
     CHECK(hoverImportCall.find("Imports a scene file asynchronously") != std::string::npos);
 }
 
+TEST_CASE("Exhaustive Grammar & i18n Verification Test")
+{
+    const char *SRC = R"script(
+/**
+ * @brief Imports a scene file.
+ */
+import void LoadScene(string path) from "scene_loader.as";
+
+using namespace Game::Physics;
+
+namespace Game
+{
+    namespace Physics
+    {
+        typedef float Real;
+
+        /**
+         * @brief Execution priority levels.
+         */
+        enum PriorityLevel
+        {
+            /** Low priority */
+            PRIORITY_LOW = 0,
+            /** High priority */
+            PRIORITY_HIGH = 10
+        }
+
+        /**
+         * @brief Collision event callback signature.
+         */
+        funcdef void CollisionCallback(Component@ target, Real impulse);
+
+        interface IUpdatable
+        {
+            /** @brief Updates entity state */
+            void Update(Real dt);
+        }
+
+        mixin class PhysicsBehavior
+        {
+            void ApplyGravity() {}
+        }
+
+        /**
+         * @brief Represents a physical body.
+         */
+        class RigidBody : IUpdatable
+        {
+            /** @brief Mass property */
+            Real mass;
+
+            /** @brief Virtual health property */
+            int Health { get const; set; }
+
+            RigidBody() { mass = 1.0f; }
+
+            /**
+             * @brief Applies force.
+             * @param force Force vector.
+             */
+            void ApplyForce(Real force) const override {}
+        }
+    }
+}
+
+void TestFunction()
+{
+    Game::Physics::RigidBody body;
+    body.ApplyForce(10.0f);
+}
+)script";
+
+    Document doc("file:///exhaustive_grammar.as", SRC);
+    SymbolTable table;
+    SymbolCollector::CollectGlobals(doc, table);
+    SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart, i18n::Locale loc)
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///exhaustive_grammar.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, loc, nullptr);
+        std::string markup_value;
+        if (!result.isNull()) {
+            if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+                auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+                for (const auto& ms : markedStrings) {
+                    if (std::holds_alternative<lsp::String>(ms)) {
+                        markup_value += std::get<lsp::String>(ms);
+                    } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                        markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                    }
+                }
+            } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+                markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+            }
+        }
+        return markup_value;
+    };
+
+    // 1. Test Typedef in ES and EN
+    std::string tdES = getHover("typedef float Real;", 15, i18n::Locale::ES);
+    std::string tdEN = getHover("typedef float Real;", 15, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER Typedef ES:\n" << tdES << "\n";
+    std::cout << "DEBUG HOVER Typedef EN:\n" << tdEN << "\n";
+    CHECK(tdES.find("typedef float Real") != std::string::npos);
+    CHECK(tdES.find("// En Game::Physics") != std::string::npos);
+    CHECK(tdEN.find("// In Game::Physics") != std::string::npos);
+
+    // 2. Test Enum Member in ES and EN
+    std::string emES = getHover("PRIORITY_HIGH = 10", 0, i18n::Locale::ES);
+    std::string emEN = getHover("PRIORITY_HIGH = 10", 0, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER Enum Member ES:\n" << emES << "\n";
+    std::cout << "DEBUG HOVER Enum Member EN:\n" << emEN << "\n";
+    CHECK(emES.find("(miembro de enum) PRIORITY_HIGH = 10") != std::string::npos);
+    CHECK(emEN.find("(enum member) PRIORITY_HIGH = 10") != std::string::npos);
+
+    // 3. Test Funcdef in ES and EN
+    std::string fdES = getHover("CollisionCallback", 0, i18n::Locale::ES);
+    std::string fdEN = getHover("CollisionCallback", 0, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER Funcdef ES:\n" << fdES << "\n";
+    std::cout << "DEBUG HOVER Funcdef EN:\n" << fdEN << "\n";
+    CHECK(fdES.find("funcdef void CollisionCallback") != std::string::npos);
+    CHECK(fdES.find("Parámetros") != std::string::npos);
+    CHECK(fdEN.find("Parameters") != std::string::npos);
+
+    // 4. Test Interface in ES and EN
+    std::string ifES = getHover("IUpdatable", 0, i18n::Locale::ES);
+    std::string ifEN = getHover("IUpdatable", 0, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER Interface ES:\n" << ifES << "\n";
+    std::cout << "DEBUG HOVER Interface EN:\n" << ifEN << "\n";
+    CHECK(ifES.find("interface IUpdatable") != std::string::npos);
+    CHECK(ifEN.find("interface IUpdatable") != std::string::npos);
+
+    // 5. Test Mixin in ES and EN
+    std::string mxES = getHover("PhysicsBehavior", 0, i18n::Locale::ES);
+    std::string mxEN = getHover("PhysicsBehavior", 0, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER Mixin ES:\n" << mxES << "\n";
+    std::cout << "DEBUG HOVER Mixin EN:\n" << mxEN << "\n";
+    CHECK(mxES.find("mixin PhysicsBehavior") != std::string::npos);
+    CHECK(mxEN.find("mixin PhysicsBehavior") != std::string::npos);
+
+    // 6. Test Virtual Property in ES and EN
+    std::string vpES = getHover("Health { get const; set; }", 0, i18n::Locale::ES);
+    std::string vpEN = getHover("Health { get const; set; }", 0, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER Virtual Prop ES:\n" << vpES << "\n";
+    std::cout << "DEBUG HOVER Virtual Prop EN:\n" << vpEN << "\n";
+    CHECK(vpES.find("(propiedad) int Health { get const; set; }") != std::string::npos);
+    CHECK(vpEN.find("(property) int Health { get const; set; }") != std::string::npos);
+
+    // 7. Test Method with const override in ES and EN
+    std::string meES = getHover("ApplyForce(Real force)", 0, i18n::Locale::ES);
+    std::string meEN = getHover("ApplyForce(Real force)", 0, i18n::Locale::EN);
+    std::cout << "DEBUG HOVER Method ES:\n" << meES << "\n";
+    std::cout << "DEBUG HOVER Method EN:\n" << meEN << "\n";
+    CHECK(meES.find("void ApplyForce(Real force) const override") != std::string::npos);
+    CHECK(meES.find("// En Game::Physics::RigidBody") != std::string::npos);
+    CHECK(meEN.find("// In Game::Physics::RigidBody") != std::string::npos);
+}
+
+
 
 
 
