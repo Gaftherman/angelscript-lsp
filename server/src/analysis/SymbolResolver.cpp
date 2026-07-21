@@ -259,7 +259,7 @@ namespace analysis
                         tempIncSym.uri = targetUri;
                         tempIncSym.kind = SymbolKind::Variable;
                         tempIncSym.typeInfo = "#include";
-                        tempIncSym.docComment = "Included script file: " + targetUri;
+                        tempIncSym.docComment = "**Included script file:** `" + relPath + "`";
                         tempIncSym.selectionRange = SymbolCollector::GetRange(preprocNode, doc);
                         tempIncSym.fullRange = SymbolCollector::GetRange(preprocNode, doc);
                         if (outMultipleResults) outMultipleResults->push_back(&tempIncSym);

@@ -179,7 +179,10 @@ namespace angel_lsp
             info.kind = sym->kind;
 
             // 1. rawSignature & localScope
-            if (sym->kind == analysis::SymbolKind::Parameter) {
+            if (sym->typeInfo == "#include") {
+                info.rawSignature = "#include \"" + sym->name + "\"";
+                info.localScope = "";
+            } else if (sym->kind == analysis::SymbolKind::Parameter) {
                 info.rawSignature = "(" + std::string(s.hoverParameter) + ") " + BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
                 if (sym->parent) {
                     info.localScope = std::string(s.hoverParameterOf) + " " + sym->parent->name + "()";

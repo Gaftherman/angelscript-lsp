@@ -1211,7 +1211,7 @@ namespace analysis
                         sym->name = relPath;
                         sym->kind = SymbolKind::Variable;
                         sym->typeInfo = "#include";
-                        sym->docComment = "Included script file: " + targetUri;
+                        sym->docComment = "**Included script file:** `" + relPath + "`";
                         sym->selectionRange = GetRange(node, doc);
                         sym->fullRange = GetRange(node, doc);
                         table.AddGlobal(sym);
