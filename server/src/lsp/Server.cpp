@@ -34,8 +34,14 @@ namespace angel_lsp
 
             if (t == "func_declaration")
             {
+                std::string funcName = "";
+                TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
+                if (!ts_node_is_null(nameNode)) {
+                    funcName = analysis::SymbolCollector::GetNodeText(nameNode, doc);
+                }
+
                 TSNode params = ts_node_child_by_field_name(child, "parameters", 10);
-                analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table);
+                analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table, funcName);
 
                 TSNode body = ts_node_child_by_field_name(child, "body", 4);
                 if (!ts_node_is_null(body))
@@ -45,8 +51,14 @@ namespace angel_lsp
             }
             else if (t == "funcdef_declaration" || t == "interface_method")
             {
+                std::string funcName = "";
+                TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
+                if (!ts_node_is_null(nameNode)) {
+                    funcName = analysis::SymbolCollector::GetNodeText(nameNode, doc);
+                }
+
                 TSNode params = ts_node_child_by_field_name(child, "parameters", 10);
-                analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table);
+                analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table, funcName);
             }
             else if (t == "virtual_property")
             {

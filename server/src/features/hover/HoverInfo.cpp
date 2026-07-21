@@ -10,7 +10,7 @@ std::vector<HoverInfo::HoverSection> HoverInfo::ToHoverSections(i18n::Locale loc
 
     // Bloque 0: Deprecated
     if (!deprecated.empty()) {
-        blocks.push_back("⛔ **" + std::string(s.hoverDeprecated) + ":** " + deprecated);
+        blocks.push_back("> **" + std::string(s.hoverDeprecated) + ":** " + deprecated);
     }
 
     // Bloque 1: Código + Ámbito
@@ -82,10 +82,10 @@ std::vector<HoverInfo::HoverSection> HoverInfo::ToHoverSections(i18n::Locale loc
 
     // Bloque 4: Notas / Advertencias
     for (const auto& note : notes) {
-        blocks.push_back("💡 **" + std::string(s.hoverNote) + ":** " + note);
+        blocks.push_back("> **" + std::string(s.hoverNote) + ":** " + note);
     }
     for (const auto& warn : warnings) {
-        blocks.push_back("⚠️ **" + std::string(s.hoverWarning) + ":** " + warn);
+        blocks.push_back("> **" + std::string(s.hoverWarning) + ":** " + warn);
     }
 
     // Bloque 5: Sobrecargas

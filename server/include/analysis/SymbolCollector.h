@@ -36,7 +36,7 @@ namespace analysis
          * @param doc The document containing the source code.
          * @param table The symbol table to populate.
          */
-        static void RegisterParamsAsLocals(TSNode paramListNode, const Document &doc, SymbolTable &table);
+        static void RegisterParamsAsLocals(TSNode paramListNode, const Document &doc, SymbolTable &table, const std::string &parentFuncName = "");
 
         /**
          * @brief Utility to extract text from an AST node.

@@ -215,10 +215,18 @@ namespace analysis
         return cleanDocs;
     }
 
-    void SymbolCollector::RegisterParamsAsLocals(TSNode paramListNode, const Document &doc, SymbolTable &table)
+    void SymbolCollector::RegisterParamsAsLocals(TSNode paramListNode, const Document &doc, SymbolTable &table, const std::string &parentFuncName)
     {
         Symbol dummy;
-        ReadParams(paramListNode, doc, dummy, &table, nullptr);
+        if (!parentFuncName.empty())
+        {
+            dummy.name = parentFuncName;
+            ReadParams(paramListNode, doc, dummy, &table, &dummy);
+        }
+        else
+        {
+            ReadParams(paramListNode, doc, dummy, &table, nullptr);
+        }
     }
 
     void SymbolCollector::CollectGlobals(const Document &doc, SymbolTable &table)
@@ -305,7 +313,15 @@ namespace analysis
 
                 auto sym = std::make_shared<Symbol>();
                 sym->uri = doc.GetUri();
-                sym->kind = hasParamList ? SymbolKind::Function : SymbolKind::Variable;
+                
+                if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin || parentScope->kind == SymbolKind::Interface))
+                {
+                    sym->kind = SymbolKind::Property;
+                }
+                else
+                {
+                    sym->kind = hasParamList ? SymbolKind::Function : SymbolKind::Variable;
+                }
                 
                 if (isLocal)
                 {
