@@ -890,6 +890,41 @@ namespace analysis
             }
             return;
         }
+        else if (type == "import_declaration")
+        {
+            auto sym = std::make_shared<Symbol>();
+            sym->uri = doc.GetUri();
+            sym->kind = SymbolKind::Function;
+            sym->fullRange = GetRange(node, doc);
+            sym->docComment = ExtractDocComments(node, doc);
+
+            TSNode nameNode = FieldChild(node, "name");
+            if (!ts_node_is_null(nameNode))
+            {
+                sym->name = GetNodeText(nameNode, doc);
+                sym->selectionRange = GetRange(nameNode, doc);
+            }
+
+            TSNode returnTypeNode = FieldChild(node, "return_type");
+            if (!ts_node_is_null(returnTypeNode))
+            {
+                sym->typeInfo = GetNodeText(returnTypeNode, doc);
+            }
+
+            TSNode parametersNode = FieldChild(node, "parameters");
+            ReadParams(parametersNode, doc, *sym, &table, sym.get());
+
+            if (parentScope)
+            {
+                sym->parent = parentScope;
+                parentScope->children.push_back(sym);
+            }
+            else
+            {
+                table.AddGlobal(sym);
+            }
+            return;
+        }
         else if (type == "virtual_property")
         {
             auto sym = std::make_shared<Symbol>();

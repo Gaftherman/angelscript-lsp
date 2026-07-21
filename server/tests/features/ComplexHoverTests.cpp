@@ -2216,6 +2216,73 @@ namespace First
     CHECK(hoverMemCrit.find("PRIORITY_CRITICAL") != std::string::npos);
 }
 
+TEST_CASE("Import Declaration Hover Test")
+{
+    const char *SRC = R"script(
+/**
+ * @brief Imports a scene file asynchronously.
+ * @param path The path to the scene asset.
+ */
+import void LoadScene(string path) from "scene_loader.as";
+
+void Main()
+{
+    LoadScene("main.map");
+}
+)script";
+
+    Document doc("file:///import_test.as", SRC);
+    SymbolTable table;
+    SymbolCollector::CollectGlobals(doc, table);
+    SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart = 0)
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///import_test.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        std::string markup_value;
+        if (!result.isNull()) {
+            if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+                auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+                for (const auto& ms : markedStrings) {
+                    if (std::holds_alternative<lsp::String>(ms)) {
+                        markup_value += std::get<lsp::String>(ms);
+                    } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                        markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                    }
+                }
+            } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+                markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+            }
+        }
+        return markup_value;
+    };
+
+    std::string hoverImportCall = getHover("LoadScene(\"main.map\")", 0);
+    std::cout << "DEBUG HOVER Import Call:\n" << hoverImportCall << "\n";
+    CHECK(hoverImportCall.find("LoadScene") != std::string::npos);
+    CHECK(hoverImportCall.find("Imports a scene file asynchronously") != std::string::npos);
+}
+
 
 
 
