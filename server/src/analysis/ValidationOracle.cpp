@@ -32,7 +32,6 @@ static std::string UrlDecode(const std::string &in)
 
 static std::string SanitizeCodeForEngine(const std::string &code, const std::unordered_set<std::string> &definedWords)
 {
-    std::unordered_set<std::string> activeDefines = definedWords;
     std::string sanitizedCode;
     sanitizedCode.reserve(code.size());
 
@@ -40,15 +39,11 @@ static std::string SanitizeCodeForEngine(const std::string &code, const std::uno
     std::string line;
     bool first = true;
 
-    struct IfState {
-        bool conditionMet;
-        bool branchTaken;
-    };
-    std::vector<IfState> ifStack;
+    std::vector<bool> ifStack;
 
     auto currentActive = [&ifStack]() -> bool {
-        for (const auto &state : ifStack) {
-            if (!state.conditionMet) return false;
+        for (bool active : ifStack) {
+            if (!active) return false;
         }
         return true;
     };
@@ -68,7 +63,7 @@ static std::string SanitizeCodeForEngine(const std::string &code, const std::uno
 
             std::string prefix = line.substr(0, firstNonSpace);
 
-            if (directive == "if" || directive == "ifdef")
+            if (directive == "if")
             {
                 std::string word;
                 lineSs >> word;
@@ -80,31 +75,10 @@ static std::string SanitizeCodeForEngine(const std::string &code, const std::uno
                     word = word.substr(1);
                 }
 
-                bool exists = activeDefines.contains(word);
+                bool exists = definedWords.contains(word);
                 bool cond = isNegated ? !exists : exists;
-                ifStack.push_back({ cond, cond });
+                ifStack.push_back(cond);
 
-                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
-                continue;
-            }
-            else if (directive == "ifndef")
-            {
-                std::string word;
-                lineSs >> word;
-                bool exists = activeDefines.contains(word);
-                bool cond = !exists;
-                ifStack.push_back({ cond, cond });
-
-                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
-                continue;
-            }
-            else if (directive == "else")
-            {
-                if (!ifStack.empty()) {
-                    auto &top = ifStack.back();
-                    top.conditionMet = !top.branchTaken;
-                    top.branchTaken = true;
-                }
                 sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
                 continue;
             }
@@ -112,26 +86,6 @@ static std::string SanitizeCodeForEngine(const std::string &code, const std::uno
             {
                 if (!ifStack.empty()) {
                     ifStack.pop_back();
-                }
-                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
-                continue;
-            }
-            else if (directive == "define")
-            {
-                if (currentActive()) {
-                    std::string word;
-                    lineSs >> word;
-                    if (!word.empty()) activeDefines.insert(word);
-                }
-                sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
-                continue;
-            }
-            else if (directive == "undef")
-            {
-                if (currentActive()) {
-                    std::string word;
-                    lineSs >> word;
-                    if (!word.empty()) activeDefines.erase(word);
                 }
                 sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
                 continue;
