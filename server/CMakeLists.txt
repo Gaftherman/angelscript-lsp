@@ -71,11 +71,17 @@ else()
 endif()
 
 set(LSP_DEPLOY_DEST "${CMAKE_CURRENT_SOURCE_DIR}/../client/bin/${TARGET_OS}-${TARGET_ARCH}")
+set(LSP_BUILD_DEBUG_DEST "${CMAKE_CURRENT_SOURCE_DIR}/../build/Debug")
+set(LSP_BUILD_RELEASE_DEST "${CMAKE_CURRENT_SOURCE_DIR}/../build/Release")
 
 add_custom_command(TARGET angel_lsp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_DEST}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_DEST}/"
-    COMMENT "Deploying compiled LSP server binary to client: bin/${TARGET_OS}-${TARGET_ARCH}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_BUILD_DEBUG_DEST}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_BUILD_DEBUG_DEST}/"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_BUILD_RELEASE_DEST}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_BUILD_RELEASE_DEST}/"
+    COMMENT "Deploying compiled LSP server binary to client and build outputs"
 )
 
 # ==============================================================================
