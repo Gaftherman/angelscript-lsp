@@ -68,6 +68,7 @@ namespace analysis
         bool isPropertyFunc = false;
         bool isExplicit = false;
         bool isDeleted = false;
+        bool isExternal = false;
 
         std::vector<SymbolParam> params;      // For functions/methods/funcdefs
         std::vector<std::string> baseClasses; // For inheritance and mixins
@@ -98,6 +99,8 @@ namespace analysis
                 sig += "protected ";
             if (isShared)
                 sig += "shared ";
+            if (isExternal)
+                sig += "external ";
             if (isAbstract)
                 sig += "abstract ";
             if (isExplicit)

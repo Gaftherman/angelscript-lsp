@@ -2706,6 +2706,159 @@ void Exec()
     CHECK(hoverOverload2.find("+2 overloads") != std::string::npos);
 }
 
+TEST_CASE("Control Flow, Auto Deduction, Cast & Lambdas Verification Test")
+{
+    const char *SRC = R"script(
+namespace Engine
+{
+    class Target
+    {
+        void Action() {}
+    }
+}
+
+using namespace Engine;
+
+external void ExternalSystemCall();
+
+funcdef void AnonymousCallback(int eventId);
+
+void ComplexRoutine()
+{
+    // Auto deduction & cast
+    Target@ t = Target();
+    auto myTarget = cast<Target@>(t);
+
+    // External call
+    ExternalSystemCall();
+
+    // Anonymous function / Delegate
+    AnonymousCallback@ cb = function(int eventId) {};
+
+    // For loop
+    for (int i = 0; i < 10; i++)
+    {
+        int loopVar = i * 2;
+    }
+
+    // While loop
+    int wCount = 5;
+    while (wCount > 0)
+    {
+        wCount--;
+    }
+
+    // Do-while loop
+    int dCount = 0;
+    do
+    {
+        dCount++;
+    } while (dCount < 3);
+
+    // Switch case
+    int mode = 1;
+    switch (mode)
+    {
+        case 1:
+            int modeVal = 100;
+            break;
+    }
+}
+)script";
+
+    Document doc("file:///control_flow_auto.as", SRC);
+    SymbolTable table;
+    SymbolCollector::CollectGlobals(doc, table);
+    SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart, i18n::Locale loc)
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///control_flow_auto.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, loc, nullptr);
+        std::string markup_value;
+        if (!result.isNull()) {
+            if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+                auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+                for (const auto& ms : markedStrings) {
+                    if (std::holds_alternative<lsp::String>(ms)) {
+                        markup_value += std::get<lsp::String>(ms);
+                    } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                        markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                    }
+                }
+            } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+                markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+            }
+        }
+        return markup_value;
+    };
+
+    // 1. Hover on using namespace target (Target@ t = Target())
+    std::string hoverTarget = getHover("Target@ t", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER using namespace Target:\n" << hoverTarget << "\n";
+    CHECK(hoverTarget.find("class Target") != std::string::npos);
+
+    // 2. Hover on auto deduced variable (auto myTarget)
+    std::string hoverAutoVar = getHover("myTarget =", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER auto deduced variable:\n" << hoverAutoVar << "\n";
+    CHECK(hoverAutoVar.find("Target@ myTarget") != std::string::npos);
+
+    // 3. Hover on cast<Target@>
+    std::string hoverCast = getHover("cast<Target@>", 5, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER cast target type:\n" << hoverCast << "\n";
+    CHECK(hoverCast.find("class Target") != std::string::npos);
+
+    // 4. Hover on external modifier function
+    std::string hoverExternal = getHover("ExternalSystemCall();", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER external function:\n" << hoverExternal << "\n";
+    CHECK(hoverExternal.find("external void ExternalSystemCall()") != std::string::npos);
+
+    // 5. Hover on funcdef variable & anonymous function
+    std::string hoverFuncdefVar = getHover("cb =", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER funcdef variable:\n" << hoverFuncdefVar << "\n";
+    CHECK(hoverFuncdefVar.find("AnonymousCallback@ cb") != std::string::npos);
+
+    // 6. Hover inside For loop
+    std::string hoverForVar = getHover("loopVar =", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER for loop local variable:\n" << hoverForVar << "\n";
+    CHECK(hoverForVar.find("(variable local) int loopVar") != std::string::npos);
+
+    // 7. Hover inside While loop
+    std::string hoverWhileVar = getHover("wCount--", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER while loop local variable:\n" << hoverWhileVar << "\n";
+    CHECK(hoverWhileVar.find("(variable local) int wCount") != std::string::npos);
+
+    // 8. Hover inside Do-While loop
+    std::string hoverDoWhileVar = getHover("dCount++", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER do-while loop local variable:\n" << hoverDoWhileVar << "\n";
+    CHECK(hoverDoWhileVar.find("(variable local) int dCount") != std::string::npos);
+
+    // 9. Hover inside Switch case
+    std::string hoverSwitchVar = getHover("modeVal =", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER switch case local variable:\n" << hoverSwitchVar << "\n";
+    CHECK(hoverSwitchVar.find("(variable local) int modeVal") != std::string::npos);
+}
+
+
 
 
 

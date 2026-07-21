@@ -275,7 +275,7 @@ namespace analysis
                 ExtractModifiers(child, doc, sym);
                 continue;
             }
-            if (type == "modifier" || type == "declaration_modifier" || type == "private" || type == "protected" || type == "const" || type == "final" || type == "override" || type == "abstract" || type == "shared" || type == "explicit" || type == "property" || type == "delete")
+            if (type == "modifier" || type == "declaration_modifier" || type == "private" || type == "protected" || type == "const" || type == "final" || type == "override" || type == "abstract" || type == "shared" || type == "external" || type == "explicit" || type == "property" || type == "delete")
             {
                 std::string modText = SymbolCollector::GetNodeText(child, doc);
                 if (modText == "private")
@@ -292,6 +292,8 @@ namespace analysis
                     sym.isAbstract = true;
                 else if (modText == "shared")
                     sym.isShared = true;
+                else if (modText == "external")
+                    sym.isExternal = true;
                 else if (modText == "property")
                     sym.isPropertyFunc = true;
                 else if (modText == "explicit")
