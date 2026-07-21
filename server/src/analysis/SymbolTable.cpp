@@ -15,7 +15,8 @@ namespace analysis
         {
             if (existing.get() == symbol.get() ||
                 (existing->name == symbol->name &&
-                 existing->uri == symbol->uri &&
+                 existing->kind == symbol->kind &&
+                 !symbol->uri.empty() && existing->uri == symbol->uri &&
                  existing->selectionRange.start.line == symbol->selectionRange.start.line &&
                  existing->selectionRange.start.character == symbol->selectionRange.start.character))
             {

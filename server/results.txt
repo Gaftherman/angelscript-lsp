@@ -1,0 +1,23 @@
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+E:\Github\src\angelscript-lsp\server\tests\analysis\PredefinedLoaderTests.cpp(78):
+TEST SUITE: PredefinedLoader
+TEST CASE:  PL1.3: asFUNCTION(0) safety - does engine accept null func pointer in Build()
+
+E:\Github\src\angelscript-lsp\server\tests\analysis\PredefinedLoaderTests.cpp(88): MESSAGE: asFUNCTION(0) register result: 19
+
+E:\Github\src\angelscript-lsp\server\tests\analysis\PredefinedLoaderTests.cpp(93): MESSAGE: Build result with asFUNCTION(0) method: 0
+
+===============================================================================
+E:\Github\src\angelscript-lsp\server\tests\analysis\SymbolTableTests.cpp(92):
+TEST SUITE: SymbolTable
+TEST CASE:  ST-M1: AddGlobal with same name does not overwrite (multimap)
+
+E:\Github\src\angelscript-lsp\server\tests\analysis\SymbolTableTests.cpp(107): FATAL ERROR: REQUIRE( globals.size() == 2 ) is NOT correct!
+  values: REQUIRE( 1 == 2 )
+
+===============================================================================
+[doctest] test cases: 165 | 164 passed | 1 failed | 0 skipped
+[doctest] assertions: 820 | 819 passed | 1 failed |
+[doctest] Status: FAILURE!

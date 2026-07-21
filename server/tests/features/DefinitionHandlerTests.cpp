@@ -771,3 +771,51 @@ void Main()
     CHECK(classLoc.uri.toString() == lsp::DocumentUri::parse(incUri).toString());
     CHECK(classLoc.range.start.line == 1);
 }
+
+TEST_CASE("DefinitionHandler - Multi-Level Nested Includes (main -> render -> vector)")
+{
+    const char *VECTOR_SRC = R"script(
+class Vector2D { float x; float y; }
+)script";
+
+    const char *RENDER_SRC = R"script(
+#include "vector.as"
+class Canvas { Vector2D pos; }
+)script";
+
+    const char *MAIN_SRC = R"script(
+#include "render.as"
+void App() { Canvas c; Vector2D v = c.pos; }
+)script";
+
+    std::string vecUri = "file:///project/vector.as";
+    Document vecDoc(vecUri, VECTOR_SRC);
+
+    std::string renUri = "file:///project/render.as";
+    Document renDoc(renUri, RENDER_SRC);
+
+    std::string mainUri = "file:///project/main.as";
+    Document mainDoc(mainUri, MAIN_SRC);
+
+    analysis::SymbolTable table;
+
+    auto resolver = [&](const std::string &uri) -> const Document * {
+        if (uri == vecUri) return &vecDoc;
+        if (uri == renUri) return &renDoc;
+        return nullptr;
+    };
+
+    analysis::SymbolCollector::CollectGlobals(mainDoc, table, resolver);
+    analysis::SymbolCollector::TraverseLocals(mainDoc.RootNode(), mainDoc, table, nullptr);
+
+    lsp::requests::TextDocument_Definition::Params vecReq;
+    vecReq.textDocument.uri = lsp::DocumentUri::parse(mainUri);
+    vecReq.position.line = 2;
+    vecReq.position.character = 23;
+
+    auto vecResult = features::ProcessDefinition(vecReq, mainDoc, table, nullptr);
+    REQUIRE(!vecResult.isNull());
+    const auto &vecDef = std::get<lsp::Definition>(*vecResult);
+    const auto &vecLoc = std::get<lsp::Location>(vecDef);
+    CHECK(vecLoc.uri.toString() == lsp::DocumentUri::parse(vecUri).toString());
+}
