@@ -46,13 +46,29 @@
       "properties": {
         "angelscript.preprocessorDefines": {
           "type": "array",
+          "scope": "resource",
           "items": {
             "type": "string"
           },
           "default": [
             "DEBUG_MODE"
           ],
-          "description": "Custom preprocessor definitions for conditional compilation (#if DEFINED / #endif)."
+          "markdownDescription": "List of preprocessor words defined for conditional compilation (`#if WORD` / `#endif`)."
+        },
+        "angelscript.searchDirectories": {
+          "type": "array",
+          "scope": "resource",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Custom directory search paths for resolving included script files (`#include \"path.as\"`)."
+        },
+        "angelscript.predefinedFile": {
+          "type": "string",
+          "scope": "resource",
+          "default": "as.predefined",
+          "markdownDescription": "Path to the custom C++ engine predefine file (`as.predefined`)."
         }
       }
     }
