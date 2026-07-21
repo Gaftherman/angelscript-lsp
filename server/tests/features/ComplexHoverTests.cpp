@@ -2858,6 +2858,159 @@ void ComplexRoutine()
     CHECK(hoverSwitchVar.find("(variable local) int modeVal") != std::string::npos);
 }
 
+TEST_CASE("Nested Namespace Class Method Overload Verification Test")
+{
+    const char *SRC = R"script(
+namespace Engine
+{
+    namespace Math
+    {
+        class Vector3
+        {
+            float x;
+            float y;
+            float z;
+        }
+    }
+
+    namespace Physics
+    {
+        class Component {}
+
+        /**
+         * @brief Dynamic rigid body implementation.
+         */
+        class RigidBody : Component
+        {
+            Math::Vector3 position;
+            float mass = 1.0f;
+
+            /**
+             * @brief Applies a directional force vector.
+             * @param force Force vector to apply.
+             * @note Force accumulation resets on the next physics step.
+             */
+            void ApplyForce(Math::Vector3 force) {}
+
+            /**
+             * @brief Applies an impulse force over time.
+             * @param force Force vector to apply.
+             * @param duration Time duration in seconds.
+             * @warning High duration values can cause solver instability.
+             * @deprecated Use ApplyForce(Vector3) with fixed timesteps instead.
+             */
+            void ApplyForce(Math::Vector3 force, float duration) {}
+
+            /**
+             * @brief Applies scalar force components.
+             * @param fx Force along X axis.
+             * @param fy Force along Y axis.
+             * @param fz Force along Z axis.
+             */
+            void ApplyForce(float fx, float fy, float fz) {}
+        }
+    }
+}
+
+void TestRigidBody()
+{
+    Engine::Physics::RigidBody body;
+    Engine::Math::Vector3 forceVec;
+    float timeStep = 0.016f;
+
+    body.ApplyForce(forceVec);
+    body.ApplyForce(forceVec, timeStep);
+    body.ApplyForce(1.0f, 2.0f, 3.0f);
+}
+)script";
+
+    Document doc("file:///nested_overloads.as", SRC);
+    SymbolTable table;
+    SymbolCollector::CollectGlobals(doc, table);
+    SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+    auto getHover = [&](const std::string &searchStr, int offsetFromStart, i18n::Locale loc)
+    {
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///nested_overloads.as");
+        size_t offset = std::string(SRC).find(searchStr) + offsetFromStart;
+        uint32_t line = 0, col = 0;
+        for (size_t i = 0; i < offset; i++)
+        {
+            if (SRC[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
+        }
+        req.position.line = line;
+        req.position.character = col;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, loc, nullptr);
+        std::string markup_value;
+        if (!result.isNull()) {
+            if (std::holds_alternative<lsp::Array<lsp::MarkedString>>((*result).contents)) {
+                auto markedStrings = std::get<lsp::Array<lsp::MarkedString>>((*result).contents);
+                for (const auto& ms : markedStrings) {
+                    if (std::holds_alternative<lsp::String>(ms)) {
+                        markup_value += std::get<lsp::String>(ms);
+                    } else if (std::holds_alternative<lsp::MarkedString_Language_Value>(ms)) {
+                        markup_value += std::get<lsp::MarkedString_Language_Value>(ms).value;
+                    }
+                }
+            } else if (std::holds_alternative<lsp::MarkupContent>((*result).contents)) {
+                markup_value = std::get<lsp::MarkupContent>((*result).contents).value;
+            }
+        }
+        return markup_value;
+    };
+
+    // 1. Hover on 1st overload definition: ApplyForce(Math::Vector3 force)
+    std::string hoverDef1 = getHover("ApplyForce(Math::Vector3 force)", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER Def 1:\n" << hoverDef1 << "\n";
+    CHECK(hoverDef1.find("void ApplyForce(Math::Vector3 force)") != std::string::npos);
+    CHECK(hoverDef1.find("+2 sobrecargas") != std::string::npos);
+    CHECK(hoverDef1.find("Applies a directional force vector.") != std::string::npos);
+
+    // 2. Hover on 2nd overload definition: ApplyForce(Math::Vector3 force, float duration)
+    std::string hoverDef2 = getHover("ApplyForce(Math::Vector3 force, float duration)", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER Def 2:\n" << hoverDef2 << "\n";
+    CHECK(hoverDef2.find("void ApplyForce(Math::Vector3 force, float duration)") != std::string::npos);
+    CHECK(hoverDef2.find("+2 sobrecargas") != std::string::npos);
+    CHECK(hoverDef2.find("En desuso") != std::string::npos);
+    CHECK(hoverDef2.find("Advertencia") != std::string::npos);
+
+    // 3. Hover on 3rd overload definition: ApplyForce(float fx, float fy, float fz)
+    std::string hoverDef3 = getHover("ApplyForce(float fx, float fy, float fz)", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER Def 3:\n" << hoverDef3 << "\n";
+    CHECK(hoverDef3.find("void ApplyForce(float fx, float fy, float fz)") != std::string::npos);
+    CHECK(hoverDef3.find("+2 sobrecargas") != std::string::npos);
+
+    // 4. Call site 1: body.ApplyForce(forceVec);
+    std::string hoverCall1 = getHover("ApplyForce(forceVec);", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER Call 1:\n" << hoverCall1 << "\n";
+    CHECK(hoverCall1.find("void ApplyForce(Math::Vector3 force)") != std::string::npos);
+    CHECK(hoverCall1.find("+2 sobrecargas") != std::string::npos);
+
+    // 5. Call site 2: body.ApplyForce(forceVec, timeStep);
+    std::string hoverCall2 = getHover("ApplyForce(forceVec, timeStep);", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER Call 2:\n" << hoverCall2 << "\n";
+    CHECK(hoverCall2.find("void ApplyForce(Math::Vector3 force, float duration)") != std::string::npos);
+    CHECK(hoverCall2.find("+2 sobrecargas") != std::string::npos);
+
+    // 6. Call site 3: body.ApplyForce(1.0f, 2.0f, 3.0f);
+    std::string hoverCall3 = getHover("ApplyForce(1.0f, 2.0f, 3.0f);", 0, i18n::Locale::ES);
+    std::cout << "DEBUG HOVER Call 3:\n" << hoverCall3 << "\n";
+    CHECK(hoverCall3.find("void ApplyForce(float fx, float fy, float fz)") != std::string::npos);
+    CHECK(hoverCall3.find("+2 sobrecargas") != std::string::npos);
+}
+
+
 
 
 

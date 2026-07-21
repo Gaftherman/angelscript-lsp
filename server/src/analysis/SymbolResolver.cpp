@@ -400,7 +400,8 @@ namespace analysis
                             }
                             for (const auto &child : currentNs->children)
                             {
-                                if (child->kind == SymbolKind::Namespace)
+                                if (child->kind == SymbolKind::Namespace || child->kind == SymbolKind::Class ||
+                                    child->kind == SymbolKind::Interface || child->kind == SymbolKind::Mixin)
                                     self(self, child.get());
                             }
                         };
@@ -827,6 +828,11 @@ namespace analysis
                 outMultipleResults->push_back(cand);
 
             int candPriority = GetKindPriority(cand->kind);
+            uint32_t nodeStartLine = ts_node_start_point(node).row;
+            if (cand->selectionRange.start.line == nodeStartLine)
+            {
+                candPriority += 1000;
+            }
 
             if (expected.has_value())
             {
