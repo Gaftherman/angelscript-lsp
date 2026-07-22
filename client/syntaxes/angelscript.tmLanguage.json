@@ -247,7 +247,7 @@
           "match": "\\b(try|catch)\\b"
         },
         {
-          "name": "keyword.control.conditional.angelscript keyword.control.angelscript keyword.operator.word.angelscript",
+          "name": "keyword.control.conditional.angelscript",
           "match": "\\b(is|not|and|or|xor|in)\\b"
         },
         {
