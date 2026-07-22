@@ -376,49 +376,70 @@ namespace angel_lsp
             }
             else
             {
-                TSNode nodeUnder = doc.NodeAt(line, col);
-                if (!ts_node_is_null(nodeUnder))
+                try
                 {
-                    std::string_view sv = doc.SourceAt(nodeUnder);
-                    std::string name(sv.begin(), sv.end());
-
-                    if (engine)
+                    TSNode nodeUnder = doc.NodeAt(line, col);
+                    if (!ts_node_is_null(nodeUnder))
                     {
-                        for (asUINT i = 0; i < engine->GetGlobalFunctionCount(); i++)
+                        std::string_view sv = doc.SourceAt(nodeUnder);
+                        if (!sv.empty())
                         {
-                            asIScriptFunction *func = engine->GetGlobalFunctionByIndex(i);
-                            if (func && std::string(func->GetName()) == name)
+                            std::string name(sv.begin(), sv.end());
+
+                            // Only query engine for valid single identifier names (skip preprocessor lines, punctuation, etc.)
+                            bool isValidIdentifier = !name.empty() && (isalpha((unsigned char)name[0]) || name[0] == '_');
+                            for (char c : name)
                             {
-                                std::string decl = func->GetDeclaration(true, true, true);
-                                HoverInfo info;
-                                info.name = name;
-                                info.kind = analysis::SymbolKind::Function;
-                                info.rawSignature = decl;
-                                info.builtinLabel = s.hoverBuiltinFunc;
-                                info.isBuiltin = true;
-                                hoverSections = info.ToHoverSections(locale);
-                                break;
-                            }
-                        }
-                        if (hoverSections.empty())
-                        {
-                            int typeId = engine->GetTypeIdByDecl(name.c_str());
-                            if (typeId >= 0)
-                            {
-                                asITypeInfo *type = engine->GetTypeInfoById(typeId);
-                                if (type)
+                                if (!isalnum((unsigned char)c) && c != '_')
                                 {
-                                    HoverInfo info;
-                                    info.name = name;
-                                    info.kind = analysis::SymbolKind::Class;
-                                    info.rawSignature = "class " + std::string(type->GetName());
-                                    info.builtinLabel = s.hoverBuiltinType;
-                                    info.isBuiltin = true;
-                                    hoverSections = info.ToHoverSections(locale);
+                                    isValidIdentifier = false;
+                                    break;
+                                }
+                            }
+
+                            if (engine && isValidIdentifier)
+                            {
+                                for (asUINT i = 0; i < engine->GetGlobalFunctionCount(); i++)
+                                {
+                                    asIScriptFunction *func = engine->GetGlobalFunctionByIndex(i);
+                                    if (func && func->GetName() && std::string(func->GetName()) == name)
+                                    {
+                                        std::string decl = func->GetDeclaration(true, true, true);
+                                        HoverInfo info;
+                                        info.name = name;
+                                        info.kind = analysis::SymbolKind::Function;
+                                        info.rawSignature = decl;
+                                        info.builtinLabel = s.hoverBuiltinFunc;
+                                        info.isBuiltin = true;
+                                        hoverSections = info.ToHoverSections(locale);
+                                        break;
+                                    }
+                                }
+                                if (hoverSections.empty())
+                                {
+                                    int typeId = engine->GetTypeIdByDecl(name.c_str());
+                                    if (typeId >= 0)
+                                    {
+                                        asITypeInfo *type = engine->GetTypeInfoById(typeId);
+                                        if (type && type->GetName())
+                                        {
+                                            HoverInfo info;
+                                            info.name = name;
+                                            info.kind = analysis::SymbolKind::Class;
+                                            info.rawSignature = "class " + std::string(type->GetName());
+                                            info.builtinLabel = s.hoverBuiltinType;
+                                            info.isBuiltin = true;
+                                            hoverSections = info.ToHoverSections(locale);
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+                }
+                catch (...)
+                {
+                    LspLogger::Warn("Exception caught during fallback hover resolution.");
                 }
             }
 

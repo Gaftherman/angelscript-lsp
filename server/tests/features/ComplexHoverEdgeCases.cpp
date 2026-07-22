@@ -363,4 +363,23 @@ void Main() {
         // Si el símbolo no está en el AST pero la lógica de Fallback funciona con un engine mockeado/real,
         // devolverá la declaración registrada en AngelScript.
     }
+
+    TEST_CASE("CH_ADV_7: Safe hover resolution over preprocessor lines and missing symbols")
+    {
+        const char *SRC = R"script(
+#if DEBUG_MODE
+void Test() {}
+#endif
+)script";
+        Document doc("file:///preproc_test.as", SRC);
+        SymbolTable table;
+
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///preproc_test.as");
+        req.position.line = 1;
+        req.position.character = 6;
+
+        lsp::requests::TextDocument_Hover::Result result;
+        CHECK_NOTHROW(angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN, nullptr));
+    }
 }
