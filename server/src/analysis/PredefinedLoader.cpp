@@ -331,8 +331,54 @@ namespace analysis
                         {
                             continue;
                         }
-                        std::string funcSig = sym->BuildSignature();
-                        engine->RegisterGlobalFunction(funcSig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
+
+                        auto isTypeRegistered = [&](const std::string &rawType) -> bool
+                        {
+                            if (rawType.empty() || rawType == "void" || rawType == "int" || rawType == "uint" ||
+                                rawType == "float" || rawType == "double" || rawType == "bool" || rawType == "size_t" ||
+                                rawType == "int8" || rawType == "int16" || rawType == "int64" || rawType == "uint8" || rawType == "uint16" || rawType == "uint64")
+                            {
+                                return true;
+                            }
+                            std::string clean = rawType;
+                            while (!clean.empty() && (clean.back() == '@' || clean.back() == ' '))
+                            {
+                                clean.pop_back();
+                            }
+                            if (clean.find("const ") == 0)
+                            {
+                                clean = clean.substr(6);
+                            }
+                            size_t ampersandPos = clean.find('&');
+                            if (ampersandPos != std::string::npos)
+                            {
+                                clean = clean.substr(0, ampersandPos);
+                            }
+                            while (!clean.empty() && clean.back() == ' ')
+                            {
+                                clean.pop_back();
+                            }
+                            return engine->GetTypeInfoByName(clean.c_str()) != nullptr;
+                        };
+
+                        bool canRegister = isTypeRegistered(sym->typeInfo);
+                        if (canRegister)
+                        {
+                            for (const auto &p : sym->params)
+                            {
+                                if (!isTypeRegistered(p.typeName))
+                                {
+                                    canRegister = false;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (canRegister)
+                        {
+                            std::string funcSig = sym->BuildSignature();
+                            engine->RegisterGlobalFunction(funcSig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
+                        }
                     }
                     else if (sym->kind == SymbolKind::Variable)
                     {
