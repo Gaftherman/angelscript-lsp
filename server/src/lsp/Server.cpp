@@ -24,6 +24,22 @@
 namespace angel_lsp
 {
 
+    static std::string NormalizeUri(const std::string &rawUri)
+    {
+        std::string out = rawUri;
+        size_t pos = 0;
+        while ((pos = out.find("%3A", pos)) != std::string::npos) {
+            out.replace(pos, 3, ":");
+            pos += 1;
+        }
+        pos = 0;
+        while ((pos = out.find("%3a", pos)) != std::string::npos) {
+            out.replace(pos, 3, ":");
+            pos += 1;
+        }
+        return out;
+    }
+
     static void CollectLocalsFunctions(TSNode node, const Document &doc, analysis::SymbolTable &table)
     {
         uint32_t count = ts_node_child_count(node);
@@ -267,7 +283,7 @@ namespace angel_lsp
         messageHandler->add<lsp::notifications::TextDocument_DidOpen>(
             [this](lsp::notifications::TextDocument_DidOpen::Params &&params)
             {
-                std::string uri = params.textDocument.uri.toString();
+                std::string uri = NormalizeUri(params.textDocument.uri.toString());
                 std::string text = params.textDocument.text;
 
                 auto doc = std::make_unique<Document>(uri, text);
@@ -293,7 +309,7 @@ namespace angel_lsp
         messageHandler->add<lsp::notifications::TextDocument_DidChange>(
             [this](lsp::notifications::TextDocument_DidChange::Params &&params)
             {
-                std::string uri = params.textDocument.uri.toString();
+                std::string uri = NormalizeUri(params.textDocument.uri.toString());
 
                 std::unique_lock lock(m_docMutex);
                 auto it = m_documents.find(uri);
@@ -309,7 +325,7 @@ namespace angel_lsp
                         it->second = std::make_unique<Document>(uri, newText);
 
                         auto docResolver = [this](const std::string &u) -> const Document * {
-                            auto dIt = m_documents.find(u);
+                            auto dIt = m_documents.find(NormalizeUri(u));
                             if (dIt != m_documents.end())
                                 return dIt->second.get();
                             return nullptr;
@@ -330,7 +346,7 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_Hover>(
             [this](lsp::requests::TextDocument_Hover::Params &&req)
             {
-                std::string uri = req.textDocument.uri.toString();
+                std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
                 {
@@ -346,7 +362,7 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_Definition>(
             [this](lsp::requests::TextDocument_Definition::Params &&req)
             {
-                std::string uri = req.textDocument.uri.toString();
+                std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
                 {
@@ -360,7 +376,7 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_TypeDefinition>(
             [this](lsp::requests::TextDocument_TypeDefinition::Params &&req)
             {
-                std::string uri = req.textDocument.uri.toString();
+                std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
                 {
@@ -374,7 +390,7 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_Completion>(
             [this](lsp::requests::TextDocument_Completion::Params &&req)
             {
-                std::string uri = req.textDocument.uri.toString();
+                std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
                 {
@@ -386,7 +402,7 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Full>(
             [this](lsp::requests::TextDocument_SemanticTokens_Full::Params &&req)
             {
-                std::string uri = req.textDocument.uri.toString();
+                std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
                 {
@@ -398,7 +414,7 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_SignatureHelp>(
             [this](lsp::requests::TextDocument_SignatureHelp::Params &&req)
             {
-                std::string uri = req.textDocument.uri.toString();
+                std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
                 {
@@ -446,7 +462,7 @@ namespace angel_lsp
             if (!m_validationPending)
                 continue; // consumed
 
-            std::string uri = std::move(m_pendingUri);
+            std::string uri = NormalizeUri(std::move(m_pendingUri));
             std::string text = std::move(m_pendingText);
             m_validationPending = false;
 
@@ -461,7 +477,8 @@ namespace angel_lsp
             {
                 auto docResolver = [this](const std::string &u) -> const Document * {
                     std::shared_lock docLock(m_docMutex);
-                    auto it = m_documents.find(u);
+                    std::string normU = NormalizeUri(u);
+                    auto it = m_documents.find(normU);
                     if (it != m_documents.end())
                         return it->second.get();
                     return nullptr;
