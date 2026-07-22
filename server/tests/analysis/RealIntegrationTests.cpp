@@ -159,3 +159,70 @@ TEST_SUITE("RealIntegrationTests")
         CHECK(foundRedefinitionErr);
     }
 }
+
+TEST_SUITE("Type Inference and Mismatch")
+{
+    TEST_CASE("Test A: int f = true; -> Assert exactly 1 diagnostic error")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                int f = true;
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_a.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 1);
+    }
+
+    TEST_CASE("Test B: float f = 3.14; -> Assert 0 diagnostics")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                float f = 3.14;
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_b.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
+
+    TEST_CASE("Test C: bool b = false; int c = b; -> Assert exactly 1 diagnostic error on the second statement")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                bool b = false;
+                int c = b;
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_c.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 1);
+    }
+}

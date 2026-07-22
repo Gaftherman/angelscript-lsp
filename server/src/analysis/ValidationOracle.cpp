@@ -7,6 +7,7 @@
 #include "ValidationOracle.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolResolver.h"
+#include "analysis/TypeEvaluator.h"
 #include "document/Document.h"
 #include "i18n/LspStrings.h"
 #include <ankerl/unordered_dense.h>
@@ -298,10 +299,14 @@ namespace analysis
                         if (!ts_node_is_null(memberNode))
                         {
                             TSPoint mStart = ts_node_start_point(memberNode);
-                            const Symbol *resolved = SymbolResolver::ResolveAt(doc, localTable, mStart.row, mStart.column);
+                            std::string_view mText = doc.SourceAt(memberNode);
+                            SymbolTable combined = localTable;
+                            combined.MergeGlobals(globalTable);
+
+                            const Symbol *resolved = SymbolResolver::ResolveAt(doc, combined, mStart.row, mStart.column);
                             if (!resolved)
                             {
-                                resolved = SymbolResolver::ResolveAt(doc, globalTable, mStart.row, mStart.column);
+                                resolved = combined.FindByNameDeep(mText);
                             }
                             if (resolved && (resolved->kind == SymbolKind::Method || resolved->kind == SymbolKind::Function))
                             {
@@ -316,8 +321,81 @@ namespace analysis
                                 d.severity = lsp::DiagnosticSeverity::Error;
                                 d.source = "angelscript";
                                 d.message = fmt::format(fmt::runtime(strs.diagMethodMustBeCalled), resolved->name);
-
                                 diags.push_back(d);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- Check 3: Type Mismatch in Variable Assignments ---
+            if (type && std::string(type) == "variable_declaration")
+            {
+                TSNode declNode = node;
+                TSNode typeNode = ts_node_child_by_field_name(declNode, "type", sizeof("type") - 1);
+                if (ts_node_is_null(typeNode))
+                {
+                    typeNode = ts_node_child(declNode, 0);
+                }
+
+                if (!ts_node_is_null(typeNode))
+                {
+                    std::string_view lhsType = doc.SourceAt(typeNode);
+                    if (lhsType != "auto" && !lhsType.empty())
+                    {
+                        uint32_t count = ts_node_child_count(declNode);
+                        for (uint32_t i = 0; i < count; ++i)
+                        {
+                            TSNode child = ts_node_child(declNode, i);
+                            const char *cType = ts_node_type(child);
+                            if (cType && (std::string(cType) == "variable_declarator" || std::string(cType) == "init_declarator"))
+                            {
+                                TSNode valueNode = ts_node_child_by_field_name(child, "value", sizeof("value") - 1);
+                                if (ts_node_is_null(valueNode))
+                                {
+                                    uint32_t subCount = ts_node_child_count(child);
+                                    bool foundEq = false;
+                                    for (uint32_t j = 0; j < subCount; ++j)
+                                    {
+                                        TSNode subChild = ts_node_child(child, j);
+                                        std::string_view subText = doc.SourceAt(subChild);
+                                        if (subText == "=")
+                                        {
+                                            foundEq = true;
+                                            continue;
+                                        }
+                                        if (foundEq)
+                                        {
+                                            valueNode = subChild;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if (!ts_node_is_null(valueNode))
+                                {
+                                    auto rhsTypeOpt = TypeEvaluator::InferType(valueNode, doc, globalTable, localTable);
+                                    if (rhsTypeOpt.has_value())
+                                    {
+                                        std::string rhsType = rhsTypeOpt.value();
+                                        if (!TypeEvaluator::AreTypesCompatible(lhsType, rhsType))
+                                        {
+                                            TSPoint start = ts_node_start_point(child);
+                                            TSPoint end = ts_node_end_point(child);
+
+                                            lsp::Diagnostic d;
+                                            d.range.start.line = start.row;
+                                            d.range.start.character = start.column;
+                                            d.range.end.line = end.row;
+                                            d.range.end.character = end.column;
+                                            d.severity = lsp::DiagnosticSeverity::Error;
+                                            d.source = "angelscript";
+                                            d.message = fmt::format("Type mismatch: Cannot implicitly convert '{}' to '{}'.", rhsType, lhsType);
+
+                                            diags.push_back(d);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
