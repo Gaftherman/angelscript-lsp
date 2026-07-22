@@ -304,7 +304,7 @@
         },
         {
           "name": "keyword.other.modifier.angelscript storage.modifier.angelscript",
-          "match": "\\b(const|override|explicit|property|shared|abstract|final|external)\\b"
+          "match": "\\b(const|override|explicit|property|shared|abstract|final|external|export)\\b"
         }
       ]
     },
@@ -349,6 +349,14 @@
         {
           "name": "punctuation.separator.namespace.angelscript punctuation.separator.scope.cpp punctuation.delimiter.angelscript",
           "match": "::"
+        },
+        {
+          "name": "punctuation.definition.typeparameters.begin.angelscript punctuation.definition.typeparameters.begin.ts",
+          "match": "(?<=\\b[A-Z_][A-Za-z0-9_]*)<(?!\\=)"
+        },
+        {
+          "name": "punctuation.definition.typeparameters.end.angelscript punctuation.definition.typeparameters.end.ts",
+          "match": "(?<=\\b[A-Z_][A-Za-z0-9_]*<[^>]*)>"
         },
         {
           "name": "punctuation.delimiter.angelscript",
