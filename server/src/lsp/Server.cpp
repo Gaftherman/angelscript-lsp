@@ -483,24 +483,20 @@ namespace angel_lsp
             lock.unlock();
 
             std::vector<lsp::Diagnostic> diagnostics;
-            if (uri.find("as.predefined") != std::string::npos || uri.ends_with(".predefined"))
+            std::function<const Document *(const std::string &)> docResolver = [this](const std::string &u) -> const Document *
             {
-                diagnostics = {};
-            }
-            else
-            {
-                std::function<const Document *(const std::string &)> docResolver = [this](const std::string &u) -> const Document * {
-                    std::shared_lock docLock(m_docMutex);
-                    std::string normU = NormalizeUri(u);
-                    auto it = m_documents.find(normU);
-                    if (it != m_documents.end())
-                        return it->second.get();
-                    return nullptr;
-                };
+                std::shared_lock docLock(m_docMutex);
+                std::string normU = NormalizeUri(u);
+                auto it = m_documents.find(normU);
+                if (it != m_documents.end())
+                {
+                    return it->second.get();
+                }
+                return nullptr;
+            };
 
-                std::lock_guard<std::mutex> engineLock(m_engineMutex);
-                diagnostics = oracle->ValidateSync(text, uri, docResolver);
-            }
+            std::lock_guard<std::mutex> engineLock(m_engineMutex);
+            diagnostics = oracle->ValidateSync(text, uri, docResolver);
 
             m_diagCache->Update(uri, diagnostics);
 

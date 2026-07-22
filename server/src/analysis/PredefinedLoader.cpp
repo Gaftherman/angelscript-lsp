@@ -229,26 +229,34 @@ namespace analysis
                 {
                     if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
                     {
-                        if (registeredTypes.find(sym->name) == registeredTypes.end())
+                        if (sym->isAbstract || sym->isShared || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface)
+                        {
                             continue;
+                        }
 
                         std::string declName = sym->name;
+                        std::string lookupName = sym->name;
                         if (sym->name == arrayType || sym->name == arrayType + "<T>")
                         {
                             declName = arrayType + "<T>";
+                            lookupName = arrayType + "<class T>";
                         }
 
-                        asITypeInfo *ti = engine->GetTypeInfoByName(declName.c_str());
+                        asITypeInfo *ti = engine->GetTypeInfoByName(lookupName.c_str());
+                        if (!ti)
+                        {
+                            ti = engine->GetTypeInfoByName(sym->name.c_str());
+                        }
+                        if (!ti && (sym->name == arrayType || sym->name == arrayType + "<T>"))
+                        {
+                            ti = engine->GetTypeInfoByName(arrayType.c_str());
+                        }
 
                         for (const auto &child : sym->children)
                         {
                             if (child->kind == SymbolKind::Method)
                             {
                                 // Do not register constructors or destructors as object methods.
-                                // In AngelScript, they must be registered via RegisterObjectBehaviour,
-                                // but since our dummy types are asOBJ_POD, they don't even need them to be
-                                // registered for compilation to succeed. Passing them to RegisterObjectMethod
-                                // will cause asINVALID_DECLARATION and kill the engine.
                                 if (child->name == sym->name)
                                 {
                                     std::string paramList = "(";
@@ -266,11 +274,26 @@ namespace analysis
                                 {
                                     continue;
                                 }
-                                std::string methodSig = child->BuildSignature();
-                                if (ti && ti->GetMethodByDecl(methodSig.c_str()) != nullptr)
+
+                                bool methodExists = false;
+                                if (ti)
+                                {
+                                    asUINT mcount = ti->GetMethodCount();
+                                    for (asUINT mi = 0; mi < mcount; ++mi)
+                                    {
+                                        asIScriptFunction *m = ti->GetMethodByIndex(mi);
+                                        if (m && m->GetName() && child->name == m->GetName())
+                                        {
+                                            methodExists = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (methodExists)
                                 {
                                     continue;
                                 }
+                                std::string methodSig = child->BuildSignature();
                                 engine->RegisterObjectMethod(declName.c_str(), methodSig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                             }
                             else if (child->kind == SymbolKind::Property || child->kind == SymbolKind::Variable)
@@ -300,11 +323,22 @@ namespace analysis
                     }
                     else if (sym->kind == SymbolKind::Function)
                     {
-                        std::string funcSig = sym->BuildSignature();
-                        if (!funcSig.empty() && engine->GetGlobalFunctionByDecl(funcSig.c_str()) != nullptr)
+                        bool funcExists = false;
+                        asUINT gcount = engine->GetGlobalFunctionCount();
+                        for (asUINT gi = 0; gi < gcount; ++gi)
+                        {
+                            asIScriptFunction *gf = engine->GetGlobalFunctionByIndex(gi);
+                            if (gf && gf->GetName() && sym->name == gf->GetName())
+                            {
+                                funcExists = true;
+                                break;
+                            }
+                        }
+                        if (funcExists)
                         {
                             continue;
                         }
+                        std::string funcSig = sym->BuildSignature();
                         engine->RegisterGlobalFunction(funcSig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                     }
                     else if (sym->kind == SymbolKind::Variable)
