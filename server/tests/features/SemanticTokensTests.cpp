@@ -272,4 +272,80 @@ void TestComplex()
         REQUIRE(!tokens.empty());
         CHECK(tokens.size() % 5 == 0);
     }
+
+    TEST_CASE("ST9: Multi-file multi-class inheritance with Doxygen comments semantic tokenization")
+    {
+        const char *SRC_A = R"script(
+/**
+ * @brief Base entity class representation
+ */
+class BaseEntity
+{
+    /** @brief Entity health points */
+    int health;
+
+    /** @brief Resets health */
+    void Reset() { health = 100; }
+}
+)script";
+
+        const char *SRC_B = R"script(
+#include "fileA.as"
+
+/**
+ * @brief Derived player class
+ */
+class Player : BaseEntity
+{
+    /** @brief Player mana */
+    int mana;
+
+    void Update()
+    {
+        Reset();
+        mana = 50;
+    }
+}
+)script";
+
+        Document docA("file:///fileA.as", SRC_A);
+        Document docB("file:///fileB.as", SRC_B);
+        analysis::SymbolTable table;
+        analysis::SymbolCollector::CollectGlobals(docA, table);
+        analysis::SymbolCollector::CollectGlobals(docB, table);
+        analysis::SymbolCollector::TraverseLocals(docA.RootNode(), docA, table, nullptr);
+        analysis::SymbolCollector::TraverseLocals(docB.RootNode(), docB, table, nullptr);
+
+        std::vector<uint32_t> tokensA = angel_lsp::features::SemanticTokensHandler::ProvideSemanticTokens(docA, table);
+        std::vector<uint32_t> tokensB = angel_lsp::features::SemanticTokensHandler::ProvideSemanticTokens(docB, table);
+
+        REQUIRE(!tokensA.empty());
+        REQUIRE(!tokensB.empty());
+        CHECK(tokensA.size() % 5 == 0);
+        CHECK(tokensB.size() % 5 == 0);
+
+        // Verify BaseEntity and Player are recognized as Class (TokenType::Class = 2)
+        uint32_t classTokenType = 2;
+        bool foundBaseClass = false;
+        bool foundDerivedClass = false;
+
+        for (size_t i = 0; i < tokensA.size(); i += 5)
+        {
+            if (tokensA[i + 2] == 10 && tokensA[i + 3] == classTokenType) // "BaseEntity"
+            {
+                foundBaseClass = true;
+            }
+        }
+
+        for (size_t i = 0; i < tokensB.size(); i += 5)
+        {
+            if (tokensB[i + 2] == 6 && tokensB[i + 3] == classTokenType) // "Player"
+            {
+                foundDerivedClass = true;
+            }
+        }
+
+        CHECK(foundBaseClass);
+        CHECK(foundDerivedClass);
+    }
 }
