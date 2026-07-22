@@ -23,6 +23,9 @@ namespace angel_lsp::i18n
             // 1. Static exact matches (O(1) lookup using unordered_dense)
             static const ankerl::unordered_dense::map<std::string, std::string> staticMap =
                 {
+                    {"Invalid #include directive: missing opening quote or angle bracket", "Directiva #include no válida: falta comilla de apertura o corchete angular"},
+                    {"Invalid #include directive: unexpected characters after path", "Directiva #include no válida: caracteres no esperados después de la ruta"},
+                    {"Invalid #include directive: empty file path", "Directiva #include no válida: ruta de archivo vacía"},
                     {"Initialization after return. All code paths must initialize the members", "Inicialización después del regreso. Todas las rutas de código deben inicializar los miembros."},
                     {"Output argument expression is not assignable", "La expresión del argumento de salida no es asignable"},
                     {"Auto is not allowed here", "Auto no está permitido aquí"},
@@ -1281,6 +1284,22 @@ namespace angel_lsp::i18n
                 if (std::regex_match(originalMsg, match, rgx))
                 {
                     return std::string("El motor se apagó antes de que se liberara el contexto. La función '" + match[1].str() + "' no se puede limpiar");
+                }
+            }
+            {
+                static const std::regex rgx(R"(Invalid\ #include\ directive:\ unclosed\ path\ delimiter\ '(.*)')");
+                std::smatch match;
+                if (std::regex_match(originalMsg, match, rgx))
+                {
+                    return std::string("Directiva #include no válida: delimitador de ruta sin cerrar '" + match[1].str() + "'");
+                }
+            }
+            {
+                static const std::regex rgx(R"(Included\ file\ not\ found:\ '(.*)')");
+                std::smatch match;
+                if (std::regex_match(originalMsg, match, rgx))
+                {
+                    return std::string("Archivo incluido no encontrado: '" + match[1].str() + "'");
                 }
             }
         }

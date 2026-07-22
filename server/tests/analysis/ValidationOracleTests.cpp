@@ -426,4 +426,25 @@ void Main()
         auto diags = oracle.ValidateSync(code, "file:///C/main.as");
         CHECK(diags.empty());
     }
+
+    TEST_CASE("Translates #include preprocessor error diagnostics when locale is ES")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        analysis::ValidationOracle oracle(engine, i18n::Locale::ES);
+
+        std::string codeMissing = "#include \"missing_file.as\"\nvoid Main() {}";
+        auto diagsMissing = oracle.ValidateSync(codeMissing, "file:///C/main_es.as");
+        CHECK(!diagsMissing.empty());
+
+        bool foundSpanishMsg = false;
+        for (const auto &d : diagsMissing)
+        {
+            if (d.message.find("Archivo incluido no encontrado") != std::string::npos)
+            {
+                foundSpanishMsg = true;
+                break;
+            }
+        }
+        CHECK(foundSpanishMsg);
+    }
 }

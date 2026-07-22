@@ -140,6 +140,7 @@ static bool ValidateIncludeDirective(const std::string &line,
                                      size_t firstNonSpace,
                                      const std::string &baseUri,
                                      std::function<const Document *(const std::string &)> docResolver,
+                                     angel_lsp::i18n::Locale locale,
                                      std::vector<lsp::Diagnostic> &diagsOut)
 {
     size_t hashPos = line.find('#', firstNonSpace);
@@ -158,7 +159,7 @@ static bool ValidateIncludeDirective(const std::string &line,
         d.range.end.character = line.length();
         d.severity = lsp::DiagnosticSeverity::Error;
         d.source = "angelscript";
-        d.message = "Invalid #include directive: missing opening quote or angle bracket";
+        d.message = angel_lsp::i18n::DiagnosticI18n::Translate("Invalid #include directive: missing opening quote or angle bracket", locale);
         diagsOut.push_back(d);
         return false;
     }
@@ -174,7 +175,7 @@ static bool ValidateIncludeDirective(const std::string &line,
         d.range.end.character = line.length();
         d.severity = lsp::DiagnosticSeverity::Error;
         d.source = "angelscript";
-        d.message = "Invalid #include directive: unclosed path delimiter ('" + std::string(1, closeChar) + "')";
+        d.message = angel_lsp::i18n::DiagnosticI18n::Translate("Invalid #include directive: unclosed path delimiter ('" + std::string(1, closeChar) + "')", locale);
         diagsOut.push_back(d);
         return false;
     }
@@ -194,7 +195,7 @@ static bool ValidateIncludeDirective(const std::string &line,
         d.range.end.character = line.length();
         d.severity = lsp::DiagnosticSeverity::Error;
         d.source = "angelscript";
-        d.message = "Invalid #include directive: unexpected characters after path";
+        d.message = angel_lsp::i18n::DiagnosticI18n::Translate("Invalid #include directive: unexpected characters after path", locale);
         diagsOut.push_back(d);
     }
 
@@ -208,7 +209,7 @@ static bool ValidateIncludeDirective(const std::string &line,
         d.range.end.character = closeQuote + 1;
         d.severity = lsp::DiagnosticSeverity::Error;
         d.source = "angelscript";
-        d.message = "Invalid #include directive: empty file path";
+        d.message = angel_lsp::i18n::DiagnosticI18n::Translate("Invalid #include directive: empty file path", locale);
         diagsOut.push_back(d);
         return false;
     }
@@ -223,7 +224,7 @@ static bool ValidateIncludeDirective(const std::string &line,
         d.range.end.character = closeQuote + 1;
         d.severity = lsp::DiagnosticSeverity::Error;
         d.source = "angelscript";
-        d.message = "Included file not found: '" + relPath + "'";
+        d.message = angel_lsp::i18n::DiagnosticI18n::Translate("Included file not found: '" + relPath + "'", locale);
         diagsOut.push_back(d);
         return false;
     }
@@ -252,7 +253,7 @@ static bool ValidateIncludeDirective(const std::string &line,
             d.range.end.character = closeQuote + 1;
             d.severity = lsp::DiagnosticSeverity::Error;
             d.source = "angelscript";
-            d.message = "Included file not found: '" + relPath + "'";
+            d.message = angel_lsp::i18n::DiagnosticI18n::Translate("Included file not found: '" + relPath + "'", locale);
             diagsOut.push_back(d);
             return false;
         }
@@ -336,7 +337,7 @@ namespace analysis
                                 try
                                 {
                                     std::vector<lsp::Diagnostic> incDiags;
-                                    bool validDirect = ValidateIncludeDirective(line, lineIdx, firstNonSpace, baseUri, docResolver, incDiags);
+                                    bool validDirect = ValidateIncludeDirective(line, lineIdx, firstNonSpace, baseUri, docResolver, m_locale, incDiags);
                                     for (const auto &d : incDiags)
                                     {
                                         m_diagnosticsByUri[baseUri].push_back(d);
