@@ -346,7 +346,11 @@ namespace analysis
 
         angel_lsp::LspLogger::Info("[Validation] Validating URI: '" + currentUri + "' (normalized: '" + normCurrentUri + "')");
 
-        m_engine->SetMessageCallback(asFUNCTION(MessageCallback), this, asCALL_CDECL);
+        int callbackRes = m_engine->SetMessageCallback(asFUNCTION(MessageCallback), this, asCALL_CDECL_OBJLAST);
+        if (callbackRes < 0)
+        {
+            angel_lsp::LspLogger::Error("[Validation] SetMessageCallback failed with error code: " + std::to_string(callbackRes));
+        }
 
         const char *moduleName = "ValidationModule";
         m_engine->DiscardModule(moduleName);
@@ -359,7 +363,11 @@ namespace analysis
             if (abstractCode && !abstractCode->empty())
             {
                 angel_lsp::LspLogger::Info("[Validation] Adding Abstract classes script section (length: " + std::to_string(abstractCode->size()) + " bytes)");
-                mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
+                int secRes = mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
+                if (secRes < 0)
+                {
+                    angel_lsp::LspLogger::Error("[Validation] AddScriptSection('Abstracts') failed with error code: " + std::to_string(secRes));
+                }
             }
 
             if (!normCurrentUri.empty())
@@ -429,7 +437,11 @@ namespace analysis
                                                 loadIncludes(normTargetUri, incContent);
                                                 std::string sanitizedInc = SanitizeCodeForEngine(incContent, m_definedWords);
                                                 angel_lsp::LspLogger::Info("[Validation] Adding included script section: '" + normTargetUri + "' (" + std::to_string(sanitizedInc.size()) + " bytes)");
-                                                mod->AddScriptSection(normTargetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
+                                                int secRes = mod->AddScriptSection(normTargetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
+                                                if (secRes < 0)
+                                                {
+                                                    angel_lsp::LspLogger::Error("[Validation] AddScriptSection('" + normTargetUri + "') failed with error code: " + std::to_string(secRes));
+                                                }
                                             }
                                         }
                                     }
@@ -448,7 +460,11 @@ namespace analysis
 
             std::string sanitizedMain = SanitizeCodeForEngine(code, m_definedWords);
             angel_lsp::LspLogger::Info("[Validation] Adding main script section: '" + normCurrentUri + "' (" + std::to_string(sanitizedMain.size()) + " bytes)");
-            mod->AddScriptSection(normCurrentUri.c_str(), sanitizedMain.c_str(), sanitizedMain.size());
+            int secRes = mod->AddScriptSection(normCurrentUri.c_str(), sanitizedMain.c_str(), sanitizedMain.size());
+            if (secRes < 0)
+            {
+                angel_lsp::LspLogger::Error("[Validation] AddScriptSection('" + normCurrentUri + "') failed with error code: " + std::to_string(secRes));
+            }
 
             int r = mod->Build();
             std::string statusStr = (r >= 0) ? "SUCCESS" : ("BUILD_ERROR (code " + std::to_string(r) + ")");

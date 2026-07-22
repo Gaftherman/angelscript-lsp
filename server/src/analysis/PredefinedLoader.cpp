@@ -255,7 +255,8 @@ namespace analysis
                                     std::string paramList = "(";
                                     for (size_t p = 0; p < child->params.size(); p++)
                                     {
-                                        if (p > 0) paramList += ", ";
+                                        if (p > 0)
+                                            paramList += ", ";
                                         paramList += child->params[p].typeName + " " + child->params[p].name;
                                     }
                                     paramList += ")";
@@ -335,7 +336,7 @@ namespace analysis
                         auto isTypeRegistered = [&](const std::string &rawType) -> bool
                         {
                             if (rawType.empty() || rawType == "void" || rawType == "int" || rawType == "uint" ||
-                                rawType == "float" || rawType == "double" || rawType == "bool" || rawType == "size_t" ||
+                                rawType == "float" || rawType == "double" || rawType == "bool" ||
                                 rawType == "int8" || rawType == "int16" || rawType == "int64" || rawType == "uint8" || rawType == "uint16" || rawType == "uint64")
                             {
                                 return true;
@@ -499,7 +500,7 @@ namespace analysis
                     {
                         funcBody = "{ return null; }";
                     }
-                    else if (retType == "int" || retType == "uint" || retType == "float" || retType == "double" || retType == "bool" || retType == "size_t")
+                    else if (retType == "int" || retType == "uint" || retType == "float" || retType == "double" || retType == "bool")
                     {
                         funcBody = "{ return 0; }";
                     }
@@ -623,13 +624,12 @@ namespace analysis
 
         // Sort predefined files deterministically so as.predefined comes first
         std::sort(predefinedFiles.begin(), predefinedFiles.end(), [](const std::string &a, const std::string &b)
-        {
+                  {
             std::string nameA = std::filesystem::path(a).filename().string();
             std::string nameB = std::filesystem::path(b).filename().string();
             if (nameA == "as.predefined") return true;
             if (nameB == "as.predefined") return false;
-            return nameA < nameB;
-        });
+            return nameA < nameB; });
 
         bool anyLoaded = false;
         for (const auto &filePath : predefinedFiles)
