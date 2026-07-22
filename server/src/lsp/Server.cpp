@@ -221,41 +221,7 @@ namespace angel_lsp
         messageHandler->add<lsp::notifications::Workspace_DidChangeConfiguration>(
             [this](lsp::notifications::Workspace_DidChangeConfiguration::Params &&params)
             {
-                lsp::requests::Window_ShowMessageRequest::Params p;
-                p.type = lsp::MessageType::Info;
-                p.message = "AngelScript configuration changed. Reload server to apply changes?";
-
-                lsp::MessageActionItem action;
-                action.title = "Reload Window";
-                p.actions = std::vector<lsp::MessageActionItem>{action};
-
-                messageHandler->sendRequest<lsp::requests::Window_ShowMessageRequest>(
-                    std::move(p),
-                    [this](lsp::requests::Window_ShowMessageRequest::Result &&res)
-                    {
-                        if (!res.isNull() && res.value().title == "Reload Window")
-                        {
-                            std::lock_guard<std::mutex> engineLock(m_engineMutex);
-                            if (asEngine)
-                                asEngine->ShutDownAndRelease();
-                            asEngine = asCreateScriptEngine();
-                            oracle = std::make_unique<analysis::ValidationOracle>(asEngine);
-                            m_globalSymbolTable.ClearAll();
-
-                            analysis::PredefinedLoader loader;
-                            auto logger = [](const std::string &msg, int severity)
-                            {
-                                if (severity == 1)
-                                    LspLogger::Error(msg);
-                                else if (severity == 2)
-                                    LspLogger::Warn(msg);
-                                else
-                                    LspLogger::Info(msg);
-                            };
-                            loader.FindInWorkspace(m_workspaceRoot, asEngine, m_globalSymbolTable, "string", "array", logger);
-                            LspLogger::Info("Server reloaded from configuration change.");
-                        }
-                    });
+                LspLogger::Info("Configuration updated from client.");
             });
 
         messageHandler->add<lsp::notifications::TextDocument_DidSave>(
