@@ -164,4 +164,59 @@ void Main()
         auto diags2 = oracle.ValidateSync(code2);
         CHECK(diags2.empty());
     }
+
+    TEST_CASE("Preprocessor edge cases: negation, nesting, formatting and unterminated #if")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        analysis::ValidationOracle oracle(engine);
+
+        // 1. Negated condition (#if !DEBUG_MODE)
+        oracle.SetDefinedWords({"DEBUG_MODE"});
+        std::string codeNegated = R"script(
+void Main()
+{
+    #if !DEBUG_MODE
+    invalid_code_that_should_be_skipped_when_DEBUG_MODE_is_defined;
+    #endif
+}
+)script";
+        CHECK(oracle.ValidateSync(codeNegated).empty());
+
+        // When DEBUG_MODE is NOT defined, #if !DEBUG_MODE activates inner block
+        oracle.SetDefinedWords({});
+        std::string codeNegatedActive = R"script(
+void Main()
+{
+    #if !DEBUG_MODE
+    int releaseVar = 42;
+    #endif
+}
+)script";
+        CHECK(oracle.ValidateSync(codeNegatedActive).empty());
+
+        // 2. Nested #if directives with whitespace
+        oracle.SetDefinedWords({"FEATURE_A"});
+        std::string codeNested = R"script(
+void Main()
+{
+    #if FEATURE_A
+    int a = 1;
+    #  if   FEATURE_B  
+    invalid_code_skipped_because_B_is_missing;
+    #  endif
+    int b = 2;
+    #endif
+}
+)script";
+        CHECK(oracle.ValidateSync(codeNested).empty());
+
+        // 3. Unterminated #if at EOF (safety check)
+        std::string codeUnterminated = R"script(
+void Main()
+{
+    #if FEATURE_X
+    int val = 5;
+)script";
+        CHECK_NOTHROW(oracle.ValidateSync(codeUnterminated));
+    }
 }
