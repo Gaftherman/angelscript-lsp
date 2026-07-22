@@ -1,4 +1,5 @@
 #pragma once
+
 #include <iostream>
 #include <unordered_map>
 #include <string>
@@ -7,6 +8,7 @@
 #include "analysis/ValidationOracle.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/DiagnosticCache.h"
+#include "config/ServerConfig.h"
 #include <shared_mutex>
 #include <thread>
 #include <condition_variable>
@@ -24,24 +26,49 @@ namespace angel_lsp
 
     /**
      * @brief The main LSP Server class orchestrating all language intelligence.
+     * 
+     * Handles incoming LSP JSON-RPC messages and dispatches request handling
+     * based on centralized ServerConfig feature toggles.
      */
     class Server
     {
     public:
         /**
-         * @brief Constructs the LSP server and initializes internal resources.
+         * @brief Constructs the LSP server with an optional configuration.
+         * @param config Configuration settings and feature flags.
          */
-        Server();
+        explicit Server(ServerConfig config = ServerConfig());
+
+        /**
+         * @brief Destroys the LSP server and cleans up engine resources.
+         */
         ~Server();
 
+        /**
+         * @brief Starts the main LSP server execution loop.
+         */
         void Run();
 
     private:
+        /**
+         * @brief Registers all LSP request and notification handlers.
+         */
         void RegisterHandlers();
 
-        // Background validation
+        /**
+         * @brief Schedules background document diagnostics validation.
+         * @param uri Document URI string.
+         * @param text Document source text.
+         */
         void ScheduleValidation(std::string uri, std::string text);
+
+        /**
+         * @brief Worker thread loop for processing background diagnostics.
+         * @param st Thread stop token.
+         */
         void ValidationWorkerLoop(std::stop_token st);
+
+        ServerConfig m_config;
 
         std::unique_ptr<lsp::Connection> m_connection;
         std::unique_ptr<lsp::MessageHandler> messageHandler;
@@ -70,3 +97,4 @@ namespace angel_lsp
     };
 
 } // namespace angel_lsp
+

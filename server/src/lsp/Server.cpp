@@ -108,7 +108,8 @@ namespace angel_lsp
         CollectLocalsFunctions(root, doc, table);
     }
 
-    Server::Server()
+    Server::Server(ServerConfig config)
+        : m_config(std::move(config))
     {
         asEngine = asCreateScriptEngine();
         oracle = std::make_unique<analysis::ValidationOracle>(asEngine);
@@ -145,7 +146,9 @@ namespace angel_lsp
                 {
                     m_locale = i18n::ParseLocale(params.locale.value());
                     if (oracle)
+                    {
                         oracle->SetLocale(m_locale);
+                    }
                 }
                 if (!params.rootUri.isNull())
                 {
@@ -164,23 +167,39 @@ namespace angel_lsp
                 sync.change = lsp::TextDocumentSyncKind::Full;
                 result.capabilities.textDocumentSync = sync;
 
-                lsp::CompletionOptions completion;
-                completion.triggerCharacters = std::vector<std::string>{".", ":"};
-                result.capabilities.completionProvider = completion;
+                if (m_config.features.enableCompletion)
+                {
+                    lsp::CompletionOptions completion;
+                    completion.triggerCharacters = std::vector<std::string>{".", ":"};
+                    result.capabilities.completionProvider = completion;
+                }
 
-                result.capabilities.hoverProvider = true;
-                result.capabilities.definitionProvider = true;
-                result.capabilities.typeDefinitionProvider = true;
+                if (m_config.features.enableHover)
+                {
+                    result.capabilities.hoverProvider = true;
+                }
 
-                lsp::SemanticTokensOptions semantic_options;
-                semantic_options.legend.tokenTypes = features::SemanticTokensHandler::GetTokenTypesLegend();
-                semantic_options.legend.tokenModifiers = features::SemanticTokensHandler::GetTokenModifiersLegend();
-                semantic_options.full = true;
-                result.capabilities.semanticTokensProvider = semantic_options;
+                if (m_config.features.enableDefinition)
+                {
+                    result.capabilities.definitionProvider = true;
+                    result.capabilities.typeDefinitionProvider = true;
+                }
 
-                lsp::SignatureHelpOptions signature_options;
-                signature_options.triggerCharacters = std::vector<std::string>{"(", ","};
-                result.capabilities.signatureHelpProvider = signature_options;
+                if (m_config.features.enableSemanticTokens)
+                {
+                    lsp::SemanticTokensOptions semantic_options;
+                    semantic_options.legend.tokenTypes = features::SemanticTokensHandler::GetTokenTypesLegend();
+                    semantic_options.legend.tokenModifiers = features::SemanticTokensHandler::GetTokenModifiersLegend();
+                    semantic_options.full = true;
+                    result.capabilities.semanticTokensProvider = semantic_options;
+                }
+
+                if (m_config.features.enableSignatureHelp)
+                {
+                    lsp::SignatureHelpOptions signature_options;
+                    signature_options.triggerCharacters = std::vector<std::string>{"(", ","};
+                    result.capabilities.signatureHelpProvider = signature_options;
+                }
 
                 return result;
             });
@@ -190,7 +209,7 @@ namespace angel_lsp
             {
                 LspLogger::Info("Client initialized.");
 
-                if (!m_workspaceRoot.empty())
+                if (m_config.features.enablePredefinedLoader && !m_workspaceRoot.empty())
                 {
                     m_predefinedThread = std::jthread([this](std::stop_token st)
                                                       {
@@ -292,10 +311,13 @@ namespace angel_lsp
                 std::unique_lock lock(m_docMutex);
                 m_documents[uri] = std::move(doc);
 
-                auto docResolver = [this](const std::string &u) -> const Document * {
-                    auto it = m_documents.find(u);
+                auto docResolver = [this](const std::string &u) -> const Document *
+                {
+                    auto it = m_documents.find(NormalizeUri(u));
                     if (it != m_documents.end())
+                    {
                         return it->second.get();
+                    }
                     return nullptr;
                 };
 
@@ -314,20 +336,24 @@ namespace angel_lsp
                 std::unique_lock lock(m_docMutex);
                 auto it = m_documents.find(uri);
                 if (it == m_documents.end())
+                {
                     return;
+                }
 
                 if (!params.contentChanges.empty())
                 {
-                    // The first change contains the text if TextDocumentSyncKind is Full
                     if (const auto *change = std::get_if<lsp::TextDocumentContentChangeEvent_Text>(&params.contentChanges[0]))
                     {
                         std::string newText = change->text;
                         it->second = std::make_unique<Document>(uri, newText);
 
-                        auto docResolver = [this](const std::string &u) -> const Document * {
+                        auto docResolver = [this](const std::string &u) -> const Document *
+                        {
                             auto dIt = m_documents.find(NormalizeUri(u));
                             if (dIt != m_documents.end())
+                            {
                                 return dIt->second.get();
+                            }
                             return nullptr;
                         };
 
@@ -342,10 +368,25 @@ namespace angel_lsp
                 }
             });
 
+        messageHandler->add<lsp::notifications::TextDocument_DidClose>(
+            [this](lsp::notifications::TextDocument_DidClose::Params &&params)
+            {
+                std::string uri = NormalizeUri(params.textDocument.uri.toString());
+
+                std::unique_lock lock(m_docMutex);
+                m_documents.erase(uri);
+                m_symbolTables.erase(uri);
+            });
+
         // Feature Handlers
         messageHandler->add<lsp::requests::TextDocument_Hover>(
             [this](lsp::requests::TextDocument_Hover::Params &&req)
             {
+                if (!m_config.features.enableHover)
+                {
+                    return lsp::requests::TextDocument_Hover::Result{};
+                }
+
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
@@ -362,6 +403,11 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_Definition>(
             [this](lsp::requests::TextDocument_Definition::Params &&req)
             {
+                if (!m_config.features.enableDefinition)
+                {
+                    return lsp::requests::TextDocument_Definition::Result{};
+                }
+
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
@@ -376,6 +422,11 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_TypeDefinition>(
             [this](lsp::requests::TextDocument_TypeDefinition::Params &&req)
             {
+                if (!m_config.features.enableDefinition)
+                {
+                    return lsp::requests::TextDocument_TypeDefinition::Result{};
+                }
+
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
@@ -390,6 +441,11 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_Completion>(
             [this](lsp::requests::TextDocument_Completion::Params &&req)
             {
+                if (!m_config.features.enableCompletion)
+                {
+                    return lsp::requests::TextDocument_Completion::Result{};
+                }
+
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
@@ -402,6 +458,11 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Full>(
             [this](lsp::requests::TextDocument_SemanticTokens_Full::Params &&req)
             {
+                if (!m_config.features.enableSemanticTokens)
+                {
+                    return lsp::requests::TextDocument_SemanticTokens_Full::Result{};
+                }
+
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
@@ -414,6 +475,11 @@ namespace angel_lsp
         messageHandler->add<lsp::requests::TextDocument_SignatureHelp>(
             [this](lsp::requests::TextDocument_SignatureHelp::Params &&req)
             {
+                if (!m_config.features.enableSignatureHelp)
+                {
+                    return lsp::requests::TextDocument_SignatureHelp::Result{};
+                }
+
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())

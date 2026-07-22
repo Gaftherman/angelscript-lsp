@@ -6,7 +6,7 @@
 #include <io.h>
 #endif
 
-int main()
+int main(int argc, char **argv)
 {
     try
     {
@@ -15,7 +15,8 @@ int main()
         _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
-        angel_lsp::Server server;
+        angel_lsp::ServerConfig config = angel_lsp::ServerConfig::FromArgs(argc, argv);
+        angel_lsp::Server server(config);
         server.Run();
     }
     catch (const std::exception &e)
