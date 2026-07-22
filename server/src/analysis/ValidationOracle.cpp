@@ -397,6 +397,7 @@ namespace analysis
                                     std::string relPath = SymbolCollector::ExtractIncludePath(line.substr(firstNonSpace));
                                     std::string targetUri = SymbolCollector::ResolveIncludeUri(baseUri, relPath);
                                     std::string normTargetUri = NormalizeUri(targetUri);
+                                    angel_lsp::LspLogger::Info("[Validation] Resolved #include directive: '" + relPath + "' -> '" + normTargetUri + "'");
 
                                     if (!normTargetUri.empty() && visited.insert(normTargetUri).second)
                                     {
@@ -405,6 +406,7 @@ namespace analysis
                                         if (openDoc)
                                         {
                                             incContent = openDoc->GetText();
+                                            angel_lsp::LspLogger::Info("[Validation] Loaded include content from open document buffer for: '" + normTargetUri + "'");
                                         }
                                         else
                                         {
@@ -425,6 +427,11 @@ namespace analysis
                                                 std::stringstream buf;
                                                 buf << infile.rdbuf();
                                                 incContent = buf.str();
+                                                angel_lsp::LspLogger::Info("[Validation] Loaded include content from disk path '" + filePath + "' for: '" + normTargetUri + "'");
+                                            }
+                                            else
+                                            {
+                                                angel_lsp::LspLogger::Warn("[Validation] Could not open include file on disk: '" + filePath + "'");
                                             }
                                         }
 
@@ -432,7 +439,7 @@ namespace analysis
                                         {
                                             loadIncludes(normTargetUri, incContent);
                                             std::string sanitizedInc = SanitizeCodeForEngine(incContent, m_definedWords);
-                                            angel_lsp::LspLogger::Info("[Validation] Adding included script section: '" + normTargetUri + "' (" + std::to_string(sanitizedInc.size()) + " bytes)");
+                                            angel_lsp::LspLogger::Info("[Validation] Adding included script section to module: '" + normTargetUri + "' (" + std::to_string(sanitizedInc.size()) + " bytes)");
                                             int secRes = mod->AddScriptSection(normTargetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
                                             if (secRes < 0)
                                             {
@@ -467,6 +474,7 @@ namespace analysis
 
             bool hasAbstracts = (abstractCode && !abstractCode->empty());
 
+            angel_lsp::LspLogger::Info("[Validation] Executing mod->Build() for ValidationModule...");
             int r = mod->Build();
             std::string statusStr = (r >= 0) ? "SUCCESS" : ("BUILD_ERROR (code " + std::to_string(r) + ")");
             angel_lsp::LspLogger::Info("[Validation] mod->Build() completed -> " + statusStr);

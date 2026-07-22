@@ -156,26 +156,10 @@ namespace analysis
                         std::string declName = sym->name;
                         std::string registerName = sym->name;
 
-                        if (sym->kind == SymbolKind::Interface)
+                        if (sym->isAbstract || sym->isShared || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface)
                         {
-                            int r = engine->RegisterInterface(sym->name.c_str());
-                            if (r >= 0)
-                            {
-                                registeredTypes.insert(sym->name);
-                                for (const auto &child : sym->children)
-                                {
-                                    if (child->kind == SymbolKind::Method)
-                                    {
-                                        engine->RegisterInterfaceMethod(sym->name.c_str(), child->BuildSignature().c_str());
-                                    }
-                                }
-                            }
-                            continue;
-                        }
-                        else if (sym->isAbstract || sym->isShared || sym->kind == SymbolKind::Mixin)
-                        {
-                            // Skip C++ object type registration for abstract/shared/mixin script classes.
-                            // They are script classes (not host C++ types) and interfaces are registered natively above.
+                            // Skip C++ object type registration for abstract/shared/mixin/interface script classes.
+                            // They will be dynamically compiled as script classes/interfaces in processAbstracts.
                             continue;
                         }
                         else if (sym->name == arrayType || sym->name == arrayType + "<T>")
@@ -194,10 +178,18 @@ namespace analysis
                         int r = engine->RegisterObjectType(registerName.c_str(), size, flags);
                         if (r < 0)
                         {
+                            if (logger && *logger)
+                            {
+                                (*logger)("[Predefined] Failed to RegisterObjectType: '" + registerName + "' (code " + std::to_string(r) + ")", 1);
+                            }
                             continue;
                         }
 
                         registeredTypes.insert(sym->name);
+                        if (logger && *logger)
+                        {
+                            (*logger)("[Predefined] Registered ObjectType: '" + registerName + "' (flags: " + std::to_string(flags) + ")", 0);
+                        }
 
                         if (flags & asOBJ_TEMPLATE)
                         {
@@ -238,7 +230,7 @@ namespace analysis
                 {
                     if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
                     {
-                        if (sym->isAbstract || sym->isShared || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface)
+                        if (sym->kind == SymbolKind::Interface)
                         {
                             continue;
                         }
@@ -330,81 +322,6 @@ namespace analysis
                                 engine->RegisterObjectProperty(declName.c_str(), child->BuildSignature().c_str(), 0);
                             }
                         }
-                    }
-                    else if (sym->kind == SymbolKind::Function)
-                    {
-                        bool funcExists = false;
-                        asUINT gcount = engine->GetGlobalFunctionCount();
-                        for (asUINT gi = 0; gi < gcount; ++gi)
-                        {
-                            asIScriptFunction *gf = engine->GetGlobalFunctionByIndex(gi);
-                            if (gf && gf->GetName() && sym->name == gf->GetName())
-                            {
-                                funcExists = true;
-                                break;
-                            }
-                        }
-                        if (funcExists)
-                        {
-                            continue;
-                        }
-
-                        auto isTypeRegistered = [&](const std::string &rawType) -> bool
-                        {
-                            if (rawType.empty() || rawType == "void" || rawType == "int" || rawType == "uint" ||
-                                rawType == "float" || rawType == "double" || rawType == "bool" ||
-                                rawType == "int8" || rawType == "int16" || rawType == "int64" || rawType == "uint8" || rawType == "uint16" || rawType == "uint64")
-                            {
-                                return true;
-                            }
-                            std::string clean = rawType;
-                            while (!clean.empty() && (clean.back() == '@' || clean.back() == ' '))
-                            {
-                                clean.pop_back();
-                            }
-                            if (clean.find("const ") == 0)
-                            {
-                                clean = clean.substr(6);
-                            }
-                            size_t ampersandPos = clean.find('&');
-                            if (ampersandPos != std::string::npos)
-                            {
-                                clean = clean.substr(0, ampersandPos);
-                            }
-                            while (!clean.empty() && clean.back() == ' ')
-                            {
-                                clean.pop_back();
-                            }
-                            return engine->GetTypeInfoByName(clean.c_str()) != nullptr;
-                        };
-
-                        bool canRegister = isTypeRegistered(sym->typeInfo);
-                        if (canRegister)
-                        {
-                            for (const auto &p : sym->params)
-                            {
-                                if (!isTypeRegistered(p.typeName))
-                                {
-                                    canRegister = false;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (canRegister)
-                        {
-                            std::string funcSig = sym->BuildSignature();
-                            engine->RegisterGlobalFunction(funcSig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
-                        }
-                    }
-                    else if (sym->kind == SymbolKind::Variable)
-                    {
-                        if (!sym->name.empty() && engine->GetGlobalPropertyIndexByName(sym->name.c_str()) >= 0)
-                        {
-                            continue;
-                        }
-                        static int dummyVar = 0;
-                        engine->RegisterGlobalProperty(sym->BuildSignature().c_str(), &dummyVar);
                     }
                 }
             }
