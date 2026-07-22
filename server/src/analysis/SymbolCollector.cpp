@@ -14,6 +14,16 @@ static inline TSNode FieldChild(TSNode node, const char* field)
 
 namespace analysis
 {
+    static std::unordered_set<std::string> g_definedWords = {"DEBUG_MODE"};
+
+    void SymbolCollector::SetDefinedWords(const std::vector<std::string> &defines)
+    {
+        g_definedWords.clear();
+        for (const auto &d : defines)
+        {
+            if (!d.empty()) g_definedWords.insert(d);
+        }
+    }
     std::string SymbolCollector::ExtractIncludePath(std::string_view text)
     {
         size_t firstQuote = text.find_first_of("\"<");
@@ -619,12 +629,113 @@ namespace analysis
         }
     }
 
+    static std::vector<bool> g_preprocStack;
+
+    static bool IsPreprocActive()
+    {
+        for (bool b : g_preprocStack)
+        {
+            if (!b) return false;
+        }
+        return true;
+    }
+
+    void SymbolCollector::CollectGlobals(const Document &doc, SymbolTable &table, std::function<const Document *(const std::string &)> docResolver)
+    {
+        g_preprocStack.clear();
+        TSNode root = doc.GetRootNode();
+        TraverseGlobals(root, doc, table, nullptr);
+    }
+
     void SymbolCollector::TraverseGlobals(TSNode node, const Document &doc, SymbolTable &table, Symbol *parentScope)
     {
         if (ts_node_is_null(node))
             return;
 
         std::string_view type = ts_node_type(node);
+
+        if (type == "preproc_directive")
+        {
+            std::string text = GetNodeText(node, doc);
+            if (text.starts_with("#if"))
+            {
+                std::stringstream ss(text);
+                std::string hashIf, word;
+                ss >> hashIf >> word;
+                bool isNegated = false;
+                if (word == "!" && ss >> word) {
+                    isNegated = true;
+                } else if (word.starts_with("!")) {
+                    isNegated = true;
+                    word = word.substr(1);
+                }
+                bool isDefined = g_definedWords.contains(word);
+                bool isActive = isNegated ? !isDefined : isDefined;
+                g_preprocStack.push_back(isActive);
+            }
+            else if (text.starts_with("#endif"))
+            {
+                if (!g_preprocStack.empty())
+                    g_preprocStack.pop_back();
+            }
+            else if (text.starts_with("#include"))
+            {
+                if (IsPreprocActive())
+                {
+                    std::string relPath = ExtractIncludePath(text);
+                    if (!relPath.empty())
+                    {
+                        std::string targetUri = ResolveIncludeUri(doc.GetUri(), relPath);
+                        if (!targetUri.empty())
+                        {
+                            auto sym = std::make_shared<Symbol>();
+                            sym->uri = targetUri;
+                            sym->name = relPath;
+                            sym->kind = SymbolKind::Variable;
+                            sym->typeInfo = "#include";
+                            sym->docComment = "";
+                            sym->selectionRange = GetRange(node, doc);
+                            sym->fullRange = GetRange(node, doc);
+                            table.AddGlobal(sym);
+
+                            if (g_visitedIncludes.insert(targetUri).second)
+                            {
+                                const Document *openDoc = g_docResolver ? g_docResolver(targetUri) : nullptr;
+                                if (openDoc)
+                                {
+                                    CollectGlobals(*openDoc, table, g_docResolver);
+                                }
+                                else
+                                {
+                                    std::string filePath = UrlDecode(targetUri);
+                                    if (filePath.starts_with("file:///"))
+                                        filePath = filePath.substr(8);
+                                    else if (filePath.starts_with("file://"))
+                                        filePath = filePath.substr(7);
+                                    std::replace(filePath.begin(), filePath.end(), '/', '\\');
+
+                                    std::ifstream infile(filePath);
+                                    if (infile.is_open())
+                                    {
+                                        std::stringstream buffer;
+                                        buffer << infile.rdbuf();
+                                        std::string incContent = buffer.str();
+                                        Document incDoc(targetUri, incContent);
+                                        CollectGlobals(incDoc, table, g_docResolver);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+
+        if (type != "script" && type != "script_section" && !IsPreprocActive())
+        {
+            return;
+        }
 
         if (type == "typedef_declaration")
         {
@@ -1192,59 +1303,6 @@ namespace analysis
             else
             {
                 table.AddGlobal(sym);
-            }
-            return;
-        }
-        else if (type == "preproc_directive")
-        {
-            std::string text = GetNodeText(node, doc);
-            if (text.starts_with("#include"))
-            {
-                std::string relPath = ExtractIncludePath(text);
-                if (!relPath.empty())
-                {
-                    std::string targetUri = ResolveIncludeUri(doc.GetUri(), relPath);
-                    if (!targetUri.empty())
-                    {
-                        auto sym = std::make_shared<Symbol>();
-                        sym->uri = targetUri;
-                        sym->name = relPath;
-                        sym->kind = SymbolKind::Variable;
-                        sym->typeInfo = "#include";
-                        sym->docComment = "";
-                        sym->selectionRange = GetRange(node, doc);
-                        sym->fullRange = GetRange(node, doc);
-                        table.AddGlobal(sym);
-
-                        if (g_visitedIncludes.insert(targetUri).second)
-                        {
-                            const Document *openDoc = g_docResolver ? g_docResolver(targetUri) : nullptr;
-                            if (openDoc)
-                            {
-                                CollectGlobals(*openDoc, table, g_docResolver);
-                            }
-                            else
-                            {
-                                std::string filePath = UrlDecode(targetUri);
-                                if (filePath.starts_with("file:///"))
-                                    filePath = filePath.substr(8);
-                                else if (filePath.starts_with("file://"))
-                                    filePath = filePath.substr(7);
-                                std::replace(filePath.begin(), filePath.end(), '/', '\\');
-
-                                std::ifstream infile(filePath);
-                                if (infile.is_open())
-                                {
-                                    std::stringstream buffer;
-                                    buffer << infile.rdbuf();
-                                    std::string incContent = buffer.str();
-                                    Document incDoc(targetUri, incContent);
-                                    CollectGlobals(incDoc, table, g_docResolver);
-                                }
-                            }
-                        }
-                    }
-                }
             }
             return;
         }

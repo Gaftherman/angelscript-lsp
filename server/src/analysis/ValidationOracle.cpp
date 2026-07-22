@@ -135,6 +135,7 @@ namespace analysis
         for (const auto &d : defines) {
             if (!d.empty()) m_definedWords.insert(d);
         }
+        SymbolCollector::SetDefinedWords(defines);
     }
 
     std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string &code,

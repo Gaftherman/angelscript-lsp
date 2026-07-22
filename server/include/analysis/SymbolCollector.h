@@ -21,6 +21,11 @@ namespace analysis
         static void CollectGlobals(const Document &doc, SymbolTable &table, std::function<const Document *(const std::string &)> docResolver = nullptr);
 
         /**
+         * @brief Updates the preprocessor defined words used for filtering symbols in inactive #if blocks.
+         */
+        static void SetDefinedWords(const std::vector<std::string> &defines);
+
+        /**
          * @brief Collects local symbols (local variables inside function bodies) and adds them to the local table.
          *
          * @param node The AST node to traverse from.

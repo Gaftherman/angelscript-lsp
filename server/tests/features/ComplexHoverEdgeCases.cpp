@@ -382,4 +382,50 @@ void Test() {}
         lsp::requests::TextDocument_Hover::Result result;
         CHECK_NOTHROW(angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN, nullptr));
     }
+
+    TEST_CASE("CH_ADV_8: Hover filtering for active #if block Doxygen comments")
+    {
+        const char *SRC = R"script(
+#if RENDERER_DX11
+/** @brief DirectX 11 Rendering Engine implementation. */
+class RenderContext
+{
+    /** @brief Initializes DirectX 11 graphics pipeline. */
+    void Initialize(int width, int height) {}
+};
+#endif
+
+#if RENDERER_VK
+/** @brief Vulkan Rendering Engine implementation. */
+class RenderContext
+{
+    /** @brief Initializes Vulkan graphics pipeline. */
+    void Initialize(int width, int height) {}
+};
+#endif
+)script";
+
+        Document doc("file:///multi_if.as", SRC);
+
+        // When RENDERER_DX11 is active:
+        SymbolTable tableDX;
+        SymbolCollector::SetDefinedWords({"RENDERER_DX11"});
+        SymbolCollector::CollectGlobals(doc, tableDX);
+
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///multi_if.as");
+        req.position.line = 3;
+        req.position.character = 8; // On 'RenderContext'
+
+        lsp::requests::TextDocument_Hover::Result resultDX;
+        angel_lsp::features::ProcessHover(resultDX, req, doc, tableDX, nullptr, i18n::Locale::EN, nullptr);
+
+        REQUIRE(!resultDX.isNull());
+        std::string markupDX;
+        if (std::holds_alternative<lsp::MarkupContent>((*resultDX).contents)) {
+            markupDX = std::get<lsp::MarkupContent>((*resultDX).contents).value;
+        }
+        CHECK(markupDX.find("DirectX 11") != std::string::npos);
+        CHECK(markupDX.find("Vulkan") == std::string::npos);
+    }
 }
