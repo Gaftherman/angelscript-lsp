@@ -37,162 +37,44 @@ static std::string UrlDecode(const std::string &in)
     return out;
 }
 
-/**
- * @brief Post-processes sanitized code to complete incomplete statements.
- *
- * Injects a synthetic `;` at the end of lines that end with a bare identifier
- * (no semicolon or block delimiter) while inside a brace scope. This forces
- * AngelScript to evaluate `hola` as a complete expression-statement and emit
- * the correct "undefined identifier" error instead of silently absorbing it.
- * Also closes any unclosed brace blocks to handle truncated (mid-typing) files.
- *
- * @param code The sanitized code produced by the preprocessor pass.
- * @return Code with incomplete statements terminated and open braces closed.
- */
-static std::string CompleteIncompleteStatements(const std::string &code)
+static std::string NormalizeUri(const std::string &rawUri)
 {
-    std::string result;
-    result.reserve(code.size() + 64);
+    if (rawUri.empty()) return "";
 
-    std::stringstream ss(code);
-    std::string line;
-    int braceDepth = 0;
-    bool firstLine = true;
+    std::string out;
+    out.reserve(rawUri.size());
 
-    while (std::getline(ss, line))
+    // URL decode %XX
+    for (size_t i = 0; i < rawUri.size(); ++i)
     {
-        if (!firstLine)
-            result += "\n";
-        firstLine = false;
-
-        // Trim trailing whitespace / \r for analysis only
-        std::string trimmed = line;
-        if (!trimmed.empty() && trimmed.back() == '\r')
-            trimmed.pop_back();
-        while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t'))
-            trimmed.pop_back();
-
-        // Strip trailing line-comment so we examine the actual code last token
-        // (Simple heuristic: find first // that is not inside a string)
+        if (rawUri[i] == '%' && i + 2 < rawUri.size())
         {
-            bool inStr = false;
-            char strChar = 0;
-            for (size_t i = 0; i < trimmed.size(); ++i)
+            int hexVal = 0;
+            std::stringstream ss;
+            ss << std::hex << rawUri.substr(i + 1, 2);
+            if (ss >> hexVal)
             {
-                if (!inStr && (trimmed[i] == '"' || trimmed[i] == '\'' ))
-                {
-                    inStr = true;
-                    strChar = trimmed[i];
-                }
-                else if (inStr && trimmed[i] == strChar && (i == 0 || trimmed[i - 1] != '\\'))
-                {
-                    inStr = false;
-                }
-                else if (!inStr && i + 1 < trimmed.size() && trimmed[i] == '/' && trimmed[i + 1] == '/')
-                {
-                    trimmed = trimmed.substr(0, i);
-                    // Re-trim trailing whitespace
-                    while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t'))
-                        trimmed.pop_back();
-                    break;
-                }
+                out += static_cast<char>(hexVal);
+                i += 2;
+                continue;
             }
         }
+        out += rawUri[i];
+    }
 
-        // Depth BEFORE this line (used to detect "inside a block")
-        int depthBefore = braceDepth;
+    // Standardize slashes: replace \ with /
+    std::replace(out.begin(), out.end(), '\\', '/');
 
-        // Count brace changes on this line (simple, not string/comment aware for depth tracking)
-        for (char c : trimmed)
+    // Normalize drive letter casing e.g. file:///c:/ -> file:///c:/
+    if (out.starts_with("file:///"))
+    {
+        if (out.size() >= 10 && std::isalpha(static_cast<unsigned char>(out[8])) && out[9] == ':')
         {
-            if (c == '{')
-                braceDepth++;
-            else if (c == '}')
-                braceDepth--;
-        }
-
-        // Decide whether to inject ';'
-        // Only inject when:
-        //   1. We are inside a brace block (depthBefore > 0).
-        //   2. The line is not a comment, preprocessor directive, or brace-only line.
-        //   3. The last character is an identifier character (a-z, A-Z, 0-9, _).
-        //   4. The FIRST word on the line is NOT a declaration keyword that could
-        //      start a valid multi-line construct (e.g. namespace, class, void, float…).
-        //      This prevents injecting ';' into things like "namespace Math" that live
-        //      inside an outer namespace block at depth >= 1.
-        static const std::unordered_set<std::string> s_declarationKeywords = {
-            "namespace", "class", "interface", "mixin", "enum", "struct",
-            "funcdef", "typedef", "import", "from", "using",
-            "void", "bool", "int", "int8", "int16", "int32", "int64",
-            "uint", "uint8", "uint16", "uint32", "uint64",
-            "float", "double", "auto", "string", "array", "dictionary",
-            "private", "protected", "public", "shared", "abstract",
-            "final", "override", "explicit", "external", "export", "const",
-            "return", "if", "else", "for", "foreach", "while", "do",
-            "switch", "case", "default", "break", "continue",
-            "try", "catch", "new", "delete", "cast", "in", "out", "inout",
-            "get", "set", "is", "not", "and", "or", "xor",
-            "true", "false", "null", "this", "super", "self"
-        };
-
-        bool shouldInject = false;
-        if (depthBefore > 0 && !trimmed.empty())
-        {
-            size_t firstNS = trimmed.find_first_not_of(" \t");
-            if (firstNS != std::string::npos)
-            {
-                char firstChar = trimmed[firstNS];
-                // Skip comment lines, preprocessor lines, and block delimiters
-                bool isSkipped = (firstChar == '/' || firstChar == '#' ||
-                                  firstChar == '{' || firstChar == '}' ||
-                                  firstChar == '~');  // destructor: ~ClassName()
-                if (!isSkipped)
-                {
-                    char lastChar = trimmed.back();
-                    // Only inject if last char is an identifier character
-                    if (std::isalpha(static_cast<unsigned char>(lastChar)) ||
-                        std::isdigit(static_cast<unsigned char>(lastChar)) ||
-                        lastChar == '_')
-                    {
-                        // Extract the first word to check for declaration keywords
-                        size_t wordEnd = firstNS;
-                        while (wordEnd < trimmed.size() &&
-                               (std::isalnum(static_cast<unsigned char>(trimmed[wordEnd])) ||
-                                trimmed[wordEnd] == '_'))
-                        {
-                            wordEnd++;
-                        }
-                        std::string firstWord = trimmed.substr(firstNS, wordEnd - firstNS);
-
-                        if (s_declarationKeywords.find(firstWord) == s_declarationKeywords.end())
-                        {
-                            shouldInject = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (shouldInject)
-        {
-            result += trimmed + ";";
-        }
-        else
-        {
-            result += line;
+            out[8] = static_cast<char>(std::tolower(static_cast<unsigned char>(out[8])));
         }
     }
 
-    // Close any unclosed brace blocks (handles truncated / mid-typing files).
-    // Each synthetic closing is preceded by ';' to force evaluation of any
-    // dangling statement before the closing brace.
-    while (braceDepth > 0)
-    {
-        result += "\n;}";
-        braceDepth--;
-    }
-
-    return result;
+    return out;
 }
 
 static std::string SanitizeCodeForEngine(const std::string &code, const std::unordered_set<std::string> &definedWords)
@@ -290,7 +172,7 @@ static std::string SanitizeCodeForEngine(const std::string &code, const std::uno
             }
         }
     }
-    return CompleteIncompleteStatements(sanitizedCode);
+    return sanitizedCode;
 }
 
 static bool ValidateIncludeDirective(const std::string &line,
@@ -452,14 +334,17 @@ namespace analysis
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_diagnosticsByUri.clear();
-        m_activeValidationUri = currentUri;
+
+        std::string normCurrentUri = NormalizeUri(currentUri);
+        m_activeValidationUri = normCurrentUri;
 
         if (!m_engine)
         {
+            angel_lsp::LspLogger::Error("[Validation] ValidationOracle engine pointer is null!");
             return {};
         }
 
-        angel_lsp::LspLogger::Info("[Validation] Validating URI: '" + currentUri + "'");
+        angel_lsp::LspLogger::Info("[Validation] Validating URI: '" + currentUri + "' (normalized: '" + normCurrentUri + "')");
 
         m_engine->SetMessageCallback(asFUNCTION(MessageCallback), this, asCALL_CDECL);
 
@@ -473,13 +358,14 @@ namespace analysis
             std::string *abstractCode = static_cast<std::string *>(m_engine->GetUserData(2000));
             if (abstractCode && !abstractCode->empty())
             {
+                angel_lsp::LspLogger::Info("[Validation] Adding Abstract classes script section (length: " + std::to_string(abstractCode->size()) + " bytes)");
                 mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
             }
 
-            if (!currentUri.empty())
+            if (!normCurrentUri.empty())
             {
                 std::unordered_set<std::string> visited;
-                visited.insert(currentUri);
+                visited.insert(normCurrentUri);
 
                 std::function<void(const std::string &, const std::string &)> loadIncludes =
                     [&](const std::string &baseUri, const std::string &srcCode)
@@ -496,27 +382,29 @@ namespace analysis
                                 {
                                     std::vector<lsp::Diagnostic> incDiags;
                                     bool validDirect = ValidateIncludeDirective(line, lineIdx, firstNonSpace, baseUri, docResolver, m_locale, incDiags);
+                                    std::string normBaseUri = NormalizeUri(baseUri);
                                     for (const auto &d : incDiags)
                                     {
-                                        m_diagnosticsByUri[baseUri].push_back(d);
+                                        m_diagnosticsByUri[normBaseUri].push_back(d);
                                     }
 
                                     if (validDirect)
                                     {
                                         std::string relPath = SymbolCollector::ExtractIncludePath(line.substr(firstNonSpace));
                                         std::string targetUri = SymbolCollector::ResolveIncludeUri(baseUri, relPath);
+                                        std::string normTargetUri = NormalizeUri(targetUri);
 
-                                        if (!targetUri.empty() && visited.insert(targetUri).second)
+                                        if (!normTargetUri.empty() && visited.insert(normTargetUri).second)
                                         {
                                             std::string incContent;
-                                            const Document *openDoc = docResolver ? docResolver(targetUri) : nullptr;
+                                            const Document *openDoc = docResolver ? docResolver(normTargetUri) : nullptr;
                                             if (openDoc)
                                             {
                                                 incContent = openDoc->GetText();
                                             }
                                             else
                                             {
-                                                std::string filePath = UrlDecode(targetUri);
+                                                std::string filePath = UrlDecode(normTargetUri);
                                                 if (filePath.starts_with("file:///"))
                                                 {
                                                     filePath = filePath.substr(8);
@@ -538,9 +426,10 @@ namespace analysis
 
                                             if (!incContent.empty())
                                             {
-                                                loadIncludes(targetUri, incContent);
+                                                loadIncludes(normTargetUri, incContent);
                                                 std::string sanitizedInc = SanitizeCodeForEngine(incContent, m_definedWords);
-                                                mod->AddScriptSection(targetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
+                                                angel_lsp::LspLogger::Info("[Validation] Adding included script section: '" + normTargetUri + "' (" + std::to_string(sanitizedInc.size()) + " bytes)");
+                                                mod->AddScriptSection(normTargetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
                                             }
                                         }
                                     }
@@ -554,20 +443,34 @@ namespace analysis
                         }
                     };
 
-                loadIncludes(currentUri, code);
+                loadIncludes(normCurrentUri, code);
             }
 
             std::string sanitizedMain = SanitizeCodeForEngine(code, m_definedWords);
-            mod->AddScriptSection(currentUri.c_str(), sanitizedMain.c_str(), sanitizedMain.size());
+            angel_lsp::LspLogger::Info("[Validation] Adding main script section: '" + normCurrentUri + "' (" + std::to_string(sanitizedMain.size()) + " bytes)");
+            mod->AddScriptSection(normCurrentUri.c_str(), sanitizedMain.c_str(), sanitizedMain.size());
 
             int r = mod->Build();
-            angel_lsp::LspLogger::Info("[Validation] mod->Build() returned " + std::to_string(r));
+            std::string statusStr = (r >= 0) ? "SUCCESS" : ("BUILD_ERROR (code " + std::to_string(r) + ")");
+            angel_lsp::LspLogger::Info("[Validation] mod->Build() completed -> " + statusStr);
+        }
+        else
+        {
+            angel_lsp::LspLogger::Error("[Validation] Failed to create module 'ValidationModule'!");
         }
 
         m_engine->ClearMessageCallback();
         m_engine->DiscardModule(moduleName);
 
-        return m_diagnosticsByUri[currentUri];
+        auto it = m_diagnosticsByUri.find(normCurrentUri);
+        size_t diagCount = (it != m_diagnosticsByUri.end()) ? it->second.size() : 0;
+        angel_lsp::LspLogger::Info("[Validation] Returning " + std::to_string(diagCount) + " diagnostic(s) for URI: '" + normCurrentUri + "'");
+
+        if (it != m_diagnosticsByUri.end())
+        {
+            return it->second;
+        }
+        return {};
     }
 
     void ValidationOracle::MessageCallback(const asSMessageInfo *msg, void *param)
@@ -590,8 +493,14 @@ namespace analysis
             targetUri = m_activeValidationUri;
         }
 
-        std::string logMsg = "[Validation] " + std::string(msg->type == asMSGTYPE_ERROR ? "ERROR " : (msg->type == asMSGTYPE_WARNING ? "WARN " : "INFO "))
-            + "(" + targetUri + ":" + std::to_string(msg->row) + ":" + std::to_string(msg->col) + "): " + msg->message;
+        std::string normTargetUri = NormalizeUri(targetUri);
+        if (normTargetUri.empty())
+        {
+            normTargetUri = m_activeValidationUri;
+        }
+
+        std::string logMsg = "[Validation] [MessageCallback] " + std::string(msg->type == asMSGTYPE_ERROR ? "ERROR " : (msg->type == asMSGTYPE_WARNING ? "WARN " : "INFO "))
+            + "(" + normTargetUri + ":" + std::to_string(msg->row) + ":" + std::to_string(msg->col) + "): " + msg->message;
 
         if (msg->type == asMSGTYPE_ERROR)
         {
@@ -631,7 +540,7 @@ namespace analysis
             break;
         }
 
-        m_diagnosticsByUri[targetUri].push_back(d);
+        m_diagnosticsByUri[normTargetUri].push_back(d);
     }
 
 } // namespace analysis

@@ -33,17 +33,41 @@ namespace angel_lsp
 
     static std::string NormalizeUri(const std::string &rawUri)
     {
-        std::string out = rawUri;
-        size_t pos = 0;
-        while ((pos = out.find("%3A", pos)) != std::string::npos) {
-            out.replace(pos, 3, ":");
-            pos += 1;
+        if (rawUri.empty()) return "";
+
+        std::string out;
+        out.reserve(rawUri.size());
+
+        // URL decode %XX
+        for (size_t i = 0; i < rawUri.size(); ++i)
+        {
+            if (rawUri[i] == '%' && i + 2 < rawUri.size())
+            {
+                int hexVal = 0;
+                std::stringstream ss;
+                ss << std::hex << rawUri.substr(i + 1, 2);
+                if (ss >> hexVal)
+                {
+                    out += static_cast<char>(hexVal);
+                    i += 2;
+                    continue;
+                }
+            }
+            out += rawUri[i];
         }
-        pos = 0;
-        while ((pos = out.find("%3a", pos)) != std::string::npos) {
-            out.replace(pos, 3, ":");
-            pos += 1;
+
+        // Standardize slashes: replace \ with /
+        std::replace(out.begin(), out.end(), '\\', '/');
+
+        // Normalize drive letter casing e.g. file:///c:/ -> file:///c:/
+        if (out.starts_with("file:///"))
+        {
+            if (out.size() >= 10 && std::isalpha(static_cast<unsigned char>(out[8])) && out[9] == ':')
+            {
+                out[8] = static_cast<char>(std::tolower(static_cast<unsigned char>(out[8])));
+            }
         }
+
         return out;
     }
 
@@ -506,6 +530,8 @@ namespace angel_lsp
             }
 
             m_diagCache->Update(uri, diagnostics);
+
+            LspLogger::Info("[Server] Publishing " + std::to_string(diagnostics.size()) + " diagnostic(s) via TextDocument_PublishDiagnostics for URI: '" + uri + "'");
 
             lsp::notifications::TextDocument_PublishDiagnostics::Params params;
             params.uri = lsp::DocumentUri::parse(uri);
