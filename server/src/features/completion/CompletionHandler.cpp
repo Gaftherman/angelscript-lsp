@@ -9,19 +9,33 @@
 
 namespace angel_lsp::features::completion
 {
+    /**
+     * @brief Type of auto-completion context at cursor location.
+     */
     enum class CompletionContextType
     {
-        Global,
-        Member,
-        Namespace
+        Global,    /**< Global scope or local variable scope. */
+        Member,    /**< Member access trigger (e.g. `object.`). */
+        Namespace  /**< Namespace scope resolution trigger (e.g. `Namespace::`). */
     };
 
+    /**
+     * @brief Holds analyzed completion context state.
+     */
     struct CompletionContext
     {
-        CompletionContextType type;
-        std::string scopeName;
+        CompletionContextType type; /**< Type of completion context. */
+        std::string scopeName;     /**< Container/object name for member or namespace completion. */
     };
 
+    /**
+     * @brief Computes 0-based byte offset from line and column position.
+     *
+     * @param[in] text The document text string.
+     * @param[in] line 0-indexed line number.
+     * @param[in] col 0-indexed column number.
+     * @return size_t Byte offset into text.
+     */
     static size_t GetByteOffset(const std::string &text, uint32_t line, uint32_t col)
     {
         size_t offset = 0;
@@ -37,6 +51,13 @@ namespace angel_lsp::features::completion
         return std::min(offset + col, text.length());
     }
 
+    /**
+     * @brief Reads backwards from position to extract previous identifier token.
+     *
+     * @param[in] text The document text string.
+     * @param[in] pos Starting byte offset.
+     * @return std::string Extracted identifier string.
+     */
     static std::string ReadIdentifierBefore(const std::string &text, size_t pos)
     {
         while (pos > 0 && std::isspace(text[pos - 1]))
@@ -51,6 +72,14 @@ namespace angel_lsp::features::completion
         return text.substr(pos, end - pos);
     }
 
+    /**
+     * @brief Analyzes code context around cursor position to determine completion trigger mode.
+     *
+     * @param[in] text The document text string.
+     * @param[in] line 0-indexed line number.
+     * @param[in] col 0-indexed column number.
+     * @return CompletionContext Analyzed completion context.
+     */
     static CompletionContext AnalyzeContext(const std::string &text, uint32_t line, uint32_t col)
     {
         size_t pos = GetByteOffset(text, line, col);
