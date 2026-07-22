@@ -219,4 +219,45 @@ void Main()
 )script";
         CHECK_NOTHROW(oracle.ValidateSync(codeUnterminated));
     }
+
+    TEST_CASE("Preprocessor conditional compilation with duplicate class declarations across #if blocks")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        analysis::ValidationOracle oracle(engine);
+
+        std::string code = R"script(
+#if USE_DIRECTX
+class Renderer
+{
+    void DrawDirectX() {}
+};
+#endif
+
+#if USE_VULKAN
+class Renderer
+{
+    void DrawVulkan() {}
+};
+#endif
+
+void DummyGlobal() {}
+)script";
+
+        // Case A: Only USE_DIRECTX defined -> clean build
+        oracle.SetDefinedWords({"USE_DIRECTX"});
+        CHECK(oracle.ValidateSync(code).empty());
+
+        // Case B: Only USE_VULKAN defined -> clean build
+        oracle.SetDefinedWords({"USE_VULKAN"});
+        CHECK(oracle.ValidateSync(code).empty());
+
+        // Case C: Both defined -> Duplicate class diagnostic error, no crash!
+        oracle.SetDefinedWords({"USE_DIRECTX", "USE_VULKAN"});
+        auto diagsBoth = oracle.ValidateSync(code);
+        CHECK(!diagsBoth.empty());
+
+        // Case D: Neither defined -> clean build (omitted both)
+        oracle.SetDefinedWords({});
+        CHECK(oracle.ValidateSync(code).empty());
+    }
 }

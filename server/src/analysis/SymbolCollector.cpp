@@ -1246,18 +1246,6 @@ namespace analysis
                     }
                 }
             }
-            else
-            {
-                auto sym = std::make_shared<Symbol>();
-                sym->uri = doc.GetUri();
-                sym->name = text;
-                sym->kind = SymbolKind::Variable;
-                sym->typeInfo = "#preproc";
-                sym->docComment = "Preprocessor directive: " + text;
-                sym->selectionRange = GetRange(node, doc);
-                sym->fullRange = GetRange(node, doc);
-                table.AddGlobal(sym);
-            }
             return;
         }
 
