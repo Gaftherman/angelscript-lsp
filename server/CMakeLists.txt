@@ -15,7 +15,11 @@ if(MSVC)
     add_compile_definitions(_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING)
     add_compile_definitions(_SILENCE_ALL_MS_EXT_DEPRECATION_WARNINGS)
     # Apply warning suppression ONLY to C and C++ (prevents sending /wd to MASM .asm assembler)
-    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4018 /wd4244 /wd4267>)
+    add_compile_options(
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4018>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4244>
+        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4267>
+    )
 endif()
 
 # ==============================================================================
