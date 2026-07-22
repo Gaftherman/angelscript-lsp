@@ -1074,10 +1074,24 @@ namespace analysis
         {
             const Symbol *bestCtor = nullptr;
             int bestCtorScore = -1;
+
+            if (outMultipleResults)
+            {
+                outMultipleResults->clear();
+            }
+
             for (const auto &child : bestMatch->children)
             {
-                if (child->kind != SymbolKind::Constructor)
+                bool isCtor = (child->kind == SymbolKind::Constructor) ||
+                              (!child->name.empty() && child->name == bestMatch->name);
+                if (!isCtor)
                     continue;
+
+                if (outMultipleResults)
+                {
+                    outMultipleResults->push_back(child.get());
+                }
+
                 int score = 0;
                 if (child->selectionRange.start.line == nodeStartLine)
                 {
@@ -1098,6 +1112,26 @@ namespace analysis
             }
             if (bestCtor)
                 bestMatch = bestCtor;
+        }
+        else if (bestMatch && (bestMatch->kind == SymbolKind::Function || bestMatch->kind == SymbolKind::Method) && outMultipleResults)
+        {
+            outMultipleResults->clear();
+            if (bestMatch->parent && (bestMatch->parent->kind == SymbolKind::Class || bestMatch->parent->kind == SymbolKind::Namespace))
+            {
+                for (const auto &sibling : bestMatch->parent->children)
+                {
+                    if (sibling->name == bestMatch->name)
+                        outMultipleResults->push_back(sibling.get());
+                }
+            }
+            else
+            {
+                for (const Symbol *cand : globalCandidates)
+                {
+                    if (cand && cand->name == bestMatch->name)
+                        outMultipleResults->push_back(cand);
+                }
+            }
         }
 
         return bestMatch;
