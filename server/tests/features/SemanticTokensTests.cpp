@@ -348,4 +348,26 @@ class Player : BaseEntity
         CHECK(foundBaseClass);
         CHECK(foundDerivedClass);
     }
+
+    TEST_CASE("ST10: Logical word operators and symbolic operators semantic tokenization")
+    {
+        const char *SRC = R"script(
+void CheckState(Material@ material)
+{
+    if (material.IsValid() && material is not null)
+    {
+        bool b = true;
+    }
+}
+)script";
+
+        Document doc("file:///logical.as", SRC);
+        analysis::SymbolTable table;
+        analysis::SymbolCollector::CollectGlobals(doc, table);
+        analysis::SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+        std::vector<uint32_t> tokens = angel_lsp::features::SemanticTokensHandler::ProvideSemanticTokens(doc, table);
+        REQUIRE(!tokens.empty());
+        CHECK(tokens.size() % 5 == 0);
+    }
 }
