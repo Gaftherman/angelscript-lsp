@@ -28,12 +28,12 @@
             {
               "match": "(@(?:param|tparam))\\s+([A-Za-z_][A-Za-z0-9_]*)",
               "captures": {
-                "1": { "name": "keyword.other.documentation.angelscript" },
-                "2": { "name": "variable.other.doxygen.angelscript" }
+                "1": { "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript" },
+                "2": { "name": "variable.other.jsdoc.angelscript variable.other.doxygen.angelscript" }
               }
             },
             {
-              "name": "keyword.other.documentation.angelscript",
+              "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript",
               "match": "@(param|tparam|return|returns|brief|details|see|sa|note|warning|deprecated|code|endcode)\\b"
             },
             {
@@ -55,12 +55,12 @@
             {
               "match": "(@(?:param|tparam))\\s+([A-Za-z_][A-Za-z0-9_]*)",
               "captures": {
-                "1": { "name": "keyword.other.documentation.angelscript" },
-                "2": { "name": "variable.other.doxygen.angelscript" }
+                "1": { "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript" },
+                "2": { "name": "variable.other.jsdoc.angelscript variable.other.doxygen.angelscript" }
               }
             },
             {
-              "name": "keyword.other.documentation.angelscript",
+              "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript",
               "match": "@(param|tparam|return|returns|brief|details|see|sa|note|warning|deprecated|code|endcode)\\b"
             },
             {
