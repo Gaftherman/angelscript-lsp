@@ -156,10 +156,26 @@ namespace analysis
                         std::string declName = sym->name;
                         std::string registerName = sym->name;
 
-                        if (sym->isAbstract || sym->isShared || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface)
+                        if (sym->kind == SymbolKind::Interface)
                         {
-                            // Skip C++ registration for abstract/shared/mixin/interface types.
-                            // They will be dynamically compiled as script classes in ValidationOracle.
+                            int r = engine->RegisterInterface(sym->name.c_str());
+                            if (r >= 0)
+                            {
+                                registeredTypes.insert(sym->name);
+                                for (const auto &child : sym->children)
+                                {
+                                    if (child->kind == SymbolKind::Method)
+                                    {
+                                        engine->RegisterInterfaceMethod(sym->name.c_str(), child->BuildSignature().c_str());
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+                        else if (sym->isAbstract || sym->isShared || sym->kind == SymbolKind::Mixin)
+                        {
+                            // Skip C++ object type registration for abstract/shared/mixin script classes.
+                            // They are script classes (not host C++ types) and interfaces are registered natively above.
                             continue;
                         }
                         else if (sym->name == arrayType || sym->name == arrayType + "<T>")
@@ -431,6 +447,9 @@ namespace analysis
         // Use document with real or custom URI to parse the source
         Document doc(customUri.empty() ? "file:///as.predefined" : customUri, source);
         SymbolCollector::CollectGlobals(doc, table);
+
+        // Call RegisterSymbols passing the logger pointer
+        RegisterSymbols(table, engine, stringType, arrayType, &logger);
 
         // Generate script code ONLY for interface/abstract/shared/mixin classes
         // (Do NOT emit global functions or global variables as they are already registered natively in engine)
