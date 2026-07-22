@@ -5,10 +5,9 @@
  */
 
 #include "Server.h"
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/fmt/fmt.h>
 #include <memory>
+#include <sstream>
 #include <shared_mutex>
 #include <ankerl/unordered_dense.h>
 #include "document/Document.h"
@@ -76,15 +75,6 @@ namespace angel_lsp
     Server::Server(ServerConfig config)
         : m_config(std::move(config))
     {
-        try
-        {
-            auto logger = spdlog::stderr_color_mt("angel_lsp");
-            spdlog::set_default_logger(logger);
-        }
-        catch (...)
-        {
-        }
-
         oracle = std::make_unique<analysis::ValidationOracle>(m_locale);
         m_diagCache = std::make_unique<analysis::DiagnosticCache>();
 
