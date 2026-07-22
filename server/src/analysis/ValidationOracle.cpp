@@ -258,9 +258,72 @@ namespace analysis
             return false;
         };
 
+        // --- Check 1: Duplicate Local Variable / Symbol Redefinition in Same Scope ---
+        const auto &locals = localTable.GetLocals();
+        for (size_t i = 0; i < locals.size(); ++i)
+        {
+            for (size_t j = i + 1; j < locals.size(); ++j)
+            {
+                if (locals[i]->name == locals[j]->name && locals[i]->parent == locals[j]->parent)
+                {
+                    lsp::Diagnostic d;
+                    d.range = locals[j]->selectionRange;
+                    d.severity = lsp::DiagnosticSeverity::Error;
+                    d.source = "angelscript";
+                    d.message = fmt::format(fmt::runtime(strs.diagRedefinitionOfSymbol), locals[j]->name);
+                    diags.push_back(d);
+                }
+            }
+        }
+
         auto walkNode = [&](auto self, TSNode node) -> void
         {
             const char *type = ts_node_type(node);
+
+            // --- Check 2: Uncalled Method / Function Reference as Standalone Expression Statement ---
+            if (type && std::string(type) == "expression_statement")
+            {
+                uint32_t childCount = ts_node_child_count(node);
+                if (childCount > 0)
+                {
+                    TSNode expr = ts_node_child(node, 0);
+                    const char *exprType = ts_node_type(expr);
+                    if (exprType && (std::string(exprType) == "member_expression" || std::string(exprType) == "field_access"))
+                    {
+                        TSNode memberNode = ts_node_child_by_field_name(expr, "member", sizeof("member") - 1);
+                        if (ts_node_is_null(memberNode))
+                        {
+                            memberNode = ts_node_child_by_field_name(expr, "field", sizeof("field") - 1);
+                        }
+                        if (!ts_node_is_null(memberNode))
+                        {
+                            TSPoint mStart = ts_node_start_point(memberNode);
+                            const Symbol *resolved = SymbolResolver::ResolveAt(doc, localTable, mStart.row, mStart.column);
+                            if (!resolved)
+                            {
+                                resolved = SymbolResolver::ResolveAt(doc, globalTable, mStart.row, mStart.column);
+                            }
+                            if (resolved && (resolved->kind == SymbolKind::Method || resolved->kind == SymbolKind::Function))
+                            {
+                                TSPoint start = ts_node_start_point(memberNode);
+                                TSPoint end = ts_node_end_point(memberNode);
+
+                                lsp::Diagnostic d;
+                                d.range.start.line = start.row;
+                                d.range.start.character = start.column;
+                                d.range.end.line = end.row;
+                                d.range.end.character = end.column;
+                                d.severity = lsp::DiagnosticSeverity::Error;
+                                d.source = "angelscript";
+                                d.message = fmt::format(fmt::runtime(strs.diagMethodMustBeCalled), resolved->name);
+
+                                diags.push_back(d);
+                            }
+                        }
+                    }
+                }
+            }
+
             if (type && std::string(type) == "identifier")
             {
                 TSNode parent = ts_node_parent(node);

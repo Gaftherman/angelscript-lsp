@@ -62,7 +62,9 @@ namespace angel_lsp::i18n
             .diagIncludedFileNotFound = "Included file not found: '{}'",
             .diagMissingIncludeDelimiter = "Syntax error: missing include path delimiter",
             .diagUnclosedIncludeDelimiter = "Syntax error: unclosed path delimiter in #include",
-            .diagUnexpectedCharsAfterInclude = "Syntax error: unexpected characters after #include directive"
+            .diagUnexpectedCharsAfterInclude = "Syntax error: unexpected characters after #include directive",
+            .diagRedefinitionOfSymbol = "Redefinition of symbol '{}'",
+            .diagMethodMustBeCalled = "Method '{}' must be called with ()"
         };
 
     static const LspStrings ES_STRINGS =
@@ -119,7 +121,9 @@ namespace angel_lsp::i18n
             .diagIncludedFileNotFound = "Archivo incluido no encontrado: '{}'",
             .diagMissingIncludeDelimiter = "Error de sintaxis: falta delimitador de ruta en #include",
             .diagUnclosedIncludeDelimiter = "Error de sintaxis: delimitador de ruta sin cerrar en #include",
-            .diagUnexpectedCharsAfterInclude = "Error de sintaxis: caracteres no esperados después de directiva #include"
+            .diagUnexpectedCharsAfterInclude = "Error de sintaxis: caracteres no esperados después de directiva #include",
+            .diagRedefinitionOfSymbol = "Redefinición del símbolo '{}'",
+            .diagMethodMustBeCalled = "El método '{}' debe llamarse con ()"
         };
 
     Locale ParseLocale(const std::string &localeStr)

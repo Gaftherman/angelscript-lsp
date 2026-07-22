@@ -102,6 +102,8 @@ namespace angel_lsp::i18n
         std::string_view diagMissingIncludeDelimiter;
         std::string_view diagUnclosedIncludeDelimiter;
         std::string_view diagUnexpectedCharsAfterInclude;
+        std::string_view diagRedefinitionOfSymbol;
+        std::string_view diagMethodMustBeCalled;
     };
 
     /**

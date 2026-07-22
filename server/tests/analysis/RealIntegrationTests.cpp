@@ -100,4 +100,62 @@ TEST_SUITE("RealIntegrationTests")
         }
         CHECK(foundSemanticErr);
     }
+
+    TEST_CASE("Uncalled Standalone Method Call Error Catching")
+    {
+        analysis::SymbolTable globalTable;
+        std::string mockPredefined = R"(
+            class array {
+                void insertLast(int val);
+            }
+        )";
+        analysis::PredefinedLoader::LoadFromSource(mockPredefined, globalTable, "string", "array");
+
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                array numbers;
+                numbers.insertLast;
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_uncalled_method.as", nullptr, &globalTable);
+        REQUIRE(!diags.empty());
+
+        bool foundUncalledErr = false;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error && d.message.find("insertLast") != std::string::npos)
+            {
+                foundUncalledErr = true;
+                break;
+            }
+        }
+        CHECK(foundUncalledErr);
+    }
+
+    TEST_CASE("Duplicate Local Variable Scope Redefinition Catching")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                int f = 1;
+                float f = 2;
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_duplicate_var.as");
+        REQUIRE(!diags.empty());
+
+        bool foundRedefinitionErr = false;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error && (d.message.find("Redefinition") != std::string::npos || d.message.find("Redefinición") != std::string::npos))
+            {
+                foundRedefinitionErr = true;
+                break;
+            }
+        }
+        CHECK(foundRedefinitionErr);
+    }
 }
