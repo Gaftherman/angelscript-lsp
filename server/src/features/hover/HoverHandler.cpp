@@ -10,10 +10,8 @@
 #include <mutex>
 #include <sstream>
 
-namespace angel_lsp
+namespace angel_lsp::features::hover
 {
-    namespace features
-    {
         static std::string BuildFullNamespace(const analysis::Symbol* nsSym) {
             std::string ns = nsSym->name;
             const analysis::Symbol* curr = nsSym->parent;
@@ -481,5 +479,4 @@ namespace angel_lsp
 
             // Debug print of the Markdown output disabled
         }
-    }
-}
+} // namespace angel_lsp::features::hover
