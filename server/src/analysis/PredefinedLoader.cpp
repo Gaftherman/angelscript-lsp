@@ -142,8 +142,12 @@ namespace analysis
                     }
                     else if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
                     {
-                        if (registeredTypes.find(sym->name) != registeredTypes.end())
+                        if (registeredTypes.find(sym->name) != registeredTypes.end() ||
+                            engine->GetTypeInfoByName(sym->name.c_str()) != nullptr)
+                        {
+                            registeredTypes.insert(sym->name);
                             continue;
+                        }
 
                         int flags = asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CDAK | asOBJ_APP_CLASS_ALLINTS | asOBJ_APP_CLASS_ALLFLOATS;
                         int size = 4;
@@ -211,8 +215,12 @@ namespace analysis
                 {
                     if (sym->kind == SymbolKind::Funcdef)
                     {
-                        if (registeredTypes.find(sym->name) != registeredTypes.end())
+                        if (registeredTypes.find(sym->name) != registeredTypes.end() ||
+                            engine->GetTypeInfoByName(sym->name.c_str()) != nullptr)
+                        {
+                            registeredTypes.insert(sym->name);
                             continue;
+                        }
                         registeredTypes.insert(sym->name);
                         engine->RegisterFuncdef(sym->BuildSignature().c_str());
                     }
@@ -229,6 +237,8 @@ namespace analysis
                         {
                             declName = arrayType + "<T>";
                         }
+
+                        asITypeInfo *ti = engine->GetTypeInfoByName(declName.c_str());
 
                         for (const auto &child : sym->children)
                         {
@@ -256,20 +266,53 @@ namespace analysis
                                 {
                                     continue;
                                 }
-                                engine->RegisterObjectMethod(declName.c_str(), child->BuildSignature().c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
+                                std::string methodSig = child->BuildSignature();
+                                if (ti && ti->GetMethodByDecl(methodSig.c_str()) != nullptr)
+                                {
+                                    continue;
+                                }
+                                engine->RegisterObjectMethod(declName.c_str(), methodSig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                             }
                             else if (child->kind == SymbolKind::Property || child->kind == SymbolKind::Variable)
                             {
+                                bool propExists = false;
+                                if (ti)
+                                {
+                                    asUINT pcount = ti->GetPropertyCount();
+                                    for (asUINT pi = 0; pi < pcount; ++pi)
+                                    {
+                                        const char *pName = nullptr;
+                                        ti->GetProperty(pi, &pName);
+                                        if (pName && child->name == pName)
+                                        {
+                                            propExists = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (propExists)
+                                {
+                                    continue;
+                                }
                                 engine->RegisterObjectProperty(declName.c_str(), child->BuildSignature().c_str(), 0);
                             }
                         }
                     }
                     else if (sym->kind == SymbolKind::Function)
                     {
-                        engine->RegisterGlobalFunction(sym->BuildSignature().c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
+                        std::string funcSig = sym->BuildSignature();
+                        if (!funcSig.empty() && engine->GetGlobalFunctionByDecl(funcSig.c_str()) != nullptr)
+                        {
+                            continue;
+                        }
+                        engine->RegisterGlobalFunction(funcSig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
                     }
                     else if (sym->kind == SymbolKind::Variable)
                     {
+                        if (!sym->name.empty() && engine->GetGlobalPropertyIndexByName(sym->name.c_str()) >= 0)
+                        {
+                            continue;
+                        }
                         static int dummyVar = 0;
                         engine->RegisterGlobalProperty(sym->BuildSignature().c_str(), &dummyVar);
                     }
