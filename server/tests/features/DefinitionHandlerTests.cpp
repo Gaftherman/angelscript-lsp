@@ -819,3 +819,40 @@ void App() { Canvas c; Vector2D v = c.pos; }
     const auto &vecLoc = std::get<lsp::Location>(vecDef);
     CHECK(vecLoc.uri.toString() == lsp::DocumentUri::parse(vecUri).toString());
 }
+
+TEST_CASE("Go To Definition on extensionless #include directive")
+{
+    const char *MAIN_SRC = R"script(
+#include "engine/render"
+void Main() {}
+)script";
+
+    const char *RENDER_SRC = R"script(
+void Render() {}
+)script";
+
+    std::string renUri = "file:///project/engine/render.as";
+    Document renDoc(renUri, RENDER_SRC);
+
+    std::string mainUri = "file:///project/main.as";
+    Document mainDoc(mainUri, MAIN_SRC);
+
+    analysis::SymbolTable table;
+    auto resolver = [&](const std::string &uri) -> const Document * {
+        if (uri == renUri) return &renDoc;
+        return nullptr;
+    };
+
+    analysis::SymbolCollector::CollectGlobals(mainDoc, table, resolver);
+
+    lsp::requests::TextDocument_Definition::Params req;
+    req.textDocument.uri = lsp::DocumentUri::parse(mainUri);
+    req.position.line = 1;
+    req.position.character = 12;
+
+    auto result = features::ProcessDefinition(req, mainDoc, table, nullptr);
+    REQUIRE(!result.isNull());
+    const auto &def = std::get<lsp::Definition>(*result);
+    const auto &loc = std::get<lsp::Location>(def);
+    CHECK(loc.uri.toString() == lsp::DocumentUri::parse(renUri).toString());
+}
