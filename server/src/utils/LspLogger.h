@@ -11,7 +11,7 @@
 #include <lsp/messagehandler.h>
 #include <lsp/messages.h>
 
-namespace angel_lsp
+namespace angel_lsp::utils
 {
     /**
      * @brief Global logger utility that bridges to the LSP framework.
@@ -55,4 +55,9 @@ namespace angel_lsp
     private:
         static lsp::MessageHandler *s_handler;
     };
+} // namespace angel_lsp::utils
+
+namespace angel_lsp
+{
+    using utils::LspLogger;
 }

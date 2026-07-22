@@ -6,7 +6,7 @@
 
 #include "LspLogger.h"
 
-namespace angel_lsp
+namespace angel_lsp::utils
 {
     lsp::MessageHandler *LspLogger::s_handler = nullptr;
 
@@ -53,4 +53,4 @@ namespace angel_lsp
         p.message = msg;
         s_handler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(p));
     }
-}
+} // namespace angel_lsp::utils
