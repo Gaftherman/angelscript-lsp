@@ -2,10 +2,8 @@
 #include <angelscript.h>
 #include <optional>
 
-namespace angel_lsp
+namespace angel_lsp::features::signature_help
 {
-    namespace features
-    {
 
         struct CallContext
         {
@@ -172,5 +170,4 @@ namespace angel_lsp
             return res;
         }
 
-    }
-}
+} // namespace angel_lsp::features::signature_help

@@ -6,25 +6,27 @@
 
 class asIScriptEngine;
 
-namespace angel_lsp
+namespace angel_lsp::features::signature_help
 {
-    namespace features
-    {
 
-        /**
-         * @brief Processes an LSP Signature Help request to show function signatures and parameters.
-         *
-         * @param req The signature help request parameters.
-         * @param doc The parsed Document containing the Tree-Sitter AST and source code.
-         * @param table The SymbolTable containing resolved symbols.
-         * @param engine Optional pointer to the AngelScript engine.
-         * @return lsp::requests::TextDocument_SignatureHelp::Result The signature information.
-         */
-        lsp::requests::TextDocument_SignatureHelp::Result ProcessSignatureHelp(
-            const lsp::requests::TextDocument_SignatureHelp::Params &req,
-            const Document &doc,
-            const analysis::SymbolTable &table,
-            const asIScriptEngine *engine);
+    /**
+     * @brief Processes an LSP Signature Help request to show function signatures and parameters.
+     *
+     * @param req The signature help request parameters.
+     * @param doc The parsed Document containing the Tree-Sitter AST and source code.
+     * @param table The SymbolTable containing resolved symbols.
+     * @param engine Optional pointer to the AngelScript engine.
+     * @return lsp::requests::TextDocument_SignatureHelp::Result The signature information.
+     */
+    lsp::requests::TextDocument_SignatureHelp::Result ProcessSignatureHelp(
+        const lsp::requests::TextDocument_SignatureHelp::Params &req,
+        const Document &doc,
+        const analysis::SymbolTable &table,
+        const asIScriptEngine *engine);
 
-    }
+} // namespace angel_lsp::features::signature_help
+
+namespace angel_lsp::features
+{
+    using signature_help::ProcessSignatureHelp;
 }

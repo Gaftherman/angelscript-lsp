@@ -4,10 +4,8 @@
 #include <ankerl/unordered_dense.h>
 #include <vector>
 
-namespace angel_lsp
+namespace angel_lsp::features::definition
 {
-    namespace features
-    {
         static lsp::Location SymbolToLocation(const analysis::Symbol *sym, const std::string &fallbackUri)
         {
             lsp::Location loc;
@@ -97,5 +95,4 @@ namespace angel_lsp
             return {};
         }
 
-    }
-}
+} // namespace angel_lsp::features::definition

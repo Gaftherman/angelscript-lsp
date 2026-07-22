@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <string_view>
 
-namespace angel_lsp::features
+namespace angel_lsp::features::semantic_tokens
 {
     std::vector<std::string> SemanticTokensHandler::GetTokenTypesLegend()
     {
@@ -358,4 +358,4 @@ namespace angel_lsp::features
         result = st;
         return result;
     }
-}
+} // namespace angel_lsp::features::semantic_tokens

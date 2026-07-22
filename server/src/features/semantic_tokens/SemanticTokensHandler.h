@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <string>
 
-namespace angel_lsp::features
+namespace angel_lsp::features::semantic_tokens
 {
     /**
      * @brief LSP Semantic Token types according to standard LSP specification.
@@ -95,4 +95,13 @@ namespace angel_lsp::features
         const lsp::requests::TextDocument_SemanticTokens_Full::Params &params,
         const Document &doc,
         const analysis::SymbolTable &table);
+} // namespace angel_lsp::features::semantic_tokens
+
+namespace angel_lsp::features
+{
+    using semantic_tokens::ProcessSemanticTokensFull;
+    using semantic_tokens::SemanticToken;
+    using semantic_tokens::SemanticTokensHandler;
+    using semantic_tokens::TokenModifier;
+    using semantic_tokens::TokenType;
 }

@@ -2,10 +2,8 @@
 #include "analysis/SymbolTable.h"
 #include <angelscript.h>
 
-namespace angel_lsp
+namespace angel_lsp::features::completion
 {
-    namespace features
-    {
 
         enum class CompletionContextType
         {
@@ -254,5 +252,4 @@ namespace angel_lsp
             return res;
         }
 
-    }
-}
+} // namespace angel_lsp::features::completion
