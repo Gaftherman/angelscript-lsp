@@ -291,7 +291,7 @@
           "match": "&inout\\b|&in\\b|&out\\b|&"
         },
         {
-          "name": "storage.modifier.pointer.angelscript storage.type.handle.angelscript",
+          "name": "storage.modifier.pointer.angelscript storage.modifier.handle.angelscript",
           "match": "@"
         },
         {
@@ -351,11 +351,11 @@
           "match": "::"
         },
         {
-          "name": "punctuation.definition.typeparameters.begin.angelscript punctuation.definition.typeparameters.begin.ts punctuation.section.angle.begin.angelscript",
+          "name": "storage.type.template.angelscript punctuation.definition.typeparameters.begin.angelscript punctuation.definition.typeparameters.begin.ts",
           "match": "(?<=\\b[a-zA-Z_][a-zA-Z0-9_]*)<(?!\\=)"
         },
         {
-          "name": "punctuation.definition.typeparameters.end.angelscript punctuation.definition.typeparameters.end.ts punctuation.section.angle.end.angelscript",
+          "name": "storage.type.template.angelscript punctuation.definition.typeparameters.end.angelscript punctuation.definition.typeparameters.end.ts",
           "match": "(?<=\\b[a-zA-Z_][a-zA-Z0-9_]*<[^>]*)>"
         },
         {
