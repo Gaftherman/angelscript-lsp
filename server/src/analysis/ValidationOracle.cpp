@@ -359,17 +359,6 @@ namespace analysis
 
         if (mod)
         {
-            std::string *abstractCode = static_cast<std::string *>(m_engine->GetUserData(2000));
-            if (abstractCode && !abstractCode->empty())
-            {
-                angel_lsp::LspLogger::Info("[Validation] Adding Abstract classes script section (length: " + std::to_string(abstractCode->size()) + " bytes)");
-                int secRes = mod->AddScriptSection("Abstracts", abstractCode->c_str(), abstractCode->size());
-                if (secRes < 0)
-                {
-                    angel_lsp::LspLogger::Error("[Validation] AddScriptSection('Abstracts') failed with error code: " + std::to_string(secRes));
-                }
-            }
-
             std::unordered_set<std::string> visited;
             std::function<void(const std::string &, const std::string &)> loadIncludes =
                 [&](const std::string &baseUri, const std::string &srcCode)
@@ -465,32 +454,9 @@ namespace analysis
                 angel_lsp::LspLogger::Error("[Validation] AddScriptSection('" + normCurrentUri + "') failed with error code: " + std::to_string(secRes));
             }
 
-            bool hasAbstracts = (abstractCode && !abstractCode->empty());
-
             int r = mod->Build();
             std::string statusStr = (r >= 0) ? "SUCCESS" : ("BUILD_ERROR (code " + std::to_string(r) + ")");
             angel_lsp::LspLogger::Info("[Validation] mod->Build() completed -> " + statusStr);
-
-            if (r < 0 && hasAbstracts)
-            {
-                angel_lsp::LspLogger::Warn("[Validation] mod->Build() failed with Abstracts section present. Retrying build without Abstracts to isolate user code diagnostics...");
-                m_diagnosticsByUri.clear();
-                m_engine->DiscardModule(moduleName);
-                mod = m_engine->GetModule(moduleName, asGM_ALWAYS_CREATE);
-                if (mod)
-                {
-                    if (!normCurrentUri.empty())
-                    {
-                        visited.clear();
-                        visited.insert(normCurrentUri);
-                        loadIncludes(normCurrentUri, code);
-                    }
-                    mod->AddScriptSection(normCurrentUri.c_str(), sanitizedMain.c_str(), sanitizedMain.size());
-                    r = mod->Build();
-                    std::string retryStatusStr = (r >= 0) ? "SUCCESS" : ("BUILD_ERROR (code " + std::to_string(r) + ")");
-                    angel_lsp::LspLogger::Info("[Validation] Retry mod->Build() (without Abstracts) completed -> " + retryStatusStr);
-                }
-            }
         }
         else
         {
