@@ -1,3 +1,9 @@
+/**
+ * @file HoverHandler.h
+ * @brief Handler implementation for Language Server Protocol (LSP) textDocument/hover requests.
+ * @ingroup Features
+ */
+
 #pragma once
 #include <lsp/messages.h>
 #include "document/Document.h"
@@ -12,15 +18,16 @@ namespace angel_lsp::features::hover
 {
 
     /**
-     * @brief Processes an LSP Hover request to provide rich tooltips.
+     * @brief Processes an LSP Hover request to provide Markdown tooltips and symbol documentation.
      *
-     * @param result The output result to populate with hover content.
-     * @param req The hover request parameters (document URI and cursor position).
-     * @param doc The parsed Document containing the Tree-Sitter AST and source code.
-     * @param table The SymbolTable containing resolved symbols.
-     * @param diagCache Optional DiagnosticCache to show errors/warnings in hover.
-     * @param locale The locale to use for translated strings in the hover.
-     * @param engine Optional pointer to the AngelScript engine.
+     * @param[out] result The output result object to populate with hover contents.
+     * @param[in] req The hover request parameters (document URI and cursor position).
+     * @param[in] doc The parsed Document containing Tree-Sitter AST and source text.
+     * @param[in] table The SymbolTable containing resolved symbols.
+     * @param[in] diagCache Optional DiagnosticCache pointer to include inline diagnostic messages.
+     * @param[in] locale Target localization locale.
+     * @param[in] engine Optional pointer to the AngelScript engine instance.
+     * @note Thread-safe stateless hover provider function.
      */
     void ProcessHover(lsp::requests::TextDocument_Hover::Result &result,
                       const lsp::requests::TextDocument_Hover::Params &req,

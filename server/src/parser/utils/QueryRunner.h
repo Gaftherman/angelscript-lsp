@@ -1,3 +1,9 @@
+/**
+ * @file QueryRunner.h
+ * @brief Singleton utility for compiling, caching, and executing Tree-Sitter queries.
+ * @ingroup Parser
+ */
+
 #pragma once
 
 #include <tree_sitter/api.h>
@@ -8,7 +14,7 @@
 #include <unordered_map>
 
 /**
- * @brief Deleter for Tree-Sitter queries to be used with smart pointers.
+ * @brief Custom RAII deleter for Tree-Sitter TSQuery pointers.
  */
 struct TSQueryDeleter
 {
@@ -20,7 +26,7 @@ struct TSQueryDeleter
 };
 
 /**
- * @brief Deleter for Tree-Sitter query cursors to be used with smart pointers.
+ * @brief Custom RAII deleter for Tree-Sitter TSQueryCursor pointers.
  */
 struct TSQueryCursorDeleter
 {
@@ -32,7 +38,7 @@ struct TSQueryCursorDeleter
 };
 
 /**
- * @brief Represents a single match from a Tree-Sitter query execution.
+ * @brief Represents a single match result from a Tree-Sitter query execution.
  */
 struct QueryMatch
 {
@@ -41,38 +47,34 @@ struct QueryMatch
 };
 
 /**
- * @brief A singleton utility to compile, store, and execute Tree-Sitter queries.
- *
- * Centralizes query execution to avoid recompiling the same query strings repeatedly.
+ * @brief A singleton utility class to compile, cache, and execute Tree-Sitter queries.
+ * @note Centralizes query execution to avoid recompiling query strings repeatedly.
  */
 class QueryRunner
 {
 public:
     /**
      * @brief Gets the singleton instance of the QueryRunner.
-     *
-     * @return The QueryRunner instance.
+     * @return QueryRunner& Reference to the global QueryRunner instance.
      */
     static QueryRunner &GetInstance();
 
     /**
      * @brief Compiles and registers a Tree-Sitter query.
      *
-     * If the query is already registered, it does nothing and returns true.
-     *
-     * @param name The unique name to assign to the query.
-     * @param source The Tree-Sitter query string.
-     * @param out_error Output parameter that will contain the parse error if compilation fails.
-     * @return true if the query was compiled or already exists, false on syntax error.
+     * @param[in] name The unique name to assign to the query.
+     * @param[in] source The Tree-Sitter pattern query string.
+     * @param[out] out_error Output parameter containing error message if compilation fails.
+     * @return bool True if query was compiled or already exists; false on syntax error.
      */
     bool RegisterQuery(const std::string &name, const std::string &source, std::string &out_error);
 
     /**
-     * @brief Executes a previously registered query against a given syntax node.
+     * @brief Executes a registered query against a syntax node.
      *
-     * @param name The name of the registered query.
-     * @param root_node The Tree-Sitter node to query against.
-     * @return A list of query matches and their named captures.
+     * @param[in] name The name of the registered query.
+     * @param[in] root_node The Tree-Sitter syntax node to query against.
+     * @return std::vector<QueryMatch> A vector of query matches and named captures.
      */
     std::vector<QueryMatch> ExecuteQuery(const std::string &name, TSNode root_node);
 

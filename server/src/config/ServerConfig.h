@@ -1,3 +1,9 @@
+/**
+ * @file ServerConfig.h
+ * @brief Server configuration parameters and feature flags parsing.
+ * @ingroup Config
+ */
+
 #pragma once
 
 #include <string>
@@ -21,6 +27,7 @@ namespace angel_lsp
 
     /**
      * @brief Centralized configuration settings for the AngelScript Language Server.
+     * @note Thread-safe immutable configuration container once initialized.
      */
     struct ServerConfig
     {
@@ -28,9 +35,10 @@ namespace angel_lsp
 
         /**
          * @brief Parses server configuration settings from command line arguments.
-         * @param argc Number of command line arguments.
-         * @param argv Array of command line argument string pointers.
-         * @return Initialized ServerConfig instance.
+         *
+         * @param[in] argc Number of command line arguments.
+         * @param[in] argv Array of command line argument string pointers.
+         * @return ServerConfig Initialized ServerConfig instance.
          */
         static ServerConfig FromArgs(int argc, char **argv);
     };

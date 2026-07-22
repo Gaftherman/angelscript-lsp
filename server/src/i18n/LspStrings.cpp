@@ -1,3 +1,9 @@
+/**
+ * @file LspStrings.cpp
+ * @brief Implementation of static localized string tables for EN and ES locales.
+ * @ingroup i18n
+ */
+
 #include "i18n/LspStrings.h"
 
 namespace i18n

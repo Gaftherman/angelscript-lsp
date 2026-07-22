@@ -1,3 +1,9 @@
+/**
+ * @file SignatureHelpHandler.cpp
+ * @brief Implementation of textDocument/signatureHelp request processor.
+ * @ingroup Features
+ */
+
 #include "SignatureHelpHandler.h"
 #include <angelscript.h>
 #include <optional>

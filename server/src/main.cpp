@@ -1,3 +1,9 @@
+/**
+ * @file main.cpp
+ * @brief Entry point for the AngelScript Language Server executable (angel_lsp).
+ * @ingroup Server
+ */
+
 #include <iostream>
 #include "lsp/Server.h"
 
@@ -6,6 +12,13 @@
 #include <io.h>
 #endif
 
+/**
+ * @brief Main entry point for angel_lsp server executable.
+ *
+ * @param[in] argc Command line argument count.
+ * @param[in] argv Command line argument string array.
+ * @return int Exit code (0 for clean shutdown, 1 on fatal error).
+ */
 int main(int argc, char **argv)
 {
     try

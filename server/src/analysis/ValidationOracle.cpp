@@ -1,3 +1,9 @@
+/**
+ * @file ValidationOracle.cpp
+ * @brief Implementation of ValidationOracle dynamic compiler error message translation.
+ * @ingroup Analysis
+ */
+
 #include "ValidationOracle.h"
 #include "utils/LspLogger.h"
 #include "i18n/DiagnosticI18n.h"

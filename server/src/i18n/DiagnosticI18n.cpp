@@ -1,3 +1,9 @@
+/**
+ * @file DiagnosticI18n.cpp
+ * @brief Implementation of diagnostic message translation tables.
+ * @ingroup i18n
+ */
+
 #include "i18n/DiagnosticI18n.h"
 #include <ankerl/unordered_dense.h>
 #include <regex>

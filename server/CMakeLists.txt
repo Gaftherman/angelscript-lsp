@@ -171,3 +171,17 @@ add_lsp_test_suite(test_feature_signature_help
 add_lsp_test_suite(test_i18n
     tests/i18n/LocalizationTests.cpp
 )
+
+# ==============================================================================
+# 5. OPTIONAL DOXYGEN TARGET
+# ==============================================================================
+find_package(Doxygen OPTIONAL_COMPONENTS dot)
+if(DOXYGEN_FOUND)
+    set(DOXYGEN_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/docs)
+    add_custom_target(docs
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating Doxygen API documentation..."
+        VERBATIM
+    )
+endif()

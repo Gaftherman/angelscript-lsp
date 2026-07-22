@@ -1,3 +1,9 @@
+/**
+ * @file HoverInfo.h
+ * @brief Structured data representation and Markdown renderer for LSP hover panels.
+ * @ingroup Features
+ */
+
 #pragma once
 #include <string>
 #include <vector>
@@ -9,8 +15,9 @@
 namespace angel_lsp::features::hover
 {
 
-    /// Structured data for one parameter (function param or template param).
-    /// Mirrors clangd's HoverInfo::Param exactly.
+    /**
+     * @brief Structured data for a single parameter (function param or template param).
+     */
     struct HoverParam
     {
         std::string typeName;       // "const float& in", "class T"
@@ -19,44 +26,44 @@ namespace angel_lsp::features::hover
         std::string docDescription; // from @param tag in doxygen
     };
 
-    /// All structured data needed to render a hover panel.
-    /// Mirrors clangd's HoverInfo struct, adapted for AngelScript.
+    /**
+     * @brief Structured representation of hover panel data, inspired by Clangd.
+     * @note Thread-safe data structure for hover formatting.
+     */
     struct HoverInfo
     {
         // --- Identity ---
-        std::string name; // "insertLast", "Vector3"
+        std::string name;
         analysis::SymbolKind kind = analysis::SymbolKind::Unknown;
 
-        // --- Scope context (for code block header comment like clangd) ---
-        std::string localScope; // "array<T>", "Entity", "Engine::Math"
-        // Note: AngelScript doesn't have C++ namespaces in the same sense,
-        // so we collapse namespace+class into localScope.
+        // --- Scope context ---
+        std::string localScope;
 
-        // --- Signature (for the code block) ---
-        std::string rawSignature; // full angelscript signature string
+        // --- Signature ---
+        std::string rawSignature;
 
-        // --- Structured function info (like clangd's Parameters/ReturnType) ---
-        std::optional<std::string> returnType;                     // "void", "float", nullopt for non-functions
-        std::optional<std::vector<HoverParam>> parameters;         // structured params list, nullopt for non-functions
-        std::optional<std::vector<HoverParam>> templateParameters; // <T>, <K,V>
+        // --- Structured function info ---
+        std::optional<std::string> returnType;
+        std::optional<std::vector<HoverParam>> parameters;
+        std::optional<std::vector<HoverParam>> templateParameters;
 
-        // --- Documentation (filled by FillHoverInfoFromDoxygen) ---
-        std::string briefText;             // @brief content
-        std::string detailsText;           // @details content
-        std::vector<std::string> notes;    // @note entries
-        std::vector<std::string> warnings; // @warning entries
-        std::string deprecated;            // @deprecated content
-        std::string returnDoc;             // @return description (cross-linked with returnType)
+        // --- Documentation ---
+        std::string briefText;
+        std::string detailsText;
+        std::vector<std::string> notes;
+        std::vector<std::string> warnings;
+        std::string deprecated;
+        std::string returnDoc;
 
         // --- Extras ---
-        int overloadCount = 0;            // 0 = no extra overloads
-        std::string templateSubstitution; // "float" when hovering array<float>
-        std::string enumValue;            // "= 42" for enum members
-        std::string accessors;            // "{ get const; set; }"
+        int overloadCount = 0;
+        std::string templateSubstitution;
+        std::string enumValue;
+        std::string accessors;
 
         // --- Builtin info ---
         bool isBuiltin = false;
-        std::string builtinLabel; // "Built-in Function"
+        std::string builtinLabel;
 
         // --- Diagnostics ---
         std::string diagnosticMessage;
@@ -69,11 +76,28 @@ namespace angel_lsp::features::hover
             std::string content;
         };
 
-        /// Populate documentation fields from a neutral ParsedDoxygenDoc.
+        /**
+         * @brief Populates documentation fields from a ParsedDoxygenDoc object.
+         *
+         * @param[in] doc The parsed Doxygen documentation.
+         * @param[in] targetParam Optional target parameter filter string.
+         */
         void PopulateFromDoxygen(const utils::ParsedDoxygenDoc &doc, const std::string &targetParam = "");
 
-        /// Render to structured hover sections.
+        /**
+         * @brief Renders the structured hover panel data to a Markdown string.
+         *
+         * @param[in] locale Target localization locale.
+         * @return std::string Formatted Markdown text.
+         */
         std::string ToMarkdown(i18n::Locale locale) const;
+
+        /**
+         * @brief Converts hover panel data into a list of structured HoverSections.
+         *
+         * @param[in] locale Target localization locale.
+         * @return std::vector<HoverSection> Vector of rendered hover sections.
+         */
         std::vector<HoverSection> ToHoverSections(i18n::Locale locale) const;
     };
 

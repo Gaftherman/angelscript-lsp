@@ -1,3 +1,9 @@
+/**
+ * @file Server.cpp
+ * @brief Implementation of main LSP Server JSON-RPC message dispatcher and request handlers.
+ * @ingroup Server
+ */
+
 #include "Server.h"
 #include <spdlog/spdlog.h>
 #include <memory>

@@ -1,3 +1,9 @@
+/**
+ * @file QueryRunner.cpp
+ * @brief Implementation of QueryRunner singleton for Tree-Sitter query compilation and execution.
+ * @ingroup Parser
+ */
+
 #include "parser/utils/QueryRunner.h"
 #include "utils/LspLogger.h"
 

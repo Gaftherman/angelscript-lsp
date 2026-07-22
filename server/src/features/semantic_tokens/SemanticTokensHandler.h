@@ -1,3 +1,9 @@
+/**
+ * @file SemanticTokensHandler.h
+ * @brief Handler for LSP textDocument/semanticTokens/full syntax highlighting requests.
+ * @ingroup Features
+ */
+
 #pragma once
 
 #include <lsp/messages.h>
@@ -65,13 +71,18 @@ namespace angel_lsp::features::semantic_tokens
     };
 
     /**
-     * @brief Handler for LSP textDocument/semanticTokens/full requests.
+     * @brief Handler class for LSP textDocument/semanticTokens/full requests.
+     * @note Thread-safe stateless semantic tokens provider class.
      */
     class SemanticTokensHandler
     {
     public:
         /**
-         * @brief Handles LSP textDocument/semanticTokens/full request and returns a Result.
+         * @brief Handles LSP textDocument/semanticTokens/full request and returns encoded integer array.
+         *
+         * @param[in] doc The parsed Document containing Tree-Sitter AST and source code.
+         * @param[in] table The SymbolTable containing resolved symbols.
+         * @return std::vector<uint32_t> Delta-encoded 5-tuple integer array.
          */
         static std::vector<uint32_t> ProvideSemanticTokens(
             const Document &doc,
@@ -79,17 +90,25 @@ namespace angel_lsp::features::semantic_tokens
 
         /**
          * @brief Returns the supported token types legend array for LSP initialization.
+         * @return std::vector<std::string> Vector of token type strings.
          */
         static std::vector<std::string> GetTokenTypesLegend();
 
         /**
          * @brief Returns the supported token modifiers legend array for LSP initialization.
+         * @return std::vector<std::string> Vector of token modifier strings.
          */
         static std::vector<std::string> GetTokenModifiersLegend();
     };
 
     /**
      * @brief High level entry point for LSP textDocument/semanticTokens/full requests.
+     *
+     * @param[in] params Request parameters object.
+     * @param[in] doc The parsed Document.
+     * @param[in] table The SymbolTable.
+     * @return lsp::requests::TextDocument_SemanticTokens_Full::Result Standard LSP semantic tokens result.
+     * @note Thread-safe stateless provider function.
      */
     lsp::requests::TextDocument_SemanticTokens_Full::Result ProcessSemanticTokensFull(
         const lsp::requests::TextDocument_SemanticTokens_Full::Params &params,

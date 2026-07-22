@@ -1,3 +1,9 @@
+/**
+ * @file SymbolCollector.cpp
+ * @brief Implementation of Tree-Sitter AST traversal for global and local symbol collection.
+ * @ingroup Analysis
+ */
+
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolResolver.h"
 #include <string_view>

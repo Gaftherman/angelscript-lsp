@@ -1,3 +1,9 @@
+/**
+ * @file SymbolTable.cpp
+ * @brief Implementation of SymbolTable class and lookup operations.
+ * @ingroup Analysis
+ */
+
 #include "analysis/SymbolTable.h"
 #include <functional>
 

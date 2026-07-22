@@ -1,3 +1,9 @@
+/**
+ * @file Document.cpp
+ * @brief Implementation of Document class and Tree-Sitter AST parser wrapper.
+ * @ingroup Core
+ */
+
 #include "Document.h"
 #include <utility>
 #include <stdexcept>

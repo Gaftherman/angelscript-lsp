@@ -1,3 +1,9 @@
+/**
+ * @file CompletionHandler.cpp
+ * @brief Implementation of textDocument/completion request processor.
+ * @ingroup Features
+ */
+
 #include "CompletionHandler.h"
 #include "analysis/SymbolTable.h"
 #include <angelscript.h>

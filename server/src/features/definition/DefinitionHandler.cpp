@@ -1,3 +1,9 @@
+/**
+ * @file DefinitionHandler.cpp
+ * @brief Implementation of textDocument/definition and textDocument/typeDefinition handlers.
+ * @ingroup Features
+ */
+
 #include "DefinitionHandler.h"
 #include "analysis/SymbolResolver.h"
 #include <angelscript.h>

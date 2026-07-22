@@ -1,3 +1,9 @@
+/**
+ * @file PredefinedLoader.h
+ * @brief Loader for workspace host application predefined declarations (as.predefined).
+ * @ingroup Analysis
+ */
+
 #pragma once
 
 #include <string>
@@ -8,47 +14,49 @@
 namespace analysis
 {
     /**
-     * @brief Utility for loading predefined globals and types into the AST and AngelScript engine.
+     * @brief Utility class for loading predefined global symbols and host types into AST and AngelScript engine.
+     * @note Thread-safe static loader helper.
      */
     class PredefinedLoader
     {
     public:
         /**
-         * @brief Finds as.predefined in the workspace root URI and loads it if it exists.
+         * @brief Searches for as.predefined in the workspace root URI and loads declarations.
          *
-         * @param rootUri The workspace root URI.
-         * @param engine The AngelScript engine instance.
-         * @param table The symbol table to populate.
-         * @param stringType The string type name.
-         * @param arrayType The array type name.
-         * @param logger An optional logger callback.
-         * @return true if successfully found and loaded, false otherwise.
+         * @param[in] rootUri The workspace root URI string.
+         * @param[in] engine Pointer to the AngelScript engine instance.
+         * @param[out] table The symbol table to populate with predefined symbols.
+         * @param[in] stringType Custom string type identifier (defaults to "string").
+         * @param[in] arrayType Custom array type identifier (defaults to "array").
+         * @param[in] logger Optional logger callback function.
+         * @return bool True if as.predefined was found and successfully loaded, false otherwise.
          */
         static bool FindInWorkspace(const std::string &rootUri, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType = "string", const std::string &arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr);
 
         /**
-         * @brief Loads definitions from the given absolute path.
+         * @brief Loads host application definitions from an absolute file path.
          *
-         * @param filePath The absolute file path to the definitions file.
-         * @param engine The AngelScript engine instance.
-         * @param table The symbol table to populate.
-         * @param stringType The string type name.
-         * @param arrayType The array type name.
-         * @param logger An optional logger callback.
-         * @return true if loaded successfully, false otherwise.
+         * @param[in] filePath Absolute file path to the definitions file.
+         * @param[in] engine Pointer to the AngelScript engine instance.
+         * @param[out] table The symbol table to populate.
+         * @param[in] stringType Custom string type identifier.
+         * @param[in] arrayType Custom array type identifier.
+         * @param[in] logger Optional logger callback function.
+         * @return bool True if loaded successfully, false otherwise.
          */
         static bool LoadFromFile(const std::string &filePath, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType = "string", const std::string &arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr);
 
         /**
-         * @brief Loads definitions from source text.
+         * @brief Loads definitions directly from source code string.
          *
-         * @param source The source text.
-         * @param engine The AngelScript engine instance.
-         * @param table The symbol table to populate.
-         * @param stringType The string type name.
-         * @param arrayType The array type name.
-         * @param logger An optional logger callback.
-         * @return true if loaded successfully, false otherwise.
+         * @param[in] source Raw AngelScript header source text.
+         * @param[in] engine Pointer to the AngelScript engine instance.
+         * @param[out] table The symbol table to populate.
+         * @param[in] stringType Custom string type identifier.
+         * @param[in] arrayType Custom array type identifier.
+         * @param[in] logger Optional logger callback function.
+         * @param[in] customUri Custom URI identifier for the loaded document.
+         * @return bool True if loaded successfully, false otherwise.
          */
         static bool LoadFromSource(const std::string &source, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType = "string", const std::string &arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr, const std::string &customUri = "file:///as.predefined");
     };

@@ -1,3 +1,9 @@
+/**
+ * @file HoverHandler.cpp
+ * @brief Implementation of textDocument/hover request processor.
+ * @ingroup Features
+ */
+
 #include "HoverHandler.h"
 #include "features/hover/HoverInfo.h"
 #include "utils/DoxygenParser.h"

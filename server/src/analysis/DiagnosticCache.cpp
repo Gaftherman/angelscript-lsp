@@ -1,3 +1,9 @@
+/**
+ * @file DiagnosticCache.cpp
+ * @brief Implementation of DiagnosticCache thread-safe diagnostic storage.
+ * @ingroup Analysis
+ */
+
 #include "analysis/DiagnosticCache.h"
 #include <mutex>
 #include <utility>

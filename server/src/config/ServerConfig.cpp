@@ -1,3 +1,9 @@
+/**
+ * @file ServerConfig.cpp
+ * @brief Implementation of ServerConfig CLI arguments parser.
+ * @ingroup Config
+ */
+
 #include "config/ServerConfig.h"
 #include <cstring>
 

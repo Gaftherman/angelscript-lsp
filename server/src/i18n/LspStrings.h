@@ -1,3 +1,9 @@
+/**
+ * @file LspStrings.h
+ * @brief Localized string tables and locale parsing declarations.
+ * @ingroup i18n
+ */
+
 #pragma once
 
 #include <string>
@@ -6,7 +12,7 @@ namespace i18n
 {
 
     /**
-     * @brief Enum representing the supported locales for localization.
+     * @brief Supported locales for diagnostic and hover UI translations.
      */
     enum class Locale
     {
@@ -16,7 +22,7 @@ namespace i18n
     };
 
     /**
-     * @brief Structure containing all localized strings for the LSP.
+     * @brief Structure containing localized strings for symbol kinds, hover labels, and Doxygen headers.
      */
     struct LspStrings
     {
@@ -71,18 +77,20 @@ namespace i18n
     };
 
     /**
-     * @brief Parses a locale string from the LSP client (e.g. "en", "es-419") into the internal enum.
+     * @brief Parses a raw locale string into the internal Locale enum.
      *
-     * @param localeStr The raw locale string provided by the LSP.
-     * @return Locale The resolved locale.
+     * @param[in] localeStr Raw locale string (e.g., "en", "es-ES", "es-419").
+     * @return Locale Resolved Locale enum.
+     * @note Thread-safe stateless locale parser.
      */
     Locale ParseLocale(const std::string &localeStr);
 
     /**
-     * @brief Gets the localized string table for the specified locale.
+     * @brief Gets the static localized string table for a specified locale.
      *
-     * @param locale The target locale (defaults to EN).
-     * @return const LspStrings& Reference to the static strings structure for that locale.
+     * @param[in] locale Target locale enum (defaults to Locale::EN).
+     * @return const LspStrings& Static reference to the localized string table.
+     * @note Thread-safe for concurrent read access.
      */
     const LspStrings &GetStrings(Locale locale = Locale::EN);
 

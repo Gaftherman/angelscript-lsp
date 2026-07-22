@@ -1,3 +1,9 @@
+/**
+ * @file PredefinedLoader.cpp
+ * @brief Implementation of workspace predefined loader and AngelScript engine registration.
+ * @ingroup Analysis
+ */
+
 #include "PredefinedLoader.h"
 #include <fstream>
 #include <sstream>

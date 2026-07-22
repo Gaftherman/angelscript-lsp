@@ -1,3 +1,9 @@
+/**
+ * @file Document.h
+ * @brief Thread-safe document container for source code text and Tree-Sitter AST parsing.
+ * @ingroup Core
+ */
+
 #pragma once
 
 #include <string>
@@ -12,7 +18,7 @@ namespace angel_lsp
     namespace document
     {
         /**
-         * @brief Custom deleter for Tree-sitter TSParser.
+         * @brief Custom RAII deleter for Tree-Sitter TSParser pointers.
          */
         struct TSParserDeleter
         {
@@ -26,7 +32,7 @@ namespace angel_lsp
         };
 
         /**
-         * @brief Custom deleter for Tree-sitter TSTree.
+         * @brief Custom RAII deleter for Tree-Sitter TSTree pointers.
          */
         struct TSTreeDeleter
         {
@@ -44,7 +50,8 @@ namespace angel_lsp
     } // namespace document
 
     /**
-     * @brief Represents a text document managed by the LSP, including its source code and Tree-Sitter AST.
+     * @brief Represents a text document managed by the LSP, including source code and Tree-Sitter AST.
+     * @note Thread-safe for concurrent read-only operations after initialization.
      */
     class Document
     {
@@ -52,13 +59,13 @@ namespace angel_lsp
         /**
          * @brief Constructs a new Document.
          *
-         * @param uri The URI of the document.
-         * @param text The initial source code text.
+         * @param[in] uri The URI of the document.
+         * @param[in] text The initial source code text.
          */
         Document(std::string uri, std::string text);
 
         /**
-         * @brief Destroys the Document and cleans up Tree-Sitter resources.
+         * @brief Destroys the Document and cleans up Tree-Sitter resources via RAII.
          */
         ~Document();
 
@@ -71,41 +78,45 @@ namespace angel_lsp
         /**
          * @brief Applies an incremental text edit to the document and updates the AST.
          *
-         * @param edit The LSP text edit to apply.
+         * @param[in] edit The LSP text edit to apply.
          */
         void ApplyEdit(const lsp::TextEdit &edit);
 
         /**
          * @brief Gets the root node of the Tree-Sitter AST.
          *
-         * @return TSNode The root node.
+         * @return TSNode The root node of the parsed syntax tree.
+         * @note Returns a null node if parsing failed or tree is uninitialized.
          */
         TSNode RootNode() const;
 
         /**
          * @brief Gets the AST node at the specified line and column.
          *
-         * @param line Zero-indexed line number.
-         * @param col Zero-indexed column number.
+         * @param[in] line Zero-indexed line number.
+         * @param[in] col Zero-indexed column number.
          * @return TSNode The innermost node containing the position.
+         * @note Uses Tree-Sitter byte offset calculation.
          */
         TSNode NodeAt(uint32_t line, uint32_t col) const;
 
         /**
          * @brief Extracts the source code substring corresponding to a given AST node.
          *
-         * @param node The AST node.
+         * @param[in] node The AST node to extract text for.
          * @return std::string_view A view into the source text.
          */
         std::string_view SourceAt(TSNode node) const;
 
         /**
          * @brief Gets the document URI.
+         * @return const std::string& The document URI string.
          */
         const std::string &GetUri() const { return uri; }
 
         /**
          * @brief Gets the full document text.
+         * @return const std::string& The full source code string.
          */
         const std::string &GetText() const { return text; }
 

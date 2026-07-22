@@ -1,3 +1,9 @@
+/**
+ * @file Server.h
+ * @brief Top-level Language Server Protocol orchestrator, request dispatcher, and validation worker.
+ * @ingroup Server
+ */
+
 #pragma once
 
 #include <iostream>
@@ -25,17 +31,16 @@ namespace angel_lsp
 {
 
     /**
-     * @brief The main LSP Server class orchestrating all language intelligence.
-     * 
-     * Handles incoming LSP JSON-RPC messages and dispatches request handling
-     * based on centralized ServerConfig feature toggles.
+     * @brief The main LSP Server class orchestrating all language intelligence and JSON-RPC messaging.
+     * @note Thread-safe orchestrator using std::shared_mutex for document reads and std::jthread background validation worker.
      */
     class Server
     {
     public:
         /**
          * @brief Constructs the LSP server with an optional configuration.
-         * @param config Configuration settings and feature flags.
+         *
+         * @param[in] config Configuration settings and feature flags.
          */
         explicit Server(ServerConfig config = ServerConfig());
 
@@ -57,14 +62,16 @@ namespace angel_lsp
 
         /**
          * @brief Schedules background document diagnostics validation.
-         * @param uri Document URI string.
-         * @param text Document source text.
+         *
+         * @param[in] uri Document URI string.
+         * @param[in] text Document source text.
          */
         void ScheduleValidation(std::string uri, std::string text);
 
         /**
-         * @brief Worker thread loop for processing background diagnostics.
-         * @param st Thread stop token.
+         * @brief Worker thread loop for processing background diagnostics with 300ms debounce.
+         *
+         * @param[in] st Thread stop token.
          */
         void ValidationWorkerLoop(std::stop_token st);
 

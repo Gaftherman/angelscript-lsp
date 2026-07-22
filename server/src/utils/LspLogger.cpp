@@ -1,3 +1,9 @@
+/**
+ * @file LspLogger.cpp
+ * @brief Implementation of LspLogger window/logMessage bridge.
+ * @ingroup Utils
+ */
+
 #include "LspLogger.h"
 
 namespace angel_lsp

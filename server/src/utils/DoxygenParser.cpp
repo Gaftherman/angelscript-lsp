@@ -1,3 +1,9 @@
+/**
+ * @file DoxygenParser.cpp
+ * @brief Implementation of Tree-Sitter based Doxygen docstring parser and Markdown formatter.
+ * @ingroup Utils
+ */
+
 #include "utils/DoxygenParser.h"
 #include "document/Document.h"
 #include <tree_sitter/api.h>

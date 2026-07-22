@@ -1,3 +1,9 @@
+/**
+ * @file SymbolResolver.cpp
+ * @brief Implementation of SymbolResolver scope resolution algorithm.
+ * @ingroup Analysis
+ */
+
 #include "analysis/SymbolResolver.h"
 #include "analysis/SymbolCollector.h"
 #include <string_view>

@@ -1,3 +1,9 @@
+/**
+ * @file SemanticTokensHandler.cpp
+ * @brief Implementation of textDocument/semanticTokens/full request processor.
+ * @ingroup Features
+ */
+
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include <lsp/messages.h>
 #include <algorithm>
