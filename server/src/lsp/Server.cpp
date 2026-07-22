@@ -157,12 +157,8 @@ namespace angel_lsp
                 result.capabilities.typeDefinitionProvider = true;
 
                 lsp::SemanticTokensOptions semantic_options;
-                semantic_options.legend.tokenTypes =
-                    {
-                        "namespace", "type", "class", "enum", "interface", "struct", "typeParameter",
-                        "parameter", "variable", "property", "enumMember", "event", "function",
-                        "method", "macro", "keyword", "modifier", "comment", "string", "number",
-                        "regexp", "operator"};
+                semantic_options.legend.tokenTypes = features::SemanticTokensHandler::GetTokenTypesLegend();
+                semantic_options.legend.tokenModifiers = features::SemanticTokensHandler::GetTokenModifiersLegend();
                 semantic_options.full = true;
                 result.capabilities.semanticTokensProvider = semantic_options;
 

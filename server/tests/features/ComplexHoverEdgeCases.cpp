@@ -845,4 +845,51 @@ void Main()
             }
         }
     }
+
+    TEST_CASE("Constructor overload hover in nested namespace")
+    {
+        const char *NS_CONSTRUCTOR_SCRIPT = R"(namespace Engine
+{
+    class Vector3
+    {
+        Vector3() {}
+        Vector3(float ax, float ay, float az) {}
+    }
+})";
+        Document doc("file:///vector3.as", NS_CONSTRUCTOR_SCRIPT);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+        // Hover over default constructor (line 4)
+        lsp::requests::TextDocument_Hover::Params req1;
+        req1.textDocument.uri = lsp::DocumentUri::parse("file:///vector3.as");
+        req1.position.line = 4;
+        req1.position.character = 10;
+        lsp::requests::TextDocument_Hover::Result res1;
+        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res1.isNull());
+
+        // Hover over parameterized constructor (line 5)
+        lsp::requests::TextDocument_Hover::Params req2;
+        req2.textDocument.uri = lsp::DocumentUri::parse("file:///vector3.as");
+        req2.position.line = 5;
+        req2.position.character = 10;
+        lsp::requests::TextDocument_Hover::Result res2;
+        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res2.isNull());
+
+        if (const auto *hover = &*res2)
+        {
+            if (const auto *msList = std::get_if<lsp::Array<lsp::MarkedString>>(&hover->contents))
+            {
+                REQUIRE(!msList->empty());
+                if (const auto *val = std::get_if<lsp::MarkedString_Language_Value>(&(*msList)[0]))
+                {
+                    CHECK(val->value.find("ax") != std::string::npos);
+                    CHECK(val->value.find("ay") != std::string::npos);
+                }
+            }
+        }
+    }
 }

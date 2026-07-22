@@ -315,6 +315,31 @@ namespace analysis
                         if (outMultipleResults) outMultipleResults->push_back(lambdaSym);
                         return lambdaSym;
                     }
+
+                    TSNode lParent = ts_node_parent(climb);
+                    while (!ts_node_is_null(lParent))
+                    {
+                        std::string_view lpType = ts_node_type(lParent);
+                        if (lpType == "variable_declarator" || lpType == "assignment_expression" || lpType == "variable_declaration")
+                        {
+                            TSNode declNode = (lpType == "variable_declaration") ? lParent : ts_node_parent(lParent);
+                            if (!ts_node_is_null(declNode) && std::string_view(ts_node_type(declNode)) == "variable_declaration")
+                            {
+                                TSNode varTypeNode = FieldChild(declNode, "var_type");
+                                if (!ts_node_is_null(varTypeNode))
+                                {
+                                    std::string typeStr = SymbolCollector::GetNodeText(varTypeNode, doc);
+                                    std::string cleanType = CleanTypeName(typeStr);
+                                    if (const Symbol *funcdefSym = table.FindByNameDeep(cleanType))
+                                    {
+                                        if (outMultipleResults) outMultipleResults->push_back(funcdefSym);
+                                        return funcdefSym;
+                                    }
+                                }
+                            }
+                        }
+                        lParent = ts_node_parent(lParent);
+                    }
                     break;
                 }
                 climb = ts_node_parent(climb);
@@ -675,22 +700,34 @@ namespace analysis
                     TSNode classNameNode = FieldChild(scopeNode, "name");
                     if (!ts_node_is_null(classNameNode))
                     {
-                        std::string_view cNameSv = doc.SourceAt(classNameNode);
-                        std::string cName(cNameSv.begin(), cNameSv.end());
-                        const Symbol *classSym = table.FindByNameDeep(cName);
+                        TSPoint cPt = ts_node_start_point(classNameNode);
+                        const Symbol *classSym = table.FindScopeByPosition(doc.GetUri(), cPt.row, cPt.column);
+                        if (!classSym || (classSym->kind != SymbolKind::Class && classSym->kind != SymbolKind::Mixin))
+                        {
+                            std::string_view cNameSv = doc.SourceAt(classNameNode);
+                            std::string cName(cNameSv.begin(), cNameSv.end());
+                            classSym = table.FindByNameDeep(cName);
+                        }
+
                         if (classSym)
                         {
                             for (const auto &child : classSym->children)
                             {
                                 if (child->name == targetName && (child->kind == SymbolKind::Constructor || child->kind == SymbolKind::Destructor))
                                 {
-                                    bool inRange = (child->selectionRange.start.line == (uint32_t)line);
-                                    if (inRange)
+                                    if (outMultipleResults)
+                                    {
+                                        outMultipleResults->push_back(child.get());
+                                    }
+
+                                    bool exactLine = (child->selectionRange.start.line == line);
+                                    bool inFullRange = (child->fullRange.start.line <= line && line <= child->fullRange.end.line);
+                                    if (exactLine || inFullRange)
                                     {
                                         foundSym = child.get();
-                                        break;
+                                        if (exactLine) break;
                                     }
-                                    if (!foundSym)
+                                    else if (!foundSym)
                                     {
                                         foundSym = child.get();
                                     }
@@ -705,8 +742,6 @@ namespace analysis
 
             if (foundSym)
             {
-                if (outMultipleResults)
-                    outMultipleResults->push_back(foundSym);
                 return foundSym;
             }
         }
@@ -918,6 +953,7 @@ namespace analysis
     {
         std::optional<SymbolKind> expected = InferExpectedKind(node, parent, parentType);
         std::optional<uint32_t> argCount = GetCallArgumentCount(node, parent, parentType);
+        uint32_t nodeStartLine = ts_node_start_point(node).row;
 
         const Symbol *bestMatch = nullptr;
         int bestPriority = -1;
@@ -931,7 +967,6 @@ namespace analysis
                 outMultipleResults->push_back(cand);
 
             int candPriority = GetKindPriority(cand->kind);
-            uint32_t nodeStartLine = ts_node_start_point(node).row;
             if (cand->selectionRange.start.line == nodeStartLine)
             {
                 candPriority += 1000;
@@ -988,6 +1023,10 @@ namespace analysis
                 if (child->kind != SymbolKind::Constructor)
                     continue;
                 int score = 0;
+                if (child->selectionRange.start.line == nodeStartLine)
+                {
+                    score += 1000;
+                }
                 if (argCount.has_value())
                 {
                     if (child->params.size() == argCount.value())

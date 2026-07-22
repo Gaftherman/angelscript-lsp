@@ -50,7 +50,7 @@ namespace analysis
          * @param logger An optional logger callback.
          * @return true if loaded successfully, false otherwise.
          */
-        static bool LoadFromSource(const std::string &source, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType = "string", const std::string &arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr);
+        static bool LoadFromSource(const std::string &source, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType = "string", const std::string &arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr, const std::string &customUri = "file:///as.predefined");
     };
 
 } // namespace analysis

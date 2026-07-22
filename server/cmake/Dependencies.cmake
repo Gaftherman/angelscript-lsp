@@ -15,6 +15,7 @@ FetchContent_MakeAvailable(doctest)
 # 1.4 LSP Framework
 set(LSP_BUILD_EXAMPLES OFF CACHE BOOL "Disable Examples")
 set(LSP_INSTALL OFF CACHE BOOL "Disable Install")
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
 
 FetchContent_Declare(
     lsp_framework

@@ -23,9 +23,21 @@
           "angelscript"
         ],
         "extensions": [
-          ".as"
+          ".as",
+          ".angelscript",
+          ".predefined"
+        ],
+        "filenames": [
+          "as.predefined"
         ],
         "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "angelscript",
+        "scopeName": "source.angelscript",
+        "path": "./syntaxes/angelscript.tmLanguage.json"
       }
     ],
     "configurationDefaults": {

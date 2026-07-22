@@ -656,6 +656,57 @@ void AppMain()
     CHECK(methodLoc.range.start.line == 5);
 }
 
+TEST_CASE("DefinitionHandler - Class member field method resolution (m_device.Present())")
+{
+    const char *HEADER_SRC = R"script(
+namespace Engine
+{
+    class RenderDevice
+    {
+        void Present() {}
+    }
+}
+)script";
+
+    const char *RENDERER_SRC = R"script(
+#include "engine/render.as"
+namespace Engine
+{
+    class Renderer
+    {
+        private Engine::RenderDevice m_device;
+        void RenderFrame()
+        {
+            m_device.Present();
+        }
+    }
+}
+)script";
+
+    std::string headerUri = "file:///project/engine/render.as";
+    Document headerDoc(headerUri, HEADER_SRC);
+
+    std::string rendererUri = "file:///project/renderer.as";
+    Document rendererDoc(rendererUri, RENDERER_SRC);
+
+    analysis::SymbolTable table;
+    analysis::SymbolCollector::CollectGlobals(headerDoc, table);
+    analysis::SymbolCollector::CollectGlobals(rendererDoc, table);
+    analysis::SymbolCollector::TraverseLocals(rendererDoc.RootNode(), rendererDoc, table, nullptr);
+
+    // Go to Definition on `Present` in `m_device.Present()`
+    lsp::requests::TextDocument_Definition::Params req;
+    req.textDocument.uri = lsp::DocumentUri::parse(rendererUri);
+    req.position.line = 9;
+    req.position.character = 21; // `Present`
+
+    auto res = features::ProcessDefinition(req, rendererDoc, table, nullptr);
+    REQUIRE(!res.isNull());
+    const auto &def = std::get<lsp::Definition>(*res);
+    const auto &loc = std::get<lsp::Location>(def);
+    CHECK(loc.uri.toString() == lsp::DocumentUri::parse(headerUri).toString());
+}
+
 TEST_CASE("DefinitionHandler - Advanced #include Formats (no .as, <angle brackets>) & Preprocessor Directives (#if, #else, #define)")
 {
     const char *SRC = R"script(

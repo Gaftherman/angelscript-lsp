@@ -300,13 +300,13 @@ namespace analysis
         engine->ClearMessageCallback();
     }
 
-    bool PredefinedLoader::LoadFromSource(const std::string &source, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger)
+    bool PredefinedLoader::LoadFromSource(const std::string &source, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger, const std::string &customUri)
     {
         if (!engine)
             return false;
 
-        // Use a temporary document to parse the source
-        Document doc("file:///as.predefined", source);
+        // Use document with real or custom URI to parse the source
+        Document doc(customUri.empty() ? "file:///as.predefined" : customUri, source);
         SymbolCollector::CollectGlobals(doc, table);
 
         // Call RegisterSymbols passing the logger pointer
@@ -401,7 +401,18 @@ namespace analysis
         std::stringstream buffer;
         buffer << file.rdbuf();
 
-        return LoadFromSource(buffer.str(), engine, table, stringType, arrayType, logger);
+        std::string fileUri = filePath;
+        std::replace(fileUri.begin(), fileUri.end(), '\\', '/');
+        if (fileUri.find("file://") != 0)
+        {
+            if (fileUri.empty() || fileUri[0] != '/')
+            {
+                fileUri = "/" + fileUri;
+            }
+            fileUri = "file://" + fileUri;
+        }
+
+        return LoadFromSource(buffer.str(), engine, table, stringType, arrayType, logger, fileUri);
     }
 
     bool PredefinedLoader::FindInWorkspace(const std::string &rootUri, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger)

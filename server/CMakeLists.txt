@@ -101,6 +101,7 @@ set(TEST_SOURCES
     tests/features/DefinitionHandlerTests.cpp
     tests/features/HoverTemplateTest.cpp
     tests/features/HoverRenderTests.cpp
+    tests/features/SemanticTokensTests.cpp
     tests/i18n/LocalizationTests.cpp
     tests/parser/TreeSitterTests.cpp
     tests/test_main.cpp
