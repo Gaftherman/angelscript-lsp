@@ -453,6 +453,11 @@ namespace angel_lsp
             lock.unlock();
 
             std::vector<lsp::Diagnostic> diagnostics;
+            if (uri.find("as.predefined") != std::string::npos || uri.ends_with(".predefined"))
+            {
+                diagnostics = {};
+            }
+            else
             {
                 auto docResolver = [this](const std::string &u) -> const Document * {
                     std::shared_lock docLock(m_docMutex);

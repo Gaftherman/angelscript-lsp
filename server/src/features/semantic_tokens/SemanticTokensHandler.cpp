@@ -255,82 +255,11 @@ namespace angel_lsp::features
 
                     tokens.push_back({line, startChar, length, static_cast<uint32_t>(tType), modifiers});
                 }
-                else if (IsPrimitiveType(type, text))
-                {
-                    tokens.push_back({line, startChar, length, static_cast<uint32_t>(TokenType::Keyword), 0});
-                }
-                else if (IsKeyword(type, text))
-                {
-                    tokens.push_back({line, startChar, length, static_cast<uint32_t>(TokenType::Keyword), 0});
-                }
-                else
+                else if (!IsPrimitiveType(type, text) && !IsKeyword(type, text))
                 {
                     TokenType inferredType = InferTokenTypeFromAST(node, doc);
                     tokens.push_back({line, startChar, length, static_cast<uint32_t>(inferredType), 0});
                 }
-            }
-        }
-        else if (IsPrimitiveType(type, text))
-        {
-            if (startPoint.row == endPoint.row && endPoint.column > startPoint.column)
-            {
-                tokens.push_back({startPoint.row, startPoint.column, endPoint.column - startPoint.column, static_cast<uint32_t>(TokenType::Keyword), 0});
-            }
-        }
-        else if (IsKeyword(type, text))
-        {
-            if (startPoint.row == endPoint.row && endPoint.column > startPoint.column)
-            {
-                tokens.push_back({startPoint.row, startPoint.column, endPoint.column - startPoint.column, static_cast<uint32_t>(TokenType::Keyword), 0});
-            }
-        }
-        else if (type == "comment")
-        {
-            uint32_t modifiers = 0;
-            if (text.starts_with("/**") || text.starts_with("///"))
-            {
-                modifiers |= static_cast<uint32_t>(TokenModifier::Documentation);
-            }
-
-            uint32_t currentLine = startPoint.row;
-            uint32_t lineStartCol = startPoint.column;
-
-            size_t pos = 0;
-            while (pos < text.size())
-            {
-                size_t newlinePos = text.find_first_of("\r\n", pos);
-                size_t lineLen = (newlinePos == std::string_view::npos) ? (text.size() - pos) : (newlinePos - pos);
-
-                if (lineLen > 0)
-                {
-                    tokens.push_back({currentLine, lineStartCol, static_cast<uint32_t>(lineLen), static_cast<uint32_t>(TokenType::Comment), modifiers});
-                }
-
-                if (newlinePos == std::string_view::npos)
-                {
-                    break;
-                }
-
-                pos = newlinePos;
-                if (pos < text.size() && text[pos] == '\r') ++pos;
-                if (pos < text.size() && text[pos] == '\n') ++pos;
-
-                currentLine++;
-                lineStartCol = 0;
-            }
-        }
-        else if (type == "string_literal")
-        {
-            if (startPoint.row == endPoint.row && endPoint.column > startPoint.column)
-            {
-                tokens.push_back({startPoint.row, startPoint.column, endPoint.column - startPoint.column, static_cast<uint32_t>(TokenType::String), 0});
-            }
-        }
-        else if (type == "number_literal")
-        {
-            if (startPoint.row == endPoint.row && endPoint.column > startPoint.column)
-            {
-                tokens.push_back({startPoint.row, startPoint.column, endPoint.column - startPoint.column, static_cast<uint32_t>(TokenType::Number), 0});
             }
         }
         else if (type == "preproc_directive")
@@ -339,25 +268,15 @@ namespace angel_lsp::features
             if (startPoint.row == endPoint.row && endPoint.column > startPoint.column)
             {
                 size_t spacePos = dirText.find_first_of(" \t");
-                size_t dirNameLen = (spacePos != std::string_view::npos) ? spacePos : dirText.size();
-
-                tokens.push_back({startPoint.row, startPoint.column, static_cast<uint32_t>(dirNameLen), static_cast<uint32_t>(TokenType::Keyword), 0});
-
                 if (spacePos != std::string_view::npos)
                 {
                     size_t restStart = dirText.find_first_not_of(" \t", spacePos);
                     if (restStart != std::string_view::npos)
                     {
                         std::string_view rest = dirText.substr(restStart);
-                        uint32_t restStartCol = startPoint.column + static_cast<uint32_t>(restStart);
-
-                        if ((rest.starts_with('"') && rest.find('"', 1) != std::string_view::npos) ||
-                            (rest.starts_with('<') && rest.find('>', 1) != std::string_view::npos))
+                        if (!rest.starts_with('"') && !rest.starts_with('<'))
                         {
-                            tokens.push_back({startPoint.row, restStartCol, static_cast<uint32_t>(rest.size()), static_cast<uint32_t>(TokenType::String), 0});
-                        }
-                        else
-                        {
+                            uint32_t restStartCol = startPoint.column + static_cast<uint32_t>(restStart);
                             tokens.push_back({startPoint.row, restStartCol, static_cast<uint32_t>(rest.size()), static_cast<uint32_t>(TokenType::Macro), 0});
                         }
                     }

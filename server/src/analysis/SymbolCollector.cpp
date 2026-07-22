@@ -840,11 +840,11 @@ namespace analysis
                 sym->selectionRange = GetRange(nameNode, doc);
 
                 TSNode prev = ts_node_prev_sibling(nameNode);
-                if (!ts_node_is_null(prev) && std::string_view(ts_node_type(prev)) == "~")
+                if (!ts_node_is_null(prev) && (std::string_view(ts_node_type(prev)) == "~" || GetNodeText(prev, doc) == "~"))
                 {
                     isDestructor = true;
                     sym->name = "~" + sym->name;
-                    sym->selectionRange = GetRange(prev, doc); // maybe include ~ in selection
+                    sym->selectionRange = GetRange(prev, doc);
                 }
             }
 
@@ -852,7 +852,16 @@ namespace analysis
             if (!ts_node_is_null(returnTypeNode))
             {
                 std::string typeStr = GetNodeText(returnTypeNode, doc);
-                if (typeStr == "explicit")
+                if (typeStr == "~" || isDestructor)
+                {
+                    isDestructor = true;
+                    sym->typeInfo.clear();
+                    if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin))
+                    {
+                        sym->kind = SymbolKind::Destructor;
+                    }
+                }
+                else if (typeStr == "explicit")
                 {
                     sym->isExplicit = true;
                     sym->typeInfo.clear();
@@ -866,7 +875,7 @@ namespace analysis
                     sym->typeInfo = typeStr;
                     if (parentScope && (parentScope->kind == SymbolKind::Class || parentScope->kind == SymbolKind::Mixin))
                     {
-                        sym->kind = SymbolKind::Method;
+                        sym->kind = isDestructor ? SymbolKind::Destructor : SymbolKind::Method;
                     }
                 }
             }

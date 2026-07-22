@@ -223,6 +223,46 @@ namespace analysis
         }
     }
 
+    static const Symbol *FindSymbolByExactDeclarationLine(const SymbolTable &table, const std::string &name, uint32_t line, uint32_t character)
+    {
+        for (const auto &[gName, syms] : table.GetGlobals())
+        {
+            for (const auto &sym : syms)
+            {
+                if (!sym) continue;
+                for (const auto &child : sym->children)
+                {
+                    if (!child) continue;
+                    if ((child->name == name || child->name == "~" + name) &&
+                        child->selectionRange.start.line <= line && line <= child->selectionRange.end.line &&
+                        child->selectionRange.start.character <= character && character <= child->selectionRange.end.character + 1)
+                        return child.get();
+                    for (const auto &gChild : child->children)
+                    {
+                        if (!gChild) continue;
+                        if ((gChild->name == name || gChild->name == "~" + name) &&
+                            gChild->selectionRange.start.line <= line && line <= gChild->selectionRange.end.line &&
+                            gChild->selectionRange.start.character <= character && character <= gChild->selectionRange.end.character + 1)
+                            return gChild.get();
+                    }
+                }
+                if (sym->name == name &&
+                    sym->selectionRange.start.line <= line && line <= sym->selectionRange.end.line &&
+                    sym->selectionRange.start.character <= character && character <= sym->selectionRange.end.character + 1)
+                    return sym.get();
+            }
+        }
+        for (const auto &localSym : table.GetLocals())
+        {
+            if (!localSym) continue;
+            if ((localSym->name == name || localSym->name == "~" + name) &&
+                localSym->selectionRange.start.line <= line && line <= localSym->selectionRange.end.line &&
+                localSym->selectionRange.start.character <= character && character <= localSym->selectionRange.end.character + 1)
+                return localSym.get();
+        }
+        return nullptr;
+    }
+
     const Symbol *SymbolResolver::ResolveAt(const Document &doc, const SymbolTable &table, uint32_t line, uint32_t character, std::vector<const Symbol *> *outMultipleResults)
     {
         TSNode rawNode = doc.NodeAt(line, character);
@@ -349,6 +389,14 @@ namespace analysis
 
         std::string_view identSv = doc.SourceAt(node);
         std::string identText(identSv.begin(), identSv.end());
+
+        uint32_t nodeStartLine = ts_node_start_point(node).row;
+        uint32_t nodeStartCol = ts_node_start_point(node).column;
+        if (const Symbol *exactSym = FindSymbolByExactDeclarationLine(table, identText, nodeStartLine, nodeStartCol))
+        {
+            if (outMultipleResults) outMultipleResults->push_back(exactSym);
+            return exactSym;
+        }
 
         TSNode parent = ts_node_parent(node);
         std::string_view parentType = ts_node_is_null(parent) ? "" : ts_node_type(parent);
@@ -683,10 +731,18 @@ namespace analysis
         if (!hasReturnType)
         {
             bool isDestructor = false;
-            TSNode prev = ts_node_prev_sibling(node);
-            if (!ts_node_is_null(prev) && std::string_view(ts_node_type(prev)) == "~")
+            TSNode retTypeNode = FieldChild(parent, "return_type");
+            if (!ts_node_is_null(retTypeNode) && doc.SourceAt(retTypeNode) == "~")
             {
                 isDestructor = true;
+            }
+            else
+            {
+                TSNode prev = ts_node_prev_sibling(node);
+                if (!ts_node_is_null(prev) && (std::string_view(ts_node_type(prev)) == "~" || doc.SourceAt(prev) == "~"))
+                {
+                    isDestructor = true;
+                }
             }
 
             std::string targetName = isDestructor ? ("~" + identText) : identText;
