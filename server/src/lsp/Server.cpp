@@ -481,20 +481,29 @@ namespace angel_lsp
             lock.unlock();
 
             std::vector<lsp::Diagnostic> diagnostics;
-            std::function<const Document *(const std::string &)> docResolver = [this](const std::string &u) -> const Document *
+            if (uri.find(".predefined") != std::string::npos)
             {
-                std::shared_lock docLock(m_docMutex);
-                std::string normU = NormalizeUri(u);
-                auto it = m_documents.find(normU);
-                if (it != m_documents.end())
+                // .predefined files are host declaration files parsed by PredefinedLoader via Tree-Sitter.
+                // They are not executable script modules and must not be passed to mod->Build().
+                diagnostics = {};
+            }
+            else
+            {
+                std::function<const Document *(const std::string &)> docResolver = [this](const std::string &u) -> const Document *
                 {
-                    return it->second.get();
-                }
-                return nullptr;
-            };
+                    std::shared_lock docLock(m_docMutex);
+                    std::string normU = NormalizeUri(u);
+                    auto it = m_documents.find(normU);
+                    if (it != m_documents.end())
+                    {
+                        return it->second.get();
+                    }
+                    return nullptr;
+                };
 
-            std::lock_guard<std::mutex> engineLock(m_engineMutex);
-            diagnostics = oracle->ValidateSync(text, uri, docResolver);
+                std::lock_guard<std::mutex> engineLock(m_engineMutex);
+                diagnostics = oracle->ValidateSync(text, uri, docResolver);
+            }
 
             m_diagCache->Update(uri, diagnostics);
 
