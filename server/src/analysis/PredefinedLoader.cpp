@@ -51,6 +51,35 @@ namespace analysis
     {
         std::string uriStr = customUri.empty() ? "file:///as.predefined" : std::string(customUri);
         Document doc(uriStr, std::string(source));
+
+        TSNode root = doc.RootNode();
+        if (!ts_node_is_null(root))
+        {
+            auto checkSyntax = [&](auto self, TSNode node) -> void
+            {
+                if (ts_node_is_error(node) || ts_node_is_missing(node))
+                {
+                    TSPoint start = ts_node_start_point(node);
+                    std::string_view sv = doc.SourceAt(node);
+                    std::string msg = fmt::format("[Predefined] Syntax error in '{}' at line {}:{}, token: '{}'", uriStr, start.row + 1, start.column + 1, sv);
+                    if (logger)
+                    {
+                        logger(msg, 1);
+                    }
+                    else
+                    {
+                        angel_lsp::utils::LspLogger::Error(msg);
+                    }
+                }
+                uint32_t childCount = ts_node_child_count(node);
+                for (uint32_t i = 0; i < childCount; ++i)
+                {
+                    self(self, ts_node_child(node, i));
+                }
+            };
+            checkSyntax(checkSyntax, root);
+        }
+
         SymbolCollector::CollectGlobals(doc, table);
 
         if (logger)
