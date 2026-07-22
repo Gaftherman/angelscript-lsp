@@ -7,7 +7,7 @@
 #include "config/ServerConfig.h"
 #include <cstring>
 
-namespace angel_lsp
+namespace angel_lsp::config
 {
 
     /**
@@ -56,4 +56,4 @@ namespace angel_lsp
         return config;
     }
 
-} // namespace angel_lsp
+} // namespace angel_lsp::config

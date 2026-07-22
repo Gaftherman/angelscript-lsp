@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace angel_lsp
+namespace angel_lsp::config
 {
 
     /**
@@ -43,4 +43,10 @@ namespace angel_lsp
         static ServerConfig FromArgs(int argc, char **argv);
     };
 
-} // namespace angel_lsp
+} // namespace angel_lsp::config
+
+namespace angel_lsp
+{
+    using config::FeatureFlags;
+    using config::ServerConfig;
+}
