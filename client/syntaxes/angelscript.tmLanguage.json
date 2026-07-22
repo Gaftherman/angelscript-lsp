@@ -37,7 +37,7 @@
               "captures": {
                 "1": { "name": "keyword.other.documentation.doxygen.angelscript" },
                 "2": { "name": "keyword.operator.direction.doxygen.angelscript" },
-                "3": { "name": "variable.other.doxygen.angelscript" }
+                "3": { "name": "variable.parameter.doxygen.angelscript variable.parameter.angelscript" }
               }
             },
             {
@@ -82,7 +82,7 @@
               "captures": {
                 "1": { "name": "keyword.other.documentation.doxygen.angelscript" },
                 "2": { "name": "keyword.operator.direction.doxygen.angelscript" },
-                "3": { "name": "variable.other.doxygen.angelscript" }
+                "3": { "name": "variable.parameter.doxygen.angelscript variable.parameter.angelscript" }
               }
             },
             {
@@ -258,7 +258,7 @@
         },
         {
           "name": "keyword.control.conditional.angelscript",
-          "match": "\\b(is|not|and|or|xor|in)\\b"
+          "match": "!is\\b|\\b(is|not|and|or|xor|in)\\b"
         },
         {
           "name": "keyword.operator.new.angelscript",
