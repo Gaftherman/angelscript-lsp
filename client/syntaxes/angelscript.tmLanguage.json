@@ -288,7 +288,11 @@
       "patterns": [
         {
           "name": "storage.modifier.reference.angelscript",
-          "match": "&inout\\b|&in\\b|&out\\b|&|@"
+          "match": "&inout\\b|&in\\b|&out\\b|&"
+        },
+        {
+          "name": "storage.type.handle.angelscript storage.modifier.pointer.angelscript keyword.operator.handle.angelscript",
+          "match": "@"
         },
         {
           "name": "storage.modifier.pointer.angelscript",
@@ -343,8 +347,12 @@
     "punctuation": {
       "patterns": [
         {
+          "name": "punctuation.separator.namespace.angelscript punctuation.separator.scope.cpp punctuation.delimiter.angelscript",
+          "match": "::"
+        },
+        {
           "name": "punctuation.delimiter.angelscript",
-          "match": ";|::|,"
+          "match": ";|,"
         },
         {
           "name": "punctuation.bracket.angelscript",
