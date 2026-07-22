@@ -460,15 +460,14 @@ namespace angel_lsp
         {
             std::unique_lock lock(m_validationMutex);
 
-            m_validationCV.wait(lock, st, [this]
-                                { return m_validationPending; });
+            m_validationCV.wait(lock, [this, &st]
+                                { return m_validationPending || st.stop_requested(); });
             if (st.stop_requested())
                 break;
 
-            // Debounce: wait for 300ms. If another change comes, m_validationCV is signaled but wait_for returns false.
-            // wait_for returns true if predicate is satisfied (not useful here, we just want to sleep).
-            m_validationCV.wait_for(lock, st, std::chrono::milliseconds(300), []
-                                    { return false; });
+            // Debounce: wait for 300ms
+            m_validationCV.wait_for(lock, std::chrono::milliseconds(300), [&st]
+                                    { return st.stop_requested(); });
             if (st.stop_requested())
                 break;
 
@@ -488,7 +487,7 @@ namespace angel_lsp
             }
             else
             {
-                auto docResolver = [this](const std::string &u) -> const Document * {
+                std::function<const Document *(const std::string &)> docResolver = [this](const std::string &u) -> const Document * {
                     std::shared_lock docLock(m_docMutex);
                     std::string normU = NormalizeUri(u);
                     auto it = m_documents.find(normU);
