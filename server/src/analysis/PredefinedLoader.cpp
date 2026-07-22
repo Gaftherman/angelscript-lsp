@@ -171,26 +171,17 @@ namespace analysis
                         }
                         else
                         {
-                            // NOTE: We MUST register non-templates (like string, char, custom classes)
-                            // as asOBJ_VALUE. If we register them as asOBJ_REF, any dummy methods that return
-                            // them by value (e.g. `string opAdd(...) const`) will be rejected by AngelScript
-                            // with asINVALID_DECLARATION, which permanently invalidates the engine configuration
-                            // and breaks all subsequent LSP compilation.
                             flags = asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CDAK | asOBJ_APP_CLASS_ALLINTS | asOBJ_APP_CLASS_ALLFLOATS;
                             size = 4;
                         }
 
                         int r = engine->RegisterObjectType(registerName.c_str(), size, flags);
                         if (r < 0)
+                        {
                             continue;
+                        }
 
                         registeredTypes.insert(sym->name);
-
-                        // --- INHERITANCE NOTE ---
-                        // Natively, AngelScript compiler forbids inheritance from C++ registered types.
-                        // We previously injected asOBJ_SCRIPT_OBJECT here, but that causes SIGSEGV
-                        // in vanilla AngelScript when building derived classes.
-                        // We must leave it as a native type to prevent crashes.
 
                         if (flags & asOBJ_TEMPLATE)
                         {
@@ -453,6 +444,24 @@ namespace analysis
                         }
                     }
                     scriptCode += "}\n";
+                }
+                else if (sym->kind == SymbolKind::Function)
+                {
+                    std::string retType = sym->typeInfo;
+                    std::string funcBody = "{}";
+                    if (retType.find('@') != std::string::npos || retType == "auto@")
+                    {
+                        funcBody = "{ return null; }";
+                    }
+                    else if (retType == "int" || retType == "uint" || retType == "float" || retType == "double" || retType == "bool" || retType == "size_t")
+                    {
+                        funcBody = "{ return 0; }";
+                    }
+                    else if (!retType.empty() && retType != "void")
+                    {
+                        funcBody = "{ " + retType + " dummy; return dummy; }";
+                    }
+                    scriptCode += sym->BuildSignature() + " " + funcBody + "\n";
                 }
             }
         };
