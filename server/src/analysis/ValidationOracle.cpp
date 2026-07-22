@@ -1,6 +1,6 @@
 /**
  * @file ValidationOracle.cpp
- * @brief Implementation of ValidationOracle dynamic compiler error message translation.
+ * @brief Implementation of ValidationOracle dynamic compiler error message translation and include validation.
  * @ingroup Analysis
  */
 
@@ -12,6 +12,7 @@
 #include <sstream>
 #include <fstream>
 #include <unordered_set>
+#include <algorithm>
 
 static std::string UrlDecode(const std::string &in)
 {
@@ -98,7 +99,8 @@ static std::string SanitizeCodeForEngine(const std::string &code, const std::uno
             }
             else if (directive == "endif")
             {
-                if (!ifStack.empty()) {
+                if (!ifStack.empty())
+                {
                     ifStack.pop_back();
                 }
                 sanitizedCode += prefix + "// " + line.substr(firstNonSpace + 1);
@@ -120,14 +122,143 @@ static std::string SanitizeCodeForEngine(const std::string &code, const std::uno
         else
         {
             size_t start = line.find_first_not_of(" \t\r");
-            if (start != std::string::npos) {
+            if (start != std::string::npos)
+            {
                 sanitizedCode += line.substr(0, start) + "// " + line.substr(start);
-            } else {
+            }
+            else
+            {
                 sanitizedCode += line;
             }
         }
     }
     return sanitizedCode;
+}
+
+static bool ValidateIncludeDirective(const std::string &line,
+                                     size_t lineIdx,
+                                     size_t firstNonSpace,
+                                     const std::string &baseUri,
+                                     std::function<const Document *(const std::string &)> docResolver,
+                                     std::vector<lsp::Diagnostic> &diagsOut)
+{
+    size_t hashPos = line.find('#', firstNonSpace);
+    if (hashPos == std::string::npos)
+    {
+        hashPos = firstNonSpace;
+    }
+
+    size_t openQuote = line.find_first_of("\"<", hashPos);
+    if (openQuote == std::string::npos)
+    {
+        lsp::Diagnostic d;
+        d.range.start.line = lineIdx;
+        d.range.start.character = hashPos;
+        d.range.end.line = lineIdx;
+        d.range.end.character = line.length();
+        d.severity = lsp::DiagnosticSeverity::Error;
+        d.source = "angelscript";
+        d.message = "Invalid #include directive: missing opening quote or angle bracket";
+        diagsOut.push_back(d);
+        return false;
+    }
+
+    char closeChar = (line[openQuote] == '<') ? '>' : '"';
+    size_t closeQuote = line.find(closeChar, openQuote + 1);
+    if (closeQuote == std::string::npos)
+    {
+        lsp::Diagnostic d;
+        d.range.start.line = lineIdx;
+        d.range.start.character = hashPos;
+        d.range.end.line = lineIdx;
+        d.range.end.character = line.length();
+        d.severity = lsp::DiagnosticSeverity::Error;
+        d.source = "angelscript";
+        d.message = "Invalid #include directive: unclosed path delimiter ('" + std::string(1, closeChar) + "')";
+        diagsOut.push_back(d);
+        return false;
+    }
+
+    size_t trailingPos = closeQuote + 1;
+    while (trailingPos < line.length() && (line[trailingPos] == ' ' || line[trailingPos] == '\t' || line[trailingPos] == '\r' || line[trailingPos] == '\n'))
+    {
+        trailingPos++;
+    }
+
+    if (trailingPos < line.length())
+    {
+        lsp::Diagnostic d;
+        d.range.start.line = lineIdx;
+        d.range.start.character = trailingPos;
+        d.range.end.line = lineIdx;
+        d.range.end.character = line.length();
+        d.severity = lsp::DiagnosticSeverity::Error;
+        d.source = "angelscript";
+        d.message = "Invalid #include directive: unexpected characters after path";
+        diagsOut.push_back(d);
+    }
+
+    std::string relPath = line.substr(openQuote + 1, closeQuote - openQuote - 1);
+    if (relPath.empty())
+    {
+        lsp::Diagnostic d;
+        d.range.start.line = lineIdx;
+        d.range.start.character = openQuote;
+        d.range.end.line = lineIdx;
+        d.range.end.character = closeQuote + 1;
+        d.severity = lsp::DiagnosticSeverity::Error;
+        d.source = "angelscript";
+        d.message = "Invalid #include directive: empty file path";
+        diagsOut.push_back(d);
+        return false;
+    }
+
+    std::string targetUri = analysis::SymbolCollector::ResolveIncludeUri(baseUri, relPath);
+    if (targetUri.empty())
+    {
+        lsp::Diagnostic d;
+        d.range.start.line = lineIdx;
+        d.range.start.character = openQuote;
+        d.range.end.line = lineIdx;
+        d.range.end.character = closeQuote + 1;
+        d.severity = lsp::DiagnosticSeverity::Error;
+        d.source = "angelscript";
+        d.message = "Included file not found: '" + relPath + "'";
+        diagsOut.push_back(d);
+        return false;
+    }
+
+    const Document *openDoc = docResolver ? docResolver(targetUri) : nullptr;
+    if (!openDoc)
+    {
+        std::string filePath = UrlDecode(targetUri);
+        if (filePath.starts_with("file:///"))
+        {
+            filePath = filePath.substr(8);
+        }
+        else if (filePath.starts_with("file://"))
+        {
+            filePath = filePath.substr(7);
+        }
+        std::replace(filePath.begin(), filePath.end(), '/', '\\');
+
+        std::ifstream infile(filePath);
+        if (!infile.is_open())
+        {
+            lsp::Diagnostic d;
+            d.range.start.line = lineIdx;
+            d.range.start.character = openQuote;
+            d.range.end.line = lineIdx;
+            d.range.end.character = closeQuote + 1;
+            d.severity = lsp::DiagnosticSeverity::Error;
+            d.source = "angelscript";
+            d.message = "Included file not found: '" + relPath + "'";
+            diagsOut.push_back(d);
+            return false;
+        }
+    }
+
+    return true;
 }
 
 namespace analysis
@@ -146,8 +277,12 @@ namespace analysis
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_definedWords.clear();
-        for (const auto &d : defines) {
-            if (!d.empty()) m_definedWords.insert(d);
+        for (const auto &d : defines)
+        {
+            if (!d.empty())
+            {
+                m_definedWords.insert(d);
+            }
         }
         SymbolCollector::SetDefinedWords(defines);
     }
@@ -157,11 +292,12 @@ namespace analysis
                                                                std::function<const Document *(const std::string &)> docResolver)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_diagnostics.clear();
+        m_diagnosticsByUri.clear();
+        m_activeValidationUri = currentUri;
 
         if (!m_engine)
         {
-            return m_diagnostics;
+            return {};
         }
 
         angel_lsp::LspLogger::Info("[Validation] Validating URI: '" + currentUri + "'");
@@ -187,61 +323,75 @@ namespace analysis
                 visited.insert(currentUri);
 
                 std::function<void(const std::string &, const std::string &)> loadIncludes =
-                    [&](const std::string &baseUri, const std::string &srcCode) {
+                    [&](const std::string &baseUri, const std::string &srcCode)
+                    {
                         std::stringstream ss(srcCode);
                         std::string line;
+                        size_t lineIdx = 0;
                         while (std::getline(ss, line))
                         {
                             size_t firstNonSpace = line.find_first_not_of(" \t\r");
                             if (firstNonSpace != std::string::npos && line.substr(firstNonSpace).starts_with("#include"))
                             {
-                                std::string relPath = SymbolCollector::ExtractIncludePath(line.substr(firstNonSpace));
-                                if (!relPath.empty())
+                                try
                                 {
-                                    angel_lsp::LspLogger::Info("[Validation] Found #include '" + relPath + "' in '" + baseUri + "'");
-                                    std::string targetUri = SymbolCollector::ResolveIncludeUri(baseUri, relPath);
-                                    angel_lsp::LspLogger::Info("[Validation] Resolved include to: '" + targetUri + "'");
-
-                                    if (!targetUri.empty() && visited.insert(targetUri).second)
+                                    std::vector<lsp::Diagnostic> incDiags;
+                                    bool validDirect = ValidateIncludeDirective(line, lineIdx, firstNonSpace, baseUri, docResolver, incDiags);
+                                    for (const auto &d : incDiags)
                                     {
-                                        std::string incContent;
-                                        const Document *openDoc = docResolver ? docResolver(targetUri) : nullptr;
-                                        if (openDoc)
-                                        {
-                                            incContent = openDoc->GetText();
-                                            angel_lsp::LspLogger::Info("[Validation] Using in-memory document content for '" + targetUri + "'");
-                                        }
-                                        else
-                                        {
-                                            std::string filePath = UrlDecode(targetUri);
-                                            if (filePath.starts_with("file:///")) filePath = filePath.substr(8);
-                                            else if (filePath.starts_with("file://")) filePath = filePath.substr(7);
-                                            std::replace(filePath.begin(), filePath.end(), '/', '\\');
+                                        m_diagnosticsByUri[baseUri].push_back(d);
+                                    }
 
-                                            std::ifstream infile(filePath);
-                                            if (infile.is_open())
+                                    if (validDirect)
+                                    {
+                                        std::string relPath = SymbolCollector::ExtractIncludePath(line.substr(firstNonSpace));
+                                        std::string targetUri = SymbolCollector::ResolveIncludeUri(baseUri, relPath);
+
+                                        if (!targetUri.empty() && visited.insert(targetUri).second)
+                                        {
+                                            std::string incContent;
+                                            const Document *openDoc = docResolver ? docResolver(targetUri) : nullptr;
+                                            if (openDoc)
                                             {
-                                                std::stringstream buf;
-                                                buf << infile.rdbuf();
-                                                incContent = buf.str();
-                                                angel_lsp::LspLogger::Info("[Validation] Read file from disk: '" + filePath + "' (" + std::to_string(incContent.size()) + " bytes)");
+                                                incContent = openDoc->GetText();
                                             }
                                             else
                                             {
-                                                angel_lsp::LspLogger::Warn("[Validation] FAILED to open file at path: '" + filePath + "'");
-                                            }
-                                        }
+                                                std::string filePath = UrlDecode(targetUri);
+                                                if (filePath.starts_with("file:///"))
+                                                {
+                                                    filePath = filePath.substr(8);
+                                                }
+                                                else if (filePath.starts_with("file://"))
+                                                {
+                                                    filePath = filePath.substr(7);
+                                                }
+                                                std::replace(filePath.begin(), filePath.end(), '/', '\\');
 
-                                        if (!incContent.empty())
-                                        {
-                                            loadIncludes(targetUri, incContent);
-                                            std::string sanitizedInc = SanitizeCodeForEngine(incContent, m_definedWords);
-                                            mod->AddScriptSection(targetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
-                                            angel_lsp::LspLogger::Info("[Validation] Added script section '" + targetUri + "' to validation module");
+                                                std::ifstream infile(filePath);
+                                                if (infile.is_open())
+                                                {
+                                                    std::stringstream buf;
+                                                    buf << infile.rdbuf();
+                                                    incContent = buf.str();
+                                                }
+                                            }
+
+                                            if (!incContent.empty())
+                                            {
+                                                loadIncludes(targetUri, incContent);
+                                                std::string sanitizedInc = SanitizeCodeForEngine(incContent, m_definedWords);
+                                                mod->AddScriptSection(targetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
+                                            }
                                         }
                                     }
                                 }
+                                catch (const std::exception &ex)
+                                {
+                                    angel_lsp::LspLogger::Error("[Validation] Exception during include processing: " + std::string(ex.what()));
+                                }
                             }
+                            lineIdx++;
                         }
                     };
 
@@ -249,8 +399,7 @@ namespace analysis
             }
 
             std::string sanitizedMain = SanitizeCodeForEngine(code, m_definedWords);
-            mod->AddScriptSection("LSP_Doc", sanitizedMain.c_str(), sanitizedMain.size());
-            angel_lsp::LspLogger::Info("[Validation] Added main script section 'LSP_Doc'");
+            mod->AddScriptSection(currentUri.c_str(), sanitizedMain.c_str(), sanitizedMain.size());
 
             int r = mod->Build();
             angel_lsp::LspLogger::Info("[Validation] mod->Build() returned " + std::to_string(r));
@@ -259,7 +408,7 @@ namespace analysis
         m_engine->ClearMessageCallback();
         m_engine->DiscardModule(moduleName);
 
-        return m_diagnostics;
+        return m_diagnosticsByUri[currentUri];
     }
 
     void ValidationOracle::MessageCallback(const asSMessageInfo *msg, void *param)
@@ -276,15 +425,27 @@ namespace analysis
         }
 
         std::string sectionStr = msg->section ? msg->section : "";
+        std::string targetUri = sectionStr;
+        if (targetUri.empty() || targetUri == "LSP_Doc")
+        {
+            targetUri = m_activeValidationUri;
+        }
+
         std::string logMsg = "[Validation] " + std::string(msg->type == asMSGTYPE_ERROR ? "ERROR " : (msg->type == asMSGTYPE_WARNING ? "WARN " : "INFO "))
-            + "(" + sectionStr + ":" + std::to_string(msg->row) + ":" + std::to_string(msg->col) + "): " + msg->message;
+            + "(" + targetUri + ":" + std::to_string(msg->row) + ":" + std::to_string(msg->col) + "): " + msg->message;
 
         if (msg->type == asMSGTYPE_ERROR)
+        {
             angel_lsp::LspLogger::Error(logMsg);
+        }
         else if (msg->type == asMSGTYPE_WARNING)
+        {
             angel_lsp::LspLogger::Warn(logMsg);
+        }
         else
+        {
             angel_lsp::LspLogger::Info(logMsg);
+        }
 
         lsp::Diagnostic d;
 
@@ -292,7 +453,6 @@ namespace analysis
         d.range.start.line = msg->row > 0 ? msg->row - 1 : 0;
         d.range.start.character = msg->col > 0 ? msg->col - 1 : 0;
 
-        // AS doesn't provide end column reliably, so we default to the same line, column + 1
         d.range.end.line = d.range.start.line;
         d.range.end.character = d.range.start.character + 1;
 
@@ -312,7 +472,7 @@ namespace analysis
             break;
         }
 
-        m_diagnostics.push_back(d);
+        m_diagnosticsByUri[targetUri].push_back(d);
     }
 
 } // namespace analysis

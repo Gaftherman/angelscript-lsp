@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <unordered_set>
+#include <unordered_map>
 #include <mutex>
 #include <functional>
 #include "i18n/LspStrings.h"
@@ -46,7 +47,7 @@ namespace analysis
          * @param[in] code The AngelScript source code to validate.
          * @param[in] currentUri Optional document URI for include resolution.
          * @param[in] docResolver Optional callback to resolve open documents in memory.
-         * @return std::vector<lsp::Diagnostic> A vector of LSP diagnostics (errors/warnings).
+         * @return std::vector<lsp::Diagnostic> A vector of LSP diagnostics (errors/warnings) belonging strictly to currentUri.
          * @note Thread-safe execution protected by m_mutex.
          */
         std::vector<lsp::Diagnostic> ValidateSync(const std::string &code,
@@ -71,7 +72,8 @@ namespace analysis
         asIScriptEngine *m_engine;
         i18n::Locale m_locale;
         std::unordered_set<std::string> m_definedWords = {"DEBUG_MODE"};
-        std::vector<lsp::Diagnostic> m_diagnostics;
+        std::unordered_map<std::string, std::vector<lsp::Diagnostic>> m_diagnosticsByUri;
+        std::string m_activeValidationUri;
         std::mutex m_mutex;
 
         /**

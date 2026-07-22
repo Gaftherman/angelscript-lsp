@@ -421,8 +421,56 @@ namespace analysis
         return LoadFromSource(buffer.str(), engine, table, stringType, arrayType, logger, fileUri);
     }
 
+    void PredefinedLoader::RegisterDefaultPredefined(asIScriptEngine *engine, SymbolTable &table)
+    {
+        static const char *DEFAULT_PREDEFINED_CODE = R"(
+class string
+{
+    string();
+    string(const string &in);
+    uint length() const;
+    void resize(uint);
+    bool isEmpty() const;
+    string opAdd(const string &in) const;
+    string& opAssign(const string &in);
+}
+
+class array<T>
+{
+    array();
+    array(uint);
+    uint length() const;
+    void resize(uint);
+    void insertLast(const T &in);
+    void removeAt(uint);
+}
+
+class dictionary
+{
+    dictionary();
+    void set(const string &in, ? &in);
+    bool get(const string &in, ? &out) const;
+    bool exists(const string &in) const;
+    void delete(const string &in);
+}
+
+float sqrt(float v);
+float cos(float rad);
+float sin(float rad);
+float tan(float rad);
+float abs(float v);
+float pow(float base, float exp);
+float min(float a, float b);
+float max(float a, float b);
+void print(const string &in);
+)";
+        LoadFromSource(DEFAULT_PREDEFINED_CODE, engine, table, "string", "array", nullptr, "file:///as.predefined");
+    }
+
     bool PredefinedLoader::FindInWorkspace(const std::string &rootUri, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger)
     {
+        RegisterDefaultPredefined(engine, table);
+
         if (rootUri.empty())
             return false;
 

@@ -325,4 +325,105 @@ void DummyGlobal() {}
         auto diagsC = oracle.ValidateSync(inMemoryFiles["file:///C/tree2_C.as"], "file:///C/tree2_C.as", docResolver);
         CHECK(!diagsC.empty());
     }
+
+    TEST_CASE("Diagnostics from included files do not bleed into main file")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        analysis::ValidationOracle oracle(engine);
+
+        std::unordered_map<std::string, std::string> inMemoryFiles = {
+            {"file:///C/main.as", "#include \"math_utils.as\"\nvoid Main() { }"},
+            {"file:///C/math_utils.as", "void Helper() { UnknownFunctionCall(); }"}
+        };
+
+        auto docResolver = [&](const std::string &uri) -> const Document * {
+            static std::unordered_map<std::string, Document> docs;
+            auto it = inMemoryFiles.find(uri);
+            if (it != inMemoryFiles.end())
+            {
+                docs.insert_or_assign(uri, Document(uri, it->second));
+                return &docs.at(uri);
+            }
+            return nullptr;
+        };
+
+        // Main file has no error itself -> diagnostics for main.as MUST be empty (no diagnostic bleed!)
+        auto diagsMain = oracle.ValidateSync(inMemoryFiles["file:///C/main.as"], "file:///C/main.as", docResolver);
+        CHECK(diagsMain.empty());
+
+        // Secondary file has error -> validating math_utils.as returns error diagnostic
+        auto diagsChild = oracle.ValidateSync(inMemoryFiles["file:///C/math_utils.as"], "file:///C/math_utils.as", docResolver);
+        CHECK(!diagsChild.empty());
+    }
+
+    TEST_CASE("Preprocessor #include syntax validation: missing/unclosed quotes, trailing tokens, non-existent file")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        analysis::ValidationOracle oracle(engine);
+
+        // 1. Trailing garbage tokens
+        std::string codeTrailing = "#include \"math.as\" extra_garbage_tokens\nvoid Main() {}";
+        auto diagsTrailing = oracle.ValidateSync(codeTrailing, "file:///C/main1.as");
+        CHECK(!diagsTrailing.empty());
+        bool foundTrailingErr = false;
+        for (const auto &d : diagsTrailing)
+        {
+            if (d.message.find("unexpected characters") != std::string::npos)
+            {
+                foundTrailingErr = true;
+                break;
+            }
+        }
+        CHECK(foundTrailingErr);
+
+        // 2. Unclosed quote
+        std::string codeUnclosed = "#include \"math.as\nvoid Main() {}";
+        auto diagsUnclosed = oracle.ValidateSync(codeUnclosed, "file:///C/main2.as");
+        CHECK(!diagsUnclosed.empty());
+        bool foundUnclosedErr = false;
+        for (const auto &d : diagsUnclosed)
+        {
+            if (d.message.find("unclosed path delimiter") != std::string::npos)
+            {
+                foundUnclosedErr = true;
+                break;
+            }
+        }
+        CHECK(foundUnclosedErr);
+
+        // 3. Non-existent file
+        std::string codeMissing = "#include \"non_existent_file_path.as\"\nvoid Main() {}";
+        auto diagsMissing = oracle.ValidateSync(codeMissing, "file:///C/main3.as");
+        CHECK(!diagsMissing.empty());
+        bool foundMissingErr = false;
+        for (const auto &d : diagsMissing)
+        {
+            if (d.message.find("Included file not found") != std::string::npos)
+            {
+                foundMissingErr = true;
+                break;
+            }
+        }
+        CHECK(foundMissingErr);
+    }
+
+    TEST_CASE("Predefined symbols string, array, and math functions are consistent across all documents")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        analysis::SymbolTable globalTable;
+        analysis::PredefinedLoader::RegisterDefaultPredefined(engine, globalTable);
+        analysis::ValidationOracle oracle(engine);
+
+        std::string code = R"script(
+void Main()
+{
+    string s = "hello";
+    array<int> arr = {1, 2, 3};
+    float val = sqrt(16.0f) + cos(0.0f) + abs(-5.0f);
+}
+)script";
+
+        auto diags = oracle.ValidateSync(code, "file:///C/main.as");
+        CHECK(diags.empty());
+    }
 }
