@@ -64,7 +64,11 @@ namespace angel_lsp::i18n
             .diagUnclosedIncludeDelimiter = "Syntax error: unclosed path delimiter in #include",
             .diagUnexpectedCharsAfterInclude = "Syntax error: unexpected characters after #include directive",
             .diagRedefinitionOfSymbol = "Redefinition of symbol '{}'",
-            .diagMethodMustBeCalled = "Method '{}' must be called with ()"
+            .diagMethodMustBeCalled = "Method '{}' must be called with ()",
+            .diagUndeclaredNamespace = "Undeclared namespace '{}' in using directive",
+            .diagDuplicateUsingDirective = "Duplicate using namespace directive for '{}'",
+            .diagInvalidImportModule = "Invalid module string in import directive",
+            .diagDuplicateImport = "Redefinition of imported function '{}'"
         };
 
     static const LspStrings ES_STRINGS =
@@ -123,7 +127,11 @@ namespace angel_lsp::i18n
             .diagUnclosedIncludeDelimiter = "Error de sintaxis: delimitador de ruta sin cerrar en #include",
             .diagUnexpectedCharsAfterInclude = "Error de sintaxis: caracteres no esperados después de directiva #include",
             .diagRedefinitionOfSymbol = "Redefinición del símbolo '{}'",
-            .diagMethodMustBeCalled = "El método '{}' debe llamarse con ()"
+            .diagMethodMustBeCalled = "El método '{}' debe llamarse con ()",
+            .diagUndeclaredNamespace = "Espacio de nombres '{}' no declarado en directiva using",
+            .diagDuplicateUsingDirective = "Directiva using namespace duplicada para '{}'",
+            .diagInvalidImportModule = "Cadena de módulo no válida en directiva import",
+            .diagDuplicateImport = "Redefinición de la función importada '{}'"
         };
 
     Locale ParseLocale(const std::string &localeStr)

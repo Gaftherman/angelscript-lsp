@@ -104,6 +104,10 @@ namespace angel_lsp::i18n
         std::string_view diagUnexpectedCharsAfterInclude;
         std::string_view diagRedefinitionOfSymbol;
         std::string_view diagMethodMustBeCalled;
+        std::string_view diagUndeclaredNamespace;
+        std::string_view diagDuplicateUsingDirective;
+        std::string_view diagInvalidImportModule;
+        std::string_view diagDuplicateImport;
     };
 
     /**

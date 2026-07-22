@@ -8,6 +8,8 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolResolver.h"
 #include "analysis/TypeEvaluator.h"
+#include "analysis/validators/UsingValidator.h"
+#include "analysis/validators/ImportValidator.h"
 #include "document/Document.h"
 #include "i18n/LspStrings.h"
 #include <ankerl/unordered_dense.h>
@@ -280,6 +282,22 @@ namespace analysis
         auto walkNode = [&](auto self, TSNode node) -> void
         {
             const char *type = ts_node_type(node);
+
+            // --- Modular Validator Dispatches ---
+            if (type)
+            {
+                std::string tStr(type);
+                if (tStr == "using_statement" || tStr == "using_directive" || tStr == "using")
+                {
+                    auto uDiags = validators::UsingValidator::Validate(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), uDiags.begin(), uDiags.end());
+                }
+                else if (tStr == "import_statement" || tStr == "import_declaration" || tStr == "import")
+                {
+                    auto iDiags = validators::ImportValidator::Validate(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), iDiags.begin(), iDiags.end());
+                }
+            }
 
             // --- Check 2: Uncalled Method / Function Reference as Standalone Expression Statement ---
             if (type && std::string(type) == "expression_statement")

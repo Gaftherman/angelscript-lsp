@@ -226,3 +226,65 @@ TEST_SUITE("Type Inference and Mismatch")
         CHECK(errorCount == 1);
     }
 }
+
+TEST_SUITE("Using and Import Validation")
+{
+    TEST_CASE("Valid using namespace statement")
+    {
+        analysis::SymbolTable globalTable;
+        std::string mockPredefined = R"(
+            namespace Math {
+                void Sin() {}
+            }
+        )";
+        analysis::PredefinedLoader::LoadFromSource(mockPredefined, globalTable, "string", "array");
+
+        analysis::ValidationOracle oracle;
+        std::string code = "using namespace Math;";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_using_valid.as", nullptr, &globalTable);
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
+
+    TEST_CASE("Invalid undeclared using namespace statement")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = "using namespace NonExistentNamespace;";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_using_invalid.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 1);
+    }
+
+    TEST_CASE("Invalid import module directive")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = "import void Kill() from;";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_import_invalid.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+}
