@@ -21,6 +21,14 @@ namespace analysis
         static void CollectGlobals(const Document &doc, SymbolTable &table, std::function<const Document *(const std::string &)> docResolver = nullptr);
 
         /**
+         * @brief Collects local symbols and parameters for all functions/methods in the document.
+         *
+         * @param doc The document containing the source code.
+         * @param table The symbol table to populate.
+         */
+        static void CollectLocals(const Document &doc, SymbolTable &table);
+
+        /**
          * @brief Updates the preprocessor defined words used for filtering symbols in inactive #if blocks.
          */
         static void SetDefinedWords(const std::vector<std::string> &defines);

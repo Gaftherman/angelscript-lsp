@@ -41,73 +41,7 @@ namespace angel_lsp
         return out;
     }
 
-    static void CollectLocalsFunctions(TSNode node, const Document &doc, analysis::SymbolTable &table)
-    {
-        uint32_t count = ts_node_child_count(node);
-        for (uint32_t i = 0; i < count; i++)
-        {
-            TSNode child = ts_node_child(node, i);
-            std::string_view t = ts_node_type(child);
 
-            if (t == "func_declaration")
-            {
-                std::string funcName = "";
-                TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
-                if (!ts_node_is_null(nameNode)) {
-                    funcName = analysis::SymbolCollector::GetNodeText(nameNode, doc);
-                }
-
-                TSNode params = ts_node_child_by_field_name(child, "parameters", 10);
-                analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table, funcName);
-
-                TSNode body = ts_node_child_by_field_name(child, "body", 4);
-                if (!ts_node_is_null(body))
-                {
-                    analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
-                }
-            }
-            else if (t == "funcdef_declaration" || t == "interface_method")
-            {
-                std::string funcName = "";
-                TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
-                if (!ts_node_is_null(nameNode)) {
-                    funcName = analysis::SymbolCollector::GetNodeText(nameNode, doc);
-                }
-
-                TSNode params = ts_node_child_by_field_name(child, "parameters", 10);
-                analysis::SymbolCollector::RegisterParamsAsLocals(params, doc, table, funcName);
-            }
-            else if (t == "virtual_property")
-            {
-                for (uint32_t j = 0; j < ts_node_child_count(child); j++)
-                {
-                    TSNode acc = ts_node_child(child, j);
-                    if (std::string_view(ts_node_type(acc)) == "accessor")
-                    {
-                        TSNode body = ts_node_child_by_field_name(acc, "body", 4);
-                        if (!ts_node_is_null(body))
-                        {
-                            analysis::SymbolCollector::TraverseLocals(body, doc, table, nullptr);
-                        }
-                    }
-                }
-            }
-            else if (t == "namespace_declaration" || t == "class_declaration" || t == "interface_declaration" || t == "mixin_declaration")
-            {
-                TSNode body = ts_node_child_by_field_name(child, "body", 4);
-                if (!ts_node_is_null(body))
-                {
-                    CollectLocalsFunctions(body, doc, table);
-                }
-            }
-        }
-    }
-
-    static void CollectLocalsForDocument(const Document &doc, analysis::SymbolTable &table)
-    {
-        TSNode root = doc.RootNode();
-        CollectLocalsFunctions(root, doc, table);
-    }
 
     Server::Server(ServerConfig config)
         : m_config(std::move(config))
@@ -326,7 +260,7 @@ namespace angel_lsp
                 table.ClearAll();
                 table.MergeGlobals(m_globalSymbolTable);
                 analysis::SymbolCollector::CollectGlobals(*m_documents[uri], table, docResolver);
-                CollectLocalsForDocument(*m_documents[uri], table);
+                analysis::SymbolCollector::CollectLocals(*m_documents[uri], table);
             });
 
         messageHandler->add<lsp::notifications::TextDocument_DidChange>(
@@ -362,7 +296,7 @@ namespace angel_lsp
                         table.ClearAll();
                         table.MergeGlobals(m_globalSymbolTable);
                         analysis::SymbolCollector::CollectGlobals(*it->second, table, docResolver);
-                        CollectLocalsForDocument(*it->second, table);
+                        analysis::SymbolCollector::CollectLocals(*it->second, table);
 
                         ScheduleValidation(uri, newText);
                     }
@@ -390,12 +324,12 @@ namespace angel_lsp
 
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
-                if (m_documents.find(uri) != m_documents.end())
+                auto docIt = m_documents.find(uri);
+                auto tableIt = m_symbolTables.find(uri);
+                if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
-                    auto &table = m_symbolTables[uri];
-
                     lsp::requests::TextDocument_Hover::Result result;
-                    features::ProcessHover(result, req, *m_documents[uri], table, m_diagCache.get(), m_locale, asEngine);
+                    features::ProcessHover(result, req, *docIt->second, tableIt->second, m_diagCache.get(), m_locale, asEngine);
                     return result;
                 }
                 return lsp::requests::TextDocument_Hover::Result{};
@@ -411,11 +345,11 @@ namespace angel_lsp
 
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
-                if (m_documents.find(uri) != m_documents.end())
+                auto docIt = m_documents.find(uri);
+                auto tableIt = m_symbolTables.find(uri);
+                if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
-                    auto &table = m_symbolTables[uri];
-
-                    return features::ProcessDefinition(req, *m_documents[uri], table, asEngine);
+                    return features::ProcessDefinition(req, *docIt->second, tableIt->second, asEngine);
                 }
                 return lsp::requests::TextDocument_Definition::Result{};
             });
@@ -430,11 +364,11 @@ namespace angel_lsp
 
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
-                if (m_documents.find(uri) != m_documents.end())
+                auto docIt = m_documents.find(uri);
+                auto tableIt = m_symbolTables.find(uri);
+                if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
-                    auto &table = m_symbolTables[uri];
-
-                    return features::ProcessTypeDefinition(req, *m_documents[uri], table, asEngine);
+                    return features::ProcessTypeDefinition(req, *docIt->second, tableIt->second, asEngine);
                 }
                 return lsp::requests::TextDocument_TypeDefinition::Result{};
             });
@@ -449,9 +383,11 @@ namespace angel_lsp
 
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
-                if (m_documents.find(uri) != m_documents.end())
+                auto docIt = m_documents.find(uri);
+                auto tableIt = m_symbolTables.find(uri);
+                if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
-                    return features::ProcessCompletion(req, *m_documents[uri], m_symbolTables[uri], asEngine);
+                    return features::ProcessCompletion(req, *docIt->second, tableIt->second, asEngine);
                 }
                 return lsp::requests::TextDocument_Completion::Result{};
             });
@@ -466,9 +402,11 @@ namespace angel_lsp
 
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
-                if (m_documents.find(uri) != m_documents.end())
+                auto docIt = m_documents.find(uri);
+                auto tableIt = m_symbolTables.find(uri);
+                if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
-                    return features::ProcessSemanticTokensFull(req, *m_documents[uri], m_symbolTables[uri]);
+                    return features::ProcessSemanticTokensFull(req, *docIt->second, tableIt->second);
                 }
                 return lsp::requests::TextDocument_SemanticTokens_Full::Result{};
             });
@@ -483,9 +421,11 @@ namespace angel_lsp
 
                 std::string uri = NormalizeUri(req.textDocument.uri.toString());
                 std::shared_lock lock(m_docMutex);
-                if (m_documents.find(uri) != m_documents.end())
+                auto docIt = m_documents.find(uri);
+                auto tableIt = m_symbolTables.find(uri);
+                if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
-                    return features::ProcessSignatureHelp(req, *m_documents[uri], m_symbolTables[uri], asEngine);
+                    return features::ProcessSignatureHelp(req, *docIt->second, tableIt->second, asEngine);
                 }
                 return lsp::requests::TextDocument_SignatureHelp::Result{};
             });
