@@ -47,14 +47,6 @@ namespace analysis
         static bool LoadFromFile(const std::string &filePath, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType = "string", const std::string &arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr);
 
         /**
-         * @brief Registers default standard types (string, array, dictionary, math functions) into engine and table.
-         *
-         * @param[in] engine Pointer to the AngelScript engine instance.
-         * @param[out] table The symbol table to populate.
-         */
-        static void RegisterDefaultPredefined(asIScriptEngine *engine, SymbolTable &table);
-
-        /**
          * @brief Loads definitions directly from source code string.
          *
          * @param[in] source Raw AngelScript header source text.

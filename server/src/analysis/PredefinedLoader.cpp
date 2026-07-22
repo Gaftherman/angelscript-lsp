@@ -8,6 +8,8 @@
 #include <fstream>
 #include <sstream>
 #include <unordered_set>
+#include <filesystem>
+#include <algorithm>
 #include "utils/LspLogger.h"
 #include "document/Document.h"
 #include "analysis/SymbolCollector.h"
@@ -498,58 +500,35 @@ namespace analysis
         return LoadFromSource(buffer.str(), engine, table, stringType, arrayType, logger, fileUri);
     }
 
-    void PredefinedLoader::RegisterDefaultPredefined(asIScriptEngine *engine, SymbolTable &table)
+    static std::string UrlDecode(const std::string &in)
     {
-        static const char *DEFAULT_PREDEFINED_CODE = R"(
-class string
-{
-    string();
-    string(const string &in);
-    uint length() const;
-    void resize(uint);
-    bool isEmpty() const;
-    string opAdd(const string &in) const;
-    string& opAssign(const string &in);
-}
-
-class array<T>
-{
-    array();
-    array(uint);
-    uint length() const;
-    void resize(uint);
-    void insertLast(const T &in);
-    void removeAt(uint);
-}
-
-class dictionary
-{
-    dictionary();
-    void set(const string &in, ? &in);
-    bool get(const string &in, ? &out) const;
-    bool exists(const string &in) const;
-    void delete(const string &in);
-}
-
-float sqrt(float v);
-float cos(float rad);
-float sin(float rad);
-float tan(float rad);
-float abs(float v);
-float pow(float base, float exp);
-float min(float a, float b);
-float max(float a, float b);
-void print(const string &in);
-)";
-        LoadFromSource(DEFAULT_PREDEFINED_CODE, engine, table, "string", "array", nullptr, "file:///as.predefined");
+        std::string out;
+        out.reserve(in.size());
+        for (size_t i = 0; i < in.size(); ++i)
+        {
+            if (in[i] == '%' && i + 2 < in.size())
+            {
+                int hexVal = 0;
+                std::stringstream ss;
+                ss << std::hex << in.substr(i + 1, 2);
+                if (ss >> hexVal)
+                {
+                    out += static_cast<char>(hexVal);
+                    i += 2;
+                    continue;
+                }
+            }
+            out += in[i];
+        }
+        return out;
     }
 
     bool PredefinedLoader::FindInWorkspace(const std::string &rootUri, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger)
     {
-        RegisterDefaultPredefined(engine, table);
-
         if (rootUri.empty())
+        {
             return false;
+        }
 
         std::string path = rootUri;
         if (path.find("file://") == 0)
@@ -560,9 +539,55 @@ void print(const string &in);
                 path = path.substr(1);
             }
         }
+        path = UrlDecode(path);
+        std::replace(path.begin(), path.end(), '/', '\\');
 
-        std::string fullPath = path + "/as.predefined";
-        return LoadFromFile(fullPath, engine, table, stringType, arrayType, logger);
+        std::vector<std::string> predefinedFiles;
+        try
+        {
+            namespace fs = std::filesystem;
+            if (fs::exists(path) && fs::is_directory(path))
+            {
+                for (const auto &entry : fs::directory_iterator(path))
+                {
+                    if (entry.is_regular_file())
+                    {
+                        std::string filename = entry.path().filename().string();
+                        if (filename == "as.predefined" || filename.ends_with(".predefined") || filename.ends_with(".as.predefined"))
+                        {
+                            predefinedFiles.push_back(entry.path().string());
+                        }
+                    }
+                }
+            }
+        }
+        catch (const std::exception &ex)
+        {
+            angel_lsp::LspLogger::Error("[Predefined] Exception scanning predefined files in workspace: " + std::string(ex.what()));
+        }
+
+        // Sort predefined files deterministically so as.predefined comes first
+        std::sort(predefinedFiles.begin(), predefinedFiles.end(), [](const std::string &a, const std::string &b)
+        {
+            std::string nameA = std::filesystem::path(a).filename().string();
+            std::string nameB = std::filesystem::path(b).filename().string();
+            if (nameA == "as.predefined") return true;
+            if (nameB == "as.predefined") return false;
+            return nameA < nameB;
+        });
+
+        bool anyLoaded = false;
+        for (const auto &filePath : predefinedFiles)
+        {
+            angel_lsp::LspLogger::Info("[Predefined] Loading workspace predefined file: '" + filePath + "'");
+            bool ok = LoadFromFile(filePath, engine, table, stringType, arrayType, logger);
+            if (ok)
+            {
+                anyLoaded = true;
+            }
+        }
+
+        return anyLoaded;
     }
 
 } // namespace analysis

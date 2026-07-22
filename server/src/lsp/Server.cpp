@@ -56,8 +56,6 @@ namespace angel_lsp
         oracle = std::make_unique<analysis::ValidationOracle>(asEngine);
         m_diagCache = std::make_unique<analysis::DiagnosticCache>();
 
-        analysis::PredefinedLoader::RegisterDefaultPredefined(asEngine, m_globalSymbolTable);
-
         m_connection = std::make_unique<lsp::Connection>(lsp::io::standardIO());
         messageHandler = std::make_unique<lsp::MessageHandler>(*m_connection);
 

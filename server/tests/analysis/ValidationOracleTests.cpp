@@ -411,7 +411,7 @@ void DummyGlobal() {}
     {
         fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
         analysis::SymbolTable globalTable;
-        analysis::PredefinedLoader::RegisterDefaultPredefined(engine, globalTable);
+        analysis::PredefinedLoader::LoadFromSource("class string { string(); } class array<T> { array(); } float sqrt(float); float cos(float); float abs(float);", engine, globalTable);
         analysis::ValidationOracle oracle(engine);
 
         std::string code = R"script(
