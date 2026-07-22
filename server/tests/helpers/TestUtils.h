@@ -7,6 +7,8 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolResolver.h"
 
+class asIScriptEngine;
+
 namespace angel_lsp::test
 {
 
@@ -27,10 +29,10 @@ namespace angel_lsp::test
      * @param table The target SymbolTable instance to populate.
      * @param asEngine Optional AngelScript engine pointer for built-in types.
      */
-    inline void PopulateTestSymbolTable(const Document &doc, analysis::SymbolTable &table, asIScriptEngine *asEngine = nullptr)
+    inline void PopulateTestSymbolTable(const Document &doc, analysis::SymbolTable &table)
     {
         analysis::SymbolCollector::CollectGlobals(doc, table);
-        analysis::SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, asEngine);
+        analysis::SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
     }
 
 } // namespace angel_lsp::test
