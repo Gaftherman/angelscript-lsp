@@ -370,91 +370,90 @@ namespace analysis
                 }
             }
 
-            if (!normCurrentUri.empty())
-            {
-                std::unordered_set<std::string> visited;
-                visited.insert(normCurrentUri);
-
-                std::function<void(const std::string &, const std::string &)> loadIncludes =
-                    [&](const std::string &baseUri, const std::string &srcCode)
+            std::unordered_set<std::string> visited;
+            std::function<void(const std::string &, const std::string &)> loadIncludes =
+                [&](const std::string &baseUri, const std::string &srcCode)
+                {
+                    std::stringstream ss(srcCode);
+                    std::string line;
+                    size_t lineIdx = 0;
+                    while (std::getline(ss, line))
                     {
-                        std::stringstream ss(srcCode);
-                        std::string line;
-                        size_t lineIdx = 0;
-                        while (std::getline(ss, line))
+                        size_t firstNonSpace = line.find_first_not_of(" \t\r");
+                        if (firstNonSpace != std::string::npos && line.substr(firstNonSpace).starts_with("#include"))
                         {
-                            size_t firstNonSpace = line.find_first_not_of(" \t\r");
-                            if (firstNonSpace != std::string::npos && line.substr(firstNonSpace).starts_with("#include"))
+                            try
                             {
-                                try
+                                std::vector<lsp::Diagnostic> incDiags;
+                                bool validDirect = ValidateIncludeDirective(line, lineIdx, firstNonSpace, baseUri, docResolver, m_locale, incDiags);
+                                std::string normBaseUri = NormalizeUri(baseUri);
+                                for (const auto &d : incDiags)
                                 {
-                                    std::vector<lsp::Diagnostic> incDiags;
-                                    bool validDirect = ValidateIncludeDirective(line, lineIdx, firstNonSpace, baseUri, docResolver, m_locale, incDiags);
-                                    std::string normBaseUri = NormalizeUri(baseUri);
-                                    for (const auto &d : incDiags)
-                                    {
-                                        m_diagnosticsByUri[normBaseUri].push_back(d);
-                                    }
+                                    m_diagnosticsByUri[normBaseUri].push_back(d);
+                                }
 
-                                    if (validDirect)
-                                    {
-                                        std::string relPath = SymbolCollector::ExtractIncludePath(line.substr(firstNonSpace));
-                                        std::string targetUri = SymbolCollector::ResolveIncludeUri(baseUri, relPath);
-                                        std::string normTargetUri = NormalizeUri(targetUri);
+                                if (validDirect)
+                                {
+                                    std::string relPath = SymbolCollector::ExtractIncludePath(line.substr(firstNonSpace));
+                                    std::string targetUri = SymbolCollector::ResolveIncludeUri(baseUri, relPath);
+                                    std::string normTargetUri = NormalizeUri(targetUri);
 
-                                        if (!normTargetUri.empty() && visited.insert(normTargetUri).second)
+                                    if (!normTargetUri.empty() && visited.insert(normTargetUri).second)
+                                    {
+                                        std::string incContent;
+                                        const Document *openDoc = docResolver ? docResolver(normTargetUri) : nullptr;
+                                        if (openDoc)
                                         {
-                                            std::string incContent;
-                                            const Document *openDoc = docResolver ? docResolver(normTargetUri) : nullptr;
-                                            if (openDoc)
+                                            incContent = openDoc->GetText();
+                                        }
+                                        else
+                                        {
+                                            std::string filePath = UrlDecode(normTargetUri);
+                                            if (filePath.starts_with("file:///"))
                                             {
-                                                incContent = openDoc->GetText();
+                                                filePath = filePath.substr(8);
                                             }
-                                            else
+                                            else if (filePath.starts_with("file://"))
                                             {
-                                                std::string filePath = UrlDecode(normTargetUri);
-                                                if (filePath.starts_with("file:///"))
-                                                {
-                                                    filePath = filePath.substr(8);
-                                                }
-                                                else if (filePath.starts_with("file://"))
-                                                {
-                                                    filePath = filePath.substr(7);
-                                                }
-                                                std::replace(filePath.begin(), filePath.end(), '/', '\\');
-
-                                                std::ifstream infile(filePath);
-                                                if (infile.is_open())
-                                                {
-                                                    std::stringstream buf;
-                                                    buf << infile.rdbuf();
-                                                    incContent = buf.str();
-                                                }
+                                                filePath = filePath.substr(7);
                                             }
+                                            std::replace(filePath.begin(), filePath.end(), '/', '\\');
 
-                                            if (!incContent.empty())
+                                            std::ifstream infile(filePath);
+                                            if (infile.is_open())
                                             {
-                                                loadIncludes(normTargetUri, incContent);
-                                                std::string sanitizedInc = SanitizeCodeForEngine(incContent, m_definedWords);
-                                                angel_lsp::LspLogger::Info("[Validation] Adding included script section: '" + normTargetUri + "' (" + std::to_string(sanitizedInc.size()) + " bytes)");
-                                                int secRes = mod->AddScriptSection(normTargetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
-                                                if (secRes < 0)
-                                                {
-                                                    angel_lsp::LspLogger::Error("[Validation] AddScriptSection('" + normTargetUri + "') failed with error code: " + std::to_string(secRes));
-                                                }
+                                                std::stringstream buf;
+                                                buf << infile.rdbuf();
+                                                incContent = buf.str();
+                                            }
+                                        }
+
+                                        if (!incContent.empty())
+                                        {
+                                            loadIncludes(normTargetUri, incContent);
+                                            std::string sanitizedInc = SanitizeCodeForEngine(incContent, m_definedWords);
+                                            angel_lsp::LspLogger::Info("[Validation] Adding included script section: '" + normTargetUri + "' (" + std::to_string(sanitizedInc.size()) + " bytes)");
+                                            int secRes = mod->AddScriptSection(normTargetUri.c_str(), sanitizedInc.c_str(), sanitizedInc.size());
+                                            if (secRes < 0)
+                                            {
+                                                angel_lsp::LspLogger::Error("[Validation] AddScriptSection('" + normTargetUri + "') failed with error code: " + std::to_string(secRes));
                                             }
                                         }
                                     }
                                 }
-                                catch (const std::exception &ex)
-                                {
-                                    angel_lsp::LspLogger::Error("[Validation] Exception during include processing: " + std::string(ex.what()));
-                                }
                             }
-                            lineIdx++;
+                            catch (const std::exception &ex)
+                            {
+                                angel_lsp::LspLogger::Error("[Validation] Exception during include processing: " + std::string(ex.what()));
+                            }
                         }
-                    };
+                        lineIdx++;
+                    }
+                };
 
+            if (!normCurrentUri.empty())
+            {
+                visited.insert(normCurrentUri);
                 loadIncludes(normCurrentUri, code);
             }
 
@@ -466,9 +465,32 @@ namespace analysis
                 angel_lsp::LspLogger::Error("[Validation] AddScriptSection('" + normCurrentUri + "') failed with error code: " + std::to_string(secRes));
             }
 
+            bool hasAbstracts = (abstractCode && !abstractCode->empty());
+
             int r = mod->Build();
             std::string statusStr = (r >= 0) ? "SUCCESS" : ("BUILD_ERROR (code " + std::to_string(r) + ")");
             angel_lsp::LspLogger::Info("[Validation] mod->Build() completed -> " + statusStr);
+
+            if (r < 0 && hasAbstracts)
+            {
+                angel_lsp::LspLogger::Warn("[Validation] mod->Build() failed with Abstracts section present. Retrying build without Abstracts to isolate user code diagnostics...");
+                m_diagnosticsByUri.clear();
+                m_engine->DiscardModule(moduleName);
+                mod = m_engine->GetModule(moduleName, asGM_ALWAYS_CREATE);
+                if (mod)
+                {
+                    if (!normCurrentUri.empty())
+                    {
+                        visited.clear();
+                        visited.insert(normCurrentUri);
+                        loadIncludes(normCurrentUri, code);
+                    }
+                    mod->AddScriptSection(normCurrentUri.c_str(), sanitizedMain.c_str(), sanitizedMain.size());
+                    r = mod->Build();
+                    std::string retryStatusStr = (r >= 0) ? "SUCCESS" : ("BUILD_ERROR (code " + std::to_string(r) + ")");
+                    angel_lsp::LspLogger::Info("[Validation] Retry mod->Build() (without Abstracts) completed -> " + retryStatusStr);
+                }
+            }
         }
         else
         {
@@ -499,7 +521,9 @@ namespace analysis
     {
         if (msg->section != nullptr && std::string(msg->section) == "Abstracts")
         {
-            return; // Ignore any errors generated from our injected abstract classes
+            std::string logMsg = "[Validation] [Abstracts Section Warning] (" + std::to_string(msg->row) + ":" + std::to_string(msg->col) + "): " + msg->message;
+            angel_lsp::LspLogger::Warn(logMsg);
+            return;
         }
 
         std::string sectionStr = msg->section ? msg->section : "";

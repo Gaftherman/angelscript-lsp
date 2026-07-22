@@ -483,7 +483,25 @@ namespace analysis
                     {
                         if (child->kind == SymbolKind::Method)
                         {
-                            scriptCode += "  " + child->BuildSignature() + " {}\n";
+                            std::string retType = child->typeInfo;
+                            std::string mBody = "{}";
+                            if (retType.find('@') != std::string::npos)
+                            {
+                                mBody = "{ return null; }";
+                            }
+                            else if (retType == "int" || retType == "uint" || retType == "float" || retType == "double" || retType == "bool" || retType.find('&') != std::string::npos)
+                            {
+                                mBody = "{ return 0; }";
+                            }
+                            else if (retType == "string")
+                            {
+                                mBody = "{ return \"\"; }";
+                            }
+                            else if (!retType.empty() && retType != "void")
+                            {
+                                mBody = "{ return null; }";
+                            }
+                            scriptCode += "  " + child->BuildSignature() + " " + mBody + "\n";
                         }
                         else if (child->kind == SymbolKind::Variable || child->kind == SymbolKind::Property)
                         {
@@ -496,17 +514,21 @@ namespace analysis
                 {
                     std::string retType = sym->typeInfo;
                     std::string funcBody = "{}";
-                    if (retType.find('@') != std::string::npos || retType == "auto@")
+                    if (retType.find('@') != std::string::npos)
                     {
                         funcBody = "{ return null; }";
                     }
-                    else if (retType == "int" || retType == "uint" || retType == "float" || retType == "double" || retType == "bool")
+                    else if (retType == "int" || retType == "uint" || retType == "float" || retType == "double" || retType == "bool" || retType.find('&') != std::string::npos)
                     {
                         funcBody = "{ return 0; }";
                     }
+                    else if (retType == "string")
+                    {
+                        funcBody = "{ return \"\"; }";
+                    }
                     else if (!retType.empty() && retType != "void")
                     {
-                        funcBody = "{ " + retType + " dummy; return dummy; }";
+                        funcBody = "{ return null; }";
                     }
                     scriptCode += sym->BuildSignature() + " " + funcBody + "\n";
                 }
