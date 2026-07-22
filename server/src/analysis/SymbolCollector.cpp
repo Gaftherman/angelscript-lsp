@@ -21,11 +21,12 @@ static inline TSNode FieldChild(TSNode node, const char* field)
 namespace analysis
 {
     static std::unordered_set<std::string> g_definedWords = {"DEBUG_MODE"};
-    static std::vector<bool> g_preprocStack;
+    static std::mutex g_definedWordsMutex;
+    static thread_local std::vector<bool> t_preprocStack;
 
     static bool IsPreprocActive()
     {
-        for (bool b : g_preprocStack)
+        for (bool b : t_preprocStack)
         {
             if (!b)
             {
@@ -37,6 +38,7 @@ namespace analysis
 
     void SymbolCollector::SetDefinedWords(const std::vector<std::string> &defines)
     {
+        std::lock_guard<std::mutex> lock(g_definedWordsMutex);
         g_definedWords.clear();
         for (const auto &d : defines)
         {
@@ -471,7 +473,7 @@ namespace analysis
 
         if (guard.isTop)
         {
-            g_preprocStack.clear();
+            t_preprocStack.clear();
         }
 
         TraverseGlobals(root, doc, table, nullptr);
@@ -678,14 +680,18 @@ namespace analysis
                     isNegated = true;
                     word = word.substr(1);
                 }
-                bool isDefined = g_definedWords.contains(word);
+                bool isDefined = false;
+                {
+                    std::lock_guard<std::mutex> lock(g_definedWordsMutex);
+                    isDefined = g_definedWords.contains(word);
+                }
                 bool isActive = isNegated ? !isDefined : isDefined;
-                g_preprocStack.push_back(isActive);
+                t_preprocStack.push_back(isActive);
             }
             else if (text.starts_with("#endif"))
             {
-                if (!g_preprocStack.empty())
-                    g_preprocStack.pop_back();
+                if (!t_preprocStack.empty())
+                    t_preprocStack.pop_back();
             }
             else if (text.starts_with("#include"))
             {
