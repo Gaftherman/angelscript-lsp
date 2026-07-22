@@ -518,11 +518,16 @@ namespace analysis
                             {
                                 std::string retType = child->typeInfo;
                                 std::string mBody = "{}";
-                                if (retType.find('@') != std::string::npos)
+                                if (retType.empty() || retType == "void")
+                                {
+                                    mBody = "{}";
+                                }
+                                else if (retType.find('@') != std::string::npos)
                                 {
                                     mBody = "{ return null; }";
                                 }
-                                else if (retType == "int" || retType == "uint" || retType == "float" || retType == "double" || retType == "bool" || retType.find('&') != std::string::npos)
+                                else if (retType == "int" || retType == "uint" || retType == "float" || retType == "double" || retType == "bool" ||
+                                         retType == "int8" || retType == "int16" || retType == "int64" || retType == "uint8" || retType == "uint16" || retType == "uint64")
                                 {
                                     mBody = "{ return 0; }";
                                 }
@@ -530,9 +535,9 @@ namespace analysis
                                 {
                                     mBody = "{ return \"\"; }";
                                 }
-                                else if (!retType.empty() && retType != "void")
+                                else
                                 {
-                                    mBody = "{ return null; }";
+                                    mBody = "{ " + retType + " dummy; return dummy; }";
                                 }
                                 scriptCode += "  " + child->BuildSignature() + " " + mBody + "\n";
                             }
