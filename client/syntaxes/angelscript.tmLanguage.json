@@ -11,6 +11,7 @@
     { "include": "#keywords" },
     { "include": "#storage" },
     { "include": "#modifiers" },
+    { "include": "#namespaces" },
     { "include": "#functions" },
     { "include": "#types" },
     { "include": "#operators" },
@@ -59,7 +60,7 @@
           "name": "meta.preprocessor.include.angelscript",
           "begin": "^\\s*(#)\\s*(include)\\b",
           "beginCaptures": {
-            "1": { "name": "punctuation.definition.directive.angelscript" },
+            "1": { "name": "punctuation.definition.directive.angelscript keyword.control.directive.include.angelscript" },
             "2": { "name": "keyword.control.directive.include.angelscript" }
           },
           "end": "$\n?",
@@ -80,7 +81,7 @@
           "name": "meta.preprocessor.conditional.angelscript",
           "begin": "^\\s*(#)\\s*(ifdef|ifndef|if|elif|else|endif)\\b",
           "beginCaptures": {
-            "1": { "name": "punctuation.definition.directive.angelscript" },
+            "1": { "name": "punctuation.definition.directive.angelscript keyword.control.directive.conditional.angelscript" },
             "2": { "name": "keyword.control.directive.conditional.angelscript" }
           },
           "end": "$\n?",
@@ -95,7 +96,7 @@
           "name": "meta.preprocessor.angelscript",
           "begin": "^\\s*(#)\\s*([A-Za-z_][A-Za-z0-9_]*)\\b",
           "beginCaptures": {
-            "1": { "name": "punctuation.definition.directive.angelscript" },
+            "1": { "name": "punctuation.definition.directive.angelscript keyword.control.directive.angelscript" },
             "2": { "name": "keyword.control.directive.angelscript" }
           },
           "end": "$\n?"
@@ -107,7 +108,13 @@
         {
           "name": "string.quoted.triple.angelscript",
           "begin": "\"\"\"",
-          "end": "\"\"\""
+          "end": "\"\"\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.angelscript",
+              "match": "\\\\."
+            }
+          ]
         },
         {
           "name": "string.quoted.double.angelscript",
@@ -137,11 +144,11 @@
       "patterns": [
         {
           "name": "constant.numeric.hex.angelscript",
-          "match": "\\b0[xX][0-9a-fA-F]+\\b"
+          "match": "\\b0[xX][0-9a-fA-F]+[uUlL]*\\b"
         },
         {
           "name": "constant.numeric.binary.angelscript",
-          "match": "\\b0[bB][01]+\\b"
+          "match": "\\b0[bB][01]+[uUlL]*\\b"
         },
         {
           "name": "constant.numeric.float.angelscript",
@@ -149,27 +156,67 @@
         },
         {
           "name": "constant.numeric.decimal.angelscript",
-          "match": "\\b[0-9]+\\b"
+          "match": "\\b[0-9]+[uUlL]*\\b"
         }
       ]
     },
     "constants": {
       "patterns": [
         {
-          "name": "constant.language.angelscript",
-          "match": "\\b(true|false|null)\\b"
+          "name": "constant.language.bool.true.angelscript",
+          "match": "\\btrue\\b"
+        },
+        {
+          "name": "constant.language.bool.false.angelscript",
+          "match": "\\bfalse\\b"
+        },
+        {
+          "name": "constant.language.null.angelscript",
+          "match": "\\bnull\\b"
+        },
+        {
+          "name": "variable.other.enummember.angelscript constant.other.enum.angelscript",
+          "match": "\\b[A-Z_][A-Z0-9_]{2,}\\b"
         }
       ]
     },
     "keywords": {
       "patterns": [
         {
-          "name": "keyword.control.angelscript",
-          "match": "\\b(if|else|for|foreach|while|do|switch|case|default|try|catch|break|continue|return)\\b"
+          "name": "keyword.control.conditional.angelscript",
+          "match": "\\b(if|else|switch|case|default)\\b"
+        },
+        {
+          "name": "keyword.control.repeat.angelscript",
+          "match": "\\b(for|foreach|while|do)\\b"
+        },
+        {
+          "name": "keyword.control.flow.angelscript",
+          "match": "\\b(return|break|continue)\\b"
+        },
+        {
+          "name": "keyword.control.exception.angelscript",
+          "match": "\\b(try|catch)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.angelscript",
+          "match": "\\b(is|not|and|or|xor|in)\\b"
+        },
+        {
+          "name": "keyword.operator.new.angelscript",
+          "match": "\\bnew\\b"
+        },
+        {
+          "name": "keyword.operator.delete.angelscript",
+          "match": "\\bdelete\\b"
+        },
+        {
+          "name": "keyword.operator.cast.angelscript",
+          "match": "\\bcast\\b"
         },
         {
           "name": "keyword.other.angelscript",
-          "match": "\\b(import|from|using|cast|delete|namespace|get|set)\\b"
+          "match": "\\b(import|from|using|namespace|get|set)\\b"
         }
       ]
     },
@@ -185,7 +232,7 @@
         },
         {
           "name": "support.type.angelscript",
-          "match": "\\b(string|array)\\b"
+          "match": "\\b(string|array|dictionary)\\b"
         }
       ]
     },
@@ -200,8 +247,32 @@
           "match": "\\*"
         },
         {
+          "name": "storage.type.modifier.access.control.angelscript keyword.other.modifier.angelscript",
+          "match": "\\b(private|protected|public)\\b"
+        },
+        {
           "name": "keyword.other.modifier.angelscript storage.modifier.angelscript",
-          "match": "\\b(private|protected|public|const|override|explicit|property|shared|abstract|final|external)\\b"
+          "match": "\\b(const|override|explicit|property|shared|abstract|final|external)\\b"
+        }
+      ]
+    },
+    "namespaces": {
+      "patterns": [
+        {
+          "name": "entity.name.namespace.angelscript",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*::)"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.destructor.angelscript",
+          "match": "~[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*\\()"
+        },
+        {
+          "name": "entity.name.function.angelscript",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*\\()"
         }
       ]
     },
@@ -210,14 +281,6 @@
         {
           "name": "entity.name.type.class.angelscript",
           "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
-        }
-      ]
-    },
-    "functions": {
-      "patterns": [
-        {
-          "name": "entity.name.function.angelscript",
-          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*\\()"
         }
       ]
     },
