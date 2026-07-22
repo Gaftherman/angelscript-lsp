@@ -331,7 +331,7 @@ namespace angel_lsp
             [this](lsp::requests::TextDocument_Hover::Params &&req)
             {
                 std::string uri = req.textDocument.uri.toString();
-                std::unique_lock lock(m_docMutex);
+                std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
                 {
                     auto &table = m_symbolTables[uri];
@@ -347,7 +347,7 @@ namespace angel_lsp
             [this](lsp::requests::TextDocument_Definition::Params &&req)
             {
                 std::string uri = req.textDocument.uri.toString();
-                std::unique_lock lock(m_docMutex);
+                std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
                 {
                     auto &table = m_symbolTables[uri];
@@ -361,7 +361,7 @@ namespace angel_lsp
             [this](lsp::requests::TextDocument_TypeDefinition::Params &&req)
             {
                 std::string uri = req.textDocument.uri.toString();
-                std::unique_lock lock(m_docMutex);
+                std::shared_lock lock(m_docMutex);
                 if (m_documents.find(uri) != m_documents.end())
                 {
                     auto &table = m_symbolTables[uri];
