@@ -152,13 +152,9 @@ namespace angel_lsp::utils
                     {
                         identifier = CleanText(GetNodeText(sub, wrappedDoxygen));
                     }
-                    else if (strcmp(subType, "description") == 0 || strcmp(subType, "text") == 0 || strcmp(subType, "text_block") == 0)
+                    else if (strcmp(subType, "description") == 0)
                     {
-                        if (!description.empty())
-                        {
-                            description += " ";
-                        }
-                        description += CleanText(GetNodeText(sub, wrappedDoxygen));
+                        description = StripDoxygenTags(CleanText(GetNodeText(sub, wrappedDoxygen)));
                     }
                 }
 
@@ -200,6 +196,16 @@ namespace angel_lsp::utils
                     p.name = identifier;
                     p.description = description;
                     doc.parameters.push_back(p);
+                }
+                else if (tagName.length() > 1)
+                {
+                    std::string tagLabel = tagName.substr(1);
+                    tagLabel[0] = toupper(tagLabel[0]);
+                    if (!doc.details.empty())
+                    {
+                        doc.details += "\n";
+                    }
+                    doc.details += "> **" + tagLabel + ":** " + description;
                 }
             }
         }
