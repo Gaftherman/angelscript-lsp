@@ -37,6 +37,164 @@ static std::string UrlDecode(const std::string &in)
     return out;
 }
 
+/**
+ * @brief Post-processes sanitized code to complete incomplete statements.
+ *
+ * Injects a synthetic `;` at the end of lines that end with a bare identifier
+ * (no semicolon or block delimiter) while inside a brace scope. This forces
+ * AngelScript to evaluate `hola` as a complete expression-statement and emit
+ * the correct "undefined identifier" error instead of silently absorbing it.
+ * Also closes any unclosed brace blocks to handle truncated (mid-typing) files.
+ *
+ * @param code The sanitized code produced by the preprocessor pass.
+ * @return Code with incomplete statements terminated and open braces closed.
+ */
+static std::string CompleteIncompleteStatements(const std::string &code)
+{
+    std::string result;
+    result.reserve(code.size() + 64);
+
+    std::stringstream ss(code);
+    std::string line;
+    int braceDepth = 0;
+    bool firstLine = true;
+
+    while (std::getline(ss, line))
+    {
+        if (!firstLine)
+            result += "\n";
+        firstLine = false;
+
+        // Trim trailing whitespace / \r for analysis only
+        std::string trimmed = line;
+        if (!trimmed.empty() && trimmed.back() == '\r')
+            trimmed.pop_back();
+        while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t'))
+            trimmed.pop_back();
+
+        // Strip trailing line-comment so we examine the actual code last token
+        // (Simple heuristic: find first // that is not inside a string)
+        {
+            bool inStr = false;
+            char strChar = 0;
+            for (size_t i = 0; i < trimmed.size(); ++i)
+            {
+                if (!inStr && (trimmed[i] == '"' || trimmed[i] == '\'' ))
+                {
+                    inStr = true;
+                    strChar = trimmed[i];
+                }
+                else if (inStr && trimmed[i] == strChar && (i == 0 || trimmed[i - 1] != '\\'))
+                {
+                    inStr = false;
+                }
+                else if (!inStr && i + 1 < trimmed.size() && trimmed[i] == '/' && trimmed[i + 1] == '/')
+                {
+                    trimmed = trimmed.substr(0, i);
+                    // Re-trim trailing whitespace
+                    while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t'))
+                        trimmed.pop_back();
+                    break;
+                }
+            }
+        }
+
+        // Depth BEFORE this line (used to detect "inside a block")
+        int depthBefore = braceDepth;
+
+        // Count brace changes on this line (simple, not string/comment aware for depth tracking)
+        for (char c : trimmed)
+        {
+            if (c == '{')
+                braceDepth++;
+            else if (c == '}')
+                braceDepth--;
+        }
+
+        // Decide whether to inject ';'
+        // Only inject when:
+        //   1. We are inside a brace block (depthBefore > 0).
+        //   2. The line is not a comment, preprocessor directive, or brace-only line.
+        //   3. The last character is an identifier character (a-z, A-Z, 0-9, _).
+        //   4. The FIRST word on the line is NOT a declaration keyword that could
+        //      start a valid multi-line construct (e.g. namespace, class, void, float…).
+        //      This prevents injecting ';' into things like "namespace Math" that live
+        //      inside an outer namespace block at depth >= 1.
+        static const std::unordered_set<std::string> s_declarationKeywords = {
+            "namespace", "class", "interface", "mixin", "enum", "struct",
+            "funcdef", "typedef", "import", "from", "using",
+            "void", "bool", "int", "int8", "int16", "int32", "int64",
+            "uint", "uint8", "uint16", "uint32", "uint64",
+            "float", "double", "auto", "string", "array", "dictionary",
+            "private", "protected", "public", "shared", "abstract",
+            "final", "override", "explicit", "external", "export", "const",
+            "return", "if", "else", "for", "foreach", "while", "do",
+            "switch", "case", "default", "break", "continue",
+            "try", "catch", "new", "delete", "cast", "in", "out", "inout",
+            "get", "set", "is", "not", "and", "or", "xor",
+            "true", "false", "null", "this", "super", "self"
+        };
+
+        bool shouldInject = false;
+        if (depthBefore > 0 && !trimmed.empty())
+        {
+            size_t firstNS = trimmed.find_first_not_of(" \t");
+            if (firstNS != std::string::npos)
+            {
+                char firstChar = trimmed[firstNS];
+                // Skip comment lines, preprocessor lines, and block delimiters
+                bool isSkipped = (firstChar == '/' || firstChar == '#' ||
+                                  firstChar == '{' || firstChar == '}' ||
+                                  firstChar == '~');  // destructor: ~ClassName()
+                if (!isSkipped)
+                {
+                    char lastChar = trimmed.back();
+                    // Only inject if last char is an identifier character
+                    if (std::isalpha(static_cast<unsigned char>(lastChar)) ||
+                        std::isdigit(static_cast<unsigned char>(lastChar)) ||
+                        lastChar == '_')
+                    {
+                        // Extract the first word to check for declaration keywords
+                        size_t wordEnd = firstNS;
+                        while (wordEnd < trimmed.size() &&
+                               (std::isalnum(static_cast<unsigned char>(trimmed[wordEnd])) ||
+                                trimmed[wordEnd] == '_'))
+                        {
+                            wordEnd++;
+                        }
+                        std::string firstWord = trimmed.substr(firstNS, wordEnd - firstNS);
+
+                        if (s_declarationKeywords.find(firstWord) == s_declarationKeywords.end())
+                        {
+                            shouldInject = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (shouldInject)
+        {
+            result += trimmed + ";";
+        }
+        else
+        {
+            result += line;
+        }
+    }
+
+    // Close any unclosed brace blocks (handles truncated / mid-typing files).
+    // Each synthetic closing is preceded by ';' to force evaluation of any
+    // dangling statement before the closing brace.
+    while (braceDepth > 0)
+    {
+        result += "\n;}";
+        braceDepth--;
+    }
+
+    return result;
+}
+
 static std::string SanitizeCodeForEngine(const std::string &code, const std::unordered_set<std::string> &definedWords)
 {
     std::string sanitizedCode;
@@ -132,7 +290,7 @@ static std::string SanitizeCodeForEngine(const std::string &code, const std::uno
             }
         }
     }
-    return sanitizedCode;
+    return CompleteIncompleteStatements(sanitizedCode);
 }
 
 static bool ValidateIncludeDirective(const std::string &line,

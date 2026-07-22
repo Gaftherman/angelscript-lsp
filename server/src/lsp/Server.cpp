@@ -465,8 +465,8 @@ namespace angel_lsp
             if (st.stop_requested())
                 break;
 
-            // Debounce: wait for 300ms
-            m_validationCV.wait_for(lock, std::chrono::milliseconds(300), [&st]
+            // Debounce: wait for 200ms
+            m_validationCV.wait_for(lock, std::chrono::milliseconds(200), [&st]
                                     { return st.stop_requested(); });
             if (st.stop_requested())
                 break;
