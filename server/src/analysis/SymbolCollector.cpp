@@ -15,13 +15,29 @@ static inline TSNode FieldChild(TSNode node, const char* field)
 namespace analysis
 {
     static std::unordered_set<std::string> g_definedWords = {"DEBUG_MODE"};
+    static std::vector<bool> g_preprocStack;
+
+    static bool IsPreprocActive()
+    {
+        for (bool b : g_preprocStack)
+        {
+            if (!b)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
 
     void SymbolCollector::SetDefinedWords(const std::vector<std::string> &defines)
     {
         g_definedWords.clear();
         for (const auto &d : defines)
         {
-            if (!d.empty()) g_definedWords.insert(d);
+            if (!d.empty())
+            {
+                g_definedWords.insert(d);
+            }
         }
     }
     std::string SymbolCollector::ExtractIncludePath(std::string_view text)
@@ -447,6 +463,11 @@ namespace analysis
             }
         } guard(docResolver, doc.GetUri());
 
+        if (guard.isTop)
+        {
+            g_preprocStack.clear();
+        }
+
         TraverseGlobals(root, doc, table, nullptr);
     }
 
@@ -627,24 +648,6 @@ namespace analysis
                 }
             }
         }
-    }
-
-    static std::vector<bool> g_preprocStack;
-
-    static bool IsPreprocActive()
-    {
-        for (bool b : g_preprocStack)
-        {
-            if (!b) return false;
-        }
-        return true;
-    }
-
-    void SymbolCollector::CollectGlobals(const Document &doc, SymbolTable &table, std::function<const Document *(const std::string &)> docResolver)
-    {
-        g_preprocStack.clear();
-        TSNode root = doc.GetRootNode();
-        TraverseGlobals(root, doc, table, nullptr);
     }
 
     void SymbolCollector::TraverseGlobals(TSNode node, const Document &doc, SymbolTable &table, Symbol *parentScope)
@@ -1306,6 +1309,38 @@ namespace analysis
             }
             return;
         }
+        else if (type == "lambda_expression")
+        {
+            auto lambdaSym = std::make_shared<Symbol>();
+            lambdaSym->uri = doc.GetUri();
+            lambdaSym->name = "function";
+            lambdaSym->kind = SymbolKind::Function;
+            lambdaSym->typeInfo = "function";
+            lambdaSym->fullRange = GetRange(node, doc);
+            lambdaSym->selectionRange = GetRange(node, doc);
+            if (parentScope)
+            {
+                lambdaSym->parent = parentScope;
+                parentScope->children.push_back(lambdaSym);
+            }
+            else
+            {
+                table.AddGlobal(lambdaSym);
+            }
+
+            TSNode paramsNode = FieldChild(node, "parameters");
+            if (!ts_node_is_null(paramsNode))
+            {
+                ReadParams(paramsNode, doc, *lambdaSym, &table, lambdaSym.get());
+            }
+
+            TSNode bodyNode = FieldChild(node, "body");
+            if (!ts_node_is_null(bodyNode))
+            {
+                TraverseLocals(bodyNode, doc, table, lambdaSym.get());
+            }
+            return;
+        }
 
         uint32_t count = ts_node_child_count(node);
         for (uint32_t i = 0; i < count; i++)
@@ -1325,6 +1360,35 @@ namespace analysis
         if (type == "variable_declaration")
         {
             BuildVariableSymbols(node, doc, table, currentScope, true);
+        }
+        else if (type == "lambda_expression")
+        {
+            auto lambdaSym = std::make_shared<Symbol>();
+            lambdaSym->uri = doc.GetUri();
+            lambdaSym->name = "function";
+            lambdaSym->kind = SymbolKind::Function;
+            lambdaSym->typeInfo = "function";
+            lambdaSym->fullRange = GetRange(node, doc);
+            lambdaSym->selectionRange = GetRange(node, doc);
+            if (currentScope)
+            {
+                lambdaSym->parent = currentScope;
+                currentScope->children.push_back(lambdaSym);
+            }
+            table.AddLocal(lambdaSym);
+
+            TSNode paramsNode = FieldChild(node, "parameters");
+            if (!ts_node_is_null(paramsNode))
+            {
+                ReadParams(paramsNode, doc, *lambdaSym, &table, lambdaSym.get());
+            }
+
+            TSNode bodyNode = FieldChild(node, "body");
+            if (!ts_node_is_null(bodyNode))
+            {
+                TraverseLocals(bodyNode, doc, table, lambdaSym.get());
+            }
+            return;
         }
 
         uint32_t count = ts_node_child_count(node);

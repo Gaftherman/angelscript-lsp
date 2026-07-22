@@ -303,7 +303,24 @@ namespace analysis
         }
 
         if (ts_node_is_null(node))
+        {
+            TSNode climb = rawNode;
+            while (!ts_node_is_null(climb))
+            {
+                std::string_view ct = ts_node_type(climb);
+                if (ct == "lambda_expression")
+                {
+                    if (const Symbol *lambdaSym = table.FindLocalByNameAt("function", line, character))
+                    {
+                        if (outMultipleResults) outMultipleResults->push_back(lambdaSym);
+                        return lambdaSym;
+                    }
+                    break;
+                }
+                climb = ts_node_parent(climb);
+            }
             return nullptr;
+        }
 
         std::string_view identSv = doc.SourceAt(node);
         std::string identText(identSv.begin(), identSv.end());
@@ -534,16 +551,21 @@ namespace analysis
 
         if (!ts_node_is_null(memberNode) && ts_node_eq(node, memberNode))
         {
-            std::string_view objSv = doc.SourceAt(objectNode);
-            std::string objText(objSv.begin(), objSv.end());
-
-            const Symbol *objSym = table.FindLocalByName(objText);
-            if (!objSym)
-                objSym = table.FindGlobalByName(objText);
-
-            if (objSym)
+            std::string rawType = EvaluateExpressionType(doc, table, objectNode);
+            if (rawType.empty())
             {
-                std::string typeName = CleanTypeName(objSym->typeInfo);
+                std::string_view objSv = doc.SourceAt(objectNode);
+                std::string objText(objSv.begin(), objSv.end());
+                const Symbol *objSym = table.FindLocalByName(objText);
+                if (!objSym)
+                    objSym = table.FindGlobalByName(objText);
+                if (objSym)
+                    rawType = objSym->typeInfo;
+            }
+
+            if (!rawType.empty())
+            {
+                std::string typeName = CleanTypeName(rawType);
 
                 const Symbol *classSym = nullptr;
                 if (typeName.find("::") != std::string::npos)
@@ -554,26 +576,41 @@ namespace analysis
                 {
                     classSym = table.FindByNameDeep(typeName);
                 }
+                if (!classSym && (rawType.starts_with("array<") || rawType.find("[]") != std::string::npos || typeName.starts_with("array<")))
+                {
+                    classSym = table.FindByNameDeep("array");
+                }
 
                 if (classSym)
                 {
                     auto findMember = [&](auto &self, const Symbol *cSym) -> const Symbol *
                     {
                         if (!cSym)
+                        {
                             return nullptr;
-                        
-                        const Symbol* firstMatch = nullptr;
-                        
+                        }
+
+                        const Symbol *firstMatch = nullptr;
+
                         for (const auto &child : cSym->children)
                         {
                             if (child->name == identText)
                             {
-                                if (!firstMatch) firstMatch = child.get();
-                                if (outMultipleResults) outMultipleResults->push_back(child.get());
+                                if (!firstMatch)
+                                {
+                                    firstMatch = child.get();
+                                }
+                                if (outMultipleResults)
+                                {
+                                    outMultipleResults->push_back(child.get());
+                                }
                             }
                         }
-                        
-                        if (firstMatch && !outMultipleResults) return firstMatch;
+
+                        if (firstMatch && !outMultipleResults)
+                        {
+                            return firstMatch;
+                        }
 
                         for (const auto &baseName : cSym->baseClasses)
                         {
@@ -1091,6 +1128,31 @@ namespace analysis
             {
                 std::string_view castType = doc.SourceAt(typeNode);
                 return std::string(castType.begin(), castType.end());
+            }
+        }
+        if (type == "index_expression")
+        {
+            TSNode objNode = FieldChild(exprNode, "object");
+            if (!ts_node_is_null(objNode))
+            {
+                std::string innerType = EvaluateExpressionType(doc, table, objNode);
+                size_t openBracket = innerType.find('<');
+                size_t closeBracket = innerType.rfind('>');
+                if (openBracket != std::string::npos && closeBracket != std::string::npos && closeBracket > openBracket)
+                {
+                    std::string elemType = innerType.substr(openBracket + 1, closeBracket - openBracket - 1);
+                    // Strip optional leading/trailing modifiers
+                    while (elemType.ends_with("@") || elemType.ends_with("&"))
+                        elemType.pop_back();
+                    return elemType;
+                }
+                if (innerType.ends_with("[]"))
+                {
+                    std::string elemType = innerType.substr(0, innerType.length() - 2);
+                    while (elemType.ends_with("@") || elemType.ends_with("&"))
+                        elemType.pop_back();
+                    return elemType;
+                }
             }
         }
 

@@ -686,6 +686,7 @@ void MainApp()
     std::string uriStr = "file:///project/app.as";
     Document doc(uriStr, SRC);
     analysis::SymbolTable table;
+    analysis::SymbolCollector::SetDefinedWords({"WITH_DEBUG"});
     analysis::SymbolCollector::CollectGlobals(doc, table);
     analysis::SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
 

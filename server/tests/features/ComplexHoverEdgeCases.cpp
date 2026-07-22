@@ -9,6 +9,7 @@
 #include "analysis/SymbolResolver.h"
 #include "analysis/DiagnosticCache.h"
 #include "features/hover/HoverHandler.h"
+#include "features/definition/DefinitionHandler.h"
 #include "i18n/LspStrings.h"
 #include <lsp/messages.h>
 
@@ -422,10 +423,426 @@ class RenderContext
 
         REQUIRE(!resultDX.isNull());
         std::string markupDX;
-        if (std::holds_alternative<lsp::MarkupContent>((*resultDX).contents)) {
-            markupDX = std::get<lsp::MarkupContent>((*resultDX).contents).value;
+        if (const auto *mc = std::get_if<lsp::MarkupContent>(&(*resultDX).contents)) {
+            markupDX = mc->value;
+        } else if (const auto *ms = std::get_if<lsp::MarkedString>(&(*resultDX).contents)) {
+            if (const auto *str = std::get_if<std::string>(ms)) {
+                markupDX = *str;
+            }
+        } else if (const auto *vec = std::get_if<std::vector<lsp::MarkedString>>(&(*resultDX).contents)) {
+            for (const auto &item : *vec) {
+                if (const auto *str = std::get_if<std::string>(&item)) {
+                    markupDX += *str + "\n";
+                }
+            }
         }
         CHECK(markupDX.find("DirectX 11") != std::string::npos);
         CHECK(markupDX.find("Vulkan") == std::string::npos);
+    }
+
+    TEST_CASE("CH_ADV_9: Anonymous functions / lambdas hover and definition resolution")
+    {
+        const char *SRC = R"script(
+funcdef void Callback(int val, float scale);
+
+void Main()
+{
+    Callback@ cb = function(int val, float scale) {
+        float result = val * scale;
+    };
+}
+)script";
+
+        Document doc("file:///lambda.as", SRC);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+        // 1. Hover on 'function' keyword (line 5, col 19)
+        lsp::requests::TextDocument_Hover::Params reqFn;
+        reqFn.textDocument.uri = lsp::DocumentUri::parse("file:///lambda.as");
+        reqFn.position.line = 5;
+        reqFn.position.character = 20;
+
+        lsp::requests::TextDocument_Hover::Result resultFn;
+        angel_lsp::features::ProcessHover(resultFn, reqFn, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!resultFn.isNull());
+
+        // 2. Hover on lambda parameter 'val' inside lambda body (line 6, col 24)
+        lsp::requests::TextDocument_Hover::Params reqVal;
+        reqVal.textDocument.uri = lsp::DocumentUri::parse("file:///lambda.as");
+        reqVal.position.line = 6;
+        reqVal.position.character = 24;
+
+        lsp::requests::TextDocument_Hover::Result resultVal;
+        angel_lsp::features::ProcessHover(resultVal, reqVal, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!resultVal.isNull());
+
+        std::string valMarkup;
+        if (const auto *mc = std::get_if<lsp::MarkupContent>(&(*resultVal).contents)) {
+            valMarkup = mc->value;
+        } else if (const auto *ms = std::get_if<lsp::MarkedString>(&(*resultVal).contents)) {
+            if (const auto *str = std::get_if<std::string>(ms)) {
+                valMarkup = *str;
+            }
+        } else if (const auto *vec = std::get_if<std::vector<lsp::MarkedString>>(&(*resultVal).contents)) {
+            for (const auto &item : *vec) {
+                if (const auto *str = std::get_if<std::string>(&item)) {
+                    valMarkup += *str + "\n";
+                }
+            }
+        }
+        CHECK(!valMarkup.empty());
+        CHECK(valMarkup.find("val") != std::string::npos);
+
+        // 3. Go To Definition on 'val' inside lambda body (line 6, col 24) -> jumps to 'int val' (line 5, col 32)
+        lsp::requests::TextDocument_Definition::Params defReq;
+        defReq.textDocument.uri = lsp::DocumentUri::parse("file:///lambda.as");
+        defReq.position.line = 6;
+        defReq.position.character = 24;
+
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        REQUIRE(!defRes.isNull());
+        if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
+            if (const auto *loc = std::get_if<lsp::Location>(def)) {
+                CHECK(loc->range.start.line == 5);
+            }
+        }
+    }
+
+    TEST_CASE("CH_ADV_10: Array indexing & multidimensional array member resolution")
+    {
+        const char *SRC = R"script(
+class TargetItem
+{
+    /** @brief Value field. */
+    int value;
+    /** @brief Performs target action. */
+    void Action() {}
+};
+
+class Container
+{
+    TargetItem@ GetTarget() { return null; }
+};
+
+void Main()
+{
+    array<TargetItem@> items;
+    items[0].Action();
+
+    array<array<TargetItem@>> grid;
+    grid[0][0].Action();
+
+    Container c;
+    c.GetTarget().Action();
+}
+)script";
+
+        Document doc("file:///array_test.as", SRC);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+        // 1. Hover on 'Action' on items[0].Action() (line 17, col 15)
+        lsp::requests::TextDocument_Hover::Params req1;
+        req1.textDocument.uri = lsp::DocumentUri::parse("file:///array_test.as");
+        req1.position.line = 17;
+        req1.position.character = 15;
+
+        lsp::requests::TextDocument_Hover::Result res1;
+        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res1.isNull());
+
+        // 2. Hover on 'Action' on grid[0][0].Action() (line 20, col 18)
+        lsp::requests::TextDocument_Hover::Params req2;
+        req2.textDocument.uri = lsp::DocumentUri::parse("file:///array_test.as");
+        req2.position.line = 20;
+        req2.position.character = 18;
+
+        lsp::requests::TextDocument_Hover::Result res2;
+        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res2.isNull());
+
+        // 3. Hover on 'Action' on c.GetTarget().Action() (line 23, col 20)
+        lsp::requests::TextDocument_Hover::Params req3;
+        req3.textDocument.uri = lsp::DocumentUri::parse("file:///array_test.as");
+        req3.position.line = 23;
+        req3.position.character = 20;
+
+        lsp::requests::TextDocument_Hover::Result res3;
+        angel_lsp::features::ProcessHover(res3, req3, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res3.isNull());
+
+        // 4. Go To Definition on Action() in grid[0][0].Action() -> jumps to line 6 (Action definition)
+        lsp::requests::TextDocument_Definition::Params defReq;
+        defReq.textDocument.uri = lsp::DocumentUri::parse("file:///array_test.as");
+        defReq.position.line = 20;
+        defReq.position.character = 18;
+
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        REQUIRE(!defRes.isNull());
+        if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
+            if (const auto *loc = std::get_if<lsp::Location>(def)) {
+                CHECK(loc->range.start.line == 6);
+            }
+        }
+    }
+
+    TEST_CASE("CH_ADV_11: Nested lambdas inside class methods & namespaces")
+    {
+        const char *SRC = R"script(
+namespace Engine
+{
+    funcdef void OuterCb(int a);
+    funcdef void InnerCb(float b);
+
+    class Manager
+    {
+        void Run()
+        {
+            OuterCb@ outer = function(int a) {
+                InnerCb@ inner = function(float b) {
+                    float total = a + b;
+                };
+            };
+        }
+    };
+}
+)script";
+
+        Document doc("file:///nested_lambda.as", SRC);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+        // Hover on 'a' inside inner lambda (line 12, col 34) -> resolves to 'int a' of outer lambda
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///nested_lambda.as");
+        req.position.line = 12;
+        req.position.character = 34;
+
+        lsp::requests::TextDocument_Hover::Result res;
+        angel_lsp::features::ProcessHover(res, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res.isNull());
+
+        // Go To Definition on 'a' inside inner lambda -> jumps to line 10 (int a)
+        lsp::requests::TextDocument_Definition::Params defReq;
+        defReq.textDocument.uri = lsp::DocumentUri::parse("file:///nested_lambda.as");
+        defReq.position.line = 12;
+        defReq.position.character = 34;
+
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        REQUIRE(!defRes.isNull());
+        if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
+            if (const auto *loc = std::get_if<lsp::Location>(def)) {
+                CHECK(loc->range.start.line == 10);
+            }
+        }
+    }
+
+    TEST_CASE("CH_ADV_12: Shorthand array syntax (T[], T@[][]) hover and member resolution")
+    {
+        const char *SRC = R"script(
+class Widget
+{
+    /** @brief Renders the widget. */
+    void Render() {}
+};
+
+void Main()
+{
+    int[] myArrayInt;
+    Widget@[] myArrayWidget;
+    myArrayWidget[0].Render();
+
+    Widget@[][] myMultiWidget;
+    myMultiWidget[0][0].Render();
+}
+)script";
+
+        Document doc("file:///shorthand_array.as", SRC);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+        // 1. Hover on 'Render' in myArrayWidget[0].Render() (line 11, col 21)
+        lsp::requests::TextDocument_Hover::Params req1;
+        req1.textDocument.uri = lsp::DocumentUri::parse("file:///shorthand_array.as");
+        req1.position.line = 11;
+        req1.position.character = 21;
+
+        lsp::requests::TextDocument_Hover::Result res1;
+        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res1.isNull());
+
+        // 2. Hover on 'Render' in myMultiWidget[0][0].Render() (line 14, col 24)
+        lsp::requests::TextDocument_Hover::Params req2;
+        req2.textDocument.uri = lsp::DocumentUri::parse("file:///shorthand_array.as");
+        req2.position.line = 14;
+        req2.position.character = 24;
+
+        lsp::requests::TextDocument_Hover::Result res2;
+        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res2.isNull());
+
+        // 3. Go To Definition on Render() in myMultiWidget[0][0].Render() -> jumps to line 4
+        lsp::requests::TextDocument_Definition::Params defReq;
+        defReq.textDocument.uri = lsp::DocumentUri::parse("file:///shorthand_array.as");
+        defReq.position.line = 14;
+        defReq.position.character = 24;
+
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        REQUIRE(!defRes.isNull());
+        if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
+            if (const auto *loc = std::get_if<lsp::Location>(def)) {
+                CHECK(loc->range.start.line == 4);
+            }
+        }
+    }
+
+    TEST_CASE("CH_ADV_13: Array built-in methods (length, insertLast, sortAsc, find) hover & definition from as.predefined / array template")
+    {
+        const char *ARRAY_PREDEFINED = R"script(
+/** @brief Standard generic array template container. */
+template<class T>
+class array
+{
+    /** @brief Returns the number of elements in the array. */
+    uint length() const {}
+    /** @brief Appends a new element at the end of the array. */
+    void insertLast(const T& in value) {}
+    /** @brief Sorts elements in ascending order. */
+    void sortAsc() {}
+    /** @brief Finds the first element with matching value. */
+    int find(const T& in value) {}
+    /** @brief Removes element at specified index. */
+    void removeAt(uint index) {}
+};
+)script";
+
+        const char *SRC = R"script(
+void Main()
+{
+    array<int> arr1 = {1, 2, 3};
+    arr1.insertLast(0);
+    uint len1 = arr1.length();
+
+    int[] arr2;
+    arr2.sortAsc();
+    int idx = arr2.find(5);
+}
+)script";
+
+        Document preDoc("file:///as.predefined", ARRAY_PREDEFINED);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(preDoc, table);
+
+        Document doc("file:///array_methods.as", SRC);
+        SymbolCollector::CollectGlobals(doc, table);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+        // 1. Hover on 'insertLast' in arr1.insertLast(0) (line 4, col 11)
+        lsp::requests::TextDocument_Hover::Params req1;
+        req1.textDocument.uri = lsp::DocumentUri::parse("file:///array_methods.as");
+        req1.position.line = 4;
+        req1.position.character = 11;
+
+        lsp::requests::TextDocument_Hover::Result res1;
+        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res1.isNull());
+
+        // 2. Hover on 'length' in arr1.length() (line 5, col 20)
+        lsp::requests::TextDocument_Hover::Params req2;
+        req2.textDocument.uri = lsp::DocumentUri::parse("file:///array_methods.as");
+        req2.position.line = 5;
+        req2.position.character = 18;
+
+        lsp::requests::TextDocument_Hover::Result res2;
+        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res2.isNull());
+
+        // 3. Hover on 'sortAsc' on arr2.sortAsc() (line 8, col 11)
+        lsp::requests::TextDocument_Hover::Params req3;
+        req3.textDocument.uri = lsp::DocumentUri::parse("file:///array_methods.as");
+        req3.position.line = 8;
+        req3.position.character = 11;
+
+        lsp::requests::TextDocument_Hover::Result res3;
+        angel_lsp::features::ProcessHover(res3, req3, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res3.isNull());
+
+        // 4. Go To Definition on 'sortAsc' -> jumps to as.predefined line 10
+        lsp::requests::TextDocument_Definition::Params defReq;
+        defReq.textDocument.uri = lsp::DocumentUri::parse("file:///array_methods.as");
+        defReq.position.line = 8;
+        defReq.position.character = 11;
+
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        REQUIRE(!defRes.isNull());
+        if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
+            if (const auto *loc = std::get_if<lsp::Location>(def)) {
+                CHECK(loc->uri.toString().find("as.predefined") != std::string::npos);
+                CHECK(loc->range.start.line == 10);
+            }
+        }
+    }
+
+    TEST_CASE("CH_ADV_14: Error resilience for broken as.predefined and incomplete user scripts")
+    {
+        const char *BROKEN_PREDEFINED = R"script(
+class ValidEngineClass
+{
+    void ValidEngineMethod() {}
+};
+
+// Intentionally malformed syntax in predefined
+class BrokenClass {
+    void UnclosedMethod(
+)script";
+
+        const char *BROKEN_USER_SCRIPT = R"script(
+void Main()
+{
+    ValidEngineClass engine;
+    engine.ValidEngineMethod();
+
+    // Incomplete syntax
+    int x = ;
+}
+)script";
+
+        Document preDoc("file:///as.predefined", BROKEN_PREDEFINED);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(preDoc, table);
+
+        Document doc("file:///broken_script.as", BROKEN_USER_SCRIPT);
+        SymbolCollector::CollectGlobals(doc, table);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+
+        // Hover on ValidEngineMethod on line 4, col 12 of user script
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///broken_script.as");
+        req.position.line = 4;
+        req.position.character = 12;
+
+        lsp::requests::TextDocument_Hover::Result res;
+        angel_lsp::features::ProcessHover(res, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res.isNull());
+
+        // Go To Definition on ValidEngineMethod -> jumps to as.predefined line 3
+        lsp::requests::TextDocument_Definition::Params defReq;
+        defReq.textDocument.uri = lsp::DocumentUri::parse("file:///broken_script.as");
+        defReq.position.line = 4;
+        defReq.position.character = 12;
+
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        REQUIRE(!defRes.isNull());
+        if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
+            if (const auto *loc = std::get_if<lsp::Location>(def)) {
+                CHECK(loc->uri.toString().find("as.predefined") != std::string::npos);
+                CHECK(loc->range.start.line == 3);
+            }
+        }
     }
 }
