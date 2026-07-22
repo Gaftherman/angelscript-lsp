@@ -45,6 +45,7 @@ jobs:
       # Configurar dependencias para Linux de 32 bits si aplica
       - name: Install 32-bit Multilib Dependencies (Linux x86)
         if: matrix.os == 'linux' && matrix.arch == 'x86'
+        shell: bash
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
@@ -52,17 +53,20 @@ jobs:
 
       # Configurar CMake
       - name: Configure CMake
+        shell: bash
         run: |
           cmake -B server/build -S server \
             -DCMAKE_BUILD_TYPE=Release \
             ${{ matrix.cmake_arch }} \
             ${{ matrix.os == 'linux' && matrix.arch == 'x86' && '-DCMAKE_CXX_FLAGS="-m32" -DCMAKE_C_FLAGS="-m32"' || '' }}
 
-      # Compilar todo el proyecto y los ejecutable de test
+      # Compilar todo el proyecto y los ejecutables de test
       - name: Build All Targets
+        shell: bash
         run: cmake --build server/build --config Release -j 4
 
       # Ejecutar la suite completa de pruebas
       - name: Run CTest Suite
         working-directory: server/build
+        shell: bash
         run: ctest -C Release --output-on-failure --parallel 4
