@@ -101,7 +101,8 @@ namespace angel_lsp::features
             type == "continue" || type == "const" || type == "shared" || type == "abstract" ||
             type == "final" || type == "override" || type == "explicit" || type == "cast" ||
             type == "using" || type == "funcdef" || type == "property" || type == "delete" ||
-            type == "in" || type == "out" || type == "inout" || type == "get" || type == "set")
+            type == "in" || type == "out" || type == "inout" || type == "get" || type == "set" ||
+            type == "is" || type == "not" || type == "and" || type == "or" || type == "xor")
         {
             return true;
         }
@@ -116,6 +117,7 @@ namespace angel_lsp::features
             text == "final" || text == "override" || text == "explicit" || text == "cast" ||
             text == "using" || text == "funcdef" || text == "property" || text == "delete" ||
             text == "in" || text == "out" || text == "inout" || text == "get" || text == "set" ||
+            text == "is" || text == "not" || text == "and" || text == "or" || text == "xor" ||
             text == "true" || text == "false" || text == "null")
         {
             return true;
