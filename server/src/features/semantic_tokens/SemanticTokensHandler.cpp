@@ -124,7 +124,7 @@ namespace angel_lsp::features::semantic_tokens
             text == "using" || text == "funcdef" || text == "property" || text == "delete" ||
             text == "in" || text == "out" || text == "inout" || text == "get" || text == "set" ||
             text == "is" || text == "not" || text == "and" || text == "or" || text == "xor" ||
-            text == "true" || text == "false" || text == "null")
+            text == "true" || text == "false" || text == "null" || text == "this" || text == "super" || text == "self")
         {
             return true;
         }

@@ -221,6 +221,10 @@
     "constants": {
       "patterns": [
         {
+          "name": "variable.language.this.angelscript",
+          "match": "\\b(this|super|self)\\b"
+        },
+        {
           "name": "constant.language.bool.true.angelscript",
           "match": "\\btrue\\b"
         },
