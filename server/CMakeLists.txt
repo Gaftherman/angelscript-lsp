@@ -83,45 +83,86 @@ add_custom_command(TARGET angel_lsp POST_BUILD
 )
 
 # ==============================================================================
-# 4. UNIT TESTS EXECUTABLE
+# 4. MODULAR UNIT TESTS EXECUTABLES
 # ==============================================================================
-set(TEST_SOURCES
+enable_testing()
+
+add_library(doctest_main STATIC tests/test_main.cpp)
+target_include_directories(doctest_main PUBLIC
+    src
+    tests
+    "${tree_sitter_angelscript_SOURCE_DIR}/src"
+    "${tree_sitter_runtime_SOURCE_DIR}/lib/include"
+    "${angelscript_repo_SOURCE_DIR}/sdk/angelscript/source"
+)
+target_link_libraries(doctest_main PUBLIC doctest::doctest spdlog::spdlog)
+
+function(add_lsp_test_suite TARGET_NAME)
+    add_executable(${TARGET_NAME} ${ARGN})
+    target_include_directories(${TARGET_NAME} PRIVATE
+        src
+        tests
+        "${tree_sitter_angelscript_SOURCE_DIR}/src"
+        "${tree_sitter_runtime_SOURCE_DIR}/lib/include"
+        "${angelscript_repo_SOURCE_DIR}/sdk/angelscript/source"
+    )
+    target_link_libraries(${TARGET_NAME} PRIVATE
+        angel_lsp_core
+        doctest_main
+    )
+    if(WIN32)
+        add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:${TARGET_NAME}>
+                $<TARGET_FILE:${TARGET_NAME}>
+                $<TARGET_FILE_DIR:${TARGET_NAME}>
+            COMMAND_EXPAND_LISTS
+            COMMENT "Copying runtime DLLs for ${TARGET_NAME}..."
+        )
+    endif()
+    add_test(NAME ${TARGET_NAME} COMMAND $<TARGET_FILE:${TARGET_NAME}>)
+endfunction()
+
+add_lsp_test_suite(test_core
+    tests/angelscript/ScriptClassTests.cpp
+    tests/angelscript/ScriptFuncdefTests.cpp
+    tests/angelscript/ScriptNamespaceTests.cpp
+    tests/document/DocumentTests.cpp
+    tests/parser/TreeSitterTests.cpp
+)
+
+add_lsp_test_suite(test_analysis
     tests/analysis/DiagnosticCacheTests.cpp
     tests/analysis/PredefinedLoaderTests.cpp
     tests/analysis/SymbolCollectorTests.cpp
     tests/analysis/SymbolResolverTests.cpp
     tests/analysis/SymbolTableTests.cpp
     tests/analysis/ValidationOracleTests.cpp
-    tests/angelscript/ScriptClassTests.cpp
-    tests/angelscript/ScriptFuncdefTests.cpp
-    tests/angelscript/ScriptNamespaceTests.cpp
-    tests/document/DocumentTests.cpp
-    tests/features/ComplexHoverTests.cpp
-    tests/features/ComplexHoverEdgeCases.cpp
-    tests/features/DefinitionHandlerTests.cpp
-    tests/features/HoverTemplateTest.cpp
-    tests/features/HoverRenderTests.cpp
-    tests/features/SemanticTokensTests.cpp
-    tests/i18n/LocalizationTests.cpp
-    tests/parser/TreeSitterTests.cpp
-    tests/test_main.cpp
 )
-add_executable(angel_lsp_tests ${TEST_SOURCES})
-target_link_libraries(angel_lsp_tests PRIVATE 
-    angel_lsp_core
-    doctest::doctest
-)
-target_include_directories(angel_lsp_tests PRIVATE "tests")
 
-if(WIN32)
-    add_custom_command(TARGET angel_lsp_tests POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_RUNTIME_DLLS:angel_lsp_tests>
-            $<TARGET_FILE:angel_lsp_tests>
-            $<TARGET_FILE_DIR:angel_lsp_tests>
-        COMMAND_EXPAND_LISTS
-        COMMENT "Copying runtime DLLs to test directory..."
-    )
-endif()
-enable_testing()
-add_test(NAME AngelLSPTests COMMAND angel_lsp_tests)
+add_lsp_test_suite(test_feature_hover
+    tests/features/hover/HoverRenderTests.cpp
+    tests/features/hover/HoverTemplateTest.cpp
+    tests/features/hover/ComplexHoverTests.cpp
+    tests/features/hover/ComplexHoverEdgeCases.cpp
+)
+
+add_lsp_test_suite(test_feature_definition
+    tests/features/definition/DefinitionHandlerTests.cpp
+)
+
+add_lsp_test_suite(test_feature_semantic_tokens
+    tests/features/semantic_tokens/SemanticTokensTests.cpp
+)
+
+add_lsp_test_suite(test_feature_completion
+    tests/features/completion/CompletionTests.cpp
+)
+
+add_lsp_test_suite(test_feature_signature_help
+    tests/features/signature_help/SignatureHelpTests.cpp
+)
+
+add_lsp_test_suite(test_i18n
+    tests/i18n/LocalizationTests.cpp
+)

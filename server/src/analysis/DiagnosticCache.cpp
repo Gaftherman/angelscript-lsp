@@ -1,4 +1,7 @@
 #include "analysis/DiagnosticCache.h"
+#include <mutex>
+#include <utility>
+#include <memory>
 
 namespace analysis
 {

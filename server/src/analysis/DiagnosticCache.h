@@ -3,6 +3,7 @@
 #include <lsp/types.h>
 #include <string>
 #include <vector>
+#include <mutex>
 #include <shared_mutex>
 #include <ankerl/unordered_dense.h>
 
