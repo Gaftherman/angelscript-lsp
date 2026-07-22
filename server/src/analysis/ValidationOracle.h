@@ -8,9 +8,9 @@
 
 #include "lsp/types.h"
 #include <string>
+#include <string_view>
 #include <vector>
-#include <unordered_set>
-#include <unordered_map>
+#include <ankerl/unordered_dense.h>
 #include <mutex>
 #include <functional>
 #include "i18n/LspStrings.h"
@@ -61,8 +61,8 @@ namespace analysis
          * @param[in] globalTable Optional global symbol table.
          * @return std::vector<lsp::Diagnostic> A vector of LSP diagnostics.
          */
-        std::vector<lsp::Diagnostic> ValidateSync(const std::string &code,
-                                                   const std::string &currentUri = "",
+        std::vector<lsp::Diagnostic> ValidateSync(std::string_view code,
+                                                   std::string_view currentUri = "",
                                                    std::function<const Document *(const std::string &)> docResolver = nullptr,
                                                    const SymbolTable *globalTable = nullptr);
 
@@ -82,7 +82,7 @@ namespace analysis
 
     private:
         i18n::Locale m_locale;
-        std::unordered_set<std::string> m_definedWords = {"DEBUG_MODE"};
+        ankerl::unordered_dense::set<std::string> m_definedWords = {"DEBUG_MODE"};
         std::mutex m_mutex;
 
         /**

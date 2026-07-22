@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <functional>
 #include "analysis/SymbolTable.h"
 
@@ -29,7 +30,7 @@ namespace analysis
          * @param[in] logger Optional logger callback function.
          * @return bool True if as.predefined was found and successfully loaded, false otherwise.
          */
-        static bool FindInWorkspace(const std::string &rootUri, SymbolTable &table, const std::string &stringType = "string", const std::string &arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr);
+        static bool FindInWorkspace(std::string_view rootUri, SymbolTable &table, std::string_view stringType = "string", std::string_view arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr);
 
         /**
          * @brief Loads host application definitions from an absolute file path.
@@ -41,7 +42,7 @@ namespace analysis
          * @param[in] logger Optional logger callback function.
          * @return bool True if loaded successfully, false otherwise.
          */
-        static bool LoadFromFile(const std::string &filePath, SymbolTable &table, const std::string &stringType = "string", const std::string &arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr);
+        static bool LoadFromFile(std::string_view filePath, SymbolTable &table, std::string_view stringType = "string", std::string_view arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr);
 
         /**
          * @brief Loads definitions directly from source code string.
@@ -54,7 +55,7 @@ namespace analysis
          * @param[in] customUri Custom URI identifier for the loaded document.
          * @return bool True if loaded successfully, false otherwise.
          */
-        static bool LoadFromSource(const std::string &source, SymbolTable &table, const std::string &stringType = "string", const std::string &arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr, const std::string &customUri = "file:///as.predefined");
+        static bool LoadFromSource(std::string_view source, SymbolTable &table, std::string_view stringType = "string", std::string_view arrayType = "array", std::function<void(const std::string &, int)> logger = nullptr, std::string_view customUri = "file:///as.predefined");
     };
 
 } // namespace analysis

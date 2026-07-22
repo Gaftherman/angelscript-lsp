@@ -7,9 +7,9 @@
 #include "PredefinedLoader.h"
 #include <fstream>
 #include <sstream>
-#include <unordered_set>
 #include <filesystem>
 #include <algorithm>
+#include <spdlog/fmt/fmt.h>
 #include "utils/LspLogger.h"
 #include "document/Document.h"
 #include "analysis/SymbolCollector.h"
@@ -24,7 +24,7 @@
 
 namespace analysis
 {
-    static std::string UrlDecode(const std::string &in)
+    static std::string UrlDecode(std::string_view in)
     {
         std::string out;
         out.reserve(in.size());
@@ -47,22 +47,24 @@ namespace analysis
         return out;
     }
 
-    bool PredefinedLoader::LoadFromSource(const std::string &source, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger, const std::string &customUri)
+    bool PredefinedLoader::LoadFromSource(std::string_view source, SymbolTable &table, std::string_view stringType, std::string_view arrayType, std::function<void(const std::string &, int)> logger, std::string_view customUri)
     {
-        Document doc(customUri.empty() ? "file:///as.predefined" : customUri, source);
+        std::string uriStr = customUri.empty() ? "file:///as.predefined" : std::string(customUri);
+        Document doc(uriStr, std::string(source));
         SymbolCollector::CollectGlobals(doc, table);
 
         if (logger)
         {
-            logger("[Predefined] Successfully extracted predefined symbols into SymbolTable from: '" + customUri + "'", 0);
+            logger(fmt::format("[Predefined] Successfully extracted predefined symbols into SymbolTable from: '{}'", uriStr), 0);
         }
 
         return true;
     }
 
-    bool PredefinedLoader::LoadFromFile(const std::string &filePath, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger)
+    bool PredefinedLoader::LoadFromFile(std::string_view filePath, SymbolTable &table, std::string_view stringType, std::string_view arrayType, std::function<void(const std::string &, int)> logger)
     {
-        std::ifstream file(filePath);
+        std::string pathStr(filePath);
+        std::ifstream file(pathStr);
         if (!file.is_open())
         {
             return false;
@@ -71,7 +73,7 @@ namespace analysis
         std::stringstream buffer;
         buffer << file.rdbuf();
 
-        std::string fileUri = filePath;
+        std::string fileUri = pathStr;
         std::replace(fileUri.begin(), fileUri.end(), '/', '/');
         std::replace(fileUri.begin(), fileUri.end(), '\\', '/');
         if (fileUri.find("file://") != 0)
@@ -86,14 +88,14 @@ namespace analysis
         return LoadFromSource(buffer.str(), table, stringType, arrayType, logger, fileUri);
     }
 
-    bool PredefinedLoader::FindInWorkspace(const std::string &rootUri, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger)
+    bool PredefinedLoader::FindInWorkspace(std::string_view rootUri, SymbolTable &table, std::string_view stringType, std::string_view arrayType, std::function<void(const std::string &, int)> logger)
     {
         if (rootUri.empty())
         {
             return false;
         }
 
-        std::string pathStr = rootUri;
+        std::string pathStr(rootUri);
         if (pathStr.rfind("file:///", 0) == 0)
         {
             pathStr = pathStr.substr(8);
@@ -132,7 +134,7 @@ namespace analysis
                     loadedAny = true;
                     if (logger)
                     {
-                        logger("[Predefined] Loaded workspace predefined file: '" + candPath.string() + "'", 0);
+                        logger(fmt::format("[Predefined] Loaded workspace predefined file: '{}'", candPath.string()), 0);
                     }
                 }
             }
@@ -154,7 +156,7 @@ namespace analysis
                                 loadedAny = true;
                                 if (logger)
                                 {
-                                    logger("[Predefined] Loaded workspace predefined file: '" + entry.path().string() + "'", 0);
+                                    logger(fmt::format("[Predefined] Loaded workspace predefined file: '{}'", entry.path().string()), 0);
                                 }
                             }
                         }

@@ -9,15 +9,17 @@
 #include "analysis/SymbolResolver.h"
 #include "document/Document.h"
 #include "i18n/LspStrings.h"
-#include <unordered_set>
+#include <ankerl/unordered_dense.h>
+#include <spdlog/fmt/fmt.h>
 #include <sstream>
 
 namespace analysis
 {
 
-    static std::string FilterInactivePreprocessorBlocks(const std::string &code, const std::unordered_set<std::string> &definedWords)
+    static std::string FilterInactivePreprocessorBlocks(std::string_view code, const ankerl::unordered_dense::set<std::string> &definedWords)
     {
-        std::istringstream stream(code);
+        std::string codeStr(code);
+        std::istringstream stream(codeStr);
         std::string line;
         std::string result;
         result.reserve(code.size());
@@ -129,12 +131,12 @@ namespace analysis
         return diags;
     }
 
-    std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(const std::string &code,
-                                                                 const std::string &currentUri,
+    std::vector<lsp::Diagnostic> ValidationOracle::ValidateSync(std::string_view code,
+                                                                 std::string_view currentUri,
                                                                  std::function<const Document *(const std::string &)> docResolver,
                                                                  const SymbolTable *globalTable)
     {
-        Document doc(currentUri, code);
+        Document doc{std::string(currentUri), std::string(code)};
         SymbolTable localTable;
         if (globalTable)
         {
@@ -190,7 +192,7 @@ namespace analysis
                 }
                 else if (!nodeText.empty())
                 {
-                    d.message = (m_locale == i18n::Locale::ES) ? ("Error de sintaxis: token inesperado '" + nodeText + "'") : ("Syntax error: unexpected token '" + nodeText + "'");
+                    d.message = (m_locale == i18n::Locale::ES) ? fmt::format("Error de sintaxis: token inesperado '{}'", nodeText) : fmt::format("Syntax error: unexpected token '{}'", nodeText);
                 }
                 else
                 {
@@ -220,7 +222,7 @@ namespace analysis
             return;
         }
 
-        static const std::unordered_set<std::string> builtins = {
+        static const ankerl::unordered_dense::set<std::string> builtins = {
             "int", "uint", "int8", "int16", "int64", "uint8", "uint16", "uint64",
             "float", "double", "bool", "void", "string", "array", "auto", "const",
             "override", "final", "abstract", "shared", "mixin", "namespace", "class",
@@ -303,7 +305,7 @@ namespace analysis
                         d.range.end.character = end.column;
                         d.severity = lsp::DiagnosticSeverity::Error;
                         d.source = "angelscript";
-                        d.message = (m_locale == i18n::Locale::ES) ? ("Identificador o símbolo no declarado '" + name + "'") : ("Undeclared identifier or symbol '" + name + "'");
+                        d.message = (m_locale == i18n::Locale::ES) ? fmt::format("Identificador o símbolo no declarado '{}'", name) : fmt::format("Undeclared identifier or symbol '{}'", name);
 
                         diags.push_back(d);
                     }
@@ -420,7 +422,7 @@ namespace analysis
                                 d.range.end.character = (uint32_t)pathEnd + 1;
                                 d.severity = lsp::DiagnosticSeverity::Error;
                                 d.source = "preprocessor";
-                                d.message = (m_locale == i18n::Locale::ES) ? ("Archivo incluido no encontrado: '" + incPath + "'") : ("Included file not found: '" + incPath + "'");
+                                d.message = (m_locale == i18n::Locale::ES) ? fmt::format("Archivo incluido no encontrado: '{}'", incPath) : fmt::format("Included file not found: '{}'", incPath);
                                 diags.push_back(d);
                             }
                         }

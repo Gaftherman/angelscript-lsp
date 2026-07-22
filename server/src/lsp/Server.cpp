@@ -6,6 +6,8 @@
 
 #include "Server.h"
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/fmt/fmt.h>
 #include <memory>
 #include <shared_mutex>
 #include <ankerl/unordered_dense.h>
@@ -74,6 +76,15 @@ namespace angel_lsp
     Server::Server(ServerConfig config)
         : m_config(std::move(config))
     {
+        try
+        {
+            auto logger = spdlog::stderr_color_mt("angel_lsp");
+            spdlog::set_default_logger(logger);
+        }
+        catch (...)
+        {
+        }
+
         oracle = std::make_unique<analysis::ValidationOracle>(m_locale);
         m_diagCache = std::make_unique<analysis::DiagnosticCache>();
 
@@ -529,7 +540,7 @@ namespace angel_lsp
 
             m_diagCache->Update(uri, diagnostics);
 
-            LspLogger::Info("[Server] Publishing " + std::to_string(diagnostics.size()) + " diagnostic(s) via TextDocument_PublishDiagnostics for URI: '" + uri + "'");
+            LspLogger::Info(fmt::format("[Server] Publishing {} diagnostic(s) via TextDocument_PublishDiagnostics for URI: '{}'", diagnostics.size(), uri));
 
             lsp::notifications::TextDocument_PublishDiagnostics::Params params;
             params.uri = lsp::DocumentUri::parse(uri);

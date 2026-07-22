@@ -7,6 +7,7 @@
 #pragma once
 #include <ankerl/unordered_dense.h>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 #include "Symbol.h"
@@ -66,7 +67,7 @@ namespace analysis
          * @param[in] col Zero-indexed column number.
          * @return Symbol* The containing scope symbol, or nullptr if none.
          */
-        Symbol *FindScopeByPosition(const std::string &uri, uint32_t line, uint32_t col) const;
+        Symbol *FindScopeByPosition(std::string_view uri, uint32_t line, uint32_t col) const;
 
         /**
          * @brief Finds the first global symbol matching a specific name.
@@ -74,7 +75,7 @@ namespace analysis
          * @param[in] name The exact symbol name.
          * @return Symbol* The matched global symbol, or nullptr.
          */
-        Symbol *FindGlobalByName(const std::string &name) const;
+        Symbol *FindGlobalByName(std::string_view name) const;
 
         /**
          * @brief Finds all global symbols matching a specific name (e.g. function overloads).
@@ -82,7 +83,7 @@ namespace analysis
          * @param[in] name The exact symbol name.
          * @return std::vector<Symbol*> A list of matched symbols.
          */
-        std::vector<Symbol *> FindAllGlobalsByName(const std::string &name) const;
+        std::vector<Symbol *> FindAllGlobalsByName(std::string_view name) const;
 
         /**
          * @brief Performs a deep recursive search for a symbol by name across all children.
@@ -90,7 +91,7 @@ namespace analysis
          * @param[in] name The exact symbol name.
          * @return const Symbol* The first matched symbol, or nullptr.
          */
-        const Symbol *FindByNameDeep(const std::string &name) const;
+        const Symbol *FindByNameDeep(std::string_view name) const;
 
         /**
          * @brief Finds all classes that inherit from or include a specified mixin.
@@ -98,7 +99,7 @@ namespace analysis
          * @param[in] mixinName The name of the target mixin.
          * @return std::vector<const Symbol*> A list of host class symbols.
          */
-        std::vector<const Symbol *> FindHostClassesOf(const std::string &mixinName) const;
+        std::vector<const Symbol *> FindHostClassesOf(std::string_view mixinName) const;
 
         /**
          * @brief Finds the first local symbol matching a specific name.
@@ -106,7 +107,7 @@ namespace analysis
          * @param[in] name The exact local variable name.
          * @return Symbol* The matched local symbol, or nullptr.
          */
-        Symbol *FindLocalByName(const std::string &name) const;
+        Symbol *FindLocalByName(std::string_view name) const;
 
         /**
          * @brief Finds a local symbol by name, ensuring it is visible at the given cursor position.
@@ -116,7 +117,7 @@ namespace analysis
          * @param[in] col Zero-indexed column number.
          * @return const Symbol* The valid local symbol, or nullptr.
          */
-        const Symbol *FindLocalByNameAt(const std::string &name, uint32_t line, uint32_t col) const;
+        const Symbol *FindLocalByNameAt(std::string_view name, uint32_t line, uint32_t col) const;
 
         /**
          * @brief Finds all symbols (global or local) matching a name.
@@ -124,7 +125,7 @@ namespace analysis
          * @param[in] name The symbol name string.
          * @return std::vector<const Symbol*> A list of matching symbols.
          */
-        std::vector<const Symbol *> FindByName(const std::string &name) const;
+        std::vector<const Symbol *> FindByName(std::string_view name) const;
 
         /**
          * @brief Finds the first symbol (local or global) matching a name.
@@ -132,7 +133,7 @@ namespace analysis
          * @param[in] name The symbol name string.
          * @return Symbol* The first matched symbol, or nullptr.
          */
-        Symbol *FindFirst(const std::string &name) const;
+        Symbol *FindFirst(std::string_view name) const;
 
         /**
          * @brief Finds all symbols directly inside a specified container (e.g., class or namespace).
@@ -140,7 +141,7 @@ namespace analysis
          * @param[in] containerName The container name string.
          * @return std::vector<const Symbol*> A list of child symbols.
          */
-        std::vector<const Symbol *> FindInContainer(const std::string &containerName) const;
+        std::vector<const Symbol *> FindInContainer(std::string_view containerName) const;
 
         /**
          * @brief Retrieves all global symbols map.
