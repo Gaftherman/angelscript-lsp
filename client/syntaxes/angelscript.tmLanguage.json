@@ -26,10 +26,23 @@
           "end": "\\*/",
           "patterns": [
             {
+              "match": "([@\\\\](?:access|permission|visibility))\\s+(public|private|protected|package|internal)\\b",
+              "captures": {
+                "1": { "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript" },
+                "2": { "name": "constant.language.access-type.jsdoc.angelscript constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript" }
+              }
+            },
+            {
               "match": "([@\\\\](?:param|tparam))\\s+([A-Za-z_][A-Za-z0-9_]*)",
               "captures": {
                 "1": { "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript" },
                 "2": { "name": "variable.other.jsdoc.angelscript variable.other.doxygen.angelscript" }
+              }
+            },
+            {
+              "match": "\\{([^}]+)\\}",
+              "captures": {
+                "0": { "name": "entity.name.type.instance.jsdoc.angelscript entity.name.type.doxygen.angelscript" }
               }
             },
             {
@@ -53,10 +66,23 @@
           "end": "$\n?",
           "patterns": [
             {
+              "match": "([@\\\\](?:access|permission|visibility))\\s+(public|private|protected|package|internal)\\b",
+              "captures": {
+                "1": { "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript" },
+                "2": { "name": "constant.language.access-type.jsdoc.angelscript constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript" }
+              }
+            },
+            {
               "match": "([@\\\\](?:param|tparam))\\s+([A-Za-z_][A-Za-z0-9_]*)",
               "captures": {
                 "1": { "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript" },
                 "2": { "name": "variable.other.jsdoc.angelscript variable.other.doxygen.angelscript" }
+              }
+            },
+            {
+              "match": "\\{([^}]+)\\}",
+              "captures": {
+                "0": { "name": "entity.name.type.instance.jsdoc.angelscript entity.name.type.doxygen.angelscript" }
               }
             },
             {
