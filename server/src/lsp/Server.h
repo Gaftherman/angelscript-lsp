@@ -70,8 +70,8 @@ namespace angel_lsp
 
         ServerConfig m_config;
 
-        std::unique_ptr<lsp::Connection> m_connection;
-        std::unique_ptr<lsp::MessageHandler> messageHandler;
+        std::unique_ptr<::lsp::Connection> m_connection;
+        std::unique_ptr<::lsp::MessageHandler> messageHandler;
         std::shared_mutex m_docMutex;
         ankerl::unordered_dense::map<std::string, std::unique_ptr<Document>> m_documents;
         ankerl::unordered_dense::map<std::string, analysis::SymbolTable> m_symbolTables;
@@ -97,4 +97,3 @@ namespace angel_lsp
     };
 
 } // namespace angel_lsp
-

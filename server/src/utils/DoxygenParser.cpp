@@ -10,6 +10,9 @@ extern "C" TSLanguage *tree_sitter_doxygen();
 
 namespace angel_lsp::utils
 {
+    using document::UniqueTSParser;
+    using document::UniqueTSTree;
+
     // Helper to get text from a node
     static std::string GetNodeText(TSNode node, const std::string &source)
     {

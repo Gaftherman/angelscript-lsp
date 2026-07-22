@@ -23,6 +23,7 @@
 
 namespace angel_lsp
 {
+    using namespace ::lsp;
 
     static std::string NormalizeUri(const std::string &rawUri)
     {
