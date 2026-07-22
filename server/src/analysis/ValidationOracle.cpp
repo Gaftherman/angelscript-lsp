@@ -169,6 +169,8 @@ namespace analysis
             return;
         }
 
+        const auto &strs = i18n::GetStrings(m_locale);
+
         auto walkNode = [&](auto self, TSNode node) -> void
         {
             if (ts_node_is_error(node) || ts_node_is_missing(node))
@@ -188,15 +190,15 @@ namespace analysis
                 std::string nodeText(sv.begin(), sv.end());
                 if (ts_node_is_missing(node))
                 {
-                    d.message = (m_locale == i18n::Locale::ES) ? "Error de sintaxis: se esperaba un token" : "Syntax error: missing expected token";
+                    d.message = std::string(strs.diagMissingExpectedToken);
                 }
                 else if (!nodeText.empty())
                 {
-                    d.message = (m_locale == i18n::Locale::ES) ? fmt::format("Error de sintaxis: token inesperado '{}'", nodeText) : fmt::format("Syntax error: unexpected token '{}'", nodeText);
+                    d.message = fmt::format(fmt::runtime(strs.diagUnexpectedToken), nodeText);
                 }
                 else
                 {
-                    d.message = (m_locale == i18n::Locale::ES) ? "Error de sintaxis: token inesperado" : "Syntax error: unexpected token";
+                    d.message = std::string(strs.diagSyntaxError);
                 }
 
                 diags.push_back(d);
@@ -221,6 +223,8 @@ namespace analysis
         {
             return;
         }
+
+        const auto &strs = i18n::GetStrings(m_locale);
 
         static const ankerl::unordered_dense::set<std::string> builtins = {
             "int", "uint", "int8", "int16", "int64", "uint8", "uint16", "uint64",
@@ -305,7 +309,7 @@ namespace analysis
                         d.range.end.character = end.column;
                         d.severity = lsp::DiagnosticSeverity::Error;
                         d.source = "angelscript";
-                        d.message = (m_locale == i18n::Locale::ES) ? fmt::format("Identificador o símbolo no declarado '{}'", name) : fmt::format("Undeclared identifier or symbol '{}'", name);
+                        d.message = fmt::format(fmt::runtime(strs.diagUndeclaredSymbol), name);
 
                         diags.push_back(d);
                     }
@@ -330,6 +334,8 @@ namespace analysis
         std::istringstream stream(doc.GetText());
         std::string line;
         uint32_t lineIdx = 0;
+
+        const auto &strs = i18n::GetStrings(m_locale);
 
         auto resolveRelative = [](const std::string &baseUri, const std::string &relPath) -> std::string
         {
@@ -360,7 +366,7 @@ namespace analysis
                     d.range.end.character = (uint32_t)line.length();
                     d.severity = lsp::DiagnosticSeverity::Error;
                     d.source = "preprocessor";
-                    d.message = (m_locale == i18n::Locale::ES) ? "Error de sintaxis: falta delimitador de ruta en #include" : "Syntax error: missing include path delimiter";
+                    d.message = std::string(strs.diagMissingIncludeDelimiter);
                     diags.push_back(d);
                 }
                 else
@@ -378,7 +384,7 @@ namespace analysis
                         d.range.end.character = (uint32_t)line.length();
                         d.severity = lsp::DiagnosticSeverity::Error;
                         d.source = "preprocessor";
-                        d.message = (m_locale == i18n::Locale::ES) ? "Error de sintaxis: delimitador de ruta sin cerrar en #include" : "Syntax error: unclosed path delimiter in #include";
+                        d.message = std::string(strs.diagUnclosedIncludeDelimiter);
                         diags.push_back(d);
                     }
                     else
@@ -393,7 +399,7 @@ namespace analysis
                             d.range.end.character = (uint32_t)line.length();
                             d.severity = lsp::DiagnosticSeverity::Error;
                             d.source = "preprocessor";
-                            d.message = (m_locale == i18n::Locale::ES) ? "Error de sintaxis: caracteres no esperados después de directiva #include" : "Syntax error: unexpected characters after #include directive";
+                            d.message = std::string(strs.diagUnexpectedCharsAfterInclude);
                             diags.push_back(d);
                         }
 
@@ -422,7 +428,7 @@ namespace analysis
                                 d.range.end.character = (uint32_t)pathEnd + 1;
                                 d.severity = lsp::DiagnosticSeverity::Error;
                                 d.source = "preprocessor";
-                                d.message = (m_locale == i18n::Locale::ES) ? fmt::format("Archivo incluido no encontrado: '{}'", incPath) : fmt::format("Included file not found: '{}'", incPath);
+                                d.message = fmt::format(fmt::runtime(strs.diagIncludedFileNotFound), incPath);
                                 diags.push_back(d);
                             }
                         }

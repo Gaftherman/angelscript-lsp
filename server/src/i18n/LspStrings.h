@@ -40,7 +40,7 @@ namespace angel_lsp::i18n
     };
 
     /**
-     * @brief Structure containing localized strings for symbol kinds, hover labels, and Doxygen headers.
+     * @brief Structure containing localized strings for symbol kinds, hover labels, diagnostics, and Doxygen headers.
      */
     struct LspStrings
     {
@@ -92,6 +92,16 @@ namespace angel_lsp::i18n
         std::string_view hoverLocalVariable;
         std::string_view hoverEnumMember;
         std::string_view hoverIncludedFile;
+
+        // --- Diagnostic messages ---
+        std::string_view diagSyntaxError;
+        std::string_view diagUnexpectedToken;
+        std::string_view diagMissingExpectedToken;
+        std::string_view diagUndeclaredSymbol;
+        std::string_view diagIncludedFileNotFound;
+        std::string_view diagMissingIncludeDelimiter;
+        std::string_view diagUnclosedIncludeDelimiter;
+        std::string_view diagUnexpectedCharsAfterInclude;
     };
 
     /**

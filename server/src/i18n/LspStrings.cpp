@@ -53,7 +53,16 @@ namespace angel_lsp::i18n
             .hoverField         = "field",
             .hoverLocalVariable = "local variable",
             .hoverEnumMember    = "enum member",
-            .hoverIncludedFile  = "Included script file:"
+            .hoverIncludedFile  = "Included script file:",
+
+            .diagSyntaxError = "Syntax error",
+            .diagUnexpectedToken = "Syntax error: unexpected token '{}'",
+            .diagMissingExpectedToken = "Syntax error: missing expected token",
+            .diagUndeclaredSymbol = "Undeclared identifier or symbol '{}'",
+            .diagIncludedFileNotFound = "Included file not found: '{}'",
+            .diagMissingIncludeDelimiter = "Syntax error: missing include path delimiter",
+            .diagUnclosedIncludeDelimiter = "Syntax error: unclosed path delimiter in #include",
+            .diagUnexpectedCharsAfterInclude = "Syntax error: unexpected characters after #include directive"
         };
 
     static const LspStrings ES_STRINGS =
@@ -101,7 +110,16 @@ namespace angel_lsp::i18n
             .hoverField         = "campo",
             .hoverLocalVariable = "variable local",
             .hoverEnumMember    = "miembro de enum",
-            .hoverIncludedFile  = "Archivo de script incluido:"
+            .hoverIncludedFile  = "Archivo de script incluido:",
+
+            .diagSyntaxError = "Error de sintaxis",
+            .diagUnexpectedToken = "Error de sintaxis: token inesperado '{}'",
+            .diagMissingExpectedToken = "Error de sintaxis: se esperaba un token",
+            .diagUndeclaredSymbol = "Identificador o símbolo no declarado '{}'",
+            .diagIncludedFileNotFound = "Archivo incluido no encontrado: '{}'",
+            .diagMissingIncludeDelimiter = "Error de sintaxis: falta delimitador de ruta en #include",
+            .diagUnclosedIncludeDelimiter = "Error de sintaxis: delimitador de ruta sin cerrar en #include",
+            .diagUnexpectedCharsAfterInclude = "Error de sintaxis: caracteres no esperados después de directiva #include"
         };
 
     Locale ParseLocale(const std::string &localeStr)
