@@ -261,6 +261,17 @@ namespace analysis
             return; // Ignore any errors generated from our injected abstract classes
         }
 
+        std::string sectionStr = msg->section ? msg->section : "";
+        std::string logMsg = "[Validation] " + std::string(msg->type == asMSGTYPE_ERROR ? "ERROR " : (msg->type == asMSGTYPE_WARNING ? "WARN " : "INFO "))
+            + "(" + sectionStr + ":" + std::to_string(msg->row) + ":" + std::to_string(msg->col) + "): " + msg->message;
+
+        if (msg->type == asMSGTYPE_ERROR)
+            angel_lsp::LspLogger::Error(logMsg);
+        else if (msg->type == asMSGTYPE_WARNING)
+            angel_lsp::LspLogger::Warn(logMsg);
+        else
+            angel_lsp::LspLogger::Info(logMsg);
+
         lsp::Diagnostic d;
 
         // AngelScript uses 1-based lines and columns
