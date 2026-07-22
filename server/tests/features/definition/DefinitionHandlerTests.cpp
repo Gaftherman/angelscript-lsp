@@ -36,7 +36,7 @@ static std::vector<lsp::Location> GetDefinitionLocations(const char *src, const 
     req.position.line = line;
     req.position.character = col;
 
-    auto result = features::ProcessDefinition(req, doc, table, nullptr);
+    auto result = features::ProcessDefinition(req, doc, table);
     std::vector<lsp::Location> locs;
     if (!result.isNull())
     {
@@ -83,7 +83,7 @@ static std::vector<lsp::Location> GetTypeDefinitionLocations(const char *src, co
     req.position.line = line;
     req.position.character = col;
 
-    auto result = features::ProcessTypeDefinition(req, doc, table, nullptr);
+    auto result = features::ProcessTypeDefinition(req, doc, table);
     std::vector<lsp::Location> locs;
     if (!result.isNull())
     {
@@ -563,7 +563,7 @@ void Main()
     req.position.line = line;
     req.position.character = col;
 
-    auto result = features::ProcessDefinition(req, mainDoc, table, nullptr);
+    auto result = features::ProcessDefinition(req, mainDoc, table);
     REQUIRE(!result.isNull());
     const auto &def = std::get<lsp::Definition>(*result);
     const auto &loc = std::get<lsp::Location>(def);
@@ -576,7 +576,7 @@ void Main()
     typeReq.position.line = 3;
     typeReq.position.character = 11; // `msg`
 
-    auto typeResult = features::ProcessTypeDefinition(typeReq, mainDoc, table, nullptr);
+    auto typeResult = features::ProcessTypeDefinition(typeReq, mainDoc, table);
     REQUIRE(!typeResult.isNull());
     const auto &typeDef = std::get<lsp::Definition>(*typeResult);
     const auto &typeLoc = std::get<lsp::Location>(typeDef);
@@ -623,7 +623,7 @@ void AppMain()
     incReq.position.line = 1;
     incReq.position.character = 5; // On `#include`
 
-    auto incResult = features::ProcessDefinition(incReq, mainDoc, table, nullptr);
+    auto incResult = features::ProcessDefinition(incReq, mainDoc, table);
     REQUIRE(!incResult.isNull());
     const auto &incDef = std::get<lsp::Definition>(*incResult);
     const auto &incLoc = std::get<lsp::Location>(incDef);
@@ -635,7 +635,7 @@ void AppMain()
     classReq.position.line = 5;
     classReq.position.character = 14;
 
-    auto classResult = features::ProcessDefinition(classReq, mainDoc, table, nullptr);
+    auto classResult = features::ProcessDefinition(classReq, mainDoc, table);
     REQUIRE(!classResult.isNull());
     const auto &classDef = std::get<lsp::Definition>(*classResult);
     const auto &classLoc = std::get<lsp::Location>(classDef);
@@ -648,7 +648,7 @@ void AppMain()
     methodReq.position.line = 6;
     methodReq.position.character = 12; // `Present`
 
-    auto methodResult = features::ProcessDefinition(methodReq, mainDoc, table, nullptr);
+    auto methodResult = features::ProcessDefinition(methodReq, mainDoc, table);
     REQUIRE(!methodResult.isNull());
     const auto &methodDef = std::get<lsp::Definition>(*methodResult);
     const auto &methodLoc = std::get<lsp::Location>(methodDef);
@@ -692,7 +692,7 @@ namespace Engine
     analysis::SymbolTable table;
     analysis::SymbolCollector::CollectGlobals(headerDoc, table);
     analysis::SymbolCollector::CollectGlobals(rendererDoc, table);
-    analysis::SymbolCollector::TraverseLocals(rendererDoc.RootNode(), rendererDoc, table, nullptr);
+    analysis::SymbolCollector::TraverseLocals(rendererDoc.RootNode(), rendererDoc, table);
 
     // Go to Definition on `Present` in `m_device.Present()`
     lsp::requests::TextDocument_Definition::Params req;
@@ -700,7 +700,7 @@ namespace Engine
     req.position.line = 9;
     req.position.character = 21; // `Present`
 
-    auto res = features::ProcessDefinition(req, rendererDoc, table, nullptr);
+    auto res = features::ProcessDefinition(req, rendererDoc, table);
     REQUIRE(!res.isNull());
     const auto &def = std::get<lsp::Definition>(*res);
     const auto &loc = std::get<lsp::Location>(def);
@@ -739,7 +739,7 @@ void MainApp()
     analysis::SymbolTable table;
     analysis::SymbolCollector::SetDefinedWords({"WITH_DEBUG"});
     analysis::SymbolCollector::CollectGlobals(doc, table);
-    analysis::SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+    analysis::SymbolCollector::TraverseLocals(doc.RootNode(), doc, table);
 
     // 1. Go to Definition on `#include <engine/math>` -> resolves auto-appended .as -> file:///project/engine/math.as
     lsp::requests::TextDocument_Definition::Params incReq;
@@ -747,7 +747,7 @@ void MainApp()
     incReq.position.line = 1;
     incReq.position.character = 5;
 
-    auto incResult = features::ProcessDefinition(incReq, doc, table, nullptr);
+    auto incResult = features::ProcessDefinition(incReq, doc, table);
     REQUIRE(!incResult.isNull());
     const auto &incDef = std::get<lsp::Definition>(*incResult);
     const auto &incLoc = std::get<lsp::Location>(incDef);
@@ -759,7 +759,7 @@ void MainApp()
     defReq.position.line = 2;
     defReq.position.character = 3;
 
-    auto defResult = features::ProcessDefinition(defReq, doc, table, nullptr);
+    auto defResult = features::ProcessDefinition(defReq, doc, table);
     REQUIRE(!defResult.isNull());
 
     // 3. Go to Definition on `NetworkManager` inside MainApp -> returns valid location
@@ -768,7 +768,7 @@ void MainApp()
     netReq.position.line = 20;
     netReq.position.character = 8; // `NetworkManager`
 
-    auto netResult = features::ProcessDefinition(netReq, doc, table, nullptr);
+    auto netResult = features::ProcessDefinition(netReq, doc, table);
     REQUIRE(!netResult.isNull());
 }
 
@@ -806,7 +806,7 @@ void Main()
 
     analysis::SymbolCollector::CollectGlobals(incDoc, table);
     analysis::SymbolCollector::CollectGlobals(mainDoc, table, resolver);
-    analysis::SymbolCollector::TraverseLocals(mainDoc.RootNode(), mainDoc, table, nullptr);
+    analysis::SymbolCollector::TraverseLocals(mainDoc.RootNode(), mainDoc, table);
 
     auto overloads = table.FindAllGlobalsByName("OpenInEditorClass");
     CHECK(overloads.size() == 1);
@@ -816,7 +816,7 @@ void Main()
     classReq.position.line = 5;
     classReq.position.character = 4;
 
-    auto classResult = features::ProcessDefinition(classReq, mainDoc, table, nullptr);
+    auto classResult = features::ProcessDefinition(classReq, mainDoc, table);
     REQUIRE(!classResult.isNull());
     const auto &classDef = std::get<lsp::Definition>(*classResult);
     const auto &classLoc = std::get<lsp::Location>(classDef);
@@ -858,14 +858,14 @@ void App() { Canvas c; Vector2D v = c.pos; }
     };
 
     analysis::SymbolCollector::CollectGlobals(mainDoc, table, resolver);
-    analysis::SymbolCollector::TraverseLocals(mainDoc.RootNode(), mainDoc, table, nullptr);
+    analysis::SymbolCollector::TraverseLocals(mainDoc.RootNode(), mainDoc, table);
 
     lsp::requests::TextDocument_Definition::Params vecReq;
     vecReq.textDocument.uri = lsp::DocumentUri::parse(mainUri);
     vecReq.position.line = 2;
     vecReq.position.character = 23;
 
-    auto vecResult = features::ProcessDefinition(vecReq, mainDoc, table, nullptr);
+    auto vecResult = features::ProcessDefinition(vecReq, mainDoc, table);
     REQUIRE(!vecResult.isNull());
     const auto &vecDef = std::get<lsp::Definition>(*vecResult);
     const auto &vecLoc = std::get<lsp::Location>(vecDef);
@@ -902,7 +902,7 @@ void Render() {}
     req.position.line = 1;
     req.position.character = 12;
 
-    auto result = features::ProcessDefinition(req, mainDoc, table, nullptr);
+    auto result = features::ProcessDefinition(req, mainDoc, table);
     REQUIRE(!result.isNull());
     const auto &def = std::get<lsp::Definition>(*result);
     const auto &loc = std::get<lsp::Location>(def);

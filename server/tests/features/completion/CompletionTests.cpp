@@ -16,6 +16,6 @@ TEST_CASE("Completion: Basic Keyword & Global Completion")
     req.position.line = 0;
     req.position.character = 34;
 
-    auto result = features::ProcessCompletion(req, doc, table, nullptr);
+    auto result = features::ProcessCompletion(req, doc, table);
     CHECK_FALSE(result.isNull());
 }

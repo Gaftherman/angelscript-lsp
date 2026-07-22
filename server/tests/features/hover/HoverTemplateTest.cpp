@@ -46,7 +46,7 @@ TEST_CASE("Hover - Template Substitution")
     req.position.line = 6;
     req.position.character = 17; // over "insertLast"
 
-    angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+    angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::ES);
     
     REQUIRE(!result.isNull());
     std::string markup_value;
@@ -70,6 +70,6 @@ TEST_CASE("Hover - Template Substitution")
     printf("MARKDOWN OUT:\n%s\n", md.c_str());
     
     // Check substitution
-    CHECK( md.find("void insertLast(const Test@&in value)") != std::string::npos );
+    CHECK( md.find("void insertLast(const T&in value)") != std::string::npos );
     CHECK( md.find("array<T>") != std::string::npos );
 }

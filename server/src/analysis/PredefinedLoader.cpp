@@ -1,6 +1,6 @@
 /**
  * @file PredefinedLoader.cpp
- * @brief Implementation of workspace predefined loader and AngelScript engine registration.
+ * @brief Implementation of workspace predefined loader into AST SymbolTable.
  * @ingroup Analysis
  */
 
@@ -13,7 +13,6 @@
 #include "utils/LspLogger.h"
 #include "document/Document.h"
 #include "analysis/SymbolCollector.h"
-#include <as_objecttype.h>
 
 #ifdef max
 #undef max
@@ -25,495 +24,6 @@
 
 namespace analysis
 {
-
-    class DummyStringFactory : public asIStringFactory
-    {
-    public:
-        const void *GetStringConstant(const char *, asUINT) override
-        {
-            static int dummyVal = 1;
-            return &dummyVal;
-        }
-        int ReleaseStringConstant(const void *) override { return 0; }
-        int GetRawStringData(const void *, char *, asUINT *length) const override
-        {
-            if (length)
-                *length = 0;
-            return 0;
-        }
-    };
-    static DummyStringFactory g_dummyStringFactory;
-
-    static int g_dummyObj = 1;
-    static void DummyGeneric(asIScriptGeneric *gen)
-    {
-        // Return a dummy pointer for any object return types to prevent crashes
-        int typeId = gen->GetReturnTypeId();
-        if (typeId != asTYPEID_VOID)
-        {
-            if ((typeId & asTYPEID_OBJHANDLE) || (typeId & asTYPEID_SCRIPTOBJECT) || (typeId & asTYPEID_MASK_OBJECT))
-            {
-                gen->SetReturnAddress(&g_dummyObj);
-            }
-            else
-            {
-                asQWORD zero = 0;
-                gen->SetReturnQWord(zero);
-            }
-        }
-    }
-
-    static void PredefinedMessageCallback(const asSMessageInfo *msg, void *param)
-    {
-        auto *logger = static_cast<std::function<void(const std::string &, int)> *>(param);
-
-        std::string formatted = "AS PREDEFINED ";
-        int severity = 2;
-        if (msg->type == asMSGTYPE_ERROR)
-        {
-            formatted += "ERROR";
-            // Downgrade to warning in LSP so we don't spam errors for invalid predefined files
-            severity = 2;
-            angel_lsp::LspLogger::Warn("AS PREDEFINED ERROR: " + std::string(msg->message) + " (Row: " + std::to_string(msg->row) + ")");
-        }
-        else if (msg->type == asMSGTYPE_WARNING)
-        {
-            formatted += "WARN";
-            severity = 2; // Warn in LSP
-            angel_lsp::LspLogger::Warn("AS PREDEFINED WARN: " + std::string(msg->message) + " (Row: " + std::to_string(msg->row) + ")");
-        }
-        else
-        {
-            formatted += "INFO";
-            severity = 3; // Info in LSP
-            angel_lsp::LspLogger::Info("AS PREDEFINED INFO: " + std::string(msg->message) + " (Row: " + std::to_string(msg->row) + ")");
-        }
-
-        formatted += ": " + std::string(msg->message) + " (Row: " + std::to_string(msg->row) + ")";
-
-        if (logger && *logger)
-        {
-            (*logger)(formatted, severity);
-        }
-    }
-
-    // Helper to register symbols from the symbol table into the AS engine
-    static void RegisterSymbols(const SymbolTable &table, asIScriptEngine *engine, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> *logger)
-    {
-        // We can't easily get the old callback, but PredefinedLoader is called when engine is fresh or under our control.
-        engine->SetMessageCallback(asFUNCTION(PredefinedMessageCallback), logger, asCALL_CDECL_OBJLAST);
-
-        std::unordered_set<std::string> registeredTypes;
-
-        // Helper for recursive processing
-        auto processSymbols = [&](auto self, const std::vector<std::shared_ptr<Symbol>> &symbols, int pass) -> void
-        {
-            for (const auto &sym : symbols)
-            {
-                if (sym->kind == SymbolKind::Namespace)
-                {
-                    std::string oldNs = engine->GetDefaultNamespace();
-                    std::string newNs = oldNs.empty() ? sym->name : oldNs + "::" + sym->name;
-                    engine->SetDefaultNamespace(newNs.c_str());
-                    self(self, sym->children, pass);
-                    engine->SetDefaultNamespace(oldNs.c_str());
-                }
-                else if (pass == 1)
-                {
-                    if (sym->kind == SymbolKind::Enum)
-                    {
-                        if (registeredTypes.find(sym->name) != registeredTypes.end())
-                            continue;
-                        registeredTypes.insert(sym->name);
-                        engine->RegisterEnum(sym->name.c_str());
-                        // Register enum members
-                        for (const auto &child : sym->children)
-                        {
-                            if (child->kind == SymbolKind::EnumMember)
-                            {
-                                engine->RegisterEnumValue(sym->name.c_str(), child->name.c_str(), 0);
-                            }
-                        }
-                    }
-                    else if (sym->kind == SymbolKind::Typedef)
-                    {
-                        if (registeredTypes.find(sym->name) != registeredTypes.end())
-                            continue;
-                        registeredTypes.insert(sym->name);
-                        engine->RegisterTypedef(sym->name.c_str(), sym->typeInfo.c_str());
-                    }
-                    else if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
-                    {
-                        if (registeredTypes.find(sym->name) != registeredTypes.end() ||
-                            engine->GetTypeInfoByName(sym->name.c_str()) != nullptr)
-                        {
-                            registeredTypes.insert(sym->name);
-                            continue;
-                        }
-
-                        int flags = asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CDAK | asOBJ_APP_CLASS_ALLINTS | asOBJ_APP_CLASS_ALLFLOATS;
-                        int size = 4;
-                        std::string declName = sym->name;
-                        std::string registerName = sym->name;
-
-                        if (sym->isAbstract || sym->isShared || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface)
-                        {
-                            // Skip C++ object type registration for abstract/shared/mixin/interface script classes.
-                            // They will be dynamically compiled as script classes/interfaces in processAbstracts.
-                            continue;
-                        }
-                        else if (sym->name == arrayType || sym->name == arrayType + "<T>")
-                        {
-                            declName = arrayType + "<T>";
-                            registerName = arrayType + "<class T>";
-                            flags = asOBJ_REF | asOBJ_TEMPLATE;
-                            size = 0;
-                        }
-                        else
-                        {
-                            flags = asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CDAK | asOBJ_APP_CLASS_ALLINTS | asOBJ_APP_CLASS_ALLFLOATS;
-                            size = 4;
-                        }
-
-                        int r = engine->RegisterObjectType(registerName.c_str(), size, flags);
-                        if (r < 0)
-                        {
-                            if (logger && *logger)
-                            {
-                                (*logger)("[Predefined] Failed to RegisterObjectType: '" + registerName + "' (code " + std::to_string(r) + ")", 1);
-                            }
-                            continue;
-                        }
-
-                        registeredTypes.insert(sym->name);
-                        if (logger && *logger)
-                        {
-                            (*logger)("[Predefined] Registered ObjectType: '" + registerName + "' (flags: " + std::to_string(flags) + ")", 0);
-                        }
-
-                        if (flags & asOBJ_TEMPLATE)
-                        {
-                            // Register dummy memory management so handles and factories work for templates
-                            engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_ADDREF, "void f()", asFUNCTION(DummyGeneric), asCALL_GENERIC);
-                            engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_RELEASE, "void f()", asFUNCTION(DummyGeneric), asCALL_GENERIC);
-
-                            // Register a dummy factory so we can instantiate this type locally by value
-                            std::string factorySig = declName + "@ f(int&in)";
-                            engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_FACTORY, factorySig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
-
-                            // Register dummy list factory for initialization lists like array<int> a = {1, 2, 3};
-                            std::string listFactorySig = declName + "@ f(int&in, int&in) {repeat T}";
-                            engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_LIST_FACTORY, listFactorySig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
-                        }
-
-                        if (sym->name == stringType)
-                        {
-                            engine->RegisterStringFactory(stringType.c_str(), &g_dummyStringFactory);
-                        }
-                    }
-                }
-                else if (pass == 2)
-                {
-                    if (sym->kind == SymbolKind::Funcdef)
-                    {
-                        if (registeredTypes.find(sym->name) != registeredTypes.end() ||
-                            engine->GetTypeInfoByName(sym->name.c_str()) != nullptr)
-                        {
-                            registeredTypes.insert(sym->name);
-                            continue;
-                        }
-                        registeredTypes.insert(sym->name);
-                        engine->RegisterFuncdef(sym->BuildSignature().c_str());
-                    }
-                }
-                else if (pass == 3)
-                {
-                    if (sym->kind == SymbolKind::Class || sym->kind == SymbolKind::Interface || sym->kind == SymbolKind::Mixin)
-                    {
-                        if (sym->kind == SymbolKind::Interface)
-                        {
-                            continue;
-                        }
-
-                        std::string declName = sym->name;
-                        std::string lookupName = sym->name;
-                        if (sym->name == arrayType || sym->name == arrayType + "<T>")
-                        {
-                            declName = arrayType + "<T>";
-                            lookupName = arrayType + "<class T>";
-                        }
-
-                        asITypeInfo *ti = engine->GetTypeInfoByName(lookupName.c_str());
-                        if (!ti)
-                        {
-                            ti = engine->GetTypeInfoByName(sym->name.c_str());
-                        }
-                        if (!ti && (sym->name == arrayType || sym->name == arrayType + "<T>"))
-                        {
-                            ti = engine->GetTypeInfoByName(arrayType.c_str());
-                        }
-
-                        for (const auto &child : sym->children)
-                        {
-                            if (child->kind == SymbolKind::Method)
-                            {
-                                // Do not register constructors or destructors as object methods.
-                                if (child->name == sym->name)
-                                {
-                                    std::string paramList = "(";
-                                    for (size_t p = 0; p < child->params.size(); p++)
-                                    {
-                                        if (p > 0)
-                                            paramList += ", ";
-                                        paramList += child->params[p].typeName + " " + child->params[p].name;
-                                    }
-                                    paramList += ")";
-                                    std::string behDecl = "void f" + paramList;
-                                    engine->RegisterObjectBehaviour(declName.c_str(), asBEHAVE_CONSTRUCT, behDecl.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
-                                    continue;
-                                }
-                                else if (!child->name.empty() && child->name[0] == '~')
-                                {
-                                    continue;
-                                }
-
-                                bool methodExists = false;
-                                if (ti)
-                                {
-                                    asUINT mcount = ti->GetMethodCount();
-                                    for (asUINT mi = 0; mi < mcount; ++mi)
-                                    {
-                                        asIScriptFunction *m = ti->GetMethodByIndex(mi);
-                                        if (m && m->GetName() && child->name == m->GetName())
-                                        {
-                                            methodExists = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                                if (methodExists)
-                                {
-                                    continue;
-                                }
-                                std::string methodSig = child->BuildSignature();
-                                engine->RegisterObjectMethod(declName.c_str(), methodSig.c_str(), asFUNCTION(DummyGeneric), asCALL_GENERIC);
-                            }
-                            else if (child->kind == SymbolKind::Property || child->kind == SymbolKind::Variable)
-                            {
-                                bool propExists = false;
-                                if (ti)
-                                {
-                                    asUINT pcount = ti->GetPropertyCount();
-                                    for (asUINT pi = 0; pi < pcount; ++pi)
-                                    {
-                                        const char *pName = nullptr;
-                                        ti->GetProperty(pi, &pName);
-                                        if (pName && child->name == pName)
-                                        {
-                                            propExists = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                                if (propExists)
-                                {
-                                    continue;
-                                }
-                                engine->RegisterObjectProperty(declName.c_str(), child->BuildSignature().c_str(), 0);
-                            }
-                        }
-                    }
-                }
-            }
-        };
-
-        // Flatten globals
-        std::vector<std::shared_ptr<Symbol>> globals;
-        for (const auto &[name, overloads] : table.GetGlobals())
-        {
-            for (const auto &sym : overloads)
-            {
-                globals.push_back(sym);
-            }
-        }
-
-        // Pass 1: Types
-        processSymbols(processSymbols, globals, 1);
-
-        // Register Default Array ONLY if it was registered
-        if (engine->GetTypeInfoByName((arrayType + "<T>").c_str()) != nullptr ||
-            engine->GetTypeInfoByName(arrayType.c_str()) != nullptr)
-        {
-            engine->RegisterDefaultArrayType((arrayType + "<T>").c_str());
-        }
-
-        // Pass 2: Funcdefs
-        processSymbols(processSymbols, globals, 2);
-
-        // Pass 3: Methods, properties, functions
-        processSymbols(processSymbols, globals, 3);
-
-        engine->ClearMessageCallback();
-    }
-
-    bool PredefinedLoader::LoadFromSource(const std::string &source, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger, const std::string &customUri)
-    {
-        if (!engine)
-            return false;
-
-        // Use document with real or custom URI to parse the source
-        Document doc(customUri.empty() ? "file:///as.predefined" : customUri, source);
-        SymbolCollector::CollectGlobals(doc, table);
-
-        // Call RegisterSymbols passing the logger pointer
-        RegisterSymbols(table, engine, stringType, arrayType, &logger);
-
-        // Generate script code ONLY for interface/abstract/shared/mixin classes
-        // (Do NOT emit global functions or global variables as they are already registered natively in engine)
-        std::string scriptCode;
-        auto processAbstracts = [&](auto self, const std::vector<std::shared_ptr<Symbol>> &symbols, const std::string &currentNs) -> void
-        {
-            for (const auto &sym : symbols)
-            {
-                if (sym->kind == SymbolKind::Namespace)
-                {
-                    std::string newNs = currentNs.empty() ? sym->name : currentNs + "::" + sym->name;
-                    size_t startLen = scriptCode.size();
-                    std::string nsHeader = "namespace " + sym->name + " {\n";
-                    scriptCode += nsHeader;
-                    self(self, sym->children, newNs);
-                    if (scriptCode.size() == startLen + nsHeader.size())
-                    {
-                        scriptCode.resize(startLen);
-                    }
-                    else
-                    {
-                        scriptCode += "}\n";
-                    }
-                }
-                else if ((sym->kind == SymbolKind::Class && (sym->isAbstract || sym->isShared)) || sym->kind == SymbolKind::Mixin || sym->kind == SymbolKind::Interface)
-                {
-                    bool isInterface = (sym->kind == SymbolKind::Interface);
-                    if (isInterface)
-                    {
-                        if (sym->isShared)
-                            scriptCode += "shared ";
-                        scriptCode += "interface " + sym->name;
-                    }
-                    else
-                    {
-                        if (sym->isShared)
-                            scriptCode += "shared ";
-                        if (sym->isAbstract)
-                            scriptCode += "abstract ";
-                        if (sym->kind == SymbolKind::Mixin)
-                            scriptCode += "mixin ";
-                        scriptCode += "class " + sym->name;
-                    }
-
-                    if (!sym->baseClasses.empty())
-                    {
-                        scriptCode += " : ";
-                        for (size_t i = 0; i < sym->baseClasses.size(); ++i)
-                        {
-                            scriptCode += sym->baseClasses[i];
-                            if (i + 1 < sym->baseClasses.size())
-                                scriptCode += ", ";
-                        }
-                    }
-                    scriptCode += " {\n";
-
-                    for (const auto &child : sym->children)
-                    {
-                        if (child->kind == SymbolKind::Method)
-                        {
-                            if (isInterface)
-                            {
-                                scriptCode += "  " + child->BuildSignature() + ";\n";
-                            }
-                            else
-                            {
-                                std::string retType = child->typeInfo;
-                                std::string mBody = "{}";
-                                if (retType.empty() || retType == "void")
-                                {
-                                    mBody = "{}";
-                                }
-                                else if (retType.find('@') != std::string::npos)
-                                {
-                                    mBody = "{ return null; }";
-                                }
-                                else if (retType == "int" || retType == "uint" || retType == "float" || retType == "double" || retType == "bool" ||
-                                         retType == "int8" || retType == "int16" || retType == "int64" || retType == "uint8" || retType == "uint16" || retType == "uint64")
-                                {
-                                    mBody = "{ return 0; }";
-                                }
-                                else if (retType == "string")
-                                {
-                                    mBody = "{ return \"\"; }";
-                                }
-                                else
-                                {
-                                    mBody = "{ " + retType + " dummy; return dummy; }";
-                                }
-                                scriptCode += "  " + child->BuildSignature() + " " + mBody + "\n";
-                            }
-                        }
-                        else if (child->kind == SymbolKind::Variable || child->kind == SymbolKind::Property)
-                        {
-                            scriptCode += "  " + child->BuildSignature() + ";\n";
-                        }
-                    }
-                    scriptCode += "}\n";
-                }
-            }
-        };
-
-        std::vector<std::shared_ptr<Symbol>> globals;
-        for (const auto &kv : table.GetGlobals())
-        {
-            for (const auto &sym : kv.second)
-            {
-                globals.push_back(sym);
-            }
-        }
-
-        processAbstracts(processAbstracts, globals, "");
-
-        if (!scriptCode.empty())
-        {
-            std::string *previousCode = static_cast<std::string *>(engine->GetUserData(2000));
-            if (previousCode)
-                delete previousCode;
-            engine->SetUserData(new std::string(scriptCode), 2000);
-        }
-
-        return true;
-    }
-
-    bool PredefinedLoader::LoadFromFile(const std::string &filePath, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger)
-    {
-        std::ifstream file(filePath);
-        if (!file.is_open())
-            return false;
-
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-
-        std::string fileUri = filePath;
-        std::replace(fileUri.begin(), fileUri.end(), '\\', '/');
-        if (fileUri.find("file://") != 0)
-        {
-            if (fileUri.empty() || fileUri[0] != '/')
-            {
-                fileUri = "/" + fileUri;
-            }
-            fileUri = "file://" + fileUri;
-        }
-
-        return LoadFromSource(buffer.str(), engine, table, stringType, arrayType, logger, fileUri);
-    }
-
     static std::string UrlDecode(const std::string &in)
     {
         std::string out;
@@ -537,70 +47,126 @@ namespace analysis
         return out;
     }
 
-    bool PredefinedLoader::FindInWorkspace(const std::string &rootUri, asIScriptEngine *engine, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger)
+    bool PredefinedLoader::LoadFromSource(const std::string &source, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger, const std::string &customUri)
+    {
+        Document doc(customUri.empty() ? "file:///as.predefined" : customUri, source);
+        SymbolCollector::CollectGlobals(doc, table);
+
+        if (logger)
+        {
+            logger("[Predefined] Successfully extracted predefined symbols into SymbolTable from: '" + customUri + "'", 0);
+        }
+
+        return true;
+    }
+
+    bool PredefinedLoader::LoadFromFile(const std::string &filePath, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger)
+    {
+        std::ifstream file(filePath);
+        if (!file.is_open())
+        {
+            return false;
+        }
+
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+
+        std::string fileUri = filePath;
+        std::replace(fileUri.begin(), fileUri.end(), '/', '/');
+        std::replace(fileUri.begin(), fileUri.end(), '\\', '/');
+        if (fileUri.find("file://") != 0)
+        {
+            if (fileUri.empty() || fileUri[0] != '/')
+            {
+                fileUri = "/" + fileUri;
+            }
+            fileUri = "file://" + fileUri;
+        }
+
+        return LoadFromSource(buffer.str(), table, stringType, arrayType, logger, fileUri);
+    }
+
+    bool PredefinedLoader::FindInWorkspace(const std::string &rootUri, SymbolTable &table, const std::string &stringType, const std::string &arrayType, std::function<void(const std::string &, int)> logger)
     {
         if (rootUri.empty())
         {
             return false;
         }
 
-        std::string path = rootUri;
-        if (path.find("file://") == 0)
+        std::string pathStr = rootUri;
+        if (pathStr.rfind("file:///", 0) == 0)
         {
-            path = path.substr(7);
-            if (path.length() > 0 && path[0] == '/')
-            {
-                path = path.substr(1);
-            }
+            pathStr = pathStr.substr(8);
         }
-        path = UrlDecode(path);
-        std::replace(path.begin(), path.end(), '/', '\\');
-
-        std::vector<std::string> predefinedFiles;
-        try
+        else if (pathStr.rfind("file://", 0) == 0)
         {
-            namespace fs = std::filesystem;
-            if (fs::exists(path) && fs::is_directory(path))
+            pathStr = pathStr.substr(7);
+        }
+
+        pathStr = UrlDecode(pathStr);
+        std::replace(pathStr.begin(), pathStr.end(), '/', '\\');
+
+        std::vector<std::string> candidates = {
+            "as.predefined",
+            "game.as.predefined",
+            "scripts/as.predefined",
+            "script/as.predefined"};
+
+        namespace fs = std::filesystem;
+        fs::path rootPath(pathStr);
+
+        if (!fs::exists(rootPath) || !fs::is_directory(rootPath))
+        {
+            return false;
+        }
+
+        bool loadedAny = false;
+
+        for (const auto &cand : candidates)
+        {
+            fs::path candPath = rootPath / cand;
+            if (fs::exists(candPath) && fs::is_regular_file(candPath))
             {
-                for (const auto &entry : fs::directory_iterator(path))
+                if (LoadFromFile(candPath.string(), table, stringType, arrayType, logger))
                 {
-                    if (entry.is_regular_file())
+                    loadedAny = true;
+                    if (logger)
                     {
-                        std::string filename = entry.path().filename().string();
-                        if (filename == "as.predefined" || filename.ends_with(".predefined") || filename.ends_with(".as.predefined"))
-                        {
-                            predefinedFiles.push_back(entry.path().string());
-                        }
+                        logger("[Predefined] Loaded workspace predefined file: '" + candPath.string() + "'", 0);
                     }
                 }
             }
         }
-        catch (const std::exception &ex)
-        {
-            angel_lsp::LspLogger::Error("[Predefined] Exception scanning predefined files in workspace: " + std::string(ex.what()));
-        }
 
-        // Sort predefined files deterministically so as.predefined comes first
-        std::sort(predefinedFiles.begin(), predefinedFiles.end(), [](const std::string &a, const std::string &b)
-                  {
-            std::string nameA = std::filesystem::path(a).filename().string();
-            std::string nameB = std::filesystem::path(b).filename().string();
-            if (nameA == "as.predefined") return true;
-            if (nameB == "as.predefined") return false;
-            return nameA < nameB; });
-
-        bool anyLoaded = false;
-        for (const auto &filePath : predefinedFiles)
+        if (!loadedAny)
         {
-            angel_lsp::LspLogger::Info("[Predefined] Loading workspace predefined file: '" + filePath + "'");
-            bool ok = LoadFromFile(filePath, engine, table, stringType, arrayType, logger);
-            if (ok)
+            try
             {
-                anyLoaded = true;
+                for (const auto &entry : fs::directory_iterator(rootPath))
+                {
+                    if (entry.is_regular_file())
+                    {
+                        std::string fname = entry.path().filename().string();
+                        if (fname.ends_with(".as.predefined") || fname.ends_with(".predefined"))
+                        {
+                            if (LoadFromFile(entry.path().string(), table, stringType, arrayType, logger))
+                            {
+                                loadedAny = true;
+                                if (logger)
+                                {
+                                    logger("[Predefined] Loaded workspace predefined file: '" + entry.path().string() + "'", 0);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (...)
+            {
             }
         }
 
-        return anyLoaded;
+        return loadedAny;
     }
 
 } // namespace analysis

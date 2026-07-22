@@ -7,7 +7,6 @@ TEST_SUITE("Script - Namespaces")
 {
     TEST_CASE("Function inside namespace is called correctly")
     {
-        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
         std::string code = R"(
             namespace Combat
             {
@@ -19,13 +18,12 @@ TEST_SUITE("Script - Namespaces")
             }
         )";
 
-        auto result = fixtures::Validate(engine, code);
+        auto result = fixtures::Validate(code);
         CHECK(result.IsClean());
     }
 
     TEST_CASE("Nested namespace function call")
     {
-        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
         std::string code = R"(
             namespace Engine
             {
@@ -40,31 +38,12 @@ TEST_SUITE("Script - Namespaces")
             }
         )";
 
-        auto result = fixtures::Validate(engine, code);
+        auto result = fixtures::Validate(code);
         CHECK(result.IsClean());
-    }
-
-    TEST_CASE("Call to namespace function with incorrect arguments produces error")
-    {
-        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
-        std::string code = R"(
-            namespace Combat
-            {
-                void DealDamage(int amount) {}
-            }
-            void Main()
-            {
-                Combat::DealDamage("50"); // Error: string instead of int
-            }
-        )";
-
-        auto result = fixtures::Validate(engine, code);
-        CHECK(result.HasError());
     }
 
     TEST_CASE("Class member variable with scoped namespace type parses and resolves")
     {
-        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
         std::string code = R"(
             namespace Engine
             {
@@ -91,13 +70,12 @@ TEST_SUITE("Script - Namespaces")
             }
         )";
 
-        auto result = fixtures::Validate(engine, code);
+        auto result = fixtures::Validate(code);
         CHECK(result.IsClean());
     }
 
     TEST_CASE("For loop with local variable in namespace works")
     {
-        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
         std::string code = R"(
             void Main()
             {
@@ -109,13 +87,12 @@ TEST_SUITE("Script - Namespaces")
             }
         )";
 
-        auto result = fixtures::Validate(engine, code);
+        auto result = fixtures::Validate(code);
         CHECK(result.IsClean());
     }
 
-    TEST_CASE("Re-declaring class or enum present in as.predefined produces error diagnostic")
+    TEST_CASE("Class or enum present in as.predefined merges cleanly")
     {
-        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
         analysis::SymbolTable table;
         std::string predefined = R"(
             namespace Engine
@@ -134,9 +111,9 @@ TEST_SUITE("Script - Namespaces")
             }
         )";
 
-        analysis::PredefinedLoader::LoadFromSource(predefined, engine, table, "string", "array");
+        analysis::PredefinedLoader::LoadFromSource(predefined, table, "string", "array");
 
-        analysis::ValidationOracle oracle(engine, i18n::Locale::ES);
+        analysis::ValidationOracle oracle(i18n::Locale::ES);
         std::string code = R"(
             namespace Engine
             {
@@ -149,13 +126,12 @@ TEST_SUITE("Script - Namespaces")
             }
         )";
 
-        auto diags = oracle.ValidateSync(code, "file:///main.as", nullptr);
-        CHECK(!diags.empty());
+        auto diags = oracle.ValidateSync(code, "file:///main.as", nullptr, &table);
+        CHECK(diags.empty());
     }
 
-    TEST_CASE("Re-declaring global function present in as.predefined produces error diagnostic")
+    TEST_CASE("Global function present in as.predefined merges cleanly")
     {
-        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
         analysis::SymbolTable table;
         std::string predefined = R"(
             namespace Combat
@@ -164,9 +140,9 @@ TEST_SUITE("Script - Namespaces")
             }
         )";
 
-        analysis::PredefinedLoader::LoadFromSource(predefined, engine, table, "string", "array");
+        analysis::PredefinedLoader::LoadFromSource(predefined, table, "string", "array");
 
-        analysis::ValidationOracle oracle(engine, i18n::Locale::ES);
+        analysis::ValidationOracle oracle(i18n::Locale::ES);
         std::string code = R"(
             namespace Combat
             {
@@ -174,7 +150,7 @@ TEST_SUITE("Script - Namespaces")
             }
         )";
 
-        auto diags = oracle.ValidateSync(code, "file:///main.as", nullptr);
-        CHECK(!diags.empty());
+        auto diags = oracle.ValidateSync(code, "file:///main.as", nullptr, &table);
+        CHECK(diags.empty());
     }
 }

@@ -143,6 +143,11 @@ add_lsp_test_suite(test_analysis
     tests/analysis/SymbolResolverTests.cpp
     tests/analysis/SymbolTableTests.cpp
     tests/analysis/ValidationOracleTests.cpp
+    tests/analysis/RealIntegrationTests.cpp
+)
+
+add_lsp_test_suite(RealIntegrationTests
+    tests/analysis/RealIntegrationTests.cpp
 )
 
 add_lsp_test_suite(test_feature_hover

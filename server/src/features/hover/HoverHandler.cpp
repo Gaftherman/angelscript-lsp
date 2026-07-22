@@ -9,7 +9,6 @@
 #include "utils/DoxygenParser.h"
 #include "analysis/SymbolResolver.h"
 #include "utils/LspLogger.h"
-#include <angelscript.h>
 #include <ankerl/unordered_dense.h>
 #include <set>
 #include <unordered_map>
@@ -18,471 +17,380 @@
 
 namespace angel_lsp::features::hover
 {
-        static std::string BuildFullNamespace(const analysis::Symbol* nsSym) {
-            std::string ns = nsSym->name;
-            const analysis::Symbol* curr = nsSym->parent;
-            while (curr && curr->kind == analysis::SymbolKind::Namespace) {
-                ns = curr->name + "::" + ns;
-                curr = curr->parent;
-            }
-            return ns;
+    static std::string BuildFullNamespace(const analysis::Symbol *nsSym)
+    {
+        std::string ns = nsSym->name;
+        const analysis::Symbol *curr = nsSym->parent;
+        while (curr && curr->kind == analysis::SymbolKind::Namespace)
+        {
+            ns = curr->name + "::" + ns;
+            curr = curr->parent;
         }
+        return ns;
+    }
 
-        static std::string BuildScopeContext(const analysis::Symbol* sym) {
-            if (!sym || !sym->parent) return "";
-            
-            if (sym->parent->kind == analysis::SymbolKind::Class || 
-                sym->parent->kind == analysis::SymbolKind::Interface || 
-                sym->parent->kind == analysis::SymbolKind::Mixin) {
-                std::string scope = sym->parent->name;
-                if (!sym->parent->templateParam.empty()) {
-                    scope += "<" + sym->parent->templateParam + ">";
-                }
-                if (sym->parent->parent && sym->parent->parent->kind == analysis::SymbolKind::Namespace) {
-                    scope = BuildFullNamespace(sym->parent->parent) + "::" + scope;
-                }
-                return scope;
-            }
-            
-            if (sym->parent->kind == analysis::SymbolKind::Enum) {
-                std::string scope = sym->parent->name;
-                if (sym->parent->parent) {
-                    if (sym->parent->parent->kind == analysis::SymbolKind::Namespace) {
-                        scope = BuildFullNamespace(sym->parent->parent) + "::" + scope;
-                    } else if (sym->parent->parent->kind == analysis::SymbolKind::Class || 
-                               sym->parent->parent->kind == analysis::SymbolKind::Interface) {
-                        std::string parentScope = BuildScopeContext(sym->parent);
-                        if (!parentScope.empty()) {
-                            scope = parentScope + "::" + scope;
-                        }
-                    }
-                }
-                return scope;
-            }
-
-            if (sym->parent->kind == analysis::SymbolKind::Namespace) {
-                return "namespace " + BuildFullNamespace(sym->parent);
-            }
-            
+    static std::string BuildScopeContext(const analysis::Symbol *sym)
+    {
+        if (!sym || !sym->parent)
+        {
             return "";
         }
-        
-        static std::vector<std::string> SplitTemplateArgs(const std::string& str) {
-            std::vector<std::string> args;
-            int depth = 0;
-            std::string current;
-            for (char c : str) {
-                if (c == '<') depth++;
-                else if (c == '>') depth--;
-                else if (c == ',' && depth == 0) {
-                    size_t first = current.find_first_not_of(" \t");
-                    if (first != std::string::npos) {
-                        size_t last = current.find_last_not_of(" \t");
-                        args.push_back(current.substr(first, last - first + 1));
-                    } else {
-                        args.push_back("");
-                    }
-                    current.clear();
-                    continue;
-                }
-                current += c;
-            }
-            size_t first = current.find_first_not_of(" \t");
-            if (first != std::string::npos) {
-                size_t last = current.find_last_not_of(" \t");
-                args.push_back(current.substr(first, last - first + 1));
-            } else if (!current.empty() || args.size() > 0) {
-                if (current.find_first_not_of(" \t") == std::string::npos && current.length() > 0)
-                    args.push_back("");
-            }
-            return args;
-        }
 
-        static std::string ApplyTemplateSubstitution(std::string text, const std::string& templateParams, const std::string& subTypesStr) {
-            if (templateParams.empty() || subTypesStr.empty()) return text;
-            std::vector<std::string> paramNames = SplitTemplateArgs(templateParams);
-            std::vector<std::string> subTypes = SplitTemplateArgs(subTypesStr);
-
-            size_t count = std::min(paramNames.size(), subTypes.size());
-            for (size_t i = 0; i < count; i++) {
-                std::string paramName = paramNames[i];
-                std::string subType = subTypes[i];
-                
-                size_t pos = text.find(paramName);
-                while (pos != std::string::npos)
-                {
-                    bool match = true;
-                    if (pos > 0 && (isalnum(text[pos - 1]) || text[pos - 1] == '_'))
-                        match = false;
-                    if (pos + paramName.length() < text.length() && (isalnum(text[pos + paramName.length()]) || text[pos + paramName.length()] == '_'))
-                        match = false;
-
-                    if (match)
-                    {
-                        text.replace(pos, paramName.length(), subType);
-                        pos += subType.length();
-                    }
-                    else
-                    {
-                        pos += paramName.length();
-                    }
-                    pos = text.find(paramName, pos);
-                }
-            }
-            return text;
-        }
-
-        static std::string BuildSignatureHelper(const analysis::Symbol *renderSym, const analysis::Symbol *originalSym, const std::string& dynamicDisplayName, const std::string& templateSubstitution)
+        if (sym->parent->kind == analysis::SymbolKind::Class ||
+            sym->parent->kind == analysis::SymbolKind::Interface ||
+            sym->parent->kind == analysis::SymbolKind::Mixin)
         {
-            bool isVarLike = renderSym->kind == analysis::SymbolKind::Parameter ||
-                             renderSym->kind == analysis::SymbolKind::Variable ||
-                             renderSym->kind == analysis::SymbolKind::Property;
-            std::string dispName = (!isVarLike && !dynamicDisplayName.empty() && originalSym && renderSym->name == originalSym->name)
-                                       ? dynamicDisplayName
-                                       : renderSym->name;
-
-            bool needsParentClass = false;
-            std::string sig = renderSym->BuildSignature(needsParentClass, dispName);
-
-            if (renderSym->parent && renderSym->parent->templateParam.length() > 0)
+            std::string scope = sym->parent->name;
+            if (!sym->parent->templateParam.empty())
             {
-                std::string typeToSub = templateSubstitution;
-                if (typeToSub.empty() && originalSym && !originalSym->templateType.empty())
-                    typeToSub = originalSym->templateType;
-
-                if (!typeToSub.empty())
-                {
-                    sig = ApplyTemplateSubstitution(sig, renderSym->parent->templateParam, typeToSub);
-                }
+                scope += "<" + sym->parent->templateParam + ">";
             }
-
-            if (renderSym->kind == analysis::SymbolKind::Funcdef) {
-                sig = "funcdef " + sig;
+            if (sym->parent->parent && sym->parent->parent->kind == analysis::SymbolKind::Namespace)
+            {
+                scope = BuildFullNamespace(sym->parent->parent) + "::" + scope;
             }
-
-            if (!renderSym->accessors.empty()) {
-                sig += " " + renderSym->accessors;
-            }
-
-            return sig;
+            return scope;
         }
 
-        static HoverInfo BuildHoverInfo(
-            const analysis::Symbol* sym,
-            const analysis::Symbol* originalSym,
-            const std::vector<const analysis::Symbol*>& multiResults,
-            const Document& doc,
-            const analysis::SymbolTable& table,
-            const i18n::LspStrings& s,
-            i18n::Locale locale,
-            const std::string& dynamicDisplayName,
-            const std::string& templateSubstitution)
+        if (sym->parent->kind == analysis::SymbolKind::Enum)
         {
-            HoverInfo info;
-            info.name = sym->name;
-            info.kind = sym->kind;
-
-            // 1. rawSignature & localScope
-            if (sym->typeInfo == "#include") {
-                info.rawSignature = "#include \"" + sym->name + "\"";
-                info.localScope = "";
-                info.briefText = std::string(s.hoverIncludedFile) + " `" + sym->name + "`";
-                info.detailsText = "";
-            } else if (sym->kind == analysis::SymbolKind::Parameter) {
-                info.rawSignature = "(" + std::string(s.hoverParameter) + ") " + BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
-                if (sym->parent) {
-                    info.localScope = std::string(s.hoverParameterOf) + " " + sym->parent->name + "()";
-                }
-            } else if (sym->kind == analysis::SymbolKind::Property || sym->kind == analysis::SymbolKind::Variable) {
-                std::string prefix = (sym->kind == analysis::SymbolKind::Property) ? "(" + std::string(s.hoverField) + ") " : "(" + std::string(s.hoverLocalVariable) + ") ";
-                if (sym->kind == analysis::SymbolKind::Property && !sym->accessors.empty()) {
-                    prefix = "(" + std::string(s.hoverProperty) + ") ";
-                }
-                info.rawSignature = prefix + BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
-                info.localScope = BuildScopeContext(sym);
-            } else {
-                info.rawSignature = BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
-                info.localScope = BuildScopeContext(sym);
-            }
-
-            // 3. parameters
-            if (sym->kind == analysis::SymbolKind::Function || sym->kind == analysis::SymbolKind::Method ||
-                sym->kind == analysis::SymbolKind::Constructor || sym->kind == analysis::SymbolKind::Destructor ||
-                sym->kind == analysis::SymbolKind::Funcdef)
+            std::string scope = sym->parent->name;
+            if (sym->parent->parent)
             {
-                info.parameters.emplace();
-                for (const auto& p : sym->params) {
-                    HoverParam hp;
-                    hp.typeName     = p.typeName;
-                    hp.name         = p.name;
-                    hp.defaultValue = p.defaultValue;
-                    if (sym->parent && !sym->parent->templateParam.empty() && !templateSubstitution.empty()) {
-                        hp.typeName = ApplyTemplateSubstitution(hp.typeName, sym->parent->templateParam, templateSubstitution);
+                if (sym->parent->parent->kind == analysis::SymbolKind::Namespace)
+                {
+                    scope = BuildFullNamespace(sym->parent->parent) + "::" + scope;
+                }
+                else if (sym->parent->parent->kind == analysis::SymbolKind::Class ||
+                         sym->parent->parent->kind == analysis::SymbolKind::Interface)
+                {
+                    std::string parentScope = BuildScopeContext(sym->parent);
+                    if (!parentScope.empty())
+                    {
+                        scope = parentScope + "::" + scope;
                     }
-                    info.parameters->push_back(hp);
-                }
-                info.returnType = sym->typeInfo;
-                if (sym->parent && !sym->parent->templateParam.empty() && !templateSubstitution.empty() && info.returnType.has_value()) {
-                    info.returnType = ApplyTemplateSubstitution(*info.returnType, sym->parent->templateParam, templateSubstitution);
                 }
             }
+            return scope;
+        }
 
-            // 4. template parameters
-            if (!sym->templateParam.empty()) {
-                info.templateParameters.emplace();
-                HoverParam tp;
-                tp.typeName = "class";
-                tp.name     = sym->templateParam;
-                info.templateParameters->push_back(tp);
-            }
+        if (sym->parent->kind == analysis::SymbolKind::Namespace)
+        {
+            return BuildFullNamespace(sym->parent);
+        }
 
-            // 5. parse documentation
-            std::string docSource = sym->docComment;
-            std::string targetParam = "";
-            if (sym->kind == analysis::SymbolKind::Parameter && sym->parent) {
-                docSource    = sym->parent->docComment;
-                targetParam  = sym->name;
-            }
-            if (!docSource.empty())
+        return "";
+    }
+
+    static std::string ExtractBriefDocumentation(const std::string &docComment)
+    {
+        if (docComment.empty())
+        {
+            return "";
+        }
+
+        utils::DoxygenDoc doc = utils::ParseDoxygen(docComment);
+
+        if (!doc.brief.empty())
+        {
+            return doc.brief;
+        }
+
+        if (!doc.details.empty())
+        {
+            size_t periodPos = doc.details.find('.');
+            if (periodPos != std::string::npos)
             {
-                utils::ParsedDoxygenDoc docParsed = utils::ParseDoxygenComment(docSource);
-                info.PopulateFromDoxygen(docParsed, targetParam);
+                return doc.details.substr(0, periodPos + 1);
             }
+            return doc.details;
+        }
 
-            // 7. extras
-            if (sym->kind == analysis::SymbolKind::EnumMember) {
-                std::string enumPrefix = "(" + std::string(s.hoverEnumMember) + ") ";
-                info.rawSignature = enumPrefix + sym->name;
-                if (!sym->value.empty()) {
-                    info.rawSignature += " = " + sym->value;
-                }
-                info.localScope = BuildScopeContext(sym);
-            }
+        return "";
+    }
 
-            // overloads
-            if (multiResults.size() > 1) {
-                // Determine how many unique overloads exist
-                ankerl::unordered_dense::set<std::string> uniqueSigs;
-                for (const auto* r : multiResults) {
-                    uniqueSigs.insert(BuildSignatureHelper(r, nullptr, "", ""));
-                }
-                if (uniqueSigs.size() > 1) {
-                    info.overloadCount = (int)uniqueSigs.size() - 1;
-                }
-            }
+    static std::string BuildOverloadDescription(const analysis::Symbol *overloadSym)
+    {
+        if (!overloadSym)
+        {
+            return "";
+        }
 
+        std::string sig = overloadSym->BuildSignature();
+        std::string docBrief = ExtractBriefDocumentation(overloadSym->docComment);
+
+        if (!docBrief.empty())
+        {
+            return "`" + sig + "`  \n*" + docBrief + "*";
+        }
+        return "`" + sig + "`";
+    }
+
+    static HoverInfo BuildHoverInfo(
+        const analysis::Symbol *primarySym,
+        const analysis::Symbol *resolvedSym,
+        const std::vector<const analysis::Symbol *> &allOverloads,
+        const Document &doc,
+        const analysis::SymbolTable &table,
+        const i18n::LspStrings &s,
+        i18n::Locale locale,
+        const std::string &dynamicDisplayName = "",
+        const std::string &templateSub = "")
+    {
+        HoverInfo info;
+
+        if (!primarySym)
+        {
             return info;
         }
 
+        info.name = dynamicDisplayName.empty() ? primarySym->name : dynamicDisplayName;
+        info.kind = primarySym->kind;
+        info.briefText = ExtractBriefDocumentation(primarySym->docComment);
 
-        static std::unordered_multimap<std::string, asIScriptFunction*> s_builtinFunctions;
-        static const asIScriptEngine* s_cachedEngine = nullptr;
-        static std::mutex s_engineCacheMutex;
+        std::string scope = BuildScopeContext(primarySym);
+        info.localScope = scope;
 
-        void ProcessHover(lsp::requests::TextDocument_Hover::Result &result,
-                          const lsp::requests::TextDocument_Hover::Params &req,
-                          const Document &doc,
-                          const analysis::SymbolTable &table,
-                          const analysis::DiagnosticCache *diagCache,
-                          i18n::Locale locale,
-                          const asIScriptEngine *engine)
+        if (primarySym->kind == analysis::SymbolKind::Function ||
+            primarySym->kind == analysis::SymbolKind::Method)
         {
-            uint32_t line = req.position.line;
-            uint32_t col = req.position.character;
-
-            std::vector<HoverInfo::HoverSection> hoverSections;
-            const auto &s = i18n::GetStrings(locale);
-
-            std::vector<const analysis::Symbol *> multiResults;
-            const analysis::Symbol *sym = analysis::SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
-
-            std::string dynamicDisplayName = "";
-            if (sym != nullptr && (sym->kind == analysis::SymbolKind::Class || sym->kind == analysis::SymbolKind::Enum ||
-                                   sym->kind == analysis::SymbolKind::Interface || sym->kind == analysis::SymbolKind::Mixin ||
-                                   sym->kind == analysis::SymbolKind::Typedef))
+            std::string sig = primarySym->BuildSignature();
+            if (!templateSub.empty() && !primarySym->templateParam.empty())
             {
-                TSNode nodeUnder = doc.NodeAt(line, col);
-                if (!ts_node_is_null(nodeUnder))
+                size_t pos = 0;
+                while ((pos = sig.find(primarySym->templateParam, pos)) != std::string::npos)
                 {
-                    TSNode current = nodeUnder;
-                    while (!ts_node_is_null(current))
-                    {
-                        std::string_view typeStr = ts_node_type(current);
-                        if (typeStr == "type" || typeStr == "datatype")
-                        {
-                            TSNode prevSibling = ts_node_prev_named_sibling(current);
-                            if (!ts_node_is_null(prevSibling))
-                            {
-                                std::string_view prevType = ts_node_type(prevSibling);
-                                if (prevType == "scope" || prevType == "ERROR")
-                                {
-                                    std::string_view scopeSv = doc.SourceAt(prevSibling);
-                                    std::string scopeStr(scopeSv.begin(), scopeSv.end());
-                                    std::string_view typeSv = doc.SourceAt(current);
-                                    std::string typeStrText(typeSv.begin(), typeSv.end());
-                                    if (!scopeStr.empty())
-                                    {
-                                        if (typeStrText.starts_with("::"))
-                                            dynamicDisplayName = scopeStr + typeStrText;
-                                        else
-                                            dynamicDisplayName = scopeStr + (scopeStr.ends_with("::") ? "" : "::") + typeStrText;
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                        current = ts_node_parent(current);
-                    }
+                    sig.replace(pos, primarySym->templateParam.length(), templateSub);
+                    pos += templateSub.length();
                 }
             }
 
-            std::string templateSubstitution = "";
-            if (sym != nullptr && sym->kind == analysis::SymbolKind::Method)
+            if (!scope.empty())
             {
-                TSNode nodeUnder = doc.NodeAt(line, col);
-                if (!ts_node_is_null(nodeUnder))
-                {
-                    TSNode parent = ts_node_parent(nodeUnder);
-                    std::string_view parentType = ts_node_is_null(parent) ? "" : ts_node_type(parent);
-                    if (parentType == "member_expression" || parentType == "field_access")
-                    {
-                        TSNode memberNode = ts_node_child_by_field_name(parent, "member", sizeof("member") - 1);
-                        if (ts_node_is_null(memberNode) || !ts_node_eq(nodeUnder, memberNode)) {
-                            memberNode = ts_node_child_by_field_name(parent, "field", sizeof("field") - 1);
-                        }
-                        
-                        if (!ts_node_is_null(memberNode) && ts_node_eq(nodeUnder, memberNode))
-                        {
-                            TSNode objectNode = ts_node_child_by_field_name(parent, "object", sizeof("object") - 1);
-                            if (!ts_node_is_null(objectNode))
-                            {
-                                std::string_view objSv = doc.SourceAt(objectNode);
-                                std::string objText(objSv.begin(), objSv.end());
-                                const analysis::Symbol *objSym = table.FindLocalByName(objText);
-                                if (!objSym) objSym = table.FindGlobalByName(objText);
-
-                                if (objSym && !objSym->typeInfo.empty())
-                                {
-                                    size_t openT = objSym->typeInfo.find('<');
-                                    size_t closeT = objSym->typeInfo.rfind('>');
-                                    if (openT != std::string::npos && closeT != std::string::npos && closeT > openT)
-                                    {
-                                        templateSubstitution = objSym->typeInfo.substr(openT + 1, closeT - openT - 1);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                sig = scope + "::" + sig;
             }
+            info.rawSignature = sig;
 
-            if (sym != nullptr)
+            if (allOverloads.size() > 1)
             {
-                HoverInfo info = BuildHoverInfo(sym, sym, multiResults, doc, table, s, locale, dynamicDisplayName, templateSubstitution);
-                hoverSections = info.ToHoverSections(locale);
+                info.overloadCount = static_cast<int>(allOverloads.size());
+            }
+        }
+        else if (primarySym->kind == analysis::SymbolKind::Variable ||
+                 primarySym->kind == analysis::SymbolKind::Property ||
+                 primarySym->kind == analysis::SymbolKind::Parameter)
+        {
+            std::string sig = primarySym->BuildSignature();
+            if (!scope.empty())
+            {
+                sig = scope + "::" + sig;
+            }
+            info.rawSignature = sig;
+
+            if (!primarySym->value.empty())
+            {
+                info.enumValue = primarySym->value;
+            }
+        }
+        else if (primarySym->kind == analysis::SymbolKind::Class ||
+                 primarySym->kind == analysis::SymbolKind::Interface ||
+                 primarySym->kind == analysis::SymbolKind::Mixin)
+        {
+            std::string prefix;
+            if (primarySym->kind == analysis::SymbolKind::Interface)
+            {
+                prefix = "interface ";
+            }
+            else if (primarySym->kind == analysis::SymbolKind::Mixin)
+            {
+                prefix = "mixin class ";
             }
             else
             {
-                try
-                {
-                    TSNode nodeUnder = doc.NodeAt(line, col);
-                    if (!ts_node_is_null(nodeUnder))
-                    {
-                        std::string_view sv = doc.SourceAt(nodeUnder);
-                        if (!sv.empty())
-                        {
-                            std::string name(sv.begin(), sv.end());
+                prefix = "class ";
+            }
 
-                            // Only query engine for valid single identifier names (skip preprocessor lines, punctuation, etc.)
-                            bool isValidIdentifier = !name.empty() && (isalpha((unsigned char)name[0]) || name[0] == '_');
-                            for (char c : name)
+            std::string sig = prefix + primarySym->name;
+            if (!primarySym->templateParam.empty())
+            {
+                sig += "<" + primarySym->templateParam + ">";
+            }
+
+            if (!primarySym->baseClasses.empty())
+            {
+                sig += " : ";
+                for (size_t i = 0; i < primarySym->baseClasses.size(); ++i)
+                {
+                    if (i > 0)
+                    {
+                        sig += ", ";
+                    }
+                    sig += primarySym->baseClasses[i];
+                }
+            }
+
+            if (!scope.empty())
+            {
+                sig = scope + "::" + sig;
+            }
+            info.rawSignature = sig;
+        }
+        else if (primarySym->kind == analysis::SymbolKind::Enum)
+        {
+            std::string sig = "enum " + primarySym->name;
+            if (!scope.empty())
+            {
+                sig = scope + "::" + sig;
+            }
+            info.rawSignature = sig;
+        }
+        else if (primarySym->kind == analysis::SymbolKind::EnumMember)
+        {
+            std::string sig = primarySym->name;
+            if (!primarySym->value.empty())
+            {
+                sig += " = " + primarySym->value;
+            }
+            if (!scope.empty())
+            {
+                sig = scope + "::" + sig;
+            }
+            info.rawSignature = sig;
+            info.enumValue = primarySym->value;
+        }
+        else if (primarySym->kind == analysis::SymbolKind::Typedef)
+        {
+            std::string sig = "typedef " + primarySym->typeInfo + " " + primarySym->name;
+            if (!scope.empty())
+            {
+                sig = scope + "::" + sig;
+            }
+            info.rawSignature = sig;
+        }
+        else if (primarySym->kind == analysis::SymbolKind::Funcdef)
+        {
+            std::string sig = "funcdef " + primarySym->BuildSignature();
+            if (!scope.empty())
+            {
+                sig = scope + "::" + sig;
+            }
+            info.rawSignature = sig;
+        }
+        else
+        {
+            info.rawSignature = primarySym->BuildSignature();
+        }
+
+        return info;
+    }
+
+    void ProcessHover(lsp::requests::TextDocument_Hover::Result &result,
+                      const lsp::requests::TextDocument_Hover::Params &req,
+                      const Document &doc,
+                      const analysis::SymbolTable &table,
+                      const analysis::DiagnosticCache *diagCache,
+                      i18n::Locale locale)
+    {
+        result = nullptr;
+
+        const auto &s = i18n::GetStrings(locale);
+
+        uint32_t line = req.position.line;
+        uint32_t col = req.position.character;
+
+        std::vector<const analysis::Symbol *> multiResults;
+        const analysis::Symbol *sym = analysis::SymbolResolver::ResolveAt(doc, table, line, col, &multiResults);
+
+        std::vector<HoverInfo::HoverSection> hoverSections;
+
+        std::string dynamicDisplayName;
+        std::string templateSubstitution;
+
+        if (sym != nullptr && sym->kind == analysis::SymbolKind::Method)
+        {
+            TSNode nodeUnder = doc.NodeAt(line, col);
+            if (!ts_node_is_null(nodeUnder))
+            {
+                TSNode parent = ts_node_parent(nodeUnder);
+                std::string_view parentType = ts_node_is_null(parent) ? "" : ts_node_type(parent);
+                if (parentType == "member_expression" || parentType == "field_access")
+                {
+                    TSNode memberNode = ts_node_child_by_field_name(parent, "member", sizeof("member") - 1);
+                    if (ts_node_is_null(memberNode) || !ts_node_eq(nodeUnder, memberNode))
+                    {
+                        memberNode = ts_node_child_by_field_name(parent, "field", sizeof("field") - 1);
+                    }
+
+                    if (!ts_node_is_null(memberNode) && ts_node_eq(nodeUnder, memberNode))
+                    {
+                        TSNode objectNode = ts_node_child_by_field_name(parent, "object", sizeof("object") - 1);
+                        if (!ts_node_is_null(objectNode))
+                        {
+                            std::string_view objSv = doc.SourceAt(objectNode);
+                            std::string objText(objSv.begin(), objSv.end());
+                            const analysis::Symbol *objSym = table.FindLocalByName(objText);
+                            if (!objSym)
                             {
-                                if (!isalnum((unsigned char)c) && c != '_')
-                                {
-                                    isValidIdentifier = false;
-                                    break;
-                                }
+                                objSym = table.FindGlobalByName(objText);
                             }
 
-                            if (engine && isValidIdentifier)
+                            if (objSym && !objSym->typeInfo.empty())
                             {
-                                for (asUINT i = 0; i < engine->GetGlobalFunctionCount(); i++)
+                                size_t openT = objSym->typeInfo.find('<');
+                                size_t closeT = objSym->typeInfo.rfind('>');
+                                if (openT != std::string::npos && closeT != std::string::npos && closeT > openT)
                                 {
-                                    asIScriptFunction *func = engine->GetGlobalFunctionByIndex(i);
-                                    if (func && func->GetName() && std::string(func->GetName()) == name)
-                                    {
-                                        std::string decl = func->GetDeclaration(true, true, true);
-                                        HoverInfo info;
-                                        info.name = name;
-                                        info.kind = analysis::SymbolKind::Function;
-                                        info.rawSignature = decl;
-                                        info.builtinLabel = s.hoverBuiltinFunc;
-                                        info.isBuiltin = true;
-                                        hoverSections = info.ToHoverSections(locale);
-                                        break;
-                                    }
-                                }
-                                if (hoverSections.empty())
-                                {
-                                    int typeId = engine->GetTypeIdByDecl(name.c_str());
-                                    if (typeId >= 0)
-                                    {
-                                        asITypeInfo *type = engine->GetTypeInfoById(typeId);
-                                        if (type && type->GetName())
-                                        {
-                                            HoverInfo info;
-                                            info.name = name;
-                                            info.kind = analysis::SymbolKind::Class;
-                                            info.rawSignature = "class " + std::string(type->GetName());
-                                            info.builtinLabel = s.hoverBuiltinType;
-                                            info.isBuiltin = true;
-                                            hoverSections = info.ToHoverSections(locale);
-                                        }
-                                    }
+                                    templateSubstitution = objSym->typeInfo.substr(openT + 1, closeT - openT - 1);
                                 }
                             }
                         }
                     }
                 }
-                catch (...)
-                {
-                    LspLogger::Warn("Exception caught during fallback hover resolution.");
-                }
             }
-
-            // Append Engine Diagnostics
-            if (diagCache)
-            {
-                auto diags = diagCache->GetAt(req.textDocument.uri.toString(), line, col);
-                for (const auto *d : diags)
-                {
-                    HoverInfo::HoverSection diagSection;
-                    diagSection.isCodeBlock = false;
-                    std::string prefix = d->severity == lsp::DiagnosticSeverity::Error ? "**" + std::string(s.hoverEngineError) + "**" : "**" + std::string(s.hoverEngineWarn) + "**";
-                    diagSection.content = prefix + " `" + d->message + "`";
-                    hoverSections.push_back(diagSection);
-                }
-            }
-
-            if (hoverSections.empty())
-                return;
-
-            result = lsp::Hover{};
-            auto &hover = *result;
-            
-            lsp::Array<lsp::MarkedString> markedStrings;
-            for (const auto& section : hoverSections) {
-                if (section.isCodeBlock) {
-                    lsp::MarkedString_Language_Value ms;
-                    ms.language = section.language;
-                    ms.value = section.content;
-                    markedStrings.push_back(ms);
-                } else {
-                    markedStrings.push_back(lsp::String{section.content});
-                }
-            }
-            hover.contents = markedStrings;
-
-            // Debug print of the Markdown output disabled
         }
+
+        if (sym != nullptr)
+        {
+            HoverInfo info = BuildHoverInfo(sym, sym, multiResults, doc, table, s, locale, dynamicDisplayName, templateSubstitution);
+            hoverSections = info.ToHoverSections(locale);
+        }
+
+        if (diagCache)
+        {
+            auto diags = diagCache->GetAt(req.textDocument.uri.toString(), line, col);
+            for (const auto *d : diags)
+            {
+                HoverInfo::HoverSection diagSection;
+                diagSection.isCodeBlock = false;
+                std::string prefix = d->severity == lsp::DiagnosticSeverity::Error ? "**" + std::string(s.hoverEngineError) + "**" : "**" + std::string(s.hoverEngineWarn) + "**";
+                diagSection.content = prefix + " `" + d->message + "`";
+                hoverSections.push_back(diagSection);
+            }
+        }
+
+        if (hoverSections.empty())
+        {
+            return;
+        }
+
+        result = lsp::Hover{};
+        auto &hover = *result;
+
+        lsp::Array<lsp::MarkedString> markedStrings;
+        for (const auto &section : hoverSections)
+        {
+            if (section.isCodeBlock)
+            {
+                lsp::MarkedString_Language_Value ms;
+                ms.language = section.language;
+                ms.value = section.content;
+                markedStrings.push_back(ms);
+            }
+            else
+            {
+                markedStrings.push_back(lsp::String{section.content});
+            }
+        }
+        hover.contents = markedStrings;
+    }
 } // namespace angel_lsp::features::hover

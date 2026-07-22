@@ -1,0 +1,103 @@
+#include <doctest/doctest.h>
+#include "analysis/PredefinedLoader.h"
+#include "analysis/ValidationOracle.h"
+#include "analysis/SymbolTable.h"
+#include "document/Document.h"
+#include "lsp/types.h"
+
+TEST_SUITE("RealIntegrationTests")
+{
+    TEST_CASE("Real as.predefined Parsing")
+    {
+        analysis::SymbolTable globalTable;
+        std::string mockPredefined = R"(
+            typedef uint32 ConCommandFlags_t;
+            funcdef bool less(const ?&in a, const ?&in b);
+            class CBasePlayer {
+                void Kill();
+                entvars_t@ pev;
+            }
+        )";
+
+        analysis::PredefinedLoader::LoadFromSource(mockPredefined, globalTable, "string", "array");
+
+        const analysis::Symbol *typedefSym = globalTable.FindGlobalByName("ConCommandFlags_t");
+        REQUIRE(typedefSym != nullptr);
+        CHECK(typedefSym->name == "ConCommandFlags_t");
+        CHECK(typedefSym->kind == analysis::SymbolKind::Typedef);
+
+        const analysis::Symbol *funcdefSym = globalTable.FindGlobalByName("less");
+        REQUIRE(funcdefSym != nullptr);
+        CHECK(funcdefSym->name == "less");
+        CHECK(funcdefSym->kind == analysis::SymbolKind::Funcdef);
+
+        const analysis::Symbol *classSym = globalTable.FindGlobalByName("CBasePlayer");
+        REQUIRE(classSym != nullptr);
+        CHECK(classSym->name == "CBasePlayer");
+        CHECK(classSym->kind == analysis::SymbolKind::Class);
+
+        const analysis::Symbol *methodSym = globalTable.FindByNameDeep("CBasePlayer::Kill");
+        if (!methodSym && classSym)
+        {
+            for (const auto &child : classSym->children)
+            {
+                if (child->name == "Kill")
+                {
+                    methodSym = child.get();
+                    break;
+                }
+            }
+        }
+        REQUIRE(methodSym != nullptr);
+        CHECK(methodSym->name == "Kill");
+        CHECK((methodSym->kind == analysis::SymbolKind::Method || methodSym->kind == analysis::SymbolKind::Function));
+    }
+
+    TEST_CASE("Tree-Sitter Syntax Diagnostic Catching")
+    {
+        analysis::ValidationOracle oracle;
+        std::string brokenSyntaxCode = R"(
+            void Main() {
+                int a = ;
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(brokenSyntaxCode, "file:///test_syntax.as");
+        REQUIRE(!diags.empty());
+
+        bool foundSyntaxErr = false;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                foundSyntaxErr = true;
+                break;
+            }
+        }
+        CHECK(foundSyntaxErr);
+    }
+
+    TEST_CASE("Tree-Sitter Semantic Diagnostic Catching")
+    {
+        analysis::ValidationOracle oracle;
+        std::string invalidSemanticCode = R"(
+            void Main() {
+                UnknownFunctionCall();
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(invalidSemanticCode, "file:///test_semantic.as");
+        REQUIRE(!diags.empty());
+
+        bool foundSemanticErr = false;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error && d.message.find("UnknownFunctionCall") != std::string::npos)
+            {
+                foundSemanticErr = true;
+                break;
+            }
+        }
+        CHECK(foundSemanticErr);
+    }
+}

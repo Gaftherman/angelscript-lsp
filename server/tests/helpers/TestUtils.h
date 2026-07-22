@@ -7,11 +7,8 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolResolver.h"
 
-class asIScriptEngine;
-
 namespace angel_lsp::test
 {
-
     /**
      * @brief Helper utility to create an in-memory Document for testing.
      * @param uri Document URI (e.g., "file:///test.as").
@@ -27,7 +24,6 @@ namespace angel_lsp::test
      * @brief Helper utility to populate a SymbolTable from an in-memory document.
      * @param doc The in-memory Document instance.
      * @param table The target SymbolTable instance to populate.
-     * @param asEngine Optional AngelScript engine pointer for built-in types.
      */
     inline void PopulateTestSymbolTable(const Document &doc, analysis::SymbolTable &table)
     {

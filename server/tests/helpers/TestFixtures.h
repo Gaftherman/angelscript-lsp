@@ -1,6 +1,6 @@
 #pragma once
+
 #include <doctest/doctest.h>
-#include <angelscript.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/fmt/fmt.h>
 #include <string>
@@ -8,50 +8,11 @@
 
 #include "analysis/ValidationOracle.h"
 #include "document/Document.h"
+#include "analysis/SymbolTable.h"
+#include "analysis/SymbolCollector.h"
 
 namespace fixtures
 {
-    // ─── RAII Engine Guard ─────────────────────────────────────────────────────
-    struct EngineGuard
-    {
-        asIScriptEngine *engine;
-        explicit EngineGuard(asIScriptEngine *e) : engine(e) {}
-        ~EngineGuard()
-        {
-            if (engine)
-            {
-                engine->ShutDownAndRelease();
-            }
-        }
-        operator asIScriptEngine *() const { return engine; }
-        asIScriptEngine *operator->() const { return engine; }
-    };
-
-    // ─── Engine Factories ─────────────────────────────────────────────────────
-    inline asIScriptEngine *CreateBaseEngine()
-    {
-        asIScriptEngine *engine = asCreateScriptEngine();
-        engine->SetEngineProperty(asEP_SCRIPT_SCANNER, 1);
-        return engine;
-    }
-
-    inline void DummyPrint(std::string &) {}
-    inline void DummyPrintln(std::string &) {}
-    inline float DummyMath(float a) { return a; }
-
-    inline asIScriptEngine *CreateGameEngine()
-    {
-        asIScriptEngine *engine = CreateBaseEngine();
-        // Mock functions so we can test with game-like code
-        engine->RegisterGlobalFunction("void print(const string& in)", asFUNCTION(DummyPrint), asCALL_CDECL);
-        engine->RegisterGlobalFunction("void println(const string& in)", asFUNCTION(DummyPrintln), asCALL_CDECL);
-        engine->RegisterGlobalFunction("float sin(float)", asFUNCTION(DummyMath), asCALL_CDECL);
-        engine->RegisterGlobalFunction("float cos(float)", asFUNCTION(DummyMath), asCALL_CDECL);
-        engine->RegisterGlobalFunction("float abs(float)", asFUNCTION(DummyMath), asCALL_CDECL);
-        return engine;
-    }
-
-    // ─── Diagnostic Helper ────────────────────────────────────────────────────
     struct DiagResult
     {
         std::vector<lsp::Diagnostic> diags;
@@ -85,7 +46,6 @@ namespace fixtures
             return diags.empty();
         }
 
-        // Print all diagnostics (for debugging failing tests)
         void Dump() const
         {
             for (const auto &d : diags)
@@ -95,16 +55,15 @@ namespace fixtures
         }
     };
 
-    inline DiagResult Validate(asIScriptEngine *engine, const std::string &code)
+    inline DiagResult Validate(const std::string &code, const analysis::SymbolTable *globalTable = nullptr)
     {
-        analysis::ValidationOracle oracle(engine);
+        analysis::ValidationOracle oracle;
         DiagResult result;
-        result.diags = oracle.ValidateSync(code);
+        result.diags = oracle.ValidateSync(code, "file:///test.as", nullptr, globalTable);
         result.Dump();
         return result;
     }
 
-    // ─── Document Helper ───────────────────────────────────────────────────────
     inline Document MakeDoc(const std::string &code,
                             const std::string &uri = "file:///test.as")
     {

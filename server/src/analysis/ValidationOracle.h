@@ -1,13 +1,12 @@
 /**
  * @file ValidationOracle.h
- * @brief Dynamic AngelScript engine compiler message interceptor and diagnostic validator.
+ * @brief Pure Tree-Sitter syntax & semantic diagnostic validator.
  * @ingroup Analysis
  */
 
 #pragma once
 
 #include "lsp/types.h"
-#include <angelscript.h>
 #include <string>
 #include <vector>
 #include <unordered_set>
@@ -15,13 +14,13 @@
 #include <mutex>
 #include <functional>
 #include "i18n/LspStrings.h"
-
 #include "document/Document.h"
+#include "analysis/SymbolTable.h"
 
 namespace analysis
 {
     /**
-     * @brief Compiles AngelScript code dynamically to intercept compiler messages and emit LSP Diagnostics.
+     * @brief Dual-pass Tree-Sitter syntax & semantic diagnostic validator.
      * @note Thread-safe for synchronous validation via internal mutex locks.
      */
     class ValidationOracle
@@ -30,29 +29,42 @@ namespace analysis
         /**
          * @brief Constructs a new Validation Oracle instance.
          *
-         * @param[in] engine Pointer to the active AngelScript engine.
          * @param[in] locale Target locale for diagnostic translation (defaults to Locale::EN).
          */
-        ValidationOracle(asIScriptEngine *engine, i18n::Locale locale = i18n::Locale::EN);
+        explicit ValidationOracle(i18n::Locale locale = i18n::Locale::EN);
 
         ~ValidationOracle();
 
-        // Prevent copy/move because we register this instance as the message callback
         ValidationOracle(const ValidationOracle &) = delete;
         ValidationOracle &operator=(const ValidationOracle &) = delete;
 
         /**
-         * @brief Synchronously validates a code string, returning translated LSP diagnostics.
+         * @brief Synchronously validates a Document and SymbolTables, returning translated LSP diagnostics.
+         *
+         * @param[in] doc The Document object containing Tree-Sitter AST and source code.
+         * @param[in] localTable Symbol table containing document-local symbols.
+         * @param[in] globalTable Symbol table containing predefined global symbols.
+         * @param[in] docResolver Optional callback to resolve open documents in memory.
+         * @return std::vector<lsp::Diagnostic> A vector of LSP diagnostics belonging strictly to doc.GetUri().
+         */
+        std::vector<lsp::Diagnostic> ValidateSync(const Document &doc,
+                                                   const SymbolTable &localTable,
+                                                   const SymbolTable &globalTable,
+                                                   std::function<const Document *(const std::string &)> docResolver = nullptr);
+
+        /**
+         * @brief Synchronously validates a raw code string, returning translated LSP diagnostics.
          *
          * @param[in] code The AngelScript source code to validate.
          * @param[in] currentUri Optional document URI for include resolution.
          * @param[in] docResolver Optional callback to resolve open documents in memory.
-         * @return std::vector<lsp::Diagnostic> A vector of LSP diagnostics (errors/warnings) belonging strictly to currentUri.
-         * @note Thread-safe execution protected by m_mutex.
+         * @param[in] globalTable Optional global symbol table.
+         * @return std::vector<lsp::Diagnostic> A vector of LSP diagnostics.
          */
         std::vector<lsp::Diagnostic> ValidateSync(const std::string &code,
                                                    const std::string &currentUri = "",
-                                                   std::function<const Document *(const std::string &)> docResolver = nullptr);
+                                                   std::function<const Document *(const std::string &)> docResolver = nullptr,
+                                                   const SymbolTable *globalTable = nullptr);
 
         /**
          * @brief Updates the locale used for diagnostic translation.
@@ -69,21 +81,25 @@ namespace analysis
         void SetDefinedWords(const std::vector<std::string> &defines);
 
     private:
-        asIScriptEngine *m_engine;
         i18n::Locale m_locale;
         std::unordered_set<std::string> m_definedWords = {"DEBUG_MODE"};
-        std::unordered_map<std::string, std::vector<lsp::Diagnostic>> m_diagnosticsByUri;
-        std::string m_activeValidationUri;
         std::mutex m_mutex;
 
         /**
-         * @brief Static C-style callback provided to the AngelScript engine.
+         * @brief Validates #include preprocessor directives syntax and existence.
          */
-        static void MessageCallback(const asSMessageInfo *msg, void *param);
+        void ValidateIncludeDirective(const Document &doc,
+                                       const std::function<const Document *(const std::string &)> &docResolver,
+                                       std::vector<lsp::Diagnostic> &diags);
 
         /**
-         * @brief Internal handler that processes and translates raw engine messages.
+         * @brief Collects AST syntax errors (TSNode IS_ERROR / IS_MISSING).
          */
-        void HandleMessage(const asSMessageInfo *msg);
+        void CollectSyntaxErrors(const Document &doc, std::vector<lsp::Diagnostic> &diags);
+
+        /**
+         * @brief Collects semantic errors (unresolvable identifiers/types/functions).
+         */
+        void CollectSemanticErrors(const Document &doc, const SymbolTable &localTable, const SymbolTable &globalTable, std::vector<lsp::Diagnostic> &diags);
     };
 }

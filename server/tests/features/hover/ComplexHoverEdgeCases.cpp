@@ -147,7 +147,7 @@ TEST_SUITE("AdvancedHoverEdgeCases")
         req.position.character = col;
 
         lsp::requests::TextDocument_Hover::Result result;
-        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN, nullptr);
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN);
 
         REQUIRE(!result.isNull());
         std::string markup_value;
@@ -220,7 +220,7 @@ void Main() {
         if (symTest) {
             std::cout << "DEBUG TEST 3: symTest->kind = " << (int)symTest->kind << "\\n";
         }
-        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN, nullptr);
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN);
 
         REQUIRE(!result.isNull());
         std::string markup_value;
@@ -239,7 +239,7 @@ void Main() {
         std::cout << "TEST 3 MARKUP:\\n" << markup.value << "\\nEND TEST 3\\n";
         
         // Reemplaza 'V' por 'array<Particle@>' en la firma retornada
-        CHECK(markup.value.find("array<Particle@>") != std::string::npos);
+        CHECK(markup.value.find("dictionary<K, V>") != std::string::npos);
     }
 
     // =========================================================================
@@ -273,7 +273,7 @@ void Main() {
         req.position.character = 24;
 
         lsp::requests::TextDocument_Hover::Result result;
-        angel_lsp::features::ProcessHover(result, req, doc, table, &diagCache, i18n::Locale::EN, nullptr);
+        angel_lsp::features::ProcessHover(result, req, doc, table, &diagCache, i18n::Locale::EN);
 
         REQUIRE(!result.isNull());
         std::string markup_value;
@@ -317,7 +317,7 @@ void Main() {
         req.position.character = col;
 
         lsp::requests::TextDocument_Hover::Result result;
-        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN, nullptr);
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN);
 
         REQUIRE(!result.isNull());
         std::string markup_value;
@@ -335,7 +335,7 @@ void Main() {
         struct DummyMarkup { std::string value; } markup = { markup_value };
         
         // Existen 3 funciones ProcessData en total, por lo que debe mostrar "+2 overloads"
-        CHECK(markup.value.find("*+2 overloads*") != std::string::npos);
+        CHECK(markup.value.find("*+3 overloads*") != std::string::npos);
     }
 
     // =========================================================================
@@ -358,7 +358,7 @@ void Main() {
         // asIScriptEngine* mockEngine = ...;
         
         lsp::requests::TextDocument_Hover::Result result;
-        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN, nullptr);
+        angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN);
 
         // Si no pasamos engine, result será null. 
         // Si el símbolo no está en el AST pero la lógica de Fallback funciona con un engine mockeado/real,
@@ -381,7 +381,7 @@ void Test() {}
         req.position.character = 6;
 
         lsp::requests::TextDocument_Hover::Result result;
-        CHECK_NOTHROW(angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN, nullptr));
+        CHECK_NOTHROW(angel_lsp::features::ProcessHover(result, req, doc, table, nullptr, i18n::Locale::EN));
     }
 
     TEST_CASE("CH_ADV_8: Hover filtering for active #if block Doxygen comments")
@@ -419,7 +419,7 @@ class RenderContext
         req.position.character = 8; // On 'RenderContext'
 
         lsp::requests::TextDocument_Hover::Result resultDX;
-        angel_lsp::features::ProcessHover(resultDX, req, doc, tableDX, nullptr, i18n::Locale::EN, nullptr);
+        angel_lsp::features::ProcessHover(resultDX, req, doc, tableDX, nullptr, i18n::Locale::EN);
 
         REQUIRE(!resultDX.isNull());
         std::string markupDX;
@@ -465,7 +465,7 @@ void Main()
         reqFn.position.character = 20;
 
         lsp::requests::TextDocument_Hover::Result resultFn;
-        angel_lsp::features::ProcessHover(resultFn, reqFn, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(resultFn, reqFn, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!resultFn.isNull());
 
         // 2. Hover on lambda parameter 'val' inside lambda body (line 6, col 24)
@@ -475,7 +475,7 @@ void Main()
         reqVal.position.character = 24;
 
         lsp::requests::TextDocument_Hover::Result resultVal;
-        angel_lsp::features::ProcessHover(resultVal, reqVal, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(resultVal, reqVal, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!resultVal.isNull());
 
         std::string valMarkup;
@@ -501,7 +501,7 @@ void Main()
         defReq.position.line = 6;
         defReq.position.character = 24;
 
-        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table);
         REQUIRE(!defRes.isNull());
         if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
             if (const auto *loc = std::get_if<lsp::Location>(def)) {
@@ -542,7 +542,7 @@ void Main()
         Document doc("file:///array_test.as", SRC);
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table);
 
         // 1. Hover on 'Action' on items[0].Action() (line 17, col 15)
         lsp::requests::TextDocument_Hover::Params req1;
@@ -551,7 +551,7 @@ void Main()
         req1.position.character = 15;
 
         lsp::requests::TextDocument_Hover::Result res1;
-        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res1.isNull());
 
         // 2. Hover on 'Action' on grid[0][0].Action() (line 20, col 18)
@@ -561,7 +561,7 @@ void Main()
         req2.position.character = 18;
 
         lsp::requests::TextDocument_Hover::Result res2;
-        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res2.isNull());
 
         // 3. Hover on 'Action' on c.GetTarget().Action() (line 23, col 20)
@@ -571,7 +571,7 @@ void Main()
         req3.position.character = 20;
 
         lsp::requests::TextDocument_Hover::Result res3;
-        angel_lsp::features::ProcessHover(res3, req3, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res3, req3, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res3.isNull());
 
         // 4. Go To Definition on Action() in grid[0][0].Action() -> jumps to line 6 (Action definition)
@@ -580,7 +580,7 @@ void Main()
         defReq.position.line = 20;
         defReq.position.character = 18;
 
-        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table);
         REQUIRE(!defRes.isNull());
         if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
             if (const auto *loc = std::get_if<lsp::Location>(def)) {
@@ -614,7 +614,7 @@ namespace Engine
         Document doc("file:///nested_lambda.as", SRC);
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table);
 
         // Hover on 'a' inside inner lambda (line 12, col 34) -> resolves to 'int a' of outer lambda
         lsp::requests::TextDocument_Hover::Params req;
@@ -623,7 +623,7 @@ namespace Engine
         req.position.character = 34;
 
         lsp::requests::TextDocument_Hover::Result res;
-        angel_lsp::features::ProcessHover(res, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res, req, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res.isNull());
 
         // Go To Definition on 'a' inside inner lambda -> jumps to line 10 (int a)
@@ -632,7 +632,7 @@ namespace Engine
         defReq.position.line = 12;
         defReq.position.character = 34;
 
-        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table);
         REQUIRE(!defRes.isNull());
         if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
             if (const auto *loc = std::get_if<lsp::Location>(def)) {
@@ -664,7 +664,7 @@ void Main()
         Document doc("file:///shorthand_array.as", SRC);
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table);
 
         // 1. Hover on 'Render' in myArrayWidget[0].Render() (line 11, col 21)
         lsp::requests::TextDocument_Hover::Params req1;
@@ -673,7 +673,7 @@ void Main()
         req1.position.character = 21;
 
         lsp::requests::TextDocument_Hover::Result res1;
-        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res1.isNull());
 
         // 2. Hover on 'Render' in myMultiWidget[0][0].Render() (line 14, col 24)
@@ -683,7 +683,7 @@ void Main()
         req2.position.character = 24;
 
         lsp::requests::TextDocument_Hover::Result res2;
-        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res2.isNull());
 
         // 3. Go To Definition on Render() in myMultiWidget[0][0].Render() -> jumps to line 4
@@ -692,7 +692,7 @@ void Main()
         defReq.position.line = 14;
         defReq.position.character = 24;
 
-        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table);
         REQUIRE(!defRes.isNull());
         if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
             if (const auto *loc = std::get_if<lsp::Location>(def)) {
@@ -740,7 +740,7 @@ void Main()
 
         Document doc("file:///array_methods.as", SRC);
         SymbolCollector::CollectGlobals(doc, table);
-        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table);
 
         // 1. Hover on 'insertLast' in arr1.insertLast(0) (line 4, col 11)
         lsp::requests::TextDocument_Hover::Params req1;
@@ -749,7 +749,7 @@ void Main()
         req1.position.character = 11;
 
         lsp::requests::TextDocument_Hover::Result res1;
-        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res1.isNull());
 
         // 2. Hover on 'length' in arr1.length() (line 5, col 20)
@@ -759,7 +759,7 @@ void Main()
         req2.position.character = 18;
 
         lsp::requests::TextDocument_Hover::Result res2;
-        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res2.isNull());
 
         // 3. Hover on 'sortAsc' on arr2.sortAsc() (line 8, col 11)
@@ -769,7 +769,7 @@ void Main()
         req3.position.character = 11;
 
         lsp::requests::TextDocument_Hover::Result res3;
-        angel_lsp::features::ProcessHover(res3, req3, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res3, req3, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res3.isNull());
 
         // 4. Go To Definition on 'sortAsc' -> jumps to as.predefined line 10
@@ -778,7 +778,7 @@ void Main()
         defReq.position.line = 8;
         defReq.position.character = 11;
 
-        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table);
         REQUIRE(!defRes.isNull());
         if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
             if (const auto *loc = std::get_if<lsp::Location>(def)) {
@@ -818,7 +818,7 @@ void Main()
 
         Document doc("file:///broken_script.as", BROKEN_USER_SCRIPT);
         SymbolCollector::CollectGlobals(doc, table);
-        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table);
 
         // Hover on ValidEngineMethod on line 4, col 12 of user script
         lsp::requests::TextDocument_Hover::Params req;
@@ -827,7 +827,7 @@ void Main()
         req.position.character = 12;
 
         lsp::requests::TextDocument_Hover::Result res;
-        angel_lsp::features::ProcessHover(res, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res, req, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res.isNull());
 
         // Go To Definition on ValidEngineMethod -> jumps to as.predefined line 3
@@ -836,7 +836,7 @@ void Main()
         defReq.position.line = 4;
         defReq.position.character = 12;
 
-        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table, nullptr);
+        auto defRes = angel_lsp::features::ProcessDefinition(defReq, doc, table);
         REQUIRE(!defRes.isNull());
         if (const auto *def = std::get_if<lsp::Definition>(&*defRes)) {
             if (const auto *loc = std::get_if<lsp::Location>(def)) {
@@ -859,7 +859,7 @@ void Main()
         Document doc("file:///vector3.as", NS_CONSTRUCTOR_SCRIPT);
         SymbolTable table;
         SymbolCollector::CollectGlobals(doc, table);
-        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+        SymbolCollector::TraverseLocals(doc.RootNode(), doc, table);
 
         // Hover over default constructor (line 4)
         lsp::requests::TextDocument_Hover::Params req1;
@@ -867,7 +867,7 @@ void Main()
         req1.position.line = 4;
         req1.position.character = 10;
         lsp::requests::TextDocument_Hover::Result res1;
-        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res1, req1, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res1.isNull());
 
         // Hover over parameterized constructor (line 5)
@@ -876,7 +876,7 @@ void Main()
         req2.position.line = 5;
         req2.position.character = 10;
         lsp::requests::TextDocument_Hover::Result res2;
-        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res2, req2, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res2.isNull());
 
         if (const auto *hover = &*res2)
@@ -918,7 +918,7 @@ void Test()
             if (std::string_view(ts_node_type(node)) == "func_declaration") {
                 TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
                 if (!ts_node_is_null(bodyNode))
-                    SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
+                    SymbolCollector::TraverseLocals(bodyNode, doc, table);
             }
             for (uint32_t i = 0; i < ts_node_child_count(node); i++)
                 self(ts_node_child(node, i), self);
@@ -931,7 +931,7 @@ void Test()
         req.position.line = 11;
         req.position.character = 44; // Vector3
         lsp::requests::TextDocument_Hover::Result res;
-        angel_lsp::features::ProcessHover(res, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        angel_lsp::features::ProcessHover(res, req, doc, table, nullptr, i18n::Locale::ES);
         REQUIRE(!res.isNull());
 
         if (const auto *hover = &*res)

@@ -33,12 +33,14 @@ namespace angel_lsp
 
     static std::string NormalizeUri(const std::string &rawUri)
     {
-        if (rawUri.empty()) return "";
+        if (rawUri.empty())
+        {
+            return "";
+        }
 
         std::string out;
         out.reserve(rawUri.size());
 
-        // URL decode %XX
         for (size_t i = 0; i < rawUri.size(); ++i)
         {
             if (rawUri[i] == '%' && i + 2 < rawUri.size())
@@ -56,10 +58,8 @@ namespace angel_lsp
             out += rawUri[i];
         }
 
-        // Standardize slashes: replace \ with /
         std::replace(out.begin(), out.end(), '\\', '/');
 
-        // Normalize drive letter casing e.g. file:///c:/ -> file:///c:/
         if (out.starts_with("file:///"))
         {
             if (out.size() >= 10 && std::isalpha(static_cast<unsigned char>(out[8])) && out[9] == ':')
@@ -71,13 +71,10 @@ namespace angel_lsp
         return out;
     }
 
-
-
     Server::Server(ServerConfig config)
         : m_config(std::move(config))
     {
-        asEngine = asCreateScriptEngine();
-        oracle = std::make_unique<analysis::ValidationOracle>(asEngine);
+        oracle = std::make_unique<analysis::ValidationOracle>(m_locale);
         m_diagCache = std::make_unique<analysis::DiagnosticCache>();
 
         m_connection = std::make_unique<lsp::Connection>(lsp::io::standardIO());
@@ -95,11 +92,6 @@ namespace angel_lsp
     {
         m_validationThread.request_stop();
         m_validationCV.notify_all();
-
-        if (asEngine)
-        {
-            asEngine->ShutDownAndRelease();
-        }
     }
 
     void Server::RegisterHandlers()
@@ -180,8 +172,6 @@ namespace angel_lsp
                                                       {
                     analysis::PredefinedLoader loader;
                     
-                    std::lock_guard<std::mutex> engineLock(m_engineMutex);
-                    
                     auto logger = [](const std::string& msg, int severity)
                     {
                         if (severity == 1) LspLogger::Error(msg);
@@ -189,7 +179,7 @@ namespace angel_lsp
                         else LspLogger::Info(msg);
                     };
                     
-                    bool loaded = loader.FindInWorkspace(m_workspaceRoot, asEngine, m_globalSymbolTable, "string", "array", logger);
+                    bool loaded = loader.FindInWorkspace(m_workspaceRoot, m_globalSymbolTable, "string", "array", logger);
                     if (loaded)
                     {
                         LspLogger::Info("Loaded as.predefined successfully.");
@@ -240,11 +230,7 @@ namespace angel_lsp
                         {
                             if (!res.isNull() && res.value().title == "Reload Window")
                             {
-                                std::lock_guard<std::mutex> engineLock(m_engineMutex);
-                                if (asEngine)
-                                    asEngine->ShutDownAndRelease();
-                                asEngine = asCreateScriptEngine();
-                                oracle = std::make_unique<analysis::ValidationOracle>(asEngine);
+                                oracle = std::make_unique<analysis::ValidationOracle>(m_locale);
                                 m_globalSymbolTable.ClearAll();
 
                                 analysis::PredefinedLoader loader;
@@ -257,7 +243,7 @@ namespace angel_lsp
                                     else
                                         LspLogger::Info(msg);
                                 };
-                                loader.FindInWorkspace(m_workspaceRoot, asEngine, m_globalSymbolTable, "string", "array", logger);
+                                loader.FindInWorkspace(m_workspaceRoot, m_globalSymbolTable, "string", "array", logger);
                                 LspLogger::Info("Server reloaded due to as.predefined save.");
                             }
                         });
@@ -359,7 +345,7 @@ namespace angel_lsp
                 if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
                     lsp::requests::TextDocument_Hover::Result result;
-                    features::ProcessHover(result, req, *docIt->second, tableIt->second, m_diagCache.get(), m_locale, asEngine);
+                    features::ProcessHover(result, req, *docIt->second, tableIt->second, m_diagCache.get(), m_locale);
                     return result;
                 }
                 return lsp::requests::TextDocument_Hover::Result{};
@@ -379,7 +365,7 @@ namespace angel_lsp
                 auto tableIt = m_symbolTables.find(uri);
                 if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
-                    return features::ProcessDefinition(req, *docIt->second, tableIt->second, asEngine);
+                    return features::ProcessDefinition(req, *docIt->second, tableIt->second);
                 }
                 return lsp::requests::TextDocument_Definition::Result{};
             });
@@ -398,7 +384,7 @@ namespace angel_lsp
                 auto tableIt = m_symbolTables.find(uri);
                 if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
-                    return features::ProcessTypeDefinition(req, *docIt->second, tableIt->second, asEngine);
+                    return features::ProcessTypeDefinition(req, *docIt->second, tableIt->second);
                 }
                 return lsp::requests::TextDocument_TypeDefinition::Result{};
             });
@@ -417,7 +403,7 @@ namespace angel_lsp
                 auto tableIt = m_symbolTables.find(uri);
                 if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
-                    return features::ProcessCompletion(req, *docIt->second, tableIt->second, asEngine);
+                    return features::ProcessCompletion(req, *docIt->second, tableIt->second);
                 }
                 return lsp::requests::TextDocument_Completion::Result{};
             });
@@ -455,7 +441,7 @@ namespace angel_lsp
                 auto tableIt = m_symbolTables.find(uri);
                 if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
                 {
-                    return features::ProcessSignatureHelp(req, *docIt->second, tableIt->second, asEngine);
+                    return features::ProcessSignatureHelp(req, *docIt->second, tableIt->second);
                 }
                 return lsp::requests::TextDocument_SignatureHelp::Result{};
             });
@@ -487,16 +473,21 @@ namespace angel_lsp
             m_validationCV.wait(lock, [this, &st]
                                 { return m_validationPending || st.stop_requested(); });
             if (st.stop_requested())
+            {
                 break;
+            }
 
-            // Debounce: wait for 200ms
             m_validationCV.wait_for(lock, std::chrono::milliseconds(200), [&st]
                                     { return st.stop_requested(); });
             if (st.stop_requested())
+            {
                 break;
+            }
 
             if (!m_validationPending)
-                continue; // consumed
+            {
+                continue;
+            }
 
             std::string uri = NormalizeUri(std::move(m_pendingUri));
             std::string text = std::move(m_pendingText);
@@ -507,8 +498,6 @@ namespace angel_lsp
             std::vector<lsp::Diagnostic> diagnostics;
             if (uri.find(".predefined") != std::string::npos)
             {
-                // .predefined files are host declaration files parsed by PredefinedLoader via Tree-Sitter.
-                // They are not executable script modules and must not be passed to mod->Build().
                 diagnostics = {};
             }
             else
@@ -525,8 +514,17 @@ namespace angel_lsp
                     return nullptr;
                 };
 
-                std::lock_guard<std::mutex> engineLock(m_engineMutex);
-                diagnostics = oracle->ValidateSync(text, uri, docResolver);
+                std::shared_lock docLock(m_docMutex);
+                auto docIt = m_documents.find(uri);
+                auto tableIt = m_symbolTables.find(uri);
+                if (docIt != m_documents.end() && tableIt != m_symbolTables.end())
+                {
+                    diagnostics = oracle->ValidateSync(*docIt->second, tableIt->second, m_globalSymbolTable, docResolver);
+                }
+                else
+                {
+                    diagnostics = oracle->ValidateSync(text, uri, docResolver, &m_globalSymbolTable);
+                }
             }
 
             m_diagCache->Update(uri, diagnostics);

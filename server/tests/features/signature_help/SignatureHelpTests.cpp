@@ -16,6 +16,6 @@ TEST_CASE("SignatureHelp: Function Call Argument Active Parameter")
     req.position.line = 1;
     req.position.character = 23;
 
-    auto result = features::ProcessSignatureHelp(req, doc, table, nullptr);
+    auto result = features::ProcessSignatureHelp(req, doc, table);
     CHECK_FALSE(result.isNull());
 }

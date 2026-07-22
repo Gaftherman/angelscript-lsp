@@ -45,7 +45,7 @@ namespace angel_lsp
         explicit Server(ServerConfig config = ServerConfig());
 
         /**
-         * @brief Destroys the LSP server and cleans up engine resources.
+         * @brief Destroys the LSP server and cleans up resources.
          */
         ~Server();
 
@@ -85,8 +85,6 @@ namespace angel_lsp
         analysis::SymbolTable m_globalSymbolTable;
         std::unique_ptr<analysis::DiagnosticCache> m_diagCache;
 
-        class asIScriptEngine *asEngine;
-        std::mutex m_engineMutex;
         std::unique_ptr<analysis::ValidationOracle> oracle;
         bool running = true;
 

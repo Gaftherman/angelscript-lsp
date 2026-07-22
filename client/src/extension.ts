@@ -87,7 +87,7 @@ export async function activate(context: ExtensionContext) {
     }
 }
 
-/**
+/**7
  * @brief Deactivates the Language Client session pipeline.
  * @return Promise token indicating completion of client teardown routines.
  */
