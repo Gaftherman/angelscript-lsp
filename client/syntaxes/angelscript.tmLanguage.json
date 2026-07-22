@@ -28,25 +28,30 @@
             {
               "match": "([@\\\\](?:access|permission|visibility))\\s+(public|private|protected|package|internal)\\b",
               "captures": {
-                "1": { "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript" },
-                "2": { "name": "constant.language.access-type.jsdoc.angelscript constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript" }
+                "1": { "name": "keyword.other.documentation.doxygen.angelscript" },
+                "2": { "name": "constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript" }
               }
             },
             {
-              "match": "([@\\\\](?:param|tparam))\\s+([A-Za-z_][A-Za-z0-9_]*)",
+              "match": "([@\\\\](?:param|tparam))\\s*(\\[(?:in|out|in,out|out,in)\\])?\\s*([A-Za-z_][A-Za-z0-9_]*)?",
               "captures": {
-                "1": { "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript" },
-                "2": { "name": "variable.other.jsdoc.angelscript variable.other.doxygen.angelscript" }
+                "1": { "name": "keyword.other.documentation.doxygen.angelscript" },
+                "2": { "name": "keyword.operator.direction.doxygen.angelscript" },
+                "3": { "name": "variable.other.doxygen.angelscript" }
               }
             },
             {
-              "match": "\\{([^}]+)\\}",
+              "match": "\\[(in|out|in,out|out,in)\\]",
               "captures": {
-                "0": { "name": "entity.name.type.instance.jsdoc.angelscript entity.name.type.doxygen.angelscript" }
+                "0": { "name": "keyword.operator.direction.doxygen.angelscript" }
               }
             },
             {
-              "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript",
+              "name": "markup.inline.raw.doxygen.angelscript",
+              "match": "[@\\\\][cpbia]\\b"
+            },
+            {
+              "name": "keyword.other.documentation.doxygen.angelscript",
               "match": "[@\\\\][A-Za-z_][A-Za-z0-9_]*\\b"
             },
             {
@@ -61,32 +66,37 @@
           "end": "\\*/"
         },
         {
-          "name": "comment.line.double-slash.documentation.angelscript",
+          "name": "comment.line.documentation.angelscript",
           "begin": "///",
           "end": "$\n?",
           "patterns": [
             {
               "match": "([@\\\\](?:access|permission|visibility))\\s+(public|private|protected|package|internal)\\b",
               "captures": {
-                "1": { "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript" },
-                "2": { "name": "constant.language.access-type.jsdoc.angelscript constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript" }
+                "1": { "name": "keyword.other.documentation.doxygen.angelscript" },
+                "2": { "name": "constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript" }
               }
             },
             {
-              "match": "([@\\\\](?:param|tparam))\\s+([A-Za-z_][A-Za-z0-9_]*)",
+              "match": "([@\\\\](?:param|tparam))\\s*(\\[(?:in|out|in,out|out,in)\\])?\\s*([A-Za-z_][A-Za-z0-9_]*)?",
               "captures": {
-                "1": { "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript" },
-                "2": { "name": "variable.other.jsdoc.angelscript variable.other.doxygen.angelscript" }
+                "1": { "name": "keyword.other.documentation.doxygen.angelscript" },
+                "2": { "name": "keyword.operator.direction.doxygen.angelscript" },
+                "3": { "name": "variable.other.doxygen.angelscript" }
               }
             },
             {
-              "match": "\\{([^}]+)\\}",
+              "match": "\\[(in|out|in,out|out,in)\\]",
               "captures": {
-                "0": { "name": "entity.name.type.instance.jsdoc.angelscript entity.name.type.doxygen.angelscript" }
+                "0": { "name": "keyword.operator.direction.doxygen.angelscript" }
               }
             },
             {
-              "name": "storage.type.class.doxygen.angelscript storage.type.class.jsdoc.angelscript keyword.other.documentation.angelscript",
+              "name": "markup.inline.raw.doxygen.angelscript",
+              "match": "[@\\\\][cpbia]\\b"
+            },
+            {
+              "name": "keyword.other.documentation.doxygen.angelscript",
               "match": "[@\\\\][A-Za-z_][A-Za-z0-9_]*\\b"
             },
             {

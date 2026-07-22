@@ -1,57 +1,90 @@
 /**
  * @file DoxygenParser.h
- * @brief Utilities for parsing raw Doxygen comment blocks into structured data and Markdown.
+ * @brief Tree-Sitter based C++20 Doxygen comment parser and Markdown formatter.
  * @ingroup Utils
  */
 
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
+#include <utility>
 #include "i18n/LspStrings.h"
 
 namespace angel_lsp::utils
 {
     /**
-     * @brief A single parameter documentation entry extracted from Doxygen comments.
+     * @brief Parameter documentation entry for function or template parameters.
      */
     struct DoxygenParam
     {
         std::string name;
+        std::string direction; // "in", "out", "in,out"
         std::string description;
     };
 
     /**
-     * @brief Structured neutral representation of parsed Doxygen comments.
+     * @brief Complete structured representation of a parsed Doxygen comment block.
      */
-    struct ParsedDoxygenDoc
+    struct DoxygenDoc
     {
+        std::string briefText;
+        std::string detailsText;
+        std::string returnDoc;
+        std::string deprecatedDoc;
+
+        std::vector<DoxygenParam> params;
+        std::vector<DoxygenParam> tparams;
+        std::vector<std::pair<std::string, std::string>> throwsDocs;
+
+        std::vector<std::string> warnings;
+        std::vector<std::string> notes;
+        std::vector<std::string> seeAlso;
+
+        // Generic fallback for any unclassified @tag (e.g. @author, @todo, @bug)
+        std::vector<std::pair<std::string, std::string>> genericTags;
+
+        // Backward compatibility fields for legacy callers
         std::string brief;
         std::string details;
+        std::string returns;
+        std::string deprecated;
         std::string note;
         std::string warning;
-        std::string deprecated;
-        std::string returns;
         std::vector<DoxygenParam> parameters;
     };
 
     /**
-     * @brief Parses a raw Doxygen comment string into a structured representation.
+     * @brief Parses a raw Doxygen comment string into a structured DoxygenDoc object.
      *
-     * @param[in] rawDoxygen The raw Doxygen string (e.g. "/** @brief ... *\/").
-     * @return ParsedDoxygenDoc Structured object containing extracted fields.
-     * @note Thread-safe stateless string parsing function.
+     * @param[in] rawComment Raw Doxygen comment text.
+     * @return DoxygenDoc Structured Doxygen representation.
+     * @note Thread-safe stateless parsing function.
      */
-    ParsedDoxygenDoc ParseDoxygenComment(const std::string &rawDoxygen);
+    DoxygenDoc ParseDoxygen(std::string_view rawComment);
 
     /**
-     * @brief Formats raw Doxygen documentation into localized Markdown text.
+     * @brief Formats a DoxygenDoc structure into localized Markdown.
      *
-     * @param[in] rawDoxygen The raw Doxygen documentation comment string.
-     * @param[in] locale Target localization locale (e.g. Locale::EN_US or Locale::ES_ES).
-     * @param[in] targetParam Optional parameter name to highlight or filter.
-     * @return std::string Formatted Markdown documentation text.
+     * @param[in] doc The parsed DoxygenDoc object.
+     * @param[in] locale Target localization locale (defaults to Locale::EN).
+     * @return std::string Formatted Markdown text.
      * @note Thread-safe stateless formatting function.
      */
-    std::string FormatDoxygenToMarkdown(const std::string &rawDoxygen, i18n::Locale locale, const std::string &targetParam = "");
-}
+    std::string FormatDoxygenToMarkdown(const DoxygenDoc &doc, i18n::Locale locale = i18n::Locale::EN);
+
+    // --- Backward Compatibility Wrappers ---
+    using ParsedDoxygenDoc = DoxygenDoc;
+
+    /**
+     * @brief Backward-compatible wrapper for ParseDoxygen.
+     */
+    DoxygenDoc ParseDoxygenComment(const std::string &rawDoxygen);
+
+    /**
+     * @brief Backward-compatible wrapper for formatting raw Doxygen comments to Markdown.
+     */
+    std::string FormatDoxygenToMarkdown(const std::string &rawDoxygen, i18n::Locale locale = i18n::Locale::EN, const std::string &targetParam = "");
+
+} // namespace angel_lsp::utils

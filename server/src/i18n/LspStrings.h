@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 namespace i18n
 {
@@ -18,7 +19,24 @@ namespace i18n
     {
         EN, // English (default)
         ES, // Español
-        UNKNOWN = EN
+        UNKNOWN = EN,
+        EN_US = EN,
+        ES_ES = ES
+    };
+
+    /**
+     * @brief Localized Doxygen section header strings.
+     */
+    struct DoxygenHeaderStrings
+    {
+        std::string_view parameters;     // "Parameters:" / "Parámetros:"
+        std::string_view typeParameters; // "Type Parameters:" / "Parámetros de Tipo:"
+        std::string_view returns;        // "Returns:" / "Retorna:"
+        std::string_view exceptions;     // "Exceptions:" / "Excepciones:"
+        std::string_view warning;        // "Warning:" / "Advertencia:"
+        std::string_view deprecated;     // "Deprecated:" / "Obsoleto:"
+        std::string_view note;           // "Note:" / "Nota:"
+        std::string_view seeAlso;        // "See also:" / "Ver también:"
     };
 
     /**
@@ -94,4 +112,22 @@ namespace i18n
      */
     const LspStrings &GetStrings(Locale locale = Locale::EN);
 
+    /**
+     * @brief Gets localized Doxygen header strings for a specified locale.
+     *
+     * @param[in] locale Target locale enum.
+     * @return DoxygenHeaderStrings Localized header strings struct.
+     */
+    DoxygenHeaderStrings GetDoxygenHeaders(Locale locale = Locale::EN);
+
 } // namespace i18n
+
+namespace angel_lsp::i18n
+{
+    using ::i18n::Locale;
+    using ::i18n::LspStrings;
+    using ::i18n::DoxygenHeaderStrings;
+    using ::i18n::ParseLocale;
+    using ::i18n::GetStrings;
+    using ::i18n::GetDoxygenHeaders;
+}

@@ -1,6 +1,6 @@
 /**
  * @file DoxygenParser.cpp
- * @brief Implementation of Tree-Sitter based Doxygen docstring parser and Markdown formatter.
+ * @brief Implementation of C++20 Doxygen parser and Markdown formatter.
  * @ingroup Utils
  */
 
@@ -11,6 +11,9 @@
 #include <sstream>
 #include <cstring>
 #include <memory>
+#include <regex>
+#include <algorithm>
+#include <cctype>
 
 extern "C" TSLanguage *tree_sitter_doxygen();
 
@@ -19,259 +22,498 @@ namespace angel_lsp::utils
     using document::UniqueTSParser;
     using document::UniqueTSTree;
 
-    // Helper to get text from a node
-    static std::string GetNodeText(TSNode node, const std::string &source)
+    static std::string CleanRawCommentText(std::string_view rawComment)
     {
-        uint32_t start = ts_node_start_byte(node);
-        uint32_t end = ts_node_end_byte(node);
-        if (start < end && end <= source.length())
+        std::string text(rawComment);
+        if (text.empty())
         {
-            return source.substr(start, end - start);
-        }
-        return "";
-    }
-
-    // Helper to remove leading/trailing whitespace and asterisks from extracted text
-    static std::string CleanText(std::string text)
-    {
-        // Strip leading whitespace and asterisks
-        while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '\n' || text.front() == '\r' || text.front() == '*'))
-        {
-            text.erase(text.begin());
-        }
-        // Strip trailing whitespace
-        while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\n' || text.back() == '\r'))
-        {
-            text.pop_back();
+            return "";
         }
 
-        // Remove ' * ' at the beginning of each line
-        size_t pos = 0;
-        while ((pos = text.find("\n", pos)) != std::string::npos)
+        if (text.starts_with("/**"))
         {
-            pos++; // move past \n
-            while (pos < text.length() && (text[pos] == ' ' || text[pos] == '\t'))
-            {
-                text.erase(pos, 1);
-            }
-            if (pos < text.length() && text[pos] == '*')
-            {
-                text.erase(pos, 1);
-            }
-            if (pos < text.length() && text[pos] == ' ')
-            {
-                text.erase(pos, 1);
-            }
+            text = text.substr(3);
+        }
+        else if (text.starts_with("/*!"))
+        {
+            text = text.substr(3);
+        }
+        else if (text.starts_with("/*"))
+        {
+            text = text.substr(2);
         }
 
-        return text;
-    }
-
-    static std::string StripDoxygenTags(std::string text)
-    {
-        static const std::vector<std::string> tags = {
-            "@brief", "\\brief", "@details", "\\details",
-            "@note", "\\note", "@warning", "\\warning",
-            "@deprecated", "\\deprecated", "@return", "\\return", "@returns", "\\returns"};
-        for (const auto &tag : tags)
+        if (text.ends_with("*/"))
         {
-            if (text.starts_with(tag))
-            {
-                text = text.substr(tag.length());
-                break;
-            }
+            text = text.substr(0, text.length() - 2);
         }
-        size_t first = text.find_first_not_of(" \t\n\r");
+
+        std::istringstream stream(text);
+        std::string line;
+        std::string result;
+
+        while (std::getline(stream, line))
+        {
+            size_t start = 0;
+            while (start < line.length() && (line[start] == ' ' || line[start] == '\t'))
+            {
+                start++;
+            }
+
+            if (line.compare(start, 3, "///") == 0)
+            {
+                start += 3;
+            }
+            else if (line.compare(start, 2, "//") == 0)
+            {
+                start += 2;
+            }
+            else if (start < line.length() && line[start] == '*')
+            {
+                start++;
+            }
+
+            if (start < line.length() && line[start] == ' ')
+            {
+                start++;
+            }
+
+            std::string cleanedLine = line.substr(start);
+            if (!result.empty())
+            {
+                result += "\n";
+            }
+            result += cleanedLine;
+        }
+
+        size_t first = result.find_first_not_of(" \t\n\r");
         if (first == std::string::npos)
         {
             return "";
         }
-        size_t last = text.find_last_not_of(" \t\n\r");
-        return text.substr(first, (last - first + 1));
+        size_t last = result.find_last_not_of(" \t\n\r");
+        return result.substr(first, last - first + 1);
     }
 
-    static std::string TrimString(const std::string &str)
+    static std::string ApplyInlineFormatting(std::string text)
     {
-        return StripDoxygenTags(str);
-    }
-
-    static void ProcessNode(TSNode node, const std::string &wrappedDoxygen, ParsedDoxygenDoc &doc)
-    {
-        uint32_t childCount = ts_node_child_count(node);
-        for (uint32_t i = 0; i < childCount; ++i)
+        if (text.empty())
         {
-            TSNode child = ts_node_child(node, i);
-            const char *nodeType = ts_node_type(child);
+            return "";
+        }
 
-            if (strcmp(nodeType, "brief_header") == 0)
+        size_t codePos = 0;
+        while ((codePos = text.find("@code")) != std::string::npos || (codePos = text.find("\\code")) != std::string::npos)
+        {
+            size_t endCodePos = text.find("@endcode", codePos);
+            size_t endLen = 8;
+            if (endCodePos == std::string::npos)
             {
-                std::string txt = CleanText(GetNodeText(child, wrappedDoxygen));
-                txt = StripDoxygenTags(txt);
-                if (!txt.empty())
-                {
-                    doc.brief = txt;
-                }
+                endCodePos = text.find("\\endcode", codePos);
             }
-            else if (strcmp(nodeType, "tag") == 0)
+            if (endCodePos != std::string::npos)
             {
-                std::string tagName = "";
-                std::string identifier = "";
-                std::string description = "";
-
-                uint32_t tagChildCount = ts_node_child_count(child);
-                for (uint32_t j = 0; j < tagChildCount; ++j)
+                std::string codeBody = text.substr(codePos + 5, endCodePos - (codePos + 5));
+                while (!codeBody.empty() && (codeBody.front() == '\n' || codeBody.front() == '\r'))
                 {
-                    TSNode sub = ts_node_child(child, j);
-                    const char *subType = ts_node_type(sub);
-
-                    if (strcmp(subType, "tag_name") == 0)
-                    {
-                        tagName = CleanText(GetNodeText(sub, wrappedDoxygen));
-                    }
-                    else if (strcmp(subType, "identifier") == 0)
-                    {
-                        identifier = CleanText(GetNodeText(sub, wrappedDoxygen));
-                    }
-                    else if (strcmp(subType, "description") == 0)
-                    {
-                        description = CleanText(GetNodeText(sub, wrappedDoxygen));
-                    }
+                    codeBody.erase(codeBody.begin());
                 }
-                if (description.empty())
+                std::string formattedBlock = "```angelscript\n" + codeBody + "\n```";
+                text.replace(codePos, (endCodePos + endLen) - codePos, formattedBlock);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        std::regex codeWordRegex(R"([@\\][cp]\s+([A-Za-z0-9_.]+))");
+        text = std::regex_replace(text, codeWordRegex, "`$1`");
+
+        std::regex boldWordRegex(R"([@\\]b\s+([A-Za-z0-9_.]+))");
+        text = std::regex_replace(text, boldWordRegex, "**$1**");
+
+        std::regex italicWordRegex(R"([@\\][ia]\s+([A-Za-z0-9_.]+))");
+        text = std::regex_replace(text, italicWordRegex, "*$1*");
+
+        return text;
+    }
+
+    DoxygenDoc ParseDoxygen(std::string_view rawComment)
+    {
+        DoxygenDoc doc;
+        if (rawComment.empty())
+        {
+            return doc;
+        }
+
+        std::string cleanedText = CleanRawCommentText(rawComment);
+        if (cleanedText.empty())
+        {
+            return doc;
+        }
+
+        // 1. IMPLICIT PLAIN TEXT FALLBACK: No '@' or '\' tags
+        if (cleanedText.find_first_of("@\\") == std::string::npos)
+        {
+            doc.briefText = ApplyInlineFormatting(cleanedText);
+            doc.brief = doc.briefText;
+            return doc;
+        }
+
+        // 2. TAG PARSING: Parse block line-by-line and tag-by-tag
+        std::istringstream stream(cleanedText);
+        std::string line;
+
+        std::string currentTag;
+        std::string currentContent;
+
+        auto flushCurrentTag = [&](const std::string &tag, const std::string &content)
+        {
+            if (tag.empty() && content.empty())
+            {
+                return;
+            }
+
+            std::string formattedContent = ApplyInlineFormatting(content);
+
+            if (tag.empty())
+            {
+                if (doc.briefText.empty())
                 {
-                    for (uint32_t j = 0; j < tagChildCount; ++j)
+                    doc.briefText = formattedContent;
+                }
+                else
+                {
+                    if (!doc.detailsText.empty())
                     {
-                        TSNode sub = ts_node_child(child, j);
-                        const char *subType = ts_node_type(sub);
-                        if (strcmp(subType, "tag_name") != 0 && strcmp(subType, "identifier") != 0)
+                        doc.detailsText += "\n";
+                    }
+                    doc.detailsText += formattedContent;
+                }
+                return;
+            }
+
+            std::string lowerTag = tag;
+            if (lowerTag.front() == '@' || lowerTag.front() == '\\')
+            {
+                lowerTag = lowerTag.substr(1);
+            }
+
+            std::transform(lowerTag.begin(), lowerTag.end(), lowerTag.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+
+            if (lowerTag == "brief")
+            {
+                doc.briefText = formattedContent;
+            }
+            else if (lowerTag == "details")
+            {
+                if (!doc.detailsText.empty())
+                {
+                    doc.detailsText += "\n";
+                }
+                doc.detailsText += formattedContent;
+            }
+            else if (lowerTag == "return" || lowerTag == "returns")
+            {
+                doc.returnDoc = formattedContent;
+                doc.returns = formattedContent;
+            }
+            else if (lowerTag == "deprecated")
+            {
+                doc.deprecatedDoc = formattedContent;
+                doc.deprecated = formattedContent;
+            }
+            else if (lowerTag == "note")
+            {
+                doc.notes.push_back(formattedContent);
+                if (!doc.note.empty())
+                {
+                    doc.note += "\n";
+                }
+                doc.note += formattedContent;
+            }
+            else if (lowerTag == "warning")
+            {
+                doc.warnings.push_back(formattedContent);
+                if (!doc.warning.empty())
+                {
+                    doc.warning += "\n";
+                }
+                doc.warning += formattedContent;
+            }
+            else if (lowerTag == "see" || lowerTag == "sa")
+            {
+                doc.seeAlso.push_back(formattedContent);
+            }
+            else if (lowerTag == "param" || lowerTag == "tparam")
+            {
+                DoxygenParam p;
+                std::string rest = formattedContent;
+
+                // Check for direction bracket [in], [out], [in,out], [out,in]
+                if (rest.front() == '[')
+                {
+                    size_t bracketEnd = rest.find(']');
+                    if (bracketEnd != std::string::npos)
+                    {
+                        p.direction = rest.substr(1, bracketEnd - 1);
+                        rest = rest.substr(bracketEnd + 1);
+                        size_t firstNonSpace = rest.find_first_not_of(" \t");
+                        if (firstNonSpace != std::string::npos)
                         {
-                            std::string subTxt = CleanText(GetNodeText(sub, wrappedDoxygen));
-                            if (!subTxt.empty())
-                            {
-                                if (!description.empty())
-                                {
-                                    description += " ";
-                                }
-                                description += subTxt;
-                            }
+                            rest = rest.substr(firstNonSpace);
                         }
                     }
                 }
-                description = StripDoxygenTags(description);
 
-                if (tagName == "@brief" || tagName == "\\brief")
+                // Extract parameter name
+                size_t spacePos = rest.find_first_of(" \t");
+                if (spacePos != std::string::npos)
                 {
-                    doc.brief = description;
-                }
-                else if (tagName == "@details" || tagName == "\\details")
-                {
-                    doc.details = description;
-                }
-                else if (tagName == "@return" || tagName == "\\return" || tagName == "@returns" || tagName == "\\returns")
-                {
-                    doc.returns = description;
-                }
-                else if (tagName == "@note" || tagName == "\\note")
-                {
-                    if (!doc.note.empty())
+                    p.name = rest.substr(0, spacePos);
+                    std::string desc = rest.substr(spacePos + 1);
+                    size_t firstNonSpace = desc.find_first_not_of(" \t");
+                    if (firstNonSpace != std::string::npos)
                     {
-                        doc.note += "\n";
+                        desc = desc.substr(firstNonSpace);
                     }
-                    doc.note += description;
+                    p.description = desc;
                 }
-                else if (tagName == "@warning" || tagName == "\\warning")
+                else
                 {
-                    if (!doc.warning.empty())
-                    {
-                        doc.warning += "\n";
-                    }
-                    doc.warning += description;
+                    p.name = rest;
                 }
-                else if (tagName == "@deprecated" || tagName == "\\deprecated")
+
+                if (lowerTag == "tparam")
                 {
-                    doc.deprecated = description;
+                    doc.tparams.push_back(p);
                 }
-                else if (tagName == "@param" || tagName == "\\param" || tagName == "@tparam" || tagName == "\\tparam")
+                else
                 {
-                    DoxygenParam p;
-                    p.name = identifier;
-                    p.description = description;
+                    doc.params.push_back(p);
                     doc.parameters.push_back(p);
                 }
-                else if (tagName.length() > 1)
-                {
-                    std::string tagLabel = tagName.substr(1);
-                    tagLabel[0] = toupper(tagLabel[0]);
-                    if (!doc.details.empty())
-                    {
-                        doc.details += "\n";
-                    }
-                    doc.details += "> **" + tagLabel + ":** " + description;
-                }
             }
-            else if (strcmp(nodeType, "text") == 0 || strcmp(nodeType, "text_block") == 0)
+            else if (lowerTag == "throws" || lowerTag == "exception")
             {
-                std::string txt = CleanText(GetNodeText(child, wrappedDoxygen));
-                if (!txt.empty() && txt != "/" && txt != "/**" && txt != "*/")
+                std::string exType;
+                std::string exDesc;
+                size_t spacePos = formattedContent.find_first_of(" \t");
+                if (spacePos != std::string::npos)
                 {
-                    if (!doc.details.empty())
+                    exType = formattedContent.substr(0, spacePos);
+                    exDesc = formattedContent.substr(spacePos + 1);
+                }
+                else
+                {
+                    exType = formattedContent;
+                }
+                doc.throwsDocs.push_back({exType, exDesc});
+            }
+            else
+            {
+                // Generic tag fallback (e.g. @author, @todo, @bug)
+                std::string tagLabel = tag.substr(1);
+                if (!tagLabel.empty())
+                {
+                    tagLabel[0] = (char)std::toupper(tagLabel[0]);
+                }
+                doc.genericTags.push_back({tagLabel, formattedContent});
+            }
+        };
+
+        while (std::getline(stream, line))
+        {
+            size_t firstChar = line.find_first_not_of(" \t");
+            if (firstChar == std::string::npos)
+            {
+                continue;
+            }
+
+            if (line[firstChar] == '@' || line[firstChar] == '\\')
+            {
+                if (!currentTag.empty() || !currentContent.empty())
+                {
+                    flushCurrentTag(currentTag, currentContent);
+                    currentContent.clear();
+                }
+
+                size_t tagEnd = line.find_first_of(" \t\n\r", firstChar);
+                if (tagEnd == std::string::npos)
+                {
+                    currentTag = line.substr(firstChar);
+                    currentContent = "";
+                }
+                else
+                {
+                    currentTag = line.substr(firstChar, tagEnd - firstChar);
+                    size_t contentStart = line.find_first_not_of(" \t", tagEnd);
+                    if (contentStart != std::string::npos)
                     {
-                        doc.details += " ";
+                        currentContent = line.substr(contentStart);
                     }
-                    doc.details += txt;
                 }
             }
             else
             {
-                ProcessNode(child, wrappedDoxygen, doc);
+                if (!currentContent.empty())
+                {
+                    currentContent += "\n";
+                }
+                currentContent += line.substr(firstChar);
             }
         }
-    }
 
-    ParsedDoxygenDoc ParseDoxygenComment(const std::string &rawDoxygen)
-    {
-        ParsedDoxygenDoc doc;
-        if (rawDoxygen.empty())
-        {
-            return doc;
-        }
+        flushCurrentTag(currentTag, currentContent);
 
-        std::string wrappedDoxygen = rawDoxygen;
-        if (wrappedDoxygen.find("/**") == std::string::npos && wrappedDoxygen.find("/*!") == std::string::npos)
-        {
-            wrappedDoxygen = "/**\n" + wrappedDoxygen + "\n*/";
-        }
-
-        UniqueTSParser parser(ts_parser_new());
-        if (!parser)
-        {
-            return doc;
-        }
-        ts_parser_set_language(parser.get(), tree_sitter_doxygen());
-
-        UniqueTSTree tree(ts_parser_parse_string(parser.get(), nullptr, wrappedDoxygen.c_str(), wrappedDoxygen.length()));
-        if (!tree)
-        {
-            return doc;
-        }
-        TSNode root = ts_tree_root_node(tree.get());
-
-        ProcessNode(root, wrappedDoxygen, doc);
-
-        doc.brief = TrimString(doc.brief);
-        doc.details = TrimString(doc.details);
-
-        if (doc.brief.empty() && !doc.details.empty())
-        {
-            doc.brief = doc.details;
-            doc.details.clear();
-        }
-        else if (!doc.details.empty() && doc.details == doc.brief)
-        {
-            doc.details.clear();
-        }
+        doc.brief = doc.briefText;
+        doc.details = doc.detailsText;
 
         return doc;
+    }
+
+    std::string FormatDoxygenToMarkdown(const DoxygenDoc &doc, i18n::Locale locale)
+    {
+        const auto headers = i18n::GetDoxygenHeaders(locale);
+        std::vector<std::string> blocks;
+
+        // 1. Brief
+        if (!doc.briefText.empty())
+        {
+            blocks.push_back(doc.briefText);
+        }
+
+        // 2. Type Parameters
+        if (!doc.tparams.empty())
+        {
+            std::string tpBlock = "### " + std::string(headers.typeParameters) + "\n";
+            for (const auto &tp : doc.tparams)
+            {
+                tpBlock += "- `" + tp.name + "`";
+                if (!tp.description.empty())
+                {
+                    tpBlock += " \xE2\x80\x94 " + tp.description;
+                }
+                tpBlock += "\n";
+            }
+            if (tpBlock.back() == '\n')
+            {
+                tpBlock.pop_back();
+            }
+            blocks.push_back(tpBlock);
+        }
+
+        // 3. Parameters
+        if (!doc.params.empty())
+        {
+            std::string pBlock = "### " + std::string(headers.parameters) + "\n";
+            for (const auto &p : doc.params)
+            {
+                pBlock += "- `" + p.name + "`";
+                if (!p.direction.empty())
+                {
+                    pBlock += " `[" + p.direction + "]`";
+                }
+                if (!p.description.empty())
+                {
+                    pBlock += " \xE2\x80\x94 " + p.description;
+                }
+                pBlock += "\n";
+            }
+            if (pBlock.back() == '\n')
+            {
+                pBlock.pop_back();
+            }
+            blocks.push_back(pBlock);
+        }
+
+        // 4. Returns
+        if (!doc.returnDoc.empty())
+        {
+            blocks.push_back("### " + std::string(headers.returns) + "\n" + doc.returnDoc);
+        }
+
+        // 5. Exceptions
+        if (!doc.throwsDocs.empty())
+        {
+            std::string exBlock = "### " + std::string(headers.exceptions) + "\n";
+            for (const auto &ex : doc.throwsDocs)
+            {
+                exBlock += "- `" + ex.first + "`";
+                if (!ex.second.empty())
+                {
+                    exBlock += " \xE2\x80\x94 " + ex.second;
+                }
+                exBlock += "\n";
+            }
+            if (exBlock.back() == '\n')
+            {
+                exBlock.pop_back();
+            }
+            blocks.push_back(exBlock);
+        }
+
+        // 6. Warnings & Deprecated
+        for (const auto &warn : doc.warnings)
+        {
+            blocks.push_back("**" + std::string(headers.warning) + "** " + warn);
+        }
+        if (!doc.deprecatedDoc.empty())
+        {
+            blocks.push_back("**" + std::string(headers.deprecated) + "** " + doc.deprecatedDoc);
+        }
+
+        // 7. Details
+        if (!doc.detailsText.empty())
+        {
+            blocks.push_back(doc.detailsText);
+        }
+
+        // 8. Notes
+        for (const auto &note : doc.notes)
+        {
+            blocks.push_back("**" + std::string(headers.note) + "** " + note);
+        }
+
+        // 9. See Also
+        if (!doc.seeAlso.empty())
+        {
+            std::string saBlock = "### " + std::string(headers.seeAlso) + "\n";
+            for (const auto &sa : doc.seeAlso)
+            {
+                saBlock += "- " + sa + "\n";
+            }
+            if (saBlock.back() == '\n')
+            {
+                saBlock.pop_back();
+            }
+            blocks.push_back(saBlock);
+        }
+
+        // 10. Generic Tags
+        for (const auto &gt : doc.genericTags)
+        {
+            blocks.push_back("> **" + gt.first + ":** " + gt.second);
+        }
+
+        // Assembly
+        std::string result;
+        for (size_t i = 0; i < blocks.size(); ++i)
+        {
+            result += blocks[i];
+            if (i + 1 < blocks.size())
+            {
+                result += "\n\n";
+            }
+        }
+
+        return result;
+    }
+
+    DoxygenDoc ParseDoxygenComment(const std::string &rawDoxygen)
+    {
+        return ParseDoxygen(rawDoxygen);
     }
 
     std::string FormatDoxygenToMarkdown(const std::string &rawDoxygen, i18n::Locale locale, const std::string &targetParam)
@@ -281,11 +523,11 @@ namespace angel_lsp::utils
             return "";
         }
 
-        ParsedDoxygenDoc doc = ParseDoxygenComment(rawDoxygen);
+        DoxygenDoc doc = ParseDoxygen(rawDoxygen);
 
         if (!targetParam.empty())
         {
-            for (const auto &p : doc.parameters)
+            for (const auto &p : doc.params)
             {
                 if (p.name == targetParam)
                 {
@@ -295,27 +537,7 @@ namespace angel_lsp::utils
             return "";
         }
 
-        std::string md;
-        if (!doc.brief.empty())
-        {
-            md += doc.brief;
-        }
-        if (!doc.details.empty())
-        {
-            if (!md.empty())
-            {
-                md += "\n\n";
-            }
-            md += doc.details;
-        }
-        if (!doc.returns.empty())
-        {
-            if (!md.empty())
-            {
-                md += "\n\n";
-            }
-            md += "**Returns:** " + doc.returns;
-        }
-        return md;
+        return FormatDoxygenToMarkdown(doc, locale);
     }
-}
+
+} // namespace angel_lsp::utils

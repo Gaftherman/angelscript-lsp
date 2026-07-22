@@ -130,4 +130,40 @@ namespace i18n
         }
     }
 
+    static const DoxygenHeaderStrings EN_DOXYGEN_HEADERS =
+        {
+            .parameters = "Parameters:",
+            .typeParameters = "Type Parameters:",
+            .returns = "Returns:",
+            .exceptions = "Exceptions:",
+            .warning = "Warning:",
+            .deprecated = "Deprecated:",
+            .note = "Note:",
+            .seeAlso = "See also:"
+        };
+
+    static const DoxygenHeaderStrings ES_DOXYGEN_HEADERS =
+        {
+            .parameters = "Parámetros:",
+            .typeParameters = "Parámetros de Tipo:",
+            .returns = "Retorna:",
+            .exceptions = "Excepciones:",
+            .warning = "Advertencia:",
+            .deprecated = "Obsoleto:",
+            .note = "Nota:",
+            .seeAlso = "Ver también:"
+        };
+
+    DoxygenHeaderStrings GetDoxygenHeaders(Locale locale)
+    {
+        switch (locale)
+        {
+        case Locale::ES:
+            return ES_DOXYGEN_HEADERS;
+        case Locale::EN:
+        default:
+            return EN_DOXYGEN_HEADERS;
+        }
+    }
+
 } // namespace i18n
