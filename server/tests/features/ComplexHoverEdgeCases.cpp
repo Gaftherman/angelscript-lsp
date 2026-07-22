@@ -892,4 +892,59 @@ void Main()
             }
         }
     }
+
+    TEST_CASE("CH_ADV_19: Constructor call in scoped expression overload matching")
+    {
+        const char *CALL_SCRIPT = R"(namespace Engine
+{
+    class Vector3
+    {
+        Vector3() {}
+        Vector3(float ax, float ay, float az) {}
+    }
+}
+
+void Test()
+{
+    Engine::Vector3 m_clearColor = Engine::Vector3(0.0f, 0.0f, 0.0f);
+}
+)";
+        Document doc("file:///vector3_call.as", CALL_SCRIPT);
+        SymbolTable table;
+        SymbolCollector::CollectGlobals(doc, table);
+
+        TSNode root = doc.RootNode();
+        auto traverseFuncs = [&](TSNode node, auto &self) -> void {
+            if (std::string_view(ts_node_type(node)) == "func_declaration") {
+                TSNode bodyNode = ts_node_child_by_field_name(node, "body", 4);
+                if (!ts_node_is_null(bodyNode))
+                    SymbolCollector::TraverseLocals(bodyNode, doc, table, nullptr);
+            }
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++)
+                self(ts_node_child(node, i), self);
+        };
+        traverseFuncs(root, traverseFuncs);
+
+        // Hover on Vector3 in 'Engine::Vector3(0.0f, 0.0f, 0.0f)' on line 11
+        lsp::requests::TextDocument_Hover::Params req;
+        req.textDocument.uri = lsp::DocumentUri::parse("file:///vector3_call.as");
+        req.position.line = 11;
+        req.position.character = 44; // Vector3
+        lsp::requests::TextDocument_Hover::Result res;
+        angel_lsp::features::ProcessHover(res, req, doc, table, nullptr, i18n::Locale::ES, nullptr);
+        REQUIRE(!res.isNull());
+
+        if (const auto *hover = &*res)
+        {
+            if (const auto *msList = std::get_if<lsp::Array<lsp::MarkedString>>(&hover->contents))
+            {
+                REQUIRE(!msList->empty());
+                if (const auto *val = std::get_if<lsp::MarkedString_Language_Value>(&(*msList)[0]))
+                {
+                    CHECK(val->value.find("ax") != std::string::npos);
+                    CHECK(val->value.find("overload") != std::string::npos);
+                }
+            }
+        }
+    }
 }
