@@ -35,16 +35,33 @@ namespace angel_lsp
                     }
                 }
             }
-            else if (parameters.has_value())
+            else
             {
-                for (const auto &p : doc.parameters)
+                if (parameters.has_value())
                 {
-                    for (auto &hp : *parameters)
+                    for (const auto &p : doc.parameters)
                     {
-                        if (hp.name == p.name)
+                        for (auto &hp : *parameters)
                         {
-                            hp.docDescription = p.description;
-                            break;
+                            if (hp.name == p.name)
+                            {
+                                hp.docDescription = p.description;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (templateParameters.has_value())
+                {
+                    for (const auto &p : doc.parameters)
+                    {
+                        for (auto &tp : *templateParameters)
+                        {
+                            if (tp.name == p.name)
+                            {
+                                tp.docDescription = p.description;
+                                break;
+                            }
                         }
                     }
                 }

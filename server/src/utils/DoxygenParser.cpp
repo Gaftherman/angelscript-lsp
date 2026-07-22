@@ -86,50 +86,21 @@ namespace angel_lsp::utils
         return StripDoxygenTags(str);
     }
 
-    ParsedDoxygenDoc ParseDoxygenComment(const std::string &rawDoxygen)
+    static void ProcessNode(TSNode node, const std::string &wrappedDoxygen, ParsedDoxygenDoc &doc)
     {
-        ParsedDoxygenDoc doc;
-        if (rawDoxygen.empty())
-        {
-            return doc;
-        }
-
-        std::string wrappedDoxygen = rawDoxygen;
-        if (wrappedDoxygen.find("/**") == std::string::npos && wrappedDoxygen.find("/*!") == std::string::npos)
-        {
-            wrappedDoxygen = "/**\n" + wrappedDoxygen + "\n*/";
-        }
-
-        UniqueTSParser parser(ts_parser_new());
-        if (!parser)
-        {
-            return doc;
-        }
-        ts_parser_set_language(parser.get(), tree_sitter_doxygen());
-
-        UniqueTSTree tree(ts_parser_parse_string(parser.get(), nullptr, wrappedDoxygen.c_str(), wrappedDoxygen.length()));
-        if (!tree)
-        {
-            return doc;
-        }
-        TSNode root = ts_tree_root_node(tree.get());
-
-        uint32_t childCount = ts_node_child_count(root);
+        uint32_t childCount = ts_node_child_count(node);
         for (uint32_t i = 0; i < childCount; ++i)
         {
-            TSNode child = ts_node_child(root, i);
+            TSNode child = ts_node_child(node, i);
             const char *nodeType = ts_node_type(child);
 
-            if (strcmp(nodeType, "text") == 0 || strcmp(nodeType, "text_block") == 0)
+            if (strcmp(nodeType, "brief_header") == 0)
             {
                 std::string txt = CleanText(GetNodeText(child, wrappedDoxygen));
-                if (!txt.empty() && txt != "/" && txt != "/**" && txt != "*/")
+                txt = StripDoxygenTags(txt);
+                if (!txt.empty())
                 {
-                    if (!doc.details.empty())
-                    {
-                        doc.details += " ";
-                    }
-                    doc.details += txt;
+                    doc.brief = txt;
                 }
             }
             else if (strcmp(nodeType, "tag") == 0)
@@ -154,9 +125,30 @@ namespace angel_lsp::utils
                     }
                     else if (strcmp(subType, "description") == 0)
                     {
-                        description = StripDoxygenTags(CleanText(GetNodeText(sub, wrappedDoxygen)));
+                        description = CleanText(GetNodeText(sub, wrappedDoxygen));
                     }
                 }
+                if (description.empty())
+                {
+                    for (uint32_t j = 0; j < tagChildCount; ++j)
+                    {
+                        TSNode sub = ts_node_child(child, j);
+                        const char *subType = ts_node_type(sub);
+                        if (strcmp(subType, "tag_name") != 0 && strcmp(subType, "identifier") != 0)
+                        {
+                            std::string subTxt = CleanText(GetNodeText(sub, wrappedDoxygen));
+                            if (!subTxt.empty())
+                            {
+                                if (!description.empty())
+                                {
+                                    description += " ";
+                                }
+                                description += subTxt;
+                            }
+                        }
+                    }
+                }
+                description = StripDoxygenTags(description);
 
                 if (tagName == "@brief" || tagName == "\\brief")
                 {
@@ -208,12 +200,64 @@ namespace angel_lsp::utils
                     doc.details += "> **" + tagLabel + ":** " + description;
                 }
             }
+            else if (strcmp(nodeType, "text") == 0 || strcmp(nodeType, "text_block") == 0)
+            {
+                std::string txt = CleanText(GetNodeText(child, wrappedDoxygen));
+                if (!txt.empty() && txt != "/" && txt != "/**" && txt != "*/")
+                {
+                    if (!doc.details.empty())
+                    {
+                        doc.details += " ";
+                    }
+                    doc.details += txt;
+                }
+            }
+            else
+            {
+                ProcessNode(child, wrappedDoxygen, doc);
+            }
         }
+    }
+
+    ParsedDoxygenDoc ParseDoxygenComment(const std::string &rawDoxygen)
+    {
+        ParsedDoxygenDoc doc;
+        if (rawDoxygen.empty())
+        {
+            return doc;
+        }
+
+        std::string wrappedDoxygen = rawDoxygen;
+        if (wrappedDoxygen.find("/**") == std::string::npos && wrappedDoxygen.find("/*!") == std::string::npos)
+        {
+            wrappedDoxygen = "/**\n" + wrappedDoxygen + "\n*/";
+        }
+
+        UniqueTSParser parser(ts_parser_new());
+        if (!parser)
+        {
+            return doc;
+        }
+        ts_parser_set_language(parser.get(), tree_sitter_doxygen());
+
+        UniqueTSTree tree(ts_parser_parse_string(parser.get(), nullptr, wrappedDoxygen.c_str(), wrappedDoxygen.length()));
+        if (!tree)
+        {
+            return doc;
+        }
+        TSNode root = ts_tree_root_node(tree.get());
+
+        ProcessNode(root, wrappedDoxygen, doc);
 
         doc.brief = TrimString(doc.brief);
         doc.details = TrimString(doc.details);
 
-        if (!doc.details.empty() && doc.details == doc.brief)
+        if (doc.brief.empty() && !doc.details.empty())
+        {
+            doc.brief = doc.details;
+            doc.details.clear();
+        }
+        else if (!doc.details.empty() && doc.details == doc.brief)
         {
             doc.details.clear();
         }
