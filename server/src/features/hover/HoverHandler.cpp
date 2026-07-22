@@ -183,6 +183,7 @@ namespace angel_lsp
                 info.rawSignature = "#include \"" + sym->name + "\"";
                 info.localScope = "";
                 info.briefText = std::string(s.hoverIncludedFile) + " `" + sym->name + "`";
+                info.detailsText = "";
             } else if (sym->kind == analysis::SymbolKind::Parameter) {
                 info.rawSignature = "(" + std::string(s.hoverParameter) + ") " + BuildSignatureHelper(sym, originalSym, dynamicDisplayName, templateSubstitution);
                 if (sym->parent) {
