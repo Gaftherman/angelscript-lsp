@@ -26,8 +26,19 @@
           "end": "\\*/",
           "patterns": [
             {
+              "match": "(@(?:param|tparam))\\s+([A-Za-z_][A-Za-z0-9_]*)",
+              "captures": {
+                "1": { "name": "keyword.other.documentation.angelscript" },
+                "2": { "name": "variable.other.doxygen.angelscript" }
+              }
+            },
+            {
               "name": "keyword.other.documentation.angelscript",
-              "match": "@(param|return|brief|see|note|warning|deprecated)\\b"
+              "match": "@(param|tparam|return|returns|brief|details|see|sa|note|warning|deprecated|code|endcode)\\b"
+            },
+            {
+              "name": "markup.inline.raw.string.angelscript",
+              "match": "`[^`]+`"
             }
           ]
         },
@@ -42,8 +53,19 @@
           "end": "$\n?",
           "patterns": [
             {
+              "match": "(@(?:param|tparam))\\s+([A-Za-z_][A-Za-z0-9_]*)",
+              "captures": {
+                "1": { "name": "keyword.other.documentation.angelscript" },
+                "2": { "name": "variable.other.doxygen.angelscript" }
+              }
+            },
+            {
               "name": "keyword.other.documentation.angelscript",
-              "match": "@(param|return|brief|see|note|warning|deprecated)\\b"
+              "match": "@(param|tparam|return|returns|brief|details|see|sa|note|warning|deprecated|code|endcode)\\b"
+            },
+            {
+              "name": "markup.inline.raw.string.angelscript",
+              "match": "`[^`]+`"
             }
           ]
         },
