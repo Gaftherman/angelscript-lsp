@@ -14,7 +14,8 @@ if(MSVC)
     # Suppress spdlog/fmt C++20 deprecation warnings on Windows
     add_compile_definitions(_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING)
     add_compile_definitions(_SILENCE_ALL_MS_EXT_DEPRECATION_WARNINGS)
-    add_compile_options(/wd4018 /wd4244 /wd4267) # Suppress tree-sitter specific warnings
+    # Apply warning suppression ONLY to C and C++ (prevents sending /wd to MASM .asm assembler)
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4018 /wd4244 /wd4267>)
 endif()
 
 # ==============================================================================

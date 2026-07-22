@@ -1,0 +1,68 @@
+name: CI Build & Test Multi-Platform
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows x64
+          - os: windows
+            runner: windows-latest
+            arch: x64
+            cmake_arch: -A x64
+          # Windows x86 (32-bit)
+          - os: windows
+            runner: windows-latest
+            arch: x86
+            cmake_arch: -A Win32
+          # Linux x64
+          - os: linux
+            runner: ubuntu-latest
+            arch: x64
+            cmake_arch: ""
+          # Linux x86 (32-bit)
+          - os: linux
+            runner: ubuntu-latest
+            arch: x86
+            cmake_arch: ""
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Configurar dependencias para Linux de 32 bits si aplica
+      - name: Install 32-bit Multilib Dependencies (Linux x86)
+        if: matrix.os == 'linux' && matrix.arch == 'x86'
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y g++-multilib gcc-multilib
+
+      # Configurar CMake
+      - name: Configure CMake
+        run: |
+          cmake -B server/build -S server \
+            -DCMAKE_BUILD_TYPE=Release \
+            ${{ matrix.cmake_arch }} \
+            ${{ matrix.os == 'linux' && matrix.arch == 'x86' && '-DCMAKE_CXX_FLAGS="-m32" -DCMAKE_C_FLAGS="-m32"' || '' }}
+
+      # Compilar todo el proyecto y los ejecutable de test
+      - name: Build All Targets
+        run: cmake --build server/build --config Release -j 4
+
+      # Ejecutar la suite completa de pruebas
+      - name: Run CTest Suite
+        working-directory: server/build
+        run: ctest -C Release --output-on-failure --parallel 4

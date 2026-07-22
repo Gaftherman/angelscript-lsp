@@ -2,6 +2,7 @@
 #include <tree_sitter/api.h>
 #include <vector>
 #include <sstream>
+#include <cstring>
 #include "features/hover/HoverInfo.h"
 
 extern "C" TSLanguage *tree_sitter_doxygen();
