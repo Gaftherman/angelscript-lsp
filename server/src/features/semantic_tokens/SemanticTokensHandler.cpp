@@ -249,6 +249,19 @@ namespace angel_lsp::features::semantic_tokens
                 if (const analysis::Symbol *sym = analysis::SymbolResolver::ResolveAt(doc, table, line, startChar))
                 {
                     TokenType tType = SymbolKindToTokenType(sym->kind);
+                    TSNode parent = ts_node_parent(node);
+                    if (!ts_node_is_null(parent))
+                    {
+                        std::string_view parentType = ts_node_type(parent);
+                        if (parentType == "type" || parentType == "datatype" || parentType == "scoped_type" || parentType == "type_identifier")
+                        {
+                            if (tType == TokenType::Function || tType == TokenType::Method || tType == TokenType::Variable)
+                            {
+                                tType = TokenType::Class;
+                            }
+                        }
+                    }
+
                     uint32_t modifiers = static_cast<uint32_t>(TokenModifier::None);
 
                     if (sym->selectionRange.start.line == line && sym->selectionRange.start.character == startChar)
