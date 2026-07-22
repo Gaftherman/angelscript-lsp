@@ -260,4 +260,69 @@ void DummyGlobal() {}
         oracle.SetDefinedWords({});
         CHECK(oracle.ValidateSync(code).empty());
     }
+
+    TEST_CASE("Isolated file without #include reports error when accessing symbols from other files")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        analysis::ValidationOracle oracle(engine);
+
+        // Map mock in-memory documents: File A, B, C, D
+        std::unordered_map<std::string, std::string> inMemoryFiles = {
+            {"file:///C/fileA.as", "#include \"fileB.as\"\nvoid FuncA() { FuncB(); }"},
+            {"file:///C/fileB.as", "#include \"fileC.as\"\nvoid FuncB() { FuncC(); }"},
+            {"file:///C/fileC.as", "class Vector3 { float x; float y; float z; };\nvoid FuncC() {}"},
+            {"file:///C/fileD.as", "void Main() { Vector3 pos; FuncA(); }"} // File D has NO #include!
+        };
+
+        auto docResolver = [&](const std::string &uri) -> const Document * {
+            static std::unordered_map<std::string, Document> docs;
+            auto it = inMemoryFiles.find(uri);
+            if (it != inMemoryFiles.end()) {
+                docs.insert_or_assign(uri, Document(uri, it->second));
+                return &docs.at(uri);
+            }
+            return nullptr;
+        };
+
+        // File A (includes B -> includes C) should validate cleanly!
+        auto diagsA = oracle.ValidateSync(inMemoryFiles["file:///C/fileA.as"], "file:///C/fileA.as", docResolver);
+        CHECK(diagsA.empty());
+
+        // File D (isolated, no #include) MUST report diagnostic errors for Vector3 and FuncA!
+        auto diagsD = oracle.ValidateSync(inMemoryFiles["file:///C/fileD.as"], "file:///C/fileD.as", docResolver);
+        CHECK(!diagsD.empty());
+    }
+
+    TEST_CASE("Two independent #include trees (Tree 1: A<->B, Tree 2: C<->D) maintain isolated module scope")
+    {
+        fixtures::EngineGuard engine(fixtures::CreateBaseEngine());
+        analysis::ValidationOracle oracle(engine);
+
+        // Tree 1: File A includes File B
+        // Tree 2: File C includes File D
+        std::unordered_map<std::string, std::string> inMemoryFiles = {
+            {"file:///C/tree1_A.as", "#include \"tree1_B.as\"\nvoid RunTree1() { Tree1_Helper(); }"},
+            {"file:///C/tree1_B.as", "void Tree1_Helper() {}"},
+            {"file:///C/tree2_C.as", "#include \"tree2_D.as\"\nvoid RunTree2() { Tree2_Helper(); Tree1_Helper(); }"}, // Invalid call to Tree1_Helper
+            {"file:///C/tree2_D.as", "void Tree2_Helper() {}"}
+        };
+
+        auto docResolver = [&](const std::string &uri) -> const Document * {
+            static std::unordered_map<std::string, Document> docs;
+            auto it = inMemoryFiles.find(uri);
+            if (it != inMemoryFiles.end()) {
+                docs.insert_or_assign(uri, Document(uri, it->second));
+                return &docs.at(uri);
+            }
+            return nullptr;
+        };
+
+        // Tree 1 (A -> B) validates cleanly!
+        auto diagsA = oracle.ValidateSync(inMemoryFiles["file:///C/tree1_A.as"], "file:///C/tree1_A.as", docResolver);
+        CHECK(diagsA.empty());
+
+        // Tree 2 (C -> D) tries to call Tree1_Helper from Tree 1 -> MUST report diagnostic error!
+        auto diagsC = oracle.ValidateSync(inMemoryFiles["file:///C/tree2_C.as"], "file:///C/tree2_C.as", docResolver);
+        CHECK(!diagsC.empty());
+    }
 }
