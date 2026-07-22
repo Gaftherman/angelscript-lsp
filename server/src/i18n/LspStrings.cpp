@@ -6,9 +6,8 @@
 
 #include "i18n/LspStrings.h"
 
-namespace i18n
+namespace angel_lsp::i18n
 {
-
     static const LspStrings EN_STRINGS =
         {
             .kindVariable = "Variable",
@@ -166,4 +165,4 @@ namespace i18n
         }
     }
 
-} // namespace i18n
+} // namespace angel_lsp::i18n

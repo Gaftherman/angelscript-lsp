@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-namespace i18n
+namespace angel_lsp::i18n
 {
 
     /**
@@ -120,14 +120,6 @@ namespace i18n
      */
     DoxygenHeaderStrings GetDoxygenHeaders(Locale locale = Locale::EN);
 
-} // namespace i18n
+} // namespace angel_lsp::i18n
 
-namespace angel_lsp::i18n
-{
-    using ::i18n::Locale;
-    using ::i18n::LspStrings;
-    using ::i18n::DoxygenHeaderStrings;
-    using ::i18n::ParseLocale;
-    using ::i18n::GetStrings;
-    using ::i18n::GetDoxygenHeaders;
-}
+namespace i18n = angel_lsp::i18n;
