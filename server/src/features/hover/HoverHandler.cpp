@@ -239,8 +239,10 @@ namespace angel_lsp
                 docSource    = sym->parent->docComment;
                 targetParam  = sym->name;
             }
-            if (!docSource.empty()) {
-                utils::FillHoverInfoFromDoxygen(docSource, info, targetParam);
+            if (!docSource.empty())
+            {
+                utils::ParsedDoxygenDoc docParsed = utils::ParseDoxygenComment(docSource);
+                info.PopulateFromDoxygen(docParsed, targetParam);
             }
 
             // 7. extras

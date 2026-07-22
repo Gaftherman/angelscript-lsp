@@ -1,8 +1,55 @@
 #include "features/hover/HoverInfo.h"
 #include "i18n/LspStrings.h"
 
-namespace angel_lsp {
-namespace features {
+namespace angel_lsp
+{
+    namespace features
+    {
+
+        void HoverInfo::PopulateFromDoxygen(const utils::ParsedDoxygenDoc &doc, const std::string &targetParam)
+        {
+            briefText = doc.brief;
+            detailsText = doc.details;
+            returnDoc = doc.returns;
+            deprecated = doc.deprecated;
+
+            if (!doc.note.empty())
+            {
+                notes.push_back(doc.note);
+            }
+            if (!doc.warning.empty())
+            {
+                warnings.push_back(doc.warning);
+            }
+
+            if (!targetParam.empty())
+            {
+                for (const auto &p : doc.parameters)
+                {
+                    if (p.name == targetParam)
+                    {
+                        briefText = p.description;
+                        detailsText.clear();
+                        returnDoc.clear();
+                        break;
+                    }
+                }
+            }
+            else if (parameters.has_value())
+            {
+                for (const auto &p : doc.parameters)
+                {
+                    for (auto &hp : *parameters)
+                    {
+                        if (hp.name == p.name)
+                        {
+                            hp.docDescription = p.description;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
 
 std::string HoverInfo::ToMarkdown(i18n::Locale locale) const {
     const auto& s = i18n::GetStrings(locale);

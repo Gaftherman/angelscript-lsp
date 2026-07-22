@@ -2,9 +2,41 @@
 
 #include <string>
 #include <string_view>
+#include <memory>
 #include <tree_sitter/api.h>
 
 #include <lsp/types.h>
+
+/**
+ * @brief Custom deleter for Tree-sitter TSParser.
+ */
+struct TSParserDeleter
+{
+    void operator()(TSParser *parser) const
+    {
+        if (parser)
+        {
+            ts_parser_delete(parser);
+        }
+    }
+};
+
+/**
+ * @brief Custom deleter for Tree-sitter TSTree.
+ */
+struct TSTreeDeleter
+{
+    void operator()(TSTree *tree) const
+    {
+        if (tree)
+        {
+            ts_tree_delete(tree);
+        }
+    }
+};
+
+using UniqueTSParser = std::unique_ptr<TSParser, TSParserDeleter>;
+using UniqueTSTree = std::unique_ptr<TSTree, TSTreeDeleter>;
 
 /**
  * @brief Represents a text document managed by the LSP, including its source code and Tree-Sitter AST.
@@ -76,8 +108,8 @@ private:
     std::string uri;
     std::string text;
 
-    TSParser *parser;
-    TSTree *tree;
+    UniqueTSParser parser;
+    UniqueTSTree tree;
 
     size_t ToByteOffset(uint32_t line, uint32_t col) const;
     TSPoint ByteToPoint(size_t byteOffset) const;

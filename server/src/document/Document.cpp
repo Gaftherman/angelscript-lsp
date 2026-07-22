@@ -5,51 +5,21 @@
 extern "C" TSLanguage *tree_sitter_angelscript();
 
 Document::Document(std::string uri, std::string text)
-    : uri(std::move(uri)), text(std::move(text)), tree(nullptr)
+    : uri(std::move(uri)), text(std::move(text)), parser(ts_parser_new()), tree(nullptr)
 {
-    parser = ts_parser_new();
-    ts_parser_set_language(parser, tree_sitter_angelscript());
-
-    tree = ts_parser_parse_string(
-        parser, nullptr,
-        this->text.c_str(), (uint32_t)this->text.size());
-}
-
-Document::~Document()
-{
-    if (tree)
-        ts_tree_delete(tree);
     if (parser)
-        ts_parser_delete(parser);
-}
-
-Document::Document(Document &&other) noexcept
-    : uri(std::move(other.uri)), text(std::move(other.text)),
-      parser(other.parser), tree(other.tree)
-{
-    other.parser = nullptr;
-    other.tree = nullptr;
-}
-
-Document &Document::operator=(Document &&other) noexcept
-{
-    if (this != &other)
     {
-        if (tree)
-            ts_tree_delete(tree);
-        if (parser)
-            ts_parser_delete(parser);
-
-        uri = std::move(other.uri);
-        text = std::move(other.text);
-        parser = other.parser;
-        tree = other.tree;
-
-        other.parser = nullptr;
-        other.tree = nullptr;
+        ts_parser_set_language(parser.get(), tree_sitter_angelscript());
+        tree.reset(ts_parser_parse_string(
+            parser.get(), nullptr,
+            this->text.c_str(), (uint32_t)this->text.size()));
     }
-    return *this;
 }
+
+Document::~Document() = default;
+
+Document::Document(Document &&other) noexcept = default;
+Document &Document::operator=(Document &&other) noexcept = default;
 
 size_t Document::ToByteOffset(uint32_t line, uint32_t col) const
 {
@@ -71,22 +41,18 @@ size_t Document::ToByteOffset(uint32_t line, uint32_t col) const
         }
         else
         {
-            // Note: simple character counting, ignores UTF-8 multi-byte logic for simplicity
-            // A real LSP would use UTF-16 code unit offset or UTF-8 depending on client capabilities.
             currentCol++;
         }
         offset++;
     }
 
-    return offset;
+    return text.size(); // If position is out of bounds, clamp to end
 }
 
 TSPoint Document::ByteToPoint(size_t byteOffset) const
 {
     TSPoint point = {0, 0};
-    size_t limit = std::min(byteOffset, text.size());
-
-    for (size_t i = 0; i < limit; i++)
+    for (size_t i = 0; i < byteOffset && i < text.size(); ++i)
     {
         if (text[i] == '\n')
         {
@@ -105,16 +71,22 @@ void Document::ApplyEdit(const lsp::TextEdit &edit)
 {
     size_t startByte = ToByteOffset(edit.range.start.line, edit.range.start.character);
     size_t oldEndByte = ToByteOffset(edit.range.end.line, edit.range.end.character);
-    size_t newEndByte = startByte + edit.newText.size();
 
     TSPoint startPoint = ByteToPoint(startByte);
     TSPoint oldEndPoint = ByteToPoint(oldEndByte);
 
+    // Apply the string replacement
     text.replace(startByte, oldEndByte - startByte, edit.newText);
 
+    size_t newEndByte = startByte + edit.newText.size();
     TSPoint newEndPoint = ByteToPoint(newEndByte);
 
-    TSInputEdit tsEdit{
+    if (!tree || !parser)
+    {
+        return;
+    }
+
+    TSInputEdit tsEdit = {
         .start_byte = (uint32_t)startByte,
         .old_end_byte = (uint32_t)oldEndByte,
         .new_end_byte = (uint32_t)newEndByte,
@@ -123,40 +95,47 @@ void Document::ApplyEdit(const lsp::TextEdit &edit)
         .new_end_point = newEndPoint,
     };
 
-    ts_tree_edit(tree, &tsEdit);
+    ts_tree_edit(tree.get(), &tsEdit);
 
-    TSTree *newTree = ts_parser_parse_string(
-        parser, tree,
-        text.c_str(), (uint32_t)text.size());
-
-    ts_tree_delete(tree);
-    tree = newTree;
+    tree.reset(ts_parser_parse_string(
+        parser.get(), tree.get(),
+        text.c_str(), (uint32_t)text.size()));
 }
 
 TSNode Document::RootNode() const
 {
     if (!tree)
+    {
         return {{0, 0, 0, 0}, nullptr, nullptr};
-    return ts_tree_root_node(tree);
+    }
+    return ts_tree_root_node(tree.get());
 }
 
 TSNode Document::NodeAt(uint32_t line, uint32_t col) const
 {
     if (!tree)
+    {
         return {{0, 0, 0, 0}, nullptr, nullptr};
+    }
     TSPoint point = {line, col};
-    return ts_node_descendant_for_point_range(ts_tree_root_node(tree), point, point);
+    return ts_node_descendant_for_point_range(ts_tree_root_node(tree.get()), point, point);
 }
 
 std::string_view Document::SourceAt(TSNode node) const
 {
     if (ts_node_is_null(node))
+    {
         return "";
+    }
     size_t start = ts_node_start_byte(node);
     size_t end = ts_node_end_byte(node);
     if (end > text.size())
+    {
         end = text.size();
+    }
     if (start >= end)
+    {
         return "";
+    }
     return std::string_view(text.c_str() + start, end - start);
 }

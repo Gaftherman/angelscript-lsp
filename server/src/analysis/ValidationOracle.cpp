@@ -41,9 +41,14 @@ static std::string SanitizeCodeForEngine(const std::string &code, const std::uno
 
     std::vector<bool> ifStack;
 
-    auto currentActive = [&ifStack]() -> bool {
-        for (bool active : ifStack) {
-            if (!active) return false;
+    auto currentActive = [&ifStack]() -> bool
+    {
+        for (bool active : ifStack)
+        {
+            if (!active)
+            {
+                return false;
+            }
         }
         return true;
     };
@@ -68,9 +73,12 @@ static std::string SanitizeCodeForEngine(const std::string &code, const std::uno
                 std::string word;
                 lineSs >> word;
                 bool isNegated = false;
-                if (word == "!" && lineSs >> word) {
+                if (word == "!" && lineSs >> word)
+                {
                     isNegated = true;
-                } else if (word.starts_with("!")) {
+                }
+                else if (word.starts_with("!"))
+                {
                     isNegated = true;
                     word = word.substr(1);
                 }

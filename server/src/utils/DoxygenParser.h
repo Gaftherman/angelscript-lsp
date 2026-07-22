@@ -1,23 +1,47 @@
 #pragma once
 
 #include <string>
-
+#include <vector>
 #include "i18n/LspStrings.h"
 
-// Forward declaration
-namespace angel_lsp { namespace features { struct HoverInfo; } }
+namespace angel_lsp::utils
+{
+    /**
+     * @brief A single parameter documentation entry extracted from Doxygen.
+     */
+    struct DoxygenParam
+    {
+        std::string name;
+        std::string description;
+    };
 
-namespace angel_lsp {
-namespace utils {
+    /**
+     * @brief Structured neutral representation of parsed Doxygen comments.
+     */
+    struct ParsedDoxygenDoc
+    {
+        std::string brief;
+        std::string details;
+        std::string note;
+        std::string warning;
+        std::string deprecated;
+        std::string returns;
+        std::vector<DoxygenParam> parameters;
+    };
 
-    // Fills the documentation fields of a HoverInfo from a raw Doxygen comment.
-    // Uses tree-sitter-doxygen for proper AST parsing.
-    // Cross-links @param names to HoverInfo.parameters[i].docDescription.
-    void FillHoverInfoFromDoxygen(const std::string& rawDoxygen, features::HoverInfo& info, const std::string& targetParam = "");
+    /**
+     * @brief Parses a raw Doxygen comment string into a structured neutral Doxygen representation.
+     * @param rawDoxygen The raw Doxygen string (e.g., "/** @brief ... *\/").
+     * @return Structured ParsedDoxygenDoc object containing extracted sections.
+     */
+    ParsedDoxygenDoc ParseDoxygenComment(const std::string &rawDoxygen);
 
-    // Legacy wrapper — kept for backward compatibility with existing tests.
-    // Internally calls FillHoverInfoFromDoxygen and renders to markdown.
-    std::string FormatDoxygenToMarkdown(const std::string& rawDoxygen, i18n::Locale locale, const std::string& targetParam = "");
-
-}
+    /**
+     * @brief Formats raw Doxygen documentation into a Markdown string for a specified locale.
+     * @param rawDoxygen The raw Doxygen documentation comment string.
+     * @param locale Target localization locale.
+     * @param targetParam Optional parameter filter.
+     * @return Formatted Markdown documentation text.
+     */
+    std::string FormatDoxygenToMarkdown(const std::string &rawDoxygen, i18n::Locale locale, const std::string &targetParam = "");
 }

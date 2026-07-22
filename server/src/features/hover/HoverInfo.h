@@ -4,9 +4,12 @@
 #include <optional>
 #include "analysis/Symbol.h"
 #include "i18n/LspStrings.h"
+#include "utils/DoxygenParser.h"
 
-namespace angel_lsp {
-namespace features {
+namespace angel_lsp
+{
+    namespace features
+    {
 
 /// Structured data for one parameter (function param or template param).
 /// Mirrors clangd's HoverInfo::Param exactly.
@@ -64,6 +67,9 @@ struct HoverInfo {
         std::string language;
         std::string content;
     };
+
+    /// Populate documentation fields from a neutral ParsedDoxygenDoc.
+    void PopulateFromDoxygen(const utils::ParsedDoxygenDoc &doc, const std::string &targetParam = "");
 
     /// Render to structured hover sections.
     std::string ToMarkdown(i18n::Locale locale) const;
