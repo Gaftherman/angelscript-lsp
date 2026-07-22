@@ -8,7 +8,7 @@
 #include <ankerl/unordered_dense.h>
 #include <regex>
 
-namespace i18n
+namespace angel_lsp::i18n
 {
 
     std::string DiagnosticI18n::Translate(const std::string &originalMsg, Locale locale)
@@ -1289,4 +1289,4 @@ namespace i18n
         return originalMsg;
     }
 
-} // namespace i18n
+} // namespace angel_lsp::i18n

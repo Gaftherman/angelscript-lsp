@@ -5,10 +5,11 @@
  */
 
 #pragma once
+
 #include <string>
 #include "i18n/LspStrings.h"
 
-namespace i18n
+namespace angel_lsp::i18n
 {
     /**
      * @brief Translates AngelScript diagnostic compiler messages based on locale.
