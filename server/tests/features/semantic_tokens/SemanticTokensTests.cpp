@@ -1,7 +1,6 @@
 #include <doctest/doctest.h>
 #include "features/semantic_tokens/SemanticTokensHandler.h"
-#include "document/Document.h"
-#include "analysis/SymbolCollector.h"
+#include "helpers/TestUtils.h"
 #include <algorithm>
 
 TEST_SUITE("SemanticTokensTests")
@@ -22,10 +21,9 @@ namespace Game
 }
 )script";
 
-        Document doc("file:///semantic.as", SRC);
+        auto doc = angel_lsp::test::CreateTestDocument("file:///semantic.as", SRC);
         analysis::SymbolTable table;
-        analysis::SymbolCollector::CollectGlobals(doc, table);
-        analysis::SymbolCollector::TraverseLocals(doc.RootNode(), doc, table, nullptr);
+        angel_lsp::test::PopulateTestSymbolTable(doc, table);
 
         std::vector<uint32_t> tokens = angel_lsp::features::SemanticTokensHandler::ProvideSemanticTokens(doc, table);
 
