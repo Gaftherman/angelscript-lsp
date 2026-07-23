@@ -112,6 +112,13 @@ namespace angel_lsp::i18n
         std::string_view diagDuplicateEnumerator;
         std::string_view diagInvalidEnumInitializer;
         std::string_view diagTypedefCollision;
+        std::string_view diagDuplicateParamName;
+        std::string_view diagDefaultParamOrder;
+        std::string_view diagDefaultParamTypeMismatch;
+        std::string_view diagUndeclaredType;
+        std::string_view diagInvalidFuncAttr;
+        std::string_view diagVoidReturnWithValue;
+        std::string_view diagReturnTypeMismatch;
     };
 
     /**

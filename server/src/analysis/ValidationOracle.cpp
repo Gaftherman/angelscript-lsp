@@ -11,6 +11,7 @@
 #include "analysis/validators/UsingValidator.h"
 #include "analysis/validators/ImportValidator.h"
 #include "analysis/validators/EnumTypeDefValidator.h"
+#include "analysis/validators/FunctionValidator.h"
 #include "document/Document.h"
 #include "i18n/LspStrings.h"
 #include <ankerl/unordered_dense.h>
@@ -268,7 +269,10 @@ namespace analysis
         {
             for (size_t j = i + 1; j < locals.size(); ++j)
             {
-                if (locals[i]->name == locals[j]->name && locals[i]->parent == locals[j]->parent)
+                if (locals[i]->name == locals[j]->name &&
+                    locals[i]->kind != SymbolKind::Parameter &&
+                    locals[j]->kind != SymbolKind::Parameter &&
+                    locals[i]->parent == locals[j]->parent)
                 {
                     lsp::Diagnostic d;
                     d.range = locals[j]->selectionRange;
@@ -307,6 +311,16 @@ namespace analysis
                 {
                     auto tDiags = validators::EnumTypeDefValidator::ValidateTypedef(node, doc, globalTable, localTable, m_locale);
                     diags.insert(diags.end(), tDiags.begin(), tDiags.end());
+                }
+                else if (tStr == "func_declaration" || tStr == "function_declaration" || tStr == "function")
+                {
+                    auto fDiags = validators::FunctionValidator::ValidateFunction(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), fDiags.begin(), fDiags.end());
+                }
+                else if (tStr == "funcdef_declaration" || tStr == "funcdef")
+                {
+                    auto fdDiags = validators::FunctionValidator::ValidateFuncdef(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), fdDiags.begin(), fdDiags.end());
                 }
             }
 

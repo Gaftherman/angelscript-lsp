@@ -394,3 +394,94 @@ TEST_SUITE("Enum and Typedef Validation")
         CHECK(errorCount >= 1);
     }
 }
+
+TEST_SUITE("Function and Paramlist Validation")
+{
+    TEST_CASE("Valid function and funcdef with default parameters")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            funcdef void Callback(int a, float b = 1.0f);
+            void Main(int a, int b = 2) {}
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_func_valid.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
+
+    TEST_CASE("Function with duplicate parameter names")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = "void Foo(int a, float a) {}";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_func_dup_param.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Function with out-of-order default parameter")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = "void Foo(int a = 1, int b) {}";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_func_default_order.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Function returning value in void function")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = "void Foo() { return 42; }";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_func_void_ret.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Global function with method-only attribute override")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = "void Foo() override {}";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_func_invalid_attr.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+}

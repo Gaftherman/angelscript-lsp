@@ -72,7 +72,14 @@ namespace angel_lsp::i18n
             .diagDuplicateEnumName = "Enum '{}' has already been declared.",
             .diagDuplicateEnumerator = "Enumerator '{}' already exists in this enum declaration.",
             .diagInvalidEnumInitializer = "Enum initializer expression must be an integer type, got '{}'.",
-            .diagTypedefCollision = "Typedef alias name '{}' collides with an existing declaration."
+            .diagTypedefCollision = "Typedef alias name '{}' collides with an existing declaration.",
+            .diagDuplicateParamName = "Parameter '{}' is already declared in this function.",
+            .diagDefaultParamOrder = "Parameters with default values must be at the end of the parameter list.",
+            .diagDefaultParamTypeMismatch = "Default parameter value of type '{}' is not compatible with parameter type '{}'.",
+            .diagUndeclaredType = "Type '{}' has not been declared.",
+            .diagInvalidFuncAttr = "Attribute '{}' is only valid for class methods.",
+            .diagVoidReturnWithValue = "A 'void' function cannot return a value.",
+            .diagReturnTypeMismatch = "Cannot convert return value of type '{}' to return type '{}'."
         };
 
     static const LspStrings ES_STRINGS =
@@ -139,7 +146,14 @@ namespace angel_lsp::i18n
             .diagDuplicateEnumName = "El enum '{}' ya ha sido declarado.",
             .diagDuplicateEnumerator = "El valor de enum '{}' ya existe en esta declaración.",
             .diagInvalidEnumInitializer = "La expresión inicializadora del enum debe ser de tipo entero, se obtuvo '{}'.",
-            .diagTypedefCollision = "El nombre de typedef '{}' colisiona con una declaración existente."
+            .diagTypedefCollision = "El nombre de typedef '{}' colisiona con una declaración existente.",
+            .diagDuplicateParamName = "El parámetro '{}' ya ha sido declarado en esta función.",
+            .diagDefaultParamOrder = "Los parámetros con valores por defecto deben ubicarse al final de la lista.",
+            .diagDefaultParamTypeMismatch = "El valor por defecto de tipo '{}' no es compatible con el parámetro de tipo '{}'.",
+            .diagUndeclaredType = "El tipo '{}' no ha sido declarado.",
+            .diagInvalidFuncAttr = "El atributo '{}' solo es válido para métodos dentro de una clase.",
+            .diagVoidReturnWithValue = "Una función 'void' no puede devolver un valor.",
+            .diagReturnTypeMismatch = "No se puede convertir el valor retornado de tipo '{}' al tipo de retorno '{}'."
         };
 
     Locale ParseLocale(const std::string &localeStr)
