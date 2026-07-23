@@ -119,6 +119,13 @@ namespace angel_lsp::i18n
         std::string_view diagInvalidFuncAttr;
         std::string_view diagVoidReturnWithValue;
         std::string_view diagReturnTypeMismatch;
+        std::string_view diagDuplicateClassName;
+        std::string_view diagInheritFinalClass;
+        std::string_view diagMultipleClassInheritance;
+        std::string_view diagUnimplementedInterfaceMethod;
+        std::string_view diagOverrideNoMatchingBase;
+        std::string_view diagOverrideFinalMethod;
+        std::string_view diagVirtPropTypeMismatch;
     };
 
     /**

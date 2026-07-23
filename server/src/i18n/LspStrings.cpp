@@ -79,7 +79,14 @@ namespace angel_lsp::i18n
             .diagUndeclaredType = "Type '{}' has not been declared.",
             .diagInvalidFuncAttr = "Attribute '{}' is only valid for class methods.",
             .diagVoidReturnWithValue = "A 'void' function cannot return a value.",
-            .diagReturnTypeMismatch = "Cannot convert return value of type '{}' to return type '{}'."
+            .diagReturnTypeMismatch = "Cannot convert return value of type '{}' to return type '{}'.",
+            .diagDuplicateClassName = "Class or interface '{}' has already been declared.",
+            .diagInheritFinalClass = "Cannot inherit from 'final' class '{}'.",
+            .diagMultipleClassInheritance = "A class can only inherit from one base class (in addition to multiple interfaces).",
+            .diagUnimplementedInterfaceMethod = "Class '{}' does not implement interface method '{}'.",
+            .diagOverrideNoMatchingBase = "Method '{}' marked with 'override' does not exist in any base class or interface.",
+            .diagOverrideFinalMethod = "Cannot override method '{}' marked as 'final'.",
+            .diagVirtPropTypeMismatch = "Virtual property accessor '{}' must use type '{}'."
         };
 
     static const LspStrings ES_STRINGS =
@@ -153,7 +160,14 @@ namespace angel_lsp::i18n
             .diagUndeclaredType = "El tipo '{}' no ha sido declarado.",
             .diagInvalidFuncAttr = "El atributo '{}' solo es válido para métodos dentro de una clase.",
             .diagVoidReturnWithValue = "Una función 'void' no puede devolver un valor.",
-            .diagReturnTypeMismatch = "No se puede convertir el valor retornado de tipo '{}' al tipo de retorno '{}'."
+            .diagReturnTypeMismatch = "No se puede convertir el valor retornado de tipo '{}' al tipo de retorno '{}'.",
+            .diagDuplicateClassName = "La clase o interfaz '{}' ya ha sido declarada.",
+            .diagInheritFinalClass = "No se puede heredar de la clase 'final' '{}'.",
+            .diagMultipleClassInheritance = "Una clase solo puede heredar de una clase base (además de múltiples interfaces).",
+            .diagUnimplementedInterfaceMethod = "La clase '{}' no implementa el método de interfaz '{}'.",
+            .diagOverrideNoMatchingBase = "El método '{}' marcado con 'override' no existe en ninguna clase base o interfaz.",
+            .diagOverrideFinalMethod = "No se puede sobrescribir el método marcado como 'final' '{}'.",
+            .diagVirtPropTypeMismatch = "El accesor '{0}' de la propiedad virtual debe usar el tipo '{1}'."
         };
 
     Locale ParseLocale(const std::string &localeStr)

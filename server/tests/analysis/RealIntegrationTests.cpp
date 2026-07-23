@@ -485,3 +485,94 @@ TEST_SUITE("Function and Paramlist Validation")
         CHECK(errorCount >= 1);
     }
 }
+
+TEST_SUITE("Class, Interface and VirtProp Validation")
+{
+    TEST_CASE("Valid class, interface, and virtprop with correct inheritance")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            interface Printable {
+                void Print();
+            }
+            class Base {}
+            class Child : Base, Printable {
+                void Print() {}
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_class_valid.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
+
+    TEST_CASE("Attempting to inherit from a final class")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            class Base final {}
+            class Child : Base {}
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_class_final.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Class failing to implement interface method")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            interface Printable {
+                void Print();
+            }
+            class Child : Printable {}
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_class_unimplemented.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Method with override that does not exist in base")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            class Child {
+                void Foo() override {}
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_class_override_missing.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+}

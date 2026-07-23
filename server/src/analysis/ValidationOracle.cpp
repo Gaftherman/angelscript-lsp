@@ -12,6 +12,7 @@
 #include "analysis/validators/ImportValidator.h"
 #include "analysis/validators/EnumTypeDefValidator.h"
 #include "analysis/validators/FunctionValidator.h"
+#include "analysis/validators/ClassValidator.h"
 #include "document/Document.h"
 #include "i18n/LspStrings.h"
 #include <ankerl/unordered_dense.h>
@@ -321,6 +322,21 @@ namespace analysis
                 {
                     auto fdDiags = validators::FunctionValidator::ValidateFuncdef(node, doc, globalTable, localTable, m_locale);
                     diags.insert(diags.end(), fdDiags.begin(), fdDiags.end());
+                }
+                else if (tStr == "class_declaration" || tStr == "class")
+                {
+                    auto cDiags = validators::ClassValidator::ValidateClass(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), cDiags.begin(), cDiags.end());
+                }
+                else if (tStr == "interface_declaration" || tStr == "interface")
+                {
+                    auto iDiags = validators::ClassValidator::ValidateInterface(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), iDiags.begin(), iDiags.end());
+                }
+                else if (tStr == "virtual_property" || tStr == "virtprop")
+                {
+                    auto vpDiags = validators::ClassValidator::ValidateVirtProp(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), vpDiags.begin(), vpDiags.end());
                 }
             }
 
