@@ -143,6 +143,7 @@ namespace angel_lsp::i18n
         std::string_view diagTernaryTypeMismatch;
         std::string_view diagUnknownNamedParam;
         std::string_view diagLValueRequired;
+        std::string_view diagInvalidOpSignature;
     };
 
     /**

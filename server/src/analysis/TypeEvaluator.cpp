@@ -200,22 +200,37 @@ namespace analysis
 
             if (!ts_node_is_null(nameNode))
             {
-                std::string_view name = doc.SourceAt(nameNode);
-                const Symbol *sym = localTable.FindLocalByName(name);
+                std::string_view fullName = doc.SourceAt(nameNode);
+                std::string_view shortName = fullName;
+                size_t pos = fullName.rfind("::");
+                if (pos != std::string_view::npos)
+                {
+                    shortName = fullName.substr(pos + 2);
+                }
+
+                const Symbol *sym = localTable.FindLocalByName(fullName);
                 if (!sym)
                 {
-                    sym = globalTable.FindGlobalByName(name);
+                    sym = localTable.FindLocalByName(shortName);
                 }
                 if (!sym)
                 {
-                    sym = globalTable.FindFirst(name);
+                    sym = globalTable.FindGlobalByName(fullName);
+                }
+                if (!sym)
+                {
+                    sym = globalTable.FindGlobalByName(shortName);
+                }
+                if (!sym)
+                {
+                    sym = globalTable.FindFirst(shortName);
                 }
 
                 if (sym && !sym->typeInfo.empty())
                 {
                     return StripTypeModifiers(sym->typeInfo);
                 }
-                return std::string(name);
+                return std::nullopt;
             }
         }
 

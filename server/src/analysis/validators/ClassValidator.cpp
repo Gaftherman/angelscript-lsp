@@ -470,4 +470,175 @@ namespace analysis::validators
         return diags;
     }
 
+    std::vector<lsp::Diagnostic> ClassValidator::ValidateOperatorOverloads(
+        TSNode funcNode,
+        const Document &doc,
+        i18n::Locale locale)
+    {
+        std::vector<lsp::Diagnostic> diags;
+        if (ts_node_is_null(funcNode))
+        {
+            return diags;
+        }
+
+        const auto &strs = i18n::GetStrings(locale);
+
+        TSNode nameNode = ts_node_child_by_field_name(funcNode, "name", sizeof("name") - 1);
+        if (ts_node_is_null(nameNode))
+        {
+            uint32_t count = ts_node_child_count(funcNode);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(funcNode, i);
+                const char *cType = ts_node_type(child);
+                if (cType && std::string(cType) == "identifier")
+                {
+                    nameNode = child;
+                    break;
+                }
+            }
+        }
+
+        if (ts_node_is_null(nameNode))
+        {
+            return diags;
+        }
+
+        std::string name = std::string(doc.SourceAt(nameNode));
+        if (!name.starts_with("op"))
+        {
+            return diags;
+        }
+
+        TSNode paramListNode = ts_node_child_by_field_name(funcNode, "parameters", sizeof("parameters") - 1);
+        if (ts_node_is_null(paramListNode))
+        {
+            uint32_t count = ts_node_child_count(funcNode);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(funcNode, i);
+                const char *cType = ts_node_type(child);
+                if (cType && std::string(cType) == "parameter_list")
+                {
+                    paramListNode = child;
+                    break;
+                }
+            }
+        }
+
+        size_t paramCount = 0;
+        if (!ts_node_is_null(paramListNode))
+        {
+            uint32_t count = ts_node_child_count(paramListNode);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(paramListNode, i);
+                const char *cType = ts_node_type(child);
+                if (cType && std::string(cType) == "parameter")
+                {
+                    paramCount++;
+                }
+            }
+        }
+
+        std::string returnType = "";
+        TSNode retTypeNode = ts_node_child_by_field_name(funcNode, "return_type", sizeof("return_type") - 1);
+        if (ts_node_is_null(retTypeNode))
+        {
+            retTypeNode = ts_node_child_by_field_name(funcNode, "type", sizeof("type") - 1);
+        }
+        if (ts_node_is_null(retTypeNode))
+        {
+            uint32_t count = ts_node_child_count(funcNode);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(funcNode, i);
+                const char *cType = ts_node_type(child);
+                if (cType && (std::string(cType) == "type" || std::string(cType) == "primitive_type"))
+                {
+                    retTypeNode = child;
+                    break;
+                }
+            }
+        }
+        if (!ts_node_is_null(retTypeNode))
+        {
+            returnType = std::string(doc.SourceAt(retTypeNode));
+        }
+
+        bool isValid = true;
+
+        static const ankerl::unordered_dense::set<std::string> binaryOps = {
+            "opAdd", "opSub", "opMul", "opDiv", "opMod", "opPow", "opAnd", "opOr", "opXor",
+            "opShl", "opShr", "opUShr", "opAddAssign", "opSubAssign", "opMulAssign", "opDivAssign",
+            "opModAssign", "opPowAssign", "opAndAssign", "opOrAssign", "opXorAssign", "opShlAssign",
+            "opShrAssign", "opUShrAssign"
+        };
+
+        static const ankerl::unordered_dense::set<std::string> unaryOps = {
+            "opNeg", "opCom", "opPostInc", "opPostDec", "opPreInc", "opPreDec"
+        };
+
+        if (binaryOps.contains(name))
+        {
+            if (paramCount != 1)
+            {
+                isValid = false;
+            }
+        }
+        else if (unaryOps.contains(name))
+        {
+            if (paramCount != 0)
+            {
+                isValid = false;
+            }
+        }
+        else if (name == "opCmp")
+        {
+            if (paramCount != 1 || (returnType != "int" && !returnType.empty()))
+            {
+                isValid = false;
+            }
+        }
+        else if (name == "opEquals")
+        {
+            if (paramCount != 1 || (returnType != "bool" && !returnType.empty()))
+            {
+                isValid = false;
+            }
+        }
+        else if (name == "opIndex" || name == "opDefaultIndex")
+        {
+            if (paramCount < 1)
+            {
+                isValid = false;
+            }
+        }
+        else if (name == "opCast" || name == "opImplCast")
+        {
+            if (paramCount != 0 || returnType == "void")
+            {
+                isValid = false;
+            }
+        }
+
+        if (!isValid)
+        {
+            TSPoint start = ts_node_start_point(nameNode);
+            TSPoint end = ts_node_end_point(nameNode);
+
+            lsp::Diagnostic d;
+            d.range.start.line = start.row;
+            d.range.start.character = start.column;
+            d.range.end.line = end.row;
+            d.range.end.character = end.column;
+            d.severity = lsp::DiagnosticSeverity::Error;
+            d.source = "angelscript";
+            d.message = fmt::format(fmt::runtime(strs.diagInvalidOpSignature), name);
+            diags.push_back(d);
+        }
+
+        return diags;
+    }
+
 } // namespace analysis::validators

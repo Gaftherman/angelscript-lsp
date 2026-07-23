@@ -776,3 +776,71 @@ TEST_SUITE("Control Flow Validation")
         CHECK(errorCount >= 1);
     }
 }
+
+TEST_SUITE("Operator Overload Validation")
+{
+    TEST_CASE("Valid operator overload method signatures")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            class Vector2 {
+                Vector2 opAdd(const Vector2 &in other) { return Vector2(); }
+                int opCmp(const Vector2 &in other) { return 0; }
+                bool opEquals(const Vector2 &in other) { return true; }
+            };
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_op_valid.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
+
+    TEST_CASE("Invalid opAdd operator overload signature")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            class Vector2 {
+                Vector2 opAdd() { return Vector2(); }
+            };
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_op_invalid_add.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Invalid opCmp operator overload return type")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            class Vector2 {
+                bool opCmp(const Vector2 &in other) { return true; }
+            };
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_op_invalid_cmp.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+}

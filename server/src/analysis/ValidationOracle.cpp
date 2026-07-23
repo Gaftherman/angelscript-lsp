@@ -322,6 +322,9 @@ namespace analysis
 
                     auto cfDiags = validators::ControlFlowValidator::ValidateControlFlow(node, doc, m_locale);
                     diags.insert(diags.end(), cfDiags.begin(), cfDiags.end());
+
+                    auto opDiags = validators::ClassValidator::ValidateOperatorOverloads(node, doc, m_locale);
+                    diags.insert(diags.end(), opDiags.begin(), opDiags.end());
                 }
                 else if (tStr == "funcdef_declaration" || tStr == "funcdef")
                 {

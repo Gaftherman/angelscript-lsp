@@ -106,19 +106,37 @@ namespace analysis::validators
                 pTypeStr = std::string(doc.SourceAt(typeNode));
                 if (!IsPrimitiveOrBuiltinType(pTypeStr))
                 {
-                    bool exists = (globalTable.FindGlobalByName(pTypeStr) != nullptr) ||
-                                  (globalTable.FindFirst(pTypeStr) != nullptr) ||
-                                  (localTable.FindGlobalByName(pTypeStr) != nullptr);
+                    std::string cleanType = pTypeStr;
+                    const std::vector<std::string> removeWords = {"const", "&inout", "&in", "&out", "&", "@"};
+                    for (const auto &w : removeWords)
+                    {
+                        size_t pos = cleanType.find(w);
+                        while (pos != std::string::npos)
+                        {
+                            cleanType.erase(pos, w.length());
+                            pos = cleanType.find(w);
+                        }
+                    }
+                    size_t start = cleanType.find_first_not_of(" \t");
+                    size_t end = cleanType.find_last_not_of(" \t");
+                    if (start != std::string::npos && end != std::string::npos)
+                    {
+                        cleanType = cleanType.substr(start, end - start + 1);
+                    }
+
+                    bool exists = (globalTable.FindGlobalByName(cleanType) != nullptr) ||
+                                  (globalTable.FindFirst(cleanType) != nullptr) ||
+                                  (localTable.FindGlobalByName(cleanType) != nullptr);
                     if (!exists)
                     {
-                        TSPoint start = ts_node_start_point(typeNode);
-                        TSPoint end = ts_node_end_point(typeNode);
+                        TSPoint startPoint = ts_node_start_point(typeNode);
+                        TSPoint endPoint = ts_node_end_point(typeNode);
 
                         lsp::Diagnostic d;
-                        d.range.start.line = start.row;
-                        d.range.start.character = start.column;
-                        d.range.end.line = end.row;
-                        d.range.end.character = end.column;
+                        d.range.start.line = startPoint.row;
+                        d.range.start.character = startPoint.column;
+                        d.range.end.line = endPoint.row;
+                        d.range.end.character = endPoint.column;
                         d.severity = lsp::DiagnosticSeverity::Error;
                         d.source = "angelscript";
                         d.message = fmt::format(fmt::runtime(strs.diagUndeclaredType), pTypeStr);

@@ -73,6 +73,18 @@ namespace analysis::validators
             const SymbolTable &globalTable,
             const SymbolTable &localTable,
             i18n::Locale locale);
+        /**
+         * @brief Validates operator overload method signatures (opAdd, opCmp, opEquals, opIndex, etc.).
+         *
+         * @param[in] funcNode The Tree-Sitter AST node for a class method.
+         * @param[in] doc The document containing source text.
+         * @param[in] locale User locale for diagnostic message formatting.
+         * @return std::vector<lsp::Diagnostic> List of emitted diagnostics.
+         */
+        static std::vector<lsp::Diagnostic> ValidateOperatorOverloads(
+            TSNode funcNode,
+            const Document &doc,
+            i18n::Locale locale);
     };
 
 } // namespace analysis::validators

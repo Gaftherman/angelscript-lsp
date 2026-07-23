@@ -103,7 +103,8 @@ namespace angel_lsp::i18n
             .diagTernaryConditionType = "Ternary operator condition must be 'bool', got '{}'.",
             .diagTernaryTypeMismatch = "Incompatible types '{}' and '{}' in ternary operator.",
             .diagUnknownNamedParam = "Function '{}' has no parameter named '{}'.",
-            .diagLValueRequired = "Expression passed to '&out' or '&inout' parameter must be a modifiable variable."
+            .diagLValueRequired = "Expression passed to '&out' or '&inout' parameter must be a modifiable variable.",
+            .diagInvalidOpSignature = "Operator overload method '{}' has an invalid signature."
         };
 
     static const LspStrings ES_STRINGS =
@@ -201,7 +202,8 @@ namespace angel_lsp::i18n
             .diagTernaryConditionType = "La condición del operador ternario debe ser 'bool', se obtuvo '{}'.",
             .diagTernaryTypeMismatch = "Tipos incompatibles '{}' y '{}' en el operador ternario.",
             .diagUnknownNamedParam = "La función '{}' no tiene un parámetro llamado '{}'.",
-            .diagLValueRequired = "La expresión pasada a un parámetro '&out' o '&inout' debe ser una variable modificable."
+            .diagLValueRequired = "La expresión pasada a un parámetro '&out' o '&inout' debe ser una variable modificable.",
+            .diagInvalidOpSignature = "El método de sobrecarga de operador '{}' tiene una firma no válida."
         };
 
     Locale ParseLocale(const std::string &localeStr)
