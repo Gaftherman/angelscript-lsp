@@ -91,7 +91,19 @@ namespace angel_lsp::i18n
             .diagInvalidLogicalOperand = "Logical operator '{}' requires operand of type 'bool', but got '{}'.",
             .diagInvalidHandleComparison = "Operator '{}' can only be applied to handles or object references.",
             .diagCannotAssignToConst = "Cannot modify constant variable '{}'.",
-            .diagInvalidCast = "Cannot explicitly cast from '{}' to '{}'."
+            .diagInvalidCast = "Cannot explicitly cast from '{}' to '{}'.",
+            .diagBreakOutsideLoop = "Statement 'break' can only be used inside a loop or switch.",
+            .diagContinueOutsideLoop = "Statement 'continue' can only be used inside a loop.",
+            .diagSwitchTypeMismatch = "Switch expression must be of integer, enum, or string type.",
+            .diagDuplicateCaseValue = "Duplicate 'case' value '{}' in switch statement.",
+            .diagMemberNotFound = "Type '{}' has no member '{}'.",
+            .diagPrivateMemberAccess = "Cannot access private member '{}' of class '{}'.",
+            .diagInvalidIndexType = "Type '{}' does not support indexing.",
+            .diagInvalidIncrementOperand = "Increment/decrement operator requires a modifiable numeric variable.",
+            .diagTernaryConditionType = "Ternary operator condition must be 'bool', got '{}'.",
+            .diagTernaryTypeMismatch = "Incompatible types '{}' and '{}' in ternary operator.",
+            .diagUnknownNamedParam = "Function '{}' has no parameter named '{}'.",
+            .diagLValueRequired = "Expression passed to '&out' or '&inout' parameter must be a modifiable variable."
         };
 
     static const LspStrings ES_STRINGS =
@@ -177,7 +189,19 @@ namespace angel_lsp::i18n
             .diagInvalidLogicalOperand = "El operador lógico '{}' requiere un operando de tipo 'bool', pero se obtuvo '{}'.",
             .diagInvalidHandleComparison = "El operador '{}' solo se puede aplicar a handles o referencias a objetos.",
             .diagCannotAssignToConst = "No se puede modificar la variable constante '{}'.",
-            .diagInvalidCast = "No se puede realizar un cast explícito de '{}' a '{}'."
+            .diagInvalidCast = "No se puede realizar un cast explícito de '{}' a '{}'.",
+            .diagBreakOutsideLoop = "La sentencia 'break' solo se puede usar dentro de un bucle o switch.",
+            .diagContinueOutsideLoop = "La sentencia 'continue' solo se puede usar dentro de un bucle.",
+            .diagSwitchTypeMismatch = "La expresión de switch debe ser de tipo entero, enum o cadena.",
+            .diagDuplicateCaseValue = "Valor de 'case' duplicado '{}' en la sentencia switch.",
+            .diagMemberNotFound = "El tipo '{}' no tiene el miembro '{}'.",
+            .diagPrivateMemberAccess = "No se puede acceder al miembro privado '{}' de la clase '{}'.",
+            .diagInvalidIndexType = "El tipo '{}' no admite indexación.",
+            .diagInvalidIncrementOperand = "El operador de incremento/decremento requiere una variable numérica modificable.",
+            .diagTernaryConditionType = "La condición del operador ternario debe ser 'bool', se obtuvo '{}'.",
+            .diagTernaryTypeMismatch = "Tipos incompatibles '{}' y '{}' en el operador ternario.",
+            .diagUnknownNamedParam = "La función '{}' no tiene un parámetro llamado '{}'.",
+            .diagLValueRequired = "La expresión pasada a un parámetro '&out' o '&inout' debe ser una variable modificable."
         };
 
     Locale ParseLocale(const std::string &localeStr)

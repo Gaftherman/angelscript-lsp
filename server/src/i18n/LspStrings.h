@@ -131,6 +131,18 @@ namespace angel_lsp::i18n
         std::string_view diagInvalidHandleComparison;
         std::string_view diagCannotAssignToConst;
         std::string_view diagInvalidCast;
+        std::string_view diagBreakOutsideLoop;
+        std::string_view diagContinueOutsideLoop;
+        std::string_view diagSwitchTypeMismatch;
+        std::string_view diagDuplicateCaseValue;
+        std::string_view diagMemberNotFound;
+        std::string_view diagPrivateMemberAccess;
+        std::string_view diagInvalidIndexType;
+        std::string_view diagInvalidIncrementOperand;
+        std::string_view diagTernaryConditionType;
+        std::string_view diagTernaryTypeMismatch;
+        std::string_view diagUnknownNamedParam;
+        std::string_view diagLValueRequired;
     };
 
     /**

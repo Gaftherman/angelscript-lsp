@@ -687,3 +687,92 @@ TEST_SUITE("Expression, Cast and Assignment Validation")
         CHECK(errorCount >= 1);
     }
 }
+
+TEST_SUITE("Control Flow Validation")
+{
+    TEST_CASE("Valid break, continue, and switch statements")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                for (int i = 0; i < 10; ++i) {
+                    if (i == 5) continue;
+                    if (i == 8) break;
+                }
+                switch (1) {
+                    case 1: break;
+                    case 2: break;
+                }
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_cf_valid.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
+
+    TEST_CASE("Break statement outside loop or switch")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = "void Main() { break; }";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_cf_break_outside.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Continue statement outside loop")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = "void Main() { continue; }";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_cf_continue_outside.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Duplicate case values in switch")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                switch (1) {
+                    case 1: break;
+                    case 1: break;
+                }
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_cf_dup_case.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+}

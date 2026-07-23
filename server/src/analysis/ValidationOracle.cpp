@@ -14,6 +14,7 @@
 #include "analysis/validators/FunctionValidator.h"
 #include "analysis/validators/ClassValidator.h"
 #include "analysis/validators/ExpressionValidator.h"
+#include "analysis/validators/ControlFlowValidator.h"
 #include "document/Document.h"
 #include "i18n/LspStrings.h"
 #include <ankerl/unordered_dense.h>
@@ -318,6 +319,9 @@ namespace analysis
                 {
                     auto fDiags = validators::FunctionValidator::ValidateFunction(node, doc, globalTable, localTable, m_locale);
                     diags.insert(diags.end(), fDiags.begin(), fDiags.end());
+
+                    auto cfDiags = validators::ControlFlowValidator::ValidateControlFlow(node, doc, m_locale);
+                    diags.insert(diags.end(), cfDiags.begin(), cfDiags.end());
                 }
                 else if (tStr == "funcdef_declaration" || tStr == "funcdef")
                 {
@@ -353,6 +357,16 @@ namespace analysis
                 {
                     auto asgDiags = validators::ExpressionValidator::ValidateAssign(node, doc, globalTable, localTable, m_locale);
                     diags.insert(diags.end(), asgDiags.begin(), asgDiags.end());
+                }
+                else if (tStr == "switch_statement" || tStr == "switch")
+                {
+                    auto swDiags = validators::ControlFlowValidator::ValidateSwitch(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), swDiags.begin(), swDiags.end());
+                }
+                else if (tStr == "foreach_statement" || tStr == "foreach")
+                {
+                    auto feDiags = validators::ControlFlowValidator::ValidateForeach(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), feDiags.begin(), feDiags.end());
                 }
             }
 
