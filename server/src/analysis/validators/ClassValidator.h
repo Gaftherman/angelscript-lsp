@@ -73,6 +73,17 @@ namespace analysis::validators
             const SymbolTable &globalTable,
             const SymbolTable &localTable,
             i18n::Locale locale);
+
+        /**
+         * @brief Validates instantiation of types (prohibiting mixin class instantiation).
+         */
+        static std::vector<lsp::Diagnostic> ValidateInstantiation(
+            TSNode node,
+            const Document &doc,
+            const SymbolTable &globalTable,
+            const SymbolTable &localTable,
+            i18n::Locale locale);
+
         /**
          * @brief Validates operator overload method signatures (opAdd, opCmp, opEquals, opIndex, etc.).
          *

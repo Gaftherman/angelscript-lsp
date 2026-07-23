@@ -542,6 +542,17 @@ namespace analysis
             }
         }
 
+        auto cleanTypeString = [](std::string t) {
+            if (t.starts_with("private ")) t = t.substr(8);
+            if (t.starts_with("protected ")) t = t.substr(10);
+            if (t.starts_with("public ")) t = t.substr(7);
+            size_t s = t.find_first_not_of(" \t");
+            size_t e = t.find_last_not_of(" \t");
+            if (s != std::string::npos && e != std::string::npos) t = t.substr(s, e - s + 1);
+            return t;
+        };
+        typeInfo = cleanTypeString(typeInfo);
+
         for (uint32_t i = 0; i < ts_node_child_count(node); i++)
         {
             TSNode child = ts_node_child(node, i);
@@ -1508,17 +1519,15 @@ namespace analysis
         }
         else if (type == "foreach_statement" || type == "foreach")
         {
-            TSNode varNode = {0};
-            TSNode typeNode = {0};
-            TSNode exprNode = {0};
-
             uint32_t count = ts_node_child_count(node);
             for (uint32_t i = 0; i < count; ++i)
             {
                 TSNode child = ts_node_child(node, i);
                 std::string_view cType = ts_node_type(child);
-                if (cType == "foreach_variable")
+                if (cType == "foreach_variable" || cType == "parameter")
                 {
+                    TSNode vNameNode = {0};
+                    TSNode vTypeNode = {0};
                     uint32_t vCount = ts_node_child_count(child);
                     for (uint32_t j = 0; j < vCount; ++j)
                     {
@@ -1527,41 +1536,43 @@ namespace analysis
                         std::string_view vcText = SymbolCollector::GetNodeText(vChild, doc);
                         if (vcType == "type" || vcType == "primitive_type" || vcText == "auto")
                         {
-                            typeNode = vChild;
+                            vTypeNode = vChild;
                         }
                         else if (vcType == "identifier" && vcText != "auto")
                         {
-                            varNode = vChild;
+                            vNameNode = vChild;
                         }
                     }
-                }
-                else if (cType == "expression" || cType == "identifier")
-                {
-                    exprNode = child;
-                }
-            }
 
-            if (!ts_node_is_null(varNode))
-            {
-                auto loopSym = std::make_shared<Symbol>();
-                loopSym->uri = doc.GetUri();
-                loopSym->name = std::string(SymbolCollector::GetNodeText(varNode, doc));
-                loopSym->kind = SymbolKind::Variable;
-                loopSym->fullRange = SymbolCollector::GetRange(varNode, doc);
-                loopSym->selectionRange = SymbolCollector::GetRange(varNode, doc);
-
-                std::string typeStr = !ts_node_is_null(typeNode) ? std::string(SymbolCollector::GetNodeText(typeNode, doc)) : "auto";
-                if (typeStr == "auto" && !ts_node_is_null(exprNode))
-                {
-                    std::string containerType = SymbolResolver::EvaluateExpressionType(doc, table, exprNode);
-                    if (containerType.starts_with("array<") && containerType.ends_with(">"))
+                    if (ts_node_is_null(vNameNode) && cType == "identifier")
                     {
-                        typeStr = containerType.substr(6, containerType.length() - 7);
+                        std::string_view text = SymbolCollector::GetNodeText(child, doc);
+                        if (text != "foreach" && text != "auto" && text != "in")
+                        {
+                            vNameNode = child;
+                        }
+                    }
+
+                    if (!ts_node_is_null(vNameNode))
+                    {
+                        auto loopSym = std::make_shared<Symbol>();
+                        loopSym->uri = doc.GetUri();
+                        loopSym->name = std::string(SymbolCollector::GetNodeText(vNameNode, doc));
+                        loopSym->kind = SymbolKind::Variable;
+                        loopSym->fullRange = SymbolCollector::GetRange(node, doc);
+                        loopSym->selectionRange = SymbolCollector::GetRange(vNameNode, doc);
+                        loopSym->typeInfo = !ts_node_is_null(vTypeNode) ? std::string(SymbolCollector::GetNodeText(vTypeNode, doc)) : "auto";
+                        table.AddLocal(loopSym);
                     }
                 }
-                loopSym->typeInfo = typeStr;
-                table.AddLocal(loopSym);
             }
+
+            TSNode bodyNode = FieldChild(node, "body");
+            if (!ts_node_is_null(bodyNode))
+            {
+                TraverseLocals(bodyNode, doc, table, currentScope);
+            }
+            return;
         }
 
         uint32_t count = ts_node_child_count(node);

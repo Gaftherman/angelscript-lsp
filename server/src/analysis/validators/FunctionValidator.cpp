@@ -360,6 +360,24 @@ namespace analysis::validators
                 const char *bTypeC = ts_node_type(bNode);
                 std::string bType = bTypeC ? std::string(bTypeC) : "";
 
+                TSNode ancestor = ts_node_parent(bNode);
+                bool inNestedFunc = false;
+                while (!ts_node_is_null(ancestor) && ancestor.id != node.id)
+                {
+                    const char *aType = ts_node_type(ancestor);
+                    std::string_view aSrc = doc.SourceAt(ancestor);
+                    if ((aType && (std::string(aType) == "lambda_expression" || std::string(aType) == "func_declaration")) || aSrc.find("function") != std::string_view::npos)
+                    {
+                        inNestedFunc = true;
+                        break;
+                    }
+                    ancestor = ts_node_parent(ancestor);
+                }
+                if (inNestedFunc)
+                {
+                    return;
+                }
+
                 if (bType == "return_statement")
                 {
                     uint32_t retChildren = ts_node_child_count(bNode);

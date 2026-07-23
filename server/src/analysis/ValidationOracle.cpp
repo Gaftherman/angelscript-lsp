@@ -236,7 +236,7 @@ namespace analysis
 
         static const ankerl::unordered_dense::set<std::string> builtins = {
             "int", "uint", "int8", "int16", "int64", "uint8", "uint16", "uint64",
-            "float", "double", "bool", "void", "string", "array", "auto", "const",
+            "float", "double", "bool", "void", "string", "array", "dictionary", "auto", "const",
             "override", "final", "abstract", "shared", "mixin", "namespace", "class",
             "interface", "enum", "struct", "typedef", "funcdef", "import", "from",
             "true", "false", "null", "this", "super"};
@@ -272,7 +272,11 @@ namespace analysis
         {
             for (size_t j = i + 1; j < locals.size(); ++j)
             {
-                if (locals[i]->name == locals[j]->name &&
+                bool isSameBlockScope = (locals[i]->fullRange.start.line == locals[j]->fullRange.start.line &&
+                                         locals[i]->fullRange.end.line == locals[j]->fullRange.end.line);
+
+                if (isSameBlockScope &&
+                    locals[i]->name == locals[j]->name &&
                     locals[i]->kind != SymbolKind::Parameter &&
                     locals[j]->kind != SymbolKind::Parameter &&
                     locals[i]->parent == locals[j]->parent)
@@ -315,7 +319,7 @@ namespace analysis
                     auto tDiags = validators::EnumTypeDefValidator::ValidateTypedef(node, doc, globalTable, localTable, m_locale);
                     diags.insert(diags.end(), tDiags.begin(), tDiags.end());
                 }
-                else if (tStr == "func_declaration" || tStr == "function_declaration" || tStr == "function")
+                else if (tStr == "func_declaration" || tStr == "function_declaration")
                 {
                     auto fDiags = validators::FunctionValidator::ValidateFunction(node, doc, globalTable, localTable, m_locale);
                     diags.insert(diags.end(), fDiags.begin(), fDiags.end());
@@ -360,6 +364,9 @@ namespace analysis
                 {
                     auto asgDiags = validators::ExpressionValidator::ValidateAssign(node, doc, globalTable, localTable, m_locale);
                     diags.insert(diags.end(), asgDiags.begin(), asgDiags.end());
+
+                    auto lamDiags = validators::ExpressionValidator::ValidateLambda(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), lamDiags.begin(), lamDiags.end());
                 }
                 else if (tStr == "switch_statement" || tStr == "switch")
                 {
@@ -370,6 +377,45 @@ namespace analysis
                 {
                     auto feDiags = validators::ControlFlowValidator::ValidateForeach(node, doc, globalTable, localTable, m_locale);
                     diags.insert(diags.end(), feDiags.begin(), feDiags.end());
+                }
+                else if (tStr == "member_expression" || tStr == "field_expression" || tStr == "member_access")
+                {
+                    auto mDiags = validators::ExpressionValidator::ValidateMemberAccess(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), mDiags.begin(), mDiags.end());
+                }
+                else if (tStr == "ternary_expression" || tStr == "conditional_expression" || tStr == "ternary")
+                {
+                    auto terDiags = validators::ExpressionValidator::ValidateTernary(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), terDiags.begin(), terDiags.end());
+                }
+                else if (tStr == "call_expression" || tStr == "function_call" || tStr == "call")
+                {
+                    auto argDiags = validators::ExpressionValidator::ValidateCallArguments(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), argDiags.begin(), argDiags.end());
+
+                    auto lamDiags = validators::ExpressionValidator::ValidateLambda(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), lamDiags.begin(), lamDiags.end());
+                }
+                else if (tStr == "update_expression" || tStr == "postfix_inc_dec_expression" || tStr == "prefix_inc_dec_expression" || tStr == "inc_dec_expression")
+                {
+                    auto incDiags = validators::ExpressionValidator::ValidateIncrementDecrement(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), incDiags.begin(), incDiags.end());
+                }
+                else if (tStr == "expression_statement" || tStr == "expression")
+                {
+                    auto argDiags = validators::ExpressionValidator::ValidateCallArguments(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), argDiags.begin(), argDiags.end());
+
+                    auto incDiags = validators::ExpressionValidator::ValidateIncrementDecrement(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), incDiags.begin(), incDiags.end());
+                }
+                else if (tStr == "variable_declaration" || tStr == "construct_call" || tStr == "construct")
+                {
+                    auto mixinDiags = validators::ClassValidator::ValidateInstantiation(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), mixinDiags.begin(), mixinDiags.end());
+
+                    auto lamDiags = validators::ExpressionValidator::ValidateLambda(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), lamDiags.begin(), lamDiags.end());
                 }
             }
 
@@ -427,7 +473,19 @@ namespace analysis
                 TSNode typeNode = ts_node_child_by_field_name(declNode, "type", sizeof("type") - 1);
                 if (ts_node_is_null(typeNode))
                 {
-                    typeNode = ts_node_child(declNode, 0);
+                    uint32_t count = ts_node_child_count(declNode);
+                    for (uint32_t i = 0; i < count; ++i)
+                    {
+                        TSNode child = ts_node_child(declNode, i);
+                        std::string_view cType = ts_node_type(child);
+                        std::string_view text = doc.SourceAt(child);
+                        if ((cType == "type" || cType == "primitive_type" || cType == "identifier") &&
+                            text != "private" && text != "protected" && text != "public" && text != "const")
+                        {
+                            typeNode = child;
+                            break;
+                        }
+                    }
                 }
 
                 if (!ts_node_is_null(typeNode))
@@ -470,7 +528,9 @@ namespace analysis
                                     if (rhsTypeOpt.has_value())
                                     {
                                         std::string rhsType = rhsTypeOpt.value();
-                                        if (!TypeEvaluator::AreTypesCompatible(lhsType, rhsType))
+                                        SymbolTable combined = localTable;
+                                        combined.MergeGlobals(globalTable);
+                                        if (!TypeEvaluator::AreTypesCompatible(lhsType, rhsType, &combined))
                                         {
                                             TSPoint start = ts_node_start_point(child);
                                             TSPoint end = ts_node_end_point(child);

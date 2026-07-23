@@ -40,7 +40,7 @@ namespace analysis
          * @param[in] sourceType RHS type (e.g. "bool", "float").
          * @return bool True if compatible, false if type mismatch.
          */
-        static bool AreTypesCompatible(std::string_view targetType, std::string_view sourceType);
+        static bool AreTypesCompatible(std::string_view targetType, std::string_view sourceType, const SymbolTable *globalTable = nullptr);
     };
 
 } // namespace analysis

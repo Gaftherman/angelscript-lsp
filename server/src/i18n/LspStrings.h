@@ -144,6 +144,14 @@ namespace angel_lsp::i18n
         std::string_view diagUnknownNamedParam;
         std::string_view diagLValueRequired;
         std::string_view diagInvalidOpSignature;
+        std::string_view diagLambdaNoMatchingFuncdef;
+        std::string_view diagLambdaSignatureMismatch;
+        std::string_view diagInvalidTypedefSource;
+        std::string_view diagEnumForwardReference;
+        std::string_view diagCannotInstantiateMixin;
+        std::string_view diagMixinCannotInheritClass;
+        std::string_view diagCircularInheritance;
+        std::string_view diagRecursiveSelfMember;
     };
 
     /**

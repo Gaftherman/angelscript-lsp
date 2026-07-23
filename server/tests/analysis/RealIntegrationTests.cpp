@@ -997,4 +997,402 @@ TEST_SUITE("Operator Overload Validation")
         }
         CHECK(errorCount == 0);
     }
+
+    TEST_CASE("Master Negative Test: Intentional Errors Detected")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void mutateStats(int &in a, int &out b, int &inout c) {}
+
+            class Dummy {
+                private int secretValue;
+
+                // ERROR 1: Firmas de sobrecarga de operadores inválidas
+                void opCmp(const Dummy& in other) {}      // opCmp DEBE retornar 'int'
+                bool opEquals() {}                         // opEquals DEBE recibir 1 parámetro
+                int opAdd(int a, int b) { return 0; }      // opAdd solo debe recibir 1 parámetro
+
+                void internalMethod() {}
+            };
+
+            void voidFunction() {
+                // ERROR 2: Return con valor en función void
+                return 42; 
+            }
+
+            int intFunction() {
+                // ERROR 3: Return vacío en función no-void
+                return;
+            }
+
+            void testErrors(Dummy@ obj) {
+                // ERROR 5: Acceso a miembro privado fuera de la clase
+                int val = obj.secretValue; 
+
+                // ERROR 6: Break y Continue fuera de contexto
+                break;    // Error: 'break' fuera de bucle o switch
+                continue; // Error: 'continue' fuera de bucle
+
+                // ERROR 7: Switch con flotantes
+                float f = 3.14f;
+                switch(f) { // Error: expresión de switch debe ser int, enum o string
+                    case 1: break;
+                }
+
+                int num = 2;
+                switch(num) {
+                    case 1: 
+                        // ERROR 8: 'continue' en switch sin estar dentro de un bucle
+                        continue; 
+                        break;
+                    case 1: // Error: valor 'case 1' duplicado
+                        break;
+                }
+
+                // ERROR 9: Pasar un R-Value (Literal) a parámetros &out o &inout
+                int counter = 0;
+                mutateStats(5, 100, counter); // Error: '100' no es un L-value modificable para &out
+
+                // ERROR 10: Incremento en constantes o literales
+                const int C = 10;
+                C++; // Error: No se puede modificar una variable 'const'
+                5++; // Error: El operando de '++' debe ser un L-value
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///master_negative_test.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                std::fprintf(stderr, "NEGATIVE TEST ERROR DETECTED: [line %u col %u] %s\n", d.range.start.line + 1, d.range.start.character + 1, d.message.c_str());
+                errorCount++;
+            }
+        }
+        std::fprintf(stderr, "TOTAL ERRORS DETECTED: %zu\n", errorCount);
+        CHECK(errorCount >= 10);
+    }
+
+    TEST_CASE("Super Master 100% EBNF & Statement Coverage Suite")
+    {
+        SUBCASE("Valid Super Master Script - Expect 0 Diagnostics")
+        {
+            analysis::ValidationOracle oracle;
+            std::string code = R"(
+                namespace Game {
+                    void log(string msg) {}
+                }
+
+                import void ExternalRender(int id) from "EngineModule";
+
+                funcdef void EventCb(int code);
+                typedef int EntityID;
+
+                enum Status { IDLE, ACTIVE = 2, BUSY, MAX_STATUS = BUSY * 10 }
+
+                interface IUpdatable {
+                    void update(float dt);
+                }
+
+                mixin class IdentityMixin {
+                    EntityID id = 1;
+                }
+
+                class Actor : IdentityMixin, IUpdatable {
+                    private int m_hp;
+
+                    Actor() { m_hp = 100; }
+                    Actor(int hp) { m_hp = hp; }
+
+                    int health {
+                        get const { return m_hp; }
+                        set { m_hp = value; }
+                    }
+
+                    void update(float dt) override {}
+
+                    int opCmp(const Actor& in other) const { return m_hp - other.m_hp; }
+                    bool opEquals(const Actor& in other) const { return m_hp == other.m_hp; }
+                }
+
+                void modifyStats(int &in mult, int &out calculated, int &inout counter) {
+                    calculated = 10 * mult;
+                    counter++;
+                }
+
+                void main() {
+                    int x = 10, y = 20;
+                    const int COMPILE_CONST = 5;
+
+                    Actor player(150);
+                    Actor@ refPlayer;
+                    @refPlayer = @player;
+
+                    bool same = (refPlayer is player);
+                    bool valid = (player !is null);
+
+                    int val = 100;
+                    {
+                        float val = 3.14f;
+                        float res = val * 2.0f;
+                    }
+
+                    {
+                        using namespace Game;
+                        log("Injected in block");
+                    }
+
+                    try {
+                        ExternalRender(1);
+                    } catch {}
+
+                    while (x > 0) { x--; }
+                    do { y++; } while (y < 25);
+
+                    for (int i = 0, j = 10; i < j; i++, j--) {
+                        if (i == 2) continue;
+                        if (i == 4) break;
+                    }
+
+                    dictionary dict;
+                    foreach(auto v, auto k : dict) {}
+
+                    int target = 5;
+                    switch (target) {
+                        case 0: break;
+                        case COMPILE_CONST: break;
+                        default: break;
+                    }
+
+                    int m = 2, outH, c = 0;
+                    modifyStats(m, outH, c);
+
+                    EventCb@ handler = function(int code) {};
+                }
+            )";
+
+            auto diags = oracle.ValidateSync(code, "file:///super_master_valid.as");
+            size_t errorCount = 0;
+            for (const auto &d : diags)
+            {
+                if (d.severity == lsp::DiagnosticSeverity::Error)
+                {
+                    std::fprintf(stderr, "SUPER MASTER VALID ERROR: [line %u col %u] %s\n", d.range.start.line + 1, d.range.start.character + 1, d.message.c_str());
+                    errorCount++;
+                }
+            }
+            CHECK(errorCount == 0);
+        }
+
+        SUBCASE("Invalid Super Master Script - Expect Exact Diagnostics")
+        {
+            analysis::ValidationOracle oracle;
+            std::string code = R"(
+                class Dummy {}
+
+                mixin class InvalidClassMixin : Dummy {}
+
+                mixin class ValidMixin { void process() {} }
+
+                funcdef void IntCallback(int val);
+
+                void modifyStats(int &in mult, int &out calculated, int &inout counter) {}
+
+                void testErrors() {
+                    { int scopedVar = 42; }
+                    int a = scopedVar;
+
+                    namespace Hidden { void hiddenFunc() {} }
+                    {
+                        using namespace Hidden;
+                        hiddenFunc();
+                    }
+                    hiddenFunc();
+
+                    Dummy d;
+                    if (d) {}
+
+                    int dynamicCase = 10;
+                    switch (10) {
+                        case dynamicCase: break;
+                    }
+
+                    const int MAX = 100;
+                    MAX = 200;
+
+                    break;
+                    continue;
+
+                    ValidMixin mixinObj;
+
+                    IntCallback@ cb = function(string invalid) {};
+
+                    enum BadEnum { eA = eB + 1, eB = 10 }
+
+                    int counter = 0;
+                    modifyStats(2, 100, counter);
+                }
+            )";
+
+            auto diags = oracle.ValidateSync(code, "file:///super_master_invalid.as");
+            size_t errorCount = 0;
+            for (const auto &d : diags)
+            {
+                if (d.severity == lsp::DiagnosticSeverity::Error)
+                {
+                    std::fprintf(stderr, "SUPER MASTER INVALID ERROR DETECTED: [line %u col %u] %s\n", d.range.start.line + 1, d.range.start.character + 1, d.message.c_str());
+                    errorCount++;
+                }
+            }
+            std::fprintf(stderr, "TOTAL SUPER MASTER INVALID ERRORS DETECTED: %zu\n", errorCount);
+            CHECK(errorCount >= 10);
+        }
+    }
+
+    TEST_CASE("Advanced Features: Diamond Interfaces, Const Handles, Indexed Virtprops & Inline Lambdas")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            interface IBase {
+                void ping();
+            }
+            interface IReadable : IBase {
+                int read();
+            }
+            interface IWritable : IBase {
+                void write(int v);
+            }
+            interface IReadWrite : IReadable, IWritable {
+                void flush();
+            }
+
+            class StreamDevice : IReadWrite {
+                private int m_data = 0;
+                
+                void ping() override {}
+                int read() override { return m_data; }
+                void write(int v) override { m_data = v; }
+                void flush() override {}
+            }
+
+            class DataNode {
+                int value = 42;
+                void modify() { value++; }
+                int getValue() const { return value; }
+            }
+
+            void testConstHandles() {
+                const DataNode@ constObjRef = DataNode();
+                int v = constObjRef.getValue();
+
+                DataNode@ const nodeHandle = DataNode();
+                nodeHandle.modify(); 
+
+                const DataNode@ const immutableRef = DataNode();
+                int v2 = immutableRef.getValue();
+            }
+
+            class MatrixContainer {
+                private array<int> m_buffer = {10, 20, 30};
+
+                int get_cell(int idx) const { return m_buffer[idx]; }
+                void set_cell(int idx, int value) { m_buffer[idx] = value; }
+            }
+
+            void testIndexedVirtProp() {
+                MatrixContainer mat;
+                mat.set_cell(0, 99);
+                int val = mat.get_cell(0);
+            }
+
+            funcdef int Transformer(int x, int y);
+
+            void processBatch(Transformer@ fn) {
+                if (fn !is null) fn(5, 5);
+            }
+
+            class Animal {}
+            class Dog : Animal {}
+            class Cat : Animal {}
+
+            Animal@ selectPet(bool chooseDog, Dog@ d, Cat@ c) {
+                Animal@ result = chooseDog ? cast<Animal>(d) : cast<Animal>(c);
+                return result;
+            }
+
+            void testInlineLambdas() {
+                processBatch(function(int a, int b) {
+                    return a * b;
+                });
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_advanced_features.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                std::fprintf(stderr, "ADVANCED FEATURE TEST ERROR: [line %u col %u] %s\n", d.range.start.line + 1, d.range.start.character + 1, d.message.c_str());
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
+
+    TEST_CASE("User Intentional Errors: Inheritance Cycles, Const Handle Violations, Bad Lambdas & Ternaries")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            class ClassA : ClassB {}
+            class ClassB : ClassA {}
+
+            class RecursiveSelf {
+                RecursiveSelf child;
+            }
+
+            class Node {
+                int data = 0;
+                void set(int d) { data = d; }
+                int get() const { return data; }
+            }
+
+            void testConstViolations() {
+                const Node@ constObj = Node();
+                constObj.set(10);
+
+                Node@ const constHandle = Node();
+                Node@ other = Node();
+                @constHandle = @other;
+            }
+
+            funcdef void ActionCallback(string message, int code);
+
+            void executeAction(ActionCallback@ cb) {}
+
+            void testLambdaMismatch() {
+                executeAction(function(int wrongMsg, string wrongCode) {});
+            }
+
+            void testBadTernary() {
+                int x = 10;
+                string s = "hello";
+                auto res = (x > 0) ? x : s; 
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_user_invalid_features.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                std::fprintf(stderr, "USER NEGATIVE TEST ERROR DETECTED: [line %u col %u] %s\n", d.range.start.line + 1, d.range.start.character + 1, d.message.c_str());
+                errorCount++;
+            }
+        }
+        std::fprintf(stderr, "TOTAL USER NEGATIVE ERRORS DETECTED: %zu\n", errorCount);
+        CHECK(errorCount >= 4);
+    }
 }

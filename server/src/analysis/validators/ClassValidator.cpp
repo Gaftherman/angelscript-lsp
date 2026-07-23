@@ -75,8 +75,9 @@ namespace analysis::validators
             }
         }
 
-        // 2. Check modifiers (abstract, final)
+        // 2. Check modifiers (abstract, final, mixin)
         bool isAbstractClass = false;
+        bool isMixinClass = false;
         uint32_t topChildCount = ts_node_child_count(node);
         for (uint32_t i = 0; i < topChildCount; ++i)
         {
@@ -85,7 +86,10 @@ namespace analysis::validators
             if (text == "abstract")
             {
                 isAbstractClass = true;
-                break;
+            }
+            else if (text == "mixin")
+            {
+                isMixinClass = true;
             }
         }
 
@@ -138,8 +142,53 @@ namespace analysis::validators
                         {
                             baseSymbols.push_back(baseSym);
 
+                            // Check circular inheritance
+                            bool isCircular = (baseSym->name == className);
+                            if (!isCircular)
+                            {
+                                for (const auto &c : baseSym->children)
+                                {
+                                    if (c->kind == SymbolKind::Class && c->name == className)
+                                    {
+                                        isCircular = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (isCircular)
+                            {
+                                TSPoint start = ts_node_start_point(bChild);
+                                TSPoint end = ts_node_end_point(bChild);
+
+                                lsp::Diagnostic d;
+                                d.range.start.line = start.row;
+                                d.range.start.character = start.column;
+                                d.range.end.line = end.row;
+                                d.range.end.character = end.column;
+                                d.severity = lsp::DiagnosticSeverity::Error;
+                                d.source = "angelscript";
+                                d.message = fmt::format(fmt::runtime(strs.diagCircularInheritance), className, baseName);
+                                diags.push_back(d);
+                            }
+
                             if (baseSym->kind == SymbolKind::Class)
                             {
+                                if (isMixinClass)
+                                {
+                                    TSPoint start = ts_node_start_point(bChild);
+                                    TSPoint end = ts_node_end_point(bChild);
+
+                                    lsp::Diagnostic d;
+                                    d.range.start.line = start.row;
+                                    d.range.start.character = start.column;
+                                    d.range.end.line = end.row;
+                                    d.range.end.character = end.column;
+                                    d.severity = lsp::DiagnosticSeverity::Error;
+                                    d.source = "angelscript";
+                                    d.message = fmt::format(fmt::runtime(strs.diagMixinCannotInheritClass), className, baseName);
+                                    diags.push_back(d);
+                                }
                                 concreteBaseClassCount++;
                                 if (concreteBaseClassCount > 1)
                                 {
@@ -203,6 +252,48 @@ namespace analysis::validators
             {
                 TSNode mChild = ts_node_child(bodyNode, i);
                 const char *cType = ts_node_type(mChild);
+
+                if (cType && (std::string(cType) == "variable_declaration" || std::string(cType) == "field_declaration" || std::string(cType) == "member_declaration"))
+                {
+                    TSNode typeNode = ts_node_child_by_field_name(mChild, "type", 4);
+                    if (ts_node_is_null(typeNode))
+                    {
+                        for (uint32_t k = 0; k < ts_node_child_count(mChild); ++k)
+                        {
+                            TSNode sub = ts_node_child(mChild, k);
+                            std::string_view subType = ts_node_type(sub);
+                            std::string_view subText = doc.SourceAt(sub);
+                            if ((subType == "type" || subType == "primitive_type" || subType == "identifier") &&
+                                subText != "private" && subText != "protected" && subText != "public")
+                            {
+                                typeNode = sub;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!ts_node_is_null(typeNode))
+                    {
+                        std::string_view typeSrc = doc.SourceAt(typeNode);
+                        std::string_view fullVarSrc = doc.SourceAt(mChild);
+                        if (typeSrc == className && fullVarSrc.find("@") == std::string_view::npos)
+                        {
+                            TSPoint start = ts_node_start_point(mChild);
+                            TSPoint end = ts_node_end_point(mChild);
+
+                            lsp::Diagnostic d;
+                            d.range.start.line = start.row;
+                            d.range.start.character = start.column;
+                            d.range.end.line = end.row;
+                            d.range.end.character = end.column;
+                            d.severity = lsp::DiagnosticSeverity::Error;
+                            d.source = "angelscript";
+                            d.message = fmt::format(fmt::runtime(strs.diagRecursiveSelfMember), className);
+                            diags.push_back(d);
+                        }
+                    }
+                }
+
                 if (cType && (std::string(cType) == "func_declaration" || std::string(cType) == "func"))
                 {
                     TSNode mNameNode = ts_node_child_by_field_name(mChild, "name", sizeof("name") - 1);
@@ -237,12 +328,20 @@ namespace analysis::validators
                             }
                         }
 
-                        // Search base class / interfaces for matching method
+                        // Search base class / interfaces for matching method recursively
                         bool foundInBase = false;
                         bool baseIsFinal = false;
-                        for (const auto *baseSym : baseSymbols)
+
+                        std::vector<const Symbol *> visited;
+                        auto searchBaseDeep = [&](auto &self, const Symbol *bSym) -> void
                         {
-                            for (const auto &bChildSym : baseSym->children)
+                            if (!bSym || std::find(visited.begin(), visited.end(), bSym) != visited.end())
+                            {
+                                return;
+                            }
+                            visited.push_back(bSym);
+
+                            for (const auto &bChildSym : bSym->children)
                             {
                                 if (bChildSym->name == mName && (bChildSym->kind == SymbolKind::Method || bChildSym->kind == SymbolKind::Function))
                                 {
@@ -252,6 +351,50 @@ namespace analysis::validators
                                         baseIsFinal = true;
                                     }
                                 }
+                            }
+
+                            for (const auto &bChildSym : bSym->children)
+                            {
+                                if (bChildSym->kind == SymbolKind::Class || bChildSym->kind == SymbolKind::Interface)
+                                {
+                                    const Symbol *deepBase = combined.FindByNameDeep(bChildSym->name);
+                                    if (!deepBase)
+                                    {
+                                        deepBase = combined.FindFirst(bChildSym->name);
+                                    }
+                                    if (deepBase)
+                                    {
+                                        self(self, deepBase);
+                                    }
+                                }
+                            }
+                        };
+
+                        for (const auto *baseSym : baseSymbols)
+                        {
+                            searchBaseDeep(searchBaseDeep, baseSym);
+                        }
+
+                        if (!foundInBase)
+                        {
+                            for (const auto &pair : combined.GetGlobals())
+                            {
+                                for (const auto &gSym : pair.second)
+                                {
+                                    if (gSym->kind == SymbolKind::Interface)
+                                    {
+                                        for (const auto &gChild : gSym->children)
+                                        {
+                                            if (gChild->name == mName && (gChild->kind == SymbolKind::Method || gChild->kind == SymbolKind::Function))
+                                            {
+                                                foundInBase = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (foundInBase) break;
+                                }
+                                if (foundInBase) break;
                             }
                         }
 
@@ -647,6 +790,74 @@ namespace analysis::validators
             d.source = "angelscript";
             d.message = fmt::format(fmt::runtime(strs.diagInvalidOpSignature), name);
             diags.push_back(d);
+        }
+
+        return diags;
+    }
+
+    std::vector<lsp::Diagnostic> ClassValidator::ValidateInstantiation(
+        TSNode node,
+        const Document &doc,
+        const SymbolTable &globalTable,
+        const SymbolTable &localTable,
+        i18n::Locale locale)
+    {
+        std::vector<lsp::Diagnostic> diags;
+        if (ts_node_is_null(node))
+        {
+            return diags;
+        }
+
+        const auto &strs = i18n::GetStrings(locale);
+
+        TSNode typeNode = ts_node_child_by_field_name(node, "type", sizeof("type") - 1);
+        if (ts_node_is_null(typeNode))
+        {
+            uint32_t count = ts_node_child_count(node);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(node, i);
+                const char *cType = ts_node_type(child);
+                if (cType && (std::string(cType) == "type" || std::string(cType) == "primitive_type" || std::string(cType) == "identifier"))
+                {
+                    typeNode = child;
+                    break;
+                }
+            }
+        }
+
+        if (!ts_node_is_null(typeNode))
+        {
+            std::string typeName = std::string(doc.SourceAt(typeNode));
+            if (typeName.ends_with("@"))
+            {
+                typeName.pop_back();
+            }
+
+            SymbolTable combined = localTable;
+            combined.MergeGlobals(globalTable);
+
+            const Symbol *typeSym = combined.FindByNameDeep(typeName);
+            if (!typeSym)
+            {
+                typeSym = combined.FindFirst(typeName);
+            }
+
+            if (typeSym && typeSym->kind == SymbolKind::Mixin)
+            {
+                TSPoint start = ts_node_start_point(typeNode);
+                TSPoint end = ts_node_end_point(typeNode);
+
+                lsp::Diagnostic d;
+                d.range.start.line = start.row;
+                d.range.start.character = start.column;
+                d.range.end.line = end.row;
+                d.range.end.character = end.column;
+                d.severity = lsp::DiagnosticSeverity::Error;
+                d.source = "angelscript";
+                d.message = fmt::format(fmt::runtime(strs.diagCannotInstantiateMixin), typeName);
+                diags.push_back(d);
+            }
         }
 
         return diags;

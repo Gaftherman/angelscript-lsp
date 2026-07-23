@@ -104,7 +104,13 @@ namespace angel_lsp::i18n
             .diagTernaryTypeMismatch = "Incompatible types '{}' and '{}' in ternary operator.",
             .diagUnknownNamedParam = "Function '{}' has no parameter named '{}'.",
             .diagLValueRequired = "Expression passed to '&out' or '&inout' parameter must be a modifiable variable.",
-            .diagInvalidOpSignature = "Operator overload method '{}' has an invalid signature."
+            .diagInvalidOpSignature = "Operator overload method '{}' has an invalid signature.",
+            .diagLambdaNoMatchingFuncdef = "Target type '{}' is not a valid funcdef handle.",
+            .diagLambdaSignatureMismatch = "Lambda signature does not match target funcdef '{}'. Expected '{}', got '{}'.",
+            .diagInvalidTypedefSource = "Typedef source '{}' must be a primitive type.",
+            .diagEnumForwardReference = "Enum constant '{}' cannot be referenced before its declaration.",
+            .diagCannotInstantiateMixin = "Cannot instantiate mixin class '{}'.",
+            .diagMixinCannotInheritClass = "Mixin class '{}' cannot inherit from concrete class '{}'."
         };
 
     static const LspStrings ES_STRINGS =
@@ -159,18 +165,18 @@ namespace angel_lsp::i18n
             .diagMissingExpectedToken = "Error de sintaxis: se esperaba un token",
             .diagUndeclaredSymbol = "Identificador o símbolo no declarado '{}'",
             .diagIncludedFileNotFound = "Archivo incluido no encontrado: '{}'",
-            .diagMissingIncludeDelimiter = "Error de sintaxis: falta delimitador de ruta en #include",
-            .diagUnclosedIncludeDelimiter = "Error de sintaxis: delimitador de ruta sin cerrar en #include",
-            .diagUnexpectedCharsAfterInclude = "Error de sintaxis: caracteres no esperados después de directiva #include",
+            .diagMissingIncludeDelimiter = "Falta el delimitador de apertura en la directiva #include (se esperaba '<' o '\"').",
+            .diagUnclosedIncludeDelimiter = "Delimitador de #include sin cerrar (se esperaba el par de cierre).",
+            .diagUnexpectedCharsAfterInclude = "Caracteres no esperados después de la ruta de #include.",
             .diagRedefinitionOfSymbol = "Redefinición del símbolo '{}'",
-            .diagMethodMustBeCalled = "El método '{}' debe llamarse con ()",
-            .diagUndeclaredNamespace = "Espacio de nombres '{}' no declarado en directiva using",
-            .diagDuplicateUsingDirective = "Directiva using namespace duplicada para '{}'",
-            .diagInvalidImportModule = "Cadena de módulo no válida en directiva import",
-            .diagDuplicateImport = "Redefinición de la función importada '{}'",
-            .diagDuplicateEnumName = "El enum '{}' ya ha sido declarado.",
-            .diagDuplicateEnumerator = "El valor de enum '{}' ya existe en esta declaración.",
-            .diagInvalidEnumInitializer = "La expresión inicializadora del enum debe ser de tipo entero, se obtuvo '{}'.",
+            .diagMethodMustBeCalled = "La referencia a función/método '{}' debe ser invocada con ()",
+            .diagUndeclaredNamespace = "Espacio de nombres no declarado '{}'",
+            .diagDuplicateUsingDirective = "Directiva 'using namespace' duplicada para '{}'",
+            .diagInvalidImportModule = "Nombre de módulo no válido en sentencia import",
+            .diagDuplicateImport = "Función importada duplicada '{}'",
+            .diagDuplicateEnumName = "El nombre de enum '{}' colisiona con una declaración existente.",
+            .diagDuplicateEnumerator = "El enumerador '{}' ya ha sido declarado en este ámbito.",
+            .diagInvalidEnumInitializer = "El inicializador del enumerador debe ser una expresión entera constante.",
             .diagTypedefCollision = "El nombre de typedef '{}' colisiona con una declaración existente.",
             .diagDuplicateParamName = "El parámetro '{}' ya ha sido declarado en esta función.",
             .diagDefaultParamOrder = "Los parámetros con valores por defecto deben ubicarse al final de la lista.",
@@ -203,7 +209,15 @@ namespace angel_lsp::i18n
             .diagTernaryTypeMismatch = "Tipos incompatibles '{}' y '{}' en el operador ternario.",
             .diagUnknownNamedParam = "La función '{}' no tiene un parámetro llamado '{}'.",
             .diagLValueRequired = "La expresión pasada a un parámetro '&out' o '&inout' debe ser una variable modificable.",
-            .diagInvalidOpSignature = "El método de sobrecarga de operador '{}' tiene una firma no válida."
+            .diagInvalidOpSignature = "El método de sobrecarga de operador '{}' tiene una firma no válida.",
+            .diagLambdaNoMatchingFuncdef = "El tipo destino '{}' no es un handle de funcdef válido.",
+            .diagLambdaSignatureMismatch = "La firma de la función anónima no coincide con el funcdef destino '{}'. Se esperaba '{}', se obtuvo '{}'.",
+            .diagInvalidTypedefSource = "El origen del typedef '{}' debe ser un tipo primitivo.",
+            .diagEnumForwardReference = "La constante del enum '{}' no se puede referenciar antes de su declaración.",
+            .diagCannotInstantiateMixin = "No se puede instanciar el mixin class '{}'.",
+            .diagMixinCannotInheritClass = "El mixin class '{}' no puede heredar de la clase concreta '{}'.",
+            .diagCircularInheritance = "Herencia circular detectada: la clase '{}' no puede heredar de '{}'.",
+            .diagRecursiveSelfMember = "La clase '{}' no puede contener una variable miembro de su propio tipo por valor."
         };
 
     Locale ParseLocale(const std::string &localeStr)

@@ -237,10 +237,33 @@ namespace analysis
         return std::nullopt;
     }
 
-    bool TypeEvaluator::AreTypesCompatible(std::string_view targetType, std::string_view sourceType)
+    bool TypeEvaluator::AreTypesCompatible(std::string_view targetType, std::string_view sourceType, const SymbolTable *globalTable)
     {
         std::string targetClean = StripTypeModifiers(targetType);
         std::string sourceClean = StripTypeModifiers(sourceType);
+
+        if (globalTable)
+        {
+            const Symbol *tSym = globalTable->FindByNameDeep(targetClean);
+            if (!tSym)
+            {
+                tSym = globalTable->FindFirst(targetClean);
+            }
+            if (tSym && tSym->kind == SymbolKind::Typedef && !tSym->typeInfo.empty())
+            {
+                targetClean = StripTypeModifiers(tSym->typeInfo);
+            }
+
+            const Symbol *sSym = globalTable->FindByNameDeep(sourceClean);
+            if (!sSym)
+            {
+                sSym = globalTable->FindFirst(sourceClean);
+            }
+            if (sSym && sSym->kind == SymbolKind::Typedef && !sSym->typeInfo.empty())
+            {
+                sourceClean = StripTypeModifiers(sSym->typeInfo);
+            }
+        }
 
         if (targetClean.empty() || sourceClean.empty())
         {
@@ -250,6 +273,22 @@ namespace analysis
         if (targetClean == sourceClean)
         {
             return true;
+        }
+
+        if (sourceClean == "funcdef")
+        {
+            if (globalTable)
+            {
+                const Symbol *tSym = globalTable->FindByNameDeep(targetClean);
+                if (!tSym)
+                {
+                    tSym = globalTable->FindFirst(targetClean);
+                }
+                if (tSym && tSym->kind == SymbolKind::Funcdef)
+                {
+                    return true;
+                }
+            }
         }
 
         // Exception for Phase 1: Implicit numeric conversions

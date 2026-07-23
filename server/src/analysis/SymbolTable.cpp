@@ -78,13 +78,23 @@ namespace analysis
 
     const Symbol *SymbolTable::FindByNameDeep(std::string_view name) const
     {
+        if (name.empty())
+        {
+            return nullptr;
+        }
+
+        if (name.starts_with("::"))
+        {
+            name = name.substr(2);
+        }
+
         // 1. Search in globals first
         if (Symbol *global = FindGlobalByName(name))
         {
             return global;
         }
 
-        // Handle scoped names like "Engine::Physics" or "Engine::Physics::BodyPriority"
+        // 2. Qualified name search (e.g. "Engine::BaseEntity")
         if (name.find("::") != std::string_view::npos)
         {
             std::vector<std::string> parts;

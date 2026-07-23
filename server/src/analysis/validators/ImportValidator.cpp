@@ -17,7 +17,8 @@ namespace analysis::validators
         i18n::Locale locale)
     {
         std::vector<lsp::Diagnostic> diags;
-        if (ts_node_is_null(node))
+        const char *nType = ts_node_type(node);
+        if (!nType || (std::string(nType) != "import_declaration" && std::string(nType) != "import_statement"))
         {
             return diags;
         }
@@ -98,7 +99,7 @@ namespace analysis::validators
             size_t importCount = 0;
             for (const auto *sym : globals)
             {
-                if (sym->kind == SymbolKind::Function)
+                if (sym->kind == SymbolKind::Function && sym->isExternal)
                 {
                     importCount++;
                 }

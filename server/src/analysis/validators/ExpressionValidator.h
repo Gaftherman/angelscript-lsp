@@ -73,6 +73,56 @@ namespace analysis::validators
             const SymbolTable &globalTable,
             const SymbolTable &localTable,
             i18n::Locale locale);
+
+        /**
+         * @brief Validates member access expressions for private member accessibility.
+         */
+        static std::vector<lsp::Diagnostic> ValidateMemberAccess(
+            TSNode node,
+            const Document &doc,
+            const SymbolTable &globalTable,
+            const SymbolTable &localTable,
+            i18n::Locale locale);
+
+        /**
+         * @brief Validates function call arguments for reference parameter L-value requirements (&out, &inout).
+         */
+        static std::vector<lsp::Diagnostic> ValidateCallArguments(
+            TSNode node,
+            const Document &doc,
+            const SymbolTable &globalTable,
+            const SymbolTable &localTable,
+            i18n::Locale locale);
+
+        /**
+         * @brief Validates increment/decrement expressions (++ / -- on const or literal operands).
+         */
+        static std::vector<lsp::Diagnostic> ValidateIncrementDecrement(
+            TSNode node,
+            const Document &doc,
+            const SymbolTable &globalTable,
+            const SymbolTable &localTable,
+            i18n::Locale locale);
+
+        /**
+         * @brief Validates lambda expressions against target funcdef handles.
+         */
+        static std::vector<lsp::Diagnostic> ValidateLambda(
+            TSNode node,
+            const Document &doc,
+            const SymbolTable &globalTable,
+            const SymbolTable &localTable,
+            i18n::Locale locale);
+
+        /**
+         * @brief Validates ternary conditional expressions (? :) for branch type compatibility.
+         */
+        static std::vector<lsp::Diagnostic> ValidateTernary(
+            TSNode node,
+            const Document &doc,
+            const SymbolTable &globalTable,
+            const SymbolTable &localTable,
+            i18n::Locale locale);
     };
 
 } // namespace analysis::validators
