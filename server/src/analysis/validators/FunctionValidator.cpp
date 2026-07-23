@@ -124,7 +124,7 @@ namespace analysis::validators
                         cleanType = cleanType.substr(start, end - start + 1);
                     }
 
-                    bool exists = (globalTable.FindGlobalByName(cleanType) != nullptr) ||
+                    bool exists = (globalTable.FindByNameDeep(cleanType) != nullptr) ||
                                   (globalTable.FindFirst(cleanType) != nullptr) ||
                                   (localTable.FindGlobalByName(cleanType) != nullptr);
                     if (!exists)
@@ -269,9 +269,27 @@ namespace analysis::validators
             returnTypeStr = std::string(doc.SourceAt(returnTypeNode));
             if (!IsPrimitiveOrBuiltinType(returnTypeStr))
             {
-                bool exists = (globalTable.FindGlobalByName(returnTypeStr) != nullptr) ||
-                              (globalTable.FindFirst(returnTypeStr) != nullptr) ||
-                              (localTable.FindGlobalByName(returnTypeStr) != nullptr);
+                std::string cleanType = returnTypeStr;
+                const std::vector<std::string> removeWords = {"const", "&inout", "&in", "&out", "&", "@"};
+                for (const auto &w : removeWords)
+                {
+                    size_t pos = cleanType.find(w);
+                    while (pos != std::string::npos)
+                    {
+                        cleanType.erase(pos, w.length());
+                        pos = cleanType.find(w);
+                    }
+                }
+                size_t start = cleanType.find_first_not_of(" \t");
+                size_t end = cleanType.find_last_not_of(" \t");
+                if (start != std::string::npos && end != std::string::npos)
+                {
+                    cleanType = cleanType.substr(start, end - start + 1);
+                }
+
+                bool exists = (globalTable.FindByNameDeep(cleanType) != nullptr) ||
+                              (globalTable.FindFirst(cleanType) != nullptr) ||
+                              (localTable.FindGlobalByName(cleanType) != nullptr);
                 if (!exists)
                 {
                     TSPoint start = ts_node_start_point(returnTypeNode);

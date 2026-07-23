@@ -1067,6 +1067,7 @@ namespace analysis
                     TraverseGlobals(ts_node_child(bodyNode, i), doc, table, sym.get());
                 }
             }
+
             return;
         }
         else if (type == "using_declaration")
@@ -1457,6 +1458,24 @@ namespace analysis
         if (type == "variable_declaration")
         {
             BuildVariableSymbols(node, doc, table, currentScope, true);
+            uint32_t count = ts_node_child_count(node);
+            for (uint32_t i = 0; i < count; i++)
+            {
+                TSNode child = ts_node_child(node, i);
+                if (std::string_view(ts_node_type(child)) == "variable_declarator")
+                {
+                    for (uint32_t c = 0; c < ts_node_child_count(child); c++)
+                    {
+                        TSNode vChild = ts_node_child(child, c);
+                        if (std::string_view(ts_node_type(vChild)) == "=" && c + 1 < ts_node_child_count(child))
+                        {
+                            TraverseLocals(ts_node_child(child, c + 1), doc, table, currentScope);
+                            break;
+                        }
+                    }
+                }
+            }
+            return;
         }
         else if (type == "lambda_expression")
         {
@@ -1465,8 +1484,8 @@ namespace analysis
             lambdaSym->name = "function";
             lambdaSym->kind = SymbolKind::Function;
             lambdaSym->typeInfo = "function";
-            lambdaSym->fullRange = GetRange(node, doc);
-            lambdaSym->selectionRange = GetRange(node, doc);
+            lambdaSym->fullRange = SymbolCollector::GetRange(node, doc);
+            lambdaSym->selectionRange = SymbolCollector::GetRange(node, doc);
             if (currentScope)
             {
                 lambdaSym->parent = currentScope;
@@ -1486,6 +1505,63 @@ namespace analysis
                 TraverseLocals(bodyNode, doc, table, lambdaSym.get());
             }
             return;
+        }
+        else if (type == "foreach_statement" || type == "foreach")
+        {
+            TSNode varNode = {0};
+            TSNode typeNode = {0};
+            TSNode exprNode = {0};
+
+            uint32_t count = ts_node_child_count(node);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(node, i);
+                std::string_view cType = ts_node_type(child);
+                if (cType == "foreach_variable")
+                {
+                    uint32_t vCount = ts_node_child_count(child);
+                    for (uint32_t j = 0; j < vCount; ++j)
+                    {
+                        TSNode vChild = ts_node_child(child, j);
+                        std::string_view vcType = ts_node_type(vChild);
+                        std::string_view vcText = SymbolCollector::GetNodeText(vChild, doc);
+                        if (vcType == "type" || vcType == "primitive_type" || vcText == "auto")
+                        {
+                            typeNode = vChild;
+                        }
+                        else if (vcType == "identifier" && vcText != "auto")
+                        {
+                            varNode = vChild;
+                        }
+                    }
+                }
+                else if (cType == "expression" || cType == "identifier")
+                {
+                    exprNode = child;
+                }
+            }
+
+            if (!ts_node_is_null(varNode))
+            {
+                auto loopSym = std::make_shared<Symbol>();
+                loopSym->uri = doc.GetUri();
+                loopSym->name = std::string(SymbolCollector::GetNodeText(varNode, doc));
+                loopSym->kind = SymbolKind::Variable;
+                loopSym->fullRange = SymbolCollector::GetRange(varNode, doc);
+                loopSym->selectionRange = SymbolCollector::GetRange(varNode, doc);
+
+                std::string typeStr = !ts_node_is_null(typeNode) ? std::string(SymbolCollector::GetNodeText(typeNode, doc)) : "auto";
+                if (typeStr == "auto" && !ts_node_is_null(exprNode))
+                {
+                    std::string containerType = SymbolResolver::EvaluateExpressionType(doc, table, exprNode);
+                    if (containerType.starts_with("array<") && containerType.ends_with(">"))
+                    {
+                        typeStr = containerType.substr(6, containerType.length() - 7);
+                    }
+                }
+                loopSym->typeInfo = typeStr;
+                table.AddLocal(loopSym);
+            }
         }
 
         uint32_t count = ts_node_child_count(node);
@@ -1536,11 +1612,35 @@ namespace analysis
             }
             else if (t == "virtual_property")
             {
+                TSNode propTypeNode = ts_node_child_by_field_name(child, "prop_type", 9);
+                std::string propType = !ts_node_is_null(propTypeNode) ? std::string(SymbolCollector::GetNodeText(propTypeNode, doc)) : "";
+
                 for (uint32_t j = 0; j < ts_node_child_count(child); j++)
                 {
                     TSNode acc = ts_node_child(child, j);
                     if (std::string_view(ts_node_type(acc)) == "accessor")
                     {
+                        bool isSet = false;
+                        for (uint32_t k = 0; k < ts_node_child_count(acc); k++)
+                        {
+                            if (std::string_view(ts_node_type(ts_node_child(acc, k))) == "set")
+                            {
+                                isSet = true;
+                                break;
+                            }
+                        }
+                        if (isSet)
+                        {
+                            auto valSym = std::make_shared<Symbol>();
+                            valSym->uri = doc.GetUri();
+                            valSym->name = "value";
+                            valSym->kind = SymbolKind::Parameter;
+                            valSym->typeInfo = propType;
+                            valSym->fullRange = SymbolCollector::GetRange(acc, doc);
+                            valSym->selectionRange = SymbolCollector::GetRange(acc, doc);
+                            table.AddLocal(valSym);
+                        }
+
                         TSNode body = ts_node_child_by_field_name(acc, "body", 4);
                         if (!ts_node_is_null(body))
                         {

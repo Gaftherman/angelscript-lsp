@@ -843,4 +843,158 @@ TEST_SUITE("Operator Overload Validation")
         }
         CHECK(errorCount >= 1);
     }
+
+    TEST_CASE("Master End-to-End Test: 0 False Positives on Complex Script")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            // ==========================================
+            // TEST 1: NAMESPACES, ENUMS & INTERFACES
+            // ==========================================
+            namespace Engine {
+                enum State { IDLE = 0, RUNNING, ATTACKING, DEAD };
+
+                interface IDamageable {
+                    void takeDamage(int amount);
+                    int getHealth() const;
+                };
+
+                class BaseEntity {
+                    protected int m_id;
+                    BaseEntity(int id) {
+                        this.m_id = id;
+                    }
+
+                    void update(float dt) {}
+                };
+            }
+
+            using namespace Engine;
+
+            // ==========================================
+            // TEST 2: CLASES, HERENCIA, VIRTPROPS & OPERADORES
+            // ==========================================
+            class Player : BaseEntity, IDamageable {
+                private int m_hp;
+                private Engine::State m_state;
+
+                Player(int id, int hp = 100) {
+                    // Invocación de clase base vía SCOPE
+                    Engine::BaseEntity::BaseEntity(id);
+                    m_hp = hp;
+                    m_state = Engine::State::IDLE;
+                }
+
+                // Propiedad Virtual (VIRTPROP)
+                int health {
+                    get const { return m_hp; }
+                    set { m_hp = value; }
+                }
+
+                // Implementación de Interface
+                void takeDamage(int amount) override {
+                    m_hp -= amount;
+                    if (m_hp <= 0) {
+                        m_state = Engine::State::DEAD;
+                    }
+                }
+
+                int getHealth() const override {
+                    return m_hp;
+                }
+
+                // Sobrecarga de Operadores (Firmas estrictas)
+                Player@ opAdd(const Player& in other) { return this; }
+                int opCmp(const Player& in other) const { return m_hp - other.m_hp; }
+                bool opEquals(const Player& in other) const { return m_hp == other.m_hp; }
+                int opIndex(int idx) const { return m_hp; }
+                int opCast() const { return m_hp; }
+            };
+
+            // ==========================================
+            // TEST 3: FUNCIONES CON MODIFICADORES & ARGS
+            // ==========================================
+            void mutateStats(int &in multiplier, int &out calculatedHp, int &inout globalCounter) {
+                calculatedHp = 100 * multiplier;
+                globalCounter += 1;
+            }
+
+            void spawnEntity(string name, int count = 1, bool active = true) {}
+
+            // ==========================================
+            // TEST 4: COMPLEJIDAD DE CONTROL DE FLUJO Y EXPRESIONES
+            // ==========================================
+            void main() {
+                // Instanciación y Handles
+                Player@ p1 = Player(1, 150);
+                Player@ p2 = Player(2, 200);
+                Player@ pRef;
+
+                // Asignación de handles (@=) y comparación de identidad (is / !is)
+                @pRef = @p1;
+                bool sameObject = (pRef is p1);
+                bool notNull = (p1 !is null);
+
+                // Virtprop access & Operador Ternario
+                p1.health = (p1.health > 0) ? p1.health + 10 : 0;
+
+                // Argumentos por defecto y Argumentos Nombrados
+                spawnEntity("Goblin");                  // Usa defaults
+                spawnEntity("Orc", count: 5);          // Usa named argument
+                spawnEntity("Dragon", active: false);  // Usa named argument salteado
+
+                // Referencias & L-Values
+                int mult = 2;
+                int outHp;
+                int counter = 0;
+                mutateStats(mult, outHp, counter);     // Variables locales pasadas a &out e &inout
+
+                // Deducción 'auto' e Inferencia de Plantillas Anidadas
+                auto autoPlayer = p1;
+                array<array<int>> grid = { {1, 2}, {3, 4} };
+                int val = grid[0][1];                  // Debe inferir tipo 'int'
+
+                // Foreach Loop
+                array<Player@> team = { p1, p2 };
+                foreach(auto member : team) {
+                    if (member is null) continue;
+                    member.takeDamage(10);
+                }
+
+                // Switch con Enums y Bucles Anidados con Break/Continue
+                Engine::State currentState = Engine::State::RUNNING;
+                switch(currentState) {
+                    case Engine::State::IDLE:
+                        break;
+
+                    case Engine::State::RUNNING: {
+                        for(int i = 0; i < 10; ++i) {
+                            if (i == 2) continue; // continue dentro de loop -> OK
+                            if (i == 8) break;    // break dentro de loop -> OK
+                        }
+                        break; // break de switch -> OK
+                    }
+
+                    case Engine::State::ATTACKING:
+                    case Engine::State::DEAD:
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///master_test.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                std::fprintf(stderr, "MASTER TEST ERROR: [line %u col %u] %s\n", d.range.start.line + 1, d.range.start.character + 1, d.message.c_str());
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
 }

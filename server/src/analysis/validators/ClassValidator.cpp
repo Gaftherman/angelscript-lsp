@@ -103,11 +103,22 @@ namespace analysis::validators
                 for (uint32_t j = 0; j < bCount; ++j)
                 {
                     TSNode bChild = ts_node_child(child, j);
-                    const char *bType = ts_node_type(bChild);
-                    if (bType && std::string(bType) == "identifier")
+                    std::string_view bText = doc.SourceAt(bChild);
+                    if (bText != ":" && bText != ",")
                     {
-                        std::string baseName = std::string(doc.SourceAt(bChild));
-                        const Symbol *baseSym = combined.FindFirst(baseName);
+                        std::string baseName = std::string(bText);
+                        std::string_view shortName = baseName;
+                        size_t pos = baseName.rfind("::");
+                        if (pos != std::string_view::npos)
+                        {
+                            shortName = baseName.substr(pos + 2);
+                        }
+
+                        const Symbol *baseSym = combined.FindByNameDeep(baseName);
+                        if (!baseSym)
+                        {
+                            baseSym = combined.FindFirst(shortName);
+                        }
                         if (!baseSym)
                         {
                             TSPoint start = ts_node_start_point(bChild);
