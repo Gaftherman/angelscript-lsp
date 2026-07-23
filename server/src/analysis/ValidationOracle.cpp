@@ -13,6 +13,7 @@
 #include "analysis/validators/EnumTypeDefValidator.h"
 #include "analysis/validators/FunctionValidator.h"
 #include "analysis/validators/ClassValidator.h"
+#include "analysis/validators/ExpressionValidator.h"
 #include "document/Document.h"
 #include "i18n/LspStrings.h"
 #include <ankerl/unordered_dense.h>
@@ -337,6 +338,21 @@ namespace analysis
                 {
                     auto vpDiags = validators::ClassValidator::ValidateVirtProp(node, doc, globalTable, localTable, m_locale);
                     diags.insert(diags.end(), vpDiags.begin(), vpDiags.end());
+                }
+                else if (tStr == "binary_expression" || tStr == "math_expression" || tStr == "logic_expression")
+                {
+                    auto exDiags = validators::ExpressionValidator::ValidateExpression(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), exDiags.begin(), exDiags.end());
+                }
+                else if (tStr == "cast" || tStr == "cast_expression")
+                {
+                    auto cstDiags = validators::ExpressionValidator::ValidateCast(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), cstDiags.begin(), cstDiags.end());
+                }
+                else if (tStr == "assignment_expression" || tStr == "assign")
+                {
+                    auto asgDiags = validators::ExpressionValidator::ValidateAssign(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), asgDiags.begin(), asgDiags.end());
                 }
             }
 

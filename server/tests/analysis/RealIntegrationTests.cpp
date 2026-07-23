@@ -576,3 +576,114 @@ TEST_SUITE("Class, Interface and VirtProp Validation")
         CHECK(errorCount >= 1);
     }
 }
+
+TEST_SUITE("Expression, Cast and Assignment Validation")
+{
+    TEST_CASE("Valid math, logical and cast expressions")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                int a = 1 + 2;
+                bool b = true and false;
+                float c = cast<float>(a);
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_expr_valid.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
+
+    TEST_CASE("Binary operation with incompatible non-numeric types")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                int x = 5 + "texto";
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_expr_invalid_binary.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Handle identity operator on primitive type")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                bool b = 5 is null;
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_expr_invalid_handle.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Assignment to constant variable")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                const int c = 10;
+                c = 20;
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_expr_assign_const.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Invalid explicit cast between disconnected types")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            void Main() {
+                int x = cast<int>("string_literal");
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_expr_invalid_cast.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+}

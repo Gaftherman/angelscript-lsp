@@ -86,7 +86,12 @@ namespace angel_lsp::i18n
             .diagUnimplementedInterfaceMethod = "Class '{}' does not implement interface method '{}'.",
             .diagOverrideNoMatchingBase = "Method '{}' marked with 'override' does not exist in any base class or interface.",
             .diagOverrideFinalMethod = "Cannot override method '{}' marked as 'final'.",
-            .diagVirtPropTypeMismatch = "Virtual property accessor '{}' must use type '{}'."
+            .diagVirtPropTypeMismatch = "Virtual property accessor '{}' must use type '{}'.",
+            .diagInvalidBinaryOperator = "Operator '{}' is not valid for types '{}' and '{}'.",
+            .diagInvalidLogicalOperand = "Logical operator '{}' requires operand of type 'bool', but got '{}'.",
+            .diagInvalidHandleComparison = "Operator '{}' can only be applied to handles or object references.",
+            .diagCannotAssignToConst = "Cannot modify constant variable '{}'.",
+            .diagInvalidCast = "Cannot explicitly cast from '{}' to '{}'."
         };
 
     static const LspStrings ES_STRINGS =
@@ -167,7 +172,12 @@ namespace angel_lsp::i18n
             .diagUnimplementedInterfaceMethod = "La clase '{}' no implementa el método de interfaz '{}'.",
             .diagOverrideNoMatchingBase = "El método '{}' marcado con 'override' no existe en ninguna clase base o interfaz.",
             .diagOverrideFinalMethod = "No se puede sobrescribir el método marcado como 'final' '{}'.",
-            .diagVirtPropTypeMismatch = "El accesor '{0}' de la propiedad virtual debe usar el tipo '{1}'."
+            .diagVirtPropTypeMismatch = "El accesor '{0}' de la propiedad virtual debe usar el tipo '{1}'.",
+            .diagInvalidBinaryOperator = "Operador '{}' no válido para los tipos '{}' y '{}'.",
+            .diagInvalidLogicalOperand = "El operador lógico '{}' requiere un operando de tipo 'bool', pero se obtuvo '{}'.",
+            .diagInvalidHandleComparison = "El operador '{}' solo se puede aplicar a handles o referencias a objetos.",
+            .diagCannotAssignToConst = "No se puede modificar la variable constante '{}'.",
+            .diagInvalidCast = "No se puede realizar un cast explícito de '{}' a '{}'."
         };
 
     Locale ParseLocale(const std::string &localeStr)

@@ -127,6 +127,64 @@ namespace analysis
             }
         }
 
+        // Rule 4: Binary Expressions
+        if (nodeType == "binary_expression" || nodeType == "math_expression" || nodeType == "logic_expression")
+        {
+            TSNode leftNode = ts_node_child_by_field_name(exprNode, "left", sizeof("left") - 1);
+            TSNode rightNode = ts_node_child_by_field_name(exprNode, "right", sizeof("right") - 1);
+            if (ts_node_is_null(leftNode) || ts_node_is_null(rightNode))
+            {
+                uint32_t count = ts_node_child_count(exprNode);
+                if (count >= 3)
+                {
+                    leftNode = ts_node_child(exprNode, 0);
+                    rightNode = ts_node_child(exprNode, count - 1);
+                }
+            }
+
+            auto leftOpt = InferType(leftNode, doc, globalTable, localTable);
+            auto rightOpt = InferType(rightNode, doc, globalTable, localTable);
+
+            if (leftOpt.value_or("") == "string" || rightOpt.value_or("") == "string")
+            {
+                return "string";
+            }
+
+            uint32_t count = ts_node_child_count(exprNode);
+            for (uint32_t i = 1; i < count; ++i)
+            {
+                TSNode opNode = ts_node_child(exprNode, i);
+                std::string_view text = doc.SourceAt(opNode);
+                if (text == "==" || text == "!=" || text == "<" || text == "<=" || text == ">" || text == ">=" ||
+                    text == "&&" || text == "||" || text == "and" || text == "or" || text == "is" || text == "!is")
+                {
+                    return "bool";
+                }
+            }
+
+            if (leftOpt.has_value())
+            {
+                return leftOpt.value();
+            }
+            return rightOpt;
+        }
+
+        // Rule 5: Cast Expressions
+        if (nodeType == "cast" || nodeType == "cast_expression")
+        {
+            TSNode typeNode = ts_node_child_by_field_name(exprNode, "type", sizeof("type") - 1);
+            if (!ts_node_is_null(typeNode))
+            {
+                return std::string(doc.SourceAt(typeNode));
+            }
+        }
+
+        // Rule 6: Lambda Expressions
+        if (nodeType == "lambda" || nodeType == "lambda_expression" || nodeType == "function_expression")
+        {
+            return "funcdef";
+        }
+
         return std::nullopt;
     }
 

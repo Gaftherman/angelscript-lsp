@@ -126,6 +126,11 @@ namespace angel_lsp::i18n
         std::string_view diagOverrideNoMatchingBase;
         std::string_view diagOverrideFinalMethod;
         std::string_view diagVirtPropTypeMismatch;
+        std::string_view diagInvalidBinaryOperator;
+        std::string_view diagInvalidLogicalOperand;
+        std::string_view diagInvalidHandleComparison;
+        std::string_view diagCannotAssignToConst;
+        std::string_view diagInvalidCast;
     };
 
     /**
