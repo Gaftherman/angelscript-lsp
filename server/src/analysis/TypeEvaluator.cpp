@@ -185,6 +185,40 @@ namespace analysis
             return "funcdef";
         }
 
+        // Rule 7: Constructor / Function Calls
+        if (nodeType == "call_expression" || nodeType == "func_call" || nodeType == "function_call" || nodeType == "construct_call" || nodeType == "constructor_call")
+        {
+            TSNode nameNode = ts_node_child_by_field_name(exprNode, "function", sizeof("function") - 1);
+            if (ts_node_is_null(nameNode))
+            {
+                nameNode = ts_node_child_by_field_name(exprNode, "name", sizeof("name") - 1);
+            }
+            if (ts_node_is_null(nameNode))
+            {
+                nameNode = ts_node_child(exprNode, 0);
+            }
+
+            if (!ts_node_is_null(nameNode))
+            {
+                std::string_view name = doc.SourceAt(nameNode);
+                const Symbol *sym = localTable.FindLocalByName(name);
+                if (!sym)
+                {
+                    sym = globalTable.FindGlobalByName(name);
+                }
+                if (!sym)
+                {
+                    sym = globalTable.FindFirst(name);
+                }
+
+                if (sym && !sym->typeInfo.empty())
+                {
+                    return StripTypeModifiers(sym->typeInfo);
+                }
+                return std::string(name);
+            }
+        }
+
         return std::nullopt;
     }
 
