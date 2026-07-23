@@ -68,7 +68,11 @@ namespace angel_lsp::i18n
             .diagUndeclaredNamespace = "Undeclared namespace '{}' in using directive",
             .diagDuplicateUsingDirective = "Duplicate using namespace directive for '{}'",
             .diagInvalidImportModule = "Invalid module string in import directive",
-            .diagDuplicateImport = "Redefinition of imported function '{}'"
+            .diagDuplicateImport = "Redefinition of imported function '{}'",
+            .diagDuplicateEnumName = "Enum '{}' has already been declared.",
+            .diagDuplicateEnumerator = "Enumerator '{}' already exists in this enum declaration.",
+            .diagInvalidEnumInitializer = "Enum initializer expression must be an integer type, got '{}'.",
+            .diagTypedefCollision = "Typedef alias name '{}' collides with an existing declaration."
         };
 
     static const LspStrings ES_STRINGS =
@@ -131,7 +135,11 @@ namespace angel_lsp::i18n
             .diagUndeclaredNamespace = "Espacio de nombres '{}' no declarado en directiva using",
             .diagDuplicateUsingDirective = "Directiva using namespace duplicada para '{}'",
             .diagInvalidImportModule = "Cadena de módulo no válida en directiva import",
-            .diagDuplicateImport = "Redefinición de la función importada '{}'"
+            .diagDuplicateImport = "Redefinición de la función importada '{}'",
+            .diagDuplicateEnumName = "El enum '{}' ya ha sido declarado.",
+            .diagDuplicateEnumerator = "El valor de enum '{}' ya existe en esta declaración.",
+            .diagInvalidEnumInitializer = "La expresión inicializadora del enum debe ser de tipo entero, se obtuvo '{}'.",
+            .diagTypedefCollision = "El nombre de typedef '{}' colisiona con una declaración existente."
         };
 
     Locale ParseLocale(const std::string &localeStr)

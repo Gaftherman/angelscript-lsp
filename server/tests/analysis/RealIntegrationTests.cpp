@@ -288,3 +288,109 @@ TEST_SUITE("Using and Import Validation")
         CHECK(errorCount >= 1);
     }
 }
+
+TEST_SUITE("Enum and Typedef Validation")
+{
+    TEST_CASE("Valid enum with and without explicit values")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            enum Color {
+                Red = 1,
+                Green = 2,
+                Blue
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_enum_valid.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
+
+    TEST_CASE("Invalid enum with duplicate constant enumerator")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            enum Color {
+                Red = 1,
+                Red = 2
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_enum_duplicate.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Invalid enum with non-integer initializer")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            enum State {
+                Active = "true"
+            }
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_enum_invalid_init.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+
+    TEST_CASE("Valid typedef statement")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = "typedef float real;";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_typedef_valid.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount == 0);
+    }
+
+    TEST_CASE("Invalid typedef with colliding alias name")
+    {
+        analysis::ValidationOracle oracle;
+        std::string code = R"(
+            typedef float real;
+            typedef int real;
+        )";
+
+        auto diags = oracle.ValidateSync(code, "file:///test_typedef_duplicate.as");
+        size_t errorCount = 0;
+        for (const auto &d : diags)
+        {
+            if (d.severity == lsp::DiagnosticSeverity::Error)
+            {
+                errorCount++;
+            }
+        }
+        CHECK(errorCount >= 1);
+    }
+}

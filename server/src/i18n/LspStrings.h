@@ -108,6 +108,10 @@ namespace angel_lsp::i18n
         std::string_view diagDuplicateUsingDirective;
         std::string_view diagInvalidImportModule;
         std::string_view diagDuplicateImport;
+        std::string_view diagDuplicateEnumName;
+        std::string_view diagDuplicateEnumerator;
+        std::string_view diagInvalidEnumInitializer;
+        std::string_view diagTypedefCollision;
     };
 
     /**

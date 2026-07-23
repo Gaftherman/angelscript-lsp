@@ -1230,6 +1230,46 @@ namespace analysis
             }
             return;
         }
+        else if (type == "typedef_declaration")
+        {
+            auto sym = std::make_shared<Symbol>();
+            sym->uri = doc.GetUri();
+            sym->kind = SymbolKind::Typedef;
+            sym->fullRange = GetRange(node, doc);
+            sym->docComment = ExtractDocComments(node, doc);
+
+            TSNode nameNode = FieldChild(node, "name");
+            if (ts_node_is_null(nameNode))
+            {
+                uint32_t count = ts_node_child_count(node);
+                for (int i = (int)count - 1; i >= 0; --i)
+                {
+                    TSNode child = ts_node_child(node, i);
+                    if (std::string_view(ts_node_type(child)) == "identifier")
+                    {
+                        nameNode = child;
+                        break;
+                    }
+                }
+            }
+
+            if (!ts_node_is_null(nameNode))
+            {
+                sym->name = GetNodeText(nameNode, doc);
+                sym->selectionRange = GetRange(nameNode, doc);
+            }
+
+            if (parentScope)
+            {
+                sym->parent = parentScope;
+                parentScope->children.push_back(sym);
+            }
+            else
+            {
+                table.AddGlobal(sym);
+            }
+            return;
+        }
         else if (type == "funcdef_declaration")
         {
             auto sym = std::make_shared<Symbol>();

@@ -10,6 +10,7 @@
 #include "analysis/TypeEvaluator.h"
 #include "analysis/validators/UsingValidator.h"
 #include "analysis/validators/ImportValidator.h"
+#include "analysis/validators/EnumTypeDefValidator.h"
 #include "document/Document.h"
 #include "i18n/LspStrings.h"
 #include <ankerl/unordered_dense.h>
@@ -296,6 +297,16 @@ namespace analysis
                 {
                     auto iDiags = validators::ImportValidator::Validate(node, doc, globalTable, localTable, m_locale);
                     diags.insert(diags.end(), iDiags.begin(), iDiags.end());
+                }
+                else if (tStr == "enum_declaration" || tStr == "enum")
+                {
+                    auto eDiags = validators::EnumTypeDefValidator::ValidateEnum(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), eDiags.begin(), eDiags.end());
+                }
+                else if (tStr == "typedef_declaration" || tStr == "typedef")
+                {
+                    auto tDiags = validators::EnumTypeDefValidator::ValidateTypedef(node, doc, globalTable, localTable, m_locale);
+                    diags.insert(diags.end(), tDiags.begin(), tDiags.end());
                 }
             }
 
