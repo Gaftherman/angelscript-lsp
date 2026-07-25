@@ -1,104 +1,52 @@
-/**
- * @file Server.h
- * @brief Top-level Language Server Protocol orchestrator, request dispatcher, and validation worker.
- * @ingroup Server
- */
-
 #pragma once
 
-#include <iostream>
-#include <unordered_map>
-#include <string>
-#include <memory>
-#include "document/Document.h"
-#include "analysis/ValidationOracle.h"
-#include "analysis/SymbolTable.h"
-#include "analysis/DiagnosticCache.h"
 #include "config/ServerConfig.h"
-#include <shared_mutex>
-#include <thread>
-#include <condition_variable>
-#include <ankerl/unordered_dense.h>
-#include "i18n/LspStrings.h"
+#include "utils/LspLogger.h"
+#include "parser/AngelScriptParser.h"
 
-namespace lsp
-{
-    class MessageHandler;
-    class Connection;
-}
+#include <lsp/messages.h>
+#include <lsp/connection.h>
+#include <lsp/io/standardio.h>
+#include <lsp/messagehandler.h>
+
+#include <string>
+#include <vector>
+#include <thread>
+#include <mutex>
 
 namespace angel_lsp
 {
-
-    /**
-     * @brief The main LSP Server class orchestrating all language intelligence and JSON-RPC messaging.
-     * @note Thread-safe orchestrator using std::shared_mutex for document reads and std::jthread background validation worker.
-     */
     class Server
     {
-    public:
-        /**
-         * @brief Constructs the LSP server with an optional configuration.
-         *
-         * @param[in] config Configuration settings and feature flags.
-         */
-        explicit Server(ServerConfig config = ServerConfig());
+    private:
+        angel_lsp::config::ServerConfig m_config;
+        std::unique_ptr<lsp::Connection> m_connection;
+        std::unique_ptr<lsp::MessageHandler> m_messageHandler;
+        bool m_running;
+        std::vector<std::string> m_workspacesRoot;
+        std::string m_locale;
+        std::jthread m_workspaceThread;
+        std::mutex m_messageHandlerMutex;
+        std::unique_ptr<angel_lsp::utils::LspLogger> m_logger;
+        std::unique_ptr<angel_lsp::parser::AngelScriptParser> m_parser;
 
-        /**
-         * @brief Destroys the LSP server and cleans up resources.
-         */
+    public:
+        Server(const angel_lsp::config::ServerConfig &config);
         ~Server();
 
-        /**
-         * @brief Starts the main LSP server execution loop.
-         */
         void Run();
+        void InitHandles();
 
-    private:
-        /**
-         * @brief Registers all LSP request and notification handlers.
-         */
-        void RegisterHandlers();
-
-        /**
-         * @brief Schedules background document diagnostics validation.
-         *
-         * @param[in] uri Document URI string.
-         * @param[in] text Document source text.
-         */
-        void ScheduleValidation(std::string uri, std::string text);
-
-        /**
-         * @brief Worker thread loop for processing background diagnostics with 300ms debounce.
-         *
-         * @param[in] st Thread stop token.
-         */
-        void ValidationWorkerLoop(std::stop_token st);
-
-        ServerConfig m_config;
-
-        std::unique_ptr<::lsp::Connection> m_connection;
-        std::unique_ptr<::lsp::MessageHandler> messageHandler;
-        std::shared_mutex m_docMutex;
-        ankerl::unordered_dense::map<std::string, std::unique_ptr<Document>> m_documents;
-        ankerl::unordered_dense::map<std::string, analysis::SymbolTable> m_symbolTables;
-        analysis::SymbolTable m_globalSymbolTable;
-        std::unique_ptr<analysis::DiagnosticCache> m_diagCache;
-
-        std::unique_ptr<analysis::ValidationOracle> oracle;
-        bool running = true;
-
-        std::jthread m_validationThread;
-        std::mutex m_validationMutex;
-        std::condition_variable_any m_validationCV;
-        bool m_validationPending = false;
-        std::string m_pendingUri;
-        std::string m_pendingText;
-
-        std::jthread m_predefinedThread;
-
-        i18n::Locale m_locale = i18n::Locale::EN;
-        std::string m_workspaceRoot;
+        auto HandleRequestsInitialized(lsp::requests::Initialize::Params &&params);
+        void HandleNotificationsInitialized(lsp::notifications::Initialized::Params &&params);
+        auto HandleRequestsShutdown();
+        void HandleNotificationsExit();
+        void HandleNotificationsWorkspace_DidChangeConfiguration(lsp::notifications::Workspace_DidChangeConfiguration::Params &&params);
+        void HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params &&params);
+        void HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params);
+        void HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params);
+        void HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params &&params);
+        void ReadWorkspaceFiles(std::stop_token stopToken);
+        void ParserPredefined(const std::string &filePath);
     };
-
-} // namespace angel_lsp
+}

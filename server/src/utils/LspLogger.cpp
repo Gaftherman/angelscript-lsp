@@ -1,56 +1,39 @@
-/**
- * @file LspLogger.cpp
- * @brief Implementation of LspLogger window/logMessage bridge.
- * @ingroup Utils
- */
-
 #include "LspLogger.h"
 
 namespace angel_lsp::utils
 {
-    lsp::MessageHandler *LspLogger::s_handler = nullptr;
-
-    void LspLogger::Initialize(lsp::MessageHandler *handler)
+    LspLogger::LspLogger(lsp::MessageHandler *messageHandler)
+        : m_messageHandler(messageHandler)
     {
-        s_handler = handler;
     }
 
-    void LspLogger::Info(const std::string &msg)
+    void LspLogger::LogInfo(std::string_view message)
     {
-        if (!s_handler) {
-            fprintf(stderr, "[INFO] %s\n", msg.c_str());
-            return;
-        }
+        std::lock_guard<std::mutex> lock(m_logMutex);
 
-        lsp::notifications::Window_LogMessage::Params p;
-        p.type = lsp::MessageType::Info;
-        p.message = msg;
-        s_handler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(p));
+        lsp::notifications::Window_LogMessage::Params logParams;
+        logParams.type = lsp::MessageType::Info;
+        logParams.message = message;
+        m_messageHandler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(logParams));
     }
 
-    void LspLogger::Warn(const std::string &msg)
+    void LspLogger::LogWarning(std::string_view message)
     {
-        if (!s_handler) {
-            fprintf(stderr, "[WARN] %s\n", msg.c_str());
-            return;
-        }
+        std::lock_guard<std::mutex> lock(m_logMutex);
 
-        lsp::notifications::Window_LogMessage::Params p;
-        p.type = lsp::MessageType::Warning;
-        p.message = msg;
-        s_handler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(p));
+        lsp::notifications::Window_LogMessage::Params logParams;
+        logParams.type = lsp::MessageType::Warning;
+        logParams.message = message;
+        m_messageHandler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(logParams));
     }
 
-    void LspLogger::Error(const std::string &msg)
+    void LspLogger::LogError(std::string_view message)
     {
-        if (!s_handler) {
-            fprintf(stderr, "[ERROR] %s\n", msg.c_str());
-            return;
-        }
+        std::lock_guard<std::mutex> lock(m_logMutex);
 
-        lsp::notifications::Window_LogMessage::Params p;
-        p.type = lsp::MessageType::Error;
-        p.message = msg;
-        s_handler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(p));
+        lsp::notifications::Window_LogMessage::Params logParams;
+        logParams.type = lsp::MessageType::Error;
+        logParams.message = message;
+        m_messageHandler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(logParams));
     }
-} // namespace angel_lsp::utils
+}

@@ -1,20 +1,9 @@
-/**
- * @file ServerConfig.h
- * @brief Server configuration parameters and feature flags parsing.
- * @ingroup Config
- */
-
 #pragma once
 
-#include <string>
-#include <vector>
+#include <string_view>
 
 namespace angel_lsp::config
 {
-
-    /**
-     * @brief Feature flags for toggling LSP capabilities at runtime.
-     */
     struct FeatureFlags
     {
         bool enableHover = true;
@@ -25,28 +14,19 @@ namespace angel_lsp::config
         bool enablePredefinedLoader = true;
     };
 
-    /**
-     * @brief Centralized configuration settings for the AngelScript Language Server.
-     * @note Thread-safe immutable configuration container once initialized.
-     */
+    struct Info
+    {
+        std::string_view name;
+        std::string_view version;
+        std::string_view fileExtension;
+        std::string_view predefinedFileExtension;
+    };
+
     struct ServerConfig
     {
         FeatureFlags features;
-
-        /**
-         * @brief Parses server configuration settings from command line arguments.
-         *
-         * @param[in] argc Number of command line arguments.
-         * @param[in] argv Array of command line argument string pointers.
-         * @return ServerConfig Initialized ServerConfig instance.
-         */
-        static ServerConfig FromArgs(int argc, char **argv);
+        Info info;
     };
 
-} // namespace angel_lsp::config
-
-namespace angel_lsp
-{
-    using config::FeatureFlags;
-    using config::ServerConfig;
+    ServerConfig FromArgs(int argc, char **argv);
 }
