@@ -27,6 +27,9 @@ namespace angel_lsp
         // Initialize the symbol collector
         m_symbolCollector = std::make_unique<angel_lsp::analysis::SymbolCollector>(m_logger.get());
 
+        // Initialize the semantic analyzer
+        m_semanticAnalyzer = std::make_unique<angel_lsp::analysis::SemanticAnalyzer>(m_logger.get());
+
         // Initialize message handlers
         InitHandles();
     }
@@ -69,9 +72,13 @@ namespace angel_lsp
         info.version = m_config.info.version;
         result.serverInfo = info;
 
+        lsp::SaveOptions saveOptions;
+        saveOptions.includeText = true;
+
         lsp::TextDocumentSyncOptions sync;
         sync.openClose = true;
-        sync.change = lsp::TextDocumentSyncKind::Full;
+        sync.change = lsp::TextDocumentSyncKind::Incremental;
+        sync.save = saveOptions;
         result.capabilities.textDocumentSync = sync;
 
         return result;
@@ -143,7 +150,10 @@ namespace angel_lsp
         std::string uriStr = params.textDocument.uri.toString();
         std::string text = params.text.has_value() ? params.text.value() : /*ReadFileContent(angel_lsp::utils::UriToPath(uriStr))*/ "";
 
-        m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+        // m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+
+        // !TODO Incremental collector symbol update for the saved document (if needed)
+        m_logger->LogInfo(fmt::format("Texto guardado: {}", text));
     }
 
     void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params)
@@ -151,8 +161,18 @@ namespace angel_lsp
         std::string uriStr = params.textDocument.uri.toString();
         std::string text = params.textDocument.text;
 
+        // Clear existing symbols for the document and collect new symbols
+        m_symbolTable.ClearDocumentSymbols(uriStr);
+
+        // Collect symbols from the opened document
         m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
-        m_symbolTable.PrintSymbols(m_logger.get());
+
+        // Perform semantic analysis on the collected symbols for the document
+        angel_lsp::analysis::SemanticAnalysisRequest request{m_symbolTable, uriStr};
+        std::vector<angel_lsp::analysis::Diagnostic> diagnostics = m_semanticAnalyzer->Analyze(request);
+
+        // Publish diagnostics to the client
+        m_logger->LogInfo(fmt::format("Diagnósticos para {}: {}", uriStr, diagnostics.size()));
     }
 
     void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params)
