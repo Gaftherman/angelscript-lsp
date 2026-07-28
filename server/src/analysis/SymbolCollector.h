@@ -1,11 +1,13 @@
 #pragma once
 
 #include "analysis/SymbolTable.h"
+#include "analysis/Diagnostics.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/LspLogger.h"
 
 #include <tree_sitter/api.h>
 #include <string>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -15,7 +17,7 @@ namespace angel_lsp::analysis
         SymbolCollector(angel_lsp::utils::LspLogger *logger);
         ~SymbolCollector();
 
-        void CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable);
+        std::vector<Diagnostic> CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable);
 
     private:
         utils::LspLogger *m_logger;
@@ -38,7 +40,7 @@ namespace angel_lsp::analysis
         void ProcessInterface(TSNode node, const std::string &tagName, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable);
 
         std::string GetNodeText(TSNode node, const std::string &sourceCode) const;
-        void ReportParseErrors(TSNode node, const std::string &fileUri, const std::string &sourceCode) const;
+        void ReportParseErrors(TSNode node, const std::string &fileUri, const std::string &sourceCode, std::vector<Diagnostic> &diagnostics) const;
 
         NodeContext GetNodeContext(TSNode node, const std::string &sourceCode) const;
 

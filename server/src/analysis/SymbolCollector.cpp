@@ -74,18 +74,35 @@ namespace angel_lsp::analysis
         }
     }
 
-    void SymbolCollector::ReportParseErrors(TSNode node, const std::string &fileUri, const std::string &sourceCode) const
+    void SymbolCollector::ReportParseErrors(TSNode node, const std::string &fileUri, const std::string &sourceCode, std::vector<Diagnostic> &diagnostics) const
     {
-        if (!m_logger || !ts_node_has_error(node))
+        if (!ts_node_has_error(node))
             return;
 
         if (ts_node_is_named(node) && strcmp(ts_node_type(node), "ERROR") == 0)
         {
             TSPoint startPt = ts_node_start_point(node);
+            TSPoint endPt = ts_node_end_point(node);
             std::string errText = GetNodeText(node, sourceCode);
 
-            m_logger->LogWarning(fmt::format("[Tree-sitter Error] Error de sintaxis en [L{}:C{}]: \"{}\" (File: {})",
-                                             startPt.row + 1, startPt.column + 1, errText, fileUri));
+            Diagnostic diag;
+            diag.range.start.line = startPt.row;
+            diag.range.start.character = startPt.column;
+            diag.range.end.line = endPt.row;
+            diag.range.end.character = endPt.column;
+            diag.severity = DiagnosticSeverity::Error;
+            diag.code = "as-syntax-error";
+            diag.source = "AngelScript";
+            diag.message = errText.empty() ? "Syntax error" : fmt::format("Syntax error: \"{}\"", errText);
+            diag.fileUri = fileUri;
+
+            diagnostics.push_back(diag);
+
+            if (m_logger)
+            {
+                m_logger->LogWarning(fmt::format("[Tree-sitter Error] Error de sintaxis en [L{}:C{}]: \"{}\" (File: {})",
+                                                 startPt.row + 1, startPt.column + 1, errText, fileUri));
+            }
             return;
         }
 
@@ -95,23 +112,24 @@ namespace angel_lsp::analysis
             TSNode child = ts_node_child(node, i);
             if (ts_node_has_error(child))
             {
-                ReportParseErrors(child, fileUri, sourceCode);
+                ReportParseErrors(child, fileUri, sourceCode, diagnostics);
             }
         }
     }
 
-    void SymbolCollector::CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable)
+    std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable)
     {
+        std::vector<Diagnostic> diagnostics;
         TSTree *tree = parser.Parse(sourceCode);
 
         if (!tree)
-            return;
+            return diagnostics;
 
         TSNode rootNode = ts_tree_root_node(tree);
 
         if (ts_node_has_error(rootNode))
         {
-            ReportParseErrors(rootNode, fileUri, sourceCode);
+            ReportParseErrors(rootNode, fileUri, sourceCode, diagnostics);
         }
 
         TSQueryCursor *cursor = ts_query_cursor_new();
@@ -167,6 +185,7 @@ namespace angel_lsp::analysis
 
         ts_query_cursor_delete(cursor);
         ts_tree_delete(tree);
+        return diagnostics;
     }
 
     SymbolCollector::NodeContext SymbolCollector::GetNodeContext(TSNode node, const std::string &sourceCode) const

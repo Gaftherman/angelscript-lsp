@@ -143,10 +143,12 @@ namespace angel_lsp
         }
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
-        m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr};
-        auto diagnostics = m_semanticAnalyzer->Analyze(req);
+        auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
+        diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
+
         PublishDiagnostics(uriStr, diagnostics);
     }
 
@@ -158,10 +160,12 @@ namespace angel_lsp
         m_openDocuments[uriStr] = text;
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
-        m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr};
-        auto diagnostics = m_semanticAnalyzer->Analyze(req);
+        auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
+        diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
+
         PublishDiagnostics(uriStr, diagnostics);
     }
 
@@ -180,9 +184,9 @@ namespace angel_lsp
             {
                 const auto &rt = std::get<lsp::TextDocumentContentChangeEvent_Range_Text>(change);
                 angel_lsp::utils::ApplyIncrementalChange(buffer,
-                    rt.range.start.line, rt.range.start.character,
-                    rt.range.end.line,   rt.range.end.character,
-                    rt.text);
+                                                         rt.range.start.line, rt.range.start.character,
+                                                         rt.range.end.line, rt.range.end.character,
+                                                         rt.text);
             }
             else if (std::holds_alternative<lsp::TextDocumentContentChangeEvent_Text>(change))
             {
@@ -192,10 +196,12 @@ namespace angel_lsp
         }
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
-        m_symbolCollector->CollectSymbols(uriStr, buffer, *m_parser, m_symbolTable);
+        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, buffer, *m_parser, m_symbolTable);
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr};
-        auto diagnostics = m_semanticAnalyzer->Analyze(req);
+        auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
+        diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
+
         PublishDiagnostics(uriStr, diagnostics);
     }
 
