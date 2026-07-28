@@ -147,6 +147,7 @@ namespace angel_lsp
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr};
         auto diagnostics = m_semanticAnalyzer->Analyze(req);
+        PublishDiagnostics(uriStr, diagnostics);
     }
 
     void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params)
@@ -161,6 +162,7 @@ namespace angel_lsp
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr};
         auto diagnostics = m_semanticAnalyzer->Analyze(req);
+        PublishDiagnostics(uriStr, diagnostics);
     }
 
     void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params)
@@ -194,6 +196,7 @@ namespace angel_lsp
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr};
         auto diagnostics = m_semanticAnalyzer->Analyze(req);
+        PublishDiagnostics(uriStr, diagnostics);
     }
 
     void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params &&params)
@@ -201,6 +204,31 @@ namespace angel_lsp
         std::string uriStr = params.textDocument.uri.toString();
         m_openDocuments.erase(uriStr);
         m_symbolTable.ClearDocumentSymbols(uriStr);
+        PublishDiagnostics(uriStr, {});
+    }
+
+    void Server::PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics)
+    {
+        lsp::notifications::TextDocument_PublishDiagnostics::Params params;
+        params.uri = lsp::DocumentUri(lsp::Uri::parse(uriStr));
+
+        for (const auto &diag : diagnostics)
+        {
+            lsp::Diagnostic lspDiag;
+            lspDiag.range.start.line = diag.range.start.line;
+            lspDiag.range.start.character = diag.range.start.character;
+            lspDiag.range.end.line = diag.range.end.line;
+            lspDiag.range.end.character = diag.range.end.character;
+            lspDiag.message = diag.message;
+            lspDiag.severity = static_cast<lsp::DiagnosticSeverity>(diag.severity);
+            lspDiag.source = diag.source;
+            lspDiag.code = diag.code;
+
+            params.diagnostics.push_back(lspDiag);
+        }
+
+        std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
+        m_messageHandler->sendNotification<lsp::notifications::TextDocument_PublishDiagnostics>(std::move(params));
     }
 
     void Server::InitHandles()

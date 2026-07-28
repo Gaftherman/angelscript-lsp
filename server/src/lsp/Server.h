@@ -56,5 +56,6 @@ namespace angel_lsp
         void HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params &&params);
         void ReadWorkspaceFiles(std::stop_token stopToken);
         void ParserPredefined(const std::string &filePath);
+        void PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics);
     };
 }
