@@ -54,12 +54,19 @@ target_link_libraries(angel_lsp_core PUBLIC
     lsp
     unordered_dense::unordered_dense
 )
+if(MSVC)
+    # /utf-8 applied only to our sources — third-party deps may have non-UTF-8 encoded files
+    target_compile_options(angel_lsp_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
+endif()
 
 # ==============================================================================
 # 3. MAIN EXECUTABLE (LSP Server)
 # ==============================================================================
 add_executable(angel_lsp src/main.cpp)
 target_link_libraries(angel_lsp PRIVATE angel_lsp_core)
+if(MSVC)
+    target_compile_options(angel_lsp PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
+endif()
 
 if(WIN32)
     set(TARGET_OS "win32")
@@ -81,10 +88,25 @@ set(LSP_BUILD_RELEASE_DEST "${CMAKE_CURRENT_SOURCE_DIR}/../build/Release")
 
 add_custom_command(TARGET angel_lsp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_DEST}"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_DEST}/"
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_DEST}/angel_lsp.exe"
     COMMENT "Deploying compiled LSP server binary to client/bin"
 )
 
+
+# ==============================================================================
+# 4. UNIT TESTS (doctest)
+# ==============================================================================
+enable_testing()
+file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "tests/*.cpp")
+if(TEST_SOURCES)
+    add_executable(angel_lsp_tests ${TEST_SOURCES})
+    target_include_directories(angel_lsp_tests PRIVATE tests src)
+    target_link_libraries(angel_lsp_tests PRIVATE angel_lsp_core doctest::doctest)
+    if(MSVC)
+        target_compile_options(angel_lsp_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
+    endif()
+    add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests)
+endif()
 
 # ==============================================================================
 # 5. OPTIONAL DOXYGEN TARGET

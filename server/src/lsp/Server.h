@@ -3,6 +3,8 @@
 #include "config/ServerConfig.h"
 #include "utils/LspLogger.h"
 #include "parser/AngelScriptParser.h"
+#include "analysis/SymbolTable.h"
+#include "analysis/SymbolCollector.h"
 
 #include <lsp/messages.h>
 #include <lsp/connection.h>
@@ -29,6 +31,8 @@ namespace angel_lsp
         std::mutex m_messageHandlerMutex;
         std::unique_ptr<angel_lsp::utils::LspLogger> m_logger;
         std::unique_ptr<angel_lsp::parser::AngelScriptParser> m_parser;
+        angel_lsp::analysis::SymbolTable m_symbolTable;
+        std::unique_ptr<angel_lsp::analysis::SymbolCollector> m_symbolCollector;
 
     public:
         Server(const angel_lsp::config::ServerConfig &config);

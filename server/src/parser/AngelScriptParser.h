@@ -3,6 +3,7 @@
 #include "utils/LspLogger.h"
 
 #include <string>
+#include <string_view>
 #include <tree_sitter/api.h>
 
 namespace angel_lsp::parser
@@ -11,13 +12,13 @@ namespace angel_lsp::parser
     {
     private:
         TSParser *m_parser;
-        angel_lsp::utils::LspLogger *m_logger;
+        utils::LspLogger *m_logger;
 
     public:
-        AngelScriptParser(angel_lsp::utils::LspLogger *logger);
+        AngelScriptParser(utils::LspLogger *logger = nullptr);
         ~AngelScriptParser();
-
-        void Parse(const std::string &sourceCode);
-        void PrintNode(TSNode node, int depth, const std::string &sourceCode);
+        TSTree *Parse(const std::string &sourceCode);
+        static std::string_view GetNodeText(TSNode node, const std::string &sourceCode);
+        TSParser *GetRawParser() const { return m_parser; }
     };
 }

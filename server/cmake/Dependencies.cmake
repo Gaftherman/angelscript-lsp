@@ -27,3 +27,11 @@ FetchContent_Declare(
     GIT_TAG v4.4.0
 )
 FetchContent_MakeAvailable(unordered_dense)
+
+# 1.6 Unit Testing Framework (doctest)
+FetchContent_Declare(
+    doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG v2.4.11
+)
+FetchContent_MakeAvailable(doctest)

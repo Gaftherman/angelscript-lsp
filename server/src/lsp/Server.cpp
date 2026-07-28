@@ -24,6 +24,9 @@ namespace angel_lsp
         // Initialize the parser
         m_parser = std::make_unique<angel_lsp::parser::AngelScriptParser>(m_logger.get());
 
+        // Initialize the symbol collector
+        m_symbolCollector = std::make_unique<angel_lsp::analysis::SymbolCollector>(m_logger.get());
+
         // Initialize message handlers
         InitHandles();
     }
@@ -137,12 +140,19 @@ namespace angel_lsp
 
     void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params &&params)
     {
+        std::string uriStr = params.textDocument.uri.toString();
+        std::string text = params.text.has_value() ? params.text.value() : /*ReadFileContent(angel_lsp::utils::UriToPath(uriStr))*/ "";
+
+        m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
     }
 
     void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params)
     {
+        std::string uriStr = params.textDocument.uri.toString();
         std::string text = params.textDocument.text;
-        m_parser->Parse(text);
+
+        m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+        m_symbolTable.PrintSymbols(m_logger.get());
     }
 
     void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params)

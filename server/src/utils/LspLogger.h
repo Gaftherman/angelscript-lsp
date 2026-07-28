@@ -15,8 +15,9 @@ namespace angel_lsp::utils
 
     public:
         LspLogger(lsp::MessageHandler *messageHandler);
-        void LogInfo(std::string_view message);
         void LogWarning(std::string_view message);
+        void LogInfo(std::string_view message);
         void LogError(std::string_view message);
+        void LogDebug(std::string_view message);
     };
 }
