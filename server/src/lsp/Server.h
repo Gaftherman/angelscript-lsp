@@ -11,6 +11,7 @@
 #include <lsp/connection.h>
 #include <lsp/io/standardio.h>
 #include <lsp/messagehandler.h>
+#include <ankerl/unordered_dense.h>
 
 #include <string>
 #include <vector>
@@ -35,6 +36,7 @@ namespace angel_lsp
         angel_lsp::analysis::SymbolTable m_symbolTable;
         std::unique_ptr<angel_lsp::analysis::SymbolCollector> m_symbolCollector;
         std::unique_ptr<angel_lsp::analysis::SemanticAnalyzer> m_semanticAnalyzer;
+        ankerl::unordered_dense::map<std::string, std::string> m_openDocuments;
 
     public:
         Server(const angel_lsp::config::ServerConfig &config);
