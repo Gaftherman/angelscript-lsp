@@ -6,15 +6,6 @@
 
 namespace angel_lsp::analysis
 {
-    static std::string GetLocalizedMessage(const SemanticAnalysisRequest &req, const std::string &key, const std::string &fallback)
-    {
-        if (req.i18n)
-        {
-            return req.i18n->GetMessage(key);
-        }
-        return fallback;
-    }
-
     SemanticAnalyzer::SemanticAnalyzer(angel_lsp::utils::LspLogger *logger)
         : m_logger(logger)
     {
@@ -107,10 +98,7 @@ namespace angel_lsp::analysis
     {
         if (sym.classSignature.isTemplate && !angel_lsp::utils::IsPredefinedFile(sym.fileUri, req.predefinedFileExtension))
         {
-            std::string pattern = GetLocalizedMessage(req, "as-err-template-class-not-supported", "La definición de clases plantilla/genéricas ('{}') solo está permitida en archivos predefinidos.");
-            diagnostics.push_back(CreateDiagnostic(sym,
-                                                   fmt::format(fmt::runtime(pattern), sym.name),
-                                                   "as-err-template-class-not-supported"));
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-template-class-not-supported", sym.name));
         }
 
         for (const auto &baseName : sym.classSignature.bases)
@@ -122,10 +110,7 @@ namespace angel_lsp::analysis
                 {
                     if (baseSym.type == SymbolType::Class && baseSym.classSignature.modifiers.isFinal)
                     {
-                        std::string pattern = GetLocalizedMessage(req, "as-err-inherit-final", "No se puede heredar de la clase final '{}'.");
-                        diagnostics.push_back(CreateDiagnostic(sym,
-                                                               fmt::format(fmt::runtime(pattern), baseName),
-                                                               "as-err-inherit-final"));
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-inherit-final", baseName));
                     }
                 }
             }
@@ -136,18 +121,12 @@ namespace angel_lsp::analysis
     {
         if (sym.classSignature.modifiers.isFinal)
         {
-            std::string pattern = GetLocalizedMessage(req, "as-err-mixin-final", "Un mixin ('{}') no puede ser declarado como 'final'.");
-            diagnostics.push_back(CreateDiagnostic(sym,
-                                                   fmt::format(fmt::runtime(pattern), sym.name),
-                                                   "as-err-mixin-final"));
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-final", sym.name));
         }
 
         if (sym.classSignature.modifiers.isAbstract)
         {
-            std::string pattern = GetLocalizedMessage(req, "as-err-mixin-abstract", "Un mixin ('{}') no puede ser declarado como 'abstract'.");
-            diagnostics.push_back(CreateDiagnostic(sym,
-                                                   fmt::format(fmt::runtime(pattern), sym.name),
-                                                   "as-err-mixin-abstract"));
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-abstract", sym.name));
         }
     }
 
@@ -159,10 +138,7 @@ namespace angel_lsp::analysis
     {
         if (!sym.functionSignature.hasBody && !angel_lsp::utils::IsPredefinedFile(sym.fileUri, req.predefinedFileExtension))
         {
-            std::string pattern = GetLocalizedMessage(req, "as-err-missing-body", "La función '{}' debe tener un cuerpo '{{}}'.");
-            diagnostics.push_back(CreateDiagnostic(sym,
-                                                   fmt::format(fmt::runtime(pattern), sym.name),
-                                                   "as-err-missing-body"));
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-missing-body", sym.name));
         }
     }
 
@@ -172,10 +148,7 @@ namespace angel_lsp::analysis
         {
             if (param.modifier == ParameterModifier::Out && param.defaultValue.size() > 0)
             {
-                std::string pattern = GetLocalizedMessage(req, "as-err-out-param-default", "El parámetro '&out' '{}' no puede tener un valor por defecto.");
-                diagnostics.push_back(CreateDiagnostic(sym,
-                                                       fmt::format(fmt::runtime(pattern), param.name),
-                                                       "as-err-out-param-default"));
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-out-param-default", param.name));
             }
         }
     }
@@ -217,24 +190,40 @@ namespace angel_lsp::analysis
             return;
         }
 
-        std::string pattern = GetLocalizedMessage(req, "as-err-duplicate-symbol", "Redeclaración de símbolo '{}' en el mismo ámbito.");
-
         for (size_t i = 1; i < symbols.size(); ++i)
         {
-            diagnostics.push_back(CreateDiagnostic(symbols[i],
-                                                   fmt::format(fmt::runtime(pattern), qualifiedName),
-                                                   "as-err-duplicate-symbol"));
+            diagnostics.push_back(CreateDiagnostic(symbols[i], req, "as-err-duplicate-symbol", qualifiedName));
         }
     }
 
-    Diagnostic SemanticAnalyzer::CreateDiagnostic(const Symbol &sym, const std::string &message, const std::string &code, DiagnosticSeverity severity) const
+    Diagnostic SemanticAnalyzer::CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code) const
     {
+        std::string message = req.i18n ? req.i18n->GetMessage(code) : "";
+
         Diagnostic diag;
         diag.range.start.line = sym.startLine;
         diag.range.start.character = sym.startCharacter;
         diag.range.end.line = sym.endLine;
         diag.range.end.character = sym.endCharacter;
-        diag.severity = severity;
+        diag.severity = DiagnosticSeverity::Error;
+        diag.code = code;
+        diag.source = "AngelScript";
+        diag.message = message;
+        diag.fileUri = sym.fileUri;
+        return diag;
+    }
+
+    Diagnostic SemanticAnalyzer::CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code, const std::string &arg1) const
+    {
+        std::string pattern = req.i18n ? req.i18n->GetMessage(code) : "";
+        std::string message = fmt::format(fmt::runtime(pattern), arg1);
+
+        Diagnostic diag;
+        diag.range.start.line = sym.startLine;
+        diag.range.start.character = sym.startCharacter;
+        diag.range.end.line = sym.endLine;
+        diag.range.end.character = sym.endCharacter;
+        diag.severity = DiagnosticSeverity::Error;
         diag.code = code;
         diag.source = "AngelScript";
         diag.message = message;

@@ -171,7 +171,7 @@ namespace angel_lsp
             return;
         }
 
-        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable, m_i18n.get());
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension), m_i18n.get()};
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
@@ -194,7 +194,7 @@ namespace angel_lsp
                 if (!m_predefinedUris.contains(uriStr))
                 {
                     m_symbolTable.ClearDocumentSymbols(uriStr);
-                    m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+                    m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable, m_i18n.get());
                     m_predefinedUris.insert(uriStr);
                 }
             }
@@ -203,7 +203,7 @@ namespace angel_lsp
         }
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
-        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable, m_i18n.get());
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension), m_i18n.get()};
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
@@ -242,12 +242,12 @@ namespace angel_lsp
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
-            m_symbolCollector->CollectSymbols(uriStr, buffer, *m_parser, m_symbolTable);
+            m_symbolCollector->CollectSymbols(uriStr, buffer, *m_parser, m_symbolTable, m_i18n.get());
             PublishDiagnostics(uriStr, {});
             return;
         }
 
-        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, buffer, *m_parser, m_symbolTable);
+        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, buffer, *m_parser, m_symbolTable, m_i18n.get());
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension), m_i18n.get()};
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);

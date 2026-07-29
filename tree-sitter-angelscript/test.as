@@ -1,9 +1,12 @@
-class SomeClass
+final sclass SomeClass
 {
-    void Function()
+    void Funtion()
     {
 
     }
 
-    void AnotherFunction();
+    void AnotherFunction()
+    {
+
+    }
 }

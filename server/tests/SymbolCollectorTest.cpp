@@ -310,3 +310,177 @@ namespace MyNamespace
     CHECK(overloads[0].containerName == "MyNamespace");
     CHECK(overloads[1].containerName == "MyNamespace");
 }
+
+TEST_CASE("SymbolCollector - Syntax Error i18n and Token Formatting Test")
+{
+    std::string sourceCode = "class SomeClass {";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable symbolTable;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    SUBCASE("English Syntax Error Token Formatting")
+    {
+        angel_lsp::i18n::I18n i18nEn("en");
+        auto diagnostics = collector.CollectSymbols(fileUri, sourceCode, parser, symbolTable, &i18nEn);
+        REQUIRE(diagnostics.size() >= 1);
+        CHECK(diagnostics[0].code == "as-syntax-error");
+        CHECK(diagnostics[0].message == "Syntax error: missing '}'");
+    }
+
+    SUBCASE("Spanish Syntax Error Token Formatting")
+    {
+        angel_lsp::i18n::I18n i18nEs("es");
+        auto diagnostics = collector.CollectSymbols(fileUri, sourceCode, parser, symbolTable, &i18nEs);
+        REQUIRE(diagnostics.size() >= 1);
+        CHECK(diagnostics[0].code == "as-syntax-error");
+        CHECK(diagnostics[0].message == "Error de sintaxis: falta '}'");
+    }
+}
+
+TEST_CASE("SymbolCollector - TypeInfo extraction from TSNode")
+{
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    auto collect = [&](const std::string &code) -> Symbol
+    {
+        SymbolTable table;
+        collector.CollectSymbols("file:///test.as", code, parser, table);
+        auto syms = table.FindSymbols("x");
+        REQUIRE(syms.size() == 1);
+        return syms[0];
+    };
+
+    SUBCASE("int x")
+    {
+        auto sym = collect("int x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Int32);
+        CHECK(sym.variableSignature.isArray == false);
+        CHECK(sym.variableSignature.arrayDepth == 0);
+        CHECK(sym.variableSignature.modifiers.isHandle == false);
+        CHECK(sym.variableSignature.baseTypeName == "int");
+    }
+
+    SUBCASE("int[] x")
+    {
+        auto sym = collect("int[] x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
+        CHECK(sym.variableSignature.isArray == true);
+        CHECK(sym.variableSignature.arrayDepth == 1);
+        CHECK(sym.variableSignature.modifiers.isHandle == false);
+        CHECK(sym.variableSignature.baseTypeName == "int");
+    }
+
+    SUBCASE("int[][] x")
+    {
+        auto sym = collect("int[][] x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
+        CHECK(sym.variableSignature.isArray == true);
+        CHECK(sym.variableSignature.arrayDepth == 2);
+        CHECK(sym.variableSignature.modifiers.isHandle == false);
+        CHECK(sym.variableSignature.baseTypeName == "int");
+    }
+
+    SUBCASE("int[]@ x")
+    {
+        auto sym = collect("int[]@ x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
+        CHECK(sym.variableSignature.isArray == true);
+        CHECK(sym.variableSignature.arrayDepth == 1);
+        CHECK(sym.variableSignature.modifiers.isHandle == true);
+        CHECK(sym.variableSignature.baseTypeName == "int");
+    }
+
+    SUBCASE("int[]@[]@ x")
+    {
+        auto sym = collect("int[]@[]@ x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
+        CHECK(sym.variableSignature.isArray == true);
+        CHECK(sym.variableSignature.arrayDepth == 2);
+        CHECK(sym.variableSignature.modifiers.isHandle == true);
+        CHECK(sym.variableSignature.baseTypeName == "int");
+    }
+
+    SUBCASE("array<int> x")
+    {
+        auto sym = collect("array<int> x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
+        CHECK(sym.variableSignature.isArray == true);
+        CHECK(sym.variableSignature.arrayDepth == 1);
+        CHECK(sym.variableSignature.modifiers.isHandle == false);
+        CHECK(sym.variableSignature.baseTypeName == "int");
+    }
+
+    SUBCASE("array<int>@ x")
+    {
+        auto sym = collect("array<int>@ x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
+        CHECK(sym.variableSignature.isArray == true);
+        CHECK(sym.variableSignature.arrayDepth == 1);
+        CHECK(sym.variableSignature.modifiers.isHandle == true);
+        CHECK(sym.variableSignature.baseTypeName == "int");
+    }
+
+    SUBCASE("array<array<int>> x")
+    {
+        auto sym = collect("array<array<int>> x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
+        CHECK(sym.variableSignature.isArray == true);
+        CHECK(sym.variableSignature.arrayDepth == 2);
+        CHECK(sym.variableSignature.modifiers.isHandle == false);
+        CHECK(sym.variableSignature.baseTypeName == "int");
+    }
+
+    SUBCASE("array<array<int>@>@ x")
+    {
+        auto sym = collect("array<array<int>@>@ x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
+        CHECK(sym.variableSignature.isArray == true);
+        CHECK(sym.variableSignature.arrayDepth == 2);
+        CHECK(sym.variableSignature.modifiers.isHandle == true);
+        CHECK(sym.variableSignature.baseTypeName == "int");
+    }
+
+    SUBCASE("array<Player@> x")
+    {
+        auto sym = collect("array<Player@> x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
+        CHECK(sym.variableSignature.isArray == true);
+        CHECK(sym.variableSignature.arrayDepth == 1);
+        CHECK(sym.variableSignature.modifiers.isHandle == true);
+        CHECK(sym.variableSignature.baseTypeName == "Player");
+    }
+
+    SUBCASE("Player@ x")
+    {
+        auto sym = collect("Player@ x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Handle);
+        CHECK(sym.variableSignature.isArray == false);
+        CHECK(sym.variableSignature.arrayDepth == 0);
+        CHECK(sym.variableSignature.modifiers.isHandle == true);
+        CHECK(sym.variableSignature.baseTypeName == "Player");
+    }
+
+    SUBCASE("ObjectHandle@[]@[]@ x")
+    {
+        auto sym = collect("ObjectHandle@[]@[]@ x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
+        CHECK(sym.variableSignature.isArray == true);
+        CHECK(sym.variableSignature.arrayDepth == 2);
+        CHECK(sym.variableSignature.modifiers.isHandle == true);
+        CHECK(sym.variableSignature.baseTypeName == "ObjectHandle");
+    }
+
+    SUBCASE("Player x")
+    {
+        auto sym = collect("Player x;");
+        CHECK(sym.variableSignature.typeKind == TypeKind::Unknown);
+        CHECK(sym.variableSignature.isArray == false);
+        CHECK(sym.variableSignature.arrayDepth == 0);
+        CHECK(sym.variableSignature.modifiers.isHandle == false);
+        CHECK(sym.variableSignature.baseTypeName == "Player");
+    }
+}
+

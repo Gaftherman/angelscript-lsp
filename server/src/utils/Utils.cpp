@@ -1,5 +1,7 @@
 #include "utils/Utils.h"
 
+#include <unordered_set>
+
 namespace angel_lsp::utils
 {
     std::string UriToPath(const std::string &uri)

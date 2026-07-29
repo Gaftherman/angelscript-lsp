@@ -975,7 +975,7 @@
               "name": "modifier",
               "content": {
                 "type": "SYMBOL",
-                "name": "declaration_modifier"
+                "name": "func_prefix_modifier"
               }
             }
           },
@@ -1112,6 +1112,19 @@
           }
         ]
       }
+    },
+    "func_prefix_modifier": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "shared"
+        },
+        {
+          "type": "STRING",
+          "value": "external"
+        }
+      ]
     },
     "declaration_modifier": {
       "type": "CHOICE",

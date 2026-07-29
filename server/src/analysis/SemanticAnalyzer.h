@@ -7,6 +7,8 @@
 
 #include <string>
 #include <vector>
+#include <utility>
+#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp::analysis
 {
@@ -42,6 +44,7 @@ namespace angel_lsp::analysis
         void ValidateNamespace(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const;
         void ValidateDuplicateSymbols(const std::string &qualifiedName, const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const;
 
-        Diagnostic CreateDiagnostic(const Symbol &sym, const std::string &message, const std::string &code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+        Diagnostic CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code) const;
+        Diagnostic CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code, const std::string &arg1) const;
     };
 }

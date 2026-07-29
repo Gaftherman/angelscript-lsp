@@ -14,4 +14,5 @@ namespace angel_lsp::utils
                                 uint32_t endLine, uint32_t endCharacter,
                                 const std::string &newText);
     bool IsPredefinedFile(const std::string_view &fileUri, const std::string_view extension);
+    bool IsPrimitiveType(const std::string &typeName);
 }
