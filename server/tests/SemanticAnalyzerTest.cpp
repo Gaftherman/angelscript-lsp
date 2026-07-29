@@ -104,7 +104,7 @@ TEST_CASE("SemanticAnalyzer - Template Class Validation Test")
         CHECK(syms[0].classSignature.isTemplate == true);
 
         SemanticAnalyzer analyzer;
-        SemanticAnalysisRequest req{table, fileUri};
+        SemanticAnalysisRequest req{table, fileUri, "as.predefined"};
         auto diagnostics = analyzer.Analyze(req);
 
         REQUIRE(diagnostics.size() == 1);
@@ -122,9 +122,42 @@ TEST_CASE("SemanticAnalyzer - Template Class Validation Test")
         CHECK(syms[0].classSignature.isTemplate == true);
 
         SemanticAnalyzer analyzer;
-        SemanticAnalysisRequest req{table, fileUri};
+        SemanticAnalysisRequest req{table, fileUri, "as.predefined"};
         auto diagnostics = analyzer.Analyze(req);
 
         CHECK(diagnostics.empty());
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - I18n Locale Messages Test")
+{
+    std::string sourceCode = "void test();\n";
+    std::string fileUri = "file:///test.as";
+
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    SymbolTable table;
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+
+    SUBCASE("English Locale")
+    {
+        angel_lsp::i18n::I18n i18nEn("en");
+        SemanticAnalysisRequest req{table, fileUri, "as.predefined", &i18nEn};
+        auto diagnostics = analyzer.Analyze(req);
+
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].message == "Function 'test' must have a body '{}'.");
+    }
+
+    SUBCASE("Spanish Locale")
+    {
+        angel_lsp::i18n::I18n i18nEs("es");
+        SemanticAnalysisRequest req{table, fileUri, "as.predefined", &i18nEs};
+        auto diagnostics = analyzer.Analyze(req);
+
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].message == "La función 'test' debe tener un cuerpo '{}'.");
     }
 }

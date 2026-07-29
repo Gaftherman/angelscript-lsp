@@ -79,11 +79,30 @@ namespace angel_lsp::analysis
         if (!ts_node_has_error(node))
             return;
 
-        if (ts_node_is_named(node) && strcmp(ts_node_type(node), "ERROR") == 0)
+        if (ts_node_is_missing(node) || (ts_node_is_named(node) && strcmp(ts_node_type(node), "ERROR") == 0))
         {
             TSPoint startPt = ts_node_start_point(node);
             TSPoint endPt = ts_node_end_point(node);
-            std::string errText = GetNodeText(node, sourceCode);
+            std::string rawErrText = GetNodeText(node, sourceCode);
+
+            std::string cleanErrText;
+            for (char c : rawErrText)
+            {
+                if (cleanErrText.size() >= 60)
+                {
+                    cleanErrText += "...";
+                    break;
+                }
+                if (c == '\r' || c == '\n' || c == '\t')
+                {
+                    if (cleanErrText.empty() || cleanErrText.back() != ' ')
+                        cleanErrText += ' ';
+                }
+                else if (static_cast<unsigned char>(c) >= 32 && static_cast<unsigned char>(c) != 127)
+                {
+                    cleanErrText += c;
+                }
+            }
 
             Diagnostic diag;
             diag.range.start.line = startPt.row;
@@ -93,7 +112,7 @@ namespace angel_lsp::analysis
             diag.severity = DiagnosticSeverity::Error;
             diag.code = "as-syntax-error";
             diag.source = "AngelScript";
-            diag.message = errText.empty() ? "Syntax error" : fmt::format("Syntax error: \"{}\"", errText);
+            diag.message = cleanErrText.empty() ? "Syntax error" : fmt::format("Syntax error: \"{}\"", cleanErrText);
             diag.fileUri = fileUri;
 
             diagnostics.push_back(diag);
@@ -101,7 +120,7 @@ namespace angel_lsp::analysis
             if (m_logger)
             {
                 m_logger->LogWarning(fmt::format("[Tree-sitter Error] Error de sintaxis en [L{}:C{}]: \"{}\" (File: {})",
-                                                 startPt.row + 1, startPt.column + 1, errText, fileUri));
+                                                 startPt.row + 1, startPt.column + 1, cleanErrText, fileUri));
             }
             return;
         }
@@ -283,16 +302,16 @@ namespace angel_lsp::analysis
     {
         NodeContext ctx = GetNodeContext(funcNode, sourceCode);
 
-        TSNode nameNode   = ts_node_child_by_field_name(funcNode, "name",        4);
-        TSNode typeNode   = ts_node_child_by_field_name(funcNode, "return_type", 11);
-        TSNode paramsNode = ts_node_child_by_field_name(funcNode, "parameters",  10);
-        TSNode bodyNode   = ts_node_child_by_field_name(funcNode, "body",        4);
+        TSNode nameNode = ts_node_child_by_field_name(funcNode, "name", 4);
+        TSNode typeNode = ts_node_child_by_field_name(funcNode, "return_type", 11);
+        TSNode paramsNode = ts_node_child_by_field_name(funcNode, "parameters", 10);
+        TSNode bodyNode = ts_node_child_by_field_name(funcNode, "body", 4);
 
         Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, sourceCode, fileUri, ctx.containerPath);
-        sym.functionSignature.returnType  = GetNodeText(typeNode, sourceCode);
-        sym.functionSignature.modifiers   = ExtractModifiers(funcNode, sourceCode);
-        sym.functionSignature.parameters  = ExtractParameters(paramsNode, sourceCode);
-        sym.functionSignature.hasBody     = !ts_node_is_null(bodyNode);
+        sym.functionSignature.returnType = GetNodeText(typeNode, sourceCode);
+        sym.functionSignature.modifiers = ExtractModifiers(funcNode, sourceCode);
+        sym.functionSignature.parameters = ExtractParameters(paramsNode, sourceCode);
+        sym.functionSignature.hasBody = !ts_node_is_null(bodyNode);
 
         symbolTable.AddSymbol(sym);
     }

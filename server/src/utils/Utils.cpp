@@ -52,6 +52,8 @@ namespace angel_lsp::utils
 
     bool IsPredefinedFile(const std::string_view &fileUri, const std::string_view extension)
     {
+        if (extension.empty())
+            return false;
         return fileUri.ends_with(extension) || fileUri.ends_with(fmt::format("/{}", extension));
     }
 }

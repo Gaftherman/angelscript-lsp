@@ -6,6 +6,15 @@
 
 namespace angel_lsp::analysis
 {
+    static std::string GetLocalizedMessage(const SemanticAnalysisRequest &req, const std::string &key, const std::string &fallback)
+    {
+        if (req.i18n)
+        {
+            return req.i18n->GetMessage(key);
+        }
+        return fallback;
+    }
+
     SemanticAnalyzer::SemanticAnalyzer(angel_lsp::utils::LspLogger *logger)
         : m_logger(logger)
     {
@@ -17,25 +26,22 @@ namespace angel_lsp::analysis
 
         request.symbolTable.ForEachSymbol([&](const std::string &qualifiedName, const std::vector<Symbol> &symbols)
                                           {
-            // 1. Check for duplicate symbol redeclarations within the same scope
-            ValidateDuplicateSymbols(qualifiedName, symbols, diagnostics);
+            ValidateDuplicateSymbols(qualifiedName, symbols, request, diagnostics);
 
             for (const auto &sym : symbols)
             {
-                // URI filter check (if fileUri is non-empty, process only symbols from that document)
                 if (!request.fileUri.empty() && sym.fileUri != request.fileUri)
                 {
                     continue;
                 }
 
-                // 2. Dispatch to specific category validator based on SymbolType
                 switch (sym.type)
                 {
                 case SymbolType::Class:
                 {
                     if (sym.classSignature.modifiers.isMixin)
                     {
-                        ValidateMixinClass(sym, request.symbolTable, diagnostics);
+                        ValidateMixinClass(sym, request, diagnostics);
                     }
                     else
                     {
@@ -45,43 +51,43 @@ namespace angel_lsp::analysis
                 }
                 case SymbolType::Interface:
                 {
-                    ValidateInterface(sym, request.symbolTable, diagnostics);
+                    ValidateInterface(sym, request, diagnostics);
                     break;
                 }
                 case SymbolType::Function:
                 {
                     ValidateFunction(sym, request, diagnostics);
-                    ValidateFunctionParameters(sym, sym.functionSignature, request.symbolTable, diagnostics);
+                    ValidateFunctionParameters(sym, sym.functionSignature, request, diagnostics);
                     break;
                 }
                 case SymbolType::Variable:
                 {
-                    ValidateVariable(sym, request.symbolTable, diagnostics);
+                    ValidateVariable(sym, request, diagnostics);
                     break;
                 }
                 case SymbolType::Property:
                 {
-                    ValidateVirtualProperty(sym, request.symbolTable, diagnostics);
+                    ValidateVirtualProperty(sym, request, diagnostics);
                     break;
                 }
                 case SymbolType::Enum:
                 {
-                    ValidateEnum(sym, request.symbolTable, diagnostics);
+                    ValidateEnum(sym, request, diagnostics);
                     break;
                 }
                 case SymbolType::Typedef:
                 {
-                    ValidateTypedef(sym, request.symbolTable, diagnostics);
+                    ValidateTypedef(sym, request, diagnostics);
                     break;
                 }
                 case SymbolType::Funcdef:
                 {
-                    ValidateFuncdef(sym, request.symbolTable, diagnostics);
+                    ValidateFuncdef(sym, request, diagnostics);
                     break;
                 }
                 case SymbolType::Namespace:
                 {
-                    ValidateNamespace(sym, request.symbolTable, diagnostics);
+                    ValidateNamespace(sym, request, diagnostics);
                     break;
                 }
                 default:
@@ -97,33 +103,28 @@ namespace angel_lsp::analysis
         return diagnostics;
     }
 
-    // ─── 1. Class Validation ───────────────────────────────────────────────────
-
     void SemanticAnalyzer::ValidateClass(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         if (sym.classSignature.isTemplate && !angel_lsp::utils::IsPredefinedFile(sym.fileUri, req.predefinedFileExtension))
         {
+            std::string pattern = GetLocalizedMessage(req, "as-err-template-class-not-supported", "La definición de clases plantilla/genéricas ('{}') solo está permitida en archivos predefinidos.");
             diagnostics.push_back(CreateDiagnostic(sym,
-                                                   fmt::format("La definición de clases plantilla/genéricas ('{}') solo está permitida en archivos predefinidos.", sym.name),
+                                                   fmt::format(fmt::runtime(pattern), sym.name),
                                                    "as-err-template-class-not-supported"));
         }
 
         for (const auto &baseName : sym.classSignature.bases)
         {
             const auto *baseSymbols = req.symbolTable.FindSymbolsPtr(baseName);
-            if (!baseSymbols || baseSymbols->empty())
-            {
-                // Base class or interface not found in table
-                // e.g.: diagnostics.push_back(CreateDiagnostic(sym, fmt::format("La clase base '{}' no fue encontrada.", baseName), "as-err-unresolved-base"));
-            }
-            else
+            if (baseSymbols && !baseSymbols->empty())
             {
                 for (const auto &baseSym : *baseSymbols)
                 {
                     if (baseSym.type == SymbolType::Class && baseSym.classSignature.modifiers.isFinal)
                     {
+                        std::string pattern = GetLocalizedMessage(req, "as-err-inherit-final", "No se puede heredar de la clase final '{}'.");
                         diagnostics.push_back(CreateDiagnostic(sym,
-                                                               fmt::format("No se puede heredar de la clase final '{}'.", baseName),
+                                                               fmt::format(fmt::runtime(pattern), baseName),
                                                                "as-err-inherit-final"));
                     }
                 }
@@ -131,131 +132,100 @@ namespace angel_lsp::analysis
         }
     }
 
-    // ─── 2. Mixin Class Validation ─────────────────────────────────────────────
-
-    void SemanticAnalyzer::ValidateMixinClass(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateMixinClass(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        // Rule: A mixin class cannot be final or abstract
         if (sym.classSignature.modifiers.isFinal)
         {
+            std::string pattern = GetLocalizedMessage(req, "as-err-mixin-final", "Un mixin ('{}') no puede ser declarado como 'final'.");
             diagnostics.push_back(CreateDiagnostic(sym,
-                                                   fmt::format("Un mixin ('{}') no puede ser declarado como 'final'.", sym.name),
+                                                   fmt::format(fmt::runtime(pattern), sym.name),
                                                    "as-err-mixin-final"));
         }
 
         if (sym.classSignature.modifiers.isAbstract)
         {
+            std::string pattern = GetLocalizedMessage(req, "as-err-mixin-abstract", "Un mixin ('{}') no puede ser declarado como 'abstract'.");
             diagnostics.push_back(CreateDiagnostic(sym,
-                                                   fmt::format("Un mixin ('{}') no puede ser declarado como 'abstract'.", sym.name),
+                                                   fmt::format(fmt::runtime(pattern), sym.name),
                                                    "as-err-mixin-abstract"));
         }
     }
 
-    // ─── 3. Interface Validation ───────────────────────────────────────────────
-
-    void SemanticAnalyzer::ValidateInterface(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateInterface(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        // TODO: Add custom interface validation rules (e.g. inherited interface resolution)
     }
-
-    // ─── 4. Function Validation ────────────────────────────────────────────────
 
     void SemanticAnalyzer::ValidateFunction(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         if (!sym.functionSignature.hasBody && !angel_lsp::utils::IsPredefinedFile(sym.fileUri, req.predefinedFileExtension))
         {
+            std::string pattern = GetLocalizedMessage(req, "as-err-missing-body", "La función '{}' debe tener un cuerpo '{{}}'.");
             diagnostics.push_back(CreateDiagnostic(sym,
-                                                   fmt::format("La función '{}' debe tener un cuerpo '{{}}'.", sym.name),
+                                                   fmt::format(fmt::runtime(pattern), sym.name),
                                                    "as-err-missing-body"));
         }
     }
 
-    // ─── 5. Function Parameter Validation ──────────────────────────────────────
-
-    void SemanticAnalyzer::ValidateFunctionParameters(const Symbol &sym, const FunctionSignature &sig, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateFunctionParameters(const Symbol &sym, const FunctionSignature &sig, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         for (const auto &param : sig.parameters)
         {
-            // Validate reference direction modifiers (&in, &out, &inout) and handle types (@)
             if (param.modifier == ParameterModifier::Out && param.defaultValue.size() > 0)
             {
+                std::string pattern = GetLocalizedMessage(req, "as-err-out-param-default", "El parámetro '&out' '{}' no puede tener un valor por defecto.");
                 diagnostics.push_back(CreateDiagnostic(sym,
-                                                       fmt::format("El parámetro '&out' '{}' no puede tener un valor por defecto.", param.name),
+                                                       fmt::format(fmt::runtime(pattern), param.name),
                                                        "as-err-out-param-default"));
             }
         }
     }
 
-    // ─── 6. Variable Validation ────────────────────────────────────────────────
-
-    void SemanticAnalyzer::ValidateVariable(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateVariable(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        // TODO: Add custom variable validation rules
     }
 
-    // ─── 7. Virtual Property Validation ────────────────────────────────────────
-
-    void SemanticAnalyzer::ValidateVirtualProperty(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateVirtualProperty(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        // TODO: Add custom virtual property validation rules (e.g. getter/setter parameter matching)
     }
 
-    // ─── 8. Enum Validation ────────────────────────────────────────────────────
-
-    void SemanticAnalyzer::ValidateEnum(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateEnum(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        // Pass 2.1: Only top-level name validation (handled by ValidateDuplicateSymbols)
     }
 
-    // ─── 9. Typedef Validation ─────────────────────────────────────────────────
-
-    void SemanticAnalyzer::ValidateTypedef(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateTypedef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        // TODO: Add custom typedef alias validation rules
     }
 
-    // ─── 10. Funcdef Validation ────────────────────────────────────────────────
-
-    void SemanticAnalyzer::ValidateFuncdef(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateFuncdef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        // TODO: Add custom funcdef delegate validation rules
     }
 
-    // ─── 11. Namespace Validation ──────────────────────────────────────────────
-
-    void SemanticAnalyzer::ValidateNamespace(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateNamespace(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        // Namespaces can be declared multiple times (re-opened) across files; no duplicate error
     }
 
-    // ─── 12. Duplicate Symbol Validation ───────────────────────────────────────
-
-    void SemanticAnalyzer::ValidateDuplicateSymbols(const std::string &qualifiedName, const std::vector<Symbol> &symbols, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateDuplicateSymbols(const std::string &qualifiedName, const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         if (symbols.size() <= 1)
             return;
 
-        // Namespaces are allowed to be re-opened across multiple declarations
         if (symbols.front().type == SymbolType::Namespace)
             return;
 
-        // Functions are allowed to be overloaded if parameter signatures differ
         if (symbols.front().type == SymbolType::Function)
         {
-            // TODO: Implement overload resolution check if needed
             return;
         }
 
-        // For non-function symbols (Class, Enum, Variable, Typedef), multiple declarations in the same scope are errors
+        std::string pattern = GetLocalizedMessage(req, "as-err-duplicate-symbol", "Redeclaración de símbolo '{}' en el mismo ámbito.");
+
         for (size_t i = 1; i < symbols.size(); ++i)
         {
             diagnostics.push_back(CreateDiagnostic(symbols[i],
-                                                   fmt::format("Redeclaración de símbolo '{}' en el mismo ámbito.", qualifiedName),
+                                                   fmt::format(fmt::runtime(pattern), qualifiedName),
                                                    "as-err-duplicate-symbol"));
         }
     }
-
-    // ─── Diagnostic Builder Helper ─────────────────────────────────────────────
 
     Diagnostic SemanticAnalyzer::CreateDiagnostic(const Symbol &sym, const std::string &message, const std::string &code, DiagnosticSeverity severity) const
     {

@@ -1,1 +1,9 @@
-void main() { Engine::Math::Vector3 pos; }
+class SomeClass
+{
+    void Function()
+    {
+
+    }
+
+    void AnotherFunction();
+}

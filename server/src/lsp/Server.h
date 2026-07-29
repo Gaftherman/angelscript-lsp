@@ -1,5 +1,6 @@
 #pragma once
 
+#include "i18n/i18n.h"
 #include "config/ServerConfig.h"
 #include "utils/LspLogger.h"
 #include "parser/AngelScriptParser.h"
@@ -28,7 +29,7 @@ namespace angel_lsp
         std::unique_ptr<lsp::MessageHandler> m_messageHandler;
         bool m_running;
         std::vector<std::string> m_workspacesRoot;
-        std::string m_locale;
+        std::unique_ptr<angel_lsp::i18n::I18n> m_i18n;
         std::jthread m_workspaceThread;
         std::mutex m_messageHandlerMutex;
         std::unique_ptr<angel_lsp::utils::LspLogger> m_logger;

@@ -11,16 +11,26 @@ namespace angel_lsp::analysis
         {
             switch (type)
             {
-            case SymbolType::Variable:  return "Variable";
-            case SymbolType::Function:  return "Function";
-            case SymbolType::Class:     return "Class";
-            case SymbolType::Interface: return "Interface";
-            case SymbolType::Enum:      return "Enum";
-            case SymbolType::Typedef:   return "Typedef";
-            case SymbolType::Namespace: return "Namespace";
-            case SymbolType::Funcdef:   return "Funcdef";
-            case SymbolType::Property:  return "Property";
-            default:                    return "Unknown";
+            case SymbolType::Variable:
+                return "Variable";
+            case SymbolType::Function:
+                return "Function";
+            case SymbolType::Class:
+                return "Class";
+            case SymbolType::Interface:
+                return "Interface";
+            case SymbolType::Enum:
+                return "Enum";
+            case SymbolType::Typedef:
+                return "Typedef";
+            case SymbolType::Namespace:
+                return "Namespace";
+            case SymbolType::Funcdef:
+                return "Funcdef";
+            case SymbolType::Property:
+                return "Property";
+            default:
+                return "Unknown";
             }
         }
 
@@ -28,10 +38,14 @@ namespace angel_lsp::analysis
         {
             switch (access)
             {
-            case AccessModifier::Public:    return "public";
-            case AccessModifier::Private:   return "private";
-            case AccessModifier::Protected: return "protected";
-            default:                        return "public";
+            case AccessModifier::Public:
+                return "public";
+            case AccessModifier::Private:
+                return "private";
+            case AccessModifier::Protected:
+                return "protected";
+            default:
+                return "public";
             }
         }
 
@@ -39,11 +53,16 @@ namespace angel_lsp::analysis
         {
             switch (mod)
             {
-            case ParameterModifier::In:    return "&in";
-            case ParameterModifier::Out:   return "&out";
-            case ParameterModifier::InOut: return "&inout";
-            case ParameterModifier::None:  return "";
-            default:                       return "";
+            case ParameterModifier::In:
+                return "&in";
+            case ParameterModifier::Out:
+                return "&out";
+            case ParameterModifier::InOut:
+                return "&inout";
+            case ParameterModifier::None:
+                return "";
+            default:
+                return "";
             }
         }
 
@@ -52,7 +71,8 @@ namespace angel_lsp::analysis
             std::string result;
             for (size_t i = 0; i < items.size(); ++i)
             {
-                if (i > 0) result += sep;
+                if (i > 0)
+                    result += sep;
                 result += items[i];
             }
             return result;
@@ -60,11 +80,11 @@ namespace angel_lsp::analysis
 
         std::string JoinFlags(const std::vector<std::string> &flags)
         {
-            if (flags.empty()) return "[]";
+            if (flags.empty())
+                return "[]";
             return "[" + JoinStrings(flags) + "]";
         }
 
-        // Builds the parameter list string and the per-parameter detail lines in a single pass.
         void BuildParamStrings(const std::vector<ParameterInformation> &params,
                                std::string &outParamsStr,
                                std::vector<std::string> &outParamLines)
@@ -73,9 +93,10 @@ namespace angel_lsp::analysis
             for (size_t i = 0; i < params.size(); ++i)
             {
                 const auto &param = params[i];
-                if (i > 0) outParamsStr += ", ";
+                if (i > 0)
+                    outParamsStr += ", ";
 
-                std::string modStr      = ParameterModifierToString(param.modifier);
+                std::string modStr = ParameterModifierToString(param.modifier);
                 std::string paramTypeStr = modStr.empty() ? param.typeName : param.typeName + " " + modStr;
 
                 outParamsStr += paramTypeStr;
@@ -84,17 +105,21 @@ namespace angel_lsp::analysis
                 if (!param.defaultValue.empty())
                     outParamsStr += " = " + param.defaultValue;
 
-                // Build the detail line for this parameter
                 std::vector<std::string> pFlags;
-                if (param.isConst)                               pFlags.push_back("const: true");
-                if (param.isHandle)                              pFlags.push_back("handle: true");
-                if (param.modifier == ParameterModifier::In)    pFlags.push_back("in: true");
-                else if (param.modifier == ParameterModifier::Out)   pFlags.push_back("out: true");
-                else if (param.modifier == ParameterModifier::InOut) pFlags.push_back("inout: true");
+                if (param.isConst)
+                    pFlags.push_back("const: true");
+                if (param.isHandle)
+                    pFlags.push_back("handle: true");
+                if (param.modifier == ParameterModifier::In)
+                    pFlags.push_back("in: true");
+                else if (param.modifier == ParameterModifier::Out)
+                    pFlags.push_back("out: true");
+                else if (param.modifier == ParameterModifier::InOut)
+                    pFlags.push_back("inout: true");
 
                 std::string defaultStr = param.defaultValue.empty()
-                    ? ""
-                    : fmt::format(" | Default: \"{}\"", param.defaultValue);
+                                             ? ""
+                                             : fmt::format(" | Default: \"{}\"", param.defaultValue);
 
                 outParamLines.push_back(fmt::format("      \u2514\u2500 Parameter: Type: \"{}\" | Name: \"{}\"{}  | Flags: {}",
                                                     paramTypeStr, param.name, defaultStr, JoinFlags(pFlags)));
@@ -102,8 +127,6 @@ namespace angel_lsp::analysis
             outParamsStr += ")";
         }
     }
-
-    // ─── Mutating API ──────────────────────────────────────────────────────────
 
     void SymbolTable::AddSymbol(const Symbol &symbol)
     {
@@ -129,8 +152,6 @@ namespace angel_lsp::analysis
                 ++it;
         }
     }
-
-    // ─── Read API ──────────────────────────────────────────────────────────────
 
     bool SymbolTable::HasSymbol(const std::string &qualifiedName) const
     {
@@ -168,8 +189,6 @@ namespace angel_lsp::analysis
             visitor(key, symbols);
     }
 
-    // ─── Debug ─────────────────────────────────────────────────────────────────
-
     void SymbolTable::PrintSymbols(angel_lsp::utils::LspLogger *logger) const
     {
         if (!logger)
@@ -184,9 +203,9 @@ namespace angel_lsp::analysis
             {
                 const std::string typeStr = SymbolTypeToString(sym.type);
                 const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                const std::string range   = fmt::format("[L{}:C{}-L{}:C{}]",
-                                                         sym.startLine + 1, sym.startCharacter + 1,
-                                                         sym.endLine + 1,   sym.endCharacter + 1);
+                const std::string range = fmt::format("[L{}:C{}-L{}:C{}]",
+                                                      sym.startLine + 1, sym.startCharacter + 1,
+                                                      sym.endLine + 1, sym.endCharacter + 1);
 
                 switch (sym.type)
                 {
@@ -194,13 +213,20 @@ namespace angel_lsp::analysis
                 {
                     const auto &sig = sym.functionSignature;
                     std::vector<std::string> flags;
-                    if (sig.modifiers.isShared)          flags.push_back("shared");
-                    if (sig.modifiers.isOverride)        flags.push_back("override");
-                    if (sig.modifiers.isFinal)           flags.push_back("final");
-                    if (sig.modifiers.isReturnReference) flags.push_back("ref_return");
-                    if (sig.modifiers.isDelete)          flags.push_back("delete");
-                    if (sig.modifiers.isExternal)        flags.push_back("external");
-                    if (sig.modifiers.isExplicit)        flags.push_back("explicit");
+                    if (sig.modifiers.isShared)
+                        flags.push_back("shared");
+                    if (sig.modifiers.isOverride)
+                        flags.push_back("override");
+                    if (sig.modifiers.isFinal)
+                        flags.push_back("final");
+                    if (sig.modifiers.isReturnReference)
+                        flags.push_back("ref_return");
+                    if (sig.modifiers.isDelete)
+                        flags.push_back("delete");
+                    if (sig.modifiers.isExternal)
+                        flags.push_back("external");
+                    if (sig.modifiers.isExplicit)
+                        flags.push_back("explicit");
 
                     std::string paramsStr;
                     std::vector<std::string> paramLines;
@@ -221,13 +247,16 @@ namespace angel_lsp::analysis
                 {
                     const auto &sig = sym.variableSignature;
                     std::vector<std::string> flags;
-                    if (sig.modifiers.isShared) flags.push_back("shared");
-                    if (sig.modifiers.isConst)  flags.push_back("const");
-                    if (sig.modifiers.isHandle) flags.push_back("handle");
+                    if (sig.modifiers.isShared)
+                        flags.push_back("shared");
+                    if (sig.modifiers.isConst)
+                        flags.push_back("const");
+                    if (sig.modifiers.isHandle)
+                        flags.push_back("handle");
 
                     std::string defaultStr = sig.defaultValue.empty()
-                        ? ""
-                        : fmt::format(" | Default: \"{}\"", sig.defaultValue);
+                                                 ? ""
+                                                 : fmt::format(" | Default: \"{}\"", sig.defaultValue);
 
                     logger->LogInfo(fmt::format("  \u2022 [{}] Access: {} | Type: \"{}\" | Name: \"{}\"{}  | Flags: {} | {}",
                                                 typeStr,
@@ -240,14 +269,18 @@ namespace angel_lsp::analysis
                 {
                     const auto &sig = sym.classSignature;
                     std::vector<std::string> flags;
-                    if (sig.modifiers.isShared)   flags.push_back("shared");
-                    if (sig.modifiers.isMixin)    flags.push_back("mixin");
-                    if (sig.modifiers.isAbstract) flags.push_back("abstract");
-                    if (sig.modifiers.isFinal)    flags.push_back("final");
+                    if (sig.modifiers.isShared)
+                        flags.push_back("shared");
+                    if (sig.modifiers.isMixin)
+                        flags.push_back("mixin");
+                    if (sig.modifiers.isAbstract)
+                        flags.push_back("abstract");
+                    if (sig.modifiers.isFinal)
+                        flags.push_back("final");
 
                     std::string basesStr = sig.bases.empty()
-                        ? ""
-                        : fmt::format(" | Bases: \"{}\"", JoinStrings(sig.bases));
+                                               ? ""
+                                               : fmt::format(" | Bases: \"{}\"", JoinStrings(sig.bases));
 
                     logger->LogInfo(fmt::format("  \u2022 [{}] Access: {} | Name: \"{}\"{}  | Flags: {} | {}",
                                                 typeStr,
@@ -259,11 +292,12 @@ namespace angel_lsp::analysis
                 {
                     const auto &sig = sym.interfaceSignature;
                     std::vector<std::string> flags;
-                    if (sig.modifiers.isShared) flags.push_back("shared");
+                    if (sig.modifiers.isShared)
+                        flags.push_back("shared");
 
                     std::string basesStr = sig.inheritedInterfaces.empty()
-                        ? ""
-                        : fmt::format(" | Extends: \"{}\"", JoinStrings(sig.inheritedInterfaces));
+                                               ? ""
+                                               : fmt::format(" | Extends: \"{}\"", JoinStrings(sig.inheritedInterfaces));
 
                     logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\"{}  | Flags: {} | {}",
                                                 typeStr, nameStr, basesStr, JoinFlags(flags), range));
@@ -273,7 +307,8 @@ namespace angel_lsp::analysis
                 {
                     const auto &sig = sym.enumSignature;
                     std::vector<std::string> flags;
-                    if (sig.modifiers.isShared) flags.push_back("shared");
+                    if (sig.modifiers.isShared)
+                        flags.push_back("shared");
 
                     logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\" | Flags: {} | {}",
                                                 typeStr, nameStr, JoinFlags(flags), range));
