@@ -103,6 +103,7 @@ namespace angel_lsp::analysis
         SymbolModifiers modifiers;                    // e.g.: { access = AccessModifier::Public }
         TypeKind returnTypeKind = TypeKind::Unknown;  // e.g.: TypeKind::Float (resolved in Pass 2)
         std::vector<ParameterInformation> parameters; // e.g.: parameter list
+        bool hasBody = false;                         // e.g.: false for interface_method / .as.predefined declarations
     };
 
     struct VariableSignature
@@ -131,6 +132,7 @@ namespace angel_lsp::analysis
          *  will resolve each entry into interfaces or mixin bases using the SymbolTable. */
         std::vector<std::string> bases;   // e.g.: {"IUpdatable", "MyBase", "DynamicBehavior"}
         SymbolModifiers modifiers;        // e.g.: { isAbstract = true, isShared = true, isFinal = true }
+        bool isTemplate = false;          // e.g.: class array<T>
     };
 
     struct InterfaceSignature

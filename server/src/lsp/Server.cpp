@@ -2,6 +2,7 @@
 #include "utils/Utils.h"
 
 #include <filesystem>
+#include <fstream>
 #include <variant>
 #include <spdlog/fmt/fmt.h>
 
@@ -82,6 +83,8 @@ namespace angel_lsp
 
     void Server::ReadWorkspaceFiles(std::stop_token stopToken)
     {
+        angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
+
         try
         {
             for (const auto &workspaceRoot : m_workspacesRoot)
@@ -96,8 +99,8 @@ namespace angel_lsp
 
                     if (entry.exists() && entry.is_regular_file())
                     {
-                        if (entry.path().string().ends_with(m_config.info.predefinedFileExtension) || entry.path().string() == m_config.info.predefinedFileExtension)
-                            ParserPredefined(entry.path().string());
+                        if (angel_lsp::utils::IsPredefinedFile(entry.path().string(), m_config.info.predefinedFileExtension))
+                            ParserPredefined(entry.path().string(), backgroundParser);
                     }
                 }
             }
@@ -108,9 +111,28 @@ namespace angel_lsp
         }
     }
 
-    void Server::ParserPredefined(const std::string &filePath)
+    void Server::ParserPredefined(const std::string &filePath, angel_lsp::parser::AngelScriptParser &parser)
     {
-        m_logger->LogInfo(fmt::format("Parsing predefined file: {}", filePath));
+        std::string uri = angel_lsp::utils::PathToUri(filePath);
+
+        std::ifstream file(filePath, std::ios::binary);
+        if (!file.is_open())
+        {
+            m_logger->LogError(fmt::format("Cannot open predefined file: {}", filePath));
+            return;
+        }
+
+        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+        m_symbolTable.ClearDocumentSymbols(uri);
+        m_symbolCollector->CollectSymbols(uri, content, parser, m_symbolTable);
+
+        {
+            std::lock_guard<std::mutex> lock(m_predefinedMutex);
+            m_predefinedUris.insert(uri);
+        }
+
+        m_logger->LogInfo(fmt::format("Loaded predefined file: {}", filePath));
     }
 
     auto Server::HandleRequestsShutdown()
@@ -138,14 +160,20 @@ namespace angel_lsp
         std::string text = params.text.has_value() ? params.text.value() : "";
 
         if (text.empty() && m_openDocuments.contains(uriStr))
-        {
             text = m_openDocuments[uriStr];
-        }
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
+
+        if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+        {
+            m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+            PublishDiagnostics(uriStr, {});
+            return;
+        }
+
         auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
 
-        angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr};
+        angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension)};
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
@@ -159,10 +187,25 @@ namespace angel_lsp
 
         m_openDocuments[uriStr] = text;
 
+        if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+        {
+            {
+                std::lock_guard<std::mutex> lock(m_predefinedMutex);
+                if (!m_predefinedUris.contains(uriStr))
+                {
+                    m_symbolTable.ClearDocumentSymbols(uriStr);
+                    m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+                    m_predefinedUris.insert(uriStr);
+                }
+            }
+            PublishDiagnostics(uriStr, {});
+            return;
+        }
+
         m_symbolTable.ClearDocumentSymbols(uriStr);
         auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
 
-        angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr};
+        angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension)};
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
@@ -196,9 +239,17 @@ namespace angel_lsp
         }
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
+
+        if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+        {
+            m_symbolCollector->CollectSymbols(uriStr, buffer, *m_parser, m_symbolTable);
+            PublishDiagnostics(uriStr, {});
+            return;
+        }
+
         auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, buffer, *m_parser, m_symbolTable);
 
-        angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr};
+        angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension)};
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
@@ -209,6 +260,13 @@ namespace angel_lsp
     {
         std::string uriStr = params.textDocument.uri.toString();
         m_openDocuments.erase(uriStr);
+
+        if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+        {
+            PublishDiagnostics(uriStr, {});
+            return;
+        }
+
         m_symbolTable.ClearDocumentSymbols(uriStr);
         PublishDiagnostics(uriStr, {});
     }

@@ -283,15 +283,16 @@ namespace angel_lsp::analysis
     {
         NodeContext ctx = GetNodeContext(funcNode, sourceCode);
 
-        TSNode nameNode = ts_node_child_by_field_name(funcNode, "name", 4);
-        TSNode typeNode = ts_node_child_by_field_name(funcNode, "return_type", 11);
-        TSNode paramsNode = ts_node_child_by_field_name(funcNode, "parameters", 10);
+        TSNode nameNode   = ts_node_child_by_field_name(funcNode, "name",        4);
+        TSNode typeNode   = ts_node_child_by_field_name(funcNode, "return_type", 11);
+        TSNode paramsNode = ts_node_child_by_field_name(funcNode, "parameters",  10);
+        TSNode bodyNode   = ts_node_child_by_field_name(funcNode, "body",        4);
 
         Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, sourceCode, fileUri, ctx.containerPath);
-        std::string returnTypeStr = GetNodeText(typeNode, sourceCode);
-        sym.functionSignature.returnType = returnTypeStr;
-        sym.functionSignature.modifiers = ExtractModifiers(funcNode, sourceCode);
-        sym.functionSignature.parameters = ExtractParameters(paramsNode, sourceCode);
+        sym.functionSignature.returnType  = GetNodeText(typeNode, sourceCode);
+        sym.functionSignature.modifiers   = ExtractModifiers(funcNode, sourceCode);
+        sym.functionSignature.parameters  = ExtractParameters(paramsNode, sourceCode);
+        sym.functionSignature.hasBody     = !ts_node_is_null(bodyNode);
 
         symbolTable.AddSymbol(sym);
     }
@@ -300,10 +301,12 @@ namespace angel_lsp::analysis
     {
         NodeContext ctx = GetNodeContext(classNode, sourceCode);
         TSNode nameNode = ts_node_child_by_field_name(classNode, "name", 4);
+        TSNode tParamNode = ts_node_child_by_field_name(classNode, "template_param", 14);
 
         Symbol sym = CreateSymbol(SymbolType::Class, classNode, nameNode, sourceCode, fileUri, ctx.containerPath);
         sym.classSignature.modifiers = ExtractModifiers(classNode, sourceCode);
         sym.classSignature.bases = ExtractBases(classNode, sourceCode);
+        sym.classSignature.isTemplate = !ts_node_is_null(tParamNode);
 
         symbolTable.AddSymbol(sym);
     }

@@ -85,3 +85,46 @@ TEST_CASE("SemanticAnalyzer - Duplicate Class Symbol Error Test")
     REQUIRE(diagnostics.size() == 1);
     CHECK(diagnostics[0].code == "as-err-duplicate-symbol");
 }
+
+TEST_CASE("SemanticAnalyzer - Template Class Validation Test")
+{
+    std::string sourceCode = "class array<T> {}\n";
+
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    SUBCASE("Template class in .as file triggers error")
+    {
+        std::string fileUri = "file:///test.as";
+        SymbolTable table;
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+        auto syms = table.FindSymbols("array");
+        REQUIRE(syms.size() == 1);
+        CHECK(syms[0].classSignature.isTemplate == true);
+
+        SemanticAnalyzer analyzer;
+        SemanticAnalysisRequest req{table, fileUri};
+        auto diagnostics = analyzer.Analyze(req);
+
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "as-err-template-class-not-supported");
+    }
+
+    SUBCASE("Template class in .as.predefined file is allowed")
+    {
+        std::string fileUri = "file:///as.predefined";
+        SymbolTable table;
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+        auto syms = table.FindSymbols("array");
+        REQUIRE(syms.size() == 1);
+        CHECK(syms[0].classSignature.isTemplate == true);
+
+        SemanticAnalyzer analyzer;
+        SemanticAnalysisRequest req{table, fileUri};
+        auto diagnostics = analyzer.Analyze(req);
+
+        CHECK(diagnostics.empty());
+    }
+}

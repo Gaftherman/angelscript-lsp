@@ -1,4 +1,5 @@
 #include "analysis/SemanticAnalyzer.h"
+#include "utils/Utils.h"
 #include "spdlog/fmt/fmt.h"
 
 #include <unordered_set>
@@ -15,7 +16,7 @@ namespace angel_lsp::analysis
         std::vector<Diagnostic> diagnostics;
 
         request.symbolTable.ForEachSymbol([&](const std::string &qualifiedName, const std::vector<Symbol> &symbols)
-        {
+                                          {
             // 1. Check for duplicate symbol redeclarations within the same scope
             ValidateDuplicateSymbols(qualifiedName, symbols, diagnostics);
 
@@ -38,7 +39,7 @@ namespace angel_lsp::analysis
                     }
                     else
                     {
-                        ValidateClass(sym, request.symbolTable, diagnostics);
+                        ValidateClass(sym, request, diagnostics);
                     }
                     break;
                 }
@@ -49,7 +50,7 @@ namespace angel_lsp::analysis
                 }
                 case SymbolType::Function:
                 {
-                    ValidateFunction(sym, request.symbolTable, diagnostics);
+                    ValidateFunction(sym, request, diagnostics);
                     ValidateFunctionParameters(sym, sym.functionSignature, request.symbolTable, diagnostics);
                     break;
                 }
@@ -86,8 +87,7 @@ namespace angel_lsp::analysis
                 default:
                     break;
                 }
-            }
-        });
+            } });
 
         if (m_logger && !diagnostics.empty())
         {
@@ -99,12 +99,18 @@ namespace angel_lsp::analysis
 
     // ─── 1. Class Validation ───────────────────────────────────────────────────
 
-    void SemanticAnalyzer::ValidateClass(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateClass(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        // TODO: Add custom class validation rules (e.g. unresolved base, inheriting from final class, circular inheritance)
+        if (sym.classSignature.isTemplate && !angel_lsp::utils::IsPredefinedFile(sym.fileUri, req.predefinedFileExtension))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym,
+                                                   fmt::format("La definición de clases plantilla/genéricas ('{}') solo está permitida en archivos predefinidos.", sym.name),
+                                                   "as-err-template-class-not-supported"));
+        }
+
         for (const auto &baseName : sym.classSignature.bases)
         {
-            const auto *baseSymbols = table.FindSymbolsPtr(baseName);
+            const auto *baseSymbols = req.symbolTable.FindSymbolsPtr(baseName);
             if (!baseSymbols || baseSymbols->empty())
             {
                 // Base class or interface not found in table
@@ -117,8 +123,8 @@ namespace angel_lsp::analysis
                     if (baseSym.type == SymbolType::Class && baseSym.classSignature.modifiers.isFinal)
                     {
                         diagnostics.push_back(CreateDiagnostic(sym,
-                            fmt::format("No se puede heredar de la clase final '{}'.", baseName),
-                            "as-err-inherit-final"));
+                                                               fmt::format("No se puede heredar de la clase final '{}'.", baseName),
+                                                               "as-err-inherit-final"));
                     }
                 }
             }
@@ -133,15 +139,15 @@ namespace angel_lsp::analysis
         if (sym.classSignature.modifiers.isFinal)
         {
             diagnostics.push_back(CreateDiagnostic(sym,
-                fmt::format("Un mixin ('{}') no puede ser declarado como 'final'.", sym.name),
-                "as-err-mixin-final"));
+                                                   fmt::format("Un mixin ('{}') no puede ser declarado como 'final'.", sym.name),
+                                                   "as-err-mixin-final"));
         }
 
         if (sym.classSignature.modifiers.isAbstract)
         {
             diagnostics.push_back(CreateDiagnostic(sym,
-                fmt::format("Un mixin ('{}') no puede ser declarado como 'abstract'.", sym.name),
-                "as-err-mixin-abstract"));
+                                                   fmt::format("Un mixin ('{}') no puede ser declarado como 'abstract'.", sym.name),
+                                                   "as-err-mixin-abstract"));
         }
     }
 
@@ -154,12 +160,13 @@ namespace angel_lsp::analysis
 
     // ─── 4. Function Validation ────────────────────────────────────────────────
 
-    void SemanticAnalyzer::ValidateFunction(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateFunction(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        // TODO: Add custom function validation rules (e.g. return type validation, return reference check)
-        if (sym.functionSignature.modifiers.isReturnReference)
+        if (!sym.functionSignature.hasBody && !angel_lsp::utils::IsPredefinedFile(sym.fileUri, req.predefinedFileExtension))
         {
-            // Function returns a reference (e.g. int& GetRef())
+            diagnostics.push_back(CreateDiagnostic(sym,
+                                                   fmt::format("La función '{}' debe tener un cuerpo '{{}}'.", sym.name),
+                                                   "as-err-missing-body"));
         }
     }
 
@@ -173,8 +180,8 @@ namespace angel_lsp::analysis
             if (param.modifier == ParameterModifier::Out && param.defaultValue.size() > 0)
             {
                 diagnostics.push_back(CreateDiagnostic(sym,
-                    fmt::format("El parámetro '&out' '{}' no puede tener un valor por defecto.", param.name),
-                    "as-err-out-param-default"));
+                                                       fmt::format("El parámetro '&out' '{}' no puede tener un valor por defecto.", param.name),
+                                                       "as-err-out-param-default"));
             }
         }
     }
@@ -243,8 +250,8 @@ namespace angel_lsp::analysis
         for (size_t i = 1; i < symbols.size(); ++i)
         {
             diagnostics.push_back(CreateDiagnostic(symbols[i],
-                fmt::format("Redeclaración de símbolo '{}' en el mismo ámbito.", qualifiedName),
-                "as-err-duplicate-symbol"));
+                                                   fmt::format("Redeclaración de símbolo '{}' en el mismo ámbito.", qualifiedName),
+                                                   "as-err-duplicate-symbol"));
         }
     }
 
@@ -253,15 +260,15 @@ namespace angel_lsp::analysis
     Diagnostic SemanticAnalyzer::CreateDiagnostic(const Symbol &sym, const std::string &message, const std::string &code, DiagnosticSeverity severity) const
     {
         Diagnostic diag;
-        diag.range.start.line      = sym.startLine;
+        diag.range.start.line = sym.startLine;
         diag.range.start.character = sym.startCharacter;
-        diag.range.end.line        = sym.endLine;
-        diag.range.end.character  = sym.endCharacter;
-        diag.severity              = severity;
-        diag.code                  = code;
-        diag.source                = "AngelScript";
-        diag.message               = message;
-        diag.fileUri               = sym.fileUri;
+        diag.range.end.line = sym.endLine;
+        diag.range.end.character = sym.endCharacter;
+        diag.severity = severity;
+        diag.code = code;
+        diag.source = "AngelScript";
+        diag.message = message;
+        diag.fileUri = sym.fileUri;
         return diag;
     }
 }

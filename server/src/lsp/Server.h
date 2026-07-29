@@ -37,6 +37,8 @@ namespace angel_lsp
         std::unique_ptr<angel_lsp::analysis::SymbolCollector> m_symbolCollector;
         std::unique_ptr<angel_lsp::analysis::SemanticAnalyzer> m_semanticAnalyzer;
         ankerl::unordered_dense::map<std::string, std::string> m_openDocuments;
+        std::mutex m_predefinedMutex;
+        ankerl::unordered_dense::set<std::string> m_predefinedUris;
 
     public:
         Server(const angel_lsp::config::ServerConfig &config);
@@ -55,7 +57,7 @@ namespace angel_lsp
         void HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params);
         void HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params &&params);
         void ReadWorkspaceFiles(std::stop_token stopToken);
-        void ParserPredefined(const std::string &filePath);
+        void ParserPredefined(const std::string &filePath, angel_lsp::parser::AngelScriptParser &parser);
         void PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics);
     };
 }

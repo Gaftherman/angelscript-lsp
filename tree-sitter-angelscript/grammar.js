@@ -177,6 +177,11 @@ module.exports = grammar({
       repeat(field("modifier", $.declaration_modifier)),
       "class",
       field("name", $.identifier),
+      optional(seq(
+        $._template_open,
+        commaSep1(field("template_param", $.identifier)),
+        $._template_close,
+      )),
       choice(
         ";",
         seq(

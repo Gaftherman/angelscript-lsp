@@ -13,7 +13,8 @@ namespace angel_lsp::analysis
     struct SemanticAnalysisRequest
     {
         const SymbolTable &symbolTable;
-        std::string fileUri; // Optional URI filter; if empty, validates all symbols in the table.
+        std::string fileUri;                 // Optional URI filter; if empty, validates all symbols in the table.
+        std::string predefinedFileExtension; // Configured predefined file extension (e.g. "as.predefined")
     };
 
     /**
@@ -41,7 +42,7 @@ namespace angel_lsp::analysis
         // ─── Individual Category Validation Stubs ──────────────────────────────────
 
         /** @brief Validates class hierarchy, base class resolution, and circular inheritance. */
-        void ValidateClass(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const;
+        void ValidateClass(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const;
 
         /** @brief Validates mixin class constraints (e.g. cannot be final or abstract). */
         void ValidateMixinClass(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const;
@@ -50,7 +51,7 @@ namespace angel_lsp::analysis
         void ValidateInterface(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const;
 
         /** @brief Validates function signature, return type, return reference (int& Func()), and overloads. */
-        void ValidateFunction(const Symbol &sym, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const;
+        void ValidateFunction(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const;
 
         /** @brief Validates parameter modifiers (&in, &out, &inout), handle types (@), and default values. */
         void ValidateFunctionParameters(const Symbol &sym, const FunctionSignature &sig, const SymbolTable &table, std::vector<Diagnostic> &diagnostics) const;
