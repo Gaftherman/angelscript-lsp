@@ -92,22 +92,31 @@ namespace angel_lsp::analysis
         std::string name;
         std::string typeName;
         std::string baseTypeName;
+        std::string templateName;
         TypeKind typeKind = TypeKind::Unknown;
         bool isArray = false;
+        bool hasPrimitiveHandle = false;
         uint32_t arrayDepth = 0;
         ParameterModifier modifier = ParameterModifier::None;
         std::string defaultValue;
         bool isHandle = false;
         bool isConst = false;
+
+        uint32_t startLine = 0;
+        uint32_t startCharacter = 0;
+        uint32_t endLine = 0;
+        uint32_t endCharacter = 0;
     };
 
     struct FunctionSignature
     {
         std::string returnType;
         std::string returnBaseTypeName;
+        std::string returnTemplateName;
         SymbolModifiers modifiers;
         TypeKind returnTypeKind = TypeKind::Unknown;
         bool returnIsArray = false;
+        bool returnHasPrimitiveHandle = false;
         uint32_t returnArrayDepth = 0;
         std::vector<ParameterInformation> parameters;
         bool hasBody = false;
@@ -117,8 +126,10 @@ namespace angel_lsp::analysis
     {
         std::string typeName;
         std::string baseTypeName;
+        std::string templateName;
         TypeKind typeKind = TypeKind::Unknown;
         bool isArray = false;
+        bool hasPrimitiveHandle = false;
         uint32_t arrayDepth = 0;
         std::string defaultValue;
         SymbolModifiers modifiers;
@@ -147,24 +158,31 @@ namespace angel_lsp::analysis
 
     struct InterfaceSignature
     {
-        std::vector<std::string> inheritedInterfaces; // e.g.: {"IDrawable", "ISerializable"} (filled in Pass 2)
-        SymbolModifiers modifiers;                    // e.g.: { isShared = true }
+        std::vector<std::string> inheritedInterfaces;
+        SymbolModifiers modifiers;
+    };
+
+    struct TypedefSignature
+    {
+        std::string baseType;
+        TypeKind typeKind = TypeKind::Unknown;
     };
 
     struct Symbol
     {
-        SymbolType type;           // e.g.: SymbolType::Function
-        std::string name;          // e.g.: "calculateArea"
-        std::string containerName; // e.g.: "Utils::Math"
-        std::string qualifiedName; // e.g.: "Utils::Math::calculateArea"
+        SymbolType type;
+        std::string name;
+        std::string containerName;
+        std::string qualifiedName;
 
-        FunctionSignature functionSignature;   // e.g.: function signature
-        VariableSignature variableSignature;   // e.g.: variable signature
-        EnumSignature enumSignature;           // e.g.: enum signature
-        ClassSignature classSignature;         // e.g.: class/mixin signature (isMixin flag in modifiers)
-        InterfaceSignature interfaceSignature; // e.g.: interface signature
+        FunctionSignature functionSignature;
+        VariableSignature variableSignature;
+        EnumSignature enumSignature;
+        ClassSignature classSignature;
+        InterfaceSignature interfaceSignature;
+        TypedefSignature typedefSignature;
 
-        std::string fileUri; // e.g.: "file:///test.as"
+        std::string fileUri;
 
         uint32_t startLine = 0;
         uint32_t startCharacter = 0;

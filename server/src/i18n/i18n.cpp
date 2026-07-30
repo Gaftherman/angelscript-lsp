@@ -15,6 +15,13 @@ namespace angel_lsp::i18n
         m_messages["as-syntax-error"] = "Syntax error: \"{}\"";
         m_messages["as-syntax-error-missing"] = "Syntax error: missing '{}'";
         m_messages["as-syntax-error-generic"] = "Syntax error";
+        m_messages["as-err-unresolved-type"] = "Unknown type '{}'.";
+        m_messages["as-err-handle-on-primitive"] = "Cannot use handle '@' on primitive type '{}'.";
+        m_messages["as-err-void-variable"] = "Cannot declare a variable of type 'void'.";
+        m_messages["as-err-multi-class-inherit"] = "Class '{}' cannot inherit from multiple classes.";
+        m_messages["as-err-base-not-found"] = "Base type '{}' not found.";
+        m_messages["as-err-typedef-unresolved"] = "Typedef base type '{}' is not defined.";
+        m_messages["as-err-funcdef-not-handle"] = "Variables or parameters of funcdef type '{}' must be declared as handles ('{}@').";
 
         if (locale == "es")
         {
@@ -28,6 +35,13 @@ namespace angel_lsp::i18n
             m_messages["as-syntax-error"] = "Error de sintaxis: \"{}\"";
             m_messages["as-syntax-error-missing"] = "Error de sintaxis: falta '{}'";
             m_messages["as-syntax-error-generic"] = "Error de sintaxis";
+            m_messages["as-err-unresolved-type"] = "Tipo desconocido '{}'.";
+            m_messages["as-err-handle-on-primitive"] = "No se puede usar handle '@' en el tipo primitivo '{}'.";
+            m_messages["as-err-void-variable"] = "No se puede declarar una variable de tipo 'void'.";
+            m_messages["as-err-multi-class-inherit"] = "La clase '{}' no puede heredar de múltiples clases.";
+            m_messages["as-err-base-not-found"] = "Tipo base '{}' no encontrado.";
+            m_messages["as-err-typedef-unresolved"] = "El tipo base '{}' del typedef no está definido.";
+            m_messages["as-err-funcdef-not-handle"] = "Variables o parámetros de tipo funcdef '{}' deben declararse como handle ('{}@').";
         }
     }
 

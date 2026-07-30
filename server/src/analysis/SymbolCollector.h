@@ -33,9 +33,11 @@ namespace angel_lsp::analysis
         struct TypeExtractionResult
         {
             std::string baseTypeName;
+            std::string templateName;
             TypeKind kind = TypeKind::Unknown;
             bool isArray = false;
             bool isHandle = false;
+            bool hasPrimitiveHandle = false;
             uint32_t arrayDepth = 0;
         };
 

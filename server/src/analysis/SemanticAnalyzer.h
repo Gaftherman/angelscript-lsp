@@ -46,5 +46,10 @@ namespace angel_lsp::analysis
 
         Diagnostic CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code) const;
         Diagnostic CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code, const std::string &arg1) const;
+        Diagnostic CreateDiagnostic(const ParameterInformation &param, const Symbol &parentSym, const SemanticAnalysisRequest &req, const std::string &code) const;
+        Diagnostic CreateDiagnostic(const ParameterInformation &param, const Symbol &parentSym, const SemanticAnalysisRequest &req, const std::string &code, const std::string &arg1) const;
+
+        bool IsTypeResolvable(const std::string &baseTypeName, const std::string &templateName, TypeKind kind, const SemanticAnalysisRequest &req) const;
+        bool IsFuncdefType(const std::string &baseTypeName, const SemanticAnalysisRequest &req) const;
     };
 }

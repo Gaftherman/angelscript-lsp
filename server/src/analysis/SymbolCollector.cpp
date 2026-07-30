@@ -253,11 +253,26 @@ namespace angel_lsp::analysis
         return ctx;
     }
 
+    static bool IsPrimitiveTypeName(const std::string &name)
+    {
+        return name == "void" || name == "int" || name == "int8" || name == "int16" || name == "int32" || name == "int64"
+            || name == "uint" || name == "uint8" || name == "uint16" || name == "uint32" || name == "uint64"
+            || name == "float" || name == "double" || name == "bool";
+    }
+
     SymbolCollector::TypeExtractionResult SymbolCollector::ExtractTypeInfo(TSNode typeNode, const std::string &sourceCode) const
     {
         TypeExtractionResult result;
         if (ts_node_is_null(typeNode))
             return result;
+
+        const char *nodeType = ts_node_type(typeNode);
+        if (strcmp(nodeType, "primitive_type") == 0 || strcmp(nodeType, "identifier") == 0)
+        {
+            result.baseTypeName = GetNodeText(typeNode, sourceCode);
+            result.kind = ParseTypeKind(result.baseTypeName);
+            return result;
+        }
 
         bool hasTemplateList = false;
         std::string datatypeText;
@@ -294,6 +309,7 @@ namespace angel_lsp::analysis
                         TypeExtractionResult inner = ExtractTypeInfo(innerType, sourceCode);
                         result.baseTypeName = inner.baseTypeName;
                         result.isHandle = inner.isHandle || result.isHandle;
+                        result.hasPrimitiveHandle = inner.hasPrimitiveHandle || result.hasPrimitiveHandle;
                         result.arrayDepth += inner.arrayDepth;
                         if (inner.kind != TypeKind::Unknown)
                         {
@@ -311,10 +327,22 @@ namespace angel_lsp::analysis
             else if (strcmp(childType, "@") == 0)
             {
                 result.isHandle = true;
+                if (i > 0)
+                {
+                    TSNode prevChild = ts_node_child(typeNode, i - 1);
+                    if (strcmp(ts_node_type(prevChild), "datatype") == 0 && IsPrimitiveTypeName(datatypeText))
+                    {
+                        result.hasPrimitiveHandle = true;
+                    }
+                }
             }
         }
 
-        if (!hasTemplateList && !datatypeText.empty())
+        if (hasTemplateList)
+        {
+            result.templateName = datatypeText;
+        }
+        else if (!datatypeText.empty())
         {
             result.baseTypeName = datatypeText;
             result.kind = ParseTypeKind(datatypeText);
@@ -357,8 +385,10 @@ namespace angel_lsp::analysis
             Symbol sym = CreateSymbol(SymbolType::Variable, varDeclNode, nameNode, sourceCode, fileUri, ctx.containerPath);
             sym.variableSignature.typeName = typeStr;
             sym.variableSignature.baseTypeName = typeInfo.baseTypeName;
+            sym.variableSignature.templateName = typeInfo.templateName;
             sym.variableSignature.typeKind = typeInfo.kind;
             sym.variableSignature.isArray = typeInfo.isArray;
+            sym.variableSignature.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
             sym.variableSignature.arrayDepth = typeInfo.arrayDepth;
             sym.variableSignature.defaultValue = GetNodeText(valueNode, sourceCode);
             sym.variableSignature.modifiers = modifiers;
@@ -376,17 +406,26 @@ namespace angel_lsp::analysis
         TypeExtractionResult pInfo = ExtractTypeInfo(pTypeNode, sourceCode);
         SymbolModifiers mods = ExtractModifiers(paramNode, sourceCode);
 
+        TSPoint startPt = ts_node_start_point(paramNode);
+        TSPoint endPt = ts_node_end_point(paramNode);
+
         ParameterInformation paramInfo;
         paramInfo.name = GetNodeText(pNameNode, sourceCode);
         paramInfo.typeName = GetNodeText(pTypeNode, sourceCode);
         paramInfo.baseTypeName = pInfo.baseTypeName;
+        paramInfo.templateName = pInfo.templateName;
         paramInfo.typeKind = pInfo.kind;
         paramInfo.isArray = pInfo.isArray;
+        paramInfo.hasPrimitiveHandle = pInfo.hasPrimitiveHandle;
         paramInfo.arrayDepth = pInfo.arrayDepth;
         paramInfo.defaultValue = GetNodeText(pDefaultNode, sourceCode);
         paramInfo.isConst = mods.isConst;
         paramInfo.isHandle = pInfo.isHandle || mods.isHandle;
         paramInfo.modifier = mods.paramModifier;
+        paramInfo.startLine = startPt.row;
+        paramInfo.startCharacter = startPt.column;
+        paramInfo.endLine = endPt.row;
+        paramInfo.endCharacter = endPt.column;
 
         return paramInfo;
     }
@@ -422,8 +461,10 @@ namespace angel_lsp::analysis
         Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, sourceCode, fileUri, ctx.containerPath);
         sym.functionSignature.returnType = GetNodeText(typeNode, sourceCode);
         sym.functionSignature.returnBaseTypeName = retInfo.baseTypeName;
+        sym.functionSignature.returnTemplateName = retInfo.templateName;
         sym.functionSignature.returnTypeKind = retInfo.kind;
         sym.functionSignature.returnIsArray = retInfo.isArray;
+        sym.functionSignature.returnHasPrimitiveHandle = retInfo.hasPrimitiveHandle;
         sym.functionSignature.returnArrayDepth = retInfo.arrayDepth;
         sym.functionSignature.modifiers = modifiers;
         sym.functionSignature.parameters = ExtractParameters(paramsNode, sourceCode);
@@ -466,7 +507,29 @@ namespace angel_lsp::analysis
     {
         NodeContext ctx = GetNodeContext(node, sourceCode);
         TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
+        TSNode baseTypeNode = ts_node_child_by_field_name(node, "base_type", 9);
+
         Symbol sym = CreateSymbol(SymbolType::Typedef, node, nameNode, sourceCode, fileUri, ctx.containerPath);
+        if (!ts_node_is_null(baseTypeNode))
+        {
+            TypeExtractionResult info = ExtractTypeInfo(baseTypeNode, sourceCode);
+            sym.typedefSignature.baseType = info.baseTypeName;
+            sym.typedefSignature.typeKind = info.kind;
+        }
+        else
+        {
+            uint32_t count = ts_node_named_child_count(node);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_named_child(node, i);
+                if (child.id != nameNode.id)
+                {
+                    sym.typedefSignature.baseType = GetNodeText(child, sourceCode);
+                    sym.typedefSignature.typeKind = ParseTypeKind(sym.typedefSignature.baseType);
+                    break;
+                }
+            }
+        }
         symbolTable.AddSymbol(sym);
     }
 
@@ -474,7 +537,22 @@ namespace angel_lsp::analysis
     {
         NodeContext ctx = GetNodeContext(node, sourceCode);
         TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
+        TSNode typeNode = ts_node_child_by_field_name(node, "return_type", 11);
+        TSNode paramsNode = ts_node_child_by_field_name(node, "parameters", 10);
+
+        TypeExtractionResult retInfo = ExtractTypeInfo(typeNode, sourceCode);
+        SymbolModifiers modifiers = ExtractModifiers(node, sourceCode);
+        modifiers.isHandle = retInfo.isHandle || modifiers.isHandle;
+
         Symbol sym = CreateSymbol(SymbolType::Funcdef, node, nameNode, sourceCode, fileUri, ctx.containerPath);
+        sym.functionSignature.returnType = GetNodeText(typeNode, sourceCode);
+        sym.functionSignature.returnBaseTypeName = retInfo.baseTypeName;
+        sym.functionSignature.returnTypeKind = retInfo.kind;
+        sym.functionSignature.returnIsArray = retInfo.isArray;
+        sym.functionSignature.returnArrayDepth = retInfo.arrayDepth;
+        sym.functionSignature.modifiers = modifiers;
+        sym.functionSignature.parameters = ExtractParameters(paramsNode, sourceCode);
+
         symbolTable.AddSymbol(sym);
     }
 
