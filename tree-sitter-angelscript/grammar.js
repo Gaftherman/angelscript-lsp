@@ -719,12 +719,12 @@ module.exports = grammar({
 
     null_literal: _ => "null",
 
-    string_literal: _ => token(choice(
+    string_literal: $ => repeat1(choice(
       // Triple-quoted heredoc strings (no escape processing, multiline)
-      seq('"""', /([^"]|"[^"]|""[^"])*/, '"""'),
+      token(seq('"""', /([^"]|"[^"]|""[^"])*/, '"""')),
       // Single and double quoted strings with escape sequences
-      seq("'", repeat(choice(/[^'\\]/, /\\./)), "'"),
-      seq('"', repeat(choice(/[^"\\]/, /\\./)), '"'),
+      token(seq("'", repeat(choice(/[^'\\]/, /\\./)), "'")),
+      token(seq('"', repeat(choice(/[^"\\]/, /\\./)), '"')),
     )),
 
     number_literal: _ => {

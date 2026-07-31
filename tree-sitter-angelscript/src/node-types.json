@@ -3267,6 +3267,11 @@
     }
   },
   {
+    "type": "string_literal",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "switch_statement",
     "named": true,
     "fields": {},
@@ -4504,10 +4509,6 @@
   {
     "type": "shared",
     "named": false
-  },
-  {
-    "type": "string_literal",
-    "named": true
   },
   {
     "type": "switch",

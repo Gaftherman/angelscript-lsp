@@ -154,6 +154,21 @@ namespace angel_lsp::analysis
                     currentFileSymbols.push_back(&sym);
             }
 
+            if (firstType == SymbolType::Typedef)
+            {
+                // Exempt identical typedef redeclarations (e.g. typedef int MyInt; typedef int MyInt;)
+                for (size_t i = 1; i < currentFileSymbols.size(); ++i)
+                {
+                    const auto &t1 = currentFileSymbols[0]->GetTypedef();
+                    const auto &t2 = currentFileSymbols[i]->GetTypedef();
+                    if (t1.baseType != t2.baseType)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(*currentFileSymbols[i], req, "as-err-duplicate-symbol", currentFileSymbols[i]->name));
+                    }
+                }
+                return;
+            }
+
             for (size_t i = 1; i < currentFileSymbols.size(); ++i)
             {
                 diagnostics.push_back(CreateDiagnostic(*currentFileSymbols[i], req, "as-err-duplicate-symbol", currentFileSymbols[i]->name));
