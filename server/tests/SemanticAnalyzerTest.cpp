@@ -1205,6 +1205,510 @@ TEST_CASE("Batch_NewEdge200_Harness_Comparison")
     std::cout << "=== LSP_VALIDATOR_BATCH_OUTPUT_END ===\n";
 }
 
+TEST_CASE("Batch_Array600_Harness_Comparison")
+{
+    struct StructuralTestCase
+    {
+        int id;
+        std::string cat;
+        std::string code;
+    };
+
+    std::vector<StructuralTestCase> cases = {
+        {401, "ArrayUnresolved", "array<NonExistentClass> arr;"},
+        {402, "ArrayUnresolved", "array<NonExistentClass>@ handle;"},
+        {403, "ArrayUnresolved", "namespace N { array<UndefinedInScope> a; }"},
+        {404, "ArrayUnresolved", "array<UnknownType>@[] handleArray;"},
+        {405, "ArrayUnresolved", "class MyClass {} array<MyClass> arr;"},
+        {406, "ArrayUnresolved", "class MyClass {} array<MyClass@> arr;"},
+        {407, "ArrayUnresolved", "class MyClass {} array<MyClass>@ handle;"},
+        {408, "ArrayUnresolved", "class MyClass {} array<const MyClass@> arr;"},
+        {409, "ArrayUnresolved", "namespace N { class LocalClass {} array<LocalClass> arr; }"},
+        {410, "ArrayUnresolved", "namespace N { class LocalClass {} } array<N::LocalClass> arr;"},
+        {411, "ArrayUnresolved", "namespace N { class LocalClass {} } namespace N { array<LocalClass> arr; }"},
+        {412, "ArrayUnresolved", "enum E { A, B } array<E> enumArr;"},
+        {413, "ArrayUnresolved", "typedef int MyInt; array<MyInt> typedefArr;"},
+        {414, "ArrayUnresolved", "funcdef void CB(); array<CB@> cbArr;"},
+        {415, "ArrayUnresolved", "interface I {} array<I@> ifaceArr;"},
+        {416, "ArrayUnresolved", "array<int> intArr;"},
+        {417, "ArrayUnresolved", "array<float> floatArr;"},
+        {418, "ArrayUnresolved", "array<double> doubleArr;"},
+        {419, "ArrayUnresolved", "array<bool> boolArr;"},
+        {420, "ArrayUnresolved", "array<uint> uintArr;"},
+        {421, "ArrayUnresolved", "array<string> strArr;"},
+        {422, "ArrayUnresolved", "array<array<int>> matrix2D;"},
+        {423, "ArrayUnresolved", "array<array<array<float>>> matrix3D;"},
+        {424, "ArrayUnresolved", "array<array<UnknownClass>> badMatrix;"},
+        {425, "ArrayUnresolved", "array<void> voidArray;"},
+        {426, "ArrayUnresolved", "array<const void> constVoidArray;"},
+        {427, "ArrayUnresolved", "array<auto> autoArray;"},
+        {428, "ArrayUnresolved", "array<class> classKeywordArray;"},
+        {429, "ArrayUnresolved", "array<struct> structKeywordArray;"},
+        {430, "ArrayUnresolved", "array<enum> enumKeywordArray;"},
+        {431, "ArrayUnresolved", "array<funcdef> funcdefKeywordArray;"},
+        {432, "ArrayUnresolved", "array<interface> interfaceKeywordArray;"},
+        {433, "ArrayUnresolved", "array<namespace> namespaceKeywordArray;"},
+        {434, "ArrayUnresolved", "array<using> usingKeywordArray;"},
+        {435, "ArrayUnresolved", "array<import> importKeywordArray;"},
+        {436, "ArrayUnresolved", "array<export> exportKeywordArray;"},
+        {437, "ArrayUnresolved", "array<external> externalKeywordArray;"},
+        {438, "ArrayUnresolved", "array<shared> sharedKeywordArray;"},
+        {439, "ArrayUnresolved", "array<final> finalKeywordArray;"},
+        {440, "ArrayUnresolved", "array<abstract> abstractKeywordArray;"},
+
+        {441, "NativeVsGeneric", "int[] nativeArr;"},
+        {442, "NativeVsGeneric", "array<int> genericArr;"},
+        {443, "NativeVsGeneric", "int[]@ nativeHandle;"},
+        {444, "NativeVsGeneric", "array<int>@ genericHandle;"},
+        {445, "NativeVsGeneric", "int[][] multidimNative;"},
+        {446, "NativeVsGeneric", "array<array<int>> multidimGeneric;"},
+        {447, "NativeVsGeneric", "const int[] constArr;"},
+        {448, "NativeVsGeneric", "const int[]@ const handleConstArr;"},
+        {449, "NativeVsGeneric", "float[] nativeFloat;"},
+        {450, "NativeVsGeneric", "array<float> genericFloat;"},
+        {451, "NativeVsGeneric", "double[] nativeDouble;"},
+        {452, "NativeVsGeneric", "array<double> genericDouble;"},
+        {453, "NativeVsGeneric", "bool[] nativeBool;"},
+        {454, "NativeVsGeneric", "array<bool> genericBool;"},
+        {455, "NativeVsGeneric", "uint[] nativeUint;"},
+        {456, "NativeVsGeneric", "array<uint> genericUint;"},
+        {457, "NativeVsGeneric", "string[] nativeString;"},
+        {458, "NativeVsGeneric", "array<string> genericString;"},
+        {459, "NativeVsGeneric", "class C {} C[] nativeObjArr;"},
+        {460, "NativeVsGeneric", "class C {} array<C> genericObjArr;"},
+        {461, "NativeVsGeneric", "class C {} C@[] nativeObjHandleArr;"},
+        {462, "NativeVsGeneric", "class C {} array<C@> genericObjHandleArr;"},
+        {463, "NativeVsGeneric", "class C {} C[]@ nativeHandleToObjArr;"},
+        {464, "NativeVsGeneric", "class C {} array<C>@ genericHandleToObjArr;"},
+        {465, "NativeVsGeneric", "class C {} const C[] constNativeObjArr;"},
+        {466, "NativeVsGeneric", "class C {} const array<C> constGenericObjArr;"},
+        {467, "NativeVsGeneric", "int[][][] native3D;"},
+        {468, "NativeVsGeneric", "array<array<array<int>>> generic3D;"},
+        {469, "NativeVsGeneric", "int[] arrInit = {1, 2, 3};"},
+        {470, "NativeVsGeneric", "array<int> arrInit = {1, 2, 3};"},
+        {471, "NativeVsGeneric", "int[][] matrixInit = {{1, 2}, {3, 4}};"},
+        {472, "NativeVsGeneric", "array<array<int>> matrixInit = {{1, 2}, {3, 4}};"},
+        {473, "NativeVsGeneric", "void f(int[] arr) {}"},
+        {474, "NativeVsGeneric", "void f(array<int> arr) {}"},
+        {475, "NativeVsGeneric", "int[] f() { return null; }"},
+        {476, "NativeVsGeneric", "array<int> f() { return null; }"},
+        {477, "NativeVsGeneric", "class C { int[] memberArr; }"},
+        {478, "NativeVsGeneric", "class C { array<int> memberArr; }"},
+        {479, "NativeVsGeneric", "interface I { int[] get_items(); }"},
+        {480, "NativeVsGeneric", "interface I { array<int> get_items(); }"},
+
+        {481, "ArrayNameCollisions", "array<int> array;"},
+        {482, "ArrayNameCollisions", "int array = 10;"},
+        {483, "ArrayNameCollisions", "float array = 3.14f;"},
+        {484, "ArrayNameCollisions", "class array {}"},
+        {485, "ArrayNameCollisions", "void array() {}"},
+        {486, "ArrayNameCollisions", "interface array {}"},
+        {487, "ArrayNameCollisions", "enum array { A, B }"},
+        {488, "ArrayNameCollisions", "typedef int array;"},
+        {489, "ArrayNameCollisions", "funcdef void array();"},
+        {490, "ArrayNameCollisions", "namespace array {}"},
+        {491, "ArrayNameCollisions", "class C { int array; }"},
+        {492, "ArrayNameCollisions", "class C { void array() {} }"},
+        {493, "ArrayNameCollisions", "void f(int array) {}"},
+        {494, "ArrayNameCollisions", "class string {}"},
+        {495, "ArrayNameCollisions", "void string() {}"},
+        {496, "ArrayNameCollisions", "int string = 5;"},
+        {497, "ArrayNameCollisions", "class int {}"},
+        {498, "ArrayNameCollisions", "class float {}"},
+        {499, "ArrayNameCollisions", "class bool {}"},
+        {500, "ArrayNameCollisions", "class void {}"},
+        {501, "ArrayNameCollisions", "class auto {}"},
+        {502, "ArrayNameCollisions", "class const {}"},
+        {503, "ArrayNameCollisions", "class final {}"},
+        {504, "ArrayNameCollisions", "class override {}"},
+        {505, "ArrayNameCollisions", "class delete {}"},
+        {506, "ArrayNameCollisions", "class explicit {}"},
+        {507, "ArrayNameCollisions", "class property {}"},
+        {508, "ArrayNameCollisions", "class get {}"},
+        {509, "ArrayNameCollisions", "class set {}"},
+        {510, "ArrayNameCollisions", "class mixin {}"},
+        {511, "ArrayNameCollisions", "class interface {}"},
+        {512, "ArrayNameCollisions", "class namespace {}"},
+        {513, "ArrayNameCollisions", "class typedef {}"},
+        {514, "ArrayNameCollisions", "class funcdef {}"},
+        {515, "ArrayNameCollisions", "class enum {}"},
+        {516, "ArrayNameCollisions", "class shared {}"},
+        {517, "ArrayNameCollisions", "class external {}"},
+        {518, "ArrayNameCollisions", "class import {}"},
+        {519, "ArrayNameCollisions", "class from {}"},
+        {520, "ArrayNameCollisions", "class return {}"},
+
+        {521, "MultipleDeclarations", "array<int> a, b, c;"},
+        {522, "MultipleDeclarations", "int[] a, b = {1, 2}, c;"},
+        {523, "MultipleDeclarations", "array<int>@ a, b = null, c;"},
+        {524, "MultipleDeclarations", "array<int> a, float[] b;"},
+        {525, "MultipleDeclarations", "int[] a, float b;"},
+        {526, "MultipleDeclarations", "int a, float[] b;"},
+        {527, "MultipleDeclarations", "int[] a = {1}, b = {2, 3}, c = {4, 5, 6};"},
+        {528, "MultipleDeclarations", "array<int> a = {1}, b = {2, 3};"},
+        {529, "MultipleDeclarations", "const int[] a, b;"},
+        {530, "MultipleDeclarations", "const array<int> a, b;"},
+        {531, "MultipleDeclarations", "class C {} C[] a, b;"},
+        {532, "MultipleDeclarations", "class C {} array<C> a, b;"},
+        {533, "MultipleDeclarations", "class C {} C@[] a, b;"},
+        {534, "MultipleDeclarations", "class C {} array<C@> a, b;"},
+        {535, "MultipleDeclarations", "int[] a, ;"},
+        {536, "MultipleDeclarations", "array<int> a, ;"},
+        {537, "MultipleDeclarations", "int[] , b;"},
+        {538, "MultipleDeclarations", "array<int> , b;"},
+        {539, "MultipleDeclarations", "int[] a, b = ;"},
+        {540, "MultipleDeclarations", "array<int> a, b = ;"},
+        {541, "MultipleDeclarations", "int[] a = , b;"},
+        {542, "MultipleDeclarations", "array<int> a = , b;"},
+        {543, "MultipleDeclarations", "int[] a, b, int c;"},
+        {544, "MultipleDeclarations", "array<int> a, b, int c;"},
+        {545, "MultipleDeclarations", "int a, b, int[] c;"},
+        {546, "MultipleDeclarations", "int a, b, array<int> c;"},
+        {547, "MultipleDeclarations", "int[] a, int[] b;"},
+        {548, "MultipleDeclarations", "array<int> a, array<int> b;"},
+        {549, "MultipleDeclarations", "int[][] a, b;"},
+        {550, "MultipleDeclarations", "array<array<int>> a, b;"},
+        {551, "MultipleDeclarations", "class C { int[] a, b; }"},
+        {552, "MultipleDeclarations", "class C { array<int> a, b; }"},
+        {553, "MultipleDeclarations", "namespace N { int[] a, b; }"},
+        {554, "MultipleDeclarations", "namespace N { array<int> a, b; }"},
+        {555, "MultipleDeclarations", "void f(int[] a, b) {}"},
+        {556, "MultipleDeclarations", "void f(array<int> a, b) {}"},
+        {557, "MultipleDeclarations", "int[] a, b, c = {1, 2};"},
+        {558, "MultipleDeclarations", "array<int> a, b, c = {1, 2};"},
+        {559, "MultipleDeclarations", "int[] a = null, b = null;"},
+        {560, "MultipleDeclarations", "array<int> a = null, b = null;"},
+
+        {561, "CorruptTemplates", "array<int arr;"},
+        {562, "CorruptTemplates", "array<int, float> arr;"},
+        {563, "CorruptTemplates", "array<> arr;"},
+        {564, "CorruptTemplates", "int[ arr;"},
+        {565, "CorruptTemplates", "int[]] arr2;"},
+        {566, "CorruptTemplates", "array<array<int>> arr;"},
+        {567, "CorruptTemplates", "array<array<int> > arr;"},
+        {568, "CorruptTemplates", "array<int> arr = {,1, 2};"},
+        {569, "CorruptTemplates", "int[] arr = {1, 2,, 3};"},
+        {570, "CorruptTemplates", "array<int> arr = {1, 2,};"},
+        {571, "CorruptTemplates", "int[] arr = {1, 2,};"},
+        {572, "CorruptTemplates", "array<int>> badClose;"},
+        {573, "CorruptTemplates", "array<<int> badOpen;"},
+        {574, "CorruptTemplates", "array<int,,float> badCommas;"},
+        {575, "CorruptTemplates", "array<,int> leadingComma;"},
+        {576, "CorruptTemplates", "array<int,> trailingComma;"},
+        {577, "CorruptTemplates", "array<int a> varInTemplate;"},
+        {578, "CorruptTemplates", "array<int = 10> defaultInTemplate;"},
+        {579, "CorruptTemplates", "array<10> intValueInTemplate;"},
+        {580, "CorruptTemplates", "array<\"str\"> strValueInTemplate;"},
+        {581, "CorruptTemplates", "array<true> boolValueInTemplate;"},
+        {582, "CorruptTemplates", "array<null> nullValueInTemplate;"},
+        {583, "CorruptTemplates", "int[[ arr;"},
+        {584, "CorruptTemplates", "int]]] arr;"},
+        {585, "CorruptTemplates", "int[[] arr;"},
+        {586, "CorruptTemplates", "int[]] arr;"},
+        {587, "CorruptTemplates", "int][ arr;"},
+        {588, "CorruptTemplates", "int[] arr = {;}"},
+        {589, "CorruptTemplates", "array<int> arr = {;};"},
+        {590, "CorruptTemplates", "int[] arr = {};"},
+        {591, "CorruptTemplates", "array<int> arr = {};"},
+        {592, "CorruptTemplates", "int[] arr = {1};"},
+        {593, "CorruptTemplates", "array<int> arr = {1};"},
+        {594, "CorruptTemplates", "array<int> arr = {1, 2, 3};"},
+        {595, "CorruptTemplates", "int[] arr = {1, 2, 3};"},
+        {596, "CorruptTemplates", "array<array<int>> matrix = {{1, 2}, {3, 4}};"},
+        {597, "CorruptTemplates", "int[][] matrix = {{1, 2}, {3, 4}};"},
+        {598, "CorruptTemplates", "array<int>@ arrHandle = null;"},
+        {599, "CorruptTemplates", "int[]@ arrHandle = null;"},
+        {600, "CorruptTemplates", "const array<int>@ const constArrHandle = null;"}
+    };
+
+    angel_lsp::i18n::I18n i18n("en");
+    std::cout << "\n=== LSP_VALIDATOR_BATCH_OUTPUT_START ===\n";
+
+    for (const auto &tc : cases)
+    {
+        std::string fileUri = "file:///test_" + std::to_string(tc.id) + ".as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+
+        auto syntaxDiags = collector.CollectSymbols(fileUri, tc.code, parser, table);
+
+        SemanticAnalyzer analyzer;
+        angel_lsp::config::TypeConfig typeConfig{"string", "array"};
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n, &typeConfig};
+        auto semanticDiags = analyzer.Analyze(req);
+
+        std::vector<Diagnostic> allDiags = syntaxDiags;
+        allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
+
+        bool rejected = !allDiags.empty();
+        std::string firstErr = "";
+        if (rejected)
+        {
+            const auto &d = allDiags[0];
+            firstErr = "L" + std::to_string(d.range.start.line + 1) + ":C" + std::to_string(d.range.start.character + 1) + " - [" + d.code + "] " + d.message;
+        }
+
+        std::cout << "ID:" << tc.id << "|"
+                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "ERR:" << firstErr << "\n";
+    }
+
+    std::cout << "=== LSP_VALIDATOR_BATCH_OUTPUT_END ===\n";
+}
+
+TEST_CASE("Batch_StringTypedef800_Harness_Comparison")
+{
+    struct StructuralTestCase
+    {
+        int id;
+        std::string cat;
+        std::string code;
+    };
+
+    std::vector<StructuralTestCase> cases = {
+        {601, "StringEscapes", "string s = \"Hola Mundo\";"},
+        {602, "StringEscapes", "string s = 'Hola Mundo';"},
+        {603, "StringEscapes", "string s = \"Linea 1\\nLinea 2\";"},
+        {604, "StringEscapes", "string s = \"Tab\\tSeparado\";"},
+        {605, "StringEscapes", "string s = \"Retorno\\rCarro\";"},
+        {606, "StringEscapes", "string s = \"Nulo\\0Byte\";"},
+        {607, "StringEscapes", "string s = \"Barra\\\\Invertida\";"},
+        {608, "StringEscapes", "string s = \"Comilla\\\"Doble\";"},
+        {609, "StringEscapes", "string s = 'Comilla\\'Simple';"},
+        {610, "StringEscapes", "string s = \"\\xFF\";"},
+        {611, "StringEscapes", "string s = \"\\x00\";"},
+        {612, "StringEscapes", "string s = \"\\x1F\";"},
+        {613, "StringEscapes", "string s = \"\\xA\";"},
+        {614, "StringEscapes", "string s = \"\\x1234\";"},
+        {615, "StringEscapes", "string s = \"\\z\";"},
+        {616, "StringEscapes", "string s = \"\\xG\";"},
+        {617, "StringEscapes", "string s = \"\\x\";"},
+        {618, "StringEscapes", "string s = \"sin cerrar\n\";"},
+        {619, "StringEscapes", "string s = 'sin cerrar\n';"},
+        {620, "StringEscapes", "string s = \"\\a\";"},
+        {621, "StringEscapes", "string s = \"\\b\";"},
+        {622, "StringEscapes", "string s = \"\\f\";"},
+        {623, "StringEscapes", "string s = \"\\v\";"},
+        {624, "StringEscapes", "string s = \"\\?\";"},
+        {625, "StringEscapes", "string s = \"\";"},
+        {626, "StringEscapes", "string s = '';"},
+        {627, "StringEscapes", "string s = \"   \";"},
+        {628, "StringEscapes", "string s = \"1234567890\";"},
+        {629, "StringEscapes", "string s = \"!@#$%^&*()\";"},
+        {630, "StringEscapes", "string s = \"Escape \\\\\\\" anidado\";"},
+        {631, "StringEscapes", "string s = 'Escape \\\\\\\' anidado';"},
+        {632, "StringEscapes", "string s = \"Mezcla \\n \\t \\r \\0 \\\\ \\\" \\xFF\";"},
+        {633, "StringEscapes", "string s = \"\\x7F\";"},
+        {634, "StringEscapes", "string s = \"\\x80\";"},
+        {635, "StringEscapes", "string s = \"\\xFE\";"},
+        {636, "StringEscapes", "string s = \"\\x12345\";"},
+        {637, "StringEscapes", "string s = \"\\q\";"},
+        {638, "StringEscapes", "string s = \"\\w\";"},
+        {639, "StringEscapes", "string s = \"\\y\";"},
+        {640, "StringEscapes", "string s = \"cadena con \\0 intermedia\";"},
+
+        {641, "UnicodeEscapes", "string s = \"\\u0041\";"},
+        {642, "UnicodeEscapes", "string s = \"\\u20AC\";"},
+        {643, "UnicodeEscapes", "string s = \"\\U0001F600\";"},
+        {644, "UnicodeEscapes", "string s = \"\\uD800\";"},
+        {645, "UnicodeEscapes", "string s = \"\\uDFFF\";"},
+        {646, "UnicodeEscapes", "string s = \"\\uDBFF\";"},
+        {647, "UnicodeEscapes", "string s = \"\\uDC00\";"},
+        {648, "UnicodeEscapes", "string s = \"\\U00110000\";"},
+        {649, "UnicodeEscapes", "string s = \"\\u12\";"},
+        {650, "UnicodeEscapes", "string s = \"\\U1234\";"},
+        {651, "UnicodeEscapes", "string s = \"\\uFFFF\";"},
+        {652, "UnicodeEscapes", "string s = \"\\u0000\";"},
+        {653, "UnicodeEscapes", "string s = \"\\u007F\";"},
+        {654, "UnicodeEscapes", "string s = \"\\u0080\";"},
+        {655, "UnicodeEscapes", "string s = \"\\u07FF\";"},
+        {656, "UnicodeEscapes", "string s = \"\\u0800\";"},
+        {657, "UnicodeEscapes", "string s = \"\\uD7FF\";"},
+        {658, "UnicodeEscapes", "string s = \"\\uE000\";"},
+        {659, "UnicodeEscapes", "string s = \"\\U00000041\";"},
+        {660, "UnicodeEscapes", "string s = \"\\U00000000\";"},
+        {661, "UnicodeEscapes", "string s = \"\\U00010FFFF\";"},
+        {662, "UnicodeEscapes", "string s = \"\\U00010FFF\";"},
+        {663, "UnicodeEscapes", "string s = \"\\U00200000\";"},
+        {664, "UnicodeEscapes", "string s = \"\\UFFFFFFFF\";"},
+        {665, "UnicodeEscapes", "string s = \"\\uG123\";"},
+        {666, "UnicodeEscapes", "string s = \"\\UG1234567\";"},
+        {667, "UnicodeEscapes", "string s = \"\\u\";"},
+        {668, "UnicodeEscapes", "string s = \"\\U\";"},
+        {669, "UnicodeEscapes", "string s = \"\\u1\";"},
+        {670, "UnicodeEscapes", "string s = \"\\u123\";"},
+        {671, "UnicodeEscapes", "string s = \"\\U1234567\";"},
+        {672, "UnicodeEscapes", "string s = \"\\u0041\\u0042\\u0043\";"},
+        {673, "UnicodeEscapes", "string s = \"Texto \\u0041 normal\";"},
+        {674, "UnicodeEscapes", "string s = \"\\u0022\";"},
+        {675, "UnicodeEscapes", "string s = \"\\u0027\";"},
+        {676, "UnicodeEscapes", "string s = \"\\u005C\";"},
+        {677, "UnicodeEscapes", "string s = \"\\u000A\";"},
+        {678, "UnicodeEscapes", "string s = \"\\u000D\";"},
+        {679, "UnicodeEscapes", "string s = \"\\u0009\";"},
+        {680, "UnicodeEscapes", "string s = \"\\uD900\";"},
+
+        {681, "HeredocStrings", "string s = \"\"\"Texto multilinea\"\"\";"},
+        {682, "HeredocStrings", "string s = \"\"\"Linea 1\nLinea 2\nLinea 3\"\"\";"},
+        {683, "HeredocStrings", "string s = \"\"\"Con \\n y \\t literales\"\"\";"},
+        {684, "HeredocStrings", "string s = \"\"\"Con \"comillas\" simples\"\"\";"},
+        {685, "HeredocStrings", "string s = \"\"\"Con \"\"dos comillas\"\" sin problema\"\"\";"},
+        {686, "HeredocStrings", "string s = \"\"\"Sin cerrar"},
+        {687, "HeredocStrings", "string s = \"\"\"';"},
+        {688, "HeredocStrings", "string s = \"\"\"\"\"\";"},
+        {689, "HeredocStrings", "string s = \"\"\"a\"\"\";"},
+        {690, "HeredocStrings", "string s = \"\"\"\n\"\"\";"},
+        {691, "HeredocStrings", "string s = \"\"\"\\x41 \\u0041 \\n \\r \\t\"\"\";"},
+        {692, "HeredocStrings", "string s = \"\"\"Barra \\ al final\"\"\";"},
+        {693, "HeredocStrings", "string s = \"\"\"Simbolo \\0 nulo\"\"\";"},
+        {694, "HeredocStrings", "string s = \"\"\"Codigo: { int x = 10; }\"\"\";"},
+        {695, "HeredocStrings", "string s = \"\"\"HTML: <div class=\"box\"></div>\"\"\";"},
+        {696, "HeredocStrings", "string s = \"\"\"JSON: {\"key\": \"value\"}\"\"\";"},
+        {697, "HeredocStrings", "string s = \"\"\"XML: <tag attr='val'/>\"\"\";"},
+        {698, "HeredocStrings", "string s = \"\"\"SQL: SELECT * FROM table WHERE col = 'a'\"\"\";"},
+        {699, "HeredocStrings", "string s = \"\"\"Multiple \"\"\"\"\"\"\";"},
+        {700, "HeredocStrings", "string s = \"\"\"Texto \"\"\" mas texto\"\"\";"},
+        {701, "HeredocStrings", "string s = \"\"\"Ruta C:\\Users\\Fano\\Desktop\"\"\";"},
+        {702, "HeredocStrings", "string s = \"\"\"Regex ^[a-z]+$\"\"\";"},
+        {703, "HeredocStrings", "string s = \"\"\"Comentario // no ignora\"\"\";"},
+        {704, "HeredocStrings", "string s = \"\"\"Comentario /* no ignora */\"\"\";"},
+        {705, "HeredocStrings", "string s = \"\"\"Unicode real: € 😃 Å\"\"\";"},
+        {706, "HeredocStrings", "string s = \"\"\"    tabulaciones    independientes\"\"\";"},
+        {707, "HeredocStrings", "string s = \"\"\"Con salto final\n\"\"\";"},
+        {708, "HeredocStrings", "string s = \"\"\"\nCon salto inicial\"\"\";"},
+        {709, "HeredocStrings", "string s = \"\"\"Triple comilla \" en heredoc\"\"\";"},
+        {710, "HeredocStrings", "string s = \"\"\"Heredoc vacio multilinea\n\n\"\"\";"},
+
+        {711, "StringConcat", "string s = \"Parte 1 \" \"Parte 2\";"},
+        {712, "StringConcat", "string s = \"Parte 1 \" // comentario\n\"Parte 2\";"},
+        {713, "StringConcat", "string s = \"Parte 1 \" /* comentario */ \"Parte 2\";"},
+        {714, "StringConcat", "string s = \"A\" \"B\" \"C\" \"D\";"},
+        {715, "StringConcat", "string s = 'A' 'B' 'C';"},
+        {716, "StringConcat", "string s = \"Mezcla \" 'simple \" y ' \"doble\";"},
+        {717, "StringConcat", "string s = \"Linea 1\\n\" \"Linea 2\\n\";"},
+        {718, "StringConcat", "string s = \"Concat \" + \"Normal\";"},
+        {719, "StringConcat", "string s = \"Concat \" + \"Tres \" + \"Partes\";"},
+        {720, "StringConcat", "string s = \"Concat \" + 10;"},
+        {721, "StringConcat", "string s = 10 + \" Concat\";"},
+        {722, "StringConcat", "string s = \"Concat \" + 3.14f;"},
+        {723, "StringConcat", "string s = \"Concat \" + true;"},
+        {724, "StringConcat", "string s = \"Concat \" + null;"},
+        {725, "StringConcat", "string s = \"\"\"Heredoc \"\"\" \"Literal\";"},
+        {726, "StringConcat", "string s = \"Literal \" \"\"\"Heredoc\"\"\";"},
+        {727, "StringConcat", "string s = \"\"\"Heredoc 1 \"\"\" \"\"\"Heredoc 2\"\"\";"},
+        {728, "StringConcat", "string s = \"Parte 1\"\n\"Parte 2\"\n\"Parte 3\";"},
+        {729, "StringConcat", "string s = \"Parte 1\"\n\"Parte 2\";"},
+        {730, "StringConcat", "void f(string s = \"A\" \"B\") {}"},
+        {731, "StringConcat", "class C { string prop = \"A\" \"B\"; }"},
+        {732, "StringConcat", "enum E { A = \"A\" \"B\" }"},
+        {733, "StringConcat", "const string GLOBAL_STR = \"P1 \" \"P2\";"},
+        {734, "StringConcat", "string s = \"Escapes \\n\" \" \\t Concat\";"},
+        {735, "StringConcat", "string s = \"\\x41\" \"\\x42\";"},
+        {736, "StringConcat", "string s = \"\\u0041\" \"\\u0042\";"},
+        {737, "StringConcat", "string s = \"Sin espacio\"\"junto\";"},
+        {738, "StringConcat", "string s = 'Sin espacio''junto';"},
+        {739, "StringConcat", "string s = \"Triple \" \"Concat \" \"Automatica\";"},
+        {740, "StringConcat", "string s = \"Concat \" \"con \" \"muchas \" \"partes \" \"seguidas\";"},
+
+        {741, "TypedefsEdge", "typedef float real32;"},
+        {742, "TypedefsEdge", "typedef double real64;"},
+        {743, "TypedefsEdge", "typedef int int32;"},
+        {744, "TypedefsEdge", "typedef uint uint32;"},
+        {745, "TypedefsEdge", "typedef bool boolean;"},
+        {746, "TypedefsEdge", "typedef float real32; real32 val = 1.0f;"},
+        {747, "TypedefsEdge", "typedef double real64; real64 val = 2.0;"},
+        {748, "TypedefsEdge", "typedef int int32; int32 val = 10;"},
+        {749, "TypedefsEdge", "typedef float;"},
+        {750, "TypedefsEdge", "typedef 123 float;"},
+        {751, "TypedefsEdge", "typedef float class;"},
+        {752, "TypedefsEdge", "typedef float struct;"},
+        {753, "TypedefsEdge", "typedef float interface;"},
+        {754, "TypedefsEdge", "typedef float enum;"},
+        {755, "TypedefsEdge", "typedef float void;"},
+        {756, "TypedefsEdge", "typedef float auto;"},
+        {757, "TypedefsEdge", "typedef float const;"},
+        {758, "TypedefsEdge", "typedef float return;"},
+        {759, "TypedefsEdge", "typedef float if;"},
+        {760, "TypedefsEdge", "typedef float while;"},
+        {761, "TypedefsEdge", "typedef float int;"},
+        {762, "TypedefsEdge", "typedef float double;"},
+        {763, "TypedefsEdge", "typedef float string;"},
+        {764, "TypedefsEdge", "typedef float array;"},
+        {765, "TypedefsEdge", "typedef int MyInt; typedef float MyInt;"},
+        {766, "TypedefsEdge", "typedef int MyInt; typedef int MyInt;"},
+        {767, "TypedefsEdge", "class CustomClass {} typedef CustomClass MyClassAlias;"},
+        {768, "TypedefsEdge", "class CustomClass {} typedef CustomClass@ MyClassHandleAlias;"},
+        {769, "TypedefsEdge", "interface I {} typedef I@ IFaceHandle;"},
+        {770, "TypedefsEdge", "enum E { A, B } typedef E EnumAlias;"},
+        {771, "TypedefsEdge", "typedef NonExistentType BadAlias;"},
+        {772, "TypedefsEdge", "namespace N { typedef int LocalInt; } N::LocalInt x = 5;"},
+        {773, "TypedefsEdge", "namespace N { typedef int LocalInt; } using namespace N; LocalInt x = 5;"},
+        {774, "TypedefsEdge", "class C { typedef int MemberInt; }"},
+        {775, "TypedefsEdge", "typedef const int ConstInt;"},
+        {776, "TypedefsEdge", "typedef int[] IntArrayAlias;"},
+        {777, "TypedefsEdge", "typedef array<int> IntGenericArrayAlias;"},
+        {778, "TypedefsEdge", "typedef void f();"},
+        {779, "TypedefsEdge", "typedef float real32, real64;"},
+        {780, "TypedefsEdge", "typedef int MyInt = 10;"},
+        {781, "TypedefsEdge", "typedef int MyInt;"},
+        {782, "TypedefsEdge", "typedef uint8 byte;"},
+        {783, "TypedefsEdge", "typedef int8 sbyte;"},
+        {784, "TypedefsEdge", "typedef int16 short;"},
+        {785, "TypedefsEdge", "typedef uint16 ushort;"},
+        {786, "TypedefsEdge", "typedef int64 long;"},
+        {787, "TypedefsEdge", "typedef uint64 ulong;"},
+        {788, "TypedefsEdge", "typedef float real32; void f(real32 p) {}"},
+        {789, "TypedefsEdge", "typedef float real32; real32 f() { return 1.0f; }"},
+        {790, "TypedefsEdge", "typedef float real32; class C { real32 member; }"},
+        {791, "TypedefsEdge", "typedef float real32; interface I { real32 get_val(); }"},
+        {792, "TypedefsEdge", "typedef int MyInt; MyInt[] arrAlias;"},
+        {793, "TypedefsEdge", "typedef int MyInt; array<MyInt> arrGenericAlias;"},
+        {794, "TypedefsEdge", "typedef MyAlias1 MyAlias2;"},
+        {795, "TypedefsEdge", "typedef int Alias1; typedef Alias1 Alias2; Alias2 x = 10;"},
+        {796, "TypedefsEdge", "typedef int Alias1; typedef Alias1 Alias2; typedef Alias2 Alias3;"},
+        {797, "TypedefsEdge", "external typedef int MyInt;"},
+        {798, "TypedefsEdge", "shared typedef int MyInt;"},
+        {799, "TypedefsEdge", "private typedef int MyInt;"},
+        {800, "TypedefsEdge", "protected typedef int MyInt;"}
+    };
+
+    angel_lsp::i18n::I18n i18n("en");
+    std::cout << "\n=== LSP_VALIDATOR_BATCH_OUTPUT_START ===\n";
+
+    for (const auto &tc : cases)
+    {
+        std::string fileUri = "file:///test_" + std::to_string(tc.id) + ".as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+
+        auto syntaxDiags = collector.CollectSymbols(fileUri, tc.code, parser, table);
+
+        SemanticAnalyzer analyzer;
+        angel_lsp::config::TypeConfig typeConfig{"string", "array"};
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n, &typeConfig};
+        auto semanticDiags = analyzer.Analyze(req);
+
+        std::vector<Diagnostic> allDiags = syntaxDiags;
+        allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
+
+        bool rejected = !allDiags.empty();
+        std::string firstErr = "";
+        if (rejected)
+        {
+            const auto &d = allDiags[0];
+            firstErr = "L" + std::to_string(d.range.start.line + 1) + ":C" + std::to_string(d.range.start.character + 1) + " - [" + d.code + "] " + d.message;
+        }
+
+        std::cout << "ID:" << tc.id << "|"
+                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "ERR:" << firstErr << "\n";
+    }
+
+    std::cout << "=== LSP_VALIDATOR_BATCH_OUTPUT_END ===\n";
+}
+
 
 
 
