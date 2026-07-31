@@ -1243,18 +1243,6 @@
           "type": "CHOICE",
           "members": [
             {
-              "type": "SYMBOL",
-              "name": "func_attributes"
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
-        },
-        {
-          "type": "CHOICE",
-          "members": [
-            {
               "type": "STRING",
               "value": ";"
             },
@@ -4016,7 +4004,7 @@
                     "members": [
                       {
                         "type": "PATTERN",
-                        "value": "[^'\\\\]"
+                        "value": "[^'\\r\\n\\\\]"
                       },
                       {
                         "type": "PATTERN",
@@ -4048,7 +4036,7 @@
                     "members": [
                       {
                         "type": "PATTERN",
-                        "value": "[^\"\\\\]"
+                        "value": "[^\"\\r\\n\\\\]"
                       },
                       {
                         "type": "PATTERN",

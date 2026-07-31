@@ -257,6 +257,7 @@ namespace angel_lsp::analysis
         void ClearDocumentSymbols(const std::string &fileUri);
 
         bool HasSymbol(const std::string &qualifiedName) const;
+        bool HasSymbolAnywhere(const std::string &name) const;
 
         /** @brief Returns a pointer to the overload list for the given qualified name.
          *  @return Pointer into the internal map (valid until the next write), or nullptr if not found.

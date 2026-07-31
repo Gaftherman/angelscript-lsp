@@ -51,6 +51,11 @@ namespace angel_lsp::i18n
         m_messages["as-err-override-final-method"] = "Cannot override method '{}' declared as final in base class '{}'.";
         m_messages["as-err-enum-invalid-initializer"] = "Enum member initializer '{}' must be a constant integer expression.";
         m_messages["as-err-standalone-reference"] = "Standalone reference variable '{}' is not supported.";
+        m_messages["as-err-delete-with-other-qualifier"] = "Cannot flag function '{}' that will be deleted with other qualifiers.";
+        m_messages["as-err-array-invalid-template"] = "Attempting to instantiate invalid template parameter '{}'.";
+        m_messages["as-err-typedef-non-primitive"] = "Typedef base type '{}' must be a primitive data type.";
+        m_messages["as-err-invalid-reference-return"] = "Not a valid reference type '{}'.";
+        m_messages["as-err-external-not-found"] = "External shared entity '{}' not found.";
 
         if (locale == "es")
         {

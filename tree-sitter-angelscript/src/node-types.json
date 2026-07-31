@@ -27,16 +27,6 @@
           }
         ]
       }
-    },
-    "children": {
-      "multiple": false,
-      "required": false,
-      "types": [
-        {
-          "type": "func_attributes",
-          "named": true
-        }
-      ]
     }
   },
   {

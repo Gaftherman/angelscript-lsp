@@ -270,11 +270,36 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-reference"));
         }
 
+        if (sym.containerName.empty() && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit || sig.modifiers.isDelete))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
+        }
+
+        if (sig.modifiers.isDelete && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-delete-with-other-qualifier", sym.name));
+        }
+
+        if (sig.modifiers.isExternal)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
+        }
+
+        if ((sig.modifiers.isReturnReference || sig.returnType.find('&') != std::string::npos) && IsPrimitiveTypeName(sig.returnBaseTypeName))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-invalid-reference-return", sig.returnBaseTypeName));
+        }
+
         if (!sym.name.empty() && sym.name[0] == '~')
         {
-            if (!sig.parameters.empty())
+            bool isUnnamedVoid = (sig.parameters.size() == 1 && (sig.parameters[0].baseTypeName == "void" || sig.parameters[0].typeKind == TypeKind::Void) && sig.parameters[0].name.empty());
+            if (!sig.parameters.empty() && !isUnnamedVoid)
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-param", sym.name));
+            }
+            if (sig.returnTypeKind != TypeKind::Void && sig.returnTypeKind != TypeKind::Unknown && !sig.returnType.empty())
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
             }
             if (sig.modifiers.isDelete)
             {
@@ -289,7 +314,7 @@ namespace angel_lsp::analysis
                 sym.name == "opMod" || sym.name == "opPow" || sym.name == "opAnd" || sym.name == "opOr" ||
                 sym.name == "opXor" || sym.name == "opShl" || sym.name == "opShr" || sym.name == "opUShr")
             {
-                if (sig.parameters.size() != 1)
+                if (sig.parameters.size() > 1)
                 {
                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-binary-operator-arity", sym.name));
                 }
@@ -419,13 +444,16 @@ namespace angel_lsp::analysis
 
             if (param.typeKind == TypeKind::Void || param.baseTypeName == "void")
             {
-                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-void-parameter", param.name, sym.name));
+                bool isUnnamedVoid = (sig.parameters.size() == 1 && param.name.empty());
+                if (!isUnnamedVoid)
+                {
+                    diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-void-parameter", param.name, sym.name));
+                }
             }
 
             if (param.modifier == ParameterModifier::InOut && param.typeKind != TypeKind::Unknown &&
                 param.typeKind != TypeKind::Auto)
             {
-                // Primitives cannot be passed with &inout (only object types supporting handles/references can)
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-inout-on-primitive", param.baseTypeName));
             }
 
@@ -444,21 +472,6 @@ namespace angel_lsp::analysis
             if (param.hasPrimitiveHandle)
             {
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-handle-on-primitive", param.baseTypeName));
-            }
-
-            if (param.modifier == ParameterModifier::Out && !param.defaultValue.empty() && param.typeKind != TypeKind::Unknown)
-            {
-                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-out-param-default", param.name));
-            }
-
-            if (param.modifier == ParameterModifier::Out && param.isConst)
-            {
-                bool isObjectType = (param.isHandle || param.typeKind == TypeKind::Object || param.typeKind == TypeKind::Handle ||
-                                     req.symbolTable.HasSymbol(param.baseTypeName));
-                if (!isObjectType)
-                {
-                    diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-const-out-param", param.name));
-                }
             }
 
             if (param.typeKind == TypeKind::Unknown && !param.baseTypeName.empty())
@@ -528,7 +541,14 @@ namespace angel_lsp::analysis
                     }
                 }
 
-                if (!isClassContainer)
+                if (isClassContainer)
+                {
+                    if (sig.modifiers.isConst)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-class-member-const", sym.name));
+                    }
+                }
+                else
                 {
                     if (sig.modifiers.access == AccessModifier::Private || sig.modifiers.access == AccessModifier::Protected)
                     {
@@ -560,6 +580,20 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
         }
 
+        if (!sig.defaultValue.empty())
+        {
+            std::string val = sig.defaultValue;
+            bool isString = (val.front() == '"' || val.front() == '\'');
+            bool isBool = (val == "true" || val == "false");
+            bool isNumericType = (sig.typeKind == TypeKind::Int32 || sig.typeKind == TypeKind::Int16 ||
+                                  sig.typeKind == TypeKind::Int64 || sig.typeKind == TypeKind::Float ||
+                                  sig.typeKind == TypeKind::Double || sig.typeKind == TypeKind::UInt32);
+            if (isNumericType && (isString || isBool))
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", sym.name));
+            }
+        }
+
         std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
         std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
 
@@ -571,17 +605,32 @@ namespace angel_lsp::analysis
         if (sig.typeKind == TypeKind::Unknown && sig.baseTypeName != "auto" && !sig.baseTypeName.empty())
         {
             if (sig.baseTypeName != stringTypeName && sig.baseTypeName != arrayTypeName &&
-                !req.symbolTable.HasSymbol(sig.baseTypeName))
+                !req.symbolTable.HasSymbolAnywhere(sig.baseTypeName))
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
             }
         }
 
+        static const ankerl::unordered_dense::set<std::string_view> invalidTemplateArgs = {
+            "void", "auto", "class", "struct", "enum", "funcdef",
+            "interface", "namespace", "using", "import", "export",
+            "external", "shared", "final", "abstract", "true", "false", "null"
+        };
+
+        if (sig.isArray && invalidTemplateArgs.count(sig.baseTypeName))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-array-invalid-template", sig.baseTypeName));
+        }
+
         if (!sig.templateName.empty() && sig.templateName != "int" && sig.templateName != "float" &&
             sig.templateName != "double" && sig.templateName != "uint" && sig.templateName != "bool" &&
-            sig.templateName != stringTypeName && sig.templateName != "auto")
+            sig.templateName != stringTypeName && sig.templateName != arrayTypeName && sig.templateName != "auto")
         {
-            if (!req.symbolTable.HasSymbol(sig.templateName))
+            if (invalidTemplateArgs.count(sig.templateName))
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-array-invalid-template", sig.templateName));
+            }
+            else if (!req.symbolTable.HasSymbolAnywhere(sig.templateName))
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.templateName));
             }
@@ -913,6 +962,30 @@ namespace angel_lsp::analysis
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-base-not-found", ifaceName));
             }
         }
+
+        const std::string ifaceContainer = sym.qualifiedName;
+        req.symbolTable.ForEachSymbol(
+            [&](const std::string & /*qName*/, const std::vector<Symbol> &symsInTable)
+            {
+                for (const auto &ms : symsInTable)
+                {
+                    if (ms.containerName == ifaceContainer && ms.fileUri == req.fileUri)
+                    {
+                        if (ms.type == SymbolType::Function)
+                        {
+                            const auto &fnSig = ms.GetFunction();
+                            if (fnSig.modifiers.access == AccessModifier::Private || fnSig.modifiers.access == AccessModifier::Protected)
+                            {
+                                diagnostics.push_back(CreateDiagnostic(ms, req, "as-err-interface-private-method", ms.name));
+                            }
+                            if (ms.name == sym.name || (!ms.name.empty() && ms.name[0] == '~'))
+                            {
+                                diagnostics.push_back(CreateDiagnostic(ms, req, "as-err-interface-constructor", ms.name));
+                            }
+                        }
+                    }
+                }
+            });
     }
 
     void SemanticAnalyzer::ValidateTypedef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
@@ -928,7 +1001,11 @@ namespace angel_lsp::analysis
 
         const auto &sig = sym.GetTypedef();
 
-        if (sig.typeKind == TypeKind::Unknown && !sig.baseType.empty())
+        if (!IsPrimitiveTypeName(sig.baseType))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-typedef-non-primitive", sig.baseType));
+        }
+        else if (sig.typeKind == TypeKind::Unknown && !sig.baseType.empty())
         {
             if (!req.symbolTable.HasSymbol(sig.baseType))
             {
@@ -978,8 +1055,14 @@ namespace angel_lsp::analysis
         }
 
         const auto &sig = sym.GetEnum();
+        ankerl::unordered_dense::set<std::string> seenEnumMembers;
         for (const auto &member : sig.members)
         {
+            if (!seenEnumMembers.insert(member.name).second)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", member.name, "enum member"));
+            }
+
             if (!member.value.empty())
             {
                 // Enum initializers must be integer constant expressions

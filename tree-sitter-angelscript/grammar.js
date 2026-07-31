@@ -311,7 +311,6 @@ module.exports = grammar({
     accessor: $ => seq(
       field("kind", choice("get", "set")),
       optional("const"),
-      optional($.func_attributes),
       choice(";", field("body", $.statement_block)),
     ),
 
@@ -722,9 +721,9 @@ module.exports = grammar({
     string_literal: $ => repeat1(choice(
       // Triple-quoted heredoc strings (no escape processing, multiline)
       token(seq('"""', /([^"]|"[^"]|""[^"])*/, '"""')),
-      // Single and double quoted strings with escape sequences
-      token(seq("'", repeat(choice(/[^'\\]/, /\\./)), "'")),
-      token(seq('"', repeat(choice(/[^"\\]/, /\\./)), '"')),
+      // Single and double quoted strings (single-line only, no raw newlines)
+      token(seq("'", repeat(choice(/[^'\r\n\\]/, /\\./)), "'")),
+      token(seq('"', repeat(choice(/[^"\r\n\\]/, /\\./)), '"')),
     )),
 
     number_literal: _ => {
