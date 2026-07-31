@@ -116,6 +116,7 @@ namespace angel_lsp::analysis
         uint32_t returnArrayDepth = 0;
         std::vector<ParameterInformation> parameters;
         bool hasBody = false;
+        bool isInterfaceMethod = false;
     };
 
     struct VariableSignature

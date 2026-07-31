@@ -66,6 +66,7 @@ namespace angel_lsp::analysis
         m_symEnumMember = ts_language_symbol_for_name(lang, "enum_member", 11, true);
         m_symFuncDeclaration = ts_language_symbol_for_name(lang, "func_declaration", 16, true);
         m_symStatementBlock = ts_language_symbol_for_name(lang, "statement_block", 15, true);
+        m_symInterfaceMethod = ts_language_symbol_for_name(lang, "interface_method", 16, true);
 
         auto addPrimitive = [&](const char *name, uint32_t len, TypeKind kind)
         {
@@ -573,6 +574,7 @@ namespace angel_lsp::analysis
         funcSig.modifiers = modifiers;
         funcSig.parameters = ExtractParameters(paramsNode, sourceCode);
         funcSig.hasBody = !ts_node_is_null(bodyNode);
+        funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_symInterfaceMethod);
 
         sym.signature = funcSig;
         symbolTable.AddSymbol(sym);
@@ -662,9 +664,11 @@ namespace angel_lsp::analysis
         FunctionSignature funcSig;
         funcSig.returnType = GetNodeText(typeNode, sourceCode);
         funcSig.returnBaseTypeName = retInfo.baseTypeName;
+        funcSig.returnTemplateName = retInfo.templateName;
         funcSig.returnTypeKind = retInfo.kind;
         funcSig.returnIsArray = retInfo.isArray;
         funcSig.returnArrayDepth = retInfo.arrayDepth;
+        funcSig.returnHasPrimitiveHandle = retInfo.hasPrimitiveHandle;
         funcSig.modifiers = modifiers;
         funcSig.parameters = ExtractParameters(paramsNode, sourceCode);
 

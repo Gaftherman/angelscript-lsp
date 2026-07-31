@@ -254,3 +254,54 @@ TEST_CASE("SemanticAnalyzer - Property Void Type Validation")
     REQUIRE(diagnostics.size() == 1);
     CHECK(diagnostics[0].code == "as-err-void-variable");
 }
+
+TEST_CASE("SemanticAnalyzer - Interface methods do not generate missing-body error")
+{
+    // interface_method nodes never have a body field in the AST.
+    // Before SC-06/SA-06, every interface method generated as-err-missing-body.
+    std::string sourceCode =
+        "interface IAnimal\n"
+        "{\n"
+        "    void Speak();\n"
+        "    int GetAge();\n"
+        "    float GetWeight(int unit);\n"
+        "}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Regular function still requires body")
+{
+    // Ensure the isInterfaceMethod guard does not suppress errors for regular
+    // non-interface functions that are missing their body.
+    std::string sourceCode =
+        "interface IValid { void Speak(); }\n"
+        "void MissingBody();\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics[0].code == "as-err-missing-body");
+    CHECK(diagnostics[0].message.find("MissingBody") != std::string::npos);
+}
+

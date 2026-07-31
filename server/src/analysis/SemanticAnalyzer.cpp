@@ -120,7 +120,7 @@ namespace angel_lsp::analysis
     {
         const auto &sig = sym.GetFunction();
 
-        if (!sig.hasBody && !sig.modifiers.isExternal && !sig.modifiers.isDelete)
+        if (!sig.hasBody && !sig.isInterfaceMethod && !sig.modifiers.isExternal && !sig.modifiers.isDelete)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-missing-body", sym.name));
         }
