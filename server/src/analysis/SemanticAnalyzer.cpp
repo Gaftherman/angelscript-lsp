@@ -333,6 +333,14 @@ namespace angel_lsp::analysis
         }
 
 
+        if (sig.returnTypeKind != TypeKind::Void && sig.returnType != "void" && !isCtor && (!sym.name.empty() && sym.name[0] != '~'))
+        {
+            if (sig.defaultValue.find("return;") != std::string::npos || sig.defaultValue.find("return ;") != std::string::npos)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
+            }
+        }
+
         if (isCtor || (!sym.name.empty() && sym.name[0] == '~'))
         {
             if (sig.defaultValue.find("return ") != std::string::npos && sig.defaultValue.find("return;") == std::string::npos)
@@ -669,7 +677,7 @@ namespace angel_lsp::analysis
             }
         }
 
-        if (sig.defaultValue.find("\"\"\"\"") != std::string::npos || sig.defaultValue.find("\"\n\"") != std::string::npos)
+        if (sig.defaultValue.find("\n\"\"\"\"") != std::string::npos || sig.defaultValue.find("\r\n\"\"\"\"") != std::string::npos)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
         }
@@ -1331,6 +1339,12 @@ namespace angel_lsp::analysis
         ankerl::unordered_dense::set<std::string> seenEnumMembers;
         for (const auto &member : sig.members)
         {
+            if (member.name.empty())
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                continue;
+            }
+
             if (!seenEnumMembers.insert(member.name).second)
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", member.name, "enum member"));
@@ -1366,6 +1380,12 @@ namespace angel_lsp::analysis
         if (IsReservedKeyword(sym.name))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            return;
+        }
+
+        if (sym.name.find("::::") != std::string::npos || sym.name.find("::namespace::") != std::string::npos || sym.name.rfind("namespace::", 0) == 0)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
             return;
         }
     }

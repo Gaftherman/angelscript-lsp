@@ -158,14 +158,18 @@ namespace angel_lsp::analysis
     bool SymbolTable::HasSymbolAnywhere(const std::string &name) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        if (m_symbols.find(name) != m_symbols.end())
+        std::string searchName = name;
+        if (searchName.rfind("::", 0) == 0)
+            searchName = searchName.substr(2);
+
+        if (m_symbols.find(searchName) != m_symbols.end() || m_symbols.find(name) != m_symbols.end())
             return true;
 
         for (const auto &[key, symbols] : m_symbols)
         {
             for (const auto &sym : symbols)
             {
-                if (sym.name == name)
+                if (sym.name == searchName || sym.name == name || sym.qualifiedName == searchName || sym.qualifiedName == name)
                     return true;
             }
         }

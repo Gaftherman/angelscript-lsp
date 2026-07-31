@@ -2210,6 +2210,405 @@ TEST_CASE("Batch_Keyword1200_Harness_Comparison")
     std::cout << "=== LSP_VALIDATOR_BATCH_OUTPUT_END ===\n";
 }
 
+TEST_CASE("SemanticAnalyzer - Multiple Errors: Class Member Const and External Function Body")
+{
+    std::string sourceCode = "class C { const int x = 0; }\nexternal void ExtFunc() {}\n";
+    std::string fileUri = "file:///test_multi1.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 2);
+    bool foundConstMember = false;
+    bool foundExtBody = false;
+
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-err-class-member-const") foundConstMember = true;
+        if (d.code == "as-err-delete-with-body") foundExtBody = true;
+    }
+
+    CHECK(foundConstMember);
+    CHECK(foundExtBody);
+}
+
+TEST_CASE("SemanticAnalyzer - Multiple Errors: Void Variable and Invalid Reference Return")
+{
+    std::string sourceCode = "const void g_badVar;\nint& BadRefFunc() { static int x; return x; }\n";
+    std::string fileUri = "file:///test_multi2.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 2);
+    bool foundVoidVar = false;
+    bool foundRefReturn = false;
+
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-err-void-variable") foundVoidVar = true;
+        if (d.code == "as-err-invalid-reference-return") foundRefReturn = true;
+    }
+
+    CHECK(foundVoidVar);
+    CHECK(foundRefReturn);
+}
+
+TEST_CASE("SemanticAnalyzer - Multiple Errors: Constructor Modifiers and Destructor Parameters")
+{
+    std::string sourceCode = "class C { final C() {} ~C(int a) {} }\n";
+    std::string fileUri = "file:///test_multi3.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 2);
+    bool foundCtorMod = false;
+    bool foundDtorParam = false;
+
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-err-reserved-keyword-name") foundCtorMod = true;
+        if (d.code == "as-err-destructor-param") foundDtorParam = true;
+    }
+
+    CHECK(foundCtorMod);
+    CHECK(foundDtorParam);
+}
+
+TEST_CASE("SemanticAnalyzer - Multiple Errors: Missing Base Class and Invalid Primitive Ref Return")
+{
+    std::string sourceCode = "class Derived : NonExistentBase {}\nint& BadRefFunc() { static int x; return x; }\n";
+    std::string fileUri = "file:///test_multi4.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 2);
+    bool foundBaseNotFound = false;
+    bool foundRefReturn = false;
+
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-err-base-not-found") foundBaseNotFound = true;
+        if (d.code == "as-err-invalid-reference-return") foundRefReturn = true;
+    }
+
+    CHECK(foundBaseNotFound);
+    CHECK(foundRefReturn);
+}
+
+TEST_CASE("SemanticAnalyzer - Multiple Errors: Enum Invalid Initializer and Duplicate Method Symbols")
+{
+    std::string sourceCode = "enum MyEnum { ValueA = \"invalid_string\" }\nclass C { void f() {} void f() {} }\n";
+    std::string fileUri = "file:///test_multi5.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 2);
+    bool foundEnumInit = false;
+    bool foundDupSymbol = false;
+
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-err-enum-invalid-initializer") foundEnumInit = true;
+        if (d.code == "as-err-duplicate-symbol") foundDupSymbol = true;
+    }
+
+    CHECK(foundEnumInit);
+    CHECK(foundDupSymbol);
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 01: Defined Enum Parameter is Valid")
+{
+    std::string sourceCode = "enum State { Idle, Running }\nvoid SetState(State s) {}\n";
+    std::string fileUri = "file:///test_enum1.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 02: Undefined Enum Parameter Flagged")
+{
+    std::string sourceCode = "void SetState(UndefinedState s) {}\n";
+    std::string fileUri = "file:///test_enum2.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-unresolved-type");
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 03: Enum Return Type Valid")
+{
+    std::string sourceCode = "enum Mode { ModeA, ModeB }\nMode GetMode() { return ModeA; }\n";
+    std::string fileUri = "file:///test_enum3.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 04: Undefined Enum Return Type Flagged")
+{
+    std::string sourceCode = "UndefinedMode GetMode() {}\n";
+    std::string fileUri = "file:///test_enum4.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-unresolved-type");
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 05: Enum Class Member Property Valid")
+{
+    std::string sourceCode = "enum Weapon { Sword, Bow }\nclass Player { Weapon currentWeapon; }\n";
+    std::string fileUri = "file:///test_enum5.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 06: Undefined Enum Class Member Flagged")
+{
+    std::string sourceCode = "class Player { UndefinedWeapon currentWeapon; }\n";
+    std::string fileUri = "file:///test_enum6.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-unresolved-type");
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 07: Duplicate Enum Members Flagged")
+{
+    std::string sourceCode = "enum Colors { Red, Red }\n";
+    std::string fileUri = "file:///test_enum7.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-name-conflict");
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 08: String Initializer in Enum Flagged")
+{
+    std::string sourceCode = "enum BadEnum { Key = \"string_val\" }\n";
+    std::string fileUri = "file:///test_enum8.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-enum-invalid-initializer");
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 09: Bool Initializer in Enum Flagged")
+{
+    std::string sourceCode = "enum BadEnum2 { Key = true }\n";
+    std::string fileUri = "file:///test_enum9.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-enum-invalid-initializer");
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 10: Reserved Keyword as Enum Name Flagged")
+{
+    std::string sourceCode = "enum class {}\n";
+    std::string fileUri = "file:///test_enum10.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-reserved-keyword-name");
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 11: Primitive Type as Enum Name Flagged")
+{
+    std::string sourceCode = "enum int {}\n";
+    std::string fileUri = "file:///test_enum11.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-reserved-keyword-name");
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 12: External Enum Flagged")
+{
+    std::string sourceCode = "external enum ExtEnum;\n";
+    std::string fileUri = "file:///test_enum12.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-external-not-found");
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 13: Namespaced Enum Parameter Valid")
+{
+    std::string sourceCode = "namespace N { enum Level { Low, High }; }\nvoid SetLevel(N::Level l) {}\n";
+    std::string fileUri = "file:///test_enum13.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 14: Enum Passed by Const In Reference Valid")
+{
+    std::string sourceCode = "enum Color { Red, Blue }\nvoid Paint(const Color &in c) {}\n";
+    std::string fileUri = "file:///test_enum14.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 15: Enum Passed by Out Reference Valid")
+{
+    std::string sourceCode = "enum Status { OK, Fail }\nvoid Check(Status &out s) {}\n";
+    std::string fileUri = "file:///test_enum15.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 16: Consecutive Commas in Enum Flagged")
+{
+    std::string sourceCode = "enum BadSyntax { A = 1,, B = 2 }\n";
+    std::string fileUri = "file:///test_enum16.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    auto syntaxDiags = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto semanticDiags = analyzer.Analyze(req);
+    std::vector<Diagnostic> allDiags = syntaxDiags;
+    allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
+    REQUIRE(!allDiags.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 17: Multiple Enums in Same File Valid")
+{
+    std::string sourceCode = "enum E1 { A1 }\nenum E2 { A2 }\nvoid Process(E1 e1, E2 e2) {}\n";
+    std::string fileUri = "file:///test_enum17.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 18: Enum Array Variable Type Valid")
+{
+    std::string sourceCode = "enum Flag { F1, F2 }\narray<Flag> flags;\n";
+    std::string fileUri = "file:///test_enum18.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::config::TypeConfig tc{"string", "array"};
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n, &tc};
+    auto diagnostics = analyzer.Analyze(req);
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 19: Enum in Interface Method Signature Valid")
+{
+    std::string sourceCode = "enum Cmd { Go, Stop }\ninterface IAgent { void Exec(Cmd c); }\n";
+    std::string fileUri = "file:///test_enum19.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Enum Suite 20: Enum Parameter with Default Value Valid")
+{
+    std::string sourceCode = "enum Option { OptA = 0, OptB = 1 }\nvoid Config(Option opt = OptA) {}\n";
+    std::string fileUri = "file:///test_enum20.as";
+    SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+    CHECK(diagnostics.empty());
+}
+
+
+
 
 
 
