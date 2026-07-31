@@ -100,6 +100,7 @@ namespace angel_lsp::analysis
         bool isHandle = false;
         bool isConst = false;
         bool isReference = false;
+        bool isStandaloneRef = false;
 
         uint32_t startLine = 0;
         uint32_t startCharacter = 0;
@@ -120,6 +121,9 @@ namespace angel_lsp::analysis
         std::vector<ParameterInformation> parameters;
         bool hasBody = false;
         bool isInterfaceMethod = false;
+        bool hasEmptyReturn = false;
+        bool hasValueReturn = false;
+        bool hasNullReturn = false;
         std::string defaultValue;
     };
 
@@ -134,6 +138,14 @@ namespace angel_lsp::analysis
         uint32_t arrayDepth = 0;
         std::string defaultValue;
         SymbolModifiers modifiers;
+        bool isVirtualProperty = false;
+        bool hasGet = false;
+        bool hasSet = false;
+        bool isGetConst = false;
+        bool hasBodyGet = false;
+        bool hasBodySet = false;
+        bool hasDuplicateGet = false;
+        bool hasDuplicateSet = false;
     };
 
     struct EnumMemberInformation

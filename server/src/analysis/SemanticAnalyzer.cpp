@@ -317,10 +317,7 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
         }
 
-        if (sig.defaultValue.find("from ;") != std::string::npos)
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-        }
+
 
         if (!sym.containerName.empty() && sig.returnType.empty() && sym.name != sym.containerName && sym.name[0] != '~')
         {
@@ -335,7 +332,7 @@ namespace angel_lsp::analysis
 
         if (sig.returnTypeKind != TypeKind::Void && sig.returnType != "void" && !isCtor && (!sym.name.empty() && sym.name[0] != '~'))
         {
-            if (sig.defaultValue.find("return;") != std::string::npos || sig.defaultValue.find("return ;") != std::string::npos)
+            if (sig.hasEmptyReturn)
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
             }
@@ -343,7 +340,7 @@ namespace angel_lsp::analysis
 
         if (isCtor || (!sym.name.empty() && sym.name[0] == '~'))
         {
-            if (sig.defaultValue.find("return ") != std::string::npos && sig.defaultValue.find("return;") == std::string::npos)
+            if (sig.hasValueReturn)
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
             }
@@ -356,7 +353,7 @@ namespace angel_lsp::analysis
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-param", sym.name));
             }
-            if (sig.returnTypeKind != TypeKind::Void && sig.returnTypeKind != TypeKind::Unknown && !sig.returnType.empty())
+            if (!sig.returnType.empty())
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
             }
@@ -526,8 +523,12 @@ namespace angel_lsp::analysis
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-double-reference", param.baseTypeName));
             }
 
-            bool isStandaloneRef = (param.rawText.find('&') != std::string::npos && param.rawText.find("&in") == std::string::npos && param.rawText.find("&out") == std::string::npos);
-            if (isStandaloneRef && !param.defaultValue.empty())
+            bool isStandaloneRef = param.isStandaloneRef;
+            if (isStandaloneRef && (IsPrimitiveTypeName(param.baseTypeName) || param.typeKind == TypeKind::Int32 || param.typeKind == TypeKind::Float || param.typeKind == TypeKind::Bool || param.typeKind == TypeKind::Double || param.typeKind == TypeKind::UInt32 || param.baseTypeName == stringTypeName))
+            {
+                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-standalone-reference", param.name));
+            }
+            else if (isStandaloneRef && !param.defaultValue.empty())
             {
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-invalid-reference-return", param.baseTypeName));
             }
@@ -647,6 +648,12 @@ namespace angel_lsp::analysis
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-variable-access-modifier", sym.name));
             }
+        }
+
+        if (sig.isVirtualProperty)
+        {
+            ValidateProperty(sym, req, diagnostics);
+            return;
         }
 
         if (sig.typeKind == TypeKind::Void)
@@ -876,22 +883,22 @@ namespace angel_lsp::analysis
             }
         }
 
-        if (sym.containerName.empty() && (sig.modifiers.isProperty || sig.defaultValue.find("get;") != std::string::npos || sig.defaultValue.find("set;") != std::string::npos))
+        if (sym.containerName.empty() && (sig.modifiers.isProperty || sig.isVirtualProperty || sig.hasGet || sig.hasSet))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
         }
 
-        if (isInterfaceProperty && (sig.defaultValue.find("return") != std::string::npos || sig.defaultValue.find("{}") != std::string::npos))
+        if (isInterfaceProperty && (sig.hasBodyGet || sig.hasBodySet))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
         }
 
-        if (!isInterfaceProperty && sig.defaultValue.find("get const") != std::string::npos)
+        if (sig.hasDuplicateGet || sig.hasDuplicateSet)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
         }
 
-        if (sig.defaultValue.find("get; set; get;") != std::string::npos)
+        if (!isInterfaceProperty && sig.isGetConst)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
         }
@@ -927,6 +934,11 @@ namespace angel_lsp::analysis
         }
 
         const auto &sig = sym.GetClass();
+
+        if (sig.modifiers.isExternal && !sig.modifiers.isShared)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
 
         if (sig.modifiers.isMixin && sig.modifiers.isFinal)
         {
@@ -1032,6 +1044,7 @@ namespace angel_lsp::analysis
                             {
                                 std::string name;
                                 std::string text;
+                                bool hasSet = false;
                             };
                             std::vector<IfaceMethod> ifaceMethods;
                             std::vector<IfaceProperty> ifaceProperties;
@@ -1041,16 +1054,15 @@ namespace angel_lsp::analysis
                                 {
                                     for (const auto &ms : symsInTable)
                                     {
-                                        if (ms.containerName == ifaceContainer)
+                                        if (ms.containerName == baseName)
                                         {
                                             if (ms.type == SymbolType::Function)
                                             {
-                                                const auto &f = ms.GetFunction();
-                                                ifaceMethods.push_back({ms.name, f.returnType, f.modifiers.isConst, f.parameters});
+                                                ifaceMethods.push_back({ms.name, ms.GetFunction().returnType, ms.GetFunction().modifiers.isConst, ms.GetFunction().parameters});
                                             }
-                                            else if (ms.type == SymbolType::Property)
+                                            else if (ms.type == SymbolType::Variable || ms.type == SymbolType::Property)
                                             {
-                                                ifaceProperties.push_back({ms.name, ms.GetVariable().defaultValue});
+                                                ifaceProperties.push_back({ms.name, ms.GetVariable().defaultValue, ms.GetVariable().hasSet});
                                             }
                                         }
                                     }
@@ -1134,7 +1146,7 @@ namespace angel_lsp::analysis
                             for (const auto &ifaceProp : ifaceProperties)
                             {
                                 bool propImplemented = false;
-                                bool ifaceNeedsSet = (ifaceProp.text.find("set") != std::string::npos);
+                                bool ifaceNeedsSet = ifaceProp.hasSet;
                                 const std::string expectedPropQN = classContainer.empty() ? ifaceProp.name : classContainer + "::" + ifaceProp.name;
                                 const auto *classPropSyms = req.symbolTable.FindSymbolsPtr(expectedPropQN);
                                 if (classPropSyms)
@@ -1143,7 +1155,7 @@ namespace angel_lsp::analysis
                                     {
                                         if (cPropSym.containerName == classContainer)
                                         {
-                                            bool classHasSet = (cPropSym.GetVariable().defaultValue.find("set") != std::string::npos);
+                                            bool classHasSet = cPropSym.GetVariable().hasSet;
                                             const std::string setFuncQN = classContainer.empty() ? "set_" + ifaceProp.name : classContainer + "::set_" + ifaceProp.name;
                                             if (req.symbolTable.HasSymbol(setFuncQN))
                                             {
@@ -1279,7 +1291,7 @@ namespace angel_lsp::analysis
 
         const auto &sig = sym.GetTypedef();
 
-        if (!IsPrimitiveTypeName(sig.baseType))
+        if (sig.typeKind == TypeKind::Void || sig.baseType == "void" || !IsPrimitiveTypeName(sig.baseType))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-typedef-non-primitive", sig.baseType));
         }
@@ -1342,12 +1354,6 @@ namespace angel_lsp::analysis
         ankerl::unordered_dense::set<std::string> seenEnumMembers;
         for (const auto &member : sig.members)
         {
-            if (member.name.empty())
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-                continue;
-            }
-
             if (!seenEnumMembers.insert(member.name).second)
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", member.name, "enum member"));
@@ -1386,11 +1392,7 @@ namespace angel_lsp::analysis
             return;
         }
 
-        if (sym.name.find("::::") != std::string::npos || sym.name.find("::namespace::") != std::string::npos || sym.name.rfind("namespace::", 0) == 0)
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-            return;
-        }
+
     }
 
     Diagnostic SemanticAnalyzer::CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code, DiagnosticSeverity severity) const

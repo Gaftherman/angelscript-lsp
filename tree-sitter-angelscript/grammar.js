@@ -114,7 +114,7 @@ module.exports = grammar({
     // =========================================================================
     namespace_declaration: $ => seq(
       "namespace",
-      field("name", choice($.identifier, $.scoped_identifier)),
+      field("name", choice($.identifier, seq($.identifier, repeat1(seq("::", $.identifier))))),
       field("body", $.namespace_body),
     ),
 
@@ -158,7 +158,7 @@ module.exports = grammar({
 
     enum_member: $ => seq(
       field("name", $.identifier),
-      optional(seq("=", field("value", $._expression))),
+      optional(seq("=", field("value", choice($.number_literal, $.identifier, $.scoped_identifier, $.binary_expression, $.unary_expression, $.parenthesized_expression)))),
     ),
 
     // =========================================================================
@@ -274,16 +274,13 @@ module.exports = grammar({
     // =========================================================================
     // FUNC
     // =========================================================================
+    destructor_identifier: _ => token(seq("~", /[a-zA-Z_][a-zA-Z0-9_]*/)),
+
     func_declaration: $ => prec.dynamic(2, seq(
       repeat(field("modifier", $.declaration_modifier)),
       optional(choice("private", "protected")),
-      optional(
-        choice(
-          field("return_type", $.type),
-          "~",
-        ),
-      ),
-      field("name", $.identifier),
+      optional(field("return_type", $.type)),
+      field("name", choice($.identifier, $.destructor_identifier)),
       field("parameters", $.parameter_list),
       optional("const"),
       optional($.func_attributes),
@@ -370,7 +367,7 @@ module.exports = grammar({
 
     return_statement: $ => seq(
       "return",
-      optional(choice($.initializer_list, $._expression)),
+      optional(field("value", choice($.initializer_list, $._expression))),
       ";",
     ),
 

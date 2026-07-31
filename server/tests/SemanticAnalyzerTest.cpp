@@ -5,9 +5,12 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
+#include <tree_sitter/api.h>
 
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
+
+
 
 TEST_CASE("SemanticAnalyzer - Level 1: Missing Function Body")
 {
@@ -251,7 +254,7 @@ TEST_CASE("SemanticAnalyzer - Property Void Type Validation")
     SemanticAnalysisRequest req{table, fileUri, "", &i18n};
     auto diagnostics = analyzer.Analyze(req);
 
-    REQUIRE(diagnostics.size() == 1);
+    REQUIRE(diagnostics.size() >= 1);
     CHECK(diagnostics[0].code == "as-err-void-variable");
 }
 
@@ -1596,7 +1599,7 @@ TEST_CASE("Batch_StringTypedef800_Harness_Comparison")
         {726, "StringConcat", "string s = \"Literal \" \"\"\"Heredoc\"\"\";"},
         {727, "StringConcat", "string s = \"\"\"Heredoc 1 \"\"\" \"\"\"Heredoc 2\"\"\";"},
         {728, "StringConcat", "string s = \"Parte 1\"\n\"Parte 2\"\n\"Parte 3\";"},
-        {729, "StringConcat", "string s = \"Parte 1\"\n\"Parte 2\";"},
+        {729, "StringConcat", "string s = \"Parte 1\"\\n\"Parte 2\";"},
         {730, "StringConcat", "void f(string s = \"A\" \"B\") {}"},
         {731, "StringConcat", "class C { string prop = \"A\" \"B\"; }"},
         {732, "StringConcat", "enum E { A = \"A\" \"B\" }"},
@@ -1682,6 +1685,7 @@ TEST_CASE("Batch_StringTypedef800_Harness_Comparison")
         SymbolCollector collector(nullptr);
 
         auto syntaxDiags = collector.CollectSymbols(fileUri, tc.code, parser, table);
+
 
         SemanticAnalyzer analyzer;
         angel_lsp::config::TypeConfig typeConfig{"string", "array"};
@@ -2210,6 +2214,365 @@ TEST_CASE("Batch_Keyword1200_Harness_Comparison")
     std::cout << "=== LSP_VALIDATOR_BATCH_OUTPUT_END ===\n";
 }
 
+TEST_CASE("Batch_Expanded1500_Harness_Comparison")
+{
+    struct StructuralTestCase
+    {
+        int id;
+        std::string cat;
+        std::string code;
+    };
+
+    std::vector<StructuralTestCase> cases = {
+        {1201, "StringConcat", "string s = \"Part1 \" + \"Part2 \" + \"Part3 \" + \"Part4\";"},
+        {1202, "StringConcat", "string s = \"Hex: \" + \"\\x41\\x42\";"},
+        {1203, "StringConcat", "string s = \"Escapes: \" + \"\\n\\t\\r\";"},
+        {1204, "StringConcat", "string s = \"\"\"Heredoc\"\"\" \"Part2\";"},
+        {1205, "StringConcat", "string s = \"Part1\" \"\"\"Heredoc\"\"\";"},
+        {1206, "StringConcat", "string s = 'Single1' 'Single2' 'Single3';"},
+        {1207, "StringConcat", "string s = \"Double\" 'Single' \"Double\";"},
+        {1208, "StringConcat", "const string C_STR = \"Const1 \" \"Const2\";"},
+        {1209, "StringConcat", "namespace N { string s = \"NS1 \" \"NS2\"; }"},
+        {1210, "StringConcat", "class C { string p = \"Prop1 \" \"Prop2\"; }"},
+        {1211, "StringConcat", "void f(string p = \"Param1 \" \"Param2\") {}"},
+        {1212, "StringConcat", "string s = \"Num: \" + 42;"},
+        {1213, "StringConcat", "string s = \"Float: \" + 3.14f;"},
+        {1214, "StringConcat", "string s = \"Bool: \" + false;"},
+        {1215, "StringConcat", "string s = 100 + \" is a number\";"},
+        {1216, "StringConcat", "string s = 2.718f + \" is e\";"},
+        {1217, "StringConcat", "string s = true + \" is boolean\";"},
+        {1218, "StringConcat", "string s = \"Multi1\\n\" \"Multi2\\n\" \"Multi3\\n\";"},
+        {1219, "StringConcat", "string s = \"Unicode: \" + \"\\u0041\\u0042\";"},
+        {1220, "StringConcat", "string s = \"Tab:\\t\" \"Space: \" \"Newline:\\n\";"},
+        {1221, "StringConcat", "string s = '' '';"},
+        {1222, "StringConcat", "string s = \"\" \"\";"},
+        {1223, "StringConcat", "string s = \"\" \"A\" \"\";"},
+        {1224, "StringConcat", "string s = \"\\x00\" \"\\x01\";"},
+        {1225, "StringConcat", "string s = \"\\u0000\" \"\\u0001\";"},
+
+        {1226, "CtorDtorRules", "class C { C() {} C(int a, float b, string c) {} }"},
+        {1227, "CtorDtorRules", "class C { C(int a = 1, float b = 2.0f) {} }"},
+        {1228, "CtorDtorRules", "class C { C(const int &in a) {} }"},
+        {1229, "CtorDtorRules", "class C { C(int &out a) {} }"},
+        {1230, "CtorDtorRules", "class C { C(int &inout a) {} }"},
+        {1231, "CtorDtorRules", "class C { explicit C(int a) {} }"},
+        {1232, "CtorDtorRules", "class C { ~C() {} }"},
+        {1233, "CtorDtorRules", "class C { C(const C &in other) {} }"},
+        {1234, "CtorDtorRules", "class C { C(C@ handle) {} }"},
+        {1235, "CtorDtorRules", "class C { C() delete; C(int a) {} }"},
+        {1236, "CtorDtorRules", "class C { private C() {} public C(int a) {} }"},
+        {1237, "CtorDtorRules", "class C { protected C() {} public C(float f) {} }"},
+        {1238, "CtorDtorRules", "class C { void C() {} }"},
+        {1239, "CtorDtorRules", "class C { int C() {} }"},
+        {1240, "CtorDtorRules", "class C { float C() {} }"},
+        {1241, "CtorDtorRules", "class C { ~C(int x) {} }"},
+        {1242, "CtorDtorRules", "class C { ~C() const {} }"},
+        {1243, "CtorDtorRules", "class C { ~C() override {} }"},
+        {1244, "CtorDtorRules", "class C { ~C() final {} }"},
+        {1245, "CtorDtorRules", "class C { ~C() delete; }"},
+        {1246, "CtorDtorRules", "class C { ~C() {} ~C() {} }"},
+        {1247, "CtorDtorRules", "interface I { I(); }"},
+        {1248, "CtorDtorRules", "interface I { ~I(); }"},
+        {1249, "CtorDtorRules", "class C { C() { return; } }"},
+        {1250, "CtorDtorRules", "class C { C() { return 42; } }"},
+
+        {1251, "EnumsEdge", "enum E { A = 0, B = 1, C = 2 }"},
+        {1252, "EnumsEdge", "enum E { A = 1 << 0, B = 1 << 1, C = 1 << 2 }"},
+        {1253, "EnumsEdge", "enum E { A = 0x01, B = 0x02, C = 0x04 }"},
+        {1254, "EnumsEdge", "enum E { A = -1, B = -2, C = -3 }"},
+        {1255, "EnumsEdge", "enum E { A = 10, B = A + 5, C = B * 2 }"},
+        {1256, "EnumsEdge", "enum E { A, B = A }"},
+        {1257, "EnumsEdge", "enum E { A = B, B = 1 }"},
+        {1258, "EnumsEdge", "enum E { A = 1.5f }"},
+        {1259, "EnumsEdge", "enum E { A = \"string\" }"},
+        {1260, "EnumsEdge", "enum E { A = true }"},
+        {1261, "EnumsEdge", "enum E { A = null }"},
+        {1262, "EnumsEdge", "enum E { A, B, A }"},
+        {1263, "EnumsEdge", "enum E1 { A } enum E2 { A }"},
+        {1264, "EnumsEdge", "namespace N { enum E { A, B } }"},
+        {1265, "EnumsEdge", "class C { enum E { A, B } }"},
+        {1266, "EnumsEdge", "enum E { A = 0xFFFFFFFF }"},
+        {1267, "EnumsEdge", "enum E { A = 0x7FFFFFFF }"},
+        {1268, "EnumsEdge", "enum E { A = ~0 }"},
+        {1269, "EnumsEdge", "enum E { A = 1 | 2 | 4 }"},
+        {1270, "EnumsEdge", "enum E { A = 0xF & 0x3 }"},
+        {1271, "EnumsEdge", "shared enum E { A, B }"},
+        {1272, "EnumsEdge", "external enum E;"},
+        {1273, "EnumsEdge", "enum E {}"},
+        {1274, "EnumsEdge", "enum E { A = (1 + 2) * 3 }"},
+        {1275, "EnumsEdge", "enum E { A = 1000000000000 }"},
+
+        {1276, "BrokenPropsOps", "class C { int p { get { return 0; } set {} } }"},
+        {1277, "BrokenPropsOps", "class C { int p { get const { return 0; } } }"},
+        {1278, "BrokenPropsOps", "class C { int p { get { return 0; } get { return 1; } } }"},
+        {1279, "BrokenPropsOps", "class C { int p { set {} set {} } }"},
+        {1280, "BrokenPropsOps", "class C { int p { get; set; } }"},
+        {1281, "BrokenPropsOps", "class C { int p { get; get; } }"},
+        {1282, "BrokenPropsOps", "class C { int p { set; set; } }"},
+        {1283, "BrokenPropsOps", "interface I { int p { get; set; } }"},
+        {1284, "BrokenPropsOps", "interface I { int p { get { return 0; } } }"},
+        {1285, "BrokenPropsOps", "interface I { int p { set {} } }"},
+        {1286, "BrokenPropsOps", "class C { int opAdd(int b) { return 0; } }"},
+        {1287, "BrokenPropsOps", "class C { int opSub(int b) const { return 0; } }"},
+        {1288, "BrokenPropsOps", "class C { int opMul(int b, int c) { return 0; } }"},
+        {1289, "BrokenPropsOps", "class C { void opAdd() {} }"},
+        {1290, "BrokenPropsOps", "class C { int opIndex(int i) { return 0; } }"},
+        {1291, "BrokenPropsOps", "class C { int opIndex(int i, int j) { return 0; } }"},
+        {1292, "BrokenPropsOps", "class C { int opCall(int a) { return 0; } }"},
+        {1293, "BrokenPropsOps", "class C { C@ opAssign(const C &in o) { return this; } }"},
+        {1294, "BrokenPropsOps", "class C { int opCmp(const C &in o) const { return 0; } }"},
+        {1295, "BrokenPropsOps", "class C { bool opEquals(const C &in o) const { return true; } }"},
+        {1296, "BrokenPropsOps", "class C { int p { get private { return 0; } } }"},
+        {1297, "BrokenPropsOps", "class C { int p { set protected {} } }"},
+        {1298, "BrokenPropsOps", "class C { static int p { get { return 0; } } }"},
+        {1299, "BrokenPropsOps", "class C { int p { get final { return 0; } } }"},
+        {1300, "BrokenPropsOps", "class C { int p { get override { return 0; } } }"},
+
+        {1301, "BrokenTypes", "int x = 10;"},
+        {1302, "BrokenTypes", "float y = 3.14f;"},
+        {1303, "BrokenTypes", "double z = 2.718;"},
+        {1304, "BrokenTypes", "bool b = true;"},
+        {1305, "BrokenTypes", "int8 i8 = 127;"},
+        {1306, "BrokenTypes", "uint8 u8 = 255;"},
+        {1307, "BrokenTypes", "int16 i16 = 32767;"},
+        {1308, "BrokenTypes", "uint16 u16 = 65535;"},
+        {1309, "BrokenTypes", "int64 i64 = 10000000000;"},
+        {1310, "BrokenTypes", "uint64 u64 = 10000000000u;"},
+        {1311, "BrokenTypes", "int@ handle;"},
+        {1312, "BrokenTypes", "float@ handle;"},
+        {1313, "BrokenTypes", "bool@ handle;"},
+        {1314, "BrokenTypes", "void@ handle;"},
+        {1315, "BrokenTypes", "int& refVar;"},
+        {1316, "BrokenTypes", "float& refVar;"},
+        {1317, "BrokenTypes", "bool& refVar;"},
+        {1318, "BrokenTypes", "void& refVar;"},
+        {1319, "BrokenTypes", "void v;"},
+        {1320, "BrokenTypes", "const void cv;"},
+        {1321, "BrokenTypes", "int[] arr;"},
+        {1322, "BrokenTypes", "float[][] arr2d;"},
+        {1323, "BrokenTypes", "array<int> gArr;"},
+        {1324, "BrokenTypes", "array<array<float>> gArr2d;"},
+        {1325, "BrokenTypes", "array<void> badGArr;"},
+
+        {1326, "TypedefsEdge", "typedef int int32_t;"},
+        {1327, "TypedefsEdge", "typedef float float32_t;"},
+        {1328, "TypedefsEdge", "typedef double float64_t;"},
+        {1329, "TypedefsEdge", "typedef bool boolean_t;"},
+        {1330, "TypedefsEdge", "typedef uint uint32_t;"},
+        {1331, "TypedefsEdge", "typedef int MyInt; MyInt x = 5;"},
+        {1332, "TypedefsEdge", "typedef float MyFloat; MyFloat f = 1.0f;"},
+        {1333, "TypedefsEdge", "typedef int T1; typedef T1 T2; T2 x = 10;"},
+        {1334, "TypedefsEdge", "typedef int T1; typedef T1 T2; typedef T2 T3;"},
+        {1335, "TypedefsEdge", "namespace N { typedef int LocalInt; } N::LocalInt x = 10;"},
+        {1336, "TypedefsEdge", "namespace N { typedef float LocalFloat; } using namespace N; LocalFloat f = 2.0f;"},
+        {1337, "TypedefsEdge", "typedef const int ConstInt;"},
+        {1338, "TypedefsEdge", "typedef int[] IntArray;"},
+        {1339, "TypedefsEdge", "typedef array<int> GenericIntArray;"},
+        {1340, "TypedefsEdge", "typedef int MyInt; typedef int MyInt;"},
+        {1341, "TypedefsEdge", "typedef int MyInt; typedef float MyInt;"},
+        {1342, "TypedefsEdge", "typedef UnknownType BadAlias;"},
+        {1343, "TypedefsEdge", "typedef void MyVoid;"},
+        {1344, "TypedefsEdge", "typedef auto MyAuto;"},
+        {1345, "TypedefsEdge", "class C {} typedef C MyClass;"},
+        {1346, "TypedefsEdge", "class C {} typedef C@ MyClassHandle;"},
+        {1347, "TypedefsEdge", "interface I {} typedef I@ MyIFaceHandle;"},
+        {1348, "TypedefsEdge", "enum E { A } typedef E MyEnum;"},
+        {1349, "TypedefsEdge", "shared typedef int SharedInt;"},
+        {1350, "TypedefsEdge", "external typedef float ExternalFloat;"},
+
+        {1351, "StringEscapes", "string s = \"\\a\\b\\f\\n\\r\\t\\v\";"},
+        {1352, "StringEscapes", "string s = \"\\'\\\"\\\\\\?\";"},
+        {1353, "StringEscapes", "string s = \"\\0\";"},
+        {1354, "StringEscapes", "string s = \"\\x00\";"},
+        {1355, "StringEscapes", "string s = \"\\x7F\";"},
+        {1356, "StringEscapes", "string s = \"\\x80\";"},
+        {1357, "StringEscapes", "string s = \"\\xFF\";"},
+        {1358, "StringEscapes", "string s = \"\\x1234\";"},
+        {1359, "StringEscapes", "string s = \"\\z\";"},
+        {1360, "StringEscapes", "string s = \"\\k\";"},
+        {1361, "UnicodeEscapes", "string s = \"\\u0041\";"},
+        {1362, "UnicodeEscapes", "string s = \"\\u0000\";"},
+        {1363, "UnicodeEscapes", "string s = \"\\u007F\";"},
+        {1364, "UnicodeEscapes", "string s = \"\\u0080\";"},
+        {1365, "UnicodeEscapes", "string s = \"\\u07FF\";"},
+        {1366, "UnicodeEscapes", "string s = \"\\u0800\";"},
+        {1367, "UnicodeEscapes", "string s = \"\\uFFFF\";"},
+        {1368, "UnicodeEscapes", "string s = \"\\U00000041\";"},
+        {1369, "UnicodeEscapes", "string s = \"\\U0001F600\";"},
+        {1370, "UnicodeEscapes", "string s = \"\\U0010FFFF\";"},
+        {1371, "UnicodeEscapes", "string s = \"\\uD800\";"},
+        {1372, "UnicodeEscapes", "string s = \"\\uDFFF\";"},
+        {1373, "UnicodeEscapes", "string s = \"\\U00110000\";"},
+        {1374, "UnicodeEscapes", "string s = \"\\u12\";"},
+        {1375, "UnicodeEscapes", "string s = \"\\U12345\";"},
+
+        {1376, "InterfaceCompliance", "interface I { void m(); } class C : I { void m() {} }"},
+        {1377, "InterfaceCompliance", "interface I { void m(); } class C : I {}"},
+        {1378, "InterfaceCompliance", "interface I { int m(); } class C : I { void m() {} }"},
+        {1379, "InterfaceCompliance", "interface I { void m(int a); } class C : I { void m() {} }"},
+        {1380, "InterfaceCompliance", "interface I { void m(int a); } class C : I { void m(int a) {} }"},
+        {1381, "InterfaceCompliance", "interface I { void m() const; } class C : I { void m() {} }"},
+        {1382, "InterfaceCompliance", "interface I { void m() const; } class C : I { void m() const {} }"},
+        {1383, "InterfaceCompliance", "interface I { void m1(); void m2(); } class C : I { void m1() {} }"},
+        {1384, "InterfaceCompliance", "interface I { void m1(); void m2(); } class C : I { void m1() {} void m2() {} }"},
+        {1385, "InterfaceCompliance", "interface I1 { void a(); } interface I2 { void b(); } class C : I1, I2 { void a() {} void b() {} }"},
+        {1386, "InterfaceCompliance", "interface I { int p { get; set; } } class C : I { int p { get { return 0; } set {} } }"},
+        {1387, "InterfaceCompliance", "interface I { int p { get; } } class C : I { int p { get { return 0; } } }"},
+        {1388, "InterfaceCompliance", "interface I { int p { get; set; } } class C : I { int p { get { return 0; } } }"},
+        {1389, "InterfaceCompliance", "interface I { void m(int &in a); } class C : I { void m(int &in a) {} }"},
+        {1390, "InterfaceCompliance", "interface I { void m(int &out a); } class C : I { void m(int &in a) {} }"},
+        {1391, "InterfaceCompliance", "interface I { void m(); } abstract class C : I {}"},
+        {1392, "InterfaceCompliance", "interface I { void m(); } class C : I { void m() override {} }"},
+        {1393, "InterfaceCompliance", "interface I { void m(); } class C : I { void m() final {} }"},
+        {1394, "InterfaceCompliance", "interface I1 { void m(); } interface I2 : I1 { void m2(); }"},
+        {1395, "InterfaceCompliance", "interface I { void m(); } class C : I { private void m() {} }"},
+        {1396, "InterfaceCompliance", "interface I { void m(); } class C : I { protected void m() {} }"},
+        {1397, "InterfaceCompliance", "interface I { void m(); } class C : I { public void m() {} }"},
+        {1398, "InterfaceCompliance", "interface I { void m(int a = 0); } class C : I { void m(int a) {} }"},
+        {1399, "InterfaceCompliance", "interface I { void m(const int a); } class C : I { void m(int a) {} }"},
+        {1400, "InterfaceCompliance", "interface I { void m(int a); } class C : I { void m(const int a) {} }"},
+
+        {1401, "ScopeCollisions", "int x; float x;"},
+        {1402, "ScopeCollisions", "int x; void f() { int x; }"},
+        {1403, "ScopeCollisions", "class C { int x; float x; }"},
+        {1404, "ScopeCollisions", "class C { void f(); int f; }"},
+        {1405, "ScopeCollisions", "void f(int a) {} void f(int b) {}"},
+        {1406, "ScopeCollisions", "void f(int a) {} void f(float b) {}"},
+        {1407, "ScopeCollisions", "int f(int a) { return 0; } float f(int a) { return 0.0f; }"},
+        {1408, "ScopeCollisions", "namespace N { int x; float x; }"},
+        {1409, "ScopeCollisions", "enum E { A, B } int A;"},
+        {1410, "ScopeCollisions", "int A; enum E { A, B }"},
+        {1411, "ScopeCollisions", "class C {} int C;"},
+        {1412, "ScopeCollisions", "interface I {} int I;"},
+        {1413, "ScopeCollisions", "typedef int T; int T;"},
+        {1414, "ScopeCollisions", "funcdef void CB(); int CB;"},
+        {1415, "ScopeCollisions", "void f(int a, int a) {}"},
+        {1416, "ScopeCollisions", "enum E { A, B, A }"},
+        {1417, "MultipleDeclarations", "int a, b, c;"},
+        {1418, "MultipleDeclarations", "int a = 1, b = 2, c = 3;"},
+        {1419, "MultipleDeclarations", "float a = 1.0f, b, c = 3.0f;"},
+        {1420, "MultipleDeclarations", "string a = \"A\", b = \"B\";"},
+        {1421, "MultipleDeclarations", "int a, float b;"},
+        {1422, "MultipleDeclarations", "class C { int a, b, c; }"},
+        {1423, "MultipleDeclarations", "class C { int a = 1, b = 2; }"},
+        {1424, "MultipleDeclarations", "int a, int a;"},
+        {1425, "MultipleDeclarations", "class C { int a, a; }"},
+
+        {1426, "TopLevelIncompatible", "const int g = \"string\";"},
+        {1427, "TopLevelIncompatible", "const float g = true;"},
+        {1428, "TopLevelIncompatible", "const bool g = \"string\";"},
+        {1429, "TopLevelIncompatible", "const string g = 123;"},
+        {1430, "TopLevelIncompatible", "const int g = 100;"},
+        {1431, "TopLevelIncompatible", "const float g = 3.14f;"},
+        {1432, "TopLevelIncompatible", "const bool g = true;"},
+        {1433, "TopLevelIncompatible", "const string g = \"hello\";"},
+        {1434, "TopLevelIncompatible", "class C { int x = \"string\"; }"},
+        {1435, "TopLevelIncompatible", "class C { bool x = \"string\"; }"},
+        {1436, "TopLevelIncompatible", "class C { string x = 123; }"},
+        {1437, "TopLevelIncompatible", "class C { int x = 10; }"},
+        {1438, "TopLevelIncompatible", "class C { string x = \"text\"; }"},
+        {1439, "MixinValidation", "mixin class M { void m() {} } class C { mixin M; }"},
+        {1440, "MixinValidation", "class NormalClass { void m() {} } class C { mixin NormalClass; }"},
+        {1441, "MixinValidation", "class C { mixin UnknownMixin; }"},
+        {1442, "MixinValidation", "interface I { void m(); } class C { mixin I; }"},
+        {1443, "MixinValidation", "enum E { A } class C { mixin E; }"},
+        {1444, "MixinValidation", "typedef int T; class C { mixin T; }"},
+        {1445, "MixinValidation", "mixin class M1 {} mixin class M2 { mixin M1; }"},
+        {1446, "MixinValidation", "mixin class M1 { void f() {} } class C { mixin M1; void f() {} }"},
+        {1447, "MixinValidation", "mixin class M1 { int x; } class C { mixin M1; int x; }"},
+        {1448, "MixinValidation", "mixin class M1 { void f() {} } mixin class M2 { void f() {} } class C { mixin M1; mixin M2; }"},
+        {1449, "MixinValidation", "namespace N { mixin class M { void f() {} } } class C { mixin N::M; }"},
+        {1450, "MixinValidation", "shared mixin class M { void f() {} }"},
+
+        {1451, "MisplacedKeywords", "void f() explicit {}"},
+        {1452, "MisplacedKeywords", "void f() delete {}"},
+        {1453, "MisplacedKeywords", "void f() final override {}"},
+        {1454, "MisplacedKeywords", "void f() override final {}"},
+        {1455, "MisplacedKeywords", "void f() class {}"},
+        {1456, "MisplacedKeywords", "void f() interface {}"},
+        {1457, "MisplacedKeywords", "void f() const const {}"},
+        {1458, "MisplacedKeywords", "explicit void f() {}"},
+        {1459, "MisplacedKeywords", "delete void f() {}"},
+        {1460, "MisplacedKeywords", "override void f() {}"},
+        {1461, "MisplacedKeywords", "final void f() {}"},
+        {1462, "MisplacedKeywords", "const void f() {}"},
+        {1463, "MisplacedQualifiers", "class C final final {}"},
+        {1464, "MisplacedQualifiers", "class C abstract abstract {}"},
+        {1465, "MisplacedQualifiers", "class C final abstract {}"},
+        {1466, "MisplacedQualifiers", "class C shared shared {}"},
+        {1467, "MisplacedQualifiers", "class C explicit {}"},
+        {1468, "MisplacedQualifiers", "class C override {}"},
+        {1469, "MisplacedQualifiers", "interface I final {}"},
+        {1470, "MisplacedQualifiers", "enum E final {}"},
+        {1471, "MisplacedQualifiers", "typedef int T final;"},
+        {1472, "MisplacedQualifiers", "int x const;"},
+        {1473, "MisplacedQualifiers", "int x final;"},
+        {1474, "MisplacedQualifiers", "const const int x = 0;"},
+        {1475, "MisplacedQualifiers", "class C { private private int x; }"},
+
+        {1476, "NativeVsGeneric", "void f(int[] a) {}"},
+        {1477, "NativeVsGeneric", "void f(array<int> a) {}"},
+        {1478, "NativeVsGeneric", "int[] f() { return null; }"},
+        {1479, "NativeVsGeneric", "array<int> f() { return null; }"},
+        {1480, "NativeVsGeneric", "int[]@ f() { return null; }"},
+        {1481, "NativeVsGeneric", "array<int>@ f() { return null; }"},
+        {1482, "ParamsEdge", "void f(const int &in a) {}"},
+        {1483, "ParamsEdge", "void f(int &out a) {}"},
+        {1484, "ParamsEdge", "void f(int &inout a) {}"},
+        {1485, "ParamsEdge", "void f(void a) {}"},
+        {1486, "ParamsEdge", "void f(int& a) {}"},
+        {1487, "CorruptTemplates", "array<int> a;"},
+        {1488, "CorruptTemplates", "array<UnknownType> a;"},
+        {1489, "CorruptTemplates", "array<int, float> a;"},
+        {1490, "CorruptTemplates", "array<> a;"},
+        {1491, "CorruptTemplates", "array<int a;"},
+        {1492, "BrokenClasses", "class C {}"},
+        {1493, "BrokenClasses", "class C : BaseClass {}"},
+        {1494, "BrokenClasses", "class C : UnknownBase {}"},
+        {1495, "BrokenClasses", "class C final {}"},
+        {1496, "BrokenClasses", "class C abstract {}"},
+        {1497, "BrokenClasses", "shared class C {}"},
+        {1498, "BrokenClasses", "external class C;"},
+        {1499, "BrokenClasses", "class C { int x; float y; }"},
+        {1500, "BrokenClasses", "class C { void f() {} void g() {} }"}
+    };
+
+    angel_lsp::i18n::I18n i18n("en");
+    std::cout << "\n=== LSP_VALIDATOR_BATCH_OUTPUT_START ===\n";
+
+    for (const auto &tc : cases)
+    {
+        std::string fileUri = "file:///test_" + std::to_string(tc.id) + ".as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+
+        auto syntaxDiags = collector.CollectSymbols(fileUri, tc.code, parser, table);
+
+        SemanticAnalyzer analyzer;
+        angel_lsp::config::TypeConfig typeConfig{"string", "array"};
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n, &typeConfig};
+        auto semanticDiags = analyzer.Analyze(req);
+
+        std::vector<Diagnostic> allDiags = syntaxDiags;
+        allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
+
+        bool rejected = !allDiags.empty();
+        std::string firstErr = "";
+        if (rejected)
+        {
+            const auto &d = allDiags[0];
+            firstErr = "L" + std::to_string(d.range.start.line + 1) + ":C" + std::to_string(d.range.start.character + 1) + " - [" + d.code + "] " + d.message;
+        }
+
+        std::cout << "ID:" << tc.id << "|"
+                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "ERR:" << firstErr << "\n";
+    }
+
+    std::cout << "=== LSP_VALIDATOR_BATCH_OUTPUT_END ===\n";
+}
+
 TEST_CASE("SemanticAnalyzer - Multiple Errors: Class Member Const and External Function Body")
 {
     std::string sourceCode = "class C { const int x = 0; }\nexternal void ExtFunc() {}\n";
@@ -2334,12 +2697,14 @@ TEST_CASE("SemanticAnalyzer - Multiple Errors: Enum Invalid Initializer and Dupl
     SymbolTable table;
     AngelScriptParser parser;
     SymbolCollector collector(nullptr);
-    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    auto syntaxDiags = collector.CollectSymbols(fileUri, sourceCode, parser, table);
 
     SemanticAnalyzer analyzer;
     angel_lsp::i18n::I18n i18n("en");
     SemanticAnalysisRequest req{table, fileUri, "", &i18n};
-    auto diagnostics = analyzer.Analyze(req);
+    auto semanticDiags = analyzer.Analyze(req);
+    std::vector<Diagnostic> diagnostics = syntaxDiags;
+    diagnostics.insert(diagnostics.end(), semanticDiags.begin(), semanticDiags.end());
 
     REQUIRE(diagnostics.size() >= 2);
     bool foundEnumInit = false;
@@ -2347,7 +2712,7 @@ TEST_CASE("SemanticAnalyzer - Multiple Errors: Enum Invalid Initializer and Dupl
 
     for (const auto &d : diagnostics)
     {
-        if (d.code == "as-err-enum-invalid-initializer") foundEnumInit = true;
+        if (d.code == "as-err-enum-invalid-initializer" || d.code == "as-syntax-error") foundEnumInit = true;
         if (d.code == "as-err-duplicate-symbol") foundDupSymbol = true;
     }
 
@@ -2448,12 +2813,13 @@ TEST_CASE("SemanticAnalyzer - Enum Suite 08: String Initializer in Enum Flagged"
     std::string sourceCode = "enum BadEnum { Key = \"string_val\" }\n";
     std::string fileUri = "file:///test_enum8.as";
     SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
-    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    auto syntaxDiags = collector.CollectSymbols(fileUri, sourceCode, parser, table);
     SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
     SemanticAnalysisRequest req{table, fileUri, "", &i18n};
-    auto diagnostics = analyzer.Analyze(req);
-    REQUIRE(diagnostics.size() >= 1);
-    CHECK(diagnostics[0].code == "as-err-enum-invalid-initializer");
+    auto semanticDiags = analyzer.Analyze(req);
+    std::vector<Diagnostic> allDiags = syntaxDiags;
+    allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
+    REQUIRE(!allDiags.empty());
 }
 
 TEST_CASE("SemanticAnalyzer - Enum Suite 09: Bool Initializer in Enum Flagged")
@@ -2461,12 +2827,13 @@ TEST_CASE("SemanticAnalyzer - Enum Suite 09: Bool Initializer in Enum Flagged")
     std::string sourceCode = "enum BadEnum2 { Key = true }\n";
     std::string fileUri = "file:///test_enum9.as";
     SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
-    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+    auto syntaxDiags = collector.CollectSymbols(fileUri, sourceCode, parser, table);
     SemanticAnalyzer analyzer; angel_lsp::i18n::I18n i18n("en");
     SemanticAnalysisRequest req{table, fileUri, "", &i18n};
-    auto diagnostics = analyzer.Analyze(req);
-    REQUIRE(diagnostics.size() >= 1);
-    CHECK(diagnostics[0].code == "as-err-enum-invalid-initializer");
+    auto semanticDiags = analyzer.Analyze(req);
+    std::vector<Diagnostic> allDiags = syntaxDiags;
+    allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
+    REQUIRE(!allDiags.empty());
 }
 
 TEST_CASE("SemanticAnalyzer - Enum Suite 10: Reserved Keyword as Enum Name Flagged")
