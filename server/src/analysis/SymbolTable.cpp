@@ -211,7 +211,7 @@ namespace angel_lsp::analysis
                 {
                 case SymbolType::Function:
                 {
-                    const auto &sig = sym.functionSignature;
+                    const auto &sig = sym.GetFunction();
                     std::vector<std::string> flags;
                     if (sig.modifiers.isShared)
                         flags.push_back("shared");
@@ -245,7 +245,7 @@ namespace angel_lsp::analysis
                 }
                 case SymbolType::Variable:
                 {
-                    const auto &sig = sym.variableSignature;
+                    const auto &sig = sym.GetVariable();
                     std::vector<std::string> flags;
                     if (sig.modifiers.isShared)
                         flags.push_back("shared");
@@ -267,7 +267,7 @@ namespace angel_lsp::analysis
                 }
                 case SymbolType::Class:
                 {
-                    const auto &sig = sym.classSignature;
+                    const auto &sig = sym.GetClass();
                     std::vector<std::string> flags;
                     if (sig.modifiers.isShared)
                         flags.push_back("shared");
@@ -290,7 +290,7 @@ namespace angel_lsp::analysis
                 }
                 case SymbolType::Interface:
                 {
-                    const auto &sig = sym.interfaceSignature;
+                    const auto &sig = sym.GetInterface();
                     std::vector<std::string> flags;
                     if (sig.modifiers.isShared)
                         flags.push_back("shared");
@@ -305,7 +305,7 @@ namespace angel_lsp::analysis
                 }
                 case SymbolType::Enum:
                 {
-                    const auto &sig = sym.enumSignature;
+                    const auto &sig = sym.GetEnum();
                     std::vector<std::string> flags;
                     if (sig.modifiers.isShared)
                         flags.push_back("shared");

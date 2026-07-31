@@ -22,6 +22,9 @@ namespace angel_lsp::i18n
         m_messages["as-err-base-not-found"] = "Base type '{}' not found.";
         m_messages["as-err-typedef-unresolved"] = "Typedef base type '{}' is not defined.";
         m_messages["as-err-funcdef-not-handle"] = "Variables or parameters of funcdef type '{}' must be declared as handles ('{}@').";
+        m_messages["as-err-duplicate-param"] = "Duplicate parameter name '{}' in function '{}'.";
+        m_messages["as-warn-shadow-global"] = "Parameter '{}' shadows a global variable of the same name.";
+        m_messages["as-err-circular-inherit"] = "Circular inheritance detected: '{}' inherits from itself.";
 
         if (locale == "es")
         {
@@ -42,6 +45,9 @@ namespace angel_lsp::i18n
             m_messages["as-err-base-not-found"] = "Tipo base '{}' no encontrado.";
             m_messages["as-err-typedef-unresolved"] = "El tipo base '{}' del typedef no está definido.";
             m_messages["as-err-funcdef-not-handle"] = "Variables o parámetros de tipo funcdef '{}' deben declararse como handle ('{}@').";
+            m_messages["as-err-duplicate-param"] = "Nombre de parámetro '{}' duplicado en la función '{}'.";
+            m_messages["as-warn-shadow-global"] = "El parámetro '{}' oculta una variable global con el mismo nombre.";
+            m_messages["as-err-circular-inherit"] = "Herencia circular detectada: '{}' hereda de sí misma.";
         }
     }
 

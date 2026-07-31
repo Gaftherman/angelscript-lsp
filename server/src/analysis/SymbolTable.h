@@ -8,6 +8,8 @@
 #include <optional>
 #include <ankerl/unordered_dense.h>
 
+#include <variant>
+
 namespace angel_lsp::analysis
 {
     enum class SymbolType
@@ -40,51 +42,44 @@ namespace angel_lsp::analysis
 
     enum class TypeKind
     {
-        Unknown, // e.g.: unresolved type
-        Auto,    // e.g.: auto x = 5
-
-        Void, // e.g.: void
-
-        Int8,  // e.g.: int8
-        Int16, // e.g.: int16
-        Int32, // e.g.: int32 / int
-        Int64, // e.g.: int64
+        Unknown,
+        Auto,
+        Void,
+        Int8,
+        Int16,
+        Int32,
+        Int64,
         Int = Int32,
-
-        UInt8,  // e.g.: uint8
-        UInt16, // e.g.: uint16
-        UInt32, // e.g.: uint32 / uint
-        UInt64, // e.g.: uint64
+        UInt8,
+        UInt16,
+        UInt32,
+        UInt64,
         UInt = UInt32,
-
-        Float,  // e.g.: float
-        Double, // e.g.: double
-
-        Bool,   // e.g.: bool
-        String, // e.g.: string
-
-        Object, // e.g.: class / struct
-        Array,  // e.g.: array<T>
-        Handle  // e.g.: Player@
+        Float,
+        Double,
+        Bool,
+        String,
+        Object,
+        Array,
+        Handle
     };
 
     struct SymbolModifiers
     {
-        AccessModifier access = AccessModifier::Public; // e.g.: AccessModifier::Private
-
-        bool isConst = false;                                      // e.g.: const int x
-        bool isHandle = false;                                     // e.g.: Player@ p
-        bool isShared = false;                                     // e.g.: shared class Entity
-        bool isMixin = false;                                      // e.g.: mixin class Player
-        bool isAbstract = false;                                   // e.g.: class Entity abstract
-        bool isFinal = false;                                      // e.g.: class Player final
-        bool isOverride = false;                                   // e.g.: void Update() override
-        bool isExplicit = false;                                   // e.g.: explicit Player(int x)
-        bool isProperty = false;                                   // e.g.: property int hp
-        bool isDelete = false;                                     // e.g.: void Func() delete
-        bool isExternal = false;                                   // e.g.: external void Func()
-        bool isReturnReference = false;                            // e.g.: int& GetRef()
-        ParameterModifier paramModifier = ParameterModifier::None; // e.g.: ParameterModifier::In || ParameterModifier::Out || ParameterModifier::InOut
+        AccessModifier access = AccessModifier::Public;
+        bool isConst = false;
+        bool isHandle = false;
+        bool isShared = false;
+        bool isMixin = false;
+        bool isAbstract = false;
+        bool isFinal = false;
+        bool isOverride = false;
+        bool isExplicit = false;
+        bool isProperty = false;
+        bool isDelete = false;
+        bool isExternal = false;
+        bool isReturnReference = false;
+        ParameterModifier paramModifier = ParameterModifier::None;
     };
 
     struct ParameterInformation
@@ -101,6 +96,7 @@ namespace angel_lsp::analysis
         std::string defaultValue;
         bool isHandle = false;
         bool isConst = false;
+        bool isReference = false;
 
         uint32_t startLine = 0;
         uint32_t startCharacter = 0;
@@ -137,23 +133,21 @@ namespace angel_lsp::analysis
 
     struct EnumMemberInformation
     {
-        std::string name;  // e.g.: "Red"
-        std::string value; // e.g.: "0"
+        std::string name;
+        std::string value;
     };
 
     struct EnumSignature
     {
-        SymbolModifiers modifiers;                  // e.g.: { isShared = true }
-        std::vector<EnumMemberInformation> members; // e.g.: member list (filled in Pass 2)
+        SymbolModifiers modifiers;
+        std::vector<EnumMemberInformation> members;
     };
 
     struct ClassSignature
     {
-        /** All base names as declared in source (unresolved). Pass 2 (SemanticAnalyzer)
-         *  will resolve each entry into interfaces or mixin bases using the SymbolTable. */
-        std::vector<std::string> bases; // e.g.: {"IUpdatable", "MyBase", "DynamicBehavior"}
-        SymbolModifiers modifiers;      // e.g.: { isAbstract = true, isShared = true, isFinal = true }
-        bool isTemplate = false;        // e.g.: class array<T>
+        std::vector<std::string> bases;
+        SymbolModifiers modifiers;
+        bool isTemplate = false;
     };
 
     struct InterfaceSignature
@@ -174,20 +168,82 @@ namespace angel_lsp::analysis
         std::string name;
         std::string containerName;
         std::string qualifiedName;
-
-        FunctionSignature functionSignature;
-        VariableSignature variableSignature;
-        EnumSignature enumSignature;
-        ClassSignature classSignature;
-        InterfaceSignature interfaceSignature;
-        TypedefSignature typedefSignature;
-
         std::string fileUri;
 
         uint32_t startLine = 0;
         uint32_t startCharacter = 0;
         uint32_t endLine = 0;
         uint32_t endCharacter = 0;
+
+        std::variant<
+            std::monostate,
+            FunctionSignature,
+            VariableSignature,
+            EnumSignature,
+            ClassSignature,
+            InterfaceSignature,
+            TypedefSignature
+        > signature;
+
+        FunctionSignature &GetFunction()
+        {
+            return std::get<FunctionSignature>(signature);
+        }
+
+        const FunctionSignature &GetFunction() const
+        {
+            return std::get<FunctionSignature>(signature);
+        }
+
+        VariableSignature &GetVariable()
+        {
+            return std::get<VariableSignature>(signature);
+        }
+
+        const VariableSignature &GetVariable() const
+        {
+            return std::get<VariableSignature>(signature);
+        }
+
+        EnumSignature &GetEnum()
+        {
+            return std::get<EnumSignature>(signature);
+        }
+
+        const EnumSignature &GetEnum() const
+        {
+            return std::get<EnumSignature>(signature);
+        }
+
+        ClassSignature &GetClass()
+        {
+            return std::get<ClassSignature>(signature);
+        }
+
+        const ClassSignature &GetClass() const
+        {
+            return std::get<ClassSignature>(signature);
+        }
+
+        InterfaceSignature &GetInterface()
+        {
+            return std::get<InterfaceSignature>(signature);
+        }
+
+        const InterfaceSignature &GetInterface() const
+        {
+            return std::get<InterfaceSignature>(signature);
+        }
+
+        TypedefSignature &GetTypedef()
+        {
+            return std::get<TypedefSignature>(signature);
+        }
+
+        const TypedefSignature &GetTypedef() const
+        {
+            return std::get<TypedefSignature>(signature);
+        }
     };
 
     class SymbolTable

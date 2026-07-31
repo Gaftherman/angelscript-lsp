@@ -31,9 +31,9 @@ TEST_CASE("SymbolCollector - Global Variable Test")
     const auto &sym = symbols[0];
     CHECK(sym.type == SymbolType::Variable);
     CHECK(sym.name == "property");
-    CHECK(sym.variableSignature.typeName == "int");
-    CHECK(sym.variableSignature.modifiers.access == AccessModifier::Public);
-    CHECK(sym.variableSignature.defaultValue.empty() == true);
+    CHECK(sym.GetVariable().typeName == "int");
+    CHECK(sym.GetVariable().modifiers.access == AccessModifier::Public);
+    CHECK(sym.GetVariable().defaultValue.empty() == true);
 }
 
 TEST_CASE("SymbolCollector - Function Main and Local Variable Isolation Test")
@@ -58,8 +58,8 @@ TEST_CASE("SymbolCollector - Function Main and Local Variable Isolation Test")
     const auto &mainSym = mainSymbols[0];
     CHECK(mainSym.type == SymbolType::Function);
     CHECK(mainSym.name == "main");
-    CHECK(mainSym.functionSignature.returnType == "void");
-    CHECK(mainSym.functionSignature.parameters.empty() == true);
+    CHECK(mainSym.GetFunction().returnType == "void");
+    CHECK(mainSym.GetFunction().parameters.empty() == true);
 
     // 2. Verify local variable 'i' inside main() was NOT collected in global SymbolTable
     CHECK(symbolTable.HasSymbol("i") == false);
@@ -87,9 +87,9 @@ TEST_CASE("SymbolCollector - Reference Return Function Test")
     const auto &funcSym = funcSymbols[0];
     CHECK(funcSym.type == SymbolType::Function);
     CHECK(funcSym.name == "Function");
-    CHECK(funcSym.functionSignature.returnType == "int &");
-    CHECK(funcSym.functionSignature.modifiers.isReturnReference == true);
-    CHECK(funcSym.functionSignature.modifiers.access == AccessModifier::Public);
+    CHECK(funcSym.GetFunction().returnType == "int &");
+    CHECK(funcSym.GetFunction().modifiers.isReturnReference == true);
+    CHECK(funcSym.GetFunction().modifiers.access == AccessModifier::Public);
 }
 
 TEST_CASE("SymbolCollector - Function With Basic Default Parameter")
@@ -112,11 +112,11 @@ TEST_CASE("SymbolCollector - Function With Basic Default Parameter")
     const auto &sym = funcSymbols[0];
     CHECK(sym.type == SymbolType::Function);
     CHECK(sym.name == "calcularArea");
-    CHECK(sym.functionSignature.returnType == "float");
-    CHECK(sym.functionSignature.modifiers.isShared == false);
+    CHECK(sym.GetFunction().returnType == "float");
+    CHECK(sym.GetFunction().modifiers.isShared == false);
 
-    REQUIRE(sym.functionSignature.parameters.size() == 1);
-    const auto &param = sym.functionSignature.parameters[0];
+    REQUIRE(sym.GetFunction().parameters.size() == 1);
+    const auto &param = sym.GetFunction().parameters[0];
     CHECK(param.name == "radius");
     CHECK(param.typeName == "float");
     CHECK(param.defaultValue == "0.0f");
@@ -144,13 +144,13 @@ TEST_CASE("SymbolCollector - Complex Function With Shared and Multiple Reference
     const auto &sym = funcSymbols[0];
     CHECK(sym.type == SymbolType::Function);
     CHECK(sym.name == "calcularArea");
-    CHECK(sym.functionSignature.returnType == "float");
-    CHECK(sym.functionSignature.modifiers.isShared == true);
+    CHECK(sym.GetFunction().returnType == "float");
+    CHECK(sym.GetFunction().modifiers.isShared == true);
 
-    REQUIRE(sym.functionSignature.parameters.size() == 2);
+    REQUIRE(sym.GetFunction().parameters.size() == 2);
 
     // Parameter 1: radius
-    const auto &p1 = sym.functionSignature.parameters[0];
+    const auto &p1 = sym.GetFunction().parameters[0];
     CHECK(p1.name == "radius");
     CHECK(p1.typeName == "const float");
     CHECK(p1.defaultValue == "0.0f");
@@ -158,7 +158,7 @@ TEST_CASE("SymbolCollector - Complex Function With Shared and Multiple Reference
     CHECK(p1.modifier == ParameterModifier::In);
 
     // Parameter 2: height
-    const auto &p2 = sym.functionSignature.parameters[1];
+    const auto &p2 = sym.GetFunction().parameters[1];
     CHECK(p2.name == "height");
     CHECK(p2.typeName == "const float");
     CHECK(p2.defaultValue == "0.0f");
@@ -187,9 +187,9 @@ TEST_CASE("SymbolCollector - No False Positive for constHandle Type Name")
     const auto &sym = symbols[0];
     CHECK(sym.type == SymbolType::Variable);
     CHECK(sym.name == "constVar");
-    CHECK(sym.variableSignature.typeName == "constHandle@");
-    CHECK(sym.variableSignature.modifiers.isHandle == true);
-    CHECK(sym.variableSignature.modifiers.isConst == false);
+    CHECK(sym.GetVariable().typeName == "constHandle@");
+    CHECK(sym.GetVariable().modifiers.isHandle == true);
+    CHECK(sym.GetVariable().modifiers.isConst == false);
 }
 
 TEST_CASE("SymbolCollector - Class Inheritance Extraction Test")
@@ -213,8 +213,8 @@ TEST_CASE("SymbolCollector - Class Inheritance Extraction Test")
     const auto &sym = classSymbols[0];
     CHECK(sym.type == SymbolType::Class);
     CHECK(sym.name == "ClassHereny");
-    REQUIRE(sym.classSignature.bases.size() == 1);
-    CHECK(sym.classSignature.bases[0] == "ClassBase");
+    REQUIRE(sym.GetClass().bases.size() == 1);
+    CHECK(sym.GetClass().bases[0] == "ClassBase");
 }
 
 TEST_CASE("SymbolCollector - Multi-Inheritance Class Extraction Test")
@@ -237,10 +237,10 @@ TEST_CASE("SymbolCollector - Multi-Inheritance Class Extraction Test")
     const auto &sym = classSymbols[0];
     CHECK(sym.type == SymbolType::Class);
     CHECK(sym.name == "MultyHerentClass");
-    REQUIRE(sym.classSignature.bases.size() == 3);
-    CHECK(sym.classSignature.bases[0] == "BaseClass");
-    CHECK(sym.classSignature.bases[1] == "Interface1");
-    CHECK(sym.classSignature.bases[2] == "Interface2");
+    REQUIRE(sym.GetClass().bases.size() == 3);
+    CHECK(sym.GetClass().bases[0] == "BaseClass");
+    CHECK(sym.GetClass().bases[1] == "Interface1");
+    CHECK(sym.GetClass().bases[2] == "Interface2");
 }
 
 TEST_CASE("SymbolCollector - Namespace Scope and Symbol Qualified Names Test")
@@ -356,131 +356,131 @@ TEST_CASE("SymbolCollector - TypeInfo extraction from TSNode")
     SUBCASE("int x")
     {
         auto sym = collect("int x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Int32);
-        CHECK(sym.variableSignature.isArray == false);
-        CHECK(sym.variableSignature.arrayDepth == 0);
-        CHECK(sym.variableSignature.modifiers.isHandle == false);
-        CHECK(sym.variableSignature.baseTypeName == "int");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Int32);
+        CHECK(sym.GetVariable().isArray == false);
+        CHECK(sym.GetVariable().arrayDepth == 0);
+        CHECK(sym.GetVariable().modifiers.isHandle == false);
+        CHECK(sym.GetVariable().baseTypeName == "int");
     }
 
     SUBCASE("int[] x")
     {
         auto sym = collect("int[] x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
-        CHECK(sym.variableSignature.isArray == true);
-        CHECK(sym.variableSignature.arrayDepth == 1);
-        CHECK(sym.variableSignature.modifiers.isHandle == false);
-        CHECK(sym.variableSignature.baseTypeName == "int");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Array);
+        CHECK(sym.GetVariable().isArray == true);
+        CHECK(sym.GetVariable().arrayDepth == 1);
+        CHECK(sym.GetVariable().modifiers.isHandle == false);
+        CHECK(sym.GetVariable().baseTypeName == "int");
     }
 
     SUBCASE("int[][] x")
     {
         auto sym = collect("int[][] x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
-        CHECK(sym.variableSignature.isArray == true);
-        CHECK(sym.variableSignature.arrayDepth == 2);
-        CHECK(sym.variableSignature.modifiers.isHandle == false);
-        CHECK(sym.variableSignature.baseTypeName == "int");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Array);
+        CHECK(sym.GetVariable().isArray == true);
+        CHECK(sym.GetVariable().arrayDepth == 2);
+        CHECK(sym.GetVariable().modifiers.isHandle == false);
+        CHECK(sym.GetVariable().baseTypeName == "int");
     }
 
     SUBCASE("int[]@ x")
     {
         auto sym = collect("int[]@ x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
-        CHECK(sym.variableSignature.isArray == true);
-        CHECK(sym.variableSignature.arrayDepth == 1);
-        CHECK(sym.variableSignature.modifiers.isHandle == true);
-        CHECK(sym.variableSignature.baseTypeName == "int");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Array);
+        CHECK(sym.GetVariable().isArray == true);
+        CHECK(sym.GetVariable().arrayDepth == 1);
+        CHECK(sym.GetVariable().modifiers.isHandle == true);
+        CHECK(sym.GetVariable().baseTypeName == "int");
     }
 
     SUBCASE("int[]@[]@ x")
     {
         auto sym = collect("int[]@[]@ x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
-        CHECK(sym.variableSignature.isArray == true);
-        CHECK(sym.variableSignature.arrayDepth == 2);
-        CHECK(sym.variableSignature.modifiers.isHandle == true);
-        CHECK(sym.variableSignature.baseTypeName == "int");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Array);
+        CHECK(sym.GetVariable().isArray == true);
+        CHECK(sym.GetVariable().arrayDepth == 2);
+        CHECK(sym.GetVariable().modifiers.isHandle == true);
+        CHECK(sym.GetVariable().baseTypeName == "int");
     }
 
     SUBCASE("array<int> x")
     {
         auto sym = collect("array<int> x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
-        CHECK(sym.variableSignature.isArray == true);
-        CHECK(sym.variableSignature.arrayDepth == 1);
-        CHECK(sym.variableSignature.modifiers.isHandle == false);
-        CHECK(sym.variableSignature.baseTypeName == "int");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Array);
+        CHECK(sym.GetVariable().isArray == true);
+        CHECK(sym.GetVariable().arrayDepth == 1);
+        CHECK(sym.GetVariable().modifiers.isHandle == false);
+        CHECK(sym.GetVariable().baseTypeName == "int");
     }
 
     SUBCASE("array<int>@ x")
     {
         auto sym = collect("array<int>@ x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
-        CHECK(sym.variableSignature.isArray == true);
-        CHECK(sym.variableSignature.arrayDepth == 1);
-        CHECK(sym.variableSignature.modifiers.isHandle == true);
-        CHECK(sym.variableSignature.baseTypeName == "int");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Array);
+        CHECK(sym.GetVariable().isArray == true);
+        CHECK(sym.GetVariable().arrayDepth == 1);
+        CHECK(sym.GetVariable().modifiers.isHandle == true);
+        CHECK(sym.GetVariable().baseTypeName == "int");
     }
 
     SUBCASE("array<array<int>> x")
     {
         auto sym = collect("array<array<int>> x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
-        CHECK(sym.variableSignature.isArray == true);
-        CHECK(sym.variableSignature.arrayDepth == 2);
-        CHECK(sym.variableSignature.modifiers.isHandle == false);
-        CHECK(sym.variableSignature.baseTypeName == "int");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Array);
+        CHECK(sym.GetVariable().isArray == true);
+        CHECK(sym.GetVariable().arrayDepth == 2);
+        CHECK(sym.GetVariable().modifiers.isHandle == false);
+        CHECK(sym.GetVariable().baseTypeName == "int");
     }
 
     SUBCASE("array<array<int>@>@ x")
     {
         auto sym = collect("array<array<int>@>@ x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
-        CHECK(sym.variableSignature.isArray == true);
-        CHECK(sym.variableSignature.arrayDepth == 2);
-        CHECK(sym.variableSignature.modifiers.isHandle == true);
-        CHECK(sym.variableSignature.baseTypeName == "int");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Array);
+        CHECK(sym.GetVariable().isArray == true);
+        CHECK(sym.GetVariable().arrayDepth == 2);
+        CHECK(sym.GetVariable().modifiers.isHandle == true);
+        CHECK(sym.GetVariable().baseTypeName == "int");
     }
 
     SUBCASE("array<Player@> x")
     {
         auto sym = collect("array<Player@> x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
-        CHECK(sym.variableSignature.isArray == true);
-        CHECK(sym.variableSignature.arrayDepth == 1);
-        CHECK(sym.variableSignature.modifiers.isHandle == true);
-        CHECK(sym.variableSignature.baseTypeName == "Player");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Array);
+        CHECK(sym.GetVariable().isArray == true);
+        CHECK(sym.GetVariable().arrayDepth == 1);
+        CHECK(sym.GetVariable().modifiers.isHandle == true);
+        CHECK(sym.GetVariable().baseTypeName == "Player");
     }
 
     SUBCASE("Player@ x")
     {
         auto sym = collect("Player@ x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Handle);
-        CHECK(sym.variableSignature.isArray == false);
-        CHECK(sym.variableSignature.arrayDepth == 0);
-        CHECK(sym.variableSignature.modifiers.isHandle == true);
-        CHECK(sym.variableSignature.baseTypeName == "Player");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Handle);
+        CHECK(sym.GetVariable().isArray == false);
+        CHECK(sym.GetVariable().arrayDepth == 0);
+        CHECK(sym.GetVariable().modifiers.isHandle == true);
+        CHECK(sym.GetVariable().baseTypeName == "Player");
     }
 
     SUBCASE("ObjectHandle@[]@[]@ x")
     {
         auto sym = collect("ObjectHandle@[]@[]@ x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Array);
-        CHECK(sym.variableSignature.isArray == true);
-        CHECK(sym.variableSignature.arrayDepth == 2);
-        CHECK(sym.variableSignature.modifiers.isHandle == true);
-        CHECK(sym.variableSignature.baseTypeName == "ObjectHandle");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Array);
+        CHECK(sym.GetVariable().isArray == true);
+        CHECK(sym.GetVariable().arrayDepth == 2);
+        CHECK(sym.GetVariable().modifiers.isHandle == true);
+        CHECK(sym.GetVariable().baseTypeName == "ObjectHandle");
     }
 
     SUBCASE("Player x")
     {
         auto sym = collect("Player x;");
-        CHECK(sym.variableSignature.typeKind == TypeKind::Unknown);
-        CHECK(sym.variableSignature.isArray == false);
-        CHECK(sym.variableSignature.arrayDepth == 0);
-        CHECK(sym.variableSignature.modifiers.isHandle == false);
-        CHECK(sym.variableSignature.baseTypeName == "Player");
+        CHECK(sym.GetVariable().typeKind == TypeKind::Unknown);
+        CHECK(sym.GetVariable().isArray == false);
+        CHECK(sym.GetVariable().arrayDepth == 0);
+        CHECK(sym.GetVariable().modifiers.isHandle == false);
+        CHECK(sym.GetVariable().baseTypeName == "Player");
     }
 }
 

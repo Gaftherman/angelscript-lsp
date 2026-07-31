@@ -7,8 +7,7 @@
 #include "utils/LspLogger.h"
 
 #include <tree_sitter/api.h>
-#include <string>
-#include <vector>
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
@@ -24,11 +23,29 @@ namespace angel_lsp::analysis
         utils::LspLogger *m_logger;
         TSQuery *m_tagsQuery;
 
-        struct NodeContext
+        TSSymbol m_symPrimitiveType = 0;
+        TSSymbol m_symDatatype = 0;
+        TSSymbol m_symTemplateTypeList = 0;
+        TSSymbol m_symIdentifier = 0;
+        TSSymbol m_symDeclarationModifier = 0;
+        TSSymbol m_symType = 0;
+        TSSymbol m_symParameter = 0;
+        TSSymbol m_symClassBody = 0;
+        TSSymbol m_symNamespaceBody = 0;
+        TSSymbol m_symEnumMember = 0;
+        TSSymbol m_symFuncDeclaration = 0;
+        TSSymbol m_symStatementBlock = 0;
+
+        ankerl::unordered_dense::map<TSSymbol, TypeKind> m_primitiveKindMap;
+
+        struct CollectionContext
         {
             std::string containerPath;
             bool isInsideFunction = false;
         };
+
+        using ProcessFn = void (SymbolCollector::*)(TSNode, const std::string &, const std::string &, SymbolTable &, const CollectionContext &);
+        std::vector<ProcessFn> m_captureDispatch;
 
         struct TypeExtractionResult
         {
@@ -37,26 +54,28 @@ namespace angel_lsp::analysis
             TypeKind kind = TypeKind::Unknown;
             bool isArray = false;
             bool isHandle = false;
+            bool isReference = false;
             bool hasPrimitiveHandle = false;
             uint32_t arrayDepth = 0;
         };
 
         TypeExtractionResult ExtractTypeInfo(TSNode typeNode, const std::string &sourceCode) const;
 
-        void ProcessVariable(TSNode varDeclNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable);
-        void ProcessFunction(TSNode funcNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable);
-        void ProcessClass(TSNode classNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable);
-        void ProcessNamespace(TSNode namespaceNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable);
-        void ProcessTypedef(TSNode node, const std::string &tagName, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable);
-        void ProcessFuncdef(TSNode node, const std::string &tagName, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable);
-        void ProcessEnum(TSNode node, const std::string &tagName, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable);
-        void ProcessProperty(TSNode node, const std::string &tagName, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable);
-        void ProcessInterface(TSNode node, const std::string &tagName, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable);
+        void ProcessVariable(TSNode varDeclNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
+        void ProcessFunction(TSNode funcNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
+        void ProcessClass(TSNode classNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
+        void ProcessNamespace(TSNode namespaceNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
+        void ProcessTypedef(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
+        void ProcessFuncdef(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
+        void ProcessEnum(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
+        void ProcessProperty(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
+        void ProcessInterface(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
 
         std::string GetNodeText(TSNode node, const std::string &sourceCode) const;
+        std::string_view GetNodeView(TSNode node, const std::string &sourceCode) const;
         void ReportParseErrors(TSNode node, const std::string &fileUri, const std::string &sourceCode, std::vector<Diagnostic> &diagnostics, const angel_lsp::i18n::I18n *i18n = nullptr) const;
 
-        NodeContext GetNodeContext(TSNode node, const std::string &sourceCode) const;
+        CollectionContext BuildContext(TSNode node, const std::string &sourceCode) const;
 
         SymbolModifiers ExtractModifiers(TSNode node, const std::string &sourceCode) const;
         ParameterInformation ExtractParameterInfo(TSNode paramNode, const std::string &sourceCode) const;
@@ -64,6 +83,6 @@ namespace angel_lsp::analysis
 
         Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const std::string &sourceCode, const std::string &fileUri, const std::string &containerPath) const;
         std::vector<std::string> ExtractBases(TSNode classNode, const std::string &sourceCode) const;
-        TypeKind ParseTypeKind(const std::string &typeName) const;
+        TypeKind LookupPrimitiveKind(TSSymbol symbol) const;
     };
 }
