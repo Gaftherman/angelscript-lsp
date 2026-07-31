@@ -130,6 +130,14 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
         }
 
+        if (sig.returnTypeKind == TypeKind::Unknown && !sig.returnBaseTypeName.empty())
+        {
+            if (!req.symbolTable.HasSymbol(sig.returnBaseTypeName))
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
+            }
+        }
+
         ValidateFunctionParameters(sym, sig, req, diagnostics);
     }
 
@@ -159,6 +167,19 @@ namespace angel_lsp::analysis
             if (param.modifier == ParameterModifier::Out && !param.defaultValue.empty())
             {
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-out-param-default", param.name));
+            }
+
+            if (param.modifier == ParameterModifier::Out && param.isConst)
+            {
+                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-const-out-param", param.name));
+            }
+
+            if (param.typeKind == TypeKind::Unknown && !param.baseTypeName.empty())
+            {
+                if (!req.symbolTable.HasSymbol(param.baseTypeName))
+                {
+                    diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-unresolved-type", param.baseTypeName));
+                }
             }
 
             if (!param.name.empty())
@@ -209,6 +230,14 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
         }
 
+        if (sig.typeKind == TypeKind::Unknown && !sig.baseTypeName.empty())
+        {
+            if (!req.symbolTable.HasSymbol(sig.baseTypeName))
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
+            }
+        }
+
         if (!sig.modifiers.isHandle && req.symbolTable.HasSymbol(sig.baseTypeName))
         {
             auto typeSyms = req.symbolTable.FindSymbols(sig.baseTypeName);
@@ -235,6 +264,14 @@ namespace angel_lsp::analysis
         if (sig.hasPrimitiveHandle)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+        }
+
+        if (sig.typeKind == TypeKind::Unknown && !sig.baseTypeName.empty())
+        {
+            if (!req.symbolTable.HasSymbol(sig.baseTypeName))
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
+            }
         }
     }
 
@@ -267,28 +304,36 @@ namespace angel_lsp::analysis
             }
             else
             {
-                auto baseSyms = req.symbolTable.FindSymbols(baseName);
-                bool isBaseClass = false;
-
-                for (const auto &bSym : baseSyms)
+                const auto *baseSyms = req.symbolTable.FindSymbolsPtr(baseName);
+                if (baseSyms)
                 {
-                    if (bSym.type == SymbolType::Class)
+                    bool isBaseClass = false;
+
+                    for (const auto &bSym : *baseSyms)
                     {
-                        isBaseClass = true;
-                        if (bSym.GetClass().modifiers.isFinal)
+                        if (bSym.type == SymbolType::Class)
                         {
-                            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-inherit-final", baseName));
-                        }
-                        break;
-                    }
-                }
+                            if (bSym.GetClass().modifiers.isMixin && !sig.modifiers.isMixin)
+                            {
+                                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-as-base", sym.name, baseName));
+                            }
 
-                if (isBaseClass)
-                {
-                    classBaseCount++;
-                    if (classBaseCount > 1)
+                            isBaseClass = true;
+                            if (bSym.GetClass().modifiers.isFinal)
+                            {
+                                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-inherit-final", baseName));
+                            }
+                            break;
+                        }
+                    }
+
+                    if (isBaseClass)
                     {
-                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-multi-class-inherit", sym.name));
+                        classBaseCount++;
+                        if (classBaseCount > 1)
+                        {
+                            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-multi-class-inherit", sym.name));
+                        }
                     }
                 }
             }
@@ -367,6 +412,14 @@ namespace angel_lsp::analysis
         if (sig.returnHasPrimitiveHandle)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
+        }
+
+        if (sig.returnTypeKind == TypeKind::Unknown && !sig.returnBaseTypeName.empty())
+        {
+            if (!req.symbolTable.HasSymbol(sig.returnBaseTypeName))
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
+            }
         }
 
         ValidateFunctionParameters(sym, sig, req, diagnostics);

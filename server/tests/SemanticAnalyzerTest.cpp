@@ -305,3 +305,135 @@ TEST_CASE("SemanticAnalyzer - Regular function still requires body")
     CHECK(diagnostics[0].message.find("MissingBody") != std::string::npos);
 }
 
+TEST_CASE("SemanticAnalyzer - SA-07: Unresolved type error")
+{
+    std::string sourceCode =
+        "UnknownType g_var;\n"
+        "void Func(MissingType param) {}\n"
+        "UndefinedReturn GetThing() { return 0; }\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() == 3);
+    CHECK(diagnostics[0].code == "as-err-unresolved-type");
+    CHECK(diagnostics[1].code == "as-err-unresolved-type");
+    CHECK(diagnostics[2].code == "as-err-unresolved-type");
+}
+
+TEST_CASE("SemanticAnalyzer - SA-08: Const out parameter error")
+{
+    std::string sourceCode = "void Func(const int &out x) {}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics[0].code == "as-err-const-out-param");
+}
+
+TEST_CASE("SemanticAnalyzer - SA-09: Mixin cannot be base of non-mixin class")
+{
+    std::string sourceCode =
+        "mixin class MyMixin {}\n"
+        "class Derived : MyMixin {}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics[0].code == "as-err-mixin-as-base");
+}
+
+TEST_CASE("SemanticAnalyzer - SA-07: Known types do NOT generate unresolved-type (false positive guard)")
+{
+    // typedef'd, enum, and class types that exist in the same file must NOT be flagged.
+    std::string sourceCode =
+        "typedef int MyInt;\n"
+        "enum Color { Red = 1 }\n"
+        "class Player {}\n"
+        "MyInt x;\n"
+        "Color c;\n"
+        "Player p;\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - SA-07: Funcdef unresolved return type")
+{
+    // funcdef return type should also be validated for resolution.
+    std::string sourceCode = "funcdef UnknownType BadCallback(int x);\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    CHECK(!diagnostics.empty());
+    bool found = false;
+    for (const auto &d : diagnostics)
+        if (d.code == "as-err-unresolved-type") { found = true; break; }
+    CHECK(found);
+}
+
+TEST_CASE("SemanticAnalyzer - SA-08: const in param is valid (no error)")
+{
+    // const &in is perfectly valid in AngelScript — only const &out is the error.
+    std::string sourceCode = "void Func(const int &in x) {}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    CHECK(diagnostics.empty());
+}
+
+

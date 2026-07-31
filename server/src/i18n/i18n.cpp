@@ -25,6 +25,8 @@ namespace angel_lsp::i18n
         m_messages["as-err-duplicate-param"] = "Duplicate parameter name '{}' in function '{}'.";
         m_messages["as-warn-shadow-global"] = "Parameter '{}' shadows a global variable of the same name.";
         m_messages["as-err-circular-inherit"] = "Circular inheritance detected: '{}' inherits from itself.";
+        m_messages["as-err-const-out-param"] = "Parameter '{}' cannot be both 'const' and '&out'.";
+        m_messages["as-err-mixin-as-base"] = "Class '{}' cannot inherit from mixin '{}'. Mixins can only be included using 'mixin class'.";
 
         if (locale == "es")
         {
@@ -48,6 +50,8 @@ namespace angel_lsp::i18n
             m_messages["as-err-duplicate-param"] = "Nombre de parámetro '{}' duplicado en la función '{}'.";
             m_messages["as-warn-shadow-global"] = "El parámetro '{}' oculta una variable global con el mismo nombre.";
             m_messages["as-err-circular-inherit"] = "Herencia circular detectada: '{}' hereda de sí misma.";
+            m_messages["as-err-const-out-param"] = "El parámetro '{}' no puede ser 'const' y '&out' al mismo tiempo.";
+            m_messages["as-err-mixin-as-base"] = "La clase '{}' no puede heredar del mixin '{}'. Los mixins solo pueden incluirse con 'mixin class'.";
         }
     }
 
