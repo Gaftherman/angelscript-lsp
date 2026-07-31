@@ -873,18 +873,30 @@ namespace angel_lsp::analysis
                                 bool isConst = false;
                                 std::vector<ParameterInformation> params;
                             };
+                            struct IfaceProperty
+                            {
+                                std::string name;
+                                std::string text;
+                            };
                             std::vector<IfaceMethod> ifaceMethods;
+                            std::vector<IfaceProperty> ifaceProperties;
 
                             req.symbolTable.ForEachSymbol(
                                 [&](const std::string & /*qName*/, const std::vector<Symbol> &symsInTable)
                                 {
                                     for (const auto &ms : symsInTable)
                                     {
-                                        if (ms.containerName == ifaceContainer &&
-                                            ms.type == SymbolType::Function)
+                                        if (ms.containerName == ifaceContainer)
                                         {
-                                            const auto &f = ms.GetFunction();
-                                            ifaceMethods.push_back({ms.name, f.returnType, f.modifiers.isConst, f.parameters});
+                                            if (ms.type == SymbolType::Function)
+                                            {
+                                                const auto &f = ms.GetFunction();
+                                                ifaceMethods.push_back({ms.name, f.returnType, f.modifiers.isConst, f.parameters});
+                                            }
+                                            else if (ms.type == SymbolType::Property)
+                                            {
+                                                ifaceProperties.push_back({ms.name, ms.GetVariable().defaultValue});
+                                            }
                                         }
                                     }
                                 });
@@ -961,6 +973,41 @@ namespace angel_lsp::analysis
                                     diagnostics.push_back(CreateDiagnostic(sym, req,
                                         "as-err-interface-impl-missing",
                                         sym.name, ifaceMethod.name, baseName));
+                                }
+                            }
+
+                            for (const auto &ifaceProp : ifaceProperties)
+                            {
+                                bool propImplemented = false;
+                                bool ifaceNeedsSet = (ifaceProp.text.find("set") != std::string::npos);
+                                const std::string expectedPropQN = classContainer.empty() ? ifaceProp.name : classContainer + "::" + ifaceProp.name;
+                                const auto *classPropSyms = req.symbolTable.FindSymbolsPtr(expectedPropQN);
+                                if (classPropSyms)
+                                {
+                                    for (const auto &cPropSym : *classPropSyms)
+                                    {
+                                        if (cPropSym.containerName == classContainer)
+                                        {
+                                            bool classHasSet = (cPropSym.GetVariable().defaultValue.find("set") != std::string::npos);
+                                            const std::string setFuncQN = classContainer.empty() ? "set_" + ifaceProp.name : classContainer + "::set_" + ifaceProp.name;
+                                            if (req.symbolTable.HasSymbol(setFuncQN))
+                                            {
+                                                classHasSet = true;
+                                            }
+                                            if (!ifaceNeedsSet || classHasSet)
+                                            {
+                                                propImplemented = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (!propImplemented)
+                                {
+                                    diagnostics.push_back(CreateDiagnostic(sym, req,
+                                        "as-err-interface-impl-missing",
+                                        sym.name, ifaceProp.name, baseName));
                                 }
                             }
                         }
@@ -1159,8 +1206,9 @@ namespace angel_lsp::analysis
                     bool isBool = (val == "true" || val == "false");
                     bool isNull = (val == "null");
                     bool isTypeKeyword = (val == "int" || val == "float" || val == "double" || val == "void" || val == "auto" || val == "class" || val == "struct" || val == "enum");
+                    bool isCallOrExpr = (std::isalpha(val.front()) && val.find('(') != std::string::npos);
 
-                    if (isStringLiteral || isLambda || isBool || isNull || isTypeKeyword)
+                    if (isStringLiteral || isLambda || isBool || isNull || isTypeKeyword || isCallOrExpr)
                     {
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", member.name));
                     }

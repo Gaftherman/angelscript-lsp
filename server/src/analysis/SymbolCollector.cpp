@@ -733,6 +733,7 @@ namespace angel_lsp::analysis
         varSig.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
         varSig.arrayDepth = typeInfo.arrayDepth;
         varSig.modifiers = modifiers;
+        varSig.defaultValue = GetNodeText(node, sourceCode);
 
         sym.signature = varSig;
         symbolTable.AddSymbol(sym);
