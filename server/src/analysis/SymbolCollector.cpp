@@ -563,6 +563,17 @@ namespace angel_lsp::analysis
         modifiers.isHandle = retInfo.isHandle || modifiers.isHandle;
         modifiers.isReturnReference = retInfo.isReference || modifiers.isReturnReference;
 
+        uint32_t funcChildCount = ts_node_child_count(funcNode);
+        for (uint32_t i = 0; i < funcChildCount; ++i)
+        {
+            TSNode child = ts_node_child(funcNode, i);
+            std::string_view tok = GetNodeView(child, sourceCode);
+            if (tok.find("delete") != std::string_view::npos)
+            {
+                modifiers.isDelete = true;
+            }
+        }
+
         Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, sourceCode, fileUri, ctx.containerPath);
         FunctionSignature funcSig;
         funcSig.returnType = GetNodeText(typeNode, sourceCode);

@@ -148,8 +148,25 @@ namespace angel_lsp::analysis
             return;
         }
 
-        if (allSameType && firstType == SymbolType::Function)
+        if (allSameType && (firstType == SymbolType::Function || firstType == SymbolType::Funcdef))
         {
+            if (firstType == SymbolType::Funcdef)
+            {
+                // Funcdefs cannot be overloaded by signature; any duplicate name in the same scope is an error.
+                std::vector<const Symbol *> currentFileSymbols;
+                for (const auto &sym : symbols)
+                {
+                    if (sym.fileUri == req.fileUri)
+                        currentFileSymbols.push_back(&sym);
+                }
+
+                for (size_t i = 1; i < currentFileSymbols.size(); ++i)
+                {
+                    diagnostics.push_back(CreateDiagnostic(*currentFileSymbols[i], req, "as-err-duplicate-symbol", currentFileSymbols[i]->name));
+                }
+                return;
+            }
+
             for (size_t i = 0; i < symbols.size(); ++i)
             {
                 if (symbols[i].fileUri != req.fileUri)
@@ -167,7 +184,13 @@ namespace angel_lsp::analysis
                     bool paramsMatch = true;
                     for (size_t p = 0; p < sigI.parameters.size(); ++p)
                     {
-                        if (sigI.parameters[p].baseTypeName != sigJ.parameters[p].baseTypeName)
+                        const auto &pI = sigI.parameters[p];
+                        const auto &pJ = sigJ.parameters[p];
+                        if (pI.baseTypeName != pJ.baseTypeName ||
+                            pI.isConst != pJ.isConst ||
+                            pI.modifier != pJ.modifier ||
+                            pI.isReference != pJ.isReference ||
+                            pI.isHandle != pJ.isHandle)
                         {
                             paramsMatch = false;
                             break;
@@ -207,6 +230,11 @@ namespace angel_lsp::analysis
         if (sig.returnTypeKind == TypeKind::Void && sig.returnType.find("const") != std::string::npos)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-const-void-return"));
+        }
+
+        if (sig.returnTypeKind == TypeKind::Void && (sig.returnType.find('&') != std::string::npos || sig.modifiers.isReturnReference))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-reference"));
         }
 
         if (sym.containerName.empty())
@@ -262,7 +290,7 @@ namespace angel_lsp::analysis
             {
                 seenDefault = true;
             }
-            else if (seenDefault)
+            else if (seenDefault && sym.type != SymbolType::Funcdef)
             {
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-default-param-order", param.name, sym.name));
             }
@@ -291,7 +319,7 @@ namespace angel_lsp::analysis
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-handle-on-primitive", param.baseTypeName));
             }
 
-            if (param.modifier == ParameterModifier::Out && !param.defaultValue.empty())
+            if (param.modifier == ParameterModifier::Out && !param.defaultValue.empty() && param.typeKind != TypeKind::Unknown)
             {
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-out-param-default", param.name));
             }
@@ -414,6 +442,42 @@ namespace angel_lsp::analysis
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
             }
         }
+
+        // Property accessors in concrete classes or global/namespace scope must have an implementation body.
+        bool isInterfaceProperty = false;
+        if (!sym.containerName.empty())
+        {
+            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            if (containerSyms)
+            {
+                for (const auto &cSym : *containerSyms)
+                {
+                    if (cSym.type == SymbolType::Interface)
+                    {
+                        isInterfaceProperty = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!isInterfaceProperty && sig.modifiers.isProperty && !sym.GetVariable().modifiers.isExternal)
+        {
+            // If the symbol represents a property accessor declaration without a body in a non-interface context:
+            const auto *funcSyms = req.symbolTable.FindSymbolsPtr(sym.name);
+            if (funcSyms)
+            {
+                for (const auto &fSym : *funcSyms)
+                {
+                    if (fSym.fileUri == sym.fileUri && fSym.startLine == sym.startLine &&
+                        fSym.type == SymbolType::Function && !fSym.GetFunction().hasBody)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     void SemanticAnalyzer::ValidateClass(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
@@ -447,7 +511,10 @@ namespace angel_lsp::analysis
         {
             if (!req.symbolTable.HasSymbol(baseName))
             {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-base-not-found", baseName));
+                if (!sig.modifiers.isMixin)
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-base-not-found", baseName));
+                }
             }
             else
             {
