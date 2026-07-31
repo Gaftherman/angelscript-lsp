@@ -66,6 +66,9 @@ namespace angel_lsp::analysis
                     case SymbolType::Funcdef:
                         ValidateFuncdef(sym, request, diagnostics);
                         break;
+                    case SymbolType::Namespace:
+                        ValidateNamespace(sym, request, diagnostics);
+                        break;
                     default:
                         break;
                     }
@@ -201,6 +204,41 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
         }
 
+        if (sig.returnTypeKind == TypeKind::Void && sig.returnType.find("const") != std::string::npos)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-const-void-return"));
+        }
+
+        if (sym.containerName.empty())
+        {
+            if (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
+            }
+        }
+        else
+        {
+            // For member functions, verify override is only used when the class has a base class or interface
+            if (sig.modifiers.isOverride)
+            {
+                const auto *classSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+                if (classSyms)
+                {
+                    for (const auto &cSym : *classSyms)
+                    {
+                        if (cSym.type == SymbolType::Class)
+                        {
+                            if (cSym.GetClass().bases.empty())
+                            {
+                                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         if (sig.returnTypeKind == TypeKind::Unknown && !sig.returnBaseTypeName.empty())
         {
             if (!req.symbolTable.HasSymbol(sig.returnBaseTypeName))
@@ -216,8 +254,26 @@ namespace angel_lsp::analysis
     {
         ankerl::unordered_dense::set<std::string> seenParamNames;
 
+        bool seenDefault = false;
+
         for (const auto &param : sig.parameters)
         {
+            if (!param.defaultValue.empty())
+            {
+                seenDefault = true;
+            }
+            else if (seenDefault)
+            {
+                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-default-param-order", param.name, sym.name));
+            }
+
+            if (param.modifier == ParameterModifier::InOut && param.typeKind != TypeKind::Unknown &&
+                param.typeKind != TypeKind::Auto)
+            {
+                // Primitives cannot be passed with &inout (only object types supporting handles/references can)
+                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-inout-on-primitive", param.baseTypeName));
+            }
+
             if (!param.name.empty())
             {
                 if (seenParamNames.contains(param.name))
@@ -297,6 +353,14 @@ namespace angel_lsp::analysis
 
         const auto &sig = sym.GetVariable();
 
+        if (sym.containerName.empty())
+        {
+            if (sig.modifiers.access == AccessModifier::Private || sig.modifiers.access == AccessModifier::Protected)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-variable-access-modifier", sym.name));
+            }
+        }
+
         if (sig.typeKind == TypeKind::Void)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-variable"));
@@ -307,7 +371,7 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
         }
 
-        if (sig.typeKind == TypeKind::Unknown && !sig.baseTypeName.empty())
+        if (sig.typeKind == TypeKind::Unknown && sig.baseTypeName != "auto" && !sig.baseTypeName.empty())
         {
             if (!req.symbolTable.HasSymbol(sig.baseTypeName))
             {
@@ -375,21 +439,6 @@ namespace angel_lsp::analysis
         if (sig.isTemplate && !req.predefinedFileExtension.empty() && req.fileUri != req.predefinedFileExtension)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-template-class-not-supported", sym.name));
-        }
-
-        // Check if the class name conflicts with one of its own active modifiers.
-        // Native AS compiler reports: "Attribute 'X' informed multiple times."
-        // Examples: 'final class final {}', 'abstract class abstract {}'.
-        ankerl::unordered_dense::set<std::string_view> activeModifiers;
-        const auto &mods = sig.modifiers;
-        if (mods.isFinal)    activeModifiers.emplace("final");
-        if (mods.isAbstract) activeModifiers.emplace("abstract");
-        if (mods.isShared)   activeModifiers.emplace("shared");
-        if (mods.isExternal) activeModifiers.emplace("external");
-
-        if (activeModifiers.contains(sym.name))
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-attribute-repeated", sym.name));
         }
 
         uint32_t classBaseCount = 0;
@@ -619,6 +668,15 @@ namespace angel_lsp::analysis
         }
 
         ValidateFunctionParameters(sym, sig, req, diagnostics);
+    }
+
+    void SemanticAnalyzer::ValidateNamespace(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (IsReservedKeyword(sym.name))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            return;
+        }
     }
 
     Diagnostic SemanticAnalyzer::CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code, DiagnosticSeverity severity) const

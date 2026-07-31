@@ -31,6 +31,12 @@ namespace angel_lsp::i18n
         m_messages["as-err-attribute-repeated"] = "Attribute '{}' is informed multiple times.";
         m_messages["as-err-reserved-keyword-name"] = "Instead found reserved keyword '{}'.";
         m_messages["as-err-name-conflict"] = "Name conflict. '{}' is already declared as a {}.";
+        m_messages["as-err-const-void-return"] = "Return type can't be 'const void'.";
+        m_messages["as-err-global-function-qualifiers"] = "Global function '{}' cannot have member function qualifiers (const, override, final).";
+        m_messages["as-err-override-no-base"] = "Method '{}' marked as override but class '{}' does not replace any base class or interface method.";
+        m_messages["as-err-default-param-order"] = "All subsequent parameters after the first default value must also have default values in function '{}'.";
+        m_messages["as-err-inout-on-primitive"] = "Only object types that support object references can use &inout ('{}').";
+        m_messages["as-err-global-variable-access-modifier"] = "Global or namespace variable '{}' cannot have access modifiers (private/protected).";
 
         if (locale == "es")
         {
@@ -60,6 +66,12 @@ namespace angel_lsp::i18n
             m_messages["as-err-attribute-repeated"] = "El atributo '{}' se informa múltiples veces.";
             m_messages["as-err-reserved-keyword-name"] = "Se encontró la palabra reservada '{}' en lugar de un identificador.";
             m_messages["as-err-name-conflict"] = "Conflicto de nombre. '{}' ya está declarado como {}.";
+            m_messages["as-err-const-void-return"] = "El tipo de retorno no puede ser 'const void'.";
+            m_messages["as-err-global-function-qualifiers"] = "La función global '{}' no puede tener calificadores de función miembro (const, override, final).";
+            m_messages["as-err-override-no-base"] = "El método '{}' marcado como override no reemplaza ningún método de clase base o interfaz en la clase '{}'.";
+            m_messages["as-err-default-param-order"] = "Todos los parámetros subsiguientes después del primer valor por defecto deben tener valores por defecto en la función '{}'.";
+            m_messages["as-err-inout-on-primitive"] = "Solo los tipos de objeto que admiten referencias pueden usar &inout ('{}').";
+            m_messages["as-err-global-variable-access-modifier"] = "La variable global o de namespace '{}' no puede tener modificadores de acceso (private/protected).";
         }
     }
 

@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include <iostream>
 
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SymbolCollector.h"
@@ -501,7 +502,7 @@ TEST_CASE("Grammar - function@ variable with lambda rhs parses correctly")
     CHECK(!hasSyntaxError);
 }
 
-TEST_CASE("SemanticAnalyzer - attribute repeated as class name (final)")
+TEST_CASE("SemanticAnalyzer - class name matching modifier allowed per native spec (final)")
 {
     std::string sourceCode = "final class final {}\n";
     SymbolTable table;
@@ -514,13 +515,10 @@ TEST_CASE("SemanticAnalyzer - attribute repeated as class name (final)")
     SemanticAnalysisRequest req{table, "file:///test.as", "", &i18n};
     auto diagnostics = analyzer.Analyze(req);
 
-    bool found = false;
-    for (const auto &d : diagnostics)
-        if (d.code == "as-err-attribute-repeated") { found = true; break; }
-    CHECK(found);
+    CHECK(diagnostics.empty());
 }
 
-TEST_CASE("SemanticAnalyzer - attribute repeated as class name (abstract)")
+TEST_CASE("SemanticAnalyzer - class name matching modifier allowed per native spec (abstract)")
 {
     std::string sourceCode = "abstract class abstract {}\n";
     SymbolTable table;
@@ -533,10 +531,7 @@ TEST_CASE("SemanticAnalyzer - attribute repeated as class name (abstract)")
     SemanticAnalysisRequest req{table, "file:///test.as", "", &i18n};
     auto diagnostics = analyzer.Analyze(req);
 
-    bool found = false;
-    for (const auto &d : diagnostics)
-        if (d.code == "as-err-attribute-repeated") { found = true; break; }
-    CHECK(found);
+    CHECK(diagnostics.empty());
 }
 
 TEST_CASE("SemanticAnalyzer - reserved keyword as function name")
@@ -633,6 +628,167 @@ TEST_CASE("SemanticAnalyzer - cross type name conflict function vs class")
         if (d.code == "as-err-name-conflict") { found = true; break; }
     CHECK(found);
 }
+
+TEST_CASE("Batch_105_Structural_Comparison")
+{
+    struct StructuralTestCase
+    {
+        int id;
+        std::string cat;
+        std::string code;
+    };
+
+    std::vector<StructuralTestCase> cases = {
+        {1, "Namespaces", "namespace N { void f(){} }"},
+        {2, "Namespaces", "namespace N1 { namespace N2 { class C{} } }"},
+        {3, "Namespaces", "namespace 123Bad {}"},
+        {4, "Namespaces", "namespace class {}"},
+        {5, "Namespaces", "namespace N { int x = 10; }"},
+        {6, "Namespaces", "namespace N::M { class C{} }"},
+        {7, "Namespaces", "namespace N { funcdef void CB(); }"},
+        {8, "Namespaces", "namespace N { typedef float Real; }"},
+        {9, "Namespaces", "namespace N { int get_p() { return 0; } }"},
+        {10, "Namespaces", "namespace N { class C { void m(){} } }"},
+        {11, "Namespaces", "namespace { void f(){} }"},
+        {12, "Namespaces", "namespace N {"},
+
+        {13, "Functions", "void f(int a, float b = 1.0) {}"},
+        {14, "Functions", "void f(const int &in a) {}"},
+        {15, "Functions", "void f(int &out a) {}"},
+        {16, "Functions", "void f(int &inout a) {}"},
+        {17, "Functions", "void f(int@ handle) {}"},
+        {18, "Functions", "void f(int a,) {}"},
+        {19, "Functions", "fucntion void f() {}"},
+        {20, "Functions", "vodi f() {}"},
+        {21, "Functions", "const void f() {}"},
+        {22, "Functions", "void f() const {}"},
+        {23, "Functions", "void f() override {}"},
+        {24, "Functions", "void f() final {}"},
+        {25, "Functions", "void f() external;"},
+        {26, "Functions", "int f(int a, int b) { return a + b; }"},
+        {27, "Functions", "void f(int a = 1, float b) {}"},
+        {28, "Functions", "void f(const &in a) {}"},
+
+        {29, "Variables", "int g_var = 100;"},
+        {30, "Variables", "const float g_pi = 3.14159f;"},
+        {31, "Variables", "private int g_priv = 1;"},
+        {32, "Variables", "int a, b = 2, c;"},
+        {33, "Variables", "int a, ;"},
+        {34, "Variables", "int a = ;"},
+        {35, "Variables", "protected string g_s;"},
+        {36, "Variables", "auto g_auto = 42;"},
+        {37, "Variables", "int[] arr;"},
+        {38, "Variables", "int@ obj;"},
+        {39, "Variables", "void v_var;"},
+        {40, "Variables", "int a = 1, float b = 2;"},
+
+        {41, "Classes", "class MyClass {}"},
+        {42, "Classes", "class Base {} class Derived : Base {}"},
+        {43, "Classes", "interface IFace {} class Impl : IFace { void m(){} }"},
+        {44, "Classes", "class Multi : Base1, Base2 {}"},
+        {45, "Classes", "final class FinalClass {}"},
+        {46, "Classes", "abstract class AbstractClass {}"},
+        {47, "Classes", "class C { private: int x; protected: float y; public: void f(){} }"},
+        {48, "Classes", "class C { ~C() {} }"},
+        {49, "Classes", "class C {};;"},
+        {50, "Classes", "clas C {}"},
+        {51, "Classes", "final class final {}"},
+        {52, "Classes", "abstract class abstract {}"},
+        {53, "Classes", "class C { int a; float b; void m() {} }"},
+        {54, "Classes", "class C : NonExistent {}"},
+        {55, "Classes", "class C { C() {} }"},
+        {56, "Classes", "class C { void f() const {} }"},
+        {57, "Classes", "class C { void f() override {} }"},
+        {58, "Classes", "class C { void f() final {} }"},
+
+        {59, "Interfaces", "interface ITest { void DoWork(); }"},
+        {60, "Interfaces", "interface ITest { int x; }"},
+        {61, "Interfaces", "interface ITest { void DoWork() {} }"},
+        {62, "Interfaces", "interface IChild : IParent {}"},
+        {63, "Interfaces", "intreface ITest {}"},
+        {64, "Interfaces", "interface ITest { void f(int a, float b); }"},
+        {65, "Interfaces", "interface ITest { ITest() {} }"},
+        {66, "Interfaces", "interface ITest { ~ITest() {} }"},
+        {67, "Interfaces", "interface ITest { private: void f(); }"},
+        {68, "Interfaces", "interface ITest { int get_prop() const; }"},
+        {69, "Interfaces", "interface ITest { void set_prop(int); }"},
+        {70, "Interfaces", "interface I1, I2 {}"},
+
+        {71, "Mixins", "mixin class Mix1 { void mixFunc() {} }"},
+        {72, "Mixins", "mixin class Mix1; class C { mixin Mix1; }"},
+        {73, "Mixins", "class C { mixin NonExistent; }"},
+        {74, "Mixins", "mixin class Mix1 : Base {}"},
+        {75, "Mixins", "final mixin class Mix1 {}"},
+        {76, "Mixins", "abstract mixin class Mix1 {}"},
+        {77, "Mixins", "mixin class Mix1 { int x; }"},
+        {78, "Mixins", "mixn class Mix1 {}"},
+        {79, "Mixins", "class C { mixin; }"},
+        {80, "Mixins", "mixin Mix1;"},
+
+        {81, "TypedefFuncdef", "typedef int MyInt;"},
+        {82, "TypedefFuncdef", "typedef float MyFloat;"},
+        {83, "TypedefFuncdef", "typedef NonExistent MyType;"},
+        {84, "TypedefFuncdef", "funcdef void Callback(int a, float b);"},
+        {85, "TypedefFuncdef", "funcdef int MathOp(int, int);"},
+        {86, "TypedefFuncdef", "funcdef void BadFunc(int a,);"},
+        {87, "TypedefFuncdef", "typdf int MyInt;"},
+        {88, "TypedefFuncdef", "fncdef void CB();"},
+        {89, "TypedefFuncdef", "funcdef void CB(int a = 1);"},
+        {90, "TypedefFuncdef", "funcdef const void CB();"},
+
+        {91, "Properties", "class PropClass { int get_val() const { return 0; } void set_val(int v) {} }"},
+        {92, "Properties", "int get_globalVal() { return 10; }"},
+        {93, "Properties", "class BadProp { int get_val(int param) { return 0; } }"},
+        {94, "Properties", "class BadSet { void set_val() {} }"},
+        {95, "Properties", "void set_globalVal(float x) {}"},
+        {96, "Properties", "class C { int prop { get const; set; } }"},
+
+        {97, "LexicalStructural", "// comment line"},
+        {98, "LexicalStructural", "/* multi line comment */"},
+        {99, "LexicalStructural", "class Unclosed {"},
+        {100, "LexicalStructural", "namespace UnclosedNS {"},
+        {101, "LexicalStructural", "int int() {}"},
+        {102, "LexicalStructural", "interface interface {}"},
+        {103, "LexicalStructural", "class class {}"},
+        {104, "LexicalStructural", "funcdef funcdef funcdef();"},
+        {105, "LexicalStructural", "class SomeHandle {} SomeHandle SomeHandle() {}"}
+    };
+
+    angel_lsp::i18n::I18n i18n("en");
+    std::cout << "\n=== LSP_VALIDATOR_BATCH_OUTPUT_START ===\n";
+
+    for (const auto &tc : cases)
+    {
+        std::string fileUri = "file:///test_" + std::to_string(tc.id) + ".as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+
+        auto syntaxDiags = collector.CollectSymbols(fileUri, tc.code, parser, table);
+
+        SemanticAnalyzer analyzer;
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto semanticDiags = analyzer.Analyze(req);
+
+        std::vector<Diagnostic> allDiags = syntaxDiags;
+        allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
+
+        bool rejected = !allDiags.empty();
+        std::string firstErr = "";
+        if (rejected)
+        {
+            const auto &d = allDiags[0];
+            firstErr = "L" + std::to_string(d.range.start.line + 1) + ":C" + std::to_string(d.range.start.character + 1) + " - [" + d.code + "] " + d.message;
+        }
+
+        std::cout << "ID:" << tc.id << "|"
+                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "ERR:" << firstErr << "\n";
+    }
+
+    std::cout << "=== LSP_VALIDATOR_BATCH_OUTPUT_END ===\n";
+}
+
 
 
 
