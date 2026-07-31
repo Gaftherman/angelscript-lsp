@@ -488,6 +488,9 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateFunctionParameters(const Symbol &sym, const FunctionSignature &sig, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
+        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
+        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+
         ankerl::unordered_dense::set<std::string> seenParamNames;
 
         bool seenDefault = false;
@@ -548,7 +551,7 @@ namespace angel_lsp::analysis
 
             if (param.typeKind == TypeKind::Unknown && !param.baseTypeName.empty())
             {
-                if (!req.symbolTable.HasSymbol(param.baseTypeName))
+                if (param.baseTypeName != stringTypeName && param.baseTypeName != arrayTypeName && !req.symbolTable.HasSymbol(param.baseTypeName) && !req.symbolTable.HasSymbolAnywhere(param.baseTypeName))
                 {
                     diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-unresolved-type", param.baseTypeName));
                 }

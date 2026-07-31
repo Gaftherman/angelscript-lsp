@@ -45,6 +45,7 @@ module.exports = grammar({
     [$.scoped_identifier, $.scoped_type],
     // type reference conflict with parameter reference
     [$.type],
+    [$.initializer_list],
   ],
 
   rules: {
@@ -721,13 +722,15 @@ module.exports = grammar({
 
     null_literal: _ => "null",
 
-    string_literal: $ => repeat1(choice(
+    _single_string_literal: _ => choice(
       // Triple-quoted heredoc strings (no escape processing, multiline)
-      token(seq('"""', /([^"]|"[^"]|""[^"])*/, '"""')),
+      token(seq('"""', repeat(choice(/[^"]/, /"[^"]/, /""[^"]/)), '"""')),
       // Single and double quoted strings (single-line only, no raw newlines)
       token(seq("'", repeat(choice(/[^'\r\n\\]/, /\\./)), "'")),
       token(seq('"', repeat(choice(/[^"\r\n\\]/, /\\./)), '"')),
-    )),
+    ),
+
+    string_literal: $ => repeat1($._single_string_literal),
 
     number_literal: _ => {
       const hex = /0[xX][0-9a-fA-F]+/;

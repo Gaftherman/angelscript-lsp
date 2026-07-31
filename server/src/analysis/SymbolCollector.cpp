@@ -153,17 +153,6 @@ namespace angel_lsp::analysis
         if (!ts_node_has_error(node))
             return;
 
-        // Suppress false positive tree-sitter parse errors for constructs that are valid in AngelScript
-        bool isEnum = (sourceCode.find("enum ") != std::string::npos);
-        if (sourceCode.find("@ const @") != std::string::npos ||
-            sourceCode.find("\"\"\"\"\"\"") != std::string::npos ||
-            sourceCode.find("\"\"\"Multiple \"\"\"\"\"") != std::string::npos ||
-            (!isEnum && ((sourceCode.find("{,") != std::string::npos || sourceCode.find(",,") != std::string::npos) && sourceCode.find('{') != std::string::npos)) ||
-            sourceCode.find("\" \"") != std::string::npos || sourceCode.find("\"\n\"") != std::string::npos || sourceCode.find("\"\r\n\"") != std::string::npos)
-        {
-            return;
-        }
-
         if (ts_node_is_missing(node) || (ts_node_is_named(node) && strcmp(ts_node_type(node), "ERROR") == 0))
         {
             TSPoint startPt = ts_node_start_point(node);
