@@ -327,62 +327,83 @@ namespace angel_lsp::analysis
                         }
                         else if (bSym.type == SymbolType::Interface && !sig.modifiers.isMixin)
                         {
-                            // Validate interface implementation for non-mixin classes
-                            std::string ifaceContainer = bSym.qualifiedName;
-                            std::string classContainer = sym.qualifiedName;
+                            const std::string ifaceContainer = bSym.qualifiedName;
+                            const std::string classContainer = sym.qualifiedName;
+
+                            // Step 1: Collect interface method signatures while holding ForEachSymbol's
+                            // shared_lock. Intentionally do NOT call FindSymbolsPtr inside the lambda
+                            // since both acquire m_mutex (shared_lock from the same thread = UB).
+                            struct IfaceMethod
+                            {
+                                std::string name;
+                                std::vector<ParameterInformation> params;
+                            };
+                            std::vector<IfaceMethod> ifaceMethods;
 
                             req.symbolTable.ForEachSymbol(
-                                [&](const std::string &qName, const std::vector<Symbol> &symbolsInTable)
+                                [&](const std::string & /*qName*/, const std::vector<Symbol> &symsInTable)
                                 {
-                                    for (const auto &ifaceMethodSym : symbolsInTable)
+                                    for (const auto &ms : symsInTable)
                                     {
-                                        if (ifaceMethodSym.containerName == ifaceContainer &&
-                                            ifaceMethodSym.type == SymbolType::Function &&
-                                            ifaceMethodSym.GetFunction().isInterfaceMethod)
+                                        if (ms.containerName == ifaceContainer &&
+                                            ms.type == SymbolType::Function &&
+                                            ms.GetFunction().isInterfaceMethod)
                                         {
-                                            // Check if class provides this method
-                                            std::string expectedQualifiedName = classContainer.empty() ? ifaceMethodSym.name : classContainer + "::" + ifaceMethodSym.name;
-                                            const auto *classMethodSyms = req.symbolTable.FindSymbolsPtr(expectedQualifiedName);
-
-                                            bool implemented = false;
-                                            if (classMethodSyms)
-                                            {
-                                                for (const auto &cMethodSym : *classMethodSyms)
-                                                {
-                                                    if (cMethodSym.type == SymbolType::Function && cMethodSym.containerName == classContainer)
-                                                    {
-                                                        // Signature match: same param count and base types
-                                                        const auto &ifaceSig = ifaceMethodSym.GetFunction();
-                                                        const auto &classSig = cMethodSym.GetFunction();
-
-                                                        if (ifaceSig.parameters.size() == classSig.parameters.size())
-                                                        {
-                                                            bool paramsMatch = true;
-                                                            for (size_t p = 0; p < ifaceSig.parameters.size(); ++p)
-                                                            {
-                                                                if (ifaceSig.parameters[p].baseTypeName != classSig.parameters[p].baseTypeName)
-                                                                {
-                                                                    paramsMatch = false;
-                                                                    break;
-                                                                }
-                                                            }
-                                                            if (paramsMatch)
-                                                            {
-                                                                implemented = true;
-                                                                break;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            if (!implemented)
-                                            {
-                                                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-interface-impl-missing", sym.name, ifaceMethodSym.name, baseName));
-                                            }
+                                            ifaceMethods.push_back({ms.name, ms.GetFunction().parameters});
                                         }
                                     }
                                 });
+
+                            // Step 2: After ForEachSymbol returns (lock released), look up each method
+                            // in the class. FindSymbolsPtr is now safe to call.
+                            for (const auto &ifaceMethod : ifaceMethods)
+                            {
+                                const std::string expectedQN = classContainer.empty()
+                                    ? ifaceMethod.name
+                                    : classContainer + "::" + ifaceMethod.name;
+
+                                const auto *classMethodSyms = req.symbolTable.FindSymbolsPtr(expectedQN);
+
+                                bool implemented = false;
+                                if (classMethodSyms)
+                                {
+                                    for (const auto &cMethodSym : *classMethodSyms)
+                                    {
+                                        if (cMethodSym.type != SymbolType::Function ||
+                                            cMethodSym.containerName != classContainer)
+                                        {
+                                            continue;
+                                        }
+
+                                        const auto &classParams = cMethodSym.GetFunction().parameters;
+                                        if (classParams.size() != ifaceMethod.params.size())
+                                            continue;
+
+                                        bool paramsMatch = true;
+                                        for (size_t p = 0; p < ifaceMethod.params.size(); ++p)
+                                        {
+                                            if (ifaceMethod.params[p].baseTypeName != classParams[p].baseTypeName)
+                                            {
+                                                paramsMatch = false;
+                                                break;
+                                            }
+                                        }
+
+                                        if (paramsMatch)
+                                        {
+                                            implemented = true;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if (!implemented)
+                                {
+                                    diagnostics.push_back(CreateDiagnostic(sym, req,
+                                        "as-err-interface-impl-missing",
+                                        sym.name, ifaceMethod.name, baseName));
+                                }
+                            }
                         }
                     }
 
