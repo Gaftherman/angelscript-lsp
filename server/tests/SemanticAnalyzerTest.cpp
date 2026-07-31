@@ -436,4 +436,34 @@ TEST_CASE("SemanticAnalyzer - SA-08: const in param is valid (no error)")
     CHECK(diagnostics.empty());
 }
 
+TEST_CASE("SemanticAnalyzer - SA-10: Interface method implementation check")
+{
+    std::string sourceCode =
+        "interface IAnimal\n"
+        "{\n"
+        "    void Speak();\n"
+        "    int GetAge();\n"
+        "}\n"
+        "class Dog : IAnimal\n"
+        "{\n"
+        "    void Speak() {}\n"
+        "}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics[0].code == "as-err-interface-impl-missing");
+    CHECK(diagnostics[0].message.find("GetAge") != std::string::npos);
+}
+
+
 

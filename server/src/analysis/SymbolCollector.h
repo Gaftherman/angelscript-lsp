@@ -32,6 +32,7 @@ namespace angel_lsp::analysis
         TSSymbol m_symParameter = 0;
         TSSymbol m_symClassBody = 0;
         TSSymbol m_symNamespaceBody = 0;
+        TSSymbol m_symInterfaceBody = 0;
         TSSymbol m_symEnumMember = 0;
         TSSymbol m_symFuncDeclaration = 0;
         TSSymbol m_symStatementBlock = 0;

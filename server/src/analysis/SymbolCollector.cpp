@@ -63,6 +63,7 @@ namespace angel_lsp::analysis
         m_symParameter = ts_language_symbol_for_name(lang, "parameter", 9, true);
         m_symClassBody = ts_language_symbol_for_name(lang, "class_body", 10, true);
         m_symNamespaceBody = ts_language_symbol_for_name(lang, "namespace_body", 14, true);
+        m_symInterfaceBody = ts_language_symbol_for_name(lang, "interface_body", 14, true);
         m_symEnumMember = ts_language_symbol_for_name(lang, "enum_member", 11, true);
         m_symFuncDeclaration = ts_language_symbol_for_name(lang, "func_declaration", 16, true);
         m_symStatementBlock = ts_language_symbol_for_name(lang, "statement_block", 15, true);
@@ -278,7 +279,7 @@ namespace angel_lsp::analysis
                 ctx.isInsideFunction = true;
             }
 
-            if (sym == m_symClassBody || sym == m_symNamespaceBody)
+            if (sym == m_symClassBody || sym == m_symNamespaceBody || sym == m_symInterfaceBody)
             {
                 TSNode parentDecl = ts_node_parent(current);
                 TSNode nameNode = ts_node_child_by_field_name(parentDecl, "name", 4);

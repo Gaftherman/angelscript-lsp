@@ -325,6 +325,65 @@ namespace angel_lsp::analysis
                             }
                             break;
                         }
+                        else if (bSym.type == SymbolType::Interface && !sig.modifiers.isMixin)
+                        {
+                            // Validate interface implementation for non-mixin classes
+                            std::string ifaceContainer = bSym.qualifiedName;
+                            std::string classContainer = sym.qualifiedName;
+
+                            req.symbolTable.ForEachSymbol(
+                                [&](const std::string &qName, const std::vector<Symbol> &symbolsInTable)
+                                {
+                                    for (const auto &ifaceMethodSym : symbolsInTable)
+                                    {
+                                        if (ifaceMethodSym.containerName == ifaceContainer &&
+                                            ifaceMethodSym.type == SymbolType::Function &&
+                                            ifaceMethodSym.GetFunction().isInterfaceMethod)
+                                        {
+                                            // Check if class provides this method
+                                            std::string expectedQualifiedName = classContainer.empty() ? ifaceMethodSym.name : classContainer + "::" + ifaceMethodSym.name;
+                                            const auto *classMethodSyms = req.symbolTable.FindSymbolsPtr(expectedQualifiedName);
+
+                                            bool implemented = false;
+                                            if (classMethodSyms)
+                                            {
+                                                for (const auto &cMethodSym : *classMethodSyms)
+                                                {
+                                                    if (cMethodSym.type == SymbolType::Function && cMethodSym.containerName == classContainer)
+                                                    {
+                                                        // Signature match: same param count and base types
+                                                        const auto &ifaceSig = ifaceMethodSym.GetFunction();
+                                                        const auto &classSig = cMethodSym.GetFunction();
+
+                                                        if (ifaceSig.parameters.size() == classSig.parameters.size())
+                                                        {
+                                                            bool paramsMatch = true;
+                                                            for (size_t p = 0; p < ifaceSig.parameters.size(); ++p)
+                                                            {
+                                                                if (ifaceSig.parameters[p].baseTypeName != classSig.parameters[p].baseTypeName)
+                                                                {
+                                                                    paramsMatch = false;
+                                                                    break;
+                                                                }
+                                                            }
+                                                            if (paramsMatch)
+                                                            {
+                                                                implemented = true;
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if (!implemented)
+                                            {
+                                                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-interface-impl-missing", sym.name, ifaceMethodSym.name, baseName));
+                                            }
+                                        }
+                                    }
+                                });
+                        }
                     }
 
                     if (isBaseClass)
@@ -471,6 +530,22 @@ namespace angel_lsp::analysis
             if (!pattern.empty())
             {
                 diag.message = fmt::format(fmt::runtime(pattern), arg1, arg2);
+            }
+        }
+
+        return diag;
+    }
+
+    Diagnostic SemanticAnalyzer::CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code, const std::string &arg1, const std::string &arg2, const std::string &arg3, DiagnosticSeverity severity) const
+    {
+        Diagnostic diag = CreateDiagnostic(sym, req, code, severity);
+
+        if (req.i18n)
+        {
+            std::string pattern = req.i18n->GetMessage(code);
+            if (!pattern.empty())
+            {
+                diag.message = fmt::format(fmt::runtime(pattern), arg1, arg2, arg3);
             }
         }
 
