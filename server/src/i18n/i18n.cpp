@@ -28,6 +28,9 @@ namespace angel_lsp::i18n
         m_messages["as-err-const-out-param"] = "Parameter '{}' cannot be both 'const' and '&out'.";
         m_messages["as-err-mixin-as-base"] = "Class '{}' cannot inherit from mixin '{}'. Mixins can only be included using 'mixin class'.";
         m_messages["as-err-interface-impl-missing"] = "Class '{}' does not implement interface method '{}' from interface '{}'.";
+        m_messages["as-err-attribute-repeated"] = "Attribute '{}' is informed multiple times.";
+        m_messages["as-err-reserved-keyword-name"] = "Instead found reserved keyword '{}'.";
+        m_messages["as-err-name-conflict"] = "Name conflict. '{}' is already declared as a {}.";
 
         if (locale == "es")
         {
@@ -54,6 +57,9 @@ namespace angel_lsp::i18n
             m_messages["as-err-const-out-param"] = "El parámetro '{}' no puede ser 'const' y '&out' al mismo tiempo.";
             m_messages["as-err-mixin-as-base"] = "La clase '{}' no puede heredar del mixin '{}'. Los mixins solo pueden incluirse con 'mixin class'.";
             m_messages["as-err-interface-impl-missing"] = "La clase '{}' no implementa el método de interfaz '{}' de la interfaz '{}'.";
+            m_messages["as-err-attribute-repeated"] = "El atributo '{}' se informa múltiples veces.";
+            m_messages["as-err-reserved-keyword-name"] = "Se encontró la palabra reservada '{}' en lugar de un identificador.";
+            m_messages["as-err-name-conflict"] = "Conflicto de nombre. '{}' ya está declarado como {}.";
         }
     }
 

@@ -3,6 +3,27 @@
 
 namespace angel_lsp::analysis
 {
+    /** @brief Checks whether the given name is a reserved AngelScript keyword that
+     *         cannot be used as a symbol name.
+     *  Context-sensitive keywords (abstract, final, function, get, set, etc.) are intentionally
+     *  excluded since they are valid identifiers per specification.
+     *  @param name The symbol name to check.
+     *  @return True if name is a reserved keyword. */
+    static bool IsReservedKeyword(const std::string &name)
+    {
+        static const ankerl::unordered_dense::set<std::string> kReserved = {
+            "and", "auto", "bool", "break", "case", "cast", "catch",
+            "class", "const", "continue", "default", "do", "double",
+            "else", "enum", "false", "float", "for", "foreach", "funcdef",
+            "if", "import", "in", "inout", "int", "int8", "int16", "int32", "int64",
+            "interface", "is", "mixin", "namespace", "not", "null",
+            "or", "out", "private", "protected", "return", "switch",
+            "true", "try", "typedef", "uint", "uint8", "uint16", "uint32", "uint64",
+            "using", "void", "while", "xor",
+        };
+        return kReserved.contains(name);
+    }
+
     SemanticAnalyzer::SemanticAnalyzer(angel_lsp::utils::LspLogger *logger)
         : m_logger(logger)
     {
@@ -64,7 +85,51 @@ namespace angel_lsp::analysis
         if (firstType == SymbolType::Namespace)
             return;
 
-        if (firstType != SymbolType::Function && firstType != SymbolType::Funcdef)
+        // 1. Cross-type name conflict detection (e.g. function/variable named after an existing class, interface, funcdef, or typedef)
+        const Symbol *typeDefiningSymbol = nullptr;
+        for (const auto &sym : symbols)
+        {
+            if (sym.type == SymbolType::Class     ||
+                sym.type == SymbolType::Interface ||
+                sym.type == SymbolType::Funcdef   ||
+                sym.type == SymbolType::Typedef)
+            {
+                typeDefiningSymbol = &sym;
+                break;
+            }
+        }
+
+        if (typeDefiningSymbol != nullptr)
+        {
+            bool hasConflict = false;
+            for (const auto &sym : symbols)
+            {
+                if (sym.fileUri != req.fileUri)
+                    continue;
+                if ((sym.type == SymbolType::Function || sym.type == SymbolType::Variable) &&
+                    &sym != typeDefiningSymbol)
+                {
+                    const std::string typeName = SymbolTypeToString(typeDefiningSymbol->type);
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", sym.name, typeName));
+                    hasConflict = true;
+                }
+            }
+            if (hasConflict)
+                return;
+        }
+
+        // 2. Same-type duplicate validation
+        bool allSameType = true;
+        for (size_t i = 1; i < symbols.size(); ++i)
+        {
+            if (symbols[i].type != firstType)
+            {
+                allSameType = false;
+                break;
+            }
+        }
+
+        if (allSameType && firstType != SymbolType::Function && firstType != SymbolType::Funcdef)
         {
             std::vector<const Symbol *> currentFileSymbols;
             for (const auto &sym : symbols)
@@ -80,7 +145,7 @@ namespace angel_lsp::analysis
             return;
         }
 
-        if (firstType == SymbolType::Function)
+        if (allSameType && firstType == SymbolType::Function)
         {
             for (size_t i = 0; i < symbols.size(); ++i)
             {
@@ -118,6 +183,12 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateFunction(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
+        if (IsReservedKeyword(sym.name))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            return;
+        }
+
         const auto &sig = sym.GetFunction();
 
         if (!sig.hasBody && !sig.isInterfaceMethod && !sig.modifiers.isExternal && !sig.modifiers.isDelete)
@@ -218,6 +289,12 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateVariable(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
+        if (IsReservedKeyword(sym.name))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            return;
+        }
+
         const auto &sig = sym.GetVariable();
 
         if (sig.typeKind == TypeKind::Void)
@@ -277,6 +354,12 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateClass(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
+        if (IsReservedKeyword(sym.name))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            return;
+        }
+
         const auto &sig = sym.GetClass();
 
         if (sig.modifiers.isMixin && sig.modifiers.isFinal)
@@ -292,6 +375,21 @@ namespace angel_lsp::analysis
         if (sig.isTemplate && !req.predefinedFileExtension.empty() && req.fileUri != req.predefinedFileExtension)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-template-class-not-supported", sym.name));
+        }
+
+        // Check if the class name conflicts with one of its own active modifiers.
+        // Native AS compiler reports: "Attribute 'X' informed multiple times."
+        // Examples: 'final class final {}', 'abstract class abstract {}'.
+        ankerl::unordered_dense::set<std::string_view> activeModifiers;
+        const auto &mods = sig.modifiers;
+        if (mods.isFinal)    activeModifiers.emplace("final");
+        if (mods.isAbstract) activeModifiers.emplace("abstract");
+        if (mods.isShared)   activeModifiers.emplace("shared");
+        if (mods.isExternal) activeModifiers.emplace("external");
+
+        if (activeModifiers.contains(sym.name))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-attribute-repeated", sym.name));
         }
 
         uint32_t classBaseCount = 0;
@@ -461,6 +559,12 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateInterface(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
+        if (IsReservedKeyword(sym.name))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            return;
+        }
+
         const auto &sig = sym.GetInterface();
 
         for (const auto &ifaceName : sig.inheritedInterfaces)
@@ -474,6 +578,12 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateTypedef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
+        if (IsReservedKeyword(sym.name))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            return;
+        }
+
         const auto &sig = sym.GetTypedef();
 
         if (sig.typeKind == TypeKind::Unknown && !sig.baseType.empty())
@@ -487,6 +597,12 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateFuncdef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
+        if (IsReservedKeyword(sym.name))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            return;
+        }
+
         const auto &sig = sym.GetFunction();
 
         if (sig.returnHasPrimitiveHandle)

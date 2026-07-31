@@ -499,6 +499,7 @@ module.exports = grammar({
 
     datatype: $ => choice(
       $.identifier,
+      alias("function", $.identifier),
       $.primitive_type,
       "?",
       "auto",

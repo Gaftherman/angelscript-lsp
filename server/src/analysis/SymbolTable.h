@@ -279,4 +279,22 @@ namespace angel_lsp::analysis
         mutable std::shared_mutex m_mutex;
         ankerl::unordered_dense::map<std::string, std::vector<Symbol>> m_symbols;
     };
+
+    /** @brief Converts SymbolType enum to lower/string representation. */
+    inline std::string SymbolTypeToString(SymbolType type)
+    {
+        switch (type)
+        {
+        case SymbolType::Variable:  return "variable";
+        case SymbolType::Function:  return "function";
+        case SymbolType::Class:     return "class";
+        case SymbolType::Interface: return "interface";
+        case SymbolType::Enum:      return "enum";
+        case SymbolType::Typedef:   return "typedef";
+        case SymbolType::Namespace: return "namespace";
+        case SymbolType::Funcdef:   return "funcdef";
+        case SymbolType::Property:  return "property";
+        default:                    return "unknown";
+        }
+    }
 }

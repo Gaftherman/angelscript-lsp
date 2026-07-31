@@ -465,5 +465,176 @@ TEST_CASE("SemanticAnalyzer - SA-10: Interface method implementation check")
     CHECK(diagnostics[0].message.find("GetAge") != std::string::npos);
 }
 
+TEST_CASE("Grammar - function@ as parameter type parses without error")
+{
+    std::string sourceCode =
+        "funcdef void function();\n"
+        "void test_function(function@ f) { f(); }\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto syntaxDiags = collector.CollectSymbols("file:///test.as", sourceCode, parser, table);
+
+    bool hasSyntaxError = false;
+    for (const auto &d : syntaxDiags)
+        if (d.code == "as-syntax-error" || d.code == "as-syntax-error-missing")
+            hasSyntaxError = true;
+    CHECK(!hasSyntaxError);
+}
+
+TEST_CASE("Grammar - function@ variable with lambda rhs parses correctly")
+{
+    std::string sourceCode =
+        "funcdef void function();\n"
+        "function@ myFunc = function() {};\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto syntaxDiags = collector.CollectSymbols("file:///test.as", sourceCode, parser, table);
+
+    bool hasSyntaxError = false;
+    for (const auto &d : syntaxDiags)
+        if (d.code == "as-syntax-error" || d.code == "as-syntax-error-missing")
+            hasSyntaxError = true;
+    CHECK(!hasSyntaxError);
+}
+
+TEST_CASE("SemanticAnalyzer - attribute repeated as class name (final)")
+{
+    std::string sourceCode = "final class final {}\n";
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols("file:///test.as", sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, "file:///test.as", "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    bool found = false;
+    for (const auto &d : diagnostics)
+        if (d.code == "as-err-attribute-repeated") { found = true; break; }
+    CHECK(found);
+}
+
+TEST_CASE("SemanticAnalyzer - attribute repeated as class name (abstract)")
+{
+    std::string sourceCode = "abstract class abstract {}\n";
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols("file:///test.as", sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, "file:///test.as", "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    bool found = false;
+    for (const auto &d : diagnostics)
+        if (d.code == "as-err-attribute-repeated") { found = true; break; }
+    CHECK(found);
+}
+
+TEST_CASE("SemanticAnalyzer - reserved keyword as function name")
+{
+    std::string sourceCode = "int int() {}\n";
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols("file:///test.as", sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, "file:///test.as", "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    bool found = false;
+    for (const auto &d : diagnostics)
+        if (d.code == "as-err-reserved-keyword-name") { found = true; break; }
+    CHECK(found);
+}
+
+TEST_CASE("SemanticAnalyzer - reserved keyword as funcdef name")
+{
+    std::string sourceCode = "funcdef void funcdef();\n";
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols("file:///test.as", sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, "file:///test.as", "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    bool found = false;
+    for (const auto &d : diagnostics)
+        if (d.code == "as-err-reserved-keyword-name") { found = true; break; }
+    CHECK(found);
+}
+
+TEST_CASE("SemanticAnalyzer - reserved keyword as interface name")
+{
+    std::string sourceCode = "interface interface {}\n";
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols("file:///test.as", sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, "file:///test.as", "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    bool found = false;
+    for (const auto &d : diagnostics)
+        if (d.code == "as-err-reserved-keyword-name") { found = true; break; }
+    CHECK(found);
+}
+
+TEST_CASE("SemanticAnalyzer - reserved keyword as class name")
+{
+    std::string sourceCode = "class class {}\n";
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols("file:///test.as", sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, "file:///test.as", "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    bool found = false;
+    for (const auto &d : diagnostics)
+        if (d.code == "as-err-reserved-keyword-name") { found = true; break; }
+    CHECK(found);
+}
+
+TEST_CASE("SemanticAnalyzer - cross type name conflict function vs class")
+{
+    std::string sourceCode = "class SomeHandle {}\nSomeHandle SomeHandle() {}\n";
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols("file:///test.as", sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, "file:///test.as", "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    bool found = false;
+    for (const auto &d : diagnostics)
+        if (d.code == "as-err-name-conflict") { found = true; break; }
+    CHECK(found);
+}
+
+
+
 
 

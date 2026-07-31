@@ -7,33 +7,6 @@ namespace angel_lsp::analysis
 {
     namespace
     {
-        std::string SymbolTypeToString(SymbolType type)
-        {
-            switch (type)
-            {
-            case SymbolType::Variable:
-                return "Variable";
-            case SymbolType::Function:
-                return "Function";
-            case SymbolType::Class:
-                return "Class";
-            case SymbolType::Interface:
-                return "Interface";
-            case SymbolType::Enum:
-                return "Enum";
-            case SymbolType::Typedef:
-                return "Typedef";
-            case SymbolType::Namespace:
-                return "Namespace";
-            case SymbolType::Funcdef:
-                return "Funcdef";
-            case SymbolType::Property:
-                return "Property";
-            default:
-                return "Unknown";
-            }
-        }
-
         std::string AccessModifierToString(AccessModifier access)
         {
             switch (access)
