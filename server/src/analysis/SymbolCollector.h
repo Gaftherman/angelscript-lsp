@@ -37,6 +37,7 @@ namespace angel_lsp::analysis
         TSSymbol m_symFuncDeclaration = 0;
         TSSymbol m_symStatementBlock = 0;
         TSSymbol m_symInterfaceMethod = 0;
+        TSSymbol m_symFuncAttributes = 0;
 
         ankerl::unordered_dense::map<TSSymbol, TypeKind> m_primitiveKindMap;
 

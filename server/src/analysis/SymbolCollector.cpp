@@ -68,6 +68,7 @@ namespace angel_lsp::analysis
         m_symFuncDeclaration = ts_language_symbol_for_name(lang, "func_declaration", 16, true);
         m_symStatementBlock = ts_language_symbol_for_name(lang, "statement_block", 15, true);
         m_symInterfaceMethod = ts_language_symbol_for_name(lang, "interface_method", 16, true);
+        m_symFuncAttributes = ts_language_symbol_for_name(lang, "func_attributes", 15, true);
 
         auto addPrimitive = [&](const char *name, uint32_t len, TypeKind kind)
         {
@@ -776,7 +777,7 @@ namespace angel_lsp::analysis
         {
             TSNode child = ts_node_child(node, i);
 
-            if (ts_node_symbol(child) == m_symDeclarationModifier)
+            if (ts_node_symbol(child) == m_symDeclarationModifier || ts_node_symbol(child) == m_symFuncAttributes)
             {
                 uint32_t modCount = ts_node_child_count(child);
                 for (uint32_t m = 0; m < modCount; ++m)

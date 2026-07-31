@@ -56,6 +56,8 @@ namespace angel_lsp::i18n
         m_messages["as-err-typedef-non-primitive"] = "Typedef base type '{}' must be a primitive data type.";
         m_messages["as-err-invalid-reference-return"] = "Not a valid reference type '{}'.";
         m_messages["as-err-external-not-found"] = "External shared entity '{}' not found.";
+        m_messages["as-err-mixin-child-type"] = "Mixin class '{}' cannot have child type declarations.";
+        m_messages["as-err-double-reference"] = "Invalid parameter reference qualifier format for type '{}'.";
 
         if (locale == "es")
         {

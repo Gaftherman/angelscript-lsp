@@ -134,7 +134,30 @@ namespace angel_lsp::analysis
                 return;
         }
 
-        // 2. Same-type duplicate validation
+        // 2. Function vs Variable and Enum vs Variable collisions
+        bool hasFunction = false;
+        bool hasEnum = false;
+        bool hasVariable = false;
+        const Symbol *varSym = nullptr;
+        for (const auto &s : symbols)
+        {
+            if (s.fileUri != req.fileUri) continue;
+            if (s.type == SymbolType::Function) hasFunction = true;
+            if (s.type == SymbolType::Enum) hasEnum = true;
+            if (s.type == SymbolType::Variable) { hasVariable = true; varSym = &s; }
+        }
+        if (hasFunction && hasVariable && varSym)
+        {
+            diagnostics.push_back(CreateDiagnostic(*varSym, req, "as-err-name-conflict", varSym->name, "function"));
+            return;
+        }
+        if (hasEnum && hasVariable && varSym)
+        {
+            diagnostics.push_back(CreateDiagnostic(*varSym, req, "as-err-name-conflict", varSym->name, "named type"));
+            return;
+        }
+
+        // 3. Same-type duplicate validation
         bool allSameType = true;
         for (size_t i = 1; i < symbols.size(); ++i)
         {
@@ -154,26 +177,10 @@ namespace angel_lsp::analysis
                     currentFileSymbols.push_back(&sym);
             }
 
-            if (firstType == SymbolType::Typedef)
-            {
-                // Exempt identical typedef redeclarations (e.g. typedef int MyInt; typedef int MyInt;)
-                for (size_t i = 1; i < currentFileSymbols.size(); ++i)
-                {
-                    const auto &t1 = currentFileSymbols[0]->GetTypedef();
-                    const auto &t2 = currentFileSymbols[i]->GetTypedef();
-                    if (t1.baseType != t2.baseType)
-                    {
-                        diagnostics.push_back(CreateDiagnostic(*currentFileSymbols[i], req, "as-err-duplicate-symbol", currentFileSymbols[i]->name));
-                    }
-                }
-                return;
-            }
-
             for (size_t i = 1; i < currentFileSymbols.size(); ++i)
             {
                 diagnostics.push_back(CreateDiagnostic(*currentFileSymbols[i], req, "as-err-duplicate-symbol", currentFileSymbols[i]->name));
             }
-            return;
         }
 
         if (allSameType && (firstType == SymbolType::Function || firstType == SymbolType::Funcdef))
@@ -208,6 +215,8 @@ namespace angel_lsp::analysis
 
                     if (sigI.parameters.size() != sigJ.parameters.size())
                         continue;
+                    if (sigI.modifiers.isConst != sigJ.modifiers.isConst)
+                        continue;
 
                     bool paramsMatch = true;
                     for (size_t p = 0; p < sigI.parameters.size(); ++p)
@@ -237,6 +246,15 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateFunction(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
+        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
+        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+
+        if (sym.containerName.empty() && (sym.name == arrayTypeName || sym.name == stringTypeName))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", sym.name, "registered object type"));
+            return;
+        }
+
         if (IsReservedKeyword(sym.name))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
@@ -342,9 +360,6 @@ namespace angel_lsp::analysis
             }
         }
 
-        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
-        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
-
         if (!sym.containerName.empty())
         {
             const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
@@ -376,6 +391,11 @@ namespace angel_lsp::analysis
                         {
                             if (cSym.type == SymbolType::Class)
                             {
+                                bool isCtorDtor = (sym.name == cSym.name || (!sym.name.empty() && sym.name[0] == '~'));
+                                if (cSym.GetClass().modifiers.isMixin || isCtorDtor)
+                                {
+                                    break;
+                                }
                                 if (cSym.GetClass().bases.empty())
                                 {
                                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
@@ -457,6 +477,11 @@ namespace angel_lsp::analysis
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-inout-on-primitive", param.baseTypeName));
             }
 
+            if (std::count(param.typeName.begin(), param.typeName.end(), '&') > 1)
+            {
+                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-double-reference", param.baseTypeName));
+            }
+
             if (!param.name.empty())
             {
                 if (seenParamNames.contains(param.name))
@@ -518,6 +543,15 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateVariable(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
+        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
+        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+
+        if (sym.containerName.empty() && (sym.name == arrayTypeName || sym.name == stringTypeName))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", sym.name, "registered object type"));
+            return;
+        }
+
         if (IsReservedKeyword(sym.name))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
@@ -592,10 +626,11 @@ namespace angel_lsp::analysis
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", sym.name));
             }
+            if ((sig.isArray || sig.baseTypeName == arrayTypeName) && !sig.modifiers.isHandle && val == "null")
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+            }
         }
-
-        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
-        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
 
         if (sig.modifiers.isHandle && sig.baseTypeName == stringTypeName)
         {
@@ -748,6 +783,21 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-abstract", sym.name));
         }
 
+        if (sig.modifiers.isMixin)
+        {
+            req.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &syms) {
+                for (const auto &s : syms)
+                {
+                    if (s.containerName == sym.name &&
+                        (s.type == SymbolType::Funcdef || s.type == SymbolType::Class || s.type == SymbolType::Enum || s.type == SymbolType::Typedef || s.type == SymbolType::Interface))
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-child-type", sym.name));
+                        return;
+                    }
+                }
+            });
+        }
+
         if (sig.isTemplate && !req.predefinedFileExtension.empty() && req.fileUri != req.predefinedFileExtension)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-template-class-not-supported", sym.name));
@@ -819,6 +869,8 @@ namespace angel_lsp::analysis
                             struct IfaceMethod
                             {
                                 std::string name;
+                                std::string returnType;
+                                bool isConst = false;
                                 std::vector<ParameterInformation> params;
                             };
                             std::vector<IfaceMethod> ifaceMethods;
@@ -829,53 +881,77 @@ namespace angel_lsp::analysis
                                     for (const auto &ms : symsInTable)
                                     {
                                         if (ms.containerName == ifaceContainer &&
-                                            ms.type == SymbolType::Function &&
-                                            ms.GetFunction().isInterfaceMethod)
+                                            ms.type == SymbolType::Function)
                                         {
-                                            ifaceMethods.push_back({ms.name, ms.GetFunction().parameters});
+                                            const auto &f = ms.GetFunction();
+                                            ifaceMethods.push_back({ms.name, f.returnType, f.modifiers.isConst, f.parameters});
                                         }
                                     }
                                 });
 
-                            // Step 2: After ForEachSymbol returns (lock released), look up each method
-                            // in the class. FindSymbolsPtr is now safe to call.
                             for (const auto &ifaceMethod : ifaceMethods)
                             {
-                                const std::string expectedQN = classContainer.empty()
-                                    ? ifaceMethod.name
-                                    : classContainer + "::" + ifaceMethod.name;
-
-                                const auto *classMethodSyms = req.symbolTable.FindSymbolsPtr(expectedQN);
-
                                 bool implemented = false;
-                                if (classMethodSyms)
-                                {
+                                
+                                auto checkMatchInClass = [&](const std::string &container) -> bool {
+                                    const std::string expectedQN = container.empty() ? ifaceMethod.name : container + "::" + ifaceMethod.name;
+                                    const auto *classMethodSyms = req.symbolTable.FindSymbolsPtr(expectedQN);
+                                    if (!classMethodSyms) return false;
+
                                     for (const auto &cMethodSym : *classMethodSyms)
                                     {
-                                        if (cMethodSym.type != SymbolType::Function ||
-                                            cMethodSym.containerName != classContainer)
-                                        {
+                                        if (cMethodSym.type != SymbolType::Function || cMethodSym.containerName != container)
                                             continue;
-                                        }
 
-                                        const auto &classParams = cMethodSym.GetFunction().parameters;
+                                        const auto &cFunc = cMethodSym.GetFunction();
+                                        if (cFunc.returnType != ifaceMethod.returnType || cFunc.modifiers.isConst != ifaceMethod.isConst)
+                                            continue;
+
+                                        const auto &classParams = cFunc.parameters;
                                         if (classParams.size() != ifaceMethod.params.size())
                                             continue;
 
                                         bool paramsMatch = true;
                                         for (size_t p = 0; p < ifaceMethod.params.size(); ++p)
                                         {
-                                            if (ifaceMethod.params[p].baseTypeName != classParams[p].baseTypeName)
+                                            const auto &ip = ifaceMethod.params[p];
+                                            const auto &cp = classParams[p];
+                                            if (ip.baseTypeName != cp.baseTypeName || ip.modifier != cp.modifier || ip.isConst != cp.isConst || ip.isReference != cp.isReference)
                                             {
                                                 paramsMatch = false;
                                                 break;
                                             }
                                         }
 
-                                        if (paramsMatch)
+                                        if (paramsMatch) return true;
+                                    }
+                                    return false;
+                                };
+
+                                implemented = checkMatchInClass(classContainer);
+
+                                if (!implemented)
+                                {
+                                    // Check base class hierarchy (excluding interfaces)
+                                    for (const auto &baseName : sig.bases)
+                                    {
+                                        const auto *baseSyms = req.symbolTable.FindSymbolsPtr(baseName);
+                                        if (baseSyms)
                                         {
-                                            implemented = true;
-                                            break;
+                                            bool isClassBase = false;
+                                            for (const auto &b : *baseSyms)
+                                            {
+                                                if (b.type == SymbolType::Class)
+                                                {
+                                                    isClassBase = true;
+                                                    break;
+                                                }
+                                            }
+                                            if (isClassBase && checkMatchInClass(baseName))
+                                            {
+                                                implemented = true;
+                                                break;
+                                            }
                                         }
                                     }
                                 }
@@ -1055,6 +1131,12 @@ namespace angel_lsp::analysis
         }
 
         const auto &sig = sym.GetEnum();
+
+        if (sig.modifiers.isExternal)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
+        }
+
         ankerl::unordered_dense::set<std::string> seenEnumMembers;
         for (const auto &member : sig.members)
         {
@@ -1065,18 +1147,23 @@ namespace angel_lsp::analysis
 
             if (!member.value.empty())
             {
-                // Enum initializers must be integer constant expressions
                 std::string val = member.value;
-                bool isStringLiteral = (val.front() == '"' || val.front() == '\'');
-                bool isLambda = (val.find("function") != std::string::npos);
-                bool isBool = (val == "true" || val == "false");
-                bool isNull = (val == "null");
-                bool isVoidAuto = (val == "void" || val == "auto" || val == "class" || val == "struct" || val == "enum");
-                bool isFloat = (val.find('.') != std::string::npos || val.back() == 'f' || val.back() == 'F');
-
-                if (isStringLiteral || isLambda || isBool || isNull || isVoidAuto || isFloat)
+                if (val == member.name)
                 {
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", member.name));
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-symbol", member.name));
+                }
+                else
+                {
+                    bool isStringLiteral = (val.front() == '"' || val.front() == '\'');
+                    bool isLambda = (val.find("function") != std::string::npos);
+                    bool isBool = (val == "true" || val == "false");
+                    bool isNull = (val == "null");
+                    bool isTypeKeyword = (val == "int" || val == "float" || val == "double" || val == "void" || val == "auto" || val == "class" || val == "struct" || val == "enum");
+
+                    if (isStringLiteral || isLambda || isBool || isNull || isTypeKeyword)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", member.name));
+                    }
                 }
             }
         }
