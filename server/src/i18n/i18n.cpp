@@ -42,6 +42,8 @@ namespace angel_lsp::i18n
         m_messages["as-err-destructor-param"] = "The destructor '{}' must not have any parameters.";
         m_messages["as-err-destructor-delete"] = "Cannot flag destructor '{}' with delete.";
         m_messages["as-err-class-member-const"] = "Class member '{}' cannot be declared as const.";
+        m_messages["as-err-delete-with-body"] = "Deleted function '{}' cannot have a body.";
+        m_messages["as-err-void-parameter"] = "Parameter '{}' in function '{}' cannot be of type 'void'.";
 
         if (locale == "es")
         {

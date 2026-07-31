@@ -222,6 +222,11 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-missing-body", sym.name));
         }
 
+        if (sig.modifiers.isDelete && sig.hasBody)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-delete-with-body", sym.name));
+        }
+
         if (sig.returnHasPrimitiveHandle)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
@@ -325,6 +330,11 @@ namespace angel_lsp::analysis
             else if (seenDefault && sym.type != SymbolType::Funcdef)
             {
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-default-param-order", param.name, sym.name));
+            }
+
+            if (param.typeKind == TypeKind::Void || param.baseTypeName == "void")
+            {
+                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-void-parameter", param.name, sym.name));
             }
 
             if (param.modifier == ParameterModifier::InOut && param.typeKind != TypeKind::Unknown &&
