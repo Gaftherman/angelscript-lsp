@@ -237,33 +237,65 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-reference"));
         }
 
-        if (sym.containerName.empty())
+        if (!sym.name.empty() && sym.name[0] == '~')
         {
-            if (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal)
+            if (!sig.parameters.empty())
             {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-param", sym.name));
+            }
+            if (sig.modifiers.isDelete)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-delete", sym.name));
+            }
+        }
+
+        if (!sym.containerName.empty())
+        {
+            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            if (containerSyms)
+            {
+                bool isClassContainer = false;
+                for (const auto &cSym : *containerSyms)
+                {
+                    if (cSym.type == SymbolType::Class || cSym.type == SymbolType::Interface)
+                    {
+                        isClassContainer = true;
+                        break;
+                    }
+                }
+
+                if (!isClassContainer)
+                {
+                    if (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
+                    }
+                }
+                else
+                {
+                    // For member functions, verify override is only used when the class has a base class or interface
+                    if (sig.modifiers.isOverride)
+                    {
+                        for (const auto &cSym : *containerSyms)
+                        {
+                            if (cSym.type == SymbolType::Class)
+                            {
+                                if (cSym.GetClass().bases.empty())
+                                {
+                                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
         else
         {
-            // For member functions, verify override is only used when the class has a base class or interface
-            if (sig.modifiers.isOverride)
+            if (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal)
             {
-                const auto *classSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
-                if (classSyms)
-                {
-                    for (const auto &cSym : *classSyms)
-                    {
-                        if (cSym.type == SymbolType::Class)
-                        {
-                            if (cSym.GetClass().bases.empty())
-                            {
-                                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
-                            }
-                            break;
-                        }
-                    }
-                }
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
             }
         }
 
@@ -381,7 +413,31 @@ namespace angel_lsp::analysis
 
         const auto &sig = sym.GetVariable();
 
-        if (sym.containerName.empty())
+        if (!sym.containerName.empty())
+        {
+            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            if (containerSyms)
+            {
+                bool isClassContainer = false;
+                for (const auto &cSym : *containerSyms)
+                {
+                    if (cSym.type == SymbolType::Class || cSym.type == SymbolType::Interface)
+                    {
+                        isClassContainer = true;
+                        break;
+                    }
+                }
+
+                if (!isClassContainer)
+                {
+                    if (sig.modifiers.access == AccessModifier::Private || sig.modifiers.access == AccessModifier::Protected)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-variable-access-modifier", sym.name));
+                    }
+                }
+            }
+        }
+        else
         {
             if (sig.modifiers.access == AccessModifier::Private || sig.modifiers.access == AccessModifier::Protected)
             {
@@ -404,6 +460,32 @@ namespace angel_lsp::analysis
             if (!req.symbolTable.HasSymbol(sig.baseTypeName))
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
+            }
+        }
+
+        if (!sig.templateName.empty() && sig.templateName != "int" && sig.templateName != "float" &&
+            sig.templateName != "double" && sig.templateName != "uint" && sig.templateName != "bool" &&
+            sig.templateName != "string" && sig.templateName != "auto")
+        {
+            if (!req.symbolTable.HasSymbol(sig.templateName))
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.templateName));
+            }
+        }
+
+        if (!sym.containerName.empty() && sig.modifiers.isConst)
+        {
+            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            if (containerSyms)
+            {
+                for (const auto &cSym : *containerSyms)
+                {
+                    if (cSym.type == SymbolType::Class)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-class-member-const", sym.name));
+                        break;
+                    }
+                }
             }
         }
 

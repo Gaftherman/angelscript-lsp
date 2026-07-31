@@ -44,6 +44,8 @@ namespace angel_lsp::analysis
         {
             std::string containerPath;
             bool isInsideFunction = false;
+            bool isInsideClass = false;
+            bool isInsideNamespace = false;
         };
 
         using ProcessFn = void (SymbolCollector::*)(TSNode, const std::string &, const std::string &, SymbolTable &, const CollectionContext &);

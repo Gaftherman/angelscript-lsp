@@ -193,7 +193,7 @@ module.exports = grammar({
 
     base_class_list: $ => seq(
       ":",
-      commaSep1(field("base", $.identifier)),
+      commaSep1(field("base", $.type)),
     ),
 
     class_body: $ => seq(

@@ -39,6 +39,9 @@ namespace angel_lsp::i18n
         m_messages["as-err-global-variable-access-modifier"] = "Global or namespace variable '{}' cannot have access modifiers (private/protected).";
         m_messages["as-err-void-reference"] = "Type 'void' cannot be a reference.";
         m_messages["as-err-property-accessor-missing-body"] = "Property accessor '{}' must be implemented.";
+        m_messages["as-err-destructor-param"] = "The destructor '{}' must not have any parameters.";
+        m_messages["as-err-destructor-delete"] = "Cannot flag destructor '{}' with delete.";
+        m_messages["as-err-class-member-const"] = "Class member '{}' cannot be declared as const.";
 
         if (locale == "es")
         {

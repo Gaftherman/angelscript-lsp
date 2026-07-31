@@ -636,7 +636,7 @@
               "name": "base",
               "content": {
                 "type": "SYMBOL",
-                "name": "identifier"
+                "name": "type"
               }
             },
             {
@@ -653,7 +653,7 @@
                     "name": "base",
                     "content": {
                       "type": "SYMBOL",
-                      "name": "identifier"
+                      "name": "type"
                     }
                   }
                 ]

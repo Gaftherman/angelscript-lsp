@@ -279,8 +279,17 @@ namespace angel_lsp::analysis
                 ctx.isInsideFunction = true;
             }
 
-            if (sym == m_symClassBody || sym == m_symNamespaceBody || sym == m_symInterfaceBody)
+            if (sym == m_symClassBody || sym == m_symInterfaceBody)
             {
+                ctx.isInsideClass = true;
+                TSNode parentDecl = ts_node_parent(current);
+                TSNode nameNode = ts_node_child_by_field_name(parentDecl, "name", 4);
+                std::string name = GetNodeText(nameNode, sourceCode);
+                ctx.containerPath = ctx.containerPath.empty() ? name : name + "::" + ctx.containerPath;
+            }
+            else if (sym == m_symNamespaceBody)
+            {
+                ctx.isInsideNamespace = true;
                 TSNode parentDecl = ts_node_parent(current);
                 TSNode nameNode = ts_node_child_by_field_name(parentDecl, "name", 4);
                 std::string name = GetNodeText(nameNode, sourceCode);
@@ -398,6 +407,11 @@ namespace angel_lsp::analysis
                 }
                 else if (tok == "@")
                 {
+                    if (result.isHandle)
+                    {
+                        // Handle-to-handle @@ is invalid in AngelScript
+                        result.hasPrimitiveHandle = true; // Trigger diagnostic
+                    }
                     result.isHandle = true;
                     if (!result.isArray && !ts_node_is_null(prevChild) && ts_node_symbol(prevChild) == m_symDatatype)
                     {
