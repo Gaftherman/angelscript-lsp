@@ -86,6 +86,7 @@ namespace angel_lsp::analysis
     {
         std::string name;
         std::string typeName;
+        std::string rawText;
         std::string baseTypeName;
         std::string templateName;
         TypeKind typeKind = TypeKind::Unknown;
@@ -117,6 +118,7 @@ namespace angel_lsp::analysis
         std::vector<ParameterInformation> parameters;
         bool hasBody = false;
         bool isInterfaceMethod = false;
+        std::string defaultValue;
     };
 
     struct VariableSignature

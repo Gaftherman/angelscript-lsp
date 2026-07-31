@@ -494,6 +494,7 @@ namespace angel_lsp::analysis
         ParameterInformation paramInfo;
         paramInfo.name = GetNodeText(pNameNode, sourceCode);
         paramInfo.typeName = GetNodeText(pTypeNode, sourceCode);
+        paramInfo.rawText = GetNodeText(paramNode, sourceCode);
         paramInfo.baseTypeName = pInfo.baseTypeName;
         paramInfo.templateName = pInfo.templateName;
         paramInfo.typeKind = pInfo.kind;
@@ -590,6 +591,12 @@ namespace angel_lsp::analysis
         }
 
         Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, sourceCode, fileUri, ctx.containerPath);
+        std::string funcText = GetNodeText(funcNode, sourceCode);
+        if (funcText.find('~') != std::string::npos && (sym.name.empty() || sym.name[0] != '~'))
+        {
+            sym.name = "~" + sym.name;
+            sym.qualifiedName = sym.containerName.empty() ? sym.name : sym.containerName + "::" + sym.name;
+        }
         FunctionSignature funcSig;
         funcSig.returnType = GetNodeText(typeNode, sourceCode);
         funcSig.returnBaseTypeName = retInfo.baseTypeName;
@@ -601,6 +608,7 @@ namespace angel_lsp::analysis
         funcSig.modifiers = modifiers;
         funcSig.parameters = ExtractParameters(paramsNode, sourceCode);
         funcSig.hasBody = !ts_node_is_null(bodyNode);
+        funcSig.defaultValue = GetNodeText(bodyNode, sourceCode);
         funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_symInterfaceMethod);
 
         sym.signature = funcSig;

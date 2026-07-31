@@ -328,7 +328,7 @@ module.exports = grammar({
     variable_declarator: $ => seq(
       field("name", $.identifier),
       optional(choice(
-        seq("=", choice($.initializer_list, $._expression)),
+        seq("=", field("value", choice($.initializer_list, $._expression))),
         $.argument_list,
       )),
     ),
@@ -454,7 +454,7 @@ module.exports = grammar({
         "...",
         seq(
           optional(field("name", $.identifier)),
-          optional(seq("=", field("default_value", $._expression))),
+          optional(seq("=", optional(field("default_value", $._expression)))),
         ),
       ),
     ),

@@ -293,9 +293,21 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
         }
 
-        if (sig.modifiers.isDelete && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit))
+        bool isCtor = (!sym.containerName.empty() && sym.name == sym.containerName);
+        if (sig.modifiers.isFinal && isCtor && !sig.modifiers.isDelete)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
+        }
+
+        if (sig.modifiers.isDelete && (sig.modifiers.isConst || (!isCtor && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit))))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-delete-with-other-qualifier", sym.name));
+        }
+
+        bool isReturnArray = sig.returnIsArray || sig.returnType.find("[]") != std::string::npos || sig.returnBaseTypeName == arrayTypeName;
+        if (isReturnArray && !sig.modifiers.isHandle && !sig.returnHasPrimitiveHandle && sig.defaultValue.find("return null") != std::string::npos)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
         }
 
         if (sig.modifiers.isExternal)
@@ -477,7 +489,7 @@ namespace angel_lsp::analysis
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-inout-on-primitive", param.baseTypeName));
             }
 
-            if (std::count(param.typeName.begin(), param.typeName.end(), '&') > 1)
+            if (std::count(param.rawText.begin(), param.rawText.end(), '&') > 1)
             {
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-double-reference", param.baseTypeName));
             }
@@ -626,7 +638,8 @@ namespace angel_lsp::analysis
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", sym.name));
             }
-            if ((sig.isArray || sig.baseTypeName == arrayTypeName) && !sig.modifiers.isHandle && val == "null")
+            bool isArrayVar = sig.isArray || sig.typeName.find("[]") != std::string::npos || sig.baseTypeName == arrayTypeName;
+            if (isArrayVar && !sig.modifiers.isHandle && val == "null")
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
             }
