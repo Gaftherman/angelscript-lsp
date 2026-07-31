@@ -953,6 +953,258 @@ TEST_CASE("DynamicTypeConfig_CustomString")
     }
 }
 
+TEST_CASE("Batch_NewEdge200_Harness_Comparison")
+{
+    struct StructuralTestCase
+    {
+        int id;
+        std::string cat;
+        std::string code;
+    };
+
+    std::vector<StructuralTestCase> cases = {
+        {201, "EnumsEdge", "enum E { A = function(){} }"},
+        {202, "EnumsEdge", "enum E { A = \"cadena\", B = 10 }"},
+        {203, "EnumsEdge", "enum E { A = , B }"},
+        {204, "EnumsEdge", "enum E { A, , B }"},
+        {205, "EnumsEdge", "enum E { A = 10, B = A + 5 }"},
+        {206, "EnumsEdge", "enum E { A = 1, B = A }"},
+        {207, "EnumsEdge", "enum E { A = true }"},
+        {208, "EnumsEdge", "enum E { A = false }"},
+        {209, "EnumsEdge", "enum E { A = 3.14f }"},
+        {210, "EnumsEdge", "enum E { A = 1 + 2 * 3 }"},
+        {211, "EnumsEdge", "enum E { A = (1 << 2) }"},
+        {212, "EnumsEdge", "enum E { A = ~0 }"},
+        {213, "EnumsEdge", "enum E { A = -10 }"},
+        {214, "EnumsEdge", "enum E { A = +10 }"},
+        {215, "EnumsEdge", "enum E { A = 1, B = 2, }"},
+        {216, "EnumsEdge", "enum E { A = 1,, B = 2 }"},
+        {217, "EnumsEdge", "enum E { = 1 }"},
+        {218, "EnumsEdge", "enum E { A = B, B = 1 }"},
+        {219, "EnumsEdge", "enum E { A = A }"},
+        {220, "EnumsEdge", "enum E { A = 0x1F }"},
+        {221, "EnumsEdge", "enum E { A = 0b1010 }"},
+        {222, "EnumsEdge", "enum E { A = null }"},
+        {223, "EnumsEdge", "class Obj {} enum E { A = Obj() }"},
+        {224, "EnumsEdge", "enum E { A = void }"},
+        {225, "EnumsEdge", "enum E { A = auto }"},
+        {226, "EnumsEdge", "enum E { A = int }"},
+        {227, "EnumsEdge", "enum E { A = float }"},
+        {228, "EnumsEdge", "enum E { A = class }"},
+        {229, "EnumsEdge", "enum E { A = struct }"},
+        {230, "EnumsEdge", "enum E { A = enum }"},
+        {231, "EnumsEdge", "enum E { A = 1, A = 2 }"},
+        {232, "EnumsEdge", "enum E { A = 1 } enum E2 { A = 1 }"},
+        {233, "EnumsEdge", "namespace N { enum E { A = 1 } } enum E { A = 1 }"},
+        {234, "EnumsEdge", "shared enum E { A = 1 }"},
+        {235, "EnumsEdge", "external enum E { A = 1 }"},
+
+        {236, "ScopesEdge", "class MyClass {} ::MyClass@ someClassname;"},
+        {237, "ScopesEdge", "namespace SOMENAMESPACE { class MYCLASS {} } SOMENAMESPACE::MYCLASS@ myFunction() { return null; }"},
+        {238, "ScopesEdge", "namespace SOMENAMESPACE { class MYCLASS {} } ::SOMENAMESPACE::MYCLASS@ myFunction() { return null; }"},
+        {239, "ScopesEdge", "namespace A::::B {}"},
+        {240, "ScopesEdge", "namespace ::namespace::Class {}"},
+        {241, "ScopesEdge", "class MyClass {} void f(::MyClass@ obj) {}"},
+        {242, "ScopesEdge", "class MyClass {} ::MyClass f() { return MyClass(); }"},
+        {243, "ScopesEdge", "namespace N { class C {} } N::C@ h;"},
+        {244, "ScopesEdge", "namespace N { class C {} } ::N::C@ h;"},
+        {245, "ScopesEdge", "namespace N { namespace M { class C {} } } ::N::M::C@ h;"},
+        {246, "ScopesEdge", "namespace N { namespace M { class C {} } } N::M::C@ h;"},
+        {247, "ScopesEdge", "class GlobalC {} namespace N { ::GlobalC@ h; }"},
+        {248, "ScopesEdge", "namespace N { class LocalC {} } namespace N { LocalC@ h; }"},
+        {249, "ScopesEdge", "namespace N { class LocalC {} } namespace N { ::N::LocalC@ h; }"},
+        {250, "ScopesEdge", "namespace N { class C {} } ::N::C f(::N::C@ arg) { return C(); }"},
+        {251, "ScopesEdge", "namespace N { enum E { A, B } } ::N::E val = ::N::A;"},
+        {252, "ScopesEdge", "namespace N { enum E { A, B } } ::N::E val = ::N::E::A;"},
+        {253, "ScopesEdge", "namespace N { typedef int MyInt; } ::N::MyInt x = 10;"},
+        {254, "ScopesEdge", "namespace N { funcdef void CB(); } ::N::CB@ cb;"},
+        {255, "ScopesEdge", "namespace A { class C {} } namespace B { class C {} } ::A::C a; ::B::C b;"},
+        {256, "ScopesEdge", "namespace A { class C {} } namespace B { using namespace A; ::A::C a; }"},
+        {257, "ScopesEdge", "namespace A { class C {} } namespace B { using namespace A; C a; }"},
+        {258, "ScopesEdge", "namespace A { namespace B { class C {} } } using namespace A::B; C obj;"},
+        {259, "ScopesEdge", "namespace A { namespace B { class C {} } } using namespace ::A::B; C obj;"},
+        {260, "ScopesEdge", "using namespace ::;"},
+        {261, "ScopesEdge", "using namespace A::;"},
+        {262, "ScopesEdge", "using namespace ::A::;"},
+        {263, "ScopesEdge", "namespace :: {}"},
+        {264, "ScopesEdge", "namespace A:: {}"},
+        {265, "ScopesEdge", "namespace ::A:: {}"},
+        {266, "ScopesEdge", "namespace A { namespace }"},
+        {267, "ScopesEdge", "namespace A { namespace 123B {} }"},
+        {268, "ScopesEdge", "namespace A { class C {} } ::A::C@ f(::A::C@ inObj) { return inObj; }"},
+        {269, "ScopesEdge", "namespace N { interface I { void m(); } } class Impl : ::N::I { void m() {} }"},
+        {270, "ScopesEdge", "namespace N { mixin class M { void f(){} } } class C { mixin ::N::M; }"},
+        {271, "ScopesEdge", "class C {} ::C@ objHandle;"},
+        {272, "ScopesEdge", "class C {} const ::C@ constObjHandle;"},
+        {273, "ScopesEdge", "class C {} ::C@ const constHandleObj = null;"},
+        {274, "ScopesEdge", "class C {} const ::C@ const constClassHandle = null;"},
+        {275, "ScopesEdge", "namespace N { class C {} } const ::N::C@ const constNSHandle = null;"},
+
+        {276, "HandlesEdge", "class MyClass {} MyClass@@ handle;"},
+        {277, "HandlesEdge", "class MyClass {} object@ @ h;"},
+        {278, "HandlesEdge", "int@ x;"},
+        {279, "HandlesEdge", "@int y;"},
+        {280, "HandlesEdge", "class C @ {}"},
+        {281, "HandlesEdge", "void f(int & & a)"},
+        {282, "HandlesEdge", "int & var;"},
+        {283, "HandlesEdge", "class MyClass {} MyClass@& handleRef;"},
+        {284, "HandlesEdge", "class MyClass {} MyClass&@ refHandle;"},
+        {285, "HandlesEdge", "class obj {} const obj @ const d = null;"},
+        {286, "HandlesEdge", "class obj {} const obj @ const f(const obj @ const &in arg) const { return null; }"},
+        {287, "HandlesEdge", "float@ fVal;"},
+        {288, "HandlesEdge", "bool@ bVal;"},
+        {289, "HandlesEdge", "double@ dVal;"},
+        {290, "HandlesEdge", "uint@ uVal;"},
+        {291, "HandlesEdge", "int8@ i8Val;"},
+        {292, "HandlesEdge", "int16@ i16Val;"},
+        {293, "HandlesEdge", "int64@ i64Val;"},
+        {294, "HandlesEdge", "uint8@ u8Val;"},
+        {295, "HandlesEdge", "uint16@ u16Val;"},
+        {296, "HandlesEdge", "uint64@ u64Val;"},
+        {297, "HandlesEdge", "class C {} C@ @ doubleHandleSpace;"},
+        {298, "HandlesEdge", "class C {} C @ @ doubleHandleSpace2;"},
+        {299, "HandlesEdge", "class C {} C@@@ tripleHandle;"},
+        {300, "HandlesEdge", "class C {} const const C@ doubleConstType;"},
+        {301, "HandlesEdge", "class C {} C@ const const doubleConstModifier;"},
+        {302, "HandlesEdge", "class C {} const C@ const const doubleConstBoth;"},
+        {303, "HandlesEdge", "class C {} void f(C@ &out param) {}"},
+        {304, "HandlesEdge", "class C {} void f(C@ &in param) {}"},
+        {305, "HandlesEdge", "class C {} void f(C@ &inout param) {}"},
+        {306, "HandlesEdge", "class C {} void f(const C@ &in param) {}"},
+        {307, "HandlesEdge", "class C {} void f(const C@ &out param) {}"},
+        {308, "HandlesEdge", "class C {} void f(const C@ &inout param) {}"},
+        {309, "HandlesEdge", "class C {} C@ & globalHandleRef;"},
+        {310, "HandlesEdge", "class C {} C& @ globalRefHandle;"},
+        {311, "HandlesEdge", "class C {} static C@ & staticHandleRef;"},
+        {312, "HandlesEdge", "class C { C@ & memberHandleRef; }"},
+        {313, "HandlesEdge", "class C { C& @ memberRefHandle; }"},
+        {314, "HandlesEdge", "void f(int & &in a) {}"},
+        {315, "HandlesEdge", "void f(int & &out a) {}"},
+        {316, "HandlesEdge", "void f(int & &inout a) {}"},
+        {317, "HandlesEdge", "void f(int &in &out a) {}"},
+        {318, "HandlesEdge", "void f(int &out &inout a) {}"},
+        {319, "HandlesEdge", "float & globalFloatRef;"},
+        {320, "HandlesEdge", "class Obj {} Obj & globalObjRef;"},
+
+        {321, "TyposEdge", "clas C {}"},
+        {322, "TyposEdge", "vodi f()"},
+        {323, "TyposEdge", "int f() { retun 0; }"},
+        {324, "TyposEdge", "intreface I {}"},
+        {325, "TyposEdge", "namespac N {}"},
+        {326, "TyposEdge", "void f {}"},
+        {327, "TyposEdge", "class MyClass {}; MyClass obj; void f;"},
+        {328, "TyposEdge", "int x = 10 class C {}"},
+        {329, "TyposEdge", "typedef int MyInt"},
+        {330, "TyposEdge", "int[ arr;"},
+        {331, "TyposEdge", "int[]] arr2;"},
+        {332, "TyposEdge", "class C [ int x; ]"},
+        {333, "TyposEdge", "class C { int x;"},
+        {334, "TyposEdge", "interface I { void f()"},
+        {335, "TyposEdge", "enum E { A, B"},
+        {336, "TyposEdge", "funcdef void CB("},
+        {337, "TyposEdge", "void f(int a"},
+        {338, "TyposEdge", "class C : Base"},
+        {339, "TyposEdge", "using namespace N"},
+        {340, "TyposEdge", "import void f() from \"mod\""},
+        {341, "TyposEdge", "external void f()"},
+        {342, "TyposEdge", "mixin class M { void f()"},
+        {343, "TyposEdge", "class C { mixin M"},
+        {344, "TyposEdge", "const int x = 10"},
+        {345, "TyposEdge", "class C { int x = 10"},
+        {346, "TyposEdge", "void f() { return 0"},
+        {347, "TyposEdge", "class C { C()"},
+        {348, "TyposEdge", "class C { ~C()"},
+        {349, "TyposEdge", "class C { int prop { get"},
+        {350, "TyposEdge", "class C { int prop { set"},
+        {351, "TyposEdge", "stuct S {}"},
+        {352, "TyposEdge", "publc class C {}"},
+        {353, "TyposEdge", "privat class C {}"},
+        {354, "TyposEdge", "protectd class C {}"},
+        {355, "TyposEdge", "statc int x = 0;"},
+        {356, "TyposEdge", "cnost int x = 0;"},
+        {357, "TyposEdge", "overide void f() {}"},
+        {358, "TyposEdge", "finl class C {}"},
+        {359, "TyposEdge", "abstrct class C {}"},
+        {360, "TyposEdge", "shared class C {}"},
+
+        {361, "ParamsEdge", "class CustomClass {} void f(CustomClass &in a) {}"},
+        {362, "ParamsEdge", "class CustomClass {} void f(const CustomClass &out b) {}"},
+        {363, "ParamsEdge", "class CustomClass {} void f(CustomClass &inout c) {}"},
+        {364, "ParamsEdge", "void f(int &inout a) {}"},
+        {365, "ParamsEdge", "class CustomClass {} void f(CustomClass &out opt = void) {}"},
+        {366, "ParamsEdge", "class CustomClass {} void f(CustomClass &in opt = void) {}"},
+        {367, "ParamsEdge", "class CustomClass {} void f(CustomClass &inout opt = void) {}"},
+        {368, "ParamsEdge", "void f(int &in a) {}"},
+        {369, "ParamsEdge", "void f(int &out a) {}"},
+        {370, "ParamsEdge", "void f(const int &in a) {}"},
+        {371, "ParamsEdge", "void f(const int &out a) {}"},
+        {372, "ParamsEdge", "void f(const int &inout a) {}"},
+        {373, "ParamsEdge", "class CustomClass {} void f(const CustomClass &in a) {}"},
+        {374, "ParamsEdge", "class CustomClass {} void f(const CustomClass &inout c) {}"},
+        {375, "ParamsEdge", "class CustomClass {} void f(CustomClass@ &in a) {}"},
+        {376, "ParamsEdge", "class CustomClass {} void f(CustomClass@ &out b) {}"},
+        {377, "ParamsEdge", "class CustomClass {} void f(CustomClass@ &inout c) {}"},
+        {378, "ParamsEdge", "class CustomClass {} void f(const CustomClass@ &in a) {}"},
+        {379, "ParamsEdge", "class CustomClass {} void f(const CustomClass@ &out b) {}"},
+        {380, "ParamsEdge", "class CustomClass {} void f(const CustomClass@ &inout c) {}"},
+        {381, "ParamsEdge", "class CustomClass {} void f(CustomClass &out opt = CustomClass()) {}"},
+        {382, "ParamsEdge", "void f(int &out opt = 10) {}"},
+        {383, "ParamsEdge", "void f(int &in opt = 10) {}"},
+        {384, "ParamsEdge", "void f(int &inout opt = 10) {}"},
+        {385, "ParamsEdge", "class CustomClass {} void f(CustomClass &in opt = CustomClass()) {}"},
+        {386, "ParamsEdge", "class CustomClass {} void f(CustomClass &inout opt = CustomClass()) {}"},
+        {387, "ParamsEdge", "void f(int &out a = void) {}"},
+        {388, "ParamsEdge", "void f(float &out a = void) {}"},
+        {389, "ParamsEdge", "void f(bool &out a = void) {}"},
+        {390, "ParamsEdge", "void f(double &out a = void) {}"},
+        {391, "ParamsEdge", "void f(uint &out a = void) {}"},
+        {392, "ParamsEdge", "void f(int &in a = void) {}"},
+        {393, "ParamsEdge", "void f(float &in a = void) {}"},
+        {394, "ParamsEdge", "void f(int &inout a = void) {}"},
+        {395, "ParamsEdge", "class CustomClass {} void f(CustomClass &out a = 10) {}"},
+        {396, "ParamsEdge", "class CustomClass {} void f(CustomClass &out a = \"str\") {}"},
+        {397, "ParamsEdge", "class CustomClass {} void f(CustomClass &out a = null) {}"},
+        {398, "ParamsEdge", "class CustomClass {} void f(CustomClass@ &out a = null) {}"},
+        {399, "ParamsEdge", "class CustomClass {} void f(CustomClass@ &in a = null) {}"},
+        {400, "ParamsEdge", "class CustomClass {} void f(CustomClass@ &inout a = null) {}"}
+    };
+
+    angel_lsp::i18n::I18n i18n("en");
+    std::cout << "\n=== LSP_VALIDATOR_BATCH_OUTPUT_START ===\n";
+
+    for (const auto &tc : cases)
+    {
+        std::string fileUri = "file:///test_" + std::to_string(tc.id) + ".as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+
+        auto syntaxDiags = collector.CollectSymbols(fileUri, tc.code, parser, table);
+
+        SemanticAnalyzer analyzer;
+        angel_lsp::config::TypeConfig typeConfig{"string", "array"};
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n, &typeConfig};
+        auto semanticDiags = analyzer.Analyze(req);
+
+        std::vector<Diagnostic> allDiags = syntaxDiags;
+        allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
+
+        bool rejected = !allDiags.empty();
+        std::string firstErr = "";
+        if (rejected)
+        {
+            const auto &d = allDiags[0];
+            firstErr = "L" + std::to_string(d.range.start.line + 1) + ":C" + std::to_string(d.range.start.character + 1) + " - [" + d.code + "] " + d.message;
+        }
+
+        std::cout << "ID:" << tc.id << "|"
+                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "ERR:" << firstErr << "\n";
+    }
+
+    std::cout << "=== LSP_VALIDATOR_BATCH_OUTPUT_END ===\n";
+}
+
 
 
 

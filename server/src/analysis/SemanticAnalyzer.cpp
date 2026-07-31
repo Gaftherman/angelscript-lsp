@@ -66,6 +66,9 @@ namespace angel_lsp::analysis
                     case SymbolType::Funcdef:
                         ValidateFuncdef(sym, request, diagnostics);
                         break;
+                    case SymbolType::Enum:
+                        ValidateEnum(sym, request, diagnostics);
+                        break;
                     case SymbolType::Namespace:
                         ValidateNamespace(sym, request, diagnostics);
                         break;
@@ -425,7 +428,12 @@ namespace angel_lsp::analysis
 
             if (param.modifier == ParameterModifier::Out && param.isConst)
             {
-                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-const-out-param", param.name));
+                bool isObjectType = (param.isHandle || param.typeKind == TypeKind::Object || param.typeKind == TypeKind::Handle ||
+                                     req.symbolTable.HasSymbol(param.baseTypeName));
+                if (!isObjectType)
+                {
+                    diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-const-out-param", param.name));
+                }
             }
 
             if (param.typeKind == TypeKind::Unknown && !param.baseTypeName.empty())
@@ -515,6 +523,11 @@ namespace angel_lsp::analysis
         if (sig.typeKind == TypeKind::Void)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-variable"));
+        }
+
+        if (sig.typeName.find('&') != std::string::npos || sig.modifiers.isReturnReference)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-standalone-reference", sym.name));
         }
 
         if (sig.hasPrimitiveHandle)
@@ -914,6 +927,36 @@ namespace angel_lsp::analysis
         }
 
         ValidateFunctionParameters(sym, sig, req, diagnostics);
+    }
+
+    void SemanticAnalyzer::ValidateEnum(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (IsReservedKeyword(sym.name))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            return;
+        }
+
+        const auto &sig = sym.GetEnum();
+        for (const auto &member : sig.members)
+        {
+            if (!member.value.empty())
+            {
+                // Enum initializers must be integer constant expressions
+                std::string val = member.value;
+                bool isStringLiteral = (val.front() == '"' || val.front() == '\'');
+                bool isLambda = (val.find("function") != std::string::npos);
+                bool isBool = (val == "true" || val == "false");
+                bool isNull = (val == "null");
+                bool isVoidAuto = (val == "void" || val == "auto" || val == "class" || val == "struct" || val == "enum");
+                bool isFloat = (val.find('.') != std::string::npos || val.back() == 'f' || val.back() == 'F');
+
+                if (isStringLiteral || isLambda || isBool || isNull || isVoidAuto || isFloat)
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", member.name));
+                }
+            }
+        }
     }
 
     void SemanticAnalyzer::ValidateNamespace(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const

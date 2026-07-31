@@ -49,6 +49,8 @@ namespace angel_lsp::i18n
         m_messages["as-err-opequals-return-bool"] = "Equality operator 'opEquals' must return 'bool'.";
         m_messages["as-err-opcmp-return-int"] = "Comparison operator 'opCmp' must return 'int'.";
         m_messages["as-err-override-final-method"] = "Cannot override method '{}' declared as final in base class '{}'.";
+        m_messages["as-err-enum-invalid-initializer"] = "Enum member initializer '{}' must be a constant integer expression.";
+        m_messages["as-err-standalone-reference"] = "Standalone reference variable '{}' is not supported.";
 
         if (locale == "es")
         {
