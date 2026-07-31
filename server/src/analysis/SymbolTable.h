@@ -73,6 +73,8 @@ namespace angel_lsp::analysis
         bool isMixin = false;
         bool isAbstract = false;
         bool isFinal = false;
+        bool isDeclarationFinal = false; ///< True when 'final' is a declaration_modifier (before type), not a func_attribute
+        bool isDeclarationAbstract = false; ///< True when 'abstract' is a declaration_modifier (before type)
         bool isOverride = false;
         bool isExplicit = false;
         bool isProperty = false;

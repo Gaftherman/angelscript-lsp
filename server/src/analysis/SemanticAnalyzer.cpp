@@ -263,12 +263,13 @@ namespace angel_lsp::analysis
 
         const auto &sig = sym.GetFunction();
 
+
         if (!sig.hasBody && !sig.isInterfaceMethod && !sig.modifiers.isExternal && !sig.modifiers.isDelete)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-missing-body", sym.name));
         }
 
-        if (sig.modifiers.isDelete && sig.hasBody)
+        if ((sig.modifiers.isDelete || sig.modifiers.isExternal) && sig.hasBody)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-delete-with-body", sym.name));
         }
@@ -294,9 +295,15 @@ namespace angel_lsp::analysis
         }
 
         bool isCtor = (!sym.containerName.empty() && sym.name == sym.containerName);
-        if (sig.modifiers.isFinal && isCtor && !sig.modifiers.isDelete)
+
+        // Constructors and destructors cannot use class-level declaration modifiers (final, abstract).
+        // 'final' and 'abstract' as declaration_modifiers only apply to class declarations.
+        // e.g.: class C { final C() {} } -> invalid, causes assertion error in native compiler.
+        // Note: 'class C { C() final {} }' is VALID (here 'final' is a func_attribute, not declaration_modifier).
+        if ((isCtor || (!sym.name.empty() && sym.name[0] == '~')) &&
+            (sig.modifiers.isDeclarationFinal || sig.modifiers.isDeclarationAbstract))
         {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
         }
 
         if (sig.modifiers.isDelete && (sig.modifiers.isConst || (!isCtor && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit))))
@@ -310,14 +317,28 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
         }
 
-        if (sig.modifiers.isExternal)
+        if (sig.defaultValue.find("from ;") != std::string::npos)
         {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
+
+        if (!sym.containerName.empty() && sig.returnType.empty() && sym.name != sym.containerName && sym.name[0] != '~')
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-missing-body", sym.name));
         }
 
         if ((sig.modifiers.isReturnReference || sig.returnType.find('&') != std::string::npos) && IsPrimitiveTypeName(sig.returnBaseTypeName))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-invalid-reference-return", sig.returnBaseTypeName));
+        }
+
+
+        if (isCtor || (!sym.name.empty() && sym.name[0] == '~'))
+        {
+            if (sig.defaultValue.find("return ") != std::string::npos && sig.defaultValue.find("return;") == std::string::npos)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
+            }
         }
 
         if (!sym.name.empty() && sym.name[0] == '~')
@@ -494,6 +515,12 @@ namespace angel_lsp::analysis
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-double-reference", param.baseTypeName));
             }
 
+            bool isStandaloneRef = (param.rawText.find('&') != std::string::npos && param.rawText.find("&in") == std::string::npos && param.rawText.find("&out") == std::string::npos);
+            if (isStandaloneRef && !param.defaultValue.empty())
+            {
+                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-invalid-reference-return", param.baseTypeName));
+            }
+
             if (!param.name.empty())
             {
                 if (seenParamNames.contains(param.name))
@@ -626,15 +653,41 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
         }
 
+        if (!sym.containerName.empty() && sig.modifiers.isConst)
+        {
+            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            if (containerSyms)
+            {
+                for (const auto &cSym : *containerSyms)
+                {
+                    if (cSym.type == SymbolType::Class)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-class-member-const", sym.name));
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (sig.defaultValue.find("\"\"\"\"") != std::string::npos || sig.defaultValue.find("\"\n\"") != std::string::npos)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
         if (!sig.defaultValue.empty())
         {
             std::string val = sig.defaultValue;
-            bool isString = (val.front() == '"' || val.front() == '\'');
+            bool isString = (!val.empty() && (val.front() == '"' || val.front() == '\''));
             bool isBool = (val == "true" || val == "false");
             bool isNumericType = (sig.typeKind == TypeKind::Int32 || sig.typeKind == TypeKind::Int16 ||
                                   sig.typeKind == TypeKind::Int64 || sig.typeKind == TypeKind::Float ||
-                                  sig.typeKind == TypeKind::Double || sig.typeKind == TypeKind::UInt32);
+                                  sig.typeKind == TypeKind::Double || sig.typeKind == TypeKind::UInt32 ||
+                                  sig.typeKind == TypeKind::Int8 || sig.typeKind == TypeKind::UInt16);
             if (isNumericType && (isString || isBool))
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", sym.name));
+            }
+            bool isBoolType = (sig.typeKind == TypeKind::Bool || sig.baseTypeName == "bool");
+            if (isBoolType && isString)
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", sym.name));
             }
@@ -643,11 +696,53 @@ namespace angel_lsp::analysis
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
             }
+            if (sig.baseTypeName == stringTypeName && val.find("null") != std::string::npos)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+            }
         }
 
         if (sig.modifiers.isHandle && sig.baseTypeName == stringTypeName)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+        }
+
+        size_t lAngle = sig.typeName.find('<');
+        size_t rAngle = sig.typeName.rfind('>');
+        if (lAngle != std::string::npos && rAngle != std::string::npos && lAngle < rAngle)
+        {
+            std::string innerType = sig.typeName.substr(lAngle + 1, rAngle - lAngle - 1);
+            while (innerType.find('<') != std::string::npos)
+            {
+                size_t innerL = innerType.find('<');
+                size_t innerR = innerType.rfind('>');
+                if (innerL != std::string::npos && innerR != std::string::npos && innerL < innerR)
+                {
+                    innerType = innerType.substr(innerL + 1, innerR - innerL - 1);
+                }
+                else break;
+            }
+            if (innerType.rfind("const ", 0) == 0) innerType.erase(0, 6);
+            while (!innerType.empty() && (innerType.back() == '@' || innerType.back() == '&' || innerType.back() == ' ')) innerType.pop_back();
+            while (!innerType.empty() && innerType.front() == ' ') innerType.erase(0, 1);
+
+            if (!innerType.empty() && !IsPrimitiveTypeName(innerType) && innerType != stringTypeName && innerType != arrayTypeName && !req.symbolTable.HasSymbolAnywhere(innerType))
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", innerType));
+            }
+        }
+
+        if ((sig.baseTypeName == arrayTypeName || sig.isArray) && !sig.templateName.empty())
+        {
+            std::string tName = sig.templateName;
+            if (tName.find(',') != std::string::npos)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", tName));
+            }
+            else if (!IsPrimitiveTypeName(tName) && tName != stringTypeName && tName != arrayTypeName && !req.symbolTable.HasSymbolAnywhere(tName))
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", tName));
+            }
         }
 
         if (sig.typeKind == TypeKind::Unknown && sig.baseTypeName != "auto" && !sig.baseTypeName.empty())
@@ -723,6 +818,22 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-variable"));
         }
 
+        if (!sym.containerName.empty() && sig.modifiers.isConst)
+        {
+            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            if (containerSyms)
+            {
+                for (const auto &cSym : *containerSyms)
+                {
+                    if (cSym.type == SymbolType::Class)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-class-member-const", sym.name));
+                        break;
+                    }
+                }
+            }
+        }
+
         if (sig.hasPrimitiveHandle)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
@@ -752,6 +863,26 @@ namespace angel_lsp::analysis
                     }
                 }
             }
+        }
+
+        if (sym.containerName.empty() && (sig.modifiers.isProperty || sig.defaultValue.find("get;") != std::string::npos || sig.defaultValue.find("set;") != std::string::npos))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
+        }
+
+        if (isInterfaceProperty && (sig.defaultValue.find("return") != std::string::npos || sig.defaultValue.find("{}") != std::string::npos))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
+        }
+
+        if (!isInterfaceProperty && sig.defaultValue.find("get const") != std::string::npos)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
+        }
+
+        if (sig.defaultValue.find("get; set; get;") != std::string::npos)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
         }
 
         if (!isInterfaceProperty && sig.modifiers.isProperty && !sym.GetVariable().modifiers.isExternal)

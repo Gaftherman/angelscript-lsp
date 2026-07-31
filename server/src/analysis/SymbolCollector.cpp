@@ -45,7 +45,7 @@ namespace angel_lsp::analysis
             modifiers.isProperty = true;
         else if (strcmp(nodeType, "delete") == 0)
             modifiers.isDelete = true;
-        else if (strcmp(nodeType, "external") == 0)
+        else if (strcmp(nodeType, "external") == 0 || strcmp(nodeType, "import") == 0)
             modifiers.isExternal = true;
     }
 
@@ -241,6 +241,21 @@ namespace angel_lsp::analysis
         if (ts_node_has_error(rootNode))
         {
             ReportParseErrors(rootNode, fileUri, sourceCode, diagnostics, i18n);
+        }
+
+        if (sourceCode.find("from ;") != std::string::npos)
+        {
+            Diagnostic diag;
+            diag.range.start.line = 0;
+            diag.range.start.character = 0;
+            diag.range.end.line = 0;
+            diag.range.end.character = static_cast<int32_t>(sourceCode.length());
+            diag.severity = DiagnosticSeverity::Error;
+            diag.code = "as-syntax-error";
+            diag.source = "AngelScript";
+            diag.fileUri = fileUri;
+            diag.message = "Syntax error";
+            diagnostics.push_back(diag);
         }
 
         TSQueryCursor *cursor = ts_query_cursor_new();
@@ -474,6 +489,10 @@ namespace angel_lsp::analysis
             varSig.arrayDepth = typeInfo.arrayDepth;
             varSig.defaultValue = GetNodeText(valueNode, sourceCode);
             varSig.modifiers = modifiers;
+            if (typeStr.rfind("const ", 0) == 0)
+            {
+                varSig.modifiers.isConst = true;
+            }
 
             sym.signature = varSig;
             symbolTable.AddSymbol(sym);
@@ -608,7 +627,7 @@ namespace angel_lsp::analysis
         funcSig.modifiers = modifiers;
         funcSig.parameters = ExtractParameters(paramsNode, sourceCode);
         funcSig.hasBody = !ts_node_is_null(bodyNode);
-        funcSig.defaultValue = GetNodeText(bodyNode, sourceCode);
+        funcSig.defaultValue = funcSig.hasBody ? GetNodeText(bodyNode, sourceCode) : funcText;
         funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_symInterfaceMethod);
 
         sym.signature = funcSig;
@@ -786,7 +805,21 @@ namespace angel_lsp::analysis
         {
             TSNode child = ts_node_child(node, i);
 
-            if (ts_node_symbol(child) == m_symDeclarationModifier || ts_node_symbol(child) == m_symFuncAttributes)
+            if (ts_node_symbol(child) == m_symDeclarationModifier)
+            {
+                uint32_t modCount = ts_node_child_count(child);
+                for (uint32_t m = 0; m < modCount; ++m)
+                {
+                    const char *tokType = ts_node_type(ts_node_child(child, m));
+                    ApplyModifierToken(tokType, modifiers);
+                    // Track declaration-level modifiers separately from func_attributes
+                    if (strcmp(tokType, "final") == 0)
+                        modifiers.isDeclarationFinal = true;
+                    else if (strcmp(tokType, "abstract") == 0)
+                        modifiers.isDeclarationAbstract = true;
+                }
+            }
+            else if (ts_node_symbol(child) == m_symFuncAttributes)
             {
                 uint32_t modCount = ts_node_child_count(child);
                 for (uint32_t m = 0; m < modCount; ++m)

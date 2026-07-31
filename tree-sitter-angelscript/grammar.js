@@ -696,7 +696,10 @@ module.exports = grammar({
 
     initializer_list: $ => seq(
       "{",
-      commaSep($._initializer_element),
+      optional(seq(
+        optional($._initializer_element),
+        repeat(seq(",", optional($._initializer_element))),
+      )),
       optional(","),
       "}",
     ),
