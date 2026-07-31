@@ -44,6 +44,11 @@ namespace angel_lsp::i18n
         m_messages["as-err-class-member-const"] = "Class member '{}' cannot be declared as const.";
         m_messages["as-err-delete-with-body"] = "Deleted function '{}' cannot have a body.";
         m_messages["as-err-void-parameter"] = "Parameter '{}' in function '{}' cannot be of type 'void'.";
+        m_messages["as-err-binary-operator-arity"] = "Binary operator overload '{}' must take exactly 1 parameter.";
+        m_messages["as-err-opindex-no-params"] = "Index operator 'opIndex' must take at least 1 parameter.";
+        m_messages["as-err-opequals-return-bool"] = "Equality operator 'opEquals' must return 'bool'.";
+        m_messages["as-err-opcmp-return-int"] = "Comparison operator 'opCmp' must return 'int'.";
+        m_messages["as-err-override-final-method"] = "Cannot override method '{}' declared as final in base class '{}'.";
 
         if (locale == "es")
         {

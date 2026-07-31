@@ -8,7 +8,8 @@ namespace angel_lsp::config
     {
         FeatureFlags feature = {};
         Info info = {"AngelScript Language Server", "1.0.0", ".as", ".as.predefined"};
+        TypeConfig types = {"string", "array"};
 
-        return ServerConfig{feature, info};
+        return ServerConfig{feature, info, types};
     }
 }

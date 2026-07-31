@@ -254,6 +254,44 @@ namespace angel_lsp::analysis
             }
         }
 
+        // Operator overload arity checks
+        if (sym.name.rfind("op", 0) == 0 && !sym.containerName.empty())
+        {
+            if (sym.name == "opAdd" || sym.name == "opSub" || sym.name == "opMul" || sym.name == "opDiv" ||
+                sym.name == "opMod" || sym.name == "opPow" || sym.name == "opAnd" || sym.name == "opOr" ||
+                sym.name == "opXor" || sym.name == "opShl" || sym.name == "opShr" || sym.name == "opUShr")
+            {
+                if (sig.parameters.size() != 1)
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-binary-operator-arity", sym.name));
+                }
+            }
+            else if (sym.name == "opIndex")
+            {
+                if (sig.parameters.empty())
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-opindex-no-params", sym.name));
+                }
+            }
+            else if (sym.name == "opEquals")
+            {
+                if (sig.returnType != "bool")
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-opequals-return-bool", sym.name));
+                }
+            }
+            else if (sym.name == "opCmp")
+            {
+                if (sig.returnType != "int")
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-opcmp-return-int", sym.name));
+                }
+            }
+        }
+
+        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
+        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+
         if (!sym.containerName.empty())
         {
             const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
@@ -289,6 +327,24 @@ namespace angel_lsp::analysis
                                 {
                                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
                                 }
+                                else
+                                {
+                                    // Check if base classes or interfaces define this method
+                                    bool foundInHierarchy = false;
+                                    for (const auto &baseName : cSym.GetClass().bases)
+                                    {
+                                        std::string expectedQN = baseName + "::" + sym.name;
+                                        if (req.symbolTable.HasSymbol(expectedQN))
+                                        {
+                                            foundInHierarchy = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!foundInHierarchy)
+                                    {
+                                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
+                                    }
+                                }
                                 break;
                             }
                         }
@@ -306,7 +362,8 @@ namespace angel_lsp::analysis
 
         if (sig.returnTypeKind == TypeKind::Unknown && !sig.returnBaseTypeName.empty())
         {
-            if (!req.symbolTable.HasSymbol(sig.returnBaseTypeName))
+            if (sig.returnBaseTypeName != stringTypeName && sig.returnBaseTypeName != arrayTypeName &&
+                !req.symbolTable.HasSymbol(sig.returnBaseTypeName))
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
             }
@@ -465,9 +522,18 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
         }
 
+        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
+        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+
+        if (sig.modifiers.isHandle && sig.baseTypeName == stringTypeName)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+        }
+
         if (sig.typeKind == TypeKind::Unknown && sig.baseTypeName != "auto" && !sig.baseTypeName.empty())
         {
-            if (!req.symbolTable.HasSymbol(sig.baseTypeName))
+            if (sig.baseTypeName != stringTypeName && sig.baseTypeName != arrayTypeName &&
+                !req.symbolTable.HasSymbol(sig.baseTypeName))
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
             }
@@ -475,7 +541,7 @@ namespace angel_lsp::analysis
 
         if (!sig.templateName.empty() && sig.templateName != "int" && sig.templateName != "float" &&
             sig.templateName != "double" && sig.templateName != "uint" && sig.templateName != "bool" &&
-            sig.templateName != "string" && sig.templateName != "auto")
+            sig.templateName != stringTypeName && sig.templateName != "auto")
         {
             if (!req.symbolTable.HasSymbol(sig.templateName))
             {
@@ -629,6 +695,27 @@ namespace angel_lsp::analysis
                             {
                                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-inherit-final", baseName));
                             }
+
+                            // Check if derived class overrides any final method of this base class
+                            std::string baseContainer = bSym.qualifiedName;
+                            std::string derivedContainer = sym.qualifiedName;
+
+                            req.symbolTable.ForEachSymbol(
+                                [&](const std::string & /*qName*/, const std::vector<Symbol> &symsInTable)
+                                {
+                                    for (const auto &mSym : symsInTable)
+                                    {
+                                        if (mSym.containerName == baseContainer && mSym.type == SymbolType::Function &&
+                                            mSym.GetFunction().modifiers.isFinal)
+                                        {
+                                            std::string derivedMethodQN = derivedContainer.empty() ? mSym.name : derivedContainer + "::" + mSym.name;
+                                            if (req.symbolTable.HasSymbol(derivedMethodQN))
+                                            {
+                                                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-final-method", mSym.name, baseName));
+                                            }
+                                        }
+                                    }
+                                });
                             break;
                         }
                         else if (bSym.type == SymbolType::Interface && !sig.modifiers.isMixin)

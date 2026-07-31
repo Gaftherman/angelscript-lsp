@@ -9,6 +9,8 @@
 #include <vector>
 #include <ankerl/unordered_dense.h>
 
+#include "config/ServerConfig.h"
+
 namespace angel_lsp::analysis
 {
     struct SemanticAnalysisRequest
@@ -17,6 +19,7 @@ namespace angel_lsp::analysis
         std::string fileUri;
         std::string predefinedFileExtension;
         const i18n::I18n *i18n = nullptr;
+        const config::TypeConfig *typeConfig = nullptr;
     };
 
     class SemanticAnalyzer

@@ -22,10 +22,17 @@ namespace angel_lsp::config
         std::string_view predefinedFileExtension;
     };
 
+    struct TypeConfig
+    {
+        std::string_view stringTypeName = "string";
+        std::string_view arrayTypeName = "array";
+    };
+
     struct ServerConfig
     {
         FeatureFlags features;
         Info info;
+        TypeConfig types;
     };
 
     ServerConfig FromArgs(int argc, char **argv);

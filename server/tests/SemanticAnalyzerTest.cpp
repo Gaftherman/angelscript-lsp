@@ -858,7 +858,8 @@ TEST_CASE("Batch_Broken200_Harness_Comparison")
         auto syntaxDiags = collector.CollectSymbols(fileUri, tc.code, parser, table);
 
         SemanticAnalyzer analyzer;
-        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        angel_lsp::config::TypeConfig typeConfig{"string", "array"};
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n, &typeConfig};
         auto semanticDiags = analyzer.Analyze(req);
 
         std::vector<Diagnostic> allDiags = syntaxDiags;
@@ -878,6 +879,78 @@ TEST_CASE("Batch_Broken200_Harness_Comparison")
     }
 
     std::cout << "=== LSP_VALIDATOR_BATCH_OUTPUT_END ===\n";
+}
+
+TEST_CASE("DynamicTypeConfig_CustomString")
+{
+    angel_lsp::i18n::I18n i18n("en");
+    angel_lsp::config::TypeConfig customConfig{"my_custom_string", "array"};
+
+    // 1. my_custom_string@ should be rejected as handle on primitive/value type
+    {
+        std::string fileUri = "file:///custom1.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+
+        std::string code = "my_custom_string@ handle;";
+        auto syntaxDiags = collector.CollectSymbols(fileUri, code, parser, table);
+
+        SemanticAnalyzer analyzer;
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n, &customConfig};
+        auto semanticDiags = analyzer.Analyze(req);
+
+        std::vector<Diagnostic> allDiags = syntaxDiags;
+        allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
+
+        bool foundCustomHandleError = false;
+        for (const auto &d : allDiags)
+        {
+            if (d.code == "as-err-handle-on-primitive")
+            {
+                foundCustomHandleError = true;
+                break;
+            }
+        }
+        CHECK(foundCustomHandleError);
+    }
+
+    // 2. string@ should NOT be rejected as primitive/value type when stringTypeName = "my_custom_string"
+    {
+        std::string fileUri = "file:///custom2.as";
+        SymbolTable table;
+        Symbol s;
+        s.type = SymbolType::Class;
+        s.name = "string";
+        s.qualifiedName = "string";
+        s.fileUri = fileUri;
+        s.signature = ClassSignature{};
+        table.AddSymbol(s);
+
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+
+        std::string code = "string@ handle;";
+        auto syntaxDiags = collector.CollectSymbols(fileUri, code, parser, table);
+
+        SemanticAnalyzer analyzer;
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n, &customConfig};
+        auto semanticDiags = analyzer.Analyze(req);
+
+        std::vector<Diagnostic> allDiags = syntaxDiags;
+        allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
+
+        bool foundPrimitiveHandleError = false;
+        for (const auto &d : allDiags)
+        {
+            if (d.code == "as-err-handle-on-primitive")
+            {
+                foundPrimitiveHandleError = true;
+                break;
+            }
+        }
+        CHECK_FALSE(foundPrimitiveHandleError);
+    }
 }
 
 
