@@ -308,10 +308,10 @@ namespace angel_lsp::analysis
         // 'final' and 'abstract' as declaration_modifiers only apply to class declarations.
         // e.g.: class C { final C() {} } -> invalid, causes assertion error in native compiler.
         // Note: 'class C { C() final {} }' is VALID (here 'final' is a func_attribute, not declaration_modifier).
-        if ((isCtor || (!sym.name.empty() && sym.name[0] == '~')) &&
-            (sig.modifiers.isDeclarationFinal || sig.modifiers.isDeclarationAbstract))
+        if (sig.modifiers.isDeclarationFinal || sig.modifiers.isDeclarationAbstract)
         {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            std::string errCode = isCtor ? "as-err-reserved-keyword-name" : "as-syntax-error";
+            diagnostics.push_back(CreateDiagnostic(sym, req, errCode, sym.name));
         }
 
         if (sig.modifiers.isDelete && (sig.modifiers.isConst || (!isCtor && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit))))
@@ -332,7 +332,7 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-missing-body", sym.name));
         }
 
-        if ((sig.modifiers.isReturnReference || sig.returnType.find('&') != std::string::npos) && IsPrimitiveTypeName(sig.returnBaseTypeName))
+        if ((sig.modifiers.isReturnReference || sig.returnType.find('&') != std::string::npos) && IsPrimitiveTypeName(sig.returnBaseTypeName) && sig.returnType.find("const") == std::string::npos)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-invalid-reference-return", sig.returnBaseTypeName));
         }
@@ -663,6 +663,14 @@ namespace angel_lsp::analysis
             }
         }
 
+        static const ankerl::unordered_dense::set<std::string> invalidDefaultValues = {
+            "class", "interface", "enum", "typedef", "funcdef", "namespace", "return"
+        };
+        if (invalidDefaultValues.contains(sig.defaultValue))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
+
         if (sig.isVirtualProperty)
         {
             ValidateProperty(sym, req, diagnostics);
@@ -961,6 +969,16 @@ namespace angel_lsp::analysis
         if (sig.modifiers.isExternal && !sig.modifiers.isShared)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
+
+        if (sig.modifiers.isExternal && sig.modifiers.isShared)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
+        }
+
+        if (sig.modifiers.isMixin && sig.modifiers.isShared)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-shared", sym.name));
         }
 
         if (sig.modifiers.isMixin && sig.modifiers.isFinal)
@@ -1268,6 +1286,11 @@ namespace angel_lsp::analysis
 
         const auto &sig = sym.GetInterface();
 
+        if (sig.modifiers.isExternal && sig.modifiers.isShared)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
+        }
+
         for (const auto &ifaceName : sig.inheritedInterfaces)
         {
             if (!req.symbolTable.HasSymbol(ifaceName))
@@ -1332,13 +1355,17 @@ namespace angel_lsp::analysis
         std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
         std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
 
+        const auto &sig = sym.GetFunction();
+        if (sig.modifiers.isExternal && sig.modifiers.isShared)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
+        }
+
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
             return;
         }
-
-        const auto &sig = sym.GetFunction();
 
         if (sig.returnHasPrimitiveHandle)
         {

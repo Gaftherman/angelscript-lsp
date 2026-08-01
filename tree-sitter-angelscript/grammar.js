@@ -308,7 +308,8 @@ module.exports = grammar({
 
     accessor: $ => seq(
       field("kind", choice("get", "set")),
-      repeat(choice("const", "final", "override")),
+      optional("const"),
+      repeat(choice("final", "override")),
       choice(";", field("body", $.statement_block)),
     ),
 

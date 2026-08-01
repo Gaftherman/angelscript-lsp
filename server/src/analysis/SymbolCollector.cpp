@@ -221,7 +221,8 @@ namespace angel_lsp::analysis
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode child = ts_node_child(node, i);
-            if (strcmp(ts_node_type(child), "string_literal") == 0)
+            const char *cType = ts_node_type(child);
+            if (strcmp(cType, "string_literal") == 0)
             {
                 std::string_view text = GetNodeView(child, sourceCode);
                 if (text.starts_with("\"\"\"") && text.ends_with("\"\"\"\""))
@@ -233,6 +234,36 @@ namespace angel_lsp::analysis
                     diag.range.end.character = ts_node_end_point(child).column;
                     diag.code = "as-syntax-error";
                     diag.message = "Non-terminated string literal";
+                    diagnostics.push_back(diag);
+                }
+            }
+            else if (strcmp(cType, "import_declaration") == 0)
+            {
+                TSNode srcNode = ts_node_child_by_field_name(child, "source", 6);
+                if (ts_node_is_null(srcNode) || GetNodeText(srcNode, sourceCode).empty())
+                {
+                    Diagnostic diag;
+                    diag.range.start.line = ts_node_start_point(child).row;
+                    diag.range.start.character = ts_node_start_point(child).column;
+                    diag.range.end.line = ts_node_end_point(child).row;
+                    diag.range.end.character = ts_node_end_point(child).column;
+                    diag.code = "as-syntax-error";
+                    diag.message = "Expected string";
+                    diagnostics.push_back(diag);
+                }
+            }
+            else if (strcmp(cType, "using_declaration") == 0)
+            {
+                std::string uText = GetNodeText(child, sourceCode);
+                if (uText.find("class") != std::string::npos)
+                {
+                    Diagnostic diag;
+                    diag.range.start.line = ts_node_start_point(child).row;
+                    diag.range.start.character = ts_node_start_point(child).column;
+                    diag.range.end.line = ts_node_end_point(child).row;
+                    diag.range.end.character = ts_node_end_point(child).column;
+                    diag.code = "as-syntax-error";
+                    diag.message = "Expected identifier";
                     diagnostics.push_back(diag);
                 }
             }
@@ -425,9 +456,10 @@ namespace angel_lsp::analysis
                 }
                 else if (tok == "@")
                 {
-                    if (result.isHandle)
+                    std::string_view prevTok = !ts_node_is_null(prevChild) ? GetNodeView(prevChild, sourceCode) : "";
+                    if (result.isHandle && prevTok != "const")
                     {
-                        // Handle-to-handle @@ is not allowed on ANY type in AngelScript
+                        // Handle-to-handle @@ without 'const' is not allowed on ANY type in AngelScript
                         result.hasPrimitiveHandle = true;
                     }
                     result.isHandle = true;
@@ -685,6 +717,22 @@ namespace angel_lsp::analysis
         TSNode typeNode = ts_node_child_by_field_name(funcNode, "return_type", 11);
         TSNode paramsNode = ts_node_child_by_field_name(funcNode, "parameters", 10);
         TSNode bodyNode = ts_node_child_by_field_name(funcNode, "body", 4);
+
+        if (strcmp(ts_node_type(funcNode), "import_declaration") == 0)
+        {
+            TSNode sourceNode = ts_node_child_by_field_name(funcNode, "source", 6);
+            if (ts_node_is_null(sourceNode) || GetNodeText(sourceNode, sourceCode).empty())
+            {
+                Diagnostic diag;
+                diag.range.start.line = ts_node_start_point(funcNode).row;
+                diag.range.start.character = ts_node_start_point(funcNode).column;
+                diag.range.end.line = ts_node_end_point(funcNode).row;
+                diag.range.end.character = ts_node_end_point(funcNode).column;
+                diag.code = "as-syntax-error";
+                diag.message = "Expected string";
+                symbolTable.AddSymbol(CreateSymbol(SymbolType::Function, funcNode, nameNode, sourceCode, fileUri, ctx.containerPath));
+            }
+        }
 
         TypeExtractionResult retInfo = ExtractTypeInfo(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(funcNode, sourceCode);
