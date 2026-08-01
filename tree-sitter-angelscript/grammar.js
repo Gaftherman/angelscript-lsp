@@ -72,10 +72,12 @@ module.exports = grammar({
       ";",
     )),
 
-    _import_source_literal: _ => token(choice(
+    _quoted_string_no_heredoc: _ => token(choice(
       seq("'", repeat(choice(/[^'\r\n\\]/, /\\./)), "'"),
       seq('"', repeat(choice(/[^"\r\n\\]/, /\\./)), '"'),
     )),
+
+    _import_source_literal: $ => $._quoted_string_no_heredoc,
 
     import_declaration: $ => seq(
       "import",
@@ -744,12 +746,11 @@ module.exports = grammar({
 
     null_literal: _ => "null",
 
-    _single_string_literal: _ => choice(
+    _single_string_literal: $ => choice(
       // Triple-quoted heredoc strings (no escape processing, multiline)
       token(seq('"""', repeat(choice(/[^"]/, /"[^"]/, /""[^"]/)), '"""')),
       // Single and double quoted strings (single-line only, no raw newlines)
-      token(seq("'", repeat(choice(/[^'\r\n\\]/, /\\./)), "'")),
-      token(seq('"', repeat(choice(/[^"\r\n\\]/, /\\./)), '"')),
+      $._quoted_string_no_heredoc,
     ),
 
     string_literal: $ => repeat1($._single_string_literal),

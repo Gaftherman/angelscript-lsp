@@ -63,7 +63,7 @@
         ]
       }
     },
-    "_import_source_literal": {
+    "_quoted_string_no_heredoc": {
       "type": "TOKEN",
       "content": {
         "type": "CHOICE",
@@ -128,6 +128,10 @@
           }
         ]
       }
+    },
+    "_import_source_literal": {
+      "type": "SYMBOL",
+      "name": "_quoted_string_no_heredoc"
     },
     "import_declaration": {
       "type": "SEQ",
@@ -4255,68 +4259,8 @@
           }
         },
         {
-          "type": "TOKEN",
-          "content": {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "'"
-              },
-              {
-                "type": "REPEAT",
-                "content": {
-                  "type": "CHOICE",
-                  "members": [
-                    {
-                      "type": "PATTERN",
-                      "value": "[^'\\r\\n\\\\]"
-                    },
-                    {
-                      "type": "PATTERN",
-                      "value": "\\\\."
-                    }
-                  ]
-                }
-              },
-              {
-                "type": "STRING",
-                "value": "'"
-              }
-            ]
-          }
-        },
-        {
-          "type": "TOKEN",
-          "content": {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "STRING",
-                "value": "\""
-              },
-              {
-                "type": "REPEAT",
-                "content": {
-                  "type": "CHOICE",
-                  "members": [
-                    {
-                      "type": "PATTERN",
-                      "value": "[^\"\\r\\n\\\\]"
-                    },
-                    {
-                      "type": "PATTERN",
-                      "value": "\\\\."
-                    }
-                  ]
-                }
-              },
-              {
-                "type": "STRING",
-                "value": "\""
-              }
-            ]
-          }
+          "type": "SYMBOL",
+          "name": "_quoted_string_no_heredoc"
         }
       ]
     },
