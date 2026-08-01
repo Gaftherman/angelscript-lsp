@@ -72,9 +72,11 @@ module.exports = grammar({
       ";",
     )),
 
-    // =========================================================================
-    // IMPORT
-    // =========================================================================
+    _import_source_literal: _ => token(choice(
+      seq("'", repeat(choice(/[^'\r\n\\]/, /\\./)), "'"),
+      seq('"', repeat(choice(/[^"\r\n\\]/, /\\./)), '"'),
+    )),
+
     import_declaration: $ => seq(
       "import",
       field("return_type", $.type),
@@ -83,7 +85,7 @@ module.exports = grammar({
       field("parameters", $.parameter_list),
       optional($.func_attributes),
       "from",
-      field("source", $._single_string_literal),
+      field("source", $._import_source_literal),
       ";",
     ),
 
