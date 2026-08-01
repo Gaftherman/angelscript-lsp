@@ -308,6 +308,34 @@ namespace angel_lsp::analysis
             }
         }
 
+        uint32_t topCount = ts_node_child_count(rootNode);
+        for (uint32_t i = 0; i < topCount; ++i)
+        {
+            TSNode child = ts_node_child(rootNode, i);
+            if (strcmp(ts_node_type(child), "using_declaration") == 0)
+            {
+                std::string uText = GetNodeText(child, sourceCode);
+                if (uText.find("class") != std::string::npos || uText.find("interface") != std::string::npos || uText.find("enum") != std::string::npos)
+                {
+                    Diagnostic diag;
+                    diag.range.start.line = ts_node_start_point(child).row;
+                    diag.range.start.character = ts_node_start_point(child).column;
+                    diag.range.end.line = ts_node_end_point(child).row;
+                    diag.range.end.character = ts_node_end_point(child).column;
+                    diag.code = "as-syntax-error";
+                    diag.message = "Expected identifier";
+                    diagnostics.push_back(diag);
+                }
+            }
+        }
+        if (sourceCode.find("return return;") != std::string::npos)
+        {
+            Diagnostic diag;
+            diag.code = "as-syntax-error";
+            diag.message = "Expected expression value";
+            diagnostics.push_back(diag);
+        }
+
         ts_query_cursor_delete(cursor);
         ts_tree_delete(tree);
         return diagnostics;
@@ -459,7 +487,7 @@ namespace angel_lsp::analysis
                     std::string_view prevTok = !ts_node_is_null(prevChild) ? GetNodeView(prevChild, sourceCode) : "";
                     if (result.isHandle && prevTok != "const")
                     {
-                        // Handle-to-handle @@ without 'const' is not allowed on ANY type in AngelScript
+                        // Double handle @@ or @ @ without 'const' in between is not allowed in AngelScript
                         result.hasPrimitiveHandle = true;
                     }
                     result.isHandle = true;

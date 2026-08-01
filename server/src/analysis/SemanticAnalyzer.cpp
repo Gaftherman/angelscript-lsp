@@ -297,6 +297,8 @@ namespace angel_lsp::analysis
                 isInsideClass = true;
         }
 
+
+
         if (!isInsideClass && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.modifiers.access == AccessModifier::Protected || sig.modifiers.access == AccessModifier::Private))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
