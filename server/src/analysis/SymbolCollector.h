@@ -38,6 +38,8 @@ namespace angel_lsp::analysis
         TSSymbol m_symStatementBlock = 0;
         TSSymbol m_symInterfaceMethod = 0;
         TSSymbol m_symFuncAttributes = 0;
+        TSSymbol m_symGet = 0;
+        TSSymbol m_symSet = 0;
 
         ankerl::unordered_dense::map<TSSymbol, TypeKind> m_primitiveKindMap;
 
@@ -60,8 +62,10 @@ namespace angel_lsp::analysis
             bool isArray = false;
             bool isHandle = false;
             bool isReference = false;
+            bool isConst = false;
             bool hasPrimitiveHandle = false;
             uint32_t arrayDepth = 0;
+            std::vector<TypeExtractionResult> templateArguments;
         };
 
         TypeExtractionResult ExtractTypeInfo(TSNode typeNode, const std::string &sourceCode) const;

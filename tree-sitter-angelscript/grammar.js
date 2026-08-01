@@ -43,9 +43,13 @@ module.exports = grammar({
     [$._scope_resolution, $.datatype],
     // scope and types vs scoped identifier conflicts
     [$.scoped_identifier, $.scoped_type],
+    [$._scope_resolution, $.scoped_identifier, $.scoped_type],
+    [$._scope_resolution, $.scoped_identifier],
     // type reference conflict with parameter reference
     [$.type],
     [$.initializer_list],
+    [$.datatype, $.template_expression],
+    [$._scope_resolution, $.datatype, $.template_expression],
   ],
 
   rules: {
@@ -79,7 +83,7 @@ module.exports = grammar({
       field("parameters", $.parameter_list),
       optional($.func_attributes),
       "from",
-      field("source", $.string_literal),
+      field("source", $._single_string_literal),
       ";",
     ),
 
@@ -158,7 +162,19 @@ module.exports = grammar({
 
     enum_member: $ => seq(
       field("name", $.identifier),
-      optional(seq("=", field("value", choice($.number_literal, $.identifier, $.scoped_identifier, $.binary_expression, $.unary_expression, $.parenthesized_expression)))),
+      optional(seq("=", field("value", choice(
+        $.number_literal,
+        $.identifier,
+        $.scoped_identifier,
+        $.binary_expression,
+        $.unary_expression,
+        $.parenthesized_expression,
+        $.call_expression,
+        $.lambda_expression,
+        $.string_literal,
+        $.boolean_literal,
+        $.null_literal,
+      )))),
     ),
 
     // =========================================================================
@@ -453,7 +469,7 @@ module.exports = grammar({
         "...",
         seq(
           optional(field("name", $.identifier)),
-          optional(seq("=", optional(field("default_value", $._expression)))),
+          optional(seq("=", optional(field("default_value", choice($.initializer_list, $._expression))))),
         ),
       ),
     ),
@@ -534,6 +550,7 @@ module.exports = grammar({
       $.member_expression,
       $.index_expression,
       $.cast_expression,
+      $.template_expression,
       $.lambda_expression,
       $.parenthesized_expression,
       $.number_literal,
@@ -542,6 +559,11 @@ module.exports = grammar({
       $.null_literal,
       $.identifier,
       $.scoped_identifier,
+    ),
+
+    template_expression: $ => seq(
+      choice($.identifier, $.scoped_identifier),
+      $.template_type_list,
     ),
 
     parenthesized_expression: $ => seq("(", $._expression, ")"),

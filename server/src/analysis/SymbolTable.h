@@ -100,6 +100,7 @@ namespace angel_lsp::analysis
         bool isHandle = false;
         bool isConst = false;
         bool isReference = false;
+        bool hasDoubleReference = false;
         bool isStandaloneRef = false;
 
         uint32_t startLine = 0;
@@ -116,6 +117,7 @@ namespace angel_lsp::analysis
         SymbolModifiers modifiers;
         TypeKind returnTypeKind = TypeKind::Unknown;
         bool returnIsArray = false;
+        bool returnIsConst = false;
         bool returnHasPrimitiveHandle = false;
         uint32_t returnArrayDepth = 0;
         std::vector<ParameterInformation> parameters;
@@ -124,6 +126,8 @@ namespace angel_lsp::analysis
         bool hasEmptyReturn = false;
         bool hasValueReturn = false;
         bool hasNullReturn = false;
+        std::string returnExpression;
+        std::string returnCallTargetName;
         std::string defaultValue;
     };
 
@@ -132,6 +136,7 @@ namespace angel_lsp::analysis
         std::string typeName;
         std::string baseTypeName;
         std::string templateName;
+        std::vector<std::string> templateArgumentTypes;
         TypeKind typeKind = TypeKind::Unknown;
         bool isArray = false;
         bool hasPrimitiveHandle = false;
@@ -150,18 +155,21 @@ namespace angel_lsp::analysis
         bool isSetOverride = false;
         bool isGetFinal = false;
         bool isSetFinal = false;
+        bool hasNullInitializer = false;
     };
 
     struct EnumMemberInformation
     {
         std::string name;
         std::string value;
+        std::string valueNodeType;
     };
 
     struct EnumSignature
     {
         SymbolModifiers modifiers;
         std::vector<EnumMemberInformation> members;
+        bool hasBraces = false;
     };
 
     struct ClassSignature
