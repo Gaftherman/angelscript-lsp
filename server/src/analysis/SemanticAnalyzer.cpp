@@ -289,7 +289,15 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-reference"));
         }
 
-        if (sym.containerName.empty() && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit || sig.modifiers.isDelete))
+        bool isInsideClass = false;
+        if (!sym.containerName.empty())
+        {
+            auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
+            if (parentOpt && parentOpt->type == SymbolType::Class)
+                isInsideClass = true;
+        }
+
+        if (!isInsideClass && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.modifiers.access == AccessModifier::Protected || sig.modifiers.access == AccessModifier::Private))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
         }
@@ -338,6 +346,11 @@ namespace angel_lsp::analysis
             }
         }
 
+        if (isCtor && !sig.returnBaseTypeName.empty())
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
+        }
+
         if (isCtor || (!sym.name.empty() && sym.name[0] == '~'))
         {
             if (sig.hasValueReturn)
@@ -370,7 +383,7 @@ namespace angel_lsp::analysis
                 sym.name == "opMod" || sym.name == "opPow" || sym.name == "opAnd" || sym.name == "opOr" ||
                 sym.name == "opXor" || sym.name == "opShl" || sym.name == "opShr" || sym.name == "opUShr")
             {
-                if (sig.parameters.size() > 1)
+                if (sig.parameters.size() > 2)
                 {
                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-binary-operator-arity", sym.name));
                 }
@@ -506,7 +519,7 @@ namespace angel_lsp::analysis
             if (param.typeKind == TypeKind::Void || param.baseTypeName == "void")
             {
                 bool isUnnamedVoid = (sig.parameters.size() == 1 && param.name.empty());
-                if (!isUnnamedVoid)
+                if (!isUnnamedVoid && sym.type != SymbolType::Funcdef)
                 {
                     diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-void-parameter", param.name, sym.name));
                 }
@@ -893,14 +906,24 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
         }
 
+        if (!isInterfaceProperty && ((sig.hasGet && !sig.hasBodyGet) || (sig.hasSet && !sig.hasBodySet)))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
+        }
+
         if (sig.hasDuplicateGet || sig.hasDuplicateSet)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
         }
 
-        if (!isInterfaceProperty && sig.isGetConst)
+        if (isInterfaceProperty && (sig.isGetFinal || sig.isGetOverride || sig.isSetFinal || sig.isSetOverride))
         {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
+
+        if (!isInterfaceProperty && (sig.isGetOverride || sig.isSetOverride))
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
         }
 
         if (!isInterfaceProperty && sig.modifiers.isProperty && !sym.GetVariable().modifiers.isExternal)

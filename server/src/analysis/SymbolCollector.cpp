@@ -221,6 +221,21 @@ namespace angel_lsp::analysis
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode child = ts_node_child(node, i);
+            if (strcmp(ts_node_type(child), "string_literal") == 0)
+            {
+                std::string_view text = GetNodeView(child, sourceCode);
+                if (text.starts_with("\"\"\"") && text.ends_with("\"\"\"\""))
+                {
+                    Diagnostic diag;
+                    diag.range.start.line = ts_node_start_point(child).row;
+                    diag.range.start.character = ts_node_start_point(child).column;
+                    diag.range.end.line = ts_node_end_point(child).row;
+                    diag.range.end.character = ts_node_end_point(child).column;
+                    diag.code = "as-syntax-error";
+                    diag.message = "Non-terminated string literal";
+                    diagnostics.push_back(diag);
+                }
+            }
             if (ts_node_has_error(child))
             {
                 ReportParseErrors(child, fileUri, sourceCode, diagnostics, i18n);
@@ -410,9 +425,9 @@ namespace angel_lsp::analysis
                 }
                 else if (tok == "@")
                 {
-                    if (result.isHandle && (result.kind != TypeKind::Unknown || result.baseTypeName == "object" || result.baseTypeName.empty() || std::islower(result.baseTypeName[0])))
+                    if (result.isHandle)
                     {
-                        // Handle-to-handle @@ on non-class type is invalid in AngelScript
+                        // Handle-to-handle @@ is not allowed on ANY type in AngelScript
                         result.hasPrimitiveHandle = true;
                     }
                     result.isHandle = true;
@@ -487,12 +502,16 @@ namespace angel_lsp::analysis
                         if (varSig.hasGet) varSig.hasDuplicateGet = true;
                         varSig.hasGet = true;
                         if (accText.find("const") != std::string::npos) varSig.isGetConst = true;
+                        if (accText.find("override") != std::string::npos) varSig.isGetOverride = true;
+                        if (accText.find("final") != std::string::npos) varSig.isGetFinal = true;
                         if (hasBody) varSig.hasBodyGet = true;
                     }
                     else if (kindStr == "set")
                     {
                         if (varSig.hasSet) varSig.hasDuplicateSet = true;
                         varSig.hasSet = true;
+                        if (accText.find("override") != std::string::npos) varSig.isSetOverride = true;
+                        if (accText.find("final") != std::string::npos) varSig.isSetFinal = true;
                         if (hasBody) varSig.hasBodySet = true;
                     }
                 }
@@ -852,12 +871,16 @@ namespace angel_lsp::analysis
                     if (varSig.hasGet) varSig.hasDuplicateGet = true;
                     varSig.hasGet = true;
                     if (accText.find("const") != std::string::npos) varSig.isGetConst = true;
+                    if (accText.find("override") != std::string::npos) varSig.isGetOverride = true;
+                    if (accText.find("final") != std::string::npos) varSig.isGetFinal = true;
                     if (hasBody) varSig.hasBodyGet = true;
                 }
                 else if (kindStr == "set")
                 {
                     if (varSig.hasSet) varSig.hasDuplicateSet = true;
                     varSig.hasSet = true;
+                    if (accText.find("override") != std::string::npos) varSig.isSetOverride = true;
+                    if (accText.find("final") != std::string::npos) varSig.isSetFinal = true;
                     if (hasBody) varSig.hasBodySet = true;
                 }
             }

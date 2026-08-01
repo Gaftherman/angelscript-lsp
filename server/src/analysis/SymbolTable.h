@@ -146,6 +146,10 @@ namespace angel_lsp::analysis
         bool hasBodySet = false;
         bool hasDuplicateGet = false;
         bool hasDuplicateSet = false;
+        bool isGetOverride = false;
+        bool isSetOverride = false;
+        bool isGetFinal = false;
+        bool isSetFinal = false;
     };
 
     struct EnumMemberInformation

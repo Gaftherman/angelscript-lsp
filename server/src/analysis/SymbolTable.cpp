@@ -126,30 +126,41 @@ namespace angel_lsp::analysis
         }
     }
 
+    static inline std::string_view CleanScope(const std::string &name)
+    {
+        if (name.rfind("::", 0) == 0)
+            return std::string_view(name).substr(2);
+        return name;
+    }
+
     bool SymbolTable::HasSymbol(const std::string &qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        return m_symbols.contains(qualifiedName);
+        std::string search = std::string(CleanScope(qualifiedName));
+        return m_symbols.contains(search);
     }
 
     const std::vector<Symbol> *SymbolTable::FindSymbolsPtr(const std::string &qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        auto it = m_symbols.find(qualifiedName);
+        std::string search = std::string(CleanScope(qualifiedName));
+        auto it = m_symbols.find(search);
         return it != m_symbols.end() ? &it->second : nullptr;
     }
 
     std::vector<Symbol> SymbolTable::FindSymbols(const std::string &qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        auto it = m_symbols.find(qualifiedName);
+        std::string search = std::string(CleanScope(qualifiedName));
+        auto it = m_symbols.find(search);
         return it != m_symbols.end() ? it->second : std::vector<Symbol>{};
     }
 
     std::optional<Symbol> SymbolTable::FindFirstSymbol(const std::string &qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        auto it = m_symbols.find(qualifiedName);
+        std::string search = std::string(CleanScope(qualifiedName));
+        auto it = m_symbols.find(search);
         if (it != m_symbols.end() && !it->second.empty())
             return it->second.front();
         return std::nullopt;

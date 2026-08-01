@@ -89,7 +89,7 @@ module.exports = grammar({
     using_declaration: $ => seq(
       "using",
       "namespace",
-      choice($.identifier, $.scoped_identifier),
+      choice($.identifier, seq($.identifier, repeat1(seq("::", $.identifier)))),
       ";",
     ),
 
@@ -308,7 +308,7 @@ module.exports = grammar({
 
     accessor: $ => seq(
       field("kind", choice("get", "set")),
-      optional("const"),
+      repeat(choice("const", "final", "override")),
       choice(";", field("body", $.statement_block)),
     ),
 
