@@ -6,6 +6,7 @@
 #include "parser/AngelScriptParser.h"
 #include "utils/LspLogger.h"
 
+#include "config/ServerConfig.h"
 #include <tree_sitter/api.h>
 #include <string_view>
 
@@ -14,10 +15,15 @@ namespace angel_lsp::analysis
     class SymbolCollector
     {
     public:
-        SymbolCollector(angel_lsp::utils::LspLogger *logger);
+        explicit SymbolCollector(angel_lsp::utils::LspLogger *logger);
         ~SymbolCollector();
 
-        std::vector<Diagnostic> CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n = nullptr);
+        static TSNode GetChildByFieldName(TSNode node, const char *fieldName)
+        {
+            return ts_node_child_by_field_name(node, fieldName, static_cast<uint32_t>(std::strlen(fieldName)));
+        }
+
+        std::vector<Diagnostic> CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n = nullptr, const angel_lsp::config::TypeConfig *typeConfig = nullptr);
 
     private:
         utils::LspLogger *m_logger;
@@ -40,6 +46,13 @@ namespace angel_lsp::analysis
         TSSymbol m_symFuncAttributes = 0;
         TSSymbol m_symGet = 0;
         TSSymbol m_symSet = 0;
+        TSSymbol m_symNullLiteral = 0;
+        TSSymbol m_symCallExpression = 0;
+        TSSymbol m_symVariableDeclarator = 0;
+        TSSymbol m_symAccessor = 0;
+        TSSymbol m_symLambdaExpression = 0;
+        TSSymbol m_symBooleanLiteral = 0;
+        TSSymbol m_symImportDeclaration = 0;
 
         ankerl::unordered_dense::map<TSSymbol, TypeKind> m_primitiveKindMap;
 

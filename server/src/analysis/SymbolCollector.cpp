@@ -64,28 +64,38 @@ namespace angel_lsp::analysis
             modifiers.isExternal = true;
     }
 
+#define SYM_NAME(str) str, static_cast<uint32_t>(sizeof(str) - 1)
+
     SymbolCollector::SymbolCollector(angel_lsp::utils::LspLogger *logger)
         : m_logger(logger)
     {
         const TSLanguage *lang = tree_sitter_angelscript();
 
-        m_symPrimitiveType = ts_language_symbol_for_name(lang, "primitive_type", 14, true);
-        m_symDatatype = ts_language_symbol_for_name(lang, "datatype", 8, true);
-        m_symTemplateTypeList = ts_language_symbol_for_name(lang, "template_type_list", 18, true);
-        m_symIdentifier = ts_language_symbol_for_name(lang, "identifier", 10, true);
-        m_symDeclarationModifier = ts_language_symbol_for_name(lang, "declaration_modifier", 20, true);
-        m_symType = ts_language_symbol_for_name(lang, "type", 4, true);
-        m_symParameter = ts_language_symbol_for_name(lang, "parameter", 9, true);
-        m_symClassBody = ts_language_symbol_for_name(lang, "class_body", 10, true);
-        m_symNamespaceBody = ts_language_symbol_for_name(lang, "namespace_body", 14, true);
-        m_symInterfaceBody = ts_language_symbol_for_name(lang, "interface_body", 14, true);
-        m_symEnumMember = ts_language_symbol_for_name(lang, "enum_member", 11, true);
-        m_symFuncDeclaration = ts_language_symbol_for_name(lang, "func_declaration", 16, true);
-        m_symStatementBlock = ts_language_symbol_for_name(lang, "statement_block", 15, true);
-        m_symInterfaceMethod = ts_language_symbol_for_name(lang, "interface_method", 16, true);
-        m_symFuncAttributes = ts_language_symbol_for_name(lang, "func_attributes", 15, true);
-        m_symGet = ts_language_symbol_for_name(lang, "get", 3, false);
-        m_symSet = ts_language_symbol_for_name(lang, "set", 3, false);
+        m_symPrimitiveType = ts_language_symbol_for_name(lang, SYM_NAME("primitive_type"), true);
+        m_symDatatype = ts_language_symbol_for_name(lang, SYM_NAME("datatype"), true);
+        m_symTemplateTypeList = ts_language_symbol_for_name(lang, SYM_NAME("template_type_list"), true);
+        m_symIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("identifier"), true);
+        m_symDeclarationModifier = ts_language_symbol_for_name(lang, SYM_NAME("declaration_modifier"), true);
+        m_symType = ts_language_symbol_for_name(lang, SYM_NAME("type"), true);
+        m_symParameter = ts_language_symbol_for_name(lang, SYM_NAME("parameter"), true);
+        m_symClassBody = ts_language_symbol_for_name(lang, SYM_NAME("class_body"), true);
+        m_symNamespaceBody = ts_language_symbol_for_name(lang, SYM_NAME("namespace_body"), true);
+        m_symInterfaceBody = ts_language_symbol_for_name(lang, SYM_NAME("interface_body"), true);
+        m_symEnumMember = ts_language_symbol_for_name(lang, SYM_NAME("enum_member"), true);
+        m_symFuncDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("func_declaration"), true);
+        m_symStatementBlock = ts_language_symbol_for_name(lang, SYM_NAME("statement_block"), true);
+        m_symInterfaceMethod = ts_language_symbol_for_name(lang, SYM_NAME("interface_method"), true);
+        m_symFuncAttributes = ts_language_symbol_for_name(lang, SYM_NAME("func_attributes"), true);
+        m_symGet = ts_language_symbol_for_name(lang, SYM_NAME("get"), false);
+        m_symSet = ts_language_symbol_for_name(lang, SYM_NAME("set"), false);
+
+        m_symNullLiteral = ts_language_symbol_for_name(lang, SYM_NAME("null_literal"), true);
+        m_symCallExpression = ts_language_symbol_for_name(lang, SYM_NAME("call_expression"), true);
+        m_symVariableDeclarator = ts_language_symbol_for_name(lang, SYM_NAME("variable_declarator"), true);
+        m_symAccessor = ts_language_symbol_for_name(lang, SYM_NAME("accessor"), true);
+        m_symLambdaExpression = ts_language_symbol_for_name(lang, SYM_NAME("lambda_expression"), true);
+        m_symBooleanLiteral = ts_language_symbol_for_name(lang, SYM_NAME("boolean_literal"), true);
+        m_symImportDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("import_declaration"), true);
 
         auto addPrimitive = [&](const char *name, uint32_t len, TypeKind kind)
         {
@@ -242,7 +252,7 @@ namespace angel_lsp::analysis
             if (strcmp(cType, "string_literal") == 0)
             {
                 std::string_view text = GetNodeView(child, sourceCode);
-                if (text.starts_with("\"\"\"") && text.ends_with("\"\"\"\""))
+                if (text.starts_with("\"\"\"") && text.ends_with("\"\"\""))
                 {
                     Diagnostic diag;
                     diag.range.start.line = ts_node_start_point(child).row;
@@ -250,14 +260,16 @@ namespace angel_lsp::analysis
                     diag.range.end.line = ts_node_end_point(child).row;
                     diag.range.end.character = ts_node_end_point(child).column;
                     diag.code = "as-syntax-error";
-                    diag.message = "Non-terminated string literal";
+                    diag.message = (i18n ? i18n->GetMessage("as-syntax-error") : "Non-terminated string literal");
+                    if (diag.message.empty()) diag.message = "Non-terminated string literal";
                     diagnostics.push_back(diag);
                 }
             }
-            else if (strcmp(cType, "import_declaration") == 0)
+            else if (ts_node_symbol(child) == m_symImportDeclaration)
             {
-                TSNode srcNode = ts_node_child_by_field_name(child, "source", 6);
-                if (ts_node_is_null(srcNode) || GetNodeText(srcNode, sourceCode).empty())
+                TSNode srcNode = GetChildByFieldName(child, "source");
+                std::string srcText = GetNodeText(srcNode, sourceCode);
+                if (ts_node_is_null(srcNode) || srcText.empty() || srcText.starts_with("\"\"\""))
                 {
                     Diagnostic diag;
                     diag.range.start.line = ts_node_start_point(child).row;
@@ -265,7 +277,8 @@ namespace angel_lsp::analysis
                     diag.range.end.line = ts_node_end_point(child).row;
                     diag.range.end.character = ts_node_end_point(child).column;
                     diag.code = "as-syntax-error";
-                    diag.message = "Expected string";
+                    diag.message = (i18n ? i18n->GetMessage("as-syntax-error") : "Expected string");
+                    if (diag.message.empty()) diag.message = "Expected string";
                     diagnostics.push_back(diag);
                 }
             }
@@ -283,7 +296,8 @@ namespace angel_lsp::analysis
                         diag.range.end.line = ts_node_end_point(child).row;
                         diag.range.end.character = ts_node_end_point(child).column;
                         diag.code = "as-syntax-error";
-                        diag.message = "Expected identifier";
+                        diag.message = (i18n ? i18n->GetMessage("as-syntax-error") : "Expected identifier");
+                        if (diag.message.empty()) diag.message = "Expected identifier";
                         diagnostics.push_back(diag);
                         break;
                     }
@@ -291,7 +305,7 @@ namespace angel_lsp::analysis
             }
             else if (strcmp(cType, "return_statement") == 0)
             {
-                TSNode valNode = ts_node_child_by_field_name(child, "value", 5);
+                TSNode valNode = GetChildByFieldName(child, "value");
                 if (!ts_node_is_null(valNode))
                 {
                     std::string valText = GetNodeText(valNode, sourceCode);
@@ -303,8 +317,8 @@ namespace angel_lsp::analysis
                         diag.range.end.line = ts_node_end_point(child).row;
                         diag.range.end.character = ts_node_end_point(child).column;
                         diag.code = "as-syntax-error";
-                        diag.message = "Expected expression value";
-                        diag.fileUri = fileUri;
+                        diag.message = (i18n ? i18n->GetMessage("as-syntax-error") : "Expected expression value");
+                        if (diag.message.empty()) diag.message = "Expected expression value";
                         diagnostics.push_back(diag);
                     }
                 }
@@ -316,7 +330,7 @@ namespace angel_lsp::analysis
         }
     }
 
-    std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n)
+    std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, const angel_lsp::config::TypeConfig *typeConfig)
     {
         std::vector<Diagnostic> diagnostics;
         TSTree *tree = parser.Parse(sourceCode);
@@ -397,7 +411,7 @@ namespace angel_lsp::analysis
             {
                 ctx.isInsideClass = true;
                 TSNode parentDecl = ts_node_parent(current);
-                TSNode nameNode = ts_node_child_by_field_name(parentDecl, "name", 4);
+                TSNode nameNode = GetChildByFieldName(parentDecl, "name");
                 std::string name = GetNodeText(nameNode, sourceCode);
                 ctx.containerPath = ctx.containerPath.empty() ? name : name + "::" + ctx.containerPath;
             }
@@ -405,7 +419,7 @@ namespace angel_lsp::analysis
             {
                 ctx.isInsideNamespace = true;
                 TSNode parentDecl = ts_node_parent(current);
-                TSNode nameNode = ts_node_child_by_field_name(parentDecl, "name", 4);
+                TSNode nameNode = GetChildByFieldName(parentDecl, "name");
                 std::string name = GetNodeText(nameNode, sourceCode);
                 ctx.containerPath = ctx.containerPath.empty() ? name : name + "::" + ctx.containerPath;
             }
@@ -583,8 +597,8 @@ namespace angel_lsp::analysis
 
         if (strcmp(ts_node_type(varDeclNode), "virtual_property") == 0)
         {
-            TSNode typeNode = ts_node_child_by_field_name(varDeclNode, "prop_type", 9);
-            TSNode nameNode = ts_node_child_by_field_name(varDeclNode, "name", 4);
+            TSNode typeNode = GetChildByFieldName(varDeclNode, "prop_type");
+            TSNode nameNode = GetChildByFieldName(varDeclNode, "name");
             std::string typeStr = GetNodeText(typeNode, sourceCode);
             TypeExtractionResult typeInfo = ExtractTypeInfo(typeNode, sourceCode);
             SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sourceCode);
@@ -609,8 +623,8 @@ namespace angel_lsp::analysis
                 TSNode accNode = ts_node_named_child(varDeclNode, i);
                 if (strcmp(ts_node_type(accNode), "accessor") == 0)
                 {
-                    TSNode kindNode = ts_node_child_by_field_name(accNode, "kind", 4);
-                    TSNode bodyNode = ts_node_child_by_field_name(accNode, "body", 4);
+                    TSNode kindNode = GetChildByFieldName(accNode, "kind");
+                    TSNode bodyNode = GetChildByFieldName(accNode, "body");
                     TSSymbol kindSym = !ts_node_is_null(kindNode) ? ts_node_symbol(kindNode) : 0;
                     bool isGet = (kindSym == m_symGet);
                     bool isSet = (kindSym == m_symSet);
@@ -644,7 +658,7 @@ namespace angel_lsp::analysis
             return;
         }
 
-        TSNode typeNode = ts_node_child_by_field_name(varDeclNode, "var_type", 8);
+        TSNode typeNode = GetChildByFieldName(varDeclNode, "var_type");
         std::string typeStr = GetNodeText(typeNode, sourceCode);
         TypeExtractionResult typeInfo = ExtractTypeInfo(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sourceCode);
@@ -658,8 +672,8 @@ namespace angel_lsp::analysis
             if (strcmp(ts_node_type(declaratorNode), "variable_declarator") != 0)
                 continue;
 
-            TSNode nameNode = ts_node_child_by_field_name(declaratorNode, "name", 4);
-            TSNode valueNode = ts_node_child_by_field_name(declaratorNode, "value", 5);
+            TSNode nameNode = GetChildByFieldName(declaratorNode, "name");
+            TSNode valueNode = GetChildByFieldName(declaratorNode, "value");
 
             Symbol sym = CreateSymbol(SymbolType::Variable, varDeclNode, nameNode, sourceCode, fileUri, ctx.containerPath);
             VariableSignature varSig;
@@ -689,9 +703,9 @@ namespace angel_lsp::analysis
 
     ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, const std::string &sourceCode) const
     {
-        TSNode pNameNode = ts_node_child_by_field_name(paramNode, "name", 4);
-        TSNode pTypeNode = ts_node_child_by_field_name(paramNode, "param_type", 10);
-        TSNode pDefaultNode = ts_node_child_by_field_name(paramNode, "default_value", 13);
+        TSNode pNameNode = GetChildByFieldName(paramNode, "name");
+        TSNode pTypeNode = GetChildByFieldName(paramNode, "param_type");
+        TSNode pDefaultNode = GetChildByFieldName(paramNode, "default_value");
 
         TypeExtractionResult pInfo = ExtractTypeInfo(pTypeNode, sourceCode);
 
@@ -791,7 +805,7 @@ namespace angel_lsp::analysis
 
         if (strcmp(ts_node_type(node), "return_statement") == 0)
         {
-            TSNode valNode = ts_node_child_by_field_name(node, "value", 5);
+            TSNode valNode = SymbolCollector::GetChildByFieldName(node, "value");
             if (ts_node_is_null(valNode))
             {
                 hasEmpty = true;
@@ -811,7 +825,7 @@ namespace angel_lsp::analysis
                 }
                 else if (strcmp(ts_node_type(valNode), "call_expression") == 0)
                 {
-                    TSNode funcNode = ts_node_child_by_field_name(valNode, "function", 8);
+                    TSNode funcNode = SymbolCollector::GetChildByFieldName(valNode, "function");
                     if (!ts_node_is_null(funcNode))
                     {
                         uint32_t fStart = ts_node_start_byte(funcNode);
@@ -835,10 +849,10 @@ namespace angel_lsp::analysis
 
     void SymbolCollector::ProcessFunction(TSNode funcNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
     {
-        TSNode nameNode = ts_node_child_by_field_name(funcNode, "name", 4);
-        TSNode typeNode = ts_node_child_by_field_name(funcNode, "return_type", 11);
-        TSNode paramsNode = ts_node_child_by_field_name(funcNode, "parameters", 10);
-        TSNode bodyNode = ts_node_child_by_field_name(funcNode, "body", 4);
+        TSNode nameNode = GetChildByFieldName(funcNode, "name");
+        TSNode typeNode = GetChildByFieldName(funcNode, "return_type");
+        TSNode paramsNode = GetChildByFieldName(funcNode, "parameters");
+        TSNode bodyNode = GetChildByFieldName(funcNode, "body");
 
         TypeExtractionResult retInfo = ExtractTypeInfo(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(funcNode, sourceCode);
@@ -900,8 +914,8 @@ namespace angel_lsp::analysis
 
     void SymbolCollector::ProcessClass(TSNode classNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
     {
-        TSNode nameNode = ts_node_child_by_field_name(classNode, "name", 4);
-        TSNode tParamNode = ts_node_child_by_field_name(classNode, "template_param", 14);
+        TSNode nameNode = GetChildByFieldName(classNode, "name");
+        TSNode tParamNode = GetChildByFieldName(classNode, "template_param");
 
         Symbol sym = CreateSymbol(SymbolType::Class, classNode, nameNode, sourceCode, fileUri, ctx.containerPath);
         ClassSignature classSig;
@@ -915,14 +929,14 @@ namespace angel_lsp::analysis
 
     void SymbolCollector::ProcessNamespace(TSNode namespaceNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
     {
-        TSNode nameNode = ts_node_child_by_field_name(namespaceNode, "name", 4);
+        TSNode nameNode = GetChildByFieldName(namespaceNode, "name");
         Symbol sym = CreateSymbol(SymbolType::Namespace, namespaceNode, nameNode, sourceCode, fileUri, ctx.containerPath);
         symbolTable.AddSymbol(sym);
     }
 
     void SymbolCollector::ProcessEnum(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
     {
-        TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
+        TSNode nameNode = GetChildByFieldName(node, "name");
         Symbol sym = CreateSymbol(SymbolType::Enum, node, nameNode, sourceCode, fileUri, ctx.containerPath);
 
         EnumSignature enumSig;
@@ -936,8 +950,8 @@ namespace angel_lsp::analysis
             if (ts_node_symbol(child) != m_symEnumMember)
                 continue;
 
-            TSNode memberName = ts_node_child_by_field_name(child, "name", 4);
-            TSNode memberValue = ts_node_child_by_field_name(child, "value", 5);
+            TSNode memberName = GetChildByFieldName(child, "name");
+            TSNode memberValue = GetChildByFieldName(child, "value");
 
             EnumMemberInformation member;
             member.name = GetNodeText(memberName, sourceCode);
@@ -955,8 +969,8 @@ namespace angel_lsp::analysis
 
     void SymbolCollector::ProcessTypedef(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
     {
-        TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-        TSNode baseTypeNode = ts_node_child_by_field_name(node, "base_type", 9);
+        TSNode nameNode = GetChildByFieldName(node, "name");
+        TSNode baseTypeNode = GetChildByFieldName(node, "base_type");
 
         Symbol sym = CreateSymbol(SymbolType::Typedef, node, nameNode, sourceCode, fileUri, ctx.containerPath);
         TypedefSignature typedefSig;
@@ -974,9 +988,9 @@ namespace angel_lsp::analysis
 
     void SymbolCollector::ProcessFuncdef(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
     {
-        TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-        TSNode typeNode = ts_node_child_by_field_name(node, "return_type", 11);
-        TSNode paramsNode = ts_node_child_by_field_name(node, "parameters", 10);
+        TSNode nameNode = GetChildByFieldName(node, "name");
+        TSNode typeNode = GetChildByFieldName(node, "return_type");
+        TSNode paramsNode = GetChildByFieldName(node, "parameters");
 
         TypeExtractionResult retInfo = ExtractTypeInfo(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(node, sourceCode);
@@ -1002,7 +1016,7 @@ namespace angel_lsp::analysis
 
     void SymbolCollector::ProcessInterface(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
     {
-        TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
+        TSNode nameNode = GetChildByFieldName(node, "name");
         Symbol sym = CreateSymbol(SymbolType::Interface, node, nameNode, sourceCode, fileUri, ctx.containerPath);
         InterfaceSignature ifaceSig;
         ifaceSig.modifiers = ExtractModifiers(node, sourceCode);
@@ -1014,8 +1028,8 @@ namespace angel_lsp::analysis
 
     void SymbolCollector::ProcessProperty(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
     {
-        TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
-        TSNode typeNode = ts_node_child_by_field_name(node, "prop_type", 9);
+        TSNode nameNode = GetChildByFieldName(node, "name");
+        TSNode typeNode = GetChildByFieldName(node, "prop_type");
 
         TypeExtractionResult typeInfo = ExtractTypeInfo(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(node, sourceCode);
@@ -1039,8 +1053,8 @@ namespace angel_lsp::analysis
             TSNode accNode = ts_node_named_child(node, i);
             if (strcmp(ts_node_type(accNode), "accessor") == 0)
             {
-                TSNode kindNode = ts_node_child_by_field_name(accNode, "kind", 4);
-                TSNode bodyNode = ts_node_child_by_field_name(accNode, "body", 4);
+                TSNode kindNode = GetChildByFieldName(accNode, "kind");
+                TSNode bodyNode = GetChildByFieldName(accNode, "body");
                 TSSymbol kindSym = !ts_node_is_null(kindNode) ? ts_node_symbol(kindNode) : 0;
                 bool isGet = (kindSym == m_symGet);
                 bool isSet = (kindSym == m_symSet);
