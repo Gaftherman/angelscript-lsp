@@ -246,8 +246,8 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateFunction(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
-        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (sym.containerName.empty() && (sym.name == arrayTypeName || sym.name == stringTypeName))
         {
@@ -573,8 +573,8 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateFunctionParameters(const Symbol &sym, const FunctionSignature &sig, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
-        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
 
         ankerl::unordered_dense::set<std::string> seenParamNames;
 
@@ -697,8 +697,8 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateVariable(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
-        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (sym.containerName.empty() && (sym.name == arrayTypeName || sym.name == stringTypeName))
         {
@@ -1065,8 +1065,8 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateClass(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
-        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
@@ -1116,7 +1116,7 @@ namespace angel_lsp::analysis
             });
         }
 
-        if (sig.isTemplate && !req.predefinedFileExtension.empty() && req.fileUri != req.predefinedFileExtension)
+        if (sig.isTemplate && !req.predefinedFileExtension.empty() && req.fileUri != req.predefinedFileExtension && !req.fileUri.ends_with(req.predefinedFileExtension))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-template-class-not-supported", sym.name));
         }
@@ -1398,8 +1398,8 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateInterface(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
-        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
@@ -1449,8 +1449,8 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateTypedef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
-        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
@@ -1475,8 +1475,8 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateFuncdef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
-        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
 
         const auto &sig = sym.GetFunction();
         if (sig.modifiers.isExternal)
@@ -1508,8 +1508,8 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateEnum(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        std::string_view stringTypeName = (req.typeConfig && !req.typeConfig->stringTypeName.empty()) ? req.typeConfig->stringTypeName : "string";
-        std::string_view arrayTypeName = (req.typeConfig && !req.typeConfig->arrayTypeName.empty()) ? req.typeConfig->arrayTypeName : "array";
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
@@ -1546,9 +1546,9 @@ namespace angel_lsp::analysis
                 }
                 else
                 {
-                    bool isStringLiteral = (member.valueNodeType == "string_literal" || (!val.empty() && (val.front() == '"' || val.front() == '\'')));
-                    bool isLambda = (member.valueNodeType == "lambda_expression");
-                    bool isBool = (member.valueNodeType == "boolean_literal" || val == "true" || val == "false");
+                    bool isStringLiteral = (member.valueNodeType == node_types::StringLiteral || (!val.empty() && (val.front() == '"' || val.front() == '\'')));
+                    bool isLambda = (member.valueNodeType == node_types::LambdaExpression);
+                    bool isBool = (member.valueNodeType == node_types::BooleanLiteral || val == "true" || val == "false");
                     bool isNull = (member.valueNodeType == "null_literal" || val == "null");
                     bool isTypeKeyword = (val == "int" || val == "float" || val == "double" || val == "void" || val == "auto" || val == "class" || val == "struct" || val == "enum");
                     bool isCallOrExpr = (member.valueNodeType == "call_expression");
@@ -1581,6 +1581,14 @@ namespace angel_lsp::analysis
         diag.range.end.line = sym.endLine;
         diag.range.end.character = sym.endCharacter;
         diag.severity = severity;
+        if (req.severityOverrides)
+        {
+            auto it = req.severityOverrides->find(code);
+            if (it != req.severityOverrides->end())
+            {
+                diag.severity = it->second;
+            }
+        }
         diag.code = code;
         diag.source = "AngelScript";
         diag.fileUri = sym.fileUri;
@@ -1588,6 +1596,10 @@ namespace angel_lsp::analysis
         if (req.i18n)
         {
             diag.message = req.i18n->GetMessage(code);
+        }
+        if (diag.message.empty())
+        {
+            diag.message = "[" + code + "] Diagnostic code: " + code;
         }
 
         return diag;
@@ -1605,6 +1617,10 @@ namespace angel_lsp::analysis
                 diag.message = fmt::format(fmt::runtime(pattern), arg1);
             }
         }
+        if (diag.message.empty() || diag.message.starts_with("["))
+        {
+            diag.message = "[" + code + "] " + arg1;
+        }
 
         return diag;
     }
@@ -1620,6 +1636,10 @@ namespace angel_lsp::analysis
             {
                 diag.message = fmt::format(fmt::runtime(pattern), arg1, arg2);
             }
+        }
+        if (diag.message.empty() || diag.message.starts_with("["))
+        {
+            diag.message = "[" + code + "] " + arg1 + ", " + arg2;
         }
 
         return diag;
@@ -1637,6 +1657,10 @@ namespace angel_lsp::analysis
                 diag.message = fmt::format(fmt::runtime(pattern), arg1, arg2, arg3);
             }
         }
+        if (diag.message.empty() || diag.message.starts_with("["))
+        {
+            diag.message = "[" + code + "] " + arg1 + ", " + arg2 + ", " + arg3;
+        }
 
         return diag;
     }
@@ -1649,6 +1673,14 @@ namespace angel_lsp::analysis
         diag.range.end.line = param.endLine;
         diag.range.end.character = param.endCharacter;
         diag.severity = severity;
+        if (req.severityOverrides)
+        {
+            auto it = req.severityOverrides->find(code);
+            if (it != req.severityOverrides->end())
+            {
+                diag.severity = it->second;
+            }
+        }
         diag.code = code;
         diag.source = "AngelScript";
         diag.fileUri = parentSym.fileUri;
@@ -1656,6 +1688,10 @@ namespace angel_lsp::analysis
         if (req.i18n)
         {
             diag.message = req.i18n->GetMessage(code);
+        }
+        if (diag.message.empty())
+        {
+            diag.message = "[" + code + "] Diagnostic code: " + code;
         }
 
         return diag;
@@ -1673,6 +1709,10 @@ namespace angel_lsp::analysis
                 diag.message = fmt::format(fmt::runtime(pattern), arg1);
             }
         }
+        if (diag.message.empty() || diag.message.starts_with("["))
+        {
+            diag.message = "[" + code + "] " + arg1;
+        }
 
         return diag;
     }
@@ -1688,6 +1728,10 @@ namespace angel_lsp::analysis
             {
                 diag.message = fmt::format(fmt::runtime(pattern), arg1, arg2);
             }
+        }
+        if (diag.message.empty() || diag.message.starts_with("["))
+        {
+            diag.message = "[" + code + "] " + arg1 + ", " + arg2;
         }
 
         return diag;

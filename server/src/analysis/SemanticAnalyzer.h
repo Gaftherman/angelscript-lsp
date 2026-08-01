@@ -13,6 +13,14 @@
 
 namespace angel_lsp::analysis
 {
+    namespace node_types
+    {
+        constexpr std::string_view StringLiteral = "string_literal";
+        constexpr std::string_view LambdaExpression = "lambda_expression";
+        constexpr std::string_view BooleanLiteral = "boolean_literal";
+        constexpr std::string_view NumberLiteral = "number_literal";
+        constexpr std::string_view ImportDeclaration = "import_declaration";
+    }
     struct SemanticAnalysisRequest
     {
         const SymbolTable &symbolTable;
@@ -20,6 +28,17 @@ namespace angel_lsp::analysis
         std::string predefinedFileExtension;
         const i18n::I18n *i18n = nullptr;
         const config::TypeConfig *typeConfig = nullptr;
+        const ankerl::unordered_dense::map<std::string, DiagnosticSeverity> *severityOverrides = nullptr;
+
+        std::string_view GetStringTypeName() const
+        {
+            return (typeConfig && !typeConfig->stringTypeName.empty()) ? std::string_view(typeConfig->stringTypeName) : std::string_view("string");
+        }
+
+        std::string_view GetArrayTypeName() const
+        {
+            return (typeConfig && !typeConfig->arrayTypeName.empty()) ? std::string_view(typeConfig->arrayTypeName) : std::string_view("array");
+        }
     };
 
     class SemanticAnalyzer
