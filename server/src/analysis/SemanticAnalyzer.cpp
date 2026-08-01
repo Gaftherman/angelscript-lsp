@@ -335,13 +335,28 @@ namespace angel_lsp::analysis
         if (!sym.containerName.empty())
         {
             auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
-            if (parentOpt && parentOpt->type == SymbolType::Class)
+            if (parentOpt && (parentOpt->type == SymbolType::Class || parentOpt->type == SymbolType::Interface))
                 isInsideClass = true;
         }
 
         if (sig.hasValueReturn && IsReservedKeyword(sig.returnExpression) && sig.returnExpression != "null" && sig.returnExpression != "true" && sig.returnExpression != "false")
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
+
+        if (sig.hasValueReturn && !sig.returnCallTargetName.empty())
+        {
+            const std::string &target = sig.returnCallTargetName;
+            if (target.find("::") == std::string::npos &&
+                !IsPrimitiveTypeName(target) && target != stringTypeName && target != arrayTypeName &&
+                target != "null" && target != "true" && target != "false")
+            {
+                std::string expectedQN = sym.containerName.empty() ? target : sym.containerName + "::" + target;
+                if (!req.symbolTable.HasSymbol(expectedQN) && !req.symbolTable.HasSymbol(target))
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", target));
+                }
+            }
         }
 
 
@@ -439,16 +454,7 @@ namespace angel_lsp::analysis
         // Operator overload arity checks
         if (sym.name.rfind("op", 0) == 0 && !sym.containerName.empty())
         {
-            if (sym.name == "opAdd" || sym.name == "opSub" || sym.name == "opMul" || sym.name == "opDiv" ||
-                sym.name == "opMod" || sym.name == "opPow" || sym.name == "opAnd" || sym.name == "opOr" ||
-                sym.name == "opXor" || sym.name == "opShl" || sym.name == "opShr" || sym.name == "opUShr")
-            {
-                if (sig.parameters.size() > 2)
-                {
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-binary-operator-arity", sym.name));
-                }
-            }
-            else if (sym.name == "opEquals")
+            if (sym.name == "opEquals")
             {
                 if (sig.parameters.empty() || (sig.returnType != "bool" && sig.returnType != "int"))
                 {

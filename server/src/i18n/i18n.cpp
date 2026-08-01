@@ -45,6 +45,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-delete-with-body"] = "Deleted function '{}' cannot have a body.";
         m_messages["as-err-void-parameter"] = "Parameter '{}' in function '{}' cannot be of type 'void'.";
         m_messages["as-err-binary-operator-arity"] = "Binary operator overload '{}' must take exactly 1 parameter.";
+        m_messages["as-err-opindex-arity"] = "Index operator 'opIndex' must take at least 1 parameter.";
         m_messages["as-err-opindex-no-params"] = "Index operator 'opIndex' must take at least 1 parameter.";
         m_messages["as-err-opequals-return-bool"] = "Equality operator 'opEquals' must return 'bool'.";
         m_messages["as-err-opcmp-return-int"] = "Comparison operator 'opCmp' must return 'int'.";
@@ -95,6 +96,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-global-variable-access-modifier"] = "La variable global o de namespace '{}' no puede tener modificadores de acceso (private/protected).";
             m_messages["as-err-void-reference"] = "El tipo 'void' no puede ser una referencia.";
             m_messages["as-err-property-accessor-missing-body"] = "El accesor de propiedad '{}' debe tener una implementación.";
+            m_messages["as-err-opindex-arity"] = "El operador de índice 'opIndex' debe tener al menos 1 parámetro.";
         }
     }
 

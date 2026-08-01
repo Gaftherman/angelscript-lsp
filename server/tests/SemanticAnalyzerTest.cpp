@@ -12,6 +12,88 @@ using namespace angel_lsp::parser;
 
 
 
+TEST_CASE("SemanticAnalyzer - OpIndex Declaration Validity")
+{
+    // Variant 1: 0 params -> ACEPTADO (Legal method declaration in class)
+    {
+        std::string sourceCode = "class C { void opIndex() {} }\n";
+        std::string fileUri = "file:///opindex1.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        CHECK(diagnostics.empty());
+    }
+
+    // Variant 2: 1 param -> ACEPTADO
+    {
+        std::string sourceCode = "class C { void opIndex(int i) {} }\n";
+        std::string fileUri = "file:///opindex2.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        CHECK(diagnostics.empty());
+    }
+
+    // Variant 3: 2 params -> ACEPTADO
+    {
+        std::string sourceCode = "class C { void opIndex(int i, int j) {} }\n";
+        std::string fileUri = "file:///opindex3.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        CHECK(diagnostics.empty());
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - Namespace Class Scope Resolution")
+{
+    // Variant 1 (ID 250 Unqualified Return): namespace N { class C {} } ::N::C f(::N::C@ arg) { return C(); } -> RECHAZADO
+    {
+        std::string sourceCode = "namespace N { class C {} }\n::N::C f(::N::C@ arg) { return C(); }\n";
+        std::string fileUri = "file:///ns1.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        REQUIRE(!diagnostics.empty());
+        CHECK(diagnostics[0].code == "as-err-unresolved-type");
+    }
+
+    // Variant 2 (Qualified Return): namespace N { class C {} } ::N::C f(::N::C@ arg) { return N::C(); } -> ACEPTADO
+    {
+        std::string sourceCode = "namespace N { class C {} }\n::N::C f(::N::C@ arg) { return N::C(); }\n";
+        std::string fileUri = "file:///ns2.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        CHECK(diagnostics.empty());
+    }
+}
+
 TEST_CASE("SemanticAnalyzer - Level 1: Missing Function Body")
 {
     std::string sourceCode = "void TestFunc();\n";
@@ -898,7 +980,15 @@ TEST_CASE("Batch_Broken200_Harness_Comparison")
         std::vector<Diagnostic> allDiags = syntaxDiags;
         allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
 
-        bool rejected = !allDiags.empty();
+        bool rejected = false;
+        for (const auto &d : allDiags)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                rejected = true;
+                break;
+            }
+        }
         std::string firstErr = "";
         if (rejected)
         {
@@ -1222,7 +1312,15 @@ TEST_CASE("Batch_NewEdge200_Harness_Comparison")
         std::vector<Diagnostic> allDiags = syntaxDiags;
         allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
 
-        bool rejected = !allDiags.empty();
+        bool rejected = false;
+        for (const auto &d : allDiags)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                rejected = true;
+                break;
+            }
+        }
         std::string firstErr = "";
         if (rejected)
         {
@@ -1474,7 +1572,15 @@ TEST_CASE("Batch_Array600_Harness_Comparison")
         std::vector<Diagnostic> allDiags = syntaxDiags;
         allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
 
-        bool rejected = !allDiags.empty();
+        bool rejected = false;
+        for (const auto &d : allDiags)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                rejected = true;
+                break;
+            }
+        }
         std::string firstErr = "";
         if (rejected)
         {
@@ -1727,7 +1833,15 @@ TEST_CASE("Batch_StringTypedef800_Harness_Comparison")
         std::vector<Diagnostic> allDiags = syntaxDiags;
         allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
 
-        bool rejected = !allDiags.empty();
+        bool rejected = false;
+        for (const auto &d : allDiags)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                rejected = true;
+                break;
+            }
+        }
         std::string firstErr = "";
         if (rejected)
         {
@@ -1979,7 +2093,15 @@ TEST_CASE("Batch_TopLevel1000_Harness_Comparison")
         std::vector<Diagnostic> allDiags = syntaxDiags;
         allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
 
-        bool rejected = !allDiags.empty();
+        bool rejected = false;
+        for (const auto &d : allDiags)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                rejected = true;
+                break;
+            }
+        }
         std::string firstErr = "";
         if (rejected)
         {
@@ -2230,7 +2352,15 @@ TEST_CASE("Batch_Keyword1200_Harness_Comparison")
         std::vector<Diagnostic> allDiags = syntaxDiags;
         allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
 
-        bool rejected = !allDiags.empty();
+        bool rejected = false;
+        for (const auto &d : allDiags)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                rejected = true;
+                break;
+            }
+        }
         std::string firstErr = "";
         if (rejected)
         {
@@ -2639,7 +2769,15 @@ TEST_CASE("Batch_Expanded1500_Harness_Comparison")
         std::vector<Diagnostic> allDiags = syntaxDiags;
         allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
 
-        bool rejected = !allDiags.empty();
+        bool rejected = false;
+        for (const auto &d : allDiags)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                rejected = true;
+                break;
+            }
+        }
         std::string firstErr = "";
         if (rejected)
         {
@@ -3607,7 +3745,15 @@ TEST_CASE("Batch_2050_Harness_Comparison")
         std::vector<Diagnostic> allDiags = syntaxDiags;
         allDiags.insert(allDiags.end(), semanticDiags.begin(), semanticDiags.end());
 
-        bool rejected = !allDiags.empty();
+        bool rejected = false;
+        for (const auto &d : allDiags)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                rejected = true;
+                break;
+            }
+        }
         std::string firstErr = "";
         if (rejected)
         {
@@ -3622,4 +3768,121 @@ TEST_CASE("Batch_2050_Harness_Comparison")
 
     std::cout << "=== LSP_VALIDATOR_BATCH_OUTPUT_END ===\n";
 }
+
+TEST_CASE("SemanticAnalyzer - Interface Const Method Valid")
+{
+    std::string sourceCode = "interface I { void m() const; } class C : I { void m() const {} }\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto syntaxDiags = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto semanticDiags = analyzer.Analyze(req);
+
+    REQUIRE(syntaxDiags.empty());
+    REQUIRE(semanticDiags.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Double Handle Detection")
+{
+    std::string sourceCode = "class Foo {}\nFoo@@ x;\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto syntaxDiags = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto semanticDiags = analyzer.Analyze(req);
+
+    REQUIRE(syntaxDiags.empty());
+    REQUIRE(semanticDiags.size() == 1);
+    CHECK(semanticDiags[0].code == "as-err-handle-on-primitive");
+}
+
+TEST_CASE("SemanticAnalyzer - ID 153 opIndex Standalone Check")
+{
+    std::string sourceCode = "class C { int opIndex() {} }\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto syntaxDiags = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto semanticDiags = analyzer.Analyze(req);
+
+    std::cout << "[ID 153 Standalone Output] Syntax Diags: " << syntaxDiags.size() << ", Semantic Diags: " << semanticDiags.size() << "\n";
+    for (const auto &d : semanticDiags) {
+        std::cout << "  Code: " << d.code << ", Message: " << d.message << "\n";
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - ID 250 Scope Standalone Check")
+{
+    std::string sourceCode = "namespace N { class C {} }\n::N::C f(::N::C@ arg) { return C(); }\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto syntaxDiags = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto semanticDiags = analyzer.Analyze(req);
+
+    std::cout << "[ID 250 Standalone Output] Syntax Diags: " << syntaxDiags.size() << ", Semantic Diags: " << semanticDiags.size() << "\n";
+    for (const auto &d : semanticDiags) {
+        std::cout << "  Code: " << d.code << ", Message: " << d.message << "\n";
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - Phase A 9 Sample Cases Test")
+{
+    struct TestCase { int id; std::string cat; std::string code; };
+    std::vector<TestCase> cases = {
+        {1468, "MisplacedQualifiers", "class C override {}"},
+        {1469, "MisplacedQualifiers", "interface I final {}"},
+        {1470, "MisplacedQualifiers", "enum E final {}"},
+        {1106, "BrokenStatements", "class C { int x = interface; }"},
+        {1107, "BrokenStatements", "class C { int x = enum; }"},
+        {1108, "BrokenStatements", "class C { int x = typedef; }"},
+        {326,  "TyposEdge", "void f {}"},
+        {327,  "TyposEdge", "class MyClass {}; MyClass obj; void f;"},
+        {328,  "TyposEdge", "int x = 10 class C {}"}
+    };
+
+    angel_lsp::i18n::I18n i18n("en");
+    for (const auto &tc : cases) {
+        std::string fileUri = "file:///test_" + std::to_string(tc.id) + ".as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+
+        auto syntaxDiags = collector.CollectSymbols(fileUri, tc.code, parser, table);
+
+        SemanticAnalyzer analyzer;
+        angel_lsp::config::TypeConfig typeConfig{"string", "array"};
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n, &typeConfig};
+        auto semanticDiags = analyzer.Analyze(req);
+
+        std::cout << "[LSP Phase A Output] ID:" << tc.id << " [" << tc.cat << "] SyntaxDiags:" << syntaxDiags.size() << " SemanticDiags:" << semanticDiags.size() << "\n";
+    }
+}
+
+
+
 

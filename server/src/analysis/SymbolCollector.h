@@ -96,6 +96,9 @@ namespace angel_lsp::analysis
         std::string GetNodeText(TSNode node, const std::string &sourceCode) const;
         std::string_view GetNodeView(TSNode node, const std::string &sourceCode) const;
         void ReportParseErrors(TSNode node, const std::string &fileUri, const std::string &sourceCode, std::vector<Diagnostic> &diagnostics, const angel_lsp::i18n::I18n *i18n = nullptr) const;
+        void CheckUsingDeclarations(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const;
+        void CheckDuplicateModifiers(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const;
+        void CheckMixinDeclarations(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const;
 
         CollectionContext BuildContext(TSNode node, const std::string &sourceCode) const;
 

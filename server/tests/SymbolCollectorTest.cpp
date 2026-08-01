@@ -499,3 +499,63 @@ TEST_CASE("SymbolCollector - Parse Error on Multiple Consecutive Colons")
     CHECK(diagnostics[0].code == "as-syntax-error");
 }
 
+TEST_CASE("SymbolCollector - Using Namespace Reserved Keyword")
+{
+    std::string sourceCode = "using namespace class;\nusing namespace int;\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto diagnostics = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    REQUIRE(diagnostics.size() == 2);
+    CHECK(diagnostics[0].code == "as-err-reserved-keyword-name");
+    CHECK(diagnostics[1].code == "as-err-reserved-keyword-name");
+}
+
+TEST_CASE("SymbolCollector - Using Namespace Valid Identifier No Diagnostic")
+{
+    std::string sourceCode = "using namespace Foo;\nusing namespace Foo::Bar;\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto diagnostics = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    REQUIRE(diagnostics.empty());
+}
+
+TEST_CASE("SymbolCollector - Using Namespace Reserved Keyword Inside Namespace")
+{
+    std::string sourceCode = "namespace NS { using namespace int; }\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto diagnostics = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics[0].code == "as-err-reserved-keyword-name");
+}
+
+TEST_CASE("SymbolCollector - Duplicate Declaration Modifier Warning")
+{
+    std::string sourceCode = "final final class Foo {}\nshared shared interface Bar {}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto diagnostics = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    REQUIRE(diagnostics.size() == 2);
+    CHECK(diagnostics[0].code == "as-err-attribute-repeated");
+    CHECK(diagnostics[0].severity == DiagnosticSeverity::Warning);
+    CHECK(diagnostics[1].code == "as-err-attribute-repeated");
+    CHECK(diagnostics[1].severity == DiagnosticSeverity::Warning);
+}
+
+

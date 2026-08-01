@@ -255,6 +255,129 @@ namespace angel_lsp::analysis
         }
     }
 
+    void SymbolCollector::CheckUsingDeclarations(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (strcmp(ts_node_type(node), "using_declaration") == 0)
+        {
+            uint32_t uCount = ts_node_child_count(node);
+            for (uint32_t u = 0; u < uCount; ++u)
+            {
+                TSNode uChild = ts_node_child(node, u);
+                std::string uText(GetNodeText(uChild, sourceCode));
+                while (!uText.empty() && (uText.back() == ';' || uText.back() == ' ' || uText.back() == '\t' || uText.back() == '\r' || uText.back() == '\n'))
+                {
+                    uText.pop_back();
+                }
+                if (!uText.empty() && uText != "using" && uText != "namespace" && IsReservedKeyword(uText))
+                {
+                    TSPoint startPt = ts_node_start_point(uChild);
+                    TSPoint endPt = ts_node_end_point(uChild);
+                    Diagnostic diag;
+                    diag.range.start.line = startPt.row;
+                    diag.range.start.character = startPt.column;
+                    diag.range.end.line = endPt.row;
+                    diag.range.end.character = endPt.column;
+                    diag.severity = DiagnosticSeverity::Error;
+                    diag.code = "as-err-reserved-keyword-name";
+                    diag.source = "AngelScript";
+                    diag.fileUri = fileUri;
+                    std::string pattern = i18n ? i18n->GetMessage("as-err-reserved-keyword-name") : "Instead found reserved keyword '{}'.";
+                    diag.message = fmt::format(fmt::runtime(pattern), uText);
+                    diagnostics.push_back(diag);
+                }
+            }
+            return;
+        }
+
+        uint32_t count = ts_node_child_count(node);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            CheckUsingDeclarations(ts_node_child(node, i), sourceCode, fileUri, i18n, diagnostics);
+        }
+    }
+
+    void SymbolCollector::CheckDuplicateModifiers(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (ts_node_is_null(node))
+            return;
+
+        const char *nodeType = ts_node_type(node);
+        if (strcmp(nodeType, "class_declaration") == 0 ||
+            strcmp(nodeType, "interface_declaration") == 0 ||
+            strcmp(nodeType, "mixin_declaration") == 0)
+        {
+            ankerl::unordered_dense::set<std::string> seenModifiers;
+            uint32_t count = ts_node_child_count(node);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(node, i);
+                if (ts_node_symbol(child) == m_symDeclarationModifier)
+                {
+                    uint32_t modCount = ts_node_child_count(child);
+                    for (uint32_t m = 0; m < modCount; ++m)
+                    {
+                        TSNode modTokNode = ts_node_child(child, m);
+                        std::string modText(GetNodeText(modTokNode, sourceCode));
+                        if (seenModifiers.contains(modText))
+                        {
+                            TSPoint startPt = ts_node_start_point(modTokNode);
+                            TSPoint endPt = ts_node_end_point(modTokNode);
+                            Diagnostic diag;
+                            diag.range.start.line = startPt.row;
+                            diag.range.start.character = startPt.column;
+                            diag.range.end.line = endPt.row;
+                            diag.range.end.character = endPt.column;
+                            diag.severity = DiagnosticSeverity::Warning;
+                            diag.code = "as-err-attribute-repeated";
+                            diag.source = "AngelScript";
+                            diag.fileUri = fileUri;
+                            std::string pattern = i18n ? i18n->GetMessage("as-err-attribute-repeated") : "Attribute '{}' is informed multiple times.";
+                            diag.message = fmt::format(fmt::runtime(pattern), modText);
+                            diagnostics.push_back(diag);
+                        }
+                        else
+                        {
+                            seenModifiers.insert(modText);
+                        }
+                    }
+                }
+            }
+        }
+
+        uint32_t count = ts_node_child_count(node);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            CheckDuplicateModifiers(ts_node_child(node, i), sourceCode, fileUri, i18n, diagnostics);
+        }
+    }
+
+    void SymbolCollector::CheckMixinDeclarations(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (ts_node_is_null(node))
+            return;
+
+        const char *nodeType = ts_node_type(node);
+        if (strcmp(nodeType, "mixin_declaration") == 0)
+        {
+            Diagnostic diag;
+            diag.range = GetNodeRange(node);
+            diag.severity = DiagnosticSeverity::Error;
+            diag.code = "as-syntax-error";
+            diag.source = "AngelScript";
+            diag.fileUri = fileUri;
+            std::string pattern = i18n ? i18n->GetMessage("as-syntax-error") : "Syntax error: \"{}\"";
+            diag.message = fmt::format(fmt::runtime(pattern), "mixin");
+            diagnostics.push_back(diag);
+            return;
+        }
+
+        uint32_t count = ts_node_child_count(node);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            CheckMixinDeclarations(ts_node_child(node, i), sourceCode, fileUri, i18n, diagnostics);
+        }
+    }
+
     std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, const angel_lsp::config::TypeConfig *typeConfig)
     {
         std::vector<Diagnostic> diagnostics;
@@ -266,6 +389,9 @@ namespace angel_lsp::analysis
         TSNode rootNode = ts_tree_root_node(tree);
 
         ReportParseErrors(rootNode, fileUri, sourceCode, diagnostics, i18n);
+        CheckUsingDeclarations(rootNode, sourceCode, fileUri, i18n, diagnostics);
+        CheckDuplicateModifiers(rootNode, sourceCode, fileUri, i18n, diagnostics);
+        CheckMixinDeclarations(rootNode, sourceCode, fileUri, i18n, diagnostics);
 
 
 
