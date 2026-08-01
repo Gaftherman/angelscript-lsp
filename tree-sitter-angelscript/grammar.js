@@ -469,13 +469,8 @@ module.exports = grammar({
     parameter: $ => seq(
       field("param_type", $.type),
       optional(seq("&", optional(choice("in", "out", "inout")))),
-      choice(
-        "...",
-        seq(
-          optional(field("name", $.identifier)),
-          optional(seq("=", optional(field("default_value", choice($.initializer_list, $._expression))))),
-        ),
-      ),
+      optional(field("name", $.identifier)),
+      optional(seq("=", optional(field("default_value", choice($.initializer_list, $._expression))))),
     ),
 
     // =========================================================================
@@ -509,11 +504,6 @@ module.exports = grammar({
       repeat(seq(",", $.type)),
       $._template_close,
     ),
-
-    scope: $ => prec.left(choice(
-      "::",
-      seq(optional("::"), repeat1(seq($.identifier, optional($.template_type_list), "::"))),
-    )),
 
     datatype: $ => choice(
       $.identifier,

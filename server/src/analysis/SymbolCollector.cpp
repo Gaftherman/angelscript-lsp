@@ -286,32 +286,6 @@ namespace angel_lsp::analysis
             }
         }
 
-        uint32_t topCount = ts_node_child_count(rootNode);
-        for (uint32_t i = 0; i < topCount; ++i)
-        {
-            TSNode child = ts_node_child(rootNode, i);
-            if (strcmp(ts_node_type(child), "using_declaration") == 0)
-            {
-                for (uint32_t u = 0; u < ts_node_child_count(child); ++u)
-                {
-                    TSNode uChild = ts_node_child(child, u);
-                    std::string uText = GetNodeText(uChild, sourceCode);
-                    if (u > 1 && IsReservedKeyword(uText))
-                    {
-                        Diagnostic diag;
-                        diag.range.start.line = ts_node_start_point(child).row;
-                        diag.range.start.character = ts_node_start_point(child).column;
-                        diag.range.end.line = ts_node_end_point(child).row;
-                        diag.range.end.character = ts_node_end_point(child).column;
-                        diag.code = "as-syntax-error";
-                        diag.message = "Expected identifier";
-                        diagnostics.push_back(diag);
-                        break;
-                    }
-                }
-            }
-        }
-
         ts_query_cursor_delete(cursor);
         ts_tree_delete(tree);
         return diagnostics;
@@ -391,7 +365,7 @@ namespace angel_lsp::analysis
             return result;
         }
 
-        if (nodeSymbol == m_symIdentifier)
+        if (nodeSymbol == m_symIdentifier || strcmp(ts_node_type(typeNode), "scoped_type") == 0)
         {
             result.baseTypeName = GetNodeText(typeNode, sourceCode);
             result.kind = TypeKind::Unknown;
@@ -407,7 +381,14 @@ namespace angel_lsp::analysis
             TSNode child = ts_node_child(typeNode, i);
             TSSymbol childSym = ts_node_symbol(child);
 
-            if (childSym == m_symDatatype)
+            if (strcmp(ts_node_type(child), "scoped_type") == 0)
+            {
+                result.baseTypeName = GetNodeText(child, sourceCode);
+                result.kind = TypeKind::Unknown;
+                datatypeText = result.baseTypeName;
+                prevChild = child;
+            }
+            else if (childSym == m_symDatatype)
             {
                 TSNode inner = ts_node_named_child(child, 0);
                 if (!ts_node_is_null(inner))
@@ -442,7 +423,7 @@ namespace angel_lsp::analysis
                         {
                             result.baseTypeName = inner.baseTypeName;
                             result.isHandle = inner.isHandle || result.isHandle;
-                            result.hasPrimitiveHandle = inner.hasPrimitiveHandle || result.hasPrimitiveHandle;
+                            result.hasPrimitiveHandle = inner.hasPrimitiveHandle;
                             result.arrayDepth += inner.arrayDepth;
                             if (inner.kind != TypeKind::Unknown)
                             {
@@ -782,21 +763,9 @@ namespace angel_lsp::analysis
         TypeExtractionResult retInfo = ExtractTypeInfo(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(funcNode, sourceCode);
 
-        if (strcmp(ts_node_type(funcNode), "import_declaration") == 0)
+        if (ts_node_symbol(funcNode) == m_symImportDeclaration)
         {
             modifiers.isExternal = true;
-            TSNode sourceNode = ts_node_child_by_field_name(funcNode, "source", 6);
-            std::string sourceStr = GetNodeText(sourceNode, sourceCode);
-            if (ts_node_is_null(sourceNode) || sourceStr.empty() || sourceStr.starts_with("\"\"\""))
-            {
-                Diagnostic diag;
-                diag.range.start.line = ts_node_start_point(funcNode).row;
-                diag.range.start.character = ts_node_start_point(funcNode).column;
-                diag.range.end.line = ts_node_end_point(funcNode).row;
-                diag.range.end.character = ts_node_end_point(funcNode).column;
-                diag.code = "as-syntax-error";
-                diag.message = "Expected string";
-            }
         }
 
         modifiers.isHandle = retInfo.isHandle || modifiers.isHandle;
@@ -847,6 +816,7 @@ namespace angel_lsp::analysis
         classSig.modifiers = ExtractModifiers(classNode, sourceCode);
         classSig.bases = ExtractBases(classNode, sourceCode);
         classSig.isTemplate = !ts_node_is_null(tParamNode);
+        classSig.hasBraces = (GetNodeText(classNode, sourceCode).find('{') != std::string::npos);
 
         sym.signature = classSig;
         symbolTable.AddSymbol(sym);

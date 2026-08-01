@@ -177,6 +177,7 @@ namespace angel_lsp::analysis
         std::vector<std::string> bases;
         SymbolModifiers modifiers;
         bool isTemplate = false;
+        bool hasBraces = false;
     };
 
     struct InterfaceSignature

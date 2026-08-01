@@ -344,33 +344,11 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
         }
 
-        if (sym.containerName.empty() && sig.hasValueReturn && sig.returnCallTargetName != stringTypeName && sig.returnCallTargetName != arrayTypeName)
-        {
-            req.symbolTable.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &symsInTable) {
-                size_t nsSep = qName.rfind("::");
-                if (nsSep != std::string::npos)
-                {
-                    std::string unqualName = qName.substr(nsSep + 2);
-                    if (!req.symbolTable.HasSymbol(unqualName))
-                    {
-                        for (const auto &s : symsInTable)
-                        {
-                            if (s.fileUri == req.fileUri && s.type == SymbolType::Class)
-                            {
-                                if (!s.name.empty() && sig.returnCallTargetName == unqualName)
-                                {
-                                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", unqualName));
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
 
 
 
-        if (!isInsideClass && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.modifiers.access == AccessModifier::Protected || sig.modifiers.access == AccessModifier::Private))
+
+        if (!isInsideClass && (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.modifiers.isProperty || sig.modifiers.access == AccessModifier::Protected || sig.modifiers.access == AccessModifier::Private))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
         }
@@ -551,13 +529,7 @@ namespace angel_lsp::analysis
                 }
             }
         }
-        else
-        {
-            if (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal)
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
-            }
-        }
+
 
         if (sig.returnTypeKind == TypeKind::Unknown && !sig.returnBaseTypeName.empty())
         {
@@ -610,10 +582,7 @@ namespace angel_lsp::analysis
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-unresolved-type", "auto"));
             }
 
-            if (param.isHandle && param.baseTypeName == stringTypeName)
-            {
-                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-handle-on-primitive", param.baseTypeName));
-            }
+
 
             if (param.modifier == ParameterModifier::InOut &&
                 (param.isHandle || IsPrimitiveTypeName(param.baseTypeName) || param.baseTypeName == stringTypeName || param.typeKind == TypeKind::String || param.typeKind == TypeKind::Int32 || param.typeKind == TypeKind::Float || param.typeKind == TypeKind::Bool))
@@ -753,6 +722,50 @@ namespace angel_lsp::analysis
             }
         }
 
+
+
+        std::string rawBaseType = sig.baseTypeName;
+        if (rawBaseType.rfind("::", 0) == 0)
+        {
+            rawBaseType = rawBaseType.substr(2);
+        }
+
+        if (rawBaseType.find("::") != std::string::npos)
+        {
+            std::string currentPrefix = "";
+            size_t start = 0;
+            size_t end = rawBaseType.find("::");
+            bool missingNamespace = false;
+            while (end != std::string::npos)
+            {
+                std::string part = rawBaseType.substr(start, end - start);
+                if (!currentPrefix.empty())
+                {
+                    currentPrefix += "::";
+                }
+                currentPrefix += part;
+
+                if (!req.symbolTable.HasSymbolAnywhere(currentPrefix) && !req.symbolTable.HasSymbol(currentPrefix))
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", part));
+                    missingNamespace = true;
+                    break;
+                }
+
+                start = end + 2;
+                end = rawBaseType.find("::", start);
+            }
+
+            if (!missingNamespace)
+            {
+                if (!req.symbolTable.HasSymbolAnywhere(rawBaseType) && !req.symbolTable.HasSymbol(rawBaseType))
+                {
+                    std::string targetType = rawBaseType.substr(start);
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", targetType));
+                }
+            }
+        }
+
         static const ankerl::unordered_dense::set<std::string> invalidDefaultValues = {
             "class", "interface", "enum", "typedef", "funcdef", "namespace", "return"
         };
@@ -869,7 +882,7 @@ namespace angel_lsp::analysis
             }
         }
 
-        if (sig.typeKind == TypeKind::Unknown && sig.baseTypeName != "auto" && !sig.baseTypeName.empty())
+        if (sig.typeKind == TypeKind::Unknown && sig.baseTypeName != "auto" && !sig.baseTypeName.empty() && sig.baseTypeName.find("::") == std::string::npos)
         {
             if (sig.baseTypeName != stringTypeName && sig.baseTypeName != arrayTypeName &&
                 !req.symbolTable.HasSymbolAnywhere(sig.baseTypeName))
@@ -1075,6 +1088,11 @@ namespace angel_lsp::analysis
         }
 
         const auto &sig = sym.GetClass();
+
+        if (!sig.hasBraces && !sig.modifiers.isExternal)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
 
         if (sig.modifiers.isExternal && !sig.modifiers.isShared)
         {

@@ -4,6 +4,7 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
+#include <tree_sitter/api.h>
 #include "utils/LspLogger.h"
 
 using namespace angel_lsp::analysis;
@@ -482,5 +483,19 @@ TEST_CASE("SymbolCollector - TypeInfo extraction from TSNode")
         CHECK(sym.GetVariable().modifiers.isHandle == false);
         CHECK(sym.GetVariable().baseTypeName == "Player");
     }
+}
+
+TEST_CASE("SymbolCollector - Parse Error on Multiple Consecutive Colons")
+{
+    std::string sourceCode = ":::::::::::::::::::::::var::::name varname;";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto diagnostics = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-syntax-error");
 }
 

@@ -92,6 +92,38 @@ TEST_CASE("SemanticAnalyzer - Level 2: Void Variable and Out Default Parameter")
     CHECK(diagnostics[0].code == "as-err-void-variable");
 }
 
+TEST_CASE("SemanticAnalyzer - Nested Namespaces Validation")
+{
+    std::string sourceCode = R"(
+namespace Outer
+{
+    namespace Inner
+    {
+        class Target {}
+    }
+}
+
+Outer::Inner::Target validVar;
+Outer::Inner::MissingType invalidTypeVar;
+Outer::MissingNamespace::Target invalidNsVar;
+)";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() == 2);
+    CHECK(diagnostics[0].code == "as-err-unresolved-type");
+    CHECK(diagnostics[1].code == "as-err-unresolved-type");
+}
+
 TEST_CASE("SemanticAnalyzer - Level 3: Duplicate Symbol Declarations")
 {
     std::string sourceCode = "int gVar;\nint gVar;\nvoid Action(int a) {}\nvoid Action(int b) {}\n";
