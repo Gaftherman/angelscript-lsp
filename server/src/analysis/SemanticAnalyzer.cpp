@@ -44,31 +44,6 @@ namespace angel_lsp::analysis
     {
         std::vector<Diagnostic> diagnostics;
 
-        bool hasConcreteSymbols = false;
-        bool hasMixinClass = false;
-        const Symbol *firstMixinSym = nullptr;
-
-        request.symbolTable.ForEachSymbol(
-            [&](const std::string &qn, const std::vector<Symbol> &symbols)
-            {
-                for (const Symbol &sym : symbols)
-                {
-                    if (sym.fileUri != request.fileUri)
-                        continue;
-
-                    if (sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin)
-                    {
-                        hasMixinClass = true;
-                        if (!firstMixinSym)
-                            firstMixinSym = &sym;
-                    }
-                    else
-                    {
-                        hasConcreteSymbols = true;
-                    }
-                }
-            });
-
         request.symbolTable.ForEachSymbol(
             [&](const std::string &qualifiedName, const std::vector<Symbol> &symbols)
             {
@@ -117,17 +92,8 @@ namespace angel_lsp::analysis
         return diagnostics;
     }
 
-    void SemanticAnalyzer::ValidateDuplicates(const std::string &qualifiedName, const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    bool SemanticAnalyzer::Rule_DuplicateTypeConflict(const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        if (symbols.size() <= 1)
-            return;
-
-        const SymbolType firstType = symbols[0].type;
-
-        if (firstType == SymbolType::Namespace)
-            return;
-
-        // 1. Cross-type name conflict detection (e.g. function/variable named after an existing class, interface, funcdef, or typedef)
         const Symbol *typeDefiningSymbol = nullptr;
         for (const auto &sym : symbols)
         {
@@ -152,19 +118,25 @@ namespace angel_lsp::analysis
                     &sym != typeDefiningSymbol)
                 {
                     const std::string typeName = SymbolTypeToString(typeDefiningSymbol->type);
+                    DebugDiag("Rule_DuplicateTypeConflict", "as-err-name-conflict", sym);
                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", sym.name, typeName));
                     hasConflict = true;
                 }
             }
             if (hasConflict)
-                return;
+                return true;
         }
 
-        // 2. Function vs Variable and Enum vs Variable collisions
+        return false;
+    }
+
+    bool SemanticAnalyzer::Rule_DuplicateVarCallableCollision(const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
         bool hasFunction = false;
         bool hasEnum = false;
         bool hasVariable = false;
         const Symbol *varSym = nullptr;
+
         for (const auto &s : symbols)
         {
             if (s.fileUri != req.fileUri) continue;
@@ -172,19 +144,28 @@ namespace angel_lsp::analysis
             if (s.type == SymbolType::Enum) hasEnum = true;
             if (s.type == SymbolType::Variable) { hasVariable = true; varSym = &s; }
         }
+
         if (hasFunction && hasVariable && varSym)
         {
+            DebugDiag("Rule_DuplicateVarCallableCollision", "as-err-name-conflict", *varSym);
             diagnostics.push_back(CreateDiagnostic(*varSym, req, "as-err-name-conflict", varSym->name, "function"));
-            return;
+            return true;
         }
         if (hasEnum && hasVariable && varSym)
         {
+            DebugDiag("Rule_DuplicateVarCallableCollision", "as-err-name-conflict", *varSym);
             diagnostics.push_back(CreateDiagnostic(*varSym, req, "as-err-name-conflict", varSym->name, "named type"));
-            return;
+            return true;
         }
 
-        // 3. Same-type duplicate validation
+        return false;
+    }
+
+    void SemanticAnalyzer::Rule_DuplicateSignature(const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const SymbolType firstType = symbols[0].type;
         bool allSameType = true;
+
         for (size_t i = 1; i < symbols.size(); ++i)
         {
             if (symbols[i].type != firstType)
@@ -205,6 +186,7 @@ namespace angel_lsp::analysis
 
             for (size_t i = 1; i < currentFileSymbols.size(); ++i)
             {
+                DebugDiag("Rule_DuplicateSignature", "as-err-duplicate-symbol", *currentFileSymbols[i]);
                 diagnostics.push_back(CreateDiagnostic(*currentFileSymbols[i], req, "as-err-duplicate-symbol", currentFileSymbols[i]->name));
             }
         }
@@ -213,7 +195,6 @@ namespace angel_lsp::analysis
         {
             if (firstType == SymbolType::Funcdef)
             {
-                // Funcdefs cannot be overloaded by signature; any duplicate name in the same scope is an error.
                 std::vector<const Symbol *> currentFileSymbols;
                 for (const auto &sym : symbols)
                 {
@@ -223,6 +204,7 @@ namespace angel_lsp::analysis
 
                 for (size_t i = 1; i < currentFileSymbols.size(); ++i)
                 {
+                    DebugDiag("Rule_DuplicateSignature", "as-err-duplicate-symbol", *currentFileSymbols[i]);
                     diagnostics.push_back(CreateDiagnostic(*currentFileSymbols[i], req, "as-err-duplicate-symbol", currentFileSymbols[i]->name));
                 }
                 return;
@@ -262,6 +244,7 @@ namespace angel_lsp::analysis
 
                     if (paramsMatch)
                     {
+                        DebugDiag("Rule_DuplicateSignature", "as-err-duplicate-symbol", symbols[i]);
                         diagnostics.push_back(CreateDiagnostic(symbols[i], req, "as-err-duplicate-symbol", symbols[i].name));
                         break;
                     }
@@ -270,148 +253,300 @@ namespace angel_lsp::analysis
         }
     }
 
-    void SemanticAnalyzer::ValidateFunction(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateDuplicates(const std::string &qualifiedName, const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (symbols.size() <= 1)
+            return;
+
+        if (symbols[0].type == SymbolType::Namespace)
+            return;
+
+        if (Rule_DuplicateTypeConflict(symbols, req, diagnostics))
+            return;
+
+        if (Rule_DuplicateVarCallableCollision(symbols, req, diagnostics))
+            return;
+
+        Rule_DuplicateSignature(symbols, req, diagnostics);
+    }
+
+    SemanticAnalyzer::FunctionContext SemanticAnalyzer::BuildFunctionContext(const Symbol &sym, const SemanticAnalysisRequest &req) const
+    {
+        FunctionContext ctx;
+        ctx.isCtor = (!sym.containerName.empty() && sym.name == sym.containerName);
+        ctx.isDtor = (!sym.name.empty() && sym.name[0] == '~');
+
+        if (!sym.containerName.empty())
+        {
+            auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
+            if (parentOpt)
+            {
+                if (parentOpt->type == SymbolType::Class || parentOpt->type == SymbolType::Interface)
+                {
+                    ctx.isInsideClass = true;
+                    if (parentOpt->type == SymbolType::Interface)
+                    {
+                        ctx.isInterface = true;
+                    }
+                    else if (parentOpt->type == SymbolType::Class && parentOpt->GetClass().modifiers.isMixin)
+                    {
+                        ctx.isInsideMixin = true;
+                    }
+                }
+            }
+        }
+        return ctx;
+    }
+
+    void SemanticAnalyzer::DebugDiag(const std::string &ruleName, const std::string &code, const Symbol &sym) const
+    {
+        if (!m_logger)
+        {
+            return;
+        }
+
+        m_logger->LogDebug(fmt::format("[SA-DEBUG] rule={:<35} code={:<35} sym={} container={}",
+                                       ruleName, code, sym.name, sym.containerName));
+    }
+
+    void SemanticAnalyzer::DebugParamDiag(const std::string &ruleName, const std::string &code, const ParameterInformation &param, const Symbol &parentSym) const
+    {
+        if (!m_logger)
+        {
+            return;
+        }
+
+        m_logger->LogDebug(fmt::format("[SA-DEBUG] rule={:<35} code={:<35} param={} parent={}",
+                                       ruleName, code, param.name, parentSym.name));
+    }
+
+    bool SemanticAnalyzer::Rule_FunctionName(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         std::string_view stringTypeName = req.GetStringTypeName();
         std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (sym.containerName.empty() && (sym.name == arrayTypeName || sym.name == stringTypeName))
         {
+            DebugDiag("Rule_FunctionName", "as-err-name-conflict", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", sym.name, "registered object type"));
-            return;
+            return false;
         }
 
         if (IsReservedKeyword(sym.name))
         {
+            DebugDiag("Rule_FunctionName", "as-err-reserved-keyword-name", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
-            return;
+            return false;
         }
 
-        const auto &sig = sym.GetFunction();
+        return true;
+    }
 
+    void SemanticAnalyzer::Rule_FunctionBody(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const auto &sig = sym.GetFunction();
 
         if (!sig.hasBody && !sig.isInterfaceMethod && !sig.modifiers.isExternal && !sig.modifiers.isDelete)
         {
+            DebugDiag("Rule_FunctionBody", "as-err-missing-body", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-missing-body", sym.name));
         }
 
         if ((sig.modifiers.isDelete || sig.modifiers.isExternal) && sig.hasBody)
         {
+            DebugDiag("Rule_FunctionBody", "as-err-delete-with-body", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-delete-with-body", sym.name));
         }
 
+        if (!sym.containerName.empty() && sig.returnType.empty() && sym.name != sym.containerName && sym.name[0] != '~')
+        {
+            DebugDiag("Rule_FunctionBody", "as-err-missing-body", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-missing-body", sym.name));
+        }
+    }
+
+    void SemanticAnalyzer::Rule_FunctionReturnType(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
+        const auto &sig = sym.GetFunction();
+
         if ((sig.returnHasPrimitiveHandle && !sig.returnIsArray && sig.returnType.find("[]") == std::string::npos && sig.returnType.find("array<") == std::string::npos) || (sig.modifiers.isHandle && sig.returnBaseTypeName == stringTypeName && !sig.returnIsArray))
         {
+            DebugDiag("Rule_FunctionReturnType", "as-err-handle-on-primitive", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
         }
 
         if (sig.returnBaseTypeName == "auto")
         {
+            DebugDiag("Rule_FunctionReturnType", "as-err-unresolved-type", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", "auto"));
-        }
-
-        if (!sym.name.empty() && sym.name[0] == '~')
-        {
-            if (sig.modifiers.isShared || sig.modifiers.isExternal)
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-            }
-        }
-
-        if (sig.modifiers.isDelete)
-        {
-            bool isMixinMember = false;
-            if (!sym.containerName.empty())
-            {
-                auto pOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
-                if (pOpt && pOpt->type == SymbolType::Class && pOpt->GetClass().modifiers.isMixin)
-                    isMixinMember = true;
-            }
-            bool isAutoGeneratable = isMixinMember || (sym.name == "opAssign" || sym.name == "opEquals" || sym.name == "opCmp" || (!sym.containerName.empty() && (sym.name == sym.containerName || sym.name == "~" + sym.containerName)));
-            if (!isAutoGeneratable)
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-            }
-        }
-
-        if (sig.modifiers.isProperty)
-        {
-            if (!sym.name.starts_with("get_") && !sym.name.starts_with("set_"))
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-            }
         }
 
         if (sig.returnTypeKind == TypeKind::Void && sig.returnIsConst)
         {
+            DebugDiag("Rule_FunctionReturnType", "as-err-const-void-return", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-const-void-return"));
         }
 
         if (sig.modifiers.isExternal && !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" && !IsPrimitiveTypeName(sig.returnBaseTypeName) && sig.returnBaseTypeName != stringTypeName && sig.returnBaseTypeName != arrayTypeName && !req.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
         {
+            DebugDiag("Rule_FunctionReturnType", "as-err-unresolved-type", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
         }
 
         if (sig.returnTypeKind == TypeKind::Void && sig.modifiers.isReturnReference)
         {
+            DebugDiag("Rule_FunctionReturnType", "as-err-void-reference", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-reference"));
         }
 
-        bool isInsideClass = false;
-        bool isInsideMixin = false;
-        if (!sym.containerName.empty())
-        {
-            auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
-            if (parentOpt && (parentOpt->type == SymbolType::Class || parentOpt->type == SymbolType::Interface))
-            {
-                isInsideClass = true;
-                if (parentOpt->type == SymbolType::Class && parentOpt->GetClass().modifiers.isMixin)
-                {
-                    isInsideMixin = true;
-                    bool isCtorCheck = (sym.name == sym.containerName);
-                    bool isDtorCheck = (!sym.name.empty() && sym.name[0] == '~');
-                    if (isCtorCheck || isDtorCheck || sig.modifiers.isDelete)
-                    {
-                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-                    }
-                }
-            }
-        }
-
-        if (sig.hasValueReturn && IsReservedKeyword(sig.returnExpression) && sig.returnExpression != "null" && sig.returnExpression != "true" && sig.returnExpression != "false")
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-        }
-
-        if (sig.hasValueReturn && !sig.returnCallTargetName.empty())
-        {
-            const std::string &target = sig.returnCallTargetName;
-            if (target.find("::") == std::string::npos &&
-                !IsPrimitiveTypeName(target) && target != stringTypeName && target != arrayTypeName &&
-                !target.starts_with("array<") && !target.starts_with(std::string(arrayTypeName) + "<") &&
-                target != "null" && target != "true" && target != "false")
-            {
-                std::string expectedQN = sym.containerName.empty() ? target : sym.containerName + "::" + target;
-                if (!req.symbolTable.HasSymbol(expectedQN) && !req.symbolTable.HasSymbol(target))
-                {
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", target));
-                }
-            }
-        }
-
-        // Return value in void function (e.g. void f() { return 42; })
         if (sig.returnTypeKind == TypeKind::Void && sig.hasValueReturn)
         {
+            DebugDiag("Rule_FunctionReturnType", "as-syntax-error", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
         }
 
-        // Primitive return type returning null (e.g. int f() { return null; }, bool f() { return null; })
         if (IsPrimitiveTypeName(sig.returnBaseTypeName) && !sig.returnIsArray && sig.returnTypeKind != TypeKind::Array && sig.returnType.find("[]") == std::string::npos && sig.returnType.find("array<") == std::string::npos && sig.returnExpression == "null")
         {
+            DebugDiag("Rule_FunctionReturnType", "as-err-handle-on-primitive", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
         }
 
-        // Control flow keywords outside loops (break;, continue;)
+        if (sig.returnBaseTypeName != "void" && sig.returnTypeKind != TypeKind::Void && !sig.returnBaseTypeName.empty() && !ctx.isCtor && (!sym.name.empty() && sym.name[0] != '~'))
+        {
+            if (sig.hasBody && !sig.hasValueReturn && !sig.hasEmptyReturn)
+            {
+                DebugDiag("Rule_FunctionReturnType", "as-syntax-error", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            }
+        }
+
+        bool isReturnArray = sig.returnIsArray || sig.returnBaseTypeName == arrayTypeName;
+        bool isArrayHandle = sig.modifiers.isHandle || sig.returnType.find("@") != std::string::npos;
+        if (isReturnArray && !isArrayHandle && !sig.returnHasPrimitiveHandle && sig.hasNullReturn)
+        {
+            DebugDiag("Rule_FunctionReturnType", "as-err-handle-on-primitive", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
+        }
+
+        if (!ctx.isInsideClass && sig.modifiers.isReturnReference && IsPrimitiveTypeName(sig.returnBaseTypeName) && !sig.modifiers.isConst && !sig.returnIsConst)
+        {
+            DebugDiag("Rule_FunctionReturnType", "as-err-invalid-reference-return", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-invalid-reference-return", sig.returnBaseTypeName));
+        }
+
+        bool isExternalFunc = sig.modifiers.isExternal;
+        if ((sig.returnTypeKind == TypeKind::Unknown || isExternalFunc) && !sig.returnBaseTypeName.empty())
+        {
+            if (sig.returnBaseTypeName != stringTypeName && sig.returnBaseTypeName != arrayTypeName &&
+                !sig.returnBaseTypeName.starts_with("array<") &&
+                !IsPrimitiveTypeName(sig.returnBaseTypeName) &&
+                !req.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
+            {
+                DebugDiag("Rule_FunctionReturnType", "as-err-unresolved-type", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
+            }
+        }
+    }
+
+    void SemanticAnalyzer::Rule_FunctionModifiers(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const auto &sig = sym.GetFunction();
+
+        if (sig.modifiers.isProperty)
+        {
+            if (!sym.name.starts_with("get_") && !sym.name.starts_with("set_"))
+            {
+                DebugDiag("Rule_FunctionModifiers", "as-syntax-error", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            }
+        }
+
+        if (!ctx.isInsideClass && (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.modifiers.isProperty || sig.modifiers.access == AccessModifier::Protected || sig.modifiers.access == AccessModifier::Private))
+        {
+            DebugDiag("Rule_FunctionModifiers", "as-err-global-function-qualifiers", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
+        }
+
+        if (sig.modifiers.isDelete && (sig.modifiers.isConst || (!ctx.isCtor && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit))))
+        {
+            DebugDiag("Rule_FunctionModifiers", "as-err-delete-with-other-qualifier", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-delete-with-other-qualifier", sym.name));
+        }
+    }
+
+    void SemanticAnalyzer::Rule_CtorDtor(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const auto &sig = sym.GetFunction();
+
+        if (ctx.isDtor)
+        {
+            if (sig.modifiers.isShared || sig.modifiers.isExternal)
+            {
+                DebugDiag("Rule_CtorDtor", "as-syntax-error", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            }
+        }
+
+        if (ctx.isCtor || ctx.isDtor)
+        {
+            if (sig.modifiers.isFinal || sig.modifiers.isAbstract)
+            {
+                DebugDiag("Rule_CtorDtor", "as-syntax-error", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            }
+        }
+
+        if (sig.returnTypeKind != TypeKind::Void && sig.returnType != "void" && !ctx.isCtor && !ctx.isDtor)
+        {
+            if (sig.hasEmptyReturn)
+            {
+                DebugDiag("Rule_CtorDtor", "as-err-destructor-return-type", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
+            }
+        }
+
+        if (ctx.isCtor && !sig.returnBaseTypeName.empty())
+        {
+            DebugDiag("Rule_CtorDtor", "as-err-destructor-return-type", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
+        }
+
+        if (ctx.isCtor || ctx.isDtor)
+        {
+            if (sig.hasValueReturn)
+            {
+                DebugDiag("Rule_CtorDtor", "as-err-destructor-return-type", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
+            }
+        }
+
+        if (ctx.isDtor)
+        {
+            bool isUnnamedVoid = (sig.parameters.size() == 1 && (sig.parameters[0].baseTypeName == "void" || sig.parameters[0].typeKind == TypeKind::Void) && sig.parameters[0].name.empty());
+            if (!sig.parameters.empty() && !isUnnamedVoid)
+            {
+                DebugDiag("Rule_CtorDtor", "as-err-destructor-param", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-param", sym.name));
+            }
+            if (!sig.returnType.empty())
+            {
+                DebugDiag("Rule_CtorDtor", "as-err-destructor-return-type", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
+            }
+            if (sig.modifiers.isDelete)
+            {
+                DebugDiag("Rule_CtorDtor", "as-err-destructor-delete", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-delete", sym.name));
+            }
+        }
+    }
+
+    void SemanticAnalyzer::Rule_FunctionBodyFlow(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const auto &sig = sym.GetFunction();
+
         if (!sig.defaultValue.empty())
         {
             if ((sig.defaultValue.find("break;") != std::string::npos || sig.defaultValue.find("continue;") != std::string::npos) &&
@@ -419,10 +554,25 @@ namespace angel_lsp::analysis
                 sig.defaultValue.find("for") == std::string::npos &&
                 sig.defaultValue.find("switch") == std::string::npos)
             {
+                DebugDiag("Rule_FunctionBodyFlow", "as-syntax-error", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
             }
 
-            // Generalized cast<T> validation for primitive or unresolved types
+            if (sig.defaultValue.find("case '") != std::string::npos)
+            {
+                DebugDiag("Rule_FunctionBodyFlow", "as-syntax-error", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            }
+        }
+    }
+
+    void SemanticAnalyzer::Rule_FunctionBodyCast(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        std::string_view stringTypeName = req.GetStringTypeName();
+        const auto &sig = sym.GetFunction();
+
+        if (!sig.defaultValue.empty())
+        {
             size_t castPos = sig.defaultValue.find("cast<");
             while (castPos != std::string::npos)
             {
@@ -435,35 +585,21 @@ namespace angel_lsp::analysis
 
                     if (castTarget == "void" || IsPrimitiveTypeName(castTarget) || castTarget == stringTypeName || (!req.symbolTable.HasSymbolAnywhere(castTarget) && !castTarget.empty()))
                     {
+                        DebugDiag("Rule_FunctionBodyCast", "as-err-unresolved-type", sym);
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", "cast"));
                     }
                 }
                 castPos = sig.defaultValue.find("cast<", castPos + 5);
             }
+        }
+    }
 
-            if (sig.defaultValue.find("case '") != std::string::npos)
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-            }
+    void SemanticAnalyzer::Rule_FunctionBodyScope(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const auto &sig = sym.GetFunction();
 
-            if (sig.defaultValue.find("super(") != std::string::npos || sig.defaultValue.find("super (") != std::string::npos)
-            {
-                if (!sym.containerName.empty())
-                {
-                    const auto *classSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
-                    if (classSyms)
-                    {
-                        for (const auto &cSym : *classSyms)
-                        {
-                            if (cSym.type == SymbolType::Class && cSym.GetClass().bases.empty())
-                            {
-                                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-                            }
-                        }
-                    }
-                }
-            }
-            // Scoped member/symbol resolution check (e.g. Base::f() where Base::f is not declared)
+        if (!sig.defaultValue.empty())
+        {
             size_t scopePos = sig.defaultValue.find("::");
             while (scopePos != std::string::npos && scopePos > 0)
             {
@@ -484,145 +620,95 @@ namespace angel_lsp::analysis
                 {
                     if (!req.symbolTable.HasSymbolAnywhere(qualifiedName))
                     {
+                        DebugDiag("Rule_FunctionBodyScope", "as-syntax-error", sym);
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
                         break;
                     }
                 }
                 scopePos = sig.defaultValue.find("::", endIdent);
             }
+        }
+    }
+
+    void SemanticAnalyzer::Rule_FunctionReturnExpr(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
+        const auto &sig = sym.GetFunction();
+
+        if (sig.hasValueReturn && IsReservedKeyword(sig.returnExpression) && sig.returnExpression != "null" && sig.returnExpression != "true" && sig.returnExpression != "false")
+        {
+            DebugDiag("Rule_FunctionReturnExpr", "as-syntax-error", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
+
+        if (sig.hasValueReturn && !sig.returnCallTargetName.empty())
+        {
+            const std::string &target = sig.returnCallTargetName;
+            if (target.find("::") == std::string::npos &&
+                !IsPrimitiveTypeName(target) && target != stringTypeName && target != arrayTypeName &&
+                !target.starts_with("array<") && !target.starts_with(std::string(arrayTypeName) + "<") &&
+                target != "null" && target != "true" && target != "false")
+            {
+                std::string expectedQN = sym.containerName.empty() ? target : sym.containerName + "::" + target;
+                if (!req.symbolTable.HasSymbol(expectedQN) && !req.symbolTable.HasSymbol(target))
+                {
+                    DebugDiag("Rule_FunctionReturnExpr", "as-err-unresolved-type", sym);
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", target));
+                }
+            }
+        }
+
+        if (!sig.defaultValue.empty())
+        {
+            if (sig.defaultValue.find("super(") != std::string::npos || sig.defaultValue.find("super (") != std::string::npos)
+            {
+                if (!sym.containerName.empty())
+                {
+                    const auto *classSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+                    if (classSyms)
+                    {
+                        for (const auto &cSym : *classSyms)
+                        {
+                            if (cSym.type == SymbolType::Class && cSym.GetClass().bases.empty())
+                            {
+                                DebugDiag("Rule_FunctionReturnExpr", "as-syntax-error", sym);
+                                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                            }
+                        }
+                    }
+                }
+            }
 
             if (sig.modifiers.isExternal)
             {
                 if (sig.defaultValue.find("inout") != std::string::npos || sig.defaultValue.find("&inout") != std::string::npos)
                 {
+                    DebugDiag("Rule_FunctionReturnExpr", "as-syntax-error", sym);
                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
                 }
                 if (!sig.returnBaseTypeName.empty() && !IsPrimitiveTypeName(sig.returnBaseTypeName) && sig.returnBaseTypeName != stringTypeName && sig.returnBaseTypeName != arrayTypeName && !sig.returnBaseTypeName.starts_with("array<") && !req.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
                 {
+                    DebugDiag("Rule_FunctionReturnExpr", "as-err-unresolved-type", sym);
                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
                 }
             }
         }
 
-        bool isCtor = (!sym.containerName.empty() && sym.name == sym.containerName);
-
-        if (sig.returnBaseTypeName != "void" && sig.returnTypeKind != TypeKind::Void && !sig.returnBaseTypeName.empty() && !isCtor && (!sym.name.empty() && sym.name[0] != '~'))
-        {
-            if (sig.hasBody && !sig.hasValueReturn && !sig.hasEmptyReturn)
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-            }
-        }
-
-        if (!isInsideClass && (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.modifiers.isProperty || sig.modifiers.access == AccessModifier::Protected || sig.modifiers.access == AccessModifier::Private))
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
-        }
-
-        // Constructors and destructors cannot use class-level declaration modifiers (final, abstract).
-        // 'final' and 'abstract' as declaration_modifiers only apply to class declarations.
-        // e.g.: class C { final C() {} } -> invalid, causes assertion error in native compiler.
-        // Note: 'class C { C() final {} }' is VALID (here 'final' is a func_attribute, not declaration_modifier).
-        if (isCtor || (!sym.name.empty() && sym.name[0] == '~'))
-        {
-            if (sig.modifiers.isFinal || sig.modifiers.isAbstract)
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
-            }
-        }
-
-        if (sig.modifiers.isDelete && (sig.modifiers.isConst || (!isCtor && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit))))
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-delete-with-other-qualifier", sym.name));
-        }
-
-        bool isReturnArray = sig.returnIsArray || sig.returnBaseTypeName == arrayTypeName;
-        bool isArrayHandle = sig.modifiers.isHandle || sig.returnType.find("@") != std::string::npos;
-        if (isReturnArray && !isArrayHandle && !sig.returnHasPrimitiveHandle && sig.hasNullReturn)
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
-        }
-
-
-
-        if (!sym.containerName.empty() && sig.returnType.empty() && sym.name != sym.containerName && sym.name[0] != '~')
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-missing-body", sym.name));
-        }
-
-        if (!isInsideClass && sig.modifiers.isReturnReference && IsPrimitiveTypeName(sig.returnBaseTypeName) && !sig.modifiers.isConst && !sig.returnIsConst)
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-invalid-reference-return", sig.returnBaseTypeName));
-        }
-
-
-
-        if (sig.returnCallTargetName == "super" && isInsideClass)
+        if (sig.returnCallTargetName == "super" && ctx.isInsideClass)
         {
             auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
             if (parentOpt && parentOpt->type == SymbolType::Class && parentOpt->GetClass().bases.empty())
             {
+                DebugDiag("Rule_FunctionReturnExpr", "as-err-no-base-class", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-no-base-class", sym.name));
             }
         }
+    }
 
-
-        if (sig.returnTypeKind != TypeKind::Void && sig.returnType != "void" && !isCtor && (!sym.name.empty() && sym.name[0] != '~'))
-        {
-            if (sig.hasEmptyReturn)
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
-            }
-        }
-
-        if (isCtor && !sig.returnBaseTypeName.empty())
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
-        }
-
-        if (isCtor || (!sym.name.empty() && sym.name[0] == '~'))
-        {
-            if (sig.hasValueReturn)
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
-            }
-        }
-
-        if (!sym.name.empty() && sym.name[0] == '~')
-        {
-            bool isUnnamedVoid = (sig.parameters.size() == 1 && (sig.parameters[0].baseTypeName == "void" || sig.parameters[0].typeKind == TypeKind::Void) && sig.parameters[0].name.empty());
-            if (!sig.parameters.empty() && !isUnnamedVoid)
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-param", sym.name));
-            }
-            if (!sig.returnType.empty())
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-return-type", sym.name));
-            }
-            if (sig.modifiers.isDelete)
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-destructor-delete", sym.name));
-            }
-        }
-
-        // Operator overload arity checks
-        if (sym.name.rfind("op", 0) == 0 && !sym.containerName.empty())
-        {
-            if (sym.name == "opEquals")
-            {
-                if (sig.parameters.empty() || (sig.returnType != "bool" && sig.returnType != "int"))
-                {
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-opequals-return-bool", sym.name));
-                }
-            }
-            else if (sym.name == "opCmp")
-            {
-                if (sig.returnType != "int" && sig.returnType != "bool")
-                {
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-opcmp-return-int", sym.name));
-                }
-            }
-        }
+    void SemanticAnalyzer::Rule_FunctionOverride(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const auto &sig = sym.GetFunction();
 
         if (!sym.containerName.empty())
         {
@@ -643,12 +729,12 @@ namespace angel_lsp::analysis
                 {
                     if (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal)
                     {
+                        DebugDiag("Rule_FunctionOverride", "as-err-global-function-qualifiers", sym);
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
                     }
                 }
                 else
                 {
-                    // For member functions, verify override is only used when the class has a base class or interface
                     if (sig.modifiers.isOverride)
                     {
                         for (const auto &cSym : *containerSyms)
@@ -662,11 +748,11 @@ namespace angel_lsp::analysis
                                 }
                                 if (cSym.GetClass().bases.empty())
                                 {
+                                    DebugDiag("Rule_FunctionOverride", "as-err-override-no-base", sym);
                                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
                                 }
                                 else
                                 {
-                                    // Check if base classes or interfaces define this method
                                     bool foundInHierarchy = false;
                                     for (const auto &baseName : cSym.GetClass().bases)
                                     {
@@ -679,6 +765,7 @@ namespace angel_lsp::analysis
                                     }
                                     if (!foundInHierarchy)
                                     {
+                                        DebugDiag("Rule_FunctionOverride", "as-err-override-no-base", sym);
                                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
                                     }
                                 }
@@ -689,21 +776,97 @@ namespace angel_lsp::analysis
                 }
             }
         }
+    }
 
+    void SemanticAnalyzer::Rule_OperatorOverload(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const auto &sig = sym.GetFunction();
 
-        bool isExternalFunc = sig.modifiers.isExternal;
-        if ((sig.returnTypeKind == TypeKind::Unknown || isExternalFunc) && !sig.returnBaseTypeName.empty())
+        if (sym.name.rfind("op", 0) == 0 && !sym.containerName.empty())
         {
-            if (sig.returnBaseTypeName != stringTypeName && sig.returnBaseTypeName != arrayTypeName &&
-                !sig.returnBaseTypeName.starts_with("array<") &&
-                !IsPrimitiveTypeName(sig.returnBaseTypeName) &&
-                !req.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
+            if (sym.name == "opEquals")
             {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
+                if (sig.parameters.empty() || (sig.returnType != "bool" && sig.returnType != "int"))
+                {
+                    DebugDiag("Rule_OperatorOverload", "as-err-opequals-return-bool", sym);
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-opequals-return-bool", sym.name));
+                }
+            }
+            else if (sym.name == "opCmp")
+            {
+                if (sig.returnType != "int" && sig.returnType != "bool")
+                {
+                    DebugDiag("Rule_OperatorOverload", "as-err-opcmp-return-int", sym);
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-opcmp-return-int", sym.name));
+                }
+            }
+        }
+    }
+
+    void SemanticAnalyzer::Rule_MixinConstraints(const Symbol &sym, const FunctionContext &ctx, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const auto &sig = sym.GetFunction();
+
+        if (sig.modifiers.isDelete)
+        {
+            bool isMixinMember = false;
+            if (!sym.containerName.empty())
+            {
+                auto pOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
+                if (pOpt && pOpt->type == SymbolType::Class && pOpt->GetClass().modifiers.isMixin)
+                {
+                    isMixinMember = true;
+                }
+            }
+            bool isAutoGeneratable = isMixinMember || (sym.name == "opAssign" || sym.name == "opEquals" || sym.name == "opCmp" || (!sym.containerName.empty() && (sym.name == sym.containerName || sym.name == "~" + sym.containerName)));
+            if (!isAutoGeneratable)
+            {
+                DebugDiag("Rule_MixinConstraints", "as-syntax-error", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
             }
         }
 
-        ValidateFunctionParameters(sym, sig, req, diagnostics);
+        if (!sym.containerName.empty())
+        {
+            auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
+            if (parentOpt && (parentOpt->type == SymbolType::Class || parentOpt->type == SymbolType::Interface))
+            {
+                if (parentOpt->type == SymbolType::Class && parentOpt->GetClass().modifiers.isMixin)
+                {
+                    bool isCtorCheck = (sym.name == sym.containerName);
+                    bool isDtorCheck = (!sym.name.empty() && sym.name[0] == '~');
+                    if (isCtorCheck || isDtorCheck || sig.modifiers.isDelete)
+                    {
+                        DebugDiag("Rule_MixinConstraints", "as-syntax-error", sym);
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                    }
+                }
+            }
+        }
+    }
+
+    void SemanticAnalyzer::ValidateFunction(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const FunctionContext ctx = BuildFunctionContext(sym, req);
+
+        if (!Rule_FunctionName(sym, ctx, req, diagnostics))
+        {
+            return;
+        }
+
+        Rule_FunctionBody(sym, ctx, req, diagnostics);
+        Rule_FunctionReturnType(sym, ctx, req, diagnostics);
+        Rule_FunctionModifiers(sym, ctx, req, diagnostics);
+        Rule_CtorDtor(sym, ctx, req, diagnostics);
+        Rule_FunctionBodyFlow(sym, ctx, req, diagnostics);
+        Rule_FunctionBodyCast(sym, ctx, req, diagnostics);
+        Rule_FunctionBodyScope(sym, ctx, req, diagnostics);
+        Rule_FunctionReturnExpr(sym, ctx, req, diagnostics);
+        Rule_FunctionOverride(sym, ctx, req, diagnostics);
+        Rule_OperatorOverload(sym, ctx, req, diagnostics);
+        Rule_MixinConstraints(sym, ctx, req, diagnostics);
+
+        ValidateFunctionParameters(sym, sym.GetFunction(), req, diagnostics);
     }
 
     void SemanticAnalyzer::ValidateFunctionParameters(const Symbol &sym, const FunctionSignature &sig, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
@@ -721,11 +884,13 @@ namespace angel_lsp::analysis
         {
             if (isExternalFunc && param.modifier == ParameterModifier::InOut)
             {
+                DebugParamDiag("ValidateFunctionParameters", "as-syntax-error", param, sym);
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-syntax-error"));
             }
 
             if (isExternalFunc && !param.baseTypeName.empty() && !IsPrimitiveTypeName(param.baseTypeName) && param.baseTypeName != stringTypeName && param.baseTypeName != arrayTypeName && !param.baseTypeName.starts_with("array<") && !req.symbolTable.HasSymbolAnywhere(param.baseTypeName))
             {
+                DebugParamDiag("ValidateFunctionParameters", "as-err-unresolved-type", param, sym);
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-unresolved-type", param.baseTypeName));
             }
 
@@ -735,6 +900,7 @@ namespace angel_lsp::analysis
             }
             else if (seenDefault && sym.type != SymbolType::Funcdef)
             {
+                DebugParamDiag("ValidateFunctionParameters", "as-err-default-param-order", param, sym);
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-default-param-order", param.name, sym.name));
             }
 
@@ -743,35 +909,39 @@ namespace angel_lsp::analysis
                 bool isUnnamedVoid = (sig.parameters.size() == 1 && param.name.empty());
                 if (!isUnnamedVoid && sym.type != SymbolType::Funcdef)
                 {
+                    DebugParamDiag("ValidateFunctionParameters", "as-err-void-parameter", param, sym);
                     diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-void-parameter", param.name, sym.name));
                 }
             }
 
             if (param.baseTypeName == "auto")
             {
+                DebugParamDiag("ValidateFunctionParameters", "as-err-unresolved-type", param, sym);
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-unresolved-type", "auto"));
             }
-
-
 
             if (param.modifier == ParameterModifier::InOut &&
                 (param.isHandle || IsPrimitiveTypeName(param.baseTypeName) || param.baseTypeName == stringTypeName || param.typeKind == TypeKind::String || param.typeKind == TypeKind::Int32 || param.typeKind == TypeKind::Float || param.typeKind == TypeKind::Bool))
             {
+                DebugParamDiag("ValidateFunctionParameters", "as-err-inout-on-primitive", param, sym);
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-inout-on-primitive", param.baseTypeName));
             }
 
             if (param.hasDoubleReference)
             {
+                DebugParamDiag("ValidateFunctionParameters", "as-err-double-reference", param, sym);
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-double-reference", param.baseTypeName));
             }
 
             bool isStandaloneRef = param.isStandaloneRef;
             if (isStandaloneRef && (IsPrimitiveTypeName(param.baseTypeName) || param.typeKind == TypeKind::Int32 || param.typeKind == TypeKind::Float || param.typeKind == TypeKind::Bool || param.typeKind == TypeKind::Double || param.typeKind == TypeKind::UInt32 || param.baseTypeName == stringTypeName))
             {
+                DebugParamDiag("ValidateFunctionParameters", "as-err-standalone-reference", param, sym);
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-standalone-reference", param.name));
             }
             else if (isStandaloneRef && !param.defaultValue.empty())
             {
+                DebugParamDiag("ValidateFunctionParameters", "as-err-invalid-reference-return", param, sym);
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-invalid-reference-return", param.baseTypeName));
             }
 
@@ -779,6 +949,7 @@ namespace angel_lsp::analysis
             {
                 if (seenParamNames.contains(param.name))
                 {
+                    DebugParamDiag("ValidateFunctionParameters", "as-err-duplicate-param", param, sym);
                     diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-duplicate-param", param.name, sym.name));
                 }
                 else
@@ -789,11 +960,13 @@ namespace angel_lsp::analysis
 
             if (param.hasPrimitiveHandle || (param.baseTypeName == stringTypeName && param.isHandle))
             {
+                DebugParamDiag("ValidateFunctionParameters", "as-err-handle-on-primitive", param, sym);
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-handle-on-primitive", param.baseTypeName));
             }
 
             if (!param.baseTypeName.empty() && !IsPrimitiveTypeName(param.baseTypeName) && param.baseTypeName != stringTypeName && param.baseTypeName != arrayTypeName && !req.symbolTable.HasSymbol(param.baseTypeName) && !req.symbolTable.HasSymbolAnywhere(param.baseTypeName))
             {
+                DebugParamDiag("ValidateFunctionParameters", "as-err-unresolved-type", param, sym);
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-unresolved-type", param.baseTypeName));
             }
 
@@ -806,6 +979,7 @@ namespace angel_lsp::analysis
                     {
                         if (gSym.containerName.empty() && gSym.type == SymbolType::Variable)
                         {
+                            DebugParamDiag("ValidateFunctionParameters", "as-warn-shadow-global", param, sym);
                             diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-warn-shadow-global", param.name, DiagnosticSeverity::Warning));
                             break;
                         }
@@ -822,6 +996,7 @@ namespace angel_lsp::analysis
                     {
                         if (tSym.type == SymbolType::Funcdef)
                         {
+                            DebugParamDiag("ValidateFunctionParameters", "as-err-funcdef-not-handle", param, sym);
                             diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-funcdef-not-handle", param.baseTypeName, param.baseTypeName));
                             break;
                         }
@@ -831,23 +1006,30 @@ namespace angel_lsp::analysis
         }
     }
 
-    void SemanticAnalyzer::ValidateVariable(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    bool SemanticAnalyzer::Rule_VariableName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         std::string_view stringTypeName = req.GetStringTypeName();
         std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (sym.containerName.empty() && (sym.name == arrayTypeName || sym.name == stringTypeName))
         {
+            DebugDiag("Rule_VariableName", "as-err-name-conflict", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", sym.name, "registered object type"));
-            return;
+            return true;
         }
 
         if (IsReservedKeyword(sym.name))
         {
+            DebugDiag("Rule_VariableName", "as-err-reserved-keyword-name", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
-            return;
+            return true;
         }
 
+        return false;
+    }
+
+    void SemanticAnalyzer::Rule_VariableModifiers(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
         const auto &sig = sym.GetVariable();
 
         if (!sym.containerName.empty())
@@ -869,6 +1051,7 @@ namespace angel_lsp::analysis
                 {
                     if (sig.modifiers.isConst)
                     {
+                        DebugDiag("Rule_VariableModifiers", "as-err-class-member-const", sym);
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-class-member-const", sym.name));
                     }
                 }
@@ -876,6 +1059,7 @@ namespace angel_lsp::analysis
                 {
                     if (sig.modifiers.access == AccessModifier::Private || sig.modifiers.access == AccessModifier::Protected)
                     {
+                        DebugDiag("Rule_VariableModifiers", "as-err-global-variable-access-modifier", sym);
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-variable-access-modifier", sym.name));
                     }
                 }
@@ -885,11 +1069,23 @@ namespace angel_lsp::analysis
         {
             if (sig.modifiers.access == AccessModifier::Private || sig.modifiers.access == AccessModifier::Protected)
             {
+                DebugDiag("Rule_VariableModifiers", "as-err-global-variable-access-modifier", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-variable-access-modifier", sym.name));
             }
         }
 
+        if (sig.modifiers.isReturnReference)
+        {
+            DebugDiag("Rule_VariableModifiers", "as-err-standalone-reference", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-standalone-reference", sym.name));
+        }
+    }
 
+    void SemanticAnalyzer::Rule_VariableTypeResolution(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
+        const auto &sig = sym.GetVariable();
 
         std::string rawBaseType = sig.baseTypeName;
         if (rawBaseType.rfind("::", 0) == 0)
@@ -914,6 +1110,7 @@ namespace angel_lsp::analysis
 
                 if (!req.symbolTable.HasSymbolAnywhere(currentPrefix) && !req.symbolTable.HasSymbol(currentPrefix))
                 {
+                    DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", part));
                     missingNamespace = true;
                     break;
@@ -928,36 +1125,138 @@ namespace angel_lsp::analysis
                 if (!req.symbolTable.HasSymbolAnywhere(rawBaseType) && !req.symbolTable.HasSymbol(rawBaseType))
                 {
                     std::string targetType = rawBaseType.substr(start);
+                    DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", targetType));
                 }
             }
         }
+
+        if (sig.typeKind == TypeKind::Void)
+        {
+            DebugDiag("Rule_VariableTypeResolution", "as-err-void-variable", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-variable"));
+        }
+
+        if (sig.hasPrimitiveHandle)
+        {
+            DebugDiag("Rule_VariableTypeResolution", "as-err-handle-on-primitive", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+        }
+
+        bool isInsideClass = false;
+        if (!sym.containerName.empty())
+        {
+            auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
+            if (parentOpt && parentOpt->type == SymbolType::Class)
+                isInsideClass = true;
+        }
+
+        if (sig.baseTypeName == "auto" && (isInsideClass || sig.defaultValue == "null"))
+        {
+            DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", "auto"));
+        }
+
+        if (sig.modifiers.isHandle && sig.baseTypeName == stringTypeName)
+        {
+            DebugDiag("Rule_VariableTypeResolution", "as-err-handle-on-primitive", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+        }
+
+        if (sig.templateArgumentTypes.size() > 1)
+        {
+            DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.templateName));
+        }
+        else
+        {
+            for (const auto &innerType : sig.templateArgumentTypes)
+            {
+                if (!innerType.empty() && !IsPrimitiveTypeName(innerType) && innerType != stringTypeName && innerType != arrayTypeName && !req.symbolTable.HasSymbolAnywhere(innerType))
+                {
+                    DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", innerType));
+                }
+            }
+        }
+
+        if (sig.templateArgumentTypes.empty() && (sig.baseTypeName == arrayTypeName || sig.isArray) && !sig.templateName.empty())
+        {
+            std::string tName = sig.templateName;
+            if (!IsPrimitiveTypeName(tName) && tName != stringTypeName && tName != arrayTypeName && !req.symbolTable.HasSymbolAnywhere(tName))
+            {
+                DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", tName));
+            }
+        }
+
+        if (sig.typeKind == TypeKind::Unknown && sig.baseTypeName != "auto" && !sig.baseTypeName.empty() && sig.baseTypeName.find("::") == std::string::npos)
+        {
+            if (sig.baseTypeName != stringTypeName && sig.baseTypeName != arrayTypeName &&
+                !req.symbolTable.HasSymbolAnywhere(sig.baseTypeName))
+            {
+                DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
+            }
+        }
+
+        static const ankerl::unordered_dense::set<std::string_view> invalidTemplateArgs = {
+            "void", "auto", "class", "struct", "enum", "funcdef",
+            "interface", "namespace", "using", "import", "export",
+            "external", "shared", "final", "abstract", "true", "false", "null"
+        };
+
+        if (sig.isArray && invalidTemplateArgs.count(sig.baseTypeName))
+        {
+            DebugDiag("Rule_VariableTypeResolution", "as-err-array-invalid-template", sym);
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-array-invalid-template", sig.baseTypeName));
+        }
+
+        if (!sig.templateName.empty() && (sig.templateName == "int8" || !IsPrimitiveTypeName(sig.templateName)) &&
+            sig.templateName != stringTypeName && sig.templateName != arrayTypeName && sig.templateName != "auto")
+        {
+            if (invalidTemplateArgs.count(sig.templateName))
+            {
+                DebugDiag("Rule_VariableTypeResolution", "as-err-array-invalid-template", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-array-invalid-template", sig.templateName));
+            }
+            else if (!req.symbolTable.HasSymbolAnywhere(sig.templateName))
+            {
+                DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.templateName));
+            }
+        }
+
+        if (!sig.modifiers.isHandle && req.symbolTable.HasSymbol(sig.baseTypeName))
+        {
+            auto typeSyms = req.symbolTable.FindSymbols(sig.baseTypeName);
+            for (const auto &tSym : typeSyms)
+            {
+                if (tSym.type == SymbolType::Funcdef)
+                {
+                    DebugDiag("Rule_VariableTypeResolution", "as-err-funcdef-not-handle", sym);
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-funcdef-not-handle", sig.baseTypeName, sig.baseTypeName));
+                    break;
+                }
+            }
+        }
+    }
+
+    void SemanticAnalyzer::Rule_VariableInitializer(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
+        const auto &sig = sym.GetVariable();
 
         static const ankerl::unordered_dense::set<std::string> invalidDefaultValues = {
             "class", "interface", "enum", "typedef", "funcdef", "namespace", "return"
         };
         if (invalidDefaultValues.contains(sig.defaultValue))
         {
+            DebugDiag("Rule_VariableInitializer", "as-syntax-error", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
         }
 
-        if (sig.isVirtualProperty)
-        {
-            ValidateProperty(sym, req, diagnostics);
-            return;
-        }
-
-        if (sig.typeKind == TypeKind::Void)
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-variable"));
-        }
-
-        if (sig.modifiers.isReturnReference)
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-standalone-reference", sym.name));
-        }
-
-        // Initializer list syntax for scalar types (not arrays) or invalid array initializer elements
         if (!sig.defaultValue.empty())
         {
             std::string trimmedDef = sig.defaultValue;
@@ -969,6 +1268,7 @@ namespace angel_lsp::analysis
             {
                 if ((IsPrimitiveTypeName(sig.baseTypeName) || sig.baseTypeName == stringTypeName) && !sig.isArray && sig.baseTypeName != arrayTypeName)
                 {
+                    DebugDiag("Rule_VariableInitializer", "as-syntax-error", sym);
                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
                 }
                 else if (sig.baseTypeName == arrayTypeName || sig.isArray || sig.templateName == arrayTypeName || sig.templateName == "array")
@@ -977,6 +1277,7 @@ namespace angel_lsp::analysis
                     {
                         if (trimmedDef.find("{{") == std::string::npos)
                         {
+                            DebugDiag("Rule_VariableInitializer", "as-syntax-error", sym);
                             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
                         }
                     }
@@ -985,7 +1286,6 @@ namespace angel_lsp::analysis
                         std::string elemType = !sig.templateArgumentTypes.empty() ? sig.templateArgumentTypes[0] : sig.baseTypeName;
                         if ((sig.templateName == arrayTypeName || sig.templateName == "array" || sig.isArray) && (elemType == "int" || elemType == "bool"))
                         {
-                            // Helper to extract clean tokens inside { ... }
                             size_t openBrace = trimmedDef.find('{');
                             size_t closeBrace = trimmedDef.rfind('}');
                             if (openBrace != std::string::npos && closeBrace != std::string::npos && closeBrace > openBrace)
@@ -1005,6 +1305,7 @@ namespace angel_lsp::analysis
                                     {
                                         if (item.starts_with("\"") || item == "true" || item == "false" || item == "null" || item.starts_with("{"))
                                         {
+                                            DebugDiag("Rule_VariableInitializer", "as-syntax-error", sym);
                                             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
                                             break;
                                         }
@@ -1013,6 +1314,7 @@ namespace angel_lsp::analysis
                                     {
                                         if (item == "1" || item == "0" || (item.find_first_not_of("0123456789") == std::string::npos && !item.empty()))
                                         {
+                                            DebugDiag("Rule_VariableInitializer", "as-syntax-error", sym);
                                             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
                                             break;
                                         }
@@ -1023,31 +1325,7 @@ namespace angel_lsp::analysis
                     }
                 }
             }
-        }
 
-        if (sig.hasPrimitiveHandle)
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
-        }
-
-        if (!sym.containerName.empty() && sig.modifiers.isConst)
-        {
-            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
-            if (containerSyms)
-            {
-                for (const auto &cSym : *containerSyms)
-                {
-                    if (cSym.type == SymbolType::Class)
-                    {
-                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-class-member-const", sym.name));
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!sig.defaultValue.empty())
-        {
             std::string val = sig.defaultValue;
             bool isString = (!val.empty() && (val.front() == '"' || val.front() == '\''));
             bool isBool = (val == "true" || val == "false");
@@ -1057,130 +1335,47 @@ namespace angel_lsp::analysis
                                   sig.typeKind == TypeKind::Int8 || sig.typeKind == TypeKind::UInt16);
             if (isNumericType && (isString || isBool))
             {
+                DebugDiag("Rule_VariableInitializer", "as-err-enum-invalid-initializer", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", sym.name));
             }
             bool isBoolType = (sig.typeKind == TypeKind::Bool || sig.baseTypeName == "bool");
             if (isBoolType && isString)
             {
+                DebugDiag("Rule_VariableInitializer", "as-err-enum-invalid-initializer", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", sym.name));
             }
             bool isArrayVar = sig.isArray || sig.baseTypeName == arrayTypeName;
             if (isArrayVar && !sig.modifiers.isHandle && val == "null")
             {
+                DebugDiag("Rule_VariableInitializer", "as-err-handle-on-primitive", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
             }
             if (sig.baseTypeName == stringTypeName && (val == "null" || sig.hasNullInitializer))
             {
+                DebugDiag("Rule_VariableInitializer", "as-err-handle-on-primitive", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
-            }
-        }
-
-        bool isInsideClass = false;
-        if (!sym.containerName.empty())
-        {
-            auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
-            if (parentOpt && parentOpt->type == SymbolType::Class)
-                isInsideClass = true;
-        }
-
-        if (sig.baseTypeName == "auto" && (isInsideClass || sig.defaultValue == "null"))
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", "auto"));
-        }
-
-        if (sig.modifiers.isHandle && sig.baseTypeName == stringTypeName)
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
-        }
-
-        if (sig.templateArgumentTypes.size() > 1)
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.templateName));
-        }
-        else
-        {
-            for (const auto &innerType : sig.templateArgumentTypes)
-            {
-                if (!innerType.empty() && !IsPrimitiveTypeName(innerType) && innerType != stringTypeName && innerType != arrayTypeName && !req.symbolTable.HasSymbolAnywhere(innerType))
-                {
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", innerType));
-                }
-            }
-        }
-
-        if (sig.templateArgumentTypes.empty() && (sig.baseTypeName == arrayTypeName || sig.isArray) && !sig.templateName.empty())
-        {
-            std::string tName = sig.templateName;
-            if (!IsPrimitiveTypeName(tName) && tName != stringTypeName && tName != arrayTypeName && !req.symbolTable.HasSymbolAnywhere(tName))
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", tName));
-            }
-        }
-
-        if (sig.typeKind == TypeKind::Unknown && sig.baseTypeName != "auto" && !sig.baseTypeName.empty() && sig.baseTypeName.find("::") == std::string::npos)
-        {
-            if (sig.baseTypeName != stringTypeName && sig.baseTypeName != arrayTypeName &&
-                !req.symbolTable.HasSymbolAnywhere(sig.baseTypeName))
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
-            }
-        }
-
-        static const ankerl::unordered_dense::set<std::string_view> invalidTemplateArgs = {
-            "void", "auto", "class", "struct", "enum", "funcdef",
-            "interface", "namespace", "using", "import", "export",
-            "external", "shared", "final", "abstract", "true", "false", "null"
-        };
-
-        if (sig.isArray && invalidTemplateArgs.count(sig.baseTypeName))
-        {
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-array-invalid-template", sig.baseTypeName));
-        }
-
-        if (!sig.templateName.empty() && (sig.templateName == "int8" || !IsPrimitiveTypeName(sig.templateName)) &&
-            sig.templateName != stringTypeName && sig.templateName != arrayTypeName && sig.templateName != "auto")
-        {
-            if (invalidTemplateArgs.count(sig.templateName))
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-array-invalid-template", sig.templateName));
-            }
-            else if (!req.symbolTable.HasSymbolAnywhere(sig.templateName))
-            {
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.templateName));
-            }
-        }
-
-        if (!sym.containerName.empty() && sig.modifiers.isConst)
-        {
-            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
-            if (containerSyms)
-            {
-                for (const auto &cSym : *containerSyms)
-                {
-                    if (cSym.type == SymbolType::Class)
-                    {
-                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-class-member-const", sym.name));
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (!sig.modifiers.isHandle && req.symbolTable.HasSymbol(sig.baseTypeName))
-        {
-            auto typeSyms = req.symbolTable.FindSymbols(sig.baseTypeName);
-            for (const auto &tSym : typeSyms)
-            {
-                if (tSym.type == SymbolType::Funcdef)
-                {
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-funcdef-not-handle", sig.baseTypeName, sig.baseTypeName));
-                    break;
-                }
             }
         }
     }
 
-    void SemanticAnalyzer::ValidateProperty(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateVariable(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (Rule_VariableName(sym, req, diagnostics))
+            return;
+
+        const auto &sig = sym.GetVariable();
+        if (sig.isVirtualProperty)
+        {
+            ValidateProperty(sym, req, diagnostics);
+            return;
+        }
+
+        Rule_VariableModifiers(sym, req, diagnostics);
+        Rule_VariableTypeResolution(sym, req, diagnostics);
+        Rule_VariableInitializer(sym, req, diagnostics);
+    }
+
+    bool SemanticAnalyzer::Rule_PropertyModifiers(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         const auto &sig = sym.GetVariable();
 
@@ -1193,8 +1388,9 @@ namespace angel_lsp::analysis
                 {
                     if (cSym.type == SymbolType::Class && cSym.GetClass().modifiers.isMixin)
                     {
+                        DebugDiag("Rule_PropertyModifiers", "as-err-mixin-virtual-property", sym);
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-virtual-property"));
-                        return;
+                        return true;
                     }
                 }
             }
@@ -1202,6 +1398,7 @@ namespace angel_lsp::analysis
 
         if (sig.typeKind == TypeKind::Void)
         {
+            DebugDiag("Rule_PropertyModifiers", "as-err-void-variable", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-variable"));
         }
 
@@ -1214,6 +1411,7 @@ namespace angel_lsp::analysis
                 {
                     if (cSym.type == SymbolType::Class)
                     {
+                        DebugDiag("Rule_PropertyModifiers", "as-err-class-member-const", sym);
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-class-member-const", sym.name));
                         break;
                     }
@@ -1223,6 +1421,7 @@ namespace angel_lsp::analysis
 
         if (sig.hasPrimitiveHandle)
         {
+            DebugDiag("Rule_PropertyModifiers", "as-err-handle-on-primitive", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
         }
 
@@ -1230,11 +1429,18 @@ namespace angel_lsp::analysis
         {
             if (!req.symbolTable.HasSymbol(sig.baseTypeName))
             {
+                DebugDiag("Rule_PropertyModifiers", "as-err-unresolved-type", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
             }
         }
 
-        // Property accessors in concrete classes or global/namespace scope must have an implementation body.
+        return false;
+    }
+
+    void SemanticAnalyzer::Rule_PropertyAccessors(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const auto &sig = sym.GetVariable();
+
         bool isInterfaceProperty = false;
         if (!sym.containerName.empty())
         {
@@ -1254,26 +1460,31 @@ namespace angel_lsp::analysis
 
         if (sym.containerName.empty() && (sig.modifiers.isProperty || sig.isVirtualProperty || sig.hasGet || sig.hasSet))
         {
+            DebugDiag("Rule_PropertyAccessors", "as-err-global-function-qualifiers", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
         }
 
         if (isInterfaceProperty && (sig.hasBodyGet || sig.hasBodySet))
         {
+            DebugDiag("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
         }
 
         if (!isInterfaceProperty && ((sig.hasGet && !sig.hasBodyGet) || (sig.hasSet && !sig.hasBodySet)))
         {
+            DebugDiag("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
         }
 
         if (sig.hasDuplicateGet || sig.hasDuplicateSet)
         {
+            DebugDiag("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
         }
 
         if (isInterfaceProperty && (sig.isGetFinal || sig.isGetOverride || sig.isSetFinal || sig.isSetOverride))
         {
+            DebugDiag("Rule_PropertyAccessors", "as-syntax-error", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
         }
 
@@ -1303,13 +1514,13 @@ namespace angel_lsp::analysis
             }
             if (!hasBaseProperty)
             {
+                DebugDiag("Rule_PropertyAccessors", "as-err-override-no-base", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
             }
         }
 
         if (!isInterfaceProperty && sig.modifiers.isProperty && !sym.GetVariable().modifiers.isExternal)
         {
-            // If the symbol represents a property accessor declaration without a body in a non-interface context:
             const auto *funcSyms = req.symbolTable.FindSymbolsPtr(sym.name);
             if (funcSyms)
             {
@@ -1318,6 +1529,7 @@ namespace angel_lsp::analysis
                     if (fSym.fileUri == sym.fileUri && fSym.startLine == sym.startLine &&
                         fSym.type == SymbolType::Function && !fSym.GetFunction().hasBody)
                     {
+                        DebugDiag("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
                         break;
                     }
@@ -1326,51 +1538,72 @@ namespace angel_lsp::analysis
         }
     }
 
-    void SemanticAnalyzer::ValidateClass(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateProperty(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (Rule_PropertyModifiers(sym, req, diagnostics))
+            return;
+
+        Rule_PropertyAccessors(sym, req, diagnostics);
+    }
+
+    bool SemanticAnalyzer::Rule_ClassName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         std::string_view stringTypeName = req.GetStringTypeName();
         std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
+            DebugDiag("Rule_ClassName", "as-err-reserved-keyword-name", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
-            return;
+            return true;
         }
 
+        return false;
+    }
+
+    void SemanticAnalyzer::Rule_ClassModifiers(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
         const auto &sig = sym.GetClass();
 
         if (!sig.hasBraces && !sig.modifiers.isExternal)
         {
+            DebugDiag("Rule_ClassModifiers", "as-syntax-error", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
         }
 
         if (sig.modifiers.isExternal && !sig.modifiers.isShared)
         {
+            DebugDiag("Rule_ClassModifiers", "as-syntax-error", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
         }
 
         if (sig.modifiers.isExternal && sig.modifiers.isShared)
         {
+            DebugDiag("Rule_ClassModifiers", "as-err-external-not-found", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
         }
 
         if (sig.modifiers.isMixin && sig.modifiers.isShared)
         {
+            DebugDiag("Rule_ClassModifiers", "as-err-mixin-shared", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-shared", sym.name));
         }
 
         if (sig.modifiers.isMixin && sig.modifiers.isFinal)
         {
+            DebugDiag("Rule_ClassModifiers", "as-err-mixin-final", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-final", sym.name));
         }
 
         if (sig.modifiers.isMixin && sig.modifiers.isAbstract)
         {
+            DebugDiag("Rule_ClassModifiers", "as-err-mixin-abstract", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-abstract", sym.name));
         }
 
         if (sig.modifiers.isOverride || sig.modifiers.isExplicit)
         {
+            DebugDiag("Rule_ClassModifiers", "as-syntax-error", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
         }
 
@@ -1378,6 +1611,7 @@ namespace angel_lsp::analysis
         {
             if (!sig.bases.empty())
             {
+                DebugDiag("Rule_ClassModifiers", "as-syntax-error", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
             }
 
@@ -1387,6 +1621,7 @@ namespace angel_lsp::analysis
                     if (s.containerName == sym.name &&
                         (s.type == SymbolType::Funcdef || s.type == SymbolType::Class || s.type == SymbolType::Enum || s.type == SymbolType::Typedef || s.type == SymbolType::Interface))
                     {
+                        DebugDiag("Rule_ClassModifiers", "as-err-mixin-child-type", sym);
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-child-type", sym.name));
                         return;
                     }
@@ -1396,9 +1631,14 @@ namespace angel_lsp::analysis
 
         if (sig.isTemplate && !req.predefinedFileExtension.empty() && req.fileUri != req.predefinedFileExtension && !req.fileUri.ends_with(req.predefinedFileExtension))
         {
+            DebugDiag("Rule_ClassModifiers", "as-err-template-class-not-supported", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-template-class-not-supported", sym.name));
         }
+    }
 
+    void SemanticAnalyzer::Rule_ClassInheritance(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        const auto &sig = sym.GetClass();
         uint32_t classBaseCount = 0;
 
         for (const auto &baseName : sig.bases)
@@ -1407,6 +1647,7 @@ namespace angel_lsp::analysis
             {
                 if (!sig.modifiers.isMixin)
                 {
+                    DebugDiag("Rule_ClassInheritance", "as-err-base-not-found", sym);
                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-base-not-found", baseName));
                 }
             }
@@ -1428,6 +1669,7 @@ namespace angel_lsp::analysis
                                 isBaseShared = bSym.GetInterface().modifiers.isShared;
                             if (!isBaseShared)
                             {
+                                DebugDiag("Rule_ClassInheritance", "as-err-base-not-found", sym);
                                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-base-not-found", baseName));
                             }
                         }
@@ -1436,16 +1678,17 @@ namespace angel_lsp::analysis
                         {
                             if (bSym.GetClass().modifiers.isMixin && !sig.modifiers.isMixin)
                             {
+                                DebugDiag("Rule_ClassInheritance", "as-err-mixin-as-base", sym);
                                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-as-base", sym.name, baseName));
                             }
 
                             isBaseClass = true;
                             if (bSym.GetClass().modifiers.isFinal)
                             {
+                                DebugDiag("Rule_ClassInheritance", "as-err-inherit-final", sym);
                                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-inherit-final", baseName));
                             }
 
-                            // Check if derived class overrides any final method of this base class
                             std::string baseContainer = bSym.qualifiedName;
                             std::string derivedContainer = sym.qualifiedName;
 
@@ -1460,6 +1703,7 @@ namespace angel_lsp::analysis
                                             std::string derivedMethodQN = derivedContainer.empty() ? mSym.name : derivedContainer + "::" + mSym.name;
                                             if (req.symbolTable.HasSymbol(derivedMethodQN))
                                             {
+                                                DebugDiag("Rule_ClassInheritance", "as-err-override-final-method", sym);
                                                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-final-method", mSym.name, baseName));
                                             }
                                         }
@@ -1472,9 +1716,6 @@ namespace angel_lsp::analysis
                             const std::string ifaceContainer = bSym.qualifiedName;
                             const std::string classContainer = sym.qualifiedName;
 
-                            // Step 1: Collect interface method signatures while holding ForEachSymbol's
-                            // shared_lock. Intentionally do NOT call FindSymbolsPtr inside the lambda
-                            // since both acquire m_mutex (shared_lock from the same thread = UB).
                             struct IfaceMethod
                             {
                                 std::string name;
@@ -1552,7 +1793,6 @@ namespace angel_lsp::analysis
 
                                 if (!implemented)
                                 {
-                                    // Check base class hierarchy (excluding interfaces)
                                     for (const auto &baseName : sig.bases)
                                     {
                                         const auto *baseSyms = req.symbolTable.FindSymbolsPtr(baseName);
@@ -1578,6 +1818,7 @@ namespace angel_lsp::analysis
 
                                 if (!implemented)
                                 {
+                                    DebugDiag("Rule_ClassInheritance", "as-err-interface-impl-missing", sym);
                                     diagnostics.push_back(CreateDiagnostic(sym, req,
                                         "as-err-interface-impl-missing",
                                         sym.name, ifaceMethod.name, baseName));
@@ -1613,6 +1854,7 @@ namespace angel_lsp::analysis
 
                                 if (!propImplemented)
                                 {
+                                    DebugDiag("Rule_ClassInheritance", "as-err-interface-impl-missing", sym);
                                     diagnostics.push_back(CreateDiagnostic(sym, req,
                                         "as-err-interface-impl-missing",
                                         sym.name, ifaceProp.name, baseName));
@@ -1626,6 +1868,7 @@ namespace angel_lsp::analysis
                         classBaseCount++;
                         if (classBaseCount > 1)
                         {
+                            DebugDiag("Rule_ClassInheritance", "as-err-multi-class-inherit", sym);
                             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-multi-class-inherit", sym.name));
                         }
                     }
@@ -1636,8 +1879,18 @@ namespace angel_lsp::analysis
         ankerl::unordered_dense::set<std::string> visited;
         if (CheckCircularInheritance(sym.name, req.symbolTable, visited))
         {
+            DebugDiag("Rule_ClassInheritance", "as-err-circular-inherit", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-circular-inherit", sym.name));
         }
+    }
+
+    void SemanticAnalyzer::ValidateClass(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (Rule_ClassName(sym, req, diagnostics))
+            return;
+
+        Rule_ClassModifiers(sym, req, diagnostics);
+        Rule_ClassInheritance(sym, req, diagnostics);
     }
 
     bool SemanticAnalyzer::CheckCircularInheritance(const std::string &currentClass, const SymbolTable &table, ankerl::unordered_dense::set<std::string> &visited) const
@@ -1673,21 +1926,28 @@ namespace angel_lsp::analysis
         return false;
     }
 
-    void SemanticAnalyzer::ValidateInterface(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    bool SemanticAnalyzer::Rule_InterfaceName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         std::string_view stringTypeName = req.GetStringTypeName();
         std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
+            DebugDiag("Rule_InterfaceName", "as-err-reserved-keyword-name", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
-            return;
+            return true;
         }
 
+        return false;
+    }
+
+    void SemanticAnalyzer::Rule_InterfaceInheritance(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
         const auto &sig = sym.GetInterface();
 
         if (sig.modifiers.isExternal)
         {
+            DebugDiag("Rule_InterfaceInheritance", "as-err-external-not-found", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
         }
 
@@ -1695,10 +1955,14 @@ namespace angel_lsp::analysis
         {
             if (ifaceName == sym.name || !req.symbolTable.HasSymbol(ifaceName))
             {
+                DebugDiag("Rule_InterfaceInheritance", "as-err-base-not-found", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-base-not-found", ifaceName));
             }
         }
+    }
 
+    void SemanticAnalyzer::Rule_InterfaceMethods(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
         const std::string ifaceContainer = sym.qualifiedName;
         req.symbolTable.ForEachSymbol(
             [&](const std::string & /*qName*/, const std::vector<Symbol> &symsInTable)
@@ -1712,10 +1976,12 @@ namespace angel_lsp::analysis
                             const auto &fnSig = ms.GetFunction();
                             if (fnSig.modifiers.access == AccessModifier::Private || fnSig.modifiers.access == AccessModifier::Protected)
                             {
+                                DebugDiag("Rule_InterfaceMethods", "as-err-interface-private-method", ms);
                                 diagnostics.push_back(CreateDiagnostic(ms, req, "as-err-interface-private-method", ms.name));
                             }
                             if (ms.name == sym.name || (!ms.name.empty() && ms.name[0] == '~'))
                             {
+                                DebugDiag("Rule_InterfaceMethods", "as-err-interface-constructor", ms);
                                 diagnostics.push_back(CreateDiagnostic(ms, req, "as-err-interface-constructor", ms.name));
                             }
                         }
@@ -1724,33 +1990,58 @@ namespace angel_lsp::analysis
             });
     }
 
-    void SemanticAnalyzer::ValidateTypedef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateInterface(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (Rule_InterfaceName(sym, req, diagnostics))
+            return;
+
+        Rule_InterfaceInheritance(sym, req, diagnostics);
+        Rule_InterfaceMethods(sym, req, diagnostics);
+    }
+
+    bool SemanticAnalyzer::Rule_TypedefName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         std::string_view stringTypeName = req.GetStringTypeName();
         std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
+            DebugDiag("Rule_TypedefName", "as-err-reserved-keyword-name", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
-            return;
+            return true;
         }
 
+        return false;
+    }
+
+    void SemanticAnalyzer::Rule_TypedefTypeResolution(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
         const auto &sig = sym.GetTypedef();
 
         if (sig.typeKind == TypeKind::Void || sig.baseType == "void" || !IsPrimitiveTypeName(sig.baseType))
         {
+            DebugDiag("Rule_TypedefTypeResolution", "as-err-typedef-non-primitive", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-typedef-non-primitive", sig.baseType));
         }
         else if (sig.typeKind == TypeKind::Unknown && !sig.baseType.empty())
         {
             if (!req.symbolTable.HasSymbol(sig.baseType))
             {
+                DebugDiag("Rule_TypedefTypeResolution", "as-err-typedef-unresolved", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-typedef-unresolved", sig.baseType));
             }
         }
     }
 
-    void SemanticAnalyzer::ValidateFuncdef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateTypedef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (Rule_TypedefName(sym, req, diagnostics))
+            return;
+
+        Rule_TypedefTypeResolution(sym, req, diagnostics);
+    }
+
+    bool SemanticAnalyzer::Rule_FuncdefName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         std::string_view stringTypeName = req.GetStringTypeName();
         std::string_view arrayTypeName = req.GetArrayTypeName();
@@ -1758,17 +2049,29 @@ namespace angel_lsp::analysis
         const auto &sig = sym.GetFunction();
         if (sig.modifiers.isExternal)
         {
+            DebugDiag("Rule_FuncdefName", "as-err-external-not-found", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
         }
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
+            DebugDiag("Rule_FuncdefName", "as-err-reserved-keyword-name", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
-            return;
+            return true;
         }
+
+        return false;
+    }
+
+    void SemanticAnalyzer::Rule_FuncdefReturn(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        std::string_view stringTypeName = req.GetStringTypeName();
+        std::string_view arrayTypeName = req.GetArrayTypeName();
+        const auto &sig = sym.GetFunction();
 
         if (sig.returnHasPrimitiveHandle)
         {
+            DebugDiag("Rule_FuncdefReturn", "as-err-handle-on-primitive", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
         }
 
@@ -1776,33 +2079,50 @@ namespace angel_lsp::analysis
         {
             if (!req.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
             {
+                DebugDiag("Rule_FuncdefReturn", "as-err-unresolved-type", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
             }
         }
+    }
 
+    void SemanticAnalyzer::ValidateFuncdef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (Rule_FuncdefName(sym, req, diagnostics))
+            return;
+
+        const auto &sig = sym.GetFunction();
+        Rule_FuncdefReturn(sym, req, diagnostics);
         ValidateFunctionParameters(sym, sig, req, diagnostics);
     }
 
-    void SemanticAnalyzer::ValidateEnum(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    bool SemanticAnalyzer::Rule_EnumName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         std::string_view stringTypeName = req.GetStringTypeName();
         std::string_view arrayTypeName = req.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
+            DebugDiag("Rule_EnumName", "as-err-reserved-keyword-name", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
-            return;
+            return true;
         }
 
+        return false;
+    }
+
+    void SemanticAnalyzer::Rule_EnumMembers(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
         const auto &sig = sym.GetEnum();
 
         if (!sig.hasBraces && sig.members.empty() && !sig.modifiers.isExternal)
         {
+            DebugDiag("Rule_EnumMembers", "as-syntax-error", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
         }
 
         if (sig.modifiers.isExternal)
         {
+            DebugDiag("Rule_EnumMembers", "as-err-external-not-found", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
         }
 
@@ -1811,6 +2131,7 @@ namespace angel_lsp::analysis
         {
             if (!seenEnumMembers.insert(member.name).second)
             {
+                DebugDiag("Rule_EnumMembers", "as-err-name-conflict", sym);
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", member.name, "enum member"));
             }
 
@@ -1819,6 +2140,7 @@ namespace angel_lsp::analysis
                 std::string val = member.value;
                 if (val == member.name)
                 {
+                    DebugDiag("Rule_EnumMembers", "as-err-unresolved-symbol", sym);
                     diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-symbol", member.name));
                 }
                 else
@@ -1832,6 +2154,7 @@ namespace angel_lsp::analysis
 
                     if (isStringLiteral || isLambda || isBool || isNull || isTypeKeyword || isCallOrExpr)
                     {
+                        DebugDiag("Rule_EnumMembers", "as-err-enum-invalid-initializer", sym);
                         diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", member.name));
                     }
                 }
@@ -1839,15 +2162,31 @@ namespace angel_lsp::analysis
         }
     }
 
-    void SemanticAnalyzer::ValidateNamespace(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void SemanticAnalyzer::ValidateEnum(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        if (Rule_EnumName(sym, req, diagnostics))
+            return;
+
+        Rule_EnumMembers(sym, req, diagnostics);
+    }
+
+    bool SemanticAnalyzer::Rule_NamespaceName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         std::string_view arrayTN = req.GetArrayTypeName();
         std::string_view stringTN = req.GetStringTypeName();
         if (IsReservedKeyword(sym.name) || sym.name == arrayTN || sym.name == stringTN || IsPrimitiveTypeName(sym.name))
         {
+            DebugDiag("Rule_NamespaceName", "as-err-reserved-keyword-name", sym);
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
-            return;
+            return true;
         }
+
+        return false;
+    }
+
+    void SemanticAnalyzer::ValidateNamespace(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    {
+        Rule_NamespaceName(sym, req, diagnostics);
     }
 
     Diagnostic SemanticAnalyzer::CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code, DiagnosticSeverity severity) const

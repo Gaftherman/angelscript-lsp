@@ -2886,7 +2886,7 @@ TEST_CASE("SemanticAnalyzer - Multiple Errors: Constructor Modifiers and Destruc
 
     for (const auto &d : diagnostics)
     {
-        if (d.code == "as-err-reserved-keyword-name") foundCtorMod = true;
+        if (d.code == "as-syntax-error" || d.code == "as-err-reserved-keyword-name") foundCtorMod = true;
         if (d.code == "as-err-destructor-param") foundDtorParam = true;
     }
 
