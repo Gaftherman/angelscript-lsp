@@ -792,30 +792,32 @@ namespace angel_lsp::analysis
         return parameters;
     }
 
-    static void InspectReturnStatements(TSNode node, bool &hasEmpty, bool &hasValue, bool &hasNull, std::string &returnValText, std::string &returnCallTargetName, const std::string &sourceCode)
+    static void InspectFunctionBodyAST(TSNode node, FunctionSignature &sig, const std::string &sourceCode)
     {
         if (ts_node_is_null(node))
             return;
 
-        if (strcmp(ts_node_type(node), "return_statement") == 0)
+        const char *nodeType = ts_node_type(node);
+
+        if (strcmp(nodeType, "return_statement") == 0)
         {
             TSNode valNode = SymbolCollector::GetChildByFieldName(node, "value");
             if (ts_node_is_null(valNode))
             {
-                hasEmpty = true;
+                sig.hasEmptyReturn = true;
             }
             else
             {
-                hasValue = true;
+                sig.hasValueReturn = true;
                 uint32_t start = ts_node_start_byte(valNode);
                 uint32_t end = ts_node_end_byte(valNode);
                 if (start < end && end <= sourceCode.size())
                 {
-                    returnValText = sourceCode.substr(start, end - start);
+                    sig.returnExpression = sourceCode.substr(start, end - start);
                 }
                 if (strcmp(ts_node_type(valNode), "null_literal") == 0)
                 {
-                    hasNull = true;
+                    sig.hasNullReturn = true;
                 }
                 else if (strcmp(ts_node_type(valNode), "call_expression") == 0)
                 {
@@ -826,18 +828,100 @@ namespace angel_lsp::analysis
                         uint32_t fEnd = ts_node_end_byte(funcNode);
                         if (fStart < fEnd && fEnd <= sourceCode.size())
                         {
-                            returnCallTargetName = sourceCode.substr(fStart, fEnd - fStart);
+                            sig.returnCallTargetName = sourceCode.substr(fStart, fEnd - fStart);
                         }
                     }
                 }
             }
-            return;
+        }
+
+        std::string nodeText;
+        uint32_t start = ts_node_start_byte(node);
+        uint32_t end = ts_node_end_byte(node);
+        if (start < end && end <= sourceCode.size())
+        {
+            nodeText = sourceCode.substr(start, end - start);
+        }
+
+        if (!nodeText.empty())
+        {
+            if (nodeText.find("super(") != std::string::npos || nodeText.find("super (") != std::string::npos)
+            {
+                sig.hasSuperCall = true;
+            }
+
+            if (nodeText.find("goto ") != std::string::npos)
+            {
+                size_t gotoPos = nodeText.find("goto ");
+                while (gotoPos != std::string::npos)
+                {
+                    size_t labelStart = gotoPos + 5;
+                    while (labelStart < nodeText.size() && isspace(static_cast<unsigned char>(nodeText[labelStart])))
+                    {
+                        labelStart++;
+                    }
+                    size_t labelEnd = labelStart;
+                    while (labelEnd < nodeText.size() && (isalnum(static_cast<unsigned char>(nodeText[labelEnd])) || nodeText[labelEnd] == '_'))
+                    {
+                        labelEnd++;
+                    }
+                    std::string labelName = nodeText.substr(labelStart, labelEnd - labelStart);
+                    if (!labelName.empty())
+                    {
+                        sig.gotoTargetLabels.push_back(labelName);
+                    }
+                    gotoPos = nodeText.find("goto ", gotoPos + 5);
+                }
+            }
+
+            if (nodeText.find("cast<") != std::string::npos)
+            {
+                size_t castPos = nodeText.find("cast<");
+                while (castPos != std::string::npos)
+                {
+                    size_t typeStart = castPos + 5;
+                    size_t typeEnd = nodeText.find('>', typeStart);
+                    if (typeEnd != std::string::npos)
+                    {
+                        std::string castType = nodeText.substr(typeStart, typeEnd - typeStart);
+                        if (!castType.empty())
+                        {
+                            sig.bodyCastTypes.push_back(castType);
+                        }
+                    }
+                    castPos = nodeText.find("cast<", castPos + 5);
+                }
+            }
+
+            if (nodeText.find("::") != std::string::npos)
+            {
+                size_t scopePos = nodeText.find("::");
+                while (scopePos != std::string::npos && scopePos > 0)
+                {
+                    size_t startIdent = scopePos;
+                    while (startIdent > 0 && (isalnum(static_cast<unsigned char>(nodeText[startIdent - 1])) || nodeText[startIdent - 1] == '_'))
+                    {
+                        startIdent--;
+                    }
+                    size_t endIdent = scopePos + 2;
+                    while (endIdent < nodeText.size() && (isalnum(static_cast<unsigned char>(nodeText[endIdent])) || nodeText[endIdent] == '_'))
+                    {
+                        endIdent++;
+                    }
+                    std::string qualifiedName = nodeText.substr(startIdent, endIdent - startIdent);
+                    if (!qualifiedName.empty())
+                    {
+                        sig.bodyQualifiedNames.push_back(qualifiedName);
+                    }
+                    scopePos = nodeText.find("::", endIdent);
+                }
+            }
         }
 
         uint32_t count = ts_node_child_count(node);
         for (uint32_t i = 0; i < count; ++i)
         {
-            InspectReturnStatements(ts_node_child(node, i), hasEmpty, hasValue, hasNull, returnValText, returnCallTargetName, sourceCode);
+            InspectFunctionBodyAST(ts_node_child(node, i), sig, sourceCode);
         }
     }
 
@@ -893,7 +977,7 @@ namespace angel_lsp::analysis
         funcSig.hasBody = !ts_node_is_null(bodyNode);
         if (funcSig.hasBody)
         {
-            InspectReturnStatements(bodyNode, funcSig.hasEmptyReturn, funcSig.hasValueReturn, funcSig.hasNullReturn, funcSig.returnExpression, funcSig.returnCallTargetName, sourceCode);
+            InspectFunctionBodyAST(bodyNode, funcSig, sourceCode);
         }
         funcSig.defaultValue = funcSig.hasBody ? GetNodeText(bodyNode, sourceCode) : funcText;
         funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_symInterfaceMethod);

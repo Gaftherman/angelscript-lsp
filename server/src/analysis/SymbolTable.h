@@ -129,6 +129,10 @@ namespace angel_lsp::analysis
         std::string returnExpression;
         std::string returnCallTargetName;
         std::string defaultValue;
+        bool hasSuperCall = false;
+        std::vector<std::string> gotoTargetLabels;
+        std::vector<std::string> bodyCastTypes;
+        std::vector<std::string> bodyQualifiedNames;
     };
 
     struct VariableSignature

@@ -18,6 +18,18 @@ namespace angel_lsp::analysis
     }
 
     /**
+     * @brief Classification categories for initializer list item expressions.
+     */
+    enum class InitializerItemKind
+    {
+        NumericOrExpression,
+        StringLiteral,
+        BooleanLiteral,
+        NullLiteral,
+        NestedInitializer
+    };
+
+    /**
      * @brief Checks whether the given name is a reserved AngelScript keyword.
      * @param name Symbol name to check.
      * @return True if name is a reserved keyword.
@@ -30,4 +42,11 @@ namespace angel_lsp::analysis
      * @return True if name is a primitive type name.
      */
     bool IsPrimitiveTypeName(const std::string &name);
+
+    /**
+     * @brief Semantically classifies the token text of an initializer item.
+     * @param item Token or expression text of the initializer item.
+     * @return InitializerItemKind classification.
+     */
+    InitializerItemKind ClassifyInitializerItem(std::string_view item);
 }

@@ -213,35 +213,13 @@ namespace angel_lsp::analysis::rules
     {
         const auto &sig = sym.GetFunction();
 
-        if (!sig.defaultValue.empty())
+        for (const auto &labelName : sig.gotoTargetLabels)
         {
-            if (sig.defaultValue.find("goto ") != std::string::npos)
+            std::string targetLabel = labelName + ":";
+            if (sig.defaultValue.find(targetLabel) == std::string::npos)
             {
-                size_t gotoPos = sig.defaultValue.find("goto ");
-                while (gotoPos != std::string::npos)
-                {
-                    size_t labelStart = gotoPos + 5;
-                    while (labelStart < sig.defaultValue.size() && isspace(static_cast<unsigned char>(sig.defaultValue[labelStart])))
-                    {
-                        labelStart++;
-                    }
-                    size_t labelEnd = labelStart;
-                    while (labelEnd < sig.defaultValue.size() && (isalnum(static_cast<unsigned char>(sig.defaultValue[labelEnd])) || sig.defaultValue[labelEnd] == '_'))
-                    {
-                        labelEnd++;
-                    }
-                    std::string labelName = sig.defaultValue.substr(labelStart, labelEnd - labelStart);
-                    if (!labelName.empty())
-                    {
-                        std::string targetLabel = labelName + ":";
-                        if (sig.defaultValue.find(targetLabel) == std::string::npos)
-                        {
-                            ctx.LogRule("Rule_FunctionBodyFlow", "as-err-unresolved-symbol", sym);
-                            ctx.Emit(sym, "as-err-unresolved-symbol", labelName);
-                        }
-                    }
-                    gotoPos = sig.defaultValue.find("goto ", gotoPos + 5);
-                }
+                ctx.LogRule("Rule_FunctionBodyFlow", "as-err-unresolved-symbol", sym);
+                ctx.Emit(sym, "as-err-unresolved-symbol", labelName);
             }
         }
     }
@@ -250,23 +228,12 @@ namespace angel_lsp::analysis::rules
     {
         const auto &sig = sym.GetFunction();
 
-        if (!sig.defaultValue.empty())
+        for (const auto &castType : sig.bodyCastTypes)
         {
-            size_t castPos = sig.defaultValue.find("cast<");
-            while (castPos != std::string::npos)
+            if (castType == "void")
             {
-                size_t typeStart = castPos + 5;
-                size_t typeEnd = sig.defaultValue.find('>', typeStart);
-                if (typeEnd != std::string::npos)
-                {
-                    std::string castType = sig.defaultValue.substr(typeStart, typeEnd - typeStart);
-                    if (castType == "void")
-                    {
-                        ctx.LogRule("Rule_FunctionBodyCast", "as-err-unresolved-type", sym);
-                        ctx.Emit(sym, "as-err-unresolved-type", "cast");
-                    }
-                }
-                castPos = sig.defaultValue.find("cast<", castPos + 5);
+                ctx.LogRule("Rule_FunctionBodyCast", "as-err-unresolved-type", sym);
+                ctx.Emit(sym, "as-err-unresolved-type", "cast");
             }
         }
     }
@@ -275,25 +242,13 @@ namespace angel_lsp::analysis::rules
     {
         const auto &sig = sym.GetFunction();
 
-        if (!sig.defaultValue.empty())
+        for (const auto &qualifiedName : sig.bodyQualifiedNames)
         {
-            size_t scopePos = sig.defaultValue.find("::");
-            while (scopePos != std::string::npos && scopePos > 0)
+            size_t scopePos = qualifiedName.find("::");
+            if (scopePos != std::string::npos)
             {
-                size_t startIdent = scopePos;
-                while (startIdent > 0 && (isalnum(static_cast<unsigned char>(sig.defaultValue[startIdent - 1])) || sig.defaultValue[startIdent - 1] == '_'))
-                {
-                    startIdent--;
-                }
-                size_t endIdent = scopePos + 2;
-                while (endIdent < sig.defaultValue.size() && (isalnum(static_cast<unsigned char>(sig.defaultValue[endIdent])) || sig.defaultValue[endIdent] == '_'))
-                {
-                    endIdent++;
-                }
-                std::string qualifiedName = sig.defaultValue.substr(startIdent, endIdent - startIdent);
-                std::string scopePrefix = sig.defaultValue.substr(startIdent, scopePos - startIdent);
-
-                if (!qualifiedName.empty() && scopePrefix != "global" && endIdent > scopePos + 2)
+                std::string scopePrefix = qualifiedName.substr(0, scopePos);
+                if (scopePrefix != "global" && qualifiedName.size() > scopePos + 2)
                 {
                     if (!ctx.request.symbolTable.HasSymbolAnywhere(qualifiedName))
                     {
@@ -302,7 +257,6 @@ namespace angel_lsp::analysis::rules
                         break;
                     }
                 }
-                scopePos = sig.defaultValue.find("::", endIdent);
             }
         }
     }
@@ -336,22 +290,19 @@ namespace angel_lsp::analysis::rules
             }
         }
 
-        if (!sig.defaultValue.empty())
+        if (sig.hasSuperCall)
         {
-            if (sig.defaultValue.find("super(") != std::string::npos || sig.defaultValue.find("super (") != std::string::npos)
+            if (!sym.containerName.empty())
             {
-                if (!sym.containerName.empty())
+                const auto *classSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
+                if (classSyms)
                 {
-                    const auto *classSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
-                    if (classSyms)
+                    for (const auto &cSym : *classSyms)
                     {
-                        for (const auto &cSym : *classSyms)
+                        if (cSym.type == SymbolType::Class && cSym.GetClass().bases.empty())
                         {
-                            if (cSym.type == SymbolType::Class && cSym.GetClass().bases.empty())
-                            {
-                                ctx.LogRule("Rule_FunctionReturnExpr", "as-syntax-error", sym);
-                                ctx.Emit(sym, "as-syntax-error");
-                            }
+                            ctx.LogRule("Rule_FunctionReturnExpr", "as-syntax-error", sym);
+                            ctx.Emit(sym, "as-syntax-error");
                         }
                     }
                 }
@@ -485,28 +436,43 @@ namespace angel_lsp::analysis::rules
         }
     }
 
-    void ValidateFunction(const Symbol &sym, const DiagnosticContext &ctx)
+    bool ValidateFunctionSignature(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
     {
-        const FunctionContext fctx = BuildFunctionContext(sym, ctx.request);
-
         if (!Rule_FunctionName(sym, fctx, ctx))
         {
-            return;
+            return false;
         }
 
-        Rule_FunctionBody(sym, fctx, ctx);
         Rule_FunctionReturnType(sym, fctx, ctx);
         Rule_FunctionModifiers(sym, fctx, ctx);
         Rule_CtorDtor(sym, fctx, ctx);
-        Rule_FunctionBodyFlow(sym, fctx, ctx);
-        Rule_FunctionBodyCast(sym, fctx, ctx);
-        Rule_FunctionBodyScope(sym, fctx, ctx);
-        Rule_FunctionReturnExpr(sym, fctx, ctx);
         Rule_FunctionOverride(sym, fctx, ctx);
         Rule_OperatorOverload(sym, fctx, ctx);
         Rule_MixinConstraints(sym, fctx, ctx);
 
         ValidateFunctionParameters(sym, sym.GetFunction(), ctx);
+        return true;
+    }
+
+    void ValidateFunctionBody(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
+    {
+        Rule_FunctionBody(sym, fctx, ctx);
+        Rule_FunctionBodyFlow(sym, fctx, ctx);
+        Rule_FunctionBodyCast(sym, fctx, ctx);
+        Rule_FunctionBodyScope(sym, fctx, ctx);
+        Rule_FunctionReturnExpr(sym, fctx, ctx);
+    }
+
+    void ValidateFunction(const Symbol &sym, const DiagnosticContext &ctx)
+    {
+        const FunctionContext fctx = BuildFunctionContext(sym, ctx.request);
+
+        if (!ValidateFunctionSignature(sym, fctx, ctx))
+        {
+            return;
+        }
+
+        ValidateFunctionBody(sym, fctx, ctx);
     }
 
     void ValidateFunctionParameters(const Symbol &sym, const FunctionSignature &sig, const DiagnosticContext &ctx)

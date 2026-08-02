@@ -412,7 +412,7 @@ namespace angel_lsp::analysis::rules
                     bool isLambda = (member.valueNodeType == node_types::LambdaExpression);
                     bool isBool = (member.valueNodeType == node_types::BooleanLiteral || val == "true" || val == "false");
                     bool isNull = (member.valueNodeType == node_types::NullLiteral || val == "null");
-                    bool isTypeKeyword = (val == "int" || val == "float" || val == "double" || val == "void" || val == "auto" || val == "class" || val == "struct" || val == "enum");
+                    bool isTypeKeyword = (IsPrimitiveTypeName(val) || IsReservedKeyword(val));
                     bool isCallOrExpr = (member.valueNodeType == node_types::CallExpression);
 
                     if (isStringLiteral || isLambda || isBool || isNull || isTypeKeyword || isCallOrExpr)

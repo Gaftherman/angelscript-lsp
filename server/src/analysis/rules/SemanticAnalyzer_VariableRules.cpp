@@ -211,8 +211,7 @@ namespace angel_lsp::analysis::rules
             ctx.Emit(sym, "as-err-array-invalid-template", sig.baseTypeName);
         }
 
-        if (!sig.templateName.empty() && (sig.templateName == "int8" || !IsPrimitiveTypeName(sig.templateName)) &&
-            sig.templateName != stringTypeName && sig.templateName != arrayTypeName && sig.templateName != "auto")
+        if (!sig.templateName.empty() && sig.templateName != stringTypeName && sig.templateName != arrayTypeName && sig.templateName != "auto")
         {
             if (invalidTemplateArgs.count(sig.templateName))
             {
@@ -283,7 +282,9 @@ namespace angel_lsp::analysis::rules
                     else
                     {
                         std::string elemType = !sig.templateArgumentTypes.empty() ? sig.templateArgumentTypes[0] : sig.baseTypeName;
-                        if ((sig.templateName == arrayTypeName || sig.templateName == "array" || sig.isArray) && (elemType == "int" || elemType == "bool"))
+                        bool isNumericElem = (IsPrimitiveTypeName(elemType) && elemType != "bool" && elemType != "void");
+                        bool isBoolElem = (elemType == "bool");
+                        if ((sig.templateName == arrayTypeName || sig.templateName == "array" || sig.isArray) && (isNumericElem || isBoolElem))
                         {
                             size_t openBrace = trimmedDef.find('{');
                             size_t closeBrace = trimmedDef.rfind('}');
@@ -300,16 +301,17 @@ namespace angel_lsp::analysis::rules
 
                                     if (item.empty()) continue;
 
-                                    if (elemType == "int")
+                                    if (isNumericElem)
                                     {
-                                        if (item.starts_with("\"") || item == "true" || item == "false" || item == "null" || item.starts_with("{"))
+                                        InitializerItemKind itemKind = ClassifyInitializerItem(item);
+                                        if (itemKind != InitializerItemKind::NumericOrExpression)
                                         {
                                             ctx.LogRule("Rule_VariableInitializer", "as-syntax-error", sym);
                                             ctx.Emit(sym, "as-syntax-error");
                                             break;
                                         }
                                     }
-                                    else if (elemType == "bool")
+                                    else if (isBoolElem)
                                     {
                                         if (item == "1" || item == "0" || (item.find_first_not_of("0123456789") == std::string::npos && !item.empty()))
                                         {

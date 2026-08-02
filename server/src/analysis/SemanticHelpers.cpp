@@ -26,4 +26,34 @@ namespace angel_lsp::analysis
         };
         return kPrimitives.contains(name);
     }
+
+    InitializerItemKind ClassifyInitializerItem(std::string_view item)
+    {
+        if (item.empty())
+        {
+            return InitializerItemKind::NumericOrExpression;
+        }
+
+        if (item.starts_with("\"") || item.starts_with("'"))
+        {
+            return InitializerItemKind::StringLiteral;
+        }
+
+        if (item == "true" || item == "false")
+        {
+            return InitializerItemKind::BooleanLiteral;
+        }
+
+        if (item == "null")
+        {
+            return InitializerItemKind::NullLiteral;
+        }
+
+        if (item.starts_with("{"))
+        {
+            return InitializerItemKind::NestedInitializer;
+        }
+
+        return InitializerItemKind::NumericOrExpression;
+    }
 }
