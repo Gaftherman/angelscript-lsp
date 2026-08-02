@@ -1,0 +1,42 @@
+#pragma once
+
+#include "analysis/Diagnostics.h"
+#include "analysis/SymbolTable.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "utils/LspLogger.h"
+
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace angel_lsp::analysis
+{
+    /**
+     * @brief Context for constructing, emitting, and logging LSP diagnostics during semantic analysis.
+     */
+    struct DiagnosticContext
+    {
+        const SemanticAnalysisRequest &request;
+        std::vector<Diagnostic> &diagnostics;
+        utils::LspLogger *logger = nullptr;
+
+        // --- Diagnostic Emission for Symbol ---
+        void Emit(const Symbol &sym, std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+        void Emit(const Symbol &sym, std::string_view code, std::string_view arg1, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+        void Emit(const Symbol &sym, std::string_view code, std::string_view arg1, std::string_view arg2, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+        void Emit(const Symbol &sym, std::string_view code, std::string_view arg1, std::string_view arg2, std::string_view arg3, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+
+        // --- Diagnostic Emission for ParameterInformation ---
+        void Emit(const ParameterInformation &param, const Symbol &parentSym, std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+        void Emit(const ParameterInformation &param, const Symbol &parentSym, std::string_view code, std::string_view arg1, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+        void Emit(const ParameterInformation &param, const Symbol &parentSym, std::string_view code, std::string_view arg1, std::string_view arg2, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+
+        // --- Debug Logging ---
+        void LogRule(std::string_view ruleName, std::string_view code, const Symbol &sym) const;
+        void LogParam(std::string_view ruleName, std::string_view code, const ParameterInformation &param, const Symbol &parentSym) const;
+
+    private:
+        Diagnostic CreateDiagnostic(const Symbol &sym, std::string_view code, DiagnosticSeverity severity) const;
+        Diagnostic CreateDiagnostic(const ParameterInformation &param, const Symbol &parentSym, std::string_view code, DiagnosticSeverity severity) const;
+    };
+}

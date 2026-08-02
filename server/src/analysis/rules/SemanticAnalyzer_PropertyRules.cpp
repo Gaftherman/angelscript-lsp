@@ -1,22 +1,22 @@
-#include "analysis/SemanticAnalyzerInternal.h"
+#include "analysis/rules/PropertyRules.h"
 
-namespace angel_lsp::analysis
+namespace angel_lsp::analysis::rules
 {
-    bool SemanticAnalyzer::Rule_PropertyModifiers(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static bool Rule_PropertyModifiers(const Symbol &sym, const DiagnosticContext &ctx)
     {
         const auto &sig = sym.GetVariable();
 
         if (!sym.containerName.empty() && (sig.isVirtualProperty || sig.hasGet || sig.hasSet))
         {
-            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            const auto *containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
             if (containerSyms)
             {
                 for (const auto &cSym : *containerSyms)
                 {
                     if (cSym.type == SymbolType::Class && cSym.GetClass().modifiers.isMixin)
                     {
-                        DebugDiag("Rule_PropertyModifiers", "as-err-mixin-virtual-property", sym);
-                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-virtual-property"));
+                        ctx.LogRule("Rule_PropertyModifiers", "as-err-mixin-virtual-property", sym);
+                        ctx.Emit(sym, "as-err-mixin-virtual-property");
                         return true;
                     }
                 }
@@ -25,21 +25,21 @@ namespace angel_lsp::analysis
 
         if (sig.typeKind == TypeKind::Void)
         {
-            DebugDiag("Rule_PropertyModifiers", "as-err-void-variable", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-variable"));
+            ctx.LogRule("Rule_PropertyModifiers", "as-err-void-variable", sym);
+            ctx.Emit(sym, "as-err-void-variable");
         }
 
         if (!sym.containerName.empty() && sig.modifiers.isConst)
         {
-            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            const auto *containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
             if (containerSyms)
             {
                 for (const auto &cSym : *containerSyms)
                 {
                     if (cSym.type == SymbolType::Class)
                     {
-                        DebugDiag("Rule_PropertyModifiers", "as-err-class-member-const", sym);
-                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-class-member-const", sym.name));
+                        ctx.LogRule("Rule_PropertyModifiers", "as-err-class-member-const", sym);
+                        ctx.Emit(sym, "as-err-class-member-const", sym.name);
                         break;
                     }
                 }
@@ -48,30 +48,30 @@ namespace angel_lsp::analysis
 
         if (sig.hasPrimitiveHandle)
         {
-            DebugDiag("Rule_PropertyModifiers", "as-err-handle-on-primitive", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+            ctx.LogRule("Rule_PropertyModifiers", "as-err-handle-on-primitive", sym);
+            ctx.Emit(sym, "as-err-handle-on-primitive", sig.baseTypeName);
         }
 
         if (sig.typeKind == TypeKind::Unknown && !sig.baseTypeName.empty())
         {
-            if (!req.symbolTable.HasSymbol(sig.baseTypeName))
+            if (!ctx.request.symbolTable.HasSymbol(sig.baseTypeName))
             {
-                DebugDiag("Rule_PropertyModifiers", "as-err-unresolved-type", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
+                ctx.LogRule("Rule_PropertyModifiers", "as-err-unresolved-type", sym);
+                ctx.Emit(sym, "as-err-unresolved-type", sig.baseTypeName);
             }
         }
 
         return false;
     }
 
-    void SemanticAnalyzer::Rule_PropertyAccessors(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static void Rule_PropertyAccessors(const Symbol &sym, const DiagnosticContext &ctx)
     {
         const auto &sig = sym.GetVariable();
 
         bool isInterfaceProperty = false;
         if (!sym.containerName.empty())
         {
-            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            const auto *containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
             if (containerSyms)
             {
                 for (const auto &cSym : *containerSyms)
@@ -87,49 +87,49 @@ namespace angel_lsp::analysis
 
         if (sym.containerName.empty() && (sig.modifiers.isProperty || sig.isVirtualProperty || sig.hasGet || sig.hasSet))
         {
-            DebugDiag("Rule_PropertyAccessors", "as-err-global-function-qualifiers", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
+            ctx.LogRule("Rule_PropertyAccessors", "as-err-global-function-qualifiers", sym);
+            ctx.Emit(sym, "as-err-global-function-qualifiers", sym.name);
         }
 
         if (isInterfaceProperty && (sig.hasBodyGet || sig.hasBodySet))
         {
-            DebugDiag("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
+            ctx.LogRule("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
+            ctx.Emit(sym, "as-err-property-accessor-missing-body", sym.name);
         }
 
         if (!isInterfaceProperty && ((sig.hasGet && !sig.hasBodyGet) || (sig.hasSet && !sig.hasBodySet)))
         {
-            DebugDiag("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
+            ctx.LogRule("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
+            ctx.Emit(sym, "as-err-property-accessor-missing-body", sym.name);
         }
 
         if (sig.hasDuplicateGet || sig.hasDuplicateSet)
         {
-            DebugDiag("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
+            ctx.LogRule("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
+            ctx.Emit(sym, "as-err-property-accessor-missing-body", sym.name);
         }
 
         if (isInterfaceProperty && (sig.isGetFinal || sig.isGetOverride || sig.isSetFinal || sig.isSetOverride))
         {
-            DebugDiag("Rule_PropertyAccessors", "as-syntax-error", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            ctx.LogRule("Rule_PropertyAccessors", "as-syntax-error", sym);
+            ctx.Emit(sym, "as-syntax-error");
         }
 
         if (!isInterfaceProperty && (sig.isGetOverride || sig.isSetOverride))
         {
             bool hasBaseProperty = false;
-            auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
+            auto parentOpt = ctx.request.symbolTable.FindFirstSymbol(sym.containerName);
             if (parentOpt && parentOpt->type == SymbolType::Class)
             {
                 for (const auto &bName : parentOpt->GetClass().bases)
                 {
-                    auto bSyms = req.symbolTable.FindSymbolsPtr(bName);
+                    auto bSyms = ctx.request.symbolTable.FindSymbolsPtr(bName);
                     if (bSyms)
                     {
                         for (const auto &bSym : *bSyms)
                         {
                             std::string propQN = bSym.qualifiedName.empty() ? sym.name : bSym.qualifiedName + "::" + sym.name;
-                            if (req.symbolTable.HasSymbol(propQN))
+                            if (ctx.request.symbolTable.HasSymbol(propQN))
                             {
                                 hasBaseProperty = true;
                                 break;
@@ -141,14 +141,14 @@ namespace angel_lsp::analysis
             }
             if (!hasBaseProperty)
             {
-                DebugDiag("Rule_PropertyAccessors", "as-err-override-no-base", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-override-no-base", sym.name, sym.containerName));
+                ctx.LogRule("Rule_PropertyAccessors", "as-err-override-no-base", sym);
+                ctx.Emit(sym, "as-err-override-no-base", sym.name, sym.containerName);
             }
         }
 
         if (!isInterfaceProperty && sig.modifiers.isProperty && !sym.GetVariable().modifiers.isExternal)
         {
-            const auto *funcSyms = req.symbolTable.FindSymbolsPtr(sym.name);
+            const auto *funcSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.name);
             if (funcSyms)
             {
                 for (const auto &fSym : *funcSyms)
@@ -156,8 +156,8 @@ namespace angel_lsp::analysis
                     if (fSym.fileUri == sym.fileUri && fSym.startLine == sym.startLine &&
                         fSym.type == SymbolType::Function && !fSym.GetFunction().hasBody)
                     {
-                        DebugDiag("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
-                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-property-accessor-missing-body", sym.name));
+                        ctx.LogRule("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
+                        ctx.Emit(sym, "as-err-property-accessor-missing-body", sym.name);
                         break;
                     }
                 }
@@ -165,11 +165,13 @@ namespace angel_lsp::analysis
         }
     }
 
-    void SemanticAnalyzer::ValidateProperty(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void ValidateProperty(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        if (Rule_PropertyModifiers(sym, req, diagnostics))
+        if (Rule_PropertyModifiers(sym, ctx))
+        {
             return;
+        }
 
-        Rule_PropertyAccessors(sym, req, diagnostics);
+        Rule_PropertyAccessors(sym, ctx);
     }
 }

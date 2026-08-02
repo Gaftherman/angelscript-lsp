@@ -1,36 +1,39 @@
-#include "analysis/SemanticAnalyzerInternal.h"
+#include "analysis/rules/VariableRules.h"
+#include "analysis/rules/PropertyRules.h"
+#include "analysis/SemanticHelpers.h"
+#include <sstream>
 
-namespace angel_lsp::analysis
+namespace angel_lsp::analysis::rules
 {
-    bool SemanticAnalyzer::Rule_VariableName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static bool Rule_VariableName(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        std::string_view stringTypeName = req.GetStringTypeName();
-        std::string_view arrayTypeName = req.GetArrayTypeName();
+        std::string_view stringTypeName = ctx.request.GetStringTypeName();
+        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
 
         if (sym.containerName.empty() && (sym.name == arrayTypeName || sym.name == stringTypeName))
         {
-            DebugDiag("Rule_VariableName", "as-err-name-conflict", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", sym.name, "registered object type"));
+            ctx.LogRule("Rule_VariableName", "as-err-name-conflict", sym);
+            ctx.Emit(sym, "as-err-name-conflict", sym.name, "registered object type");
             return true;
         }
 
         if (IsReservedKeyword(sym.name))
         {
-            DebugDiag("Rule_VariableName", "as-err-reserved-keyword-name", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            ctx.LogRule("Rule_VariableName", "as-err-reserved-keyword-name", sym);
+            ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
             return true;
         }
 
         return false;
     }
 
-    void SemanticAnalyzer::Rule_VariableModifiers(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static void Rule_VariableModifiers(const Symbol &sym, const DiagnosticContext &ctx)
     {
         const auto &sig = sym.GetVariable();
 
         if (!sym.containerName.empty())
         {
-            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            const auto *containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
             if (containerSyms)
             {
                 bool isClassContainer = false;
@@ -47,16 +50,16 @@ namespace angel_lsp::analysis
                 {
                     if (sig.modifiers.isConst)
                     {
-                        DebugDiag("Rule_VariableModifiers", "as-err-class-member-const", sym);
-                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-class-member-const", sym.name));
+                        ctx.LogRule("Rule_VariableModifiers", "as-err-class-member-const", sym);
+                        ctx.Emit(sym, "as-err-class-member-const", sym.name);
                     }
                 }
                 else
                 {
                     if (sig.modifiers.access == AccessModifier::Private || sig.modifiers.access == AccessModifier::Protected)
                     {
-                        DebugDiag("Rule_VariableModifiers", "as-err-global-variable-access-modifier", sym);
-                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-variable-access-modifier", sym.name));
+                        ctx.LogRule("Rule_VariableModifiers", "as-err-global-variable-access-modifier", sym);
+                        ctx.Emit(sym, "as-err-global-variable-access-modifier", sym.name);
                     }
                 }
             }
@@ -65,22 +68,22 @@ namespace angel_lsp::analysis
         {
             if (sig.modifiers.access == AccessModifier::Private || sig.modifiers.access == AccessModifier::Protected)
             {
-                DebugDiag("Rule_VariableModifiers", "as-err-global-variable-access-modifier", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-variable-access-modifier", sym.name));
+                ctx.LogRule("Rule_VariableModifiers", "as-err-global-variable-access-modifier", sym);
+                ctx.Emit(sym, "as-err-global-variable-access-modifier", sym.name);
             }
         }
 
         if (sig.modifiers.isReturnReference)
         {
-            DebugDiag("Rule_VariableModifiers", "as-err-standalone-reference", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-standalone-reference", sym.name));
+            ctx.LogRule("Rule_VariableModifiers", "as-err-standalone-reference", sym);
+            ctx.Emit(sym, "as-err-standalone-reference", sym.name);
         }
     }
 
-    void SemanticAnalyzer::Rule_VariableTypeResolution(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static void Rule_VariableTypeResolution(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        std::string_view stringTypeName = req.GetStringTypeName();
-        std::string_view arrayTypeName = req.GetArrayTypeName();
+        std::string_view stringTypeName = ctx.request.GetStringTypeName();
+        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
         const auto &sig = sym.GetVariable();
 
         std::string rawBaseType = sig.baseTypeName;
@@ -104,10 +107,10 @@ namespace angel_lsp::analysis
                 }
                 currentPrefix += part;
 
-                if (!req.symbolTable.HasSymbolAnywhere(currentPrefix) && !req.symbolTable.HasSymbol(currentPrefix))
+                if (!ctx.request.symbolTable.HasSymbolAnywhere(currentPrefix) && !ctx.request.symbolTable.HasSymbol(currentPrefix))
                 {
-                    DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", part));
+                    ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+                    ctx.Emit(sym, "as-err-unresolved-type", part);
                     missingNamespace = true;
                     break;
                 }
@@ -118,60 +121,60 @@ namespace angel_lsp::analysis
 
             if (!missingNamespace)
             {
-                if (!req.symbolTable.HasSymbolAnywhere(rawBaseType) && !req.symbolTable.HasSymbol(rawBaseType))
+                if (!ctx.request.symbolTable.HasSymbolAnywhere(rawBaseType) && !ctx.request.symbolTable.HasSymbol(rawBaseType))
                 {
                     std::string targetType = rawBaseType.substr(start);
-                    DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", targetType));
+                    ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+                    ctx.Emit(sym, "as-err-unresolved-type", targetType);
                 }
             }
         }
 
         if (sig.typeKind == TypeKind::Void)
         {
-            DebugDiag("Rule_VariableTypeResolution", "as-err-void-variable", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-void-variable"));
+            ctx.LogRule("Rule_VariableTypeResolution", "as-err-void-variable", sym);
+            ctx.Emit(sym, "as-err-void-variable");
         }
 
         if (sig.hasPrimitiveHandle)
         {
-            DebugDiag("Rule_VariableTypeResolution", "as-err-handle-on-primitive", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+            ctx.LogRule("Rule_VariableTypeResolution", "as-err-handle-on-primitive", sym);
+            ctx.Emit(sym, "as-err-handle-on-primitive", sig.baseTypeName);
         }
 
         bool isInsideClass = false;
         if (!sym.containerName.empty())
         {
-            auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
+            auto parentOpt = ctx.request.symbolTable.FindFirstSymbol(sym.containerName);
             if (parentOpt && parentOpt->type == SymbolType::Class)
                 isInsideClass = true;
         }
 
         if (sig.baseTypeName == "auto" && (isInsideClass || sig.defaultValue == "null"))
         {
-            DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", "auto"));
+            ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+            ctx.Emit(sym, "as-err-unresolved-type", "auto");
         }
 
         if (sig.modifiers.isHandle && sig.baseTypeName == stringTypeName)
         {
-            DebugDiag("Rule_VariableTypeResolution", "as-err-handle-on-primitive", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+            ctx.LogRule("Rule_VariableTypeResolution", "as-err-handle-on-primitive", sym);
+            ctx.Emit(sym, "as-err-handle-on-primitive", sig.baseTypeName);
         }
 
         if (sig.templateArgumentTypes.size() > 1)
         {
-            DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.templateName));
+            ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+            ctx.Emit(sym, "as-err-unresolved-type", sig.templateName);
         }
         else
         {
             for (const auto &innerType : sig.templateArgumentTypes)
             {
-                if (!innerType.empty() && !IsPrimitiveTypeName(innerType) && innerType != stringTypeName && innerType != arrayTypeName && !req.symbolTable.HasSymbolAnywhere(innerType))
+                if (!innerType.empty() && !IsPrimitiveTypeName(innerType) && innerType != stringTypeName && innerType != arrayTypeName && !ctx.request.symbolTable.HasSymbolAnywhere(innerType))
                 {
-                    DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", innerType));
+                    ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+                    ctx.Emit(sym, "as-err-unresolved-type", innerType);
                 }
             }
         }
@@ -179,20 +182,20 @@ namespace angel_lsp::analysis
         if (sig.templateArgumentTypes.empty() && (sig.baseTypeName == arrayTypeName || sig.isArray) && !sig.templateName.empty())
         {
             std::string tName = sig.templateName;
-            if (!IsPrimitiveTypeName(tName) && tName != stringTypeName && tName != arrayTypeName && !req.symbolTable.HasSymbolAnywhere(tName))
+            if (!IsPrimitiveTypeName(tName) && tName != stringTypeName && tName != arrayTypeName && !ctx.request.symbolTable.HasSymbolAnywhere(tName))
             {
-                DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", tName));
+                ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+                ctx.Emit(sym, "as-err-unresolved-type", tName);
             }
         }
 
         if (sig.typeKind == TypeKind::Unknown && sig.baseTypeName != "auto" && !sig.baseTypeName.empty() && sig.baseTypeName.find("::") == std::string::npos)
         {
             if (sig.baseTypeName != stringTypeName && sig.baseTypeName != arrayTypeName &&
-                !req.symbolTable.HasSymbolAnywhere(sig.baseTypeName))
+                !ctx.request.symbolTable.HasSymbolAnywhere(sig.baseTypeName))
             {
-                DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.baseTypeName));
+                ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+                ctx.Emit(sym, "as-err-unresolved-type", sig.baseTypeName);
             }
         }
 
@@ -204,8 +207,8 @@ namespace angel_lsp::analysis
 
         if (sig.isArray && invalidTemplateArgs.count(sig.baseTypeName))
         {
-            DebugDiag("Rule_VariableTypeResolution", "as-err-array-invalid-template", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-array-invalid-template", sig.baseTypeName));
+            ctx.LogRule("Rule_VariableTypeResolution", "as-err-array-invalid-template", sym);
+            ctx.Emit(sym, "as-err-array-invalid-template", sig.baseTypeName);
         }
 
         if (!sig.templateName.empty() && (sig.templateName == "int8" || !IsPrimitiveTypeName(sig.templateName)) &&
@@ -213,35 +216,35 @@ namespace angel_lsp::analysis
         {
             if (invalidTemplateArgs.count(sig.templateName))
             {
-                DebugDiag("Rule_VariableTypeResolution", "as-err-array-invalid-template", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-array-invalid-template", sig.templateName));
+                ctx.LogRule("Rule_VariableTypeResolution", "as-err-array-invalid-template", sym);
+                ctx.Emit(sym, "as-err-array-invalid-template", sig.templateName);
             }
-            else if (!req.symbolTable.HasSymbolAnywhere(sig.templateName))
+            else if (!ctx.request.symbolTable.HasSymbolAnywhere(sig.templateName))
             {
-                DebugDiag("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.templateName));
+                ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
+                ctx.Emit(sym, "as-err-unresolved-type", sig.templateName);
             }
         }
 
-        if (!sig.modifiers.isHandle && req.symbolTable.HasSymbol(sig.baseTypeName))
+        if (!sig.modifiers.isHandle && ctx.request.symbolTable.HasSymbol(sig.baseTypeName))
         {
-            auto typeSyms = req.symbolTable.FindSymbols(sig.baseTypeName);
+            auto typeSyms = ctx.request.symbolTable.FindSymbols(sig.baseTypeName);
             for (const auto &tSym : typeSyms)
             {
                 if (tSym.type == SymbolType::Funcdef)
                 {
-                    DebugDiag("Rule_VariableTypeResolution", "as-err-funcdef-not-handle", sym);
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-funcdef-not-handle", sig.baseTypeName, sig.baseTypeName));
+                    ctx.LogRule("Rule_VariableTypeResolution", "as-err-funcdef-not-handle", sym);
+                    ctx.Emit(sym, "as-err-funcdef-not-handle", sig.baseTypeName, sig.baseTypeName);
                     break;
                 }
             }
         }
     }
 
-    void SemanticAnalyzer::Rule_VariableInitializer(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static void Rule_VariableInitializer(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        std::string_view stringTypeName = req.GetStringTypeName();
-        std::string_view arrayTypeName = req.GetArrayTypeName();
+        std::string_view stringTypeName = ctx.request.GetStringTypeName();
+        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
         const auto &sig = sym.GetVariable();
 
         static const ankerl::unordered_dense::set<std::string> invalidDefaultValues = {
@@ -249,8 +252,8 @@ namespace angel_lsp::analysis
         };
         if (invalidDefaultValues.contains(sig.defaultValue))
         {
-            DebugDiag("Rule_VariableInitializer", "as-syntax-error", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            ctx.LogRule("Rule_VariableInitializer", "as-syntax-error", sym);
+            ctx.Emit(sym, "as-syntax-error");
         }
 
         if (!sig.defaultValue.empty())
@@ -264,8 +267,8 @@ namespace angel_lsp::analysis
             {
                 if ((IsPrimitiveTypeName(sig.baseTypeName) || sig.baseTypeName == stringTypeName) && !sig.isArray && sig.baseTypeName != arrayTypeName)
                 {
-                    DebugDiag("Rule_VariableInitializer", "as-syntax-error", sym);
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                    ctx.LogRule("Rule_VariableInitializer", "as-syntax-error", sym);
+                    ctx.Emit(sym, "as-syntax-error");
                 }
                 else if (sig.baseTypeName == arrayTypeName || sig.isArray || sig.templateName == arrayTypeName || sig.templateName == "array")
                 {
@@ -273,8 +276,8 @@ namespace angel_lsp::analysis
                     {
                         if (trimmedDef.find("{{") == std::string::npos)
                         {
-                            DebugDiag("Rule_VariableInitializer", "as-syntax-error", sym);
-                            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                            ctx.LogRule("Rule_VariableInitializer", "as-syntax-error", sym);
+                            ctx.Emit(sym, "as-syntax-error");
                         }
                     }
                     else
@@ -301,8 +304,8 @@ namespace angel_lsp::analysis
                                     {
                                         if (item.starts_with("\"") || item == "true" || item == "false" || item == "null" || item.starts_with("{"))
                                         {
-                                            DebugDiag("Rule_VariableInitializer", "as-syntax-error", sym);
-                                            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                                            ctx.LogRule("Rule_VariableInitializer", "as-syntax-error", sym);
+                                            ctx.Emit(sym, "as-syntax-error");
                                             break;
                                         }
                                     }
@@ -310,8 +313,8 @@ namespace angel_lsp::analysis
                                     {
                                         if (item == "1" || item == "0" || (item.find_first_not_of("0123456789") == std::string::npos && !item.empty()))
                                         {
-                                            DebugDiag("Rule_VariableInitializer", "as-syntax-error", sym);
-                                            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                                            ctx.LogRule("Rule_VariableInitializer", "as-syntax-error", sym);
+                                            ctx.Emit(sym, "as-syntax-error");
                                             break;
                                         }
                                     }
@@ -331,43 +334,45 @@ namespace angel_lsp::analysis
                                   sig.typeKind == TypeKind::Int8 || sig.typeKind == TypeKind::UInt16);
             if (isNumericType && (isString || isBool))
             {
-                DebugDiag("Rule_VariableInitializer", "as-err-enum-invalid-initializer", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", sym.name));
+                ctx.LogRule("Rule_VariableInitializer", "as-err-enum-invalid-initializer", sym);
+                ctx.Emit(sym, "as-err-enum-invalid-initializer", sym.name);
             }
             bool isBoolType = (sig.typeKind == TypeKind::Bool || sig.baseTypeName == "bool");
             if (isBoolType && isString)
             {
-                DebugDiag("Rule_VariableInitializer", "as-err-enum-invalid-initializer", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", sym.name));
+                ctx.LogRule("Rule_VariableInitializer", "as-err-enum-invalid-initializer", sym);
+                ctx.Emit(sym, "as-err-enum-invalid-initializer", sym.name);
             }
             bool isArrayVar = sig.isArray || sig.baseTypeName == arrayTypeName;
             if (isArrayVar && !sig.modifiers.isHandle && val == "null")
             {
-                DebugDiag("Rule_VariableInitializer", "as-err-handle-on-primitive", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+                ctx.LogRule("Rule_VariableInitializer", "as-err-handle-on-primitive", sym);
+                ctx.Emit(sym, "as-err-handle-on-primitive", sig.baseTypeName);
             }
             if (sig.baseTypeName == stringTypeName && (val == "null" || sig.hasNullInitializer))
             {
-                DebugDiag("Rule_VariableInitializer", "as-err-handle-on-primitive", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
+                ctx.LogRule("Rule_VariableInitializer", "as-err-handle-on-primitive", sym);
+                ctx.Emit(sym, "as-err-handle-on-primitive", sig.baseTypeName);
             }
         }
     }
 
-    void SemanticAnalyzer::ValidateVariable(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void ValidateVariable(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        if (Rule_VariableName(sym, req, diagnostics))
+        if (Rule_VariableName(sym, ctx))
+        {
             return;
+        }
 
         const auto &sig = sym.GetVariable();
         if (sig.isVirtualProperty)
         {
-            ValidateProperty(sym, req, diagnostics);
+            ValidateProperty(sym, ctx);
             return;
         }
 
-        Rule_VariableModifiers(sym, req, diagnostics);
-        Rule_VariableTypeResolution(sym, req, diagnostics);
-        Rule_VariableInitializer(sym, req, diagnostics);
+        Rule_VariableModifiers(sym, ctx);
+        Rule_VariableTypeResolution(sym, ctx);
+        Rule_VariableInitializer(sym, ctx);
     }
 }

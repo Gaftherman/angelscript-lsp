@@ -1,8 +1,11 @@
-#include "analysis/SemanticAnalyzerInternal.h"
+#include "analysis/rules/TypeRules.h"
+#include "analysis/rules/FunctionRules.h"
+#include "analysis/SemanticHelpers.h"
+#include <ankerl/unordered_dense.h>
 
-namespace angel_lsp::analysis
+namespace angel_lsp::analysis::rules
 {
-    bool SemanticAnalyzer::Rule_DuplicateTypeConflict(const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static bool Rule_DuplicateTypeConflict(const std::vector<Symbol> &symbols, const DiagnosticContext &ctx)
     {
         const Symbol *typeDefiningSymbol = nullptr;
         for (const auto &sym : symbols)
@@ -22,14 +25,14 @@ namespace angel_lsp::analysis
             bool hasConflict = false;
             for (const auto &sym : symbols)
             {
-                if (sym.fileUri != req.fileUri)
+                if (sym.fileUri != ctx.request.fileUri)
                     continue;
                 if ((sym.type == SymbolType::Function || sym.type == SymbolType::Variable) &&
                     &sym != typeDefiningSymbol)
                 {
                     const std::string typeName = SymbolTypeToString(typeDefiningSymbol->type);
-                    DebugDiag("Rule_DuplicateTypeConflict", "as-err-name-conflict", sym);
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", sym.name, typeName));
+                    ctx.LogRule("Rule_DuplicateTypeConflict", "as-err-name-conflict", sym);
+                    ctx.Emit(sym, "as-err-name-conflict", sym.name, typeName);
                     hasConflict = true;
                 }
             }
@@ -40,7 +43,7 @@ namespace angel_lsp::analysis
         return false;
     }
 
-    bool SemanticAnalyzer::Rule_DuplicateVarCallableCollision(const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static bool Rule_DuplicateVarCallableCollision(const std::vector<Symbol> &symbols, const DiagnosticContext &ctx)
     {
         bool hasFunction = false;
         bool hasEnum = false;
@@ -49,7 +52,7 @@ namespace angel_lsp::analysis
 
         for (const auto &s : symbols)
         {
-            if (s.fileUri != req.fileUri) continue;
+            if (s.fileUri != ctx.request.fileUri) continue;
             if (s.type == SymbolType::Function) hasFunction = true;
             if (s.type == SymbolType::Enum) hasEnum = true;
             if (s.type == SymbolType::Variable) { hasVariable = true; varSym = &s; }
@@ -57,21 +60,21 @@ namespace angel_lsp::analysis
 
         if (hasFunction && hasVariable && varSym)
         {
-            DebugDiag("Rule_DuplicateVarCallableCollision", "as-err-name-conflict", *varSym);
-            diagnostics.push_back(CreateDiagnostic(*varSym, req, "as-err-name-conflict", varSym->name, "function"));
+            ctx.LogRule("Rule_DuplicateVarCallableCollision", "as-err-name-conflict", *varSym);
+            ctx.Emit(*varSym, "as-err-name-conflict", varSym->name, "function");
             return true;
         }
         if (hasEnum && hasVariable && varSym)
         {
-            DebugDiag("Rule_DuplicateVarCallableCollision", "as-err-name-conflict", *varSym);
-            diagnostics.push_back(CreateDiagnostic(*varSym, req, "as-err-name-conflict", varSym->name, "named type"));
+            ctx.LogRule("Rule_DuplicateVarCallableCollision", "as-err-name-conflict", *varSym);
+            ctx.Emit(*varSym, "as-err-name-conflict", varSym->name, "named type");
             return true;
         }
 
         return false;
     }
 
-    void SemanticAnalyzer::Rule_DuplicateSignature(const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static void Rule_DuplicateSignature(const std::vector<Symbol> &symbols, const DiagnosticContext &ctx)
     {
         const SymbolType firstType = symbols[0].type;
         bool allSameType = true;
@@ -90,14 +93,14 @@ namespace angel_lsp::analysis
             std::vector<const Symbol *> currentFileSymbols;
             for (const auto &sym : symbols)
             {
-                if (sym.fileUri == req.fileUri)
+                if (sym.fileUri == ctx.request.fileUri)
                     currentFileSymbols.push_back(&sym);
             }
 
             for (size_t i = 1; i < currentFileSymbols.size(); ++i)
             {
-                DebugDiag("Rule_DuplicateSignature", "as-err-duplicate-symbol", *currentFileSymbols[i]);
-                diagnostics.push_back(CreateDiagnostic(*currentFileSymbols[i], req, "as-err-duplicate-symbol", currentFileSymbols[i]->name));
+                ctx.LogRule("Rule_DuplicateSignature", "as-err-duplicate-symbol", *currentFileSymbols[i]);
+                ctx.Emit(*currentFileSymbols[i], "as-err-duplicate-symbol", currentFileSymbols[i]->name);
             }
         }
 
@@ -108,21 +111,21 @@ namespace angel_lsp::analysis
                 std::vector<const Symbol *> currentFileSymbols;
                 for (const auto &sym : symbols)
                 {
-                    if (sym.fileUri == req.fileUri)
+                    if (sym.fileUri == ctx.request.fileUri)
                         currentFileSymbols.push_back(&sym);
                 }
 
                 for (size_t i = 1; i < currentFileSymbols.size(); ++i)
                 {
-                    DebugDiag("Rule_DuplicateSignature", "as-err-duplicate-symbol", *currentFileSymbols[i]);
-                    diagnostics.push_back(CreateDiagnostic(*currentFileSymbols[i], req, "as-err-duplicate-symbol", currentFileSymbols[i]->name));
+                    ctx.LogRule("Rule_DuplicateSignature", "as-err-duplicate-symbol", *currentFileSymbols[i]);
+                    ctx.Emit(*currentFileSymbols[i], "as-err-duplicate-symbol", currentFileSymbols[i]->name);
                 }
                 return;
             }
 
             for (size_t i = 0; i < symbols.size(); ++i)
             {
-                if (symbols[i].fileUri != req.fileUri)
+                if (symbols[i].fileUri != ctx.request.fileUri)
                     continue;
 
                 const auto &sigI = symbols[i].GetFunction();
@@ -154,8 +157,8 @@ namespace angel_lsp::analysis
 
                     if (paramsMatch)
                     {
-                        DebugDiag("Rule_DuplicateSignature", "as-err-duplicate-symbol", symbols[i]);
-                        diagnostics.push_back(CreateDiagnostic(symbols[i], req, "as-err-duplicate-symbol", symbols[i].name));
+                        ctx.LogRule("Rule_DuplicateSignature", "as-err-duplicate-symbol", symbols[i]);
+                        ctx.Emit(symbols[i], "as-err-duplicate-symbol", symbols[i].name);
                         break;
                     }
                 }
@@ -163,7 +166,7 @@ namespace angel_lsp::analysis
         }
     }
 
-    void SemanticAnalyzer::ValidateDuplicates(const std::string &qualifiedName, const std::vector<Symbol> &symbols, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void ValidateDuplicates(const std::string &qualifiedName, const std::vector<Symbol> &symbols, const DiagnosticContext &ctx)
     {
         if (symbols.size() <= 1)
             return;
@@ -171,72 +174,72 @@ namespace angel_lsp::analysis
         if (symbols[0].type == SymbolType::Namespace)
             return;
 
-        if (Rule_DuplicateTypeConflict(symbols, req, diagnostics))
+        if (Rule_DuplicateTypeConflict(symbols, ctx))
             return;
 
-        if (Rule_DuplicateVarCallableCollision(symbols, req, diagnostics))
+        if (Rule_DuplicateVarCallableCollision(symbols, ctx))
             return;
 
-        Rule_DuplicateSignature(symbols, req, diagnostics);
+        Rule_DuplicateSignature(symbols, ctx);
     }
 
-    bool SemanticAnalyzer::Rule_InterfaceName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static bool Rule_InterfaceName(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        std::string_view stringTypeName = req.GetStringTypeName();
-        std::string_view arrayTypeName = req.GetArrayTypeName();
+        std::string_view stringTypeName = ctx.request.GetStringTypeName();
+        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
-            DebugDiag("Rule_InterfaceName", "as-err-reserved-keyword-name", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            ctx.LogRule("Rule_InterfaceName", "as-err-reserved-keyword-name", sym);
+            ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
             return true;
         }
 
         return false;
     }
 
-    void SemanticAnalyzer::Rule_InterfaceInheritance(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static void Rule_InterfaceInheritance(const Symbol &sym, const DiagnosticContext &ctx)
     {
         const auto &sig = sym.GetInterface();
 
         if (sig.modifiers.isExternal)
         {
-            DebugDiag("Rule_InterfaceInheritance", "as-err-external-not-found", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
+            ctx.LogRule("Rule_InterfaceInheritance", "as-err-external-not-found", sym);
+            ctx.Emit(sym, "as-err-external-not-found", sym.name);
         }
 
         for (const auto &ifaceName : sig.inheritedInterfaces)
         {
-            if (ifaceName == sym.name || !req.symbolTable.HasSymbol(ifaceName))
+            if (ifaceName == sym.name || !ctx.request.symbolTable.HasSymbol(ifaceName))
             {
-                DebugDiag("Rule_InterfaceInheritance", "as-err-base-not-found", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-base-not-found", ifaceName));
+                ctx.LogRule("Rule_InterfaceInheritance", "as-err-base-not-found", sym);
+                ctx.Emit(sym, "as-err-base-not-found", ifaceName);
             }
         }
     }
 
-    void SemanticAnalyzer::Rule_InterfaceMethods(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static void Rule_InterfaceMethods(const Symbol &sym, const DiagnosticContext &ctx)
     {
         const std::string ifaceContainer = sym.qualifiedName;
-        req.symbolTable.ForEachSymbol(
+        ctx.request.symbolTable.ForEachSymbol(
             [&](const std::string & /*qName*/, const std::vector<Symbol> &symsInTable)
             {
                 for (const auto &ms : symsInTable)
                 {
-                    if (ms.containerName == ifaceContainer && ms.fileUri == req.fileUri)
+                    if (ms.containerName == ifaceContainer && ms.fileUri == ctx.request.fileUri)
                     {
                         if (ms.type == SymbolType::Function)
                         {
                             const auto &fnSig = ms.GetFunction();
                             if (fnSig.modifiers.access == AccessModifier::Private || fnSig.modifiers.access == AccessModifier::Protected)
                             {
-                                DebugDiag("Rule_InterfaceMethods", "as-err-interface-private-method", ms);
-                                diagnostics.push_back(CreateDiagnostic(ms, req, "as-err-interface-private-method", ms.name));
+                                ctx.LogRule("Rule_InterfaceMethods", "as-err-interface-private-method", ms);
+                                ctx.Emit(ms, "as-err-interface-private-method", ms.name);
                             }
                             if (ms.name == sym.name || (!ms.name.empty() && ms.name[0] == '~'))
                             {
-                                DebugDiag("Rule_InterfaceMethods", "as-err-interface-constructor", ms);
-                                diagnostics.push_back(CreateDiagnostic(ms, req, "as-err-interface-constructor", ms.name));
+                                ctx.LogRule("Rule_InterfaceMethods", "as-err-interface-constructor", ms);
+                                ctx.Emit(ms, "as-err-interface-constructor", ms.name);
                             }
                         }
                     }
@@ -244,140 +247,146 @@ namespace angel_lsp::analysis
             });
     }
 
-    void SemanticAnalyzer::ValidateInterface(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void ValidateInterface(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        if (Rule_InterfaceName(sym, req, diagnostics))
+        if (Rule_InterfaceName(sym, ctx))
+        {
             return;
+        }
 
-        Rule_InterfaceInheritance(sym, req, diagnostics);
-        Rule_InterfaceMethods(sym, req, diagnostics);
+        Rule_InterfaceInheritance(sym, ctx);
+        Rule_InterfaceMethods(sym, ctx);
     }
 
-    bool SemanticAnalyzer::Rule_TypedefName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static bool Rule_TypedefName(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        std::string_view stringTypeName = req.GetStringTypeName();
-        std::string_view arrayTypeName = req.GetArrayTypeName();
+        std::string_view stringTypeName = ctx.request.GetStringTypeName();
+        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
-            DebugDiag("Rule_TypedefName", "as-err-reserved-keyword-name", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            ctx.LogRule("Rule_TypedefName", "as-err-reserved-keyword-name", sym);
+            ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
             return true;
         }
 
         return false;
     }
 
-    void SemanticAnalyzer::Rule_TypedefTypeResolution(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static void Rule_TypedefTypeResolution(const Symbol &sym, const DiagnosticContext &ctx)
     {
         const auto &sig = sym.GetTypedef();
 
         if (sig.typeKind == TypeKind::Void || sig.baseType == "void" || !IsPrimitiveTypeName(sig.baseType))
         {
-            DebugDiag("Rule_TypedefTypeResolution", "as-err-typedef-non-primitive", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-typedef-non-primitive", sig.baseType));
+            ctx.LogRule("Rule_TypedefTypeResolution", "as-err-typedef-non-primitive", sym);
+            ctx.Emit(sym, "as-err-typedef-non-primitive", sig.baseType);
         }
         else if (sig.typeKind == TypeKind::Unknown && !sig.baseType.empty())
         {
-            if (!req.symbolTable.HasSymbol(sig.baseType))
+            if (!ctx.request.symbolTable.HasSymbol(sig.baseType))
             {
-                DebugDiag("Rule_TypedefTypeResolution", "as-err-typedef-unresolved", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-typedef-unresolved", sig.baseType));
+                ctx.LogRule("Rule_TypedefTypeResolution", "as-err-typedef-unresolved", sym);
+                ctx.Emit(sym, "as-err-typedef-unresolved", sig.baseType);
             }
         }
     }
 
-    void SemanticAnalyzer::ValidateTypedef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void ValidateTypedef(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        if (Rule_TypedefName(sym, req, diagnostics))
+        if (Rule_TypedefName(sym, ctx))
+        {
             return;
+        }
 
-        Rule_TypedefTypeResolution(sym, req, diagnostics);
+        Rule_TypedefTypeResolution(sym, ctx);
     }
 
-    bool SemanticAnalyzer::Rule_FuncdefName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static bool Rule_FuncdefName(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        std::string_view stringTypeName = req.GetStringTypeName();
-        std::string_view arrayTypeName = req.GetArrayTypeName();
+        std::string_view stringTypeName = ctx.request.GetStringTypeName();
+        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
 
         const auto &sig = sym.GetFunction();
         if (sig.modifiers.isExternal)
         {
-            DebugDiag("Rule_FuncdefName", "as-err-external-not-found", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
+            ctx.LogRule("Rule_FuncdefName", "as-err-external-not-found", sym);
+            ctx.Emit(sym, "as-err-external-not-found", sym.name);
         }
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
-            DebugDiag("Rule_FuncdefName", "as-err-reserved-keyword-name", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            ctx.LogRule("Rule_FuncdefName", "as-err-reserved-keyword-name", sym);
+            ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
             return true;
         }
 
         return false;
     }
 
-    void SemanticAnalyzer::Rule_FuncdefReturn(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static void Rule_FuncdefReturn(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        std::string_view stringTypeName = req.GetStringTypeName();
-        std::string_view arrayTypeName = req.GetArrayTypeName();
+        std::string_view stringTypeName = ctx.request.GetStringTypeName();
+        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
         const auto &sig = sym.GetFunction();
 
         if (sig.returnHasPrimitiveHandle)
         {
-            DebugDiag("Rule_FuncdefReturn", "as-err-handle-on-primitive", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
+            ctx.LogRule("Rule_FuncdefReturn", "as-err-handle-on-primitive", sym);
+            ctx.Emit(sym, "as-err-handle-on-primitive", sig.returnBaseTypeName);
         }
 
         if (!sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" && !IsPrimitiveTypeName(sig.returnBaseTypeName) && sig.returnBaseTypeName != stringTypeName && sig.returnBaseTypeName != arrayTypeName)
         {
-            if (!req.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
+            if (!ctx.request.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
             {
-                DebugDiag("Rule_FuncdefReturn", "as-err-unresolved-type", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
+                ctx.LogRule("Rule_FuncdefReturn", "as-err-unresolved-type", sym);
+                ctx.Emit(sym, "as-err-unresolved-type", sig.returnBaseTypeName);
             }
         }
     }
 
-    void SemanticAnalyzer::ValidateFuncdef(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void ValidateFuncdef(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        if (Rule_FuncdefName(sym, req, diagnostics))
+        if (Rule_FuncdefName(sym, ctx))
+        {
             return;
+        }
 
         const auto &sig = sym.GetFunction();
-        Rule_FuncdefReturn(sym, req, diagnostics);
-        ValidateFunctionParameters(sym, sig, req, diagnostics);
+        Rule_FuncdefReturn(sym, ctx);
+        ValidateFunctionParameters(sym, sig, ctx);
     }
 
-    bool SemanticAnalyzer::Rule_EnumName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static bool Rule_EnumName(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        std::string_view stringTypeName = req.GetStringTypeName();
-        std::string_view arrayTypeName = req.GetArrayTypeName();
+        std::string_view stringTypeName = ctx.request.GetStringTypeName();
+        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
 
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
         {
-            DebugDiag("Rule_EnumName", "as-err-reserved-keyword-name", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            ctx.LogRule("Rule_EnumName", "as-err-reserved-keyword-name", sym);
+            ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
             return true;
         }
 
         return false;
     }
 
-    void SemanticAnalyzer::Rule_EnumMembers(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static void Rule_EnumMembers(const Symbol &sym, const DiagnosticContext &ctx)
     {
         const auto &sig = sym.GetEnum();
 
         if (!sig.hasBraces && sig.members.empty() && !sig.modifiers.isExternal)
         {
-            DebugDiag("Rule_EnumMembers", "as-syntax-error", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            ctx.LogRule("Rule_EnumMembers", "as-syntax-error", sym);
+            ctx.Emit(sym, "as-syntax-error");
         }
 
         if (sig.modifiers.isExternal)
         {
-            DebugDiag("Rule_EnumMembers", "as-err-external-not-found", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-external-not-found", sym.name));
+            ctx.LogRule("Rule_EnumMembers", "as-err-external-not-found", sym);
+            ctx.Emit(sym, "as-err-external-not-found", sym.name);
         }
 
         ankerl::unordered_dense::set<std::string> seenEnumMembers;
@@ -385,8 +394,8 @@ namespace angel_lsp::analysis
         {
             if (!seenEnumMembers.insert(member.name).second)
             {
-                DebugDiag("Rule_EnumMembers", "as-err-name-conflict", sym);
-                diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-name-conflict", member.name, "enum member"));
+                ctx.LogRule("Rule_EnumMembers", "as-err-name-conflict", sym);
+                ctx.Emit(sym, "as-err-name-conflict", member.name, "enum member");
             }
 
             if (!member.value.empty())
@@ -394,8 +403,8 @@ namespace angel_lsp::analysis
                 std::string val = member.value;
                 if (val == member.name)
                 {
-                    DebugDiag("Rule_EnumMembers", "as-err-unresolved-symbol", sym);
-                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-symbol", member.name));
+                    ctx.LogRule("Rule_EnumMembers", "as-err-unresolved-symbol", sym);
+                    ctx.Emit(sym, "as-err-unresolved-symbol", member.name);
                 }
                 else
                 {
@@ -408,38 +417,40 @@ namespace angel_lsp::analysis
 
                     if (isStringLiteral || isLambda || isBool || isNull || isTypeKeyword || isCallOrExpr)
                     {
-                        DebugDiag("Rule_EnumMembers", "as-err-enum-invalid-initializer", sym);
-                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-enum-invalid-initializer", member.name));
+                        ctx.LogRule("Rule_EnumMembers", "as-err-enum-invalid-initializer", sym);
+                        ctx.Emit(sym, "as-err-enum-invalid-initializer", member.name);
                     }
                 }
             }
         }
     }
 
-    void SemanticAnalyzer::ValidateEnum(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void ValidateEnum(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        if (Rule_EnumName(sym, req, diagnostics))
+        if (Rule_EnumName(sym, ctx))
+        {
             return;
+        }
 
-        Rule_EnumMembers(sym, req, diagnostics);
+        Rule_EnumMembers(sym, ctx);
     }
 
-    bool SemanticAnalyzer::Rule_NamespaceName(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    static bool Rule_NamespaceName(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        std::string_view arrayTN = req.GetArrayTypeName();
-        std::string_view stringTN = req.GetStringTypeName();
+        std::string_view arrayTN = ctx.request.GetArrayTypeName();
+        std::string_view stringTN = ctx.request.GetStringTypeName();
         if (IsReservedKeyword(sym.name) || sym.name == arrayTN || sym.name == stringTN || IsPrimitiveTypeName(sym.name))
         {
-            DebugDiag("Rule_NamespaceName", "as-err-reserved-keyword-name", sym);
-            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
+            ctx.LogRule("Rule_NamespaceName", "as-err-reserved-keyword-name", sym);
+            ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
             return true;
         }
 
         return false;
     }
 
-    void SemanticAnalyzer::ValidateNamespace(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
+    void ValidateNamespace(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        Rule_NamespaceName(sym, req, diagnostics);
+        Rule_NamespaceName(sym, ctx);
     }
 }
