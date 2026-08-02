@@ -1,0 +1,13 @@
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+E:\Github\src\angelscript-lsp-clean\server\tests\SemanticAnalyzerTest.cpp(117):
+TEST CASE:  SemanticAnalyzer - Level 1: Mixin Final and Abstract
+
+E:\Github\src\angelscript-lsp-clean\server\tests\SemanticAnalyzerTest.cpp(132): FATAL ERROR: REQUIRE( diagnostics.size() == 2 ) is NOT correct!
+  values: REQUIRE( 3 == 2 )
+
+===============================================================================
+[doctest] test cases:  89 |  88 passed | 1 failed | 0 skipped
+[doctest] assertions: 305 | 304 passed | 1 failed |
+[doctest] Status: FAILURE!

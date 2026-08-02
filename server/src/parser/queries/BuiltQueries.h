@@ -281,6 +281,9 @@ namespace angel_lsp::parser::queries
 ; Interface methods
 (interface_method) @definition.function
 
+; Imported functions
+(import_declaration) @definition.function
+
 ; Virtual properties
 (virtual_property) @definition.property
 

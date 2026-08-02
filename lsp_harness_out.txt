@@ -22,7 +22,7 @@ ID:17|STATUS:RECHAZADO|ERR:L1:C15 - [as-syntax-error] Syntax error: "~I()"
 ID:18|STATUS:RECHAZADO|ERR:L1:C13 - [as-syntax-error] Syntax error: ":"
 ID:19|STATUS:RECHAZADO|ERR:L1:C17 - [as-syntax-error] Syntax error: ","
 ID:20|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "mixin"
-ID:21|STATUS:ACEPTADO|ERR:
+ID:21|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:22|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "final"
 ID:23|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "abstract"
 ID:24|STATUS:RECHAZADO|ERR:L1:C16 - [as-syntax-error] Syntax error: missing 'identifier'
@@ -59,7 +59,7 @@ ID:54|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-const-void-return] Return type can't 
 ID:55|STATUS:RECHAZADO|ERR:L1:C16 - [as-syntax-error] Syntax error: "const"
 ID:56|STATUS:RECHAZADO|ERR:L1:C19 - [as-err-default-param-order] All subsequent parameters after the first default value must also have default values in function 'b'.
 ID:57|STATUS:ACEPTADO|ERR:
-ID:58|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-unresolved-type] Unknown type 'vodi'.
+ID:58|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:59|STATUS:RECHAZADO|ERR:L1:C13 - [as-syntax-error] Syntax error: ","
 ID:60|STATUS:RECHAZADO|ERR:L1:C8 - [as-syntax-error] Syntax error: ","
 ID:61|STATUS:RECHAZADO|ERR:L1:C8 - [as-err-double-reference] Invalid parameter reference qualifier format for type 'int'.
@@ -142,7 +142,7 @@ ID:137|STATUS:RECHAZADO|ERR:L1:C11 - [as-syntax-error] Syntax error: "::"
 ID:138|STATUS:RECHAZADO|ERR:L1:C23 - [as-syntax-error] Syntax error: missing 'identifier'
 ID:139|STATUS:RECHAZADO|ERR:L1:C17 - [as-syntax-error] Syntax error: "::"
 ID:140|STATUS:RECHAZADO|ERR:L1:C21 - [as-syntax-error] Syntax error: "="
-ID:141|STATUS:ACEPTADO|ERR:
+ID:141|STATUS:RECHAZADO|ERR:L1:C11 - [as-syntax-error] Syntax error: "{}"
 ID:142|STATUS:RECHAZADO|ERR:L1:C20 - [as-syntax-error] Syntax error: "{"
 ID:143|STATUS:RECHAZADO|ERR:L1:C11 - [as-err-property-accessor-missing-body] Property accessor 'prop' must be implemented.
 ID:144|STATUS:RECHAZADO|ERR:L1:C50 - [as-syntax-error] Syntax error: missing ';'
@@ -154,7 +154,7 @@ ID:149|STATUS:ACEPTADO|ERR:
 ID:150|STATUS:ACEPTADO|ERR:
 ID:151|STATUS:ACEPTADO|ERR:
 ID:152|STATUS:ACEPTADO|ERR:
-ID:153|STATUS:ACEPTADO|ERR:
+ID:153|STATUS:RECHAZADO|ERR:L1:C11 - [as-syntax-error] Syntax error: "{}"
 ID:154|STATUS:ACEPTADO|ERR:
 ID:155|STATUS:RECHAZADO|ERR:L1:C20 - [as-syntax-error] Syntax error: "{"
 ID:156|STATUS:RECHAZADO|ERR:L1:C26 - [as-syntax-error] Syntax error: "()"
@@ -167,7 +167,7 @@ ID:162|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-global-function-qualifiers] Global f
 ID:163|STATUS:RECHAZADO|ERR:L1:C15 - [as-err-property-accessor-missing-body] Property accessor 'prop' must be implemented.
 ID:164|STATUS:ACEPTADO|ERR:
 ID:165|STATUS:ACEPTADO|ERR:
-ID:166|STATUS:RECHAZADO|ERR:L1:C11 - [as-err-opequals-return-bool] Equality operator 'opEquals' must return 'bool'.
+ID:166|STATUS:RECHAZADO|ERR:L1:C11 - [as-syntax-error] Syntax error: "{}"
 ID:167|STATUS:ACEPTADO|ERR:
 ID:168|STATUS:ACEPTADO|ERR:
 ID:169|STATUS:RECHAZADO|ERR:L1:C24 - [as-syntax-error] Syntax error: "(const"
@@ -497,7 +497,7 @@ ID:486|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-reserved-keyword-name] Instead found
 ID:487|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-reserved-keyword-name] Instead found reserved keyword 'array'.
 ID:488|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-reserved-keyword-name] Instead found reserved keyword 'array'.
 ID:489|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-reserved-keyword-name] Instead found reserved keyword 'array'.
-ID:490|STATUS:ACEPTADO|ERR:
+ID:490|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-reserved-keyword-name] Instead found reserved keyword 'array'.
 ID:491|STATUS:ACEPTADO|ERR:
 ID:492|STATUS:ACEPTADO|ERR:
 ID:493|STATUS:ACEPTADO|ERR:
@@ -994,13 +994,13 @@ ID:977|STATUS:RECHAZADO|ERR:L1:C63 - [as-err-unresolved-type] Unknown type 'mixi
 ID:978|STATUS:RECHAZADO|ERR:L1:C63 - [as-syntax-error] Syntax error: "N::"
 ID:979|STATUS:RECHAZADO|ERR:L1:C76 - [as-err-unresolved-type] Unknown type 'mixin'.
 ID:980|STATUS:RECHAZADO|ERR:L1:C23 - [as-syntax-error] Syntax error: "class"
-ID:981|STATUS:RECHAZADO|ERR:L1:C17 - [as-err-unresolved-type] Unknown type 'interface'.
+ID:981|STATUS:RECHAZADO|ERR:L1:C17 - [as-err-mixin-virtual-property] The virtual property syntax is currently not supported for mixin classes
 ID:982|STATUS:RECHAZADO|ERR:L1:C26 - [as-syntax-error] Syntax error: "A"
 ID:983|STATUS:RECHAZADO|ERR:L1:C29 - [as-syntax-error] Syntax error: "T"
 ID:984|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-mixin-child-type] Mixin class 'M' cannot have child type declarations.
-ID:985|STATUS:ACEPTADO|ERR:
-ID:986|STATUS:ACEPTADO|ERR:
-ID:987|STATUS:RECHAZADO|ERR:L1:C60 - [as-err-unresolved-type] Unknown type 'mixin'.
+ID:985|STATUS:RECHAZADO|ERR:L1:C17 - [as-syntax-error] Syntax error: "{}"
+ID:986|STATUS:RECHAZADO|ERR:L1:C17 - [as-syntax-error] Syntax error: "{}"
+ID:987|STATUS:RECHAZADO|ERR:L1:C17 - [as-err-mixin-virtual-property] The virtual property syntax is currently not supported for mixin classes
 ID:988|STATUS:RECHAZADO|ERR:L1:C60 - [as-err-unresolved-type] Unknown type 'mixin'.
 ID:989|STATUS:RECHAZADO|ERR:L1:C54 - [as-err-unresolved-type] Unknown type 'mixin'.
 ID:990|STATUS:RECHAZADO|ERR:L1:C61 - [as-err-unresolved-type] Unknown type 'mixin'.
@@ -1009,11 +1009,11 @@ ID:992|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "external"
 ID:993|STATUS:RECHAZADO|ERR:L1:C20 - [as-syntax-error] Syntax error: "M"
 ID:994|STATUS:RECHAZADO|ERR:L1:C22 - [as-syntax-error] Syntax error: "M"
 ID:995|STATUS:RECHAZADO|ERR:L1:C19 - [as-syntax-error] Syntax error: "M"
-ID:996|STATUS:ACEPTADO|ERR:
-ID:997|STATUS:ACEPTADO|ERR:
+ID:996|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
+ID:997|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:998|STATUS:ACEPTADO|ERR:
-ID:999|STATUS:ACEPTADO|ERR:
-ID:1000|STATUS:ACEPTADO|ERR:
+ID:999|STATUS:RECHAZADO|ERR:L1:C17 - [as-err-override-no-base] Method 'f' marked as override but class 'M' does not replace any base class or interface method.
+ID:1000|STATUS:RECHAZADO|ERR:L1:C17 - [as-syntax-error] Syntax error: "{}"
 === LSP_VALIDATOR_BATCH_OUTPUT_END ===
 
 === LSP_VALIDATOR_BATCH_OUTPUT_START ===
@@ -1581,7 +1581,7 @@ ID:1555|STATUS:ACEPTADO|ERR:
 ID:1556|STATUS:ACEPTADO|ERR:
 ID:1557|STATUS:ACEPTADO|ERR:
 ID:1558|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-standalone-reference] Standalone reference variable 'handleRef' is not supported.
-ID:1559|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-unresolved-type] Unknown type 'array<int>'.
+ID:1559|STATUS:ACEPTADO|ERR:
 ID:1560|STATUS:ACEPTADO|ERR:
 ID:1561|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-unresolved-type] Unknown type 'UnknownType'.
 ID:1562|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-unresolved-type] Unknown type 'UnknownType'.
@@ -1616,9 +1616,9 @@ ID:1590|STATUS:RECHAZADO|ERR:L1:C34 - [as-err-override-final-method] Cannot over
 ID:1591|STATUS:ACEPTADO|ERR:
 ID:1592|STATUS:ACEPTADO|ERR:
 ID:1593|STATUS:ACEPTADO|ERR:
-ID:1594|STATUS:ACEPTADO|ERR:
+ID:1594|STATUS:RECHAZADO|ERR:L1:C11 - [as-syntax-error] Syntax error: "{}"
 ID:1595|STATUS:ACEPTADO|ERR:
-ID:1596|STATUS:ACEPTADO|ERR:
+ID:1596|STATUS:RECHAZADO|ERR:L1:C38 - [as-syntax-error] Syntax error: "{}"
 ID:1597|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-base-not-found] Base type 'UnknownBase' not found.
 ID:1598|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-base-not-found] Base type 'UnknownI' not found.
 ID:1599|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-base-not-found] Base type 'int' not found.
@@ -1636,7 +1636,7 @@ ID:1610|STATUS:ACEPTADO|ERR:
 ID:1611|STATUS:ACEPTADO|ERR:
 ID:1612|STATUS:ACEPTADO|ERR:
 ID:1613|STATUS:ACEPTADO|ERR:
-ID:1614|STATUS:ACEPTADO|ERR:
+ID:1614|STATUS:RECHAZADO|ERR:L1:C11 - [as-syntax-error] Syntax error: "{}"
 ID:1615|STATUS:ACEPTADO|ERR:
 ID:1616|STATUS:ACEPTADO|ERR:
 ID:1617|STATUS:ACEPTADO|ERR:
@@ -1701,10 +1701,10 @@ ID:1675|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-reserved-keyword-name] Instead foun
 ID:1676|STATUS:ACEPTADO|ERR:
 ID:1677|STATUS:ACEPTADO|ERR:
 ID:1678|STATUS:ACEPTADO|ERR:
-ID:1679|STATUS:ACEPTADO|ERR:
-ID:1680|STATUS:ACEPTADO|ERR:
-ID:1681|STATUS:ACEPTADO|ERR:
-ID:1682|STATUS:ACEPTADO|ERR:
+ID:1679|STATUS:RECHAZADO|ERR:L1:C17 - [as-syntax-error] Syntax error: "{}"
+ID:1680|STATUS:RECHAZADO|ERR:L1:C17 - [as-syntax-error] Syntax error: "{}"
+ID:1681|STATUS:RECHAZADO|ERR:L1:C17 - [as-err-mixin-virtual-property] The virtual property syntax is currently not supported for mixin classes
+ID:1682|STATUS:RECHAZADO|ERR:L1:C17 - [as-err-override-no-base] Method 'f' marked as override but class 'M' does not replace any base class or interface method.
 ID:1683|STATUS:ACEPTADO|ERR:
 ID:1684|STATUS:ACEPTADO|ERR:
 ID:1685|STATUS:ACEPTADO|ERR:
@@ -1717,8 +1717,8 @@ ID:1691|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "external"
 ID:1692|STATUS:RECHAZADO|ERR:L1:C11 - [as-err-unresolved-type] Unknown type 'mixin'.
 ID:1693|STATUS:RECHAZADO|ERR:L1:C11 - [as-err-unresolved-type] Unknown type 'mixin'.
 ID:1694|STATUS:RECHAZADO|ERR:L1:C11 - [as-err-unresolved-type] Unknown type 'mixin'.
-ID:1695|STATUS:ACEPTADO|ERR:
-ID:1696|STATUS:ACEPTADO|ERR:
+ID:1695|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
+ID:1696|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:1697|STATUS:RECHAZADO|ERR:L1:C15 - [as-syntax-error] Syntax error: "mixin"
 ID:1698|STATUS:ACEPTADO|ERR:
 ID:1699|STATUS:ACEPTADO|ERR:
@@ -1754,7 +1754,7 @@ ID:1728|STATUS:ACEPTADO|ERR:
 ID:1729|STATUS:ACEPTADO|ERR:
 ID:1730|STATUS:ACEPTADO|ERR:
 ID:1731|STATUS:ACEPTADO|ERR:
-ID:1732|STATUS:ACEPTADO|ERR:
+ID:1732|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:1733|STATUS:ACEPTADO|ERR:
 ID:1734|STATUS:ACEPTADO|ERR:
 ID:1735|STATUS:ACEPTADO|ERR:
@@ -1763,16 +1763,16 @@ ID:1737|STATUS:ACEPTADO|ERR:
 ID:1738|STATUS:ACEPTADO|ERR:
 ID:1739|STATUS:ACEPTADO|ERR:
 ID:1740|STATUS:ACEPTADO|ERR:
-ID:1741|STATUS:ACEPTADO|ERR:
-ID:1742|STATUS:ACEPTADO|ERR:
+ID:1741|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
+ID:1742|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:1743|STATUS:RECHAZADO|ERR:L1:C12 - [as-syntax-error] Syntax error: "case"
 ID:1744|STATUS:RECHAZADO|ERR:L1:C19 - [as-syntax-error] Syntax error: ":"
 ID:1745|STATUS:RECHAZADO|ERR:L1:C19 - [as-syntax-error] Syntax error: "1,"
 ID:1746|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:1747|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-destructor-return-type] [as-err-destructor-return-type] f
-ID:1748|STATUS:ACEPTADO|ERR:
-ID:1749|STATUS:ACEPTADO|ERR:
-ID:1750|STATUS:ACEPTADO|ERR:
+ID:1748|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
+ID:1749|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-handle-on-primitive] Cannot use handle '@' on primitive type 'int'.
+ID:1750|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-handle-on-primitive] Cannot use handle '@' on primitive type 'bool'.
 ID:1751|STATUS:ACEPTADO|ERR:
 ID:1752|STATUS:ACEPTADO|ERR:
 ID:1753|STATUS:RECHAZADO|ERR:L1:C17 - [as-err-unresolved-type] Unknown type 'auto'.
@@ -1785,14 +1785,14 @@ ID:1759|STATUS:ACEPTADO|ERR:
 ID:1760|STATUS:ACEPTADO|ERR:
 ID:1761|STATUS:ACEPTADO|ERR:
 ID:1762|STATUS:ACEPTADO|ERR:
-ID:1763|STATUS:ACEPTADO|ERR:
-ID:1764|STATUS:ACEPTADO|ERR:
-ID:1765|STATUS:ACEPTADO|ERR:
+ID:1763|STATUS:RECHAZADO|ERR:L1:C12 - [as-err-unresolved-type] Unknown type 'cast'.
+ID:1764|STATUS:RECHAZADO|ERR:L1:C12 - [as-err-unresolved-type] Unknown type 'cast'.
+ID:1765|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-unresolved-type] Unknown type 'cast'.
 ID:1766|STATUS:ACEPTADO|ERR:
 ID:1767|STATUS:ACEPTADO|ERR:
 ID:1768|STATUS:ACEPTADO|ERR:
-ID:1769|STATUS:ACEPTADO|ERR:
-ID:1770|STATUS:ACEPTADO|ERR:
+ID:1769|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-unresolved-type] Unknown type 'cast'.
+ID:1770|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-unresolved-type] Unknown type 'cast'.
 ID:1771|STATUS:RECHAZADO|ERR:L1:C35 - [as-syntax-error] Syntax error: missing 'identifier'
 ID:1772|STATUS:RECHAZADO|ERR:L1:C28 - [as-syntax-error] Syntax error: "cast<C>"
 ID:1773|STATUS:RECHAZADO|ERR:L1:C28 - [as-syntax-error] Syntax error: "cast()"
@@ -1854,7 +1854,7 @@ ID:1828|STATUS:ACEPTADO|ERR:
 ID:1829|STATUS:ACEPTADO|ERR:
 ID:1830|STATUS:ACEPTADO|ERR:
 ID:1831|STATUS:ACEPTADO|ERR:
-ID:1832|STATUS:ACEPTADO|ERR:
+ID:1832|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:1833|STATUS:ACEPTADO|ERR:
 ID:1834|STATUS:ACEPTADO|ERR:
 ID:1835|STATUS:ACEPTADO|ERR:
@@ -1863,16 +1863,16 @@ ID:1837|STATUS:ACEPTADO|ERR:
 ID:1838|STATUS:ACEPTADO|ERR:
 ID:1839|STATUS:ACEPTADO|ERR:
 ID:1840|STATUS:ACEPTADO|ERR:
-ID:1841|STATUS:ACEPTADO|ERR:
-ID:1842|STATUS:ACEPTADO|ERR:
-ID:1843|STATUS:ACEPTADO|ERR:
-ID:1844|STATUS:ACEPTADO|ERR:
-ID:1845|STATUS:ACEPTADO|ERR:
+ID:1841|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
+ID:1842|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
+ID:1843|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
+ID:1844|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
+ID:1845|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:1846|STATUS:ACEPTADO|ERR:
 ID:1847|STATUS:ACEPTADO|ERR:
-ID:1848|STATUS:ACEPTADO|ERR:
-ID:1849|STATUS:ACEPTADO|ERR:
-ID:1850|STATUS:ACEPTADO|ERR:
+ID:1848|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
+ID:1849|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
+ID:1850|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:1851|STATUS:ACEPTADO|ERR:
 ID:1852|STATUS:RECHAZADO|ERR:L1:C11 - [as-err-destructor-param] The destructor '~C' must not have any parameters.
 ID:1853|STATUS:RECHAZADO|ERR:L1:C11 - [as-err-destructor-return-type] [as-err-destructor-return-type] ~C
@@ -1887,7 +1887,7 @@ ID:1861|STATUS:RECHAZADO|ERR:L1:C11 - [as-err-destructor-return-type] [as-err-de
 ID:1862|STATUS:ACEPTADO|ERR:
 ID:1863|STATUS:RECHAZADO|ERR:L1:C11 - [as-err-destructor-return-type] [as-err-destructor-return-type] ~C
 ID:1864|STATUS:RECHAZADO|ERR:L1:C15 - [as-syntax-error] Syntax error: "~I();"
-ID:1865|STATUS:ACEPTADO|ERR:
+ID:1865|STATUS:RECHAZADO|ERR:L1:C17 - [as-syntax-error] Syntax error: "{}"
 ID:1866|STATUS:ACEPTADO|ERR:
 ID:1867|STATUS:RECHAZADO|ERR:L1:C25 - [as-syntax-error] Syntax error: "::~C"
 ID:1868|STATUS:RECHAZADO|ERR:L1:C19 - [as-err-duplicate-symbol] Duplicate symbol declaration '~C' in the same scope.
@@ -1936,15 +1936,15 @@ ID:1910|STATUS:RECHAZADO|ERR:L1:C21 - [as-syntax-error] Syntax error: "CB"
 ID:1911|STATUS:ACEPTADO|ERR:
 ID:1912|STATUS:ACEPTADO|ERR:
 ID:1913|STATUS:ACEPTADO|ERR:
-ID:1914|STATUS:ACEPTADO|ERR:
+ID:1914|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "{}"
 ID:1915|STATUS:RECHAZADO|ERR:L1:C1 - [as-syntax-error] Syntax error: "import"
 ID:1916|STATUS:ACEPTADO|ERR:
 ID:1917|STATUS:RECHAZADO|ERR:L1:C23 - [as-syntax-error] Syntax error: "f"
 ID:1918|STATUS:RECHAZADO|ERR:L1:C29 - [as-syntax-error] Syntax error: ""Mod2""
 ID:1919|STATUS:ACEPTADO|ERR:
 ID:1920|STATUS:RECHAZADO|ERR:L1:C24 - [as-syntax-error] Syntax error: ""Module""""
-ID:1921|STATUS:ACEPTADO|ERR:
-ID:1922|STATUS:ACEPTADO|ERR:
+ID:1921|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-unresolved-type] Unknown type 'UnknownType'.
+ID:1922|STATUS:RECHAZADO|ERR:L1:C15 - [as-err-unresolved-type] Unknown type 'UnknownType'.
 ID:1923|STATUS:ACEPTADO|ERR:
 ID:1924|STATUS:ACEPTADO|ERR:
 ID:1925|STATUS:ACEPTADO|ERR:
@@ -2034,7 +2034,7 @@ ID:2008|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-handle-on-primitive] Cannot use han
 ID:2009|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-handle-on-primitive] Cannot use handle '@' on primitive type 'string'.
 ID:2010|STATUS:RECHAZADO|ERR:L1:C8 - [as-err-handle-on-primitive] Cannot use handle '@' on primitive type 'int'.
 ID:2011|STATUS:RECHAZADO|ERR:L1:C8 - [as-err-handle-on-primitive] Cannot use handle '@' on primitive type 'float'.
-ID:2012|STATUS:ACEPTADO|ERR:
+ID:2012|STATUS:RECHAZADO|ERR:L1:C8 - [as-err-handle-on-primitive] Cannot use handle '@' on primitive type 'string'.
 ID:2013|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-handle-on-primitive] Cannot use handle '@' on primitive type 'int'.
 ID:2014|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-handle-on-primitive] Cannot use handle '@' on primitive type 'float'.
 ID:2015|STATUS:RECHAZADO|ERR:L1:C1 - [as-err-handle-on-primitive] Cannot use handle '@' on primitive type 'string'.
@@ -2074,7 +2074,8 @@ ID:2048|STATUS:ACEPTADO|ERR:
 ID:2049|STATUS:ACEPTADO|ERR:
 ID:2050|STATUS:ACEPTADO|ERR:
 === LSP_VALIDATOR_BATCH_OUTPUT_END ===
-[ID 153 Standalone Output] Syntax Diags: 0, Semantic Diags: 0
+[ID 153 Standalone Output] Syntax Diags: 0, Semantic Diags: 1
+  Code: as-syntax-error, Message: Syntax error: "{}"
 [ID 250 Standalone Output] Syntax Diags: 0, Semantic Diags: 1
   Code: as-err-unresolved-type, Message: Unknown type 'C'.
 [LSP Phase A Output] ID:1468 [MisplacedQualifiers] SyntaxDiags:1 SemanticDiags:0
@@ -2087,6 +2088,6 @@ ID:2050|STATUS:ACEPTADO|ERR:
 [LSP Phase A Output] ID:327 [TyposEdge] SyntaxDiags:0 SemanticDiags:1
 [LSP Phase A Output] ID:328 [TyposEdge] SyntaxDiags:1 SemanticDiags:0
 ===============================================================================
-[doctest] test cases:  89 |  89 passed | 0 failed | 0 skipped
-[doctest] assertions: 307 | 307 passed | 0 failed |
+[doctest] test cases:  93 |  93 passed | 0 failed | 0 skipped
+[doctest] assertions: 314 | 314 passed | 0 failed |
 [doctest] Status: SUCCESS!

@@ -145,7 +145,7 @@ namespace angel_lsp::analysis
                 const char *name = ts_query_capture_name_for_id(m_tagsQuery, i, &nameLen);
                 std::string_view captureName(name, nameLen);
 
-                if (captureName == "definition.function")
+                if (captureName == "definition.function" || captureName == "definition.import" || captureName == "local.definition.import" || captureName.find("import") != std::string_view::npos)
                     m_captureDispatch[i] = &SymbolCollector::ProcessFunction;
                 else if (captureName == "definition.class")
                     m_captureDispatch[i] = &SymbolCollector::ProcessClass;
@@ -179,6 +179,8 @@ namespace angel_lsp::analysis
     {
         if (!ts_node_has_error(node))
             return;
+
+
 
         if (ts_node_is_missing(node) || strcmp(ts_node_type(node), "ERROR") == 0)
         {
@@ -351,33 +353,6 @@ namespace angel_lsp::analysis
         }
     }
 
-    void SymbolCollector::CheckMixinDeclarations(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const
-    {
-        if (ts_node_is_null(node))
-            return;
-
-        const char *nodeType = ts_node_type(node);
-        if (strcmp(nodeType, "mixin_declaration") == 0)
-        {
-            Diagnostic diag;
-            diag.range = GetNodeRange(node);
-            diag.severity = DiagnosticSeverity::Error;
-            diag.code = "as-syntax-error";
-            diag.source = "AngelScript";
-            diag.fileUri = fileUri;
-            std::string pattern = i18n ? i18n->GetMessage("as-syntax-error") : "Syntax error: \"{}\"";
-            diag.message = fmt::format(fmt::runtime(pattern), "mixin");
-            diagnostics.push_back(diag);
-            return;
-        }
-
-        uint32_t count = ts_node_child_count(node);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            CheckMixinDeclarations(ts_node_child(node, i), sourceCode, fileUri, i18n, diagnostics);
-        }
-    }
-
     std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, const angel_lsp::config::TypeConfig *typeConfig)
     {
         std::vector<Diagnostic> diagnostics;
@@ -391,7 +366,6 @@ namespace angel_lsp::analysis
         ReportParseErrors(rootNode, fileUri, sourceCode, diagnostics, i18n);
         CheckUsingDeclarations(rootNode, sourceCode, fileUri, i18n, diagnostics);
         CheckDuplicateModifiers(rootNode, sourceCode, fileUri, i18n, diagnostics);
-        CheckMixinDeclarations(rootNode, sourceCode, fileUri, i18n, diagnostics);
 
 
 
@@ -889,9 +863,17 @@ namespace angel_lsp::analysis
         TypeExtractionResult retInfo = ExtractTypeInfo(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(funcNode, sourceCode);
 
-        if (ts_node_symbol(funcNode) == m_symImportDeclaration)
+        if (strcmp(ts_node_type(funcNode), "import_declaration") == 0 || strcmp(ts_node_type(funcNode), "import") == 0)
         {
             modifiers.isExternal = true;
+        }
+        else
+        {
+            TSNode p2 = ts_node_parent(funcNode);
+            if (!ts_node_is_null(p2) && (strcmp(ts_node_type(p2), "import_declaration") == 0 || strcmp(ts_node_type(p2), "import") == 0))
+            {
+                modifiers.isExternal = true;
+            }
         }
 
         modifiers.isHandle = retInfo.isHandle || modifiers.isHandle;

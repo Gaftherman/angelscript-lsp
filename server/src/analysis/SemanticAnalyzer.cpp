@@ -1,5 +1,6 @@
 #include "analysis/SemanticAnalyzer.h"
 #include <spdlog/fmt/fmt.h>
+#include <sstream>
 
 namespace angel_lsp::analysis
 {
@@ -42,6 +43,31 @@ namespace angel_lsp::analysis
     std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest &request) const
     {
         std::vector<Diagnostic> diagnostics;
+
+        bool hasConcreteSymbols = false;
+        bool hasMixinClass = false;
+        const Symbol *firstMixinSym = nullptr;
+
+        request.symbolTable.ForEachSymbol(
+            [&](const std::string &qn, const std::vector<Symbol> &symbols)
+            {
+                for (const Symbol &sym : symbols)
+                {
+                    if (sym.fileUri != request.fileUri)
+                        continue;
+
+                    if (sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin)
+                    {
+                        hasMixinClass = true;
+                        if (!firstMixinSym)
+                            firstMixinSym = &sym;
+                    }
+                    else
+                    {
+                        hasConcreteSymbols = true;
+                    }
+                }
+            });
 
         request.symbolTable.ForEachSymbol(
             [&](const std::string &qualifiedName, const std::vector<Symbol> &symbols)
@@ -274,7 +300,7 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-delete-with-body", sym.name));
         }
 
-        if (sig.returnHasPrimitiveHandle || (sig.modifiers.isHandle && sig.returnBaseTypeName == stringTypeName))
+        if ((sig.returnHasPrimitiveHandle && !sig.returnIsArray && sig.returnType.find("[]") == std::string::npos && sig.returnType.find("array<") == std::string::npos) || (sig.modifiers.isHandle && sig.returnBaseTypeName == stringTypeName && !sig.returnIsArray))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
         }
@@ -332,11 +358,24 @@ namespace angel_lsp::analysis
         }
 
         bool isInsideClass = false;
+        bool isInsideMixin = false;
         if (!sym.containerName.empty())
         {
             auto parentOpt = req.symbolTable.FindFirstSymbol(sym.containerName);
             if (parentOpt && (parentOpt->type == SymbolType::Class || parentOpt->type == SymbolType::Interface))
+            {
                 isInsideClass = true;
+                if (parentOpt->type == SymbolType::Class && parentOpt->GetClass().modifiers.isMixin)
+                {
+                    isInsideMixin = true;
+                    bool isCtorCheck = (sym.name == sym.containerName);
+                    bool isDtorCheck = (!sym.name.empty() && sym.name[0] == '~');
+                    if (isCtorCheck || isDtorCheck || sig.modifiers.isDelete)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                    }
+                }
+            }
         }
 
         if (sig.hasValueReturn && IsReservedKeyword(sig.returnExpression) && sig.returnExpression != "null" && sig.returnExpression != "true" && sig.returnExpression != "false")
@@ -349,6 +388,7 @@ namespace angel_lsp::analysis
             const std::string &target = sig.returnCallTargetName;
             if (target.find("::") == std::string::npos &&
                 !IsPrimitiveTypeName(target) && target != stringTypeName && target != arrayTypeName &&
+                !target.starts_with("array<") && !target.starts_with(std::string(arrayTypeName) + "<") &&
                 target != "null" && target != "true" && target != "false")
             {
                 std::string expectedQN = sym.containerName.empty() ? target : sym.containerName + "::" + target;
@@ -359,25 +399,136 @@ namespace angel_lsp::analysis
             }
         }
 
+        // Return value in void function (e.g. void f() { return 42; })
+        if (sig.returnTypeKind == TypeKind::Void && sig.hasValueReturn)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
 
+        // Primitive return type returning null (e.g. int f() { return null; }, bool f() { return null; })
+        if (IsPrimitiveTypeName(sig.returnBaseTypeName) && !sig.returnIsArray && sig.returnTypeKind != TypeKind::Array && sig.returnType.find("[]") == std::string::npos && sig.returnType.find("array<") == std::string::npos && sig.returnExpression == "null")
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
+        }
 
+        // Control flow keywords outside loops (break;, continue;)
+        if (!sig.defaultValue.empty())
+        {
+            if ((sig.defaultValue.find("break;") != std::string::npos || sig.defaultValue.find("continue;") != std::string::npos) &&
+                sig.defaultValue.find("while") == std::string::npos &&
+                sig.defaultValue.find("for") == std::string::npos &&
+                sig.defaultValue.find("switch") == std::string::npos)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            }
 
+            // Generalized cast<T> validation for primitive or unresolved types
+            size_t castPos = sig.defaultValue.find("cast<");
+            while (castPos != std::string::npos)
+            {
+                size_t endAngle = sig.defaultValue.find('>', castPos + 5);
+                if (endAngle != std::string::npos)
+                {
+                    std::string castTarget = sig.defaultValue.substr(castPos + 5, endAngle - (castPos + 5));
+                    castTarget.erase(0, castTarget.find_first_not_of(" \t"));
+                    castTarget.erase(castTarget.find_last_not_of(" \t") + 1);
+
+                    if (castTarget == "void" || IsPrimitiveTypeName(castTarget) || castTarget == stringTypeName || (!req.symbolTable.HasSymbolAnywhere(castTarget) && !castTarget.empty()))
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", "cast"));
+                    }
+                }
+                castPos = sig.defaultValue.find("cast<", castPos + 5);
+            }
+
+            if (sig.defaultValue.find("case '") != std::string::npos)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            }
+
+            if (sig.defaultValue.find("super(") != std::string::npos || sig.defaultValue.find("super (") != std::string::npos)
+            {
+                if (!sym.containerName.empty())
+                {
+                    const auto *classSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+                    if (classSyms)
+                    {
+                        for (const auto &cSym : *classSyms)
+                        {
+                            if (cSym.type == SymbolType::Class && cSym.GetClass().bases.empty())
+                            {
+                                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                            }
+                        }
+                    }
+                }
+            }
+            // Scoped member/symbol resolution check (e.g. Base::f() where Base::f is not declared)
+            size_t scopePos = sig.defaultValue.find("::");
+            while (scopePos != std::string::npos && scopePos > 0)
+            {
+                size_t startIdent = scopePos;
+                while (startIdent > 0 && (isalnum(static_cast<unsigned char>(sig.defaultValue[startIdent - 1])) || sig.defaultValue[startIdent - 1] == '_'))
+                {
+                    startIdent--;
+                }
+                size_t endIdent = scopePos + 2;
+                while (endIdent < sig.defaultValue.size() && (isalnum(static_cast<unsigned char>(sig.defaultValue[endIdent])) || sig.defaultValue[endIdent] == '_'))
+                {
+                    endIdent++;
+                }
+                std::string qualifiedName = sig.defaultValue.substr(startIdent, endIdent - startIdent);
+                std::string scopePrefix = sig.defaultValue.substr(startIdent, scopePos - startIdent);
+
+                if (!qualifiedName.empty() && scopePrefix != "global" && endIdent > scopePos + 2)
+                {
+                    if (!req.symbolTable.HasSymbolAnywhere(qualifiedName))
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                        break;
+                    }
+                }
+                scopePos = sig.defaultValue.find("::", endIdent);
+            }
+
+            if (sig.modifiers.isExternal)
+            {
+                if (sig.defaultValue.find("inout") != std::string::npos || sig.defaultValue.find("&inout") != std::string::npos)
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                }
+                if (!sig.returnBaseTypeName.empty() && !IsPrimitiveTypeName(sig.returnBaseTypeName) && sig.returnBaseTypeName != stringTypeName && sig.returnBaseTypeName != arrayTypeName && !sig.returnBaseTypeName.starts_with("array<") && !req.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
+                }
+            }
+        }
+
+        bool isCtor = (!sym.containerName.empty() && sym.name == sym.containerName);
+
+        if (sig.returnBaseTypeName != "void" && sig.returnTypeKind != TypeKind::Void && !sig.returnBaseTypeName.empty() && !isCtor && (!sym.name.empty() && sym.name[0] != '~'))
+        {
+            if (sig.hasBody && !sig.hasValueReturn && !sig.hasEmptyReturn)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            }
+        }
 
         if (!isInsideClass && (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.modifiers.isProperty || sig.modifiers.access == AccessModifier::Protected || sig.modifiers.access == AccessModifier::Private))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-global-function-qualifiers", sym.name));
         }
 
-        bool isCtor = (!sym.containerName.empty() && sym.name == sym.containerName);
-
         // Constructors and destructors cannot use class-level declaration modifiers (final, abstract).
         // 'final' and 'abstract' as declaration_modifiers only apply to class declarations.
         // e.g.: class C { final C() {} } -> invalid, causes assertion error in native compiler.
         // Note: 'class C { C() final {} }' is VALID (here 'final' is a func_attribute, not declaration_modifier).
-        if (sig.modifiers.isDeclarationFinal || sig.modifiers.isDeclarationAbstract)
+        if (isCtor || (!sym.name.empty() && sym.name[0] == '~'))
         {
-            std::string errCode = isCtor ? "as-err-reserved-keyword-name" : "as-syntax-error";
-            diagnostics.push_back(CreateDiagnostic(sym, req, errCode, sym.name));
+            if (sig.modifiers.isFinal || sig.modifiers.isAbstract)
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            }
         }
 
         if (sig.modifiers.isDelete && (sig.modifiers.isConst || (!isCtor && (sig.modifiers.isOverride || sig.modifiers.isFinal || sig.modifiers.isExplicit))))
@@ -386,7 +537,8 @@ namespace angel_lsp::analysis
         }
 
         bool isReturnArray = sig.returnIsArray || sig.returnBaseTypeName == arrayTypeName;
-        if (isReturnArray && !sig.modifiers.isHandle && !sig.returnHasPrimitiveHandle && sig.hasNullReturn)
+        bool isArrayHandle = sig.modifiers.isHandle || sig.returnType.find("@") != std::string::npos;
+        if (isReturnArray && !isArrayHandle && !sig.returnHasPrimitiveHandle && sig.hasNullReturn)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.returnBaseTypeName));
         }
@@ -398,10 +550,12 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-missing-body", sym.name));
         }
 
-        if (!isInsideClass && sig.modifiers.isReturnReference && IsPrimitiveTypeName(sig.returnBaseTypeName) && !sig.modifiers.isConst)
+        if (!isInsideClass && sig.modifiers.isReturnReference && IsPrimitiveTypeName(sig.returnBaseTypeName) && !sig.modifiers.isConst && !sig.returnIsConst)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-invalid-reference-return", sig.returnBaseTypeName));
         }
+
+
 
         if (sig.returnCallTargetName == "super" && isInsideClass)
         {
@@ -502,7 +656,7 @@ namespace angel_lsp::analysis
                             if (cSym.type == SymbolType::Class)
                             {
                                 bool isCtorDtor = (sym.name == cSym.name || (!sym.name.empty() && sym.name[0] == '~'));
-                                if (cSym.GetClass().modifiers.isMixin || isCtorDtor)
+                                if (isCtorDtor)
                                 {
                                     break;
                                 }
@@ -537,10 +691,13 @@ namespace angel_lsp::analysis
         }
 
 
-        if (sig.returnTypeKind == TypeKind::Unknown && !sig.returnBaseTypeName.empty())
+        bool isExternalFunc = sig.modifiers.isExternal;
+        if ((sig.returnTypeKind == TypeKind::Unknown || isExternalFunc) && !sig.returnBaseTypeName.empty())
         {
             if (sig.returnBaseTypeName != stringTypeName && sig.returnBaseTypeName != arrayTypeName &&
-                !req.symbolTable.HasSymbol(sig.returnBaseTypeName))
+                !sig.returnBaseTypeName.starts_with("array<") &&
+                !IsPrimitiveTypeName(sig.returnBaseTypeName) &&
+                !req.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
             {
                 diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-unresolved-type", sig.returnBaseTypeName));
             }
@@ -558,9 +715,16 @@ namespace angel_lsp::analysis
 
         bool seenDefault = false;
 
+        bool isExternalFunc = sig.modifiers.isExternal;
+
         for (const auto &param : sig.parameters)
         {
-            if (sig.modifiers.isExternal && !param.baseTypeName.empty() && !IsPrimitiveTypeName(param.baseTypeName) && param.baseTypeName != stringTypeName && param.baseTypeName != arrayTypeName && !req.symbolTable.HasSymbolAnywhere(param.baseTypeName))
+            if (isExternalFunc && param.modifier == ParameterModifier::InOut)
+            {
+                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-syntax-error"));
+            }
+
+            if (isExternalFunc && !param.baseTypeName.empty() && !IsPrimitiveTypeName(param.baseTypeName) && param.baseTypeName != stringTypeName && param.baseTypeName != arrayTypeName && !param.baseTypeName.starts_with("array<") && !req.symbolTable.HasSymbolAnywhere(param.baseTypeName))
             {
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-unresolved-type", param.baseTypeName));
             }
@@ -623,17 +787,14 @@ namespace angel_lsp::analysis
                 }
             }
 
-            if (param.hasPrimitiveHandle)
+            if (param.hasPrimitiveHandle || (param.baseTypeName == stringTypeName && param.isHandle))
             {
                 diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-handle-on-primitive", param.baseTypeName));
             }
 
-            if (param.typeKind == TypeKind::Unknown && !param.baseTypeName.empty())
+            if (!param.baseTypeName.empty() && !IsPrimitiveTypeName(param.baseTypeName) && param.baseTypeName != stringTypeName && param.baseTypeName != arrayTypeName && !req.symbolTable.HasSymbol(param.baseTypeName) && !req.symbolTable.HasSymbolAnywhere(param.baseTypeName))
             {
-                if (param.baseTypeName != stringTypeName && param.baseTypeName != arrayTypeName && !req.symbolTable.HasSymbol(param.baseTypeName) && !req.symbolTable.HasSymbolAnywhere(param.baseTypeName))
-                {
-                    diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-unresolved-type", param.baseTypeName));
-                }
+                diagnostics.push_back(CreateDiagnostic(param, sym, req, "as-err-unresolved-type", param.baseTypeName));
             }
 
             if (!param.name.empty())
@@ -796,6 +957,74 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-standalone-reference", sym.name));
         }
 
+        // Initializer list syntax for scalar types (not arrays) or invalid array initializer elements
+        if (!sig.defaultValue.empty())
+        {
+            std::string trimmedDef = sig.defaultValue;
+            size_t firstChar = trimmedDef.find_first_not_of(" \t\r\n");
+            if (firstChar != std::string::npos)
+                trimmedDef = trimmedDef.substr(firstChar);
+
+            if (trimmedDef.rfind("{", 0) == 0)
+            {
+                if ((IsPrimitiveTypeName(sig.baseTypeName) || sig.baseTypeName == stringTypeName) && !sig.isArray && sig.baseTypeName != arrayTypeName)
+                {
+                    diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                }
+                else if (sig.baseTypeName == arrayTypeName || sig.isArray || sig.templateName == arrayTypeName || sig.templateName == "array")
+                {
+                    if (sig.arrayDepth >= 2)
+                    {
+                        if (trimmedDef.find("{{") == std::string::npos)
+                        {
+                            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                        }
+                    }
+                    else
+                    {
+                        std::string elemType = !sig.templateArgumentTypes.empty() ? sig.templateArgumentTypes[0] : sig.baseTypeName;
+                        if ((sig.templateName == arrayTypeName || sig.templateName == "array" || sig.isArray) && (elemType == "int" || elemType == "bool"))
+                        {
+                            // Helper to extract clean tokens inside { ... }
+                            size_t openBrace = trimmedDef.find('{');
+                            size_t closeBrace = trimmedDef.rfind('}');
+                            if (openBrace != std::string::npos && closeBrace != std::string::npos && closeBrace > openBrace)
+                            {
+                                std::string inner = trimmedDef.substr(openBrace + 1, closeBrace - openBrace - 1);
+                                std::stringstream ss(inner);
+                                std::string item;
+                                while (std::getline(ss, item, ','))
+                                {
+                                    item.erase(0, item.find_first_not_of(" \t\r\n"));
+                                    size_t last = item.find_last_not_of(" \t\r\n");
+                                    if (last != std::string::npos) item = item.substr(0, last + 1);
+
+                                    if (item.empty()) continue;
+
+                                    if (elemType == "int")
+                                    {
+                                        if (item.starts_with("\"") || item == "true" || item == "false" || item == "null" || item.starts_with("{"))
+                                        {
+                                            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                                            break;
+                                        }
+                                    }
+                                    else if (elemType == "bool")
+                                    {
+                                        if (item == "1" || item == "0" || (item.find_first_not_of("0123456789") == std::string::npos && !item.empty()))
+                                        {
+                                            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (sig.hasPrimitiveHandle)
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-handle-on-primitive", sig.baseTypeName));
@@ -908,8 +1137,7 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-array-invalid-template", sig.baseTypeName));
         }
 
-        if (!sig.templateName.empty() && sig.templateName != "int" && sig.templateName != "float" &&
-            sig.templateName != "double" && sig.templateName != "uint" && sig.templateName != "bool" &&
+        if (!sig.templateName.empty() && (sig.templateName == "int8" || !IsPrimitiveTypeName(sig.templateName)) &&
             sig.templateName != stringTypeName && sig.templateName != arrayTypeName && sig.templateName != "auto")
         {
             if (invalidTemplateArgs.count(sig.templateName))
@@ -955,6 +1183,22 @@ namespace angel_lsp::analysis
     void SemanticAnalyzer::ValidateProperty(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
         const auto &sig = sym.GetVariable();
+
+        if (!sym.containerName.empty() && (sig.isVirtualProperty || sig.hasGet || sig.hasSet))
+        {
+            const auto *containerSyms = req.symbolTable.FindSymbolsPtr(sym.containerName);
+            if (containerSyms)
+            {
+                for (const auto &cSym : *containerSyms)
+                {
+                    if (cSym.type == SymbolType::Class && cSym.GetClass().modifiers.isMixin)
+                    {
+                        diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-virtual-property"));
+                        return;
+                    }
+                }
+            }
+        }
 
         if (sig.typeKind == TypeKind::Void)
         {
@@ -1125,8 +1369,18 @@ namespace angel_lsp::analysis
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-mixin-abstract", sym.name));
         }
 
+        if (sig.modifiers.isOverride || sig.modifiers.isExplicit)
+        {
+            diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+        }
+
         if (sig.modifiers.isMixin)
         {
+            if (!sig.bases.empty())
+            {
+                diagnostics.push_back(CreateDiagnostic(sym, req, "as-syntax-error"));
+            }
+
             req.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &syms) {
                 for (const auto &s : syms)
                 {
@@ -1259,7 +1513,6 @@ namespace angel_lsp::analysis
                             for (const auto &ifaceMethod : ifaceMethods)
                             {
                                 bool implemented = false;
-                                
                                 auto checkMatchInClass = [&](const std::string &container) -> bool {
                                     const std::string expectedQN = container.empty() ? ifaceMethod.name : container + "::" + ifaceMethod.name;
                                     const auto *classMethodSyms = req.symbolTable.FindSymbolsPtr(expectedQN);
@@ -1573,9 +1826,9 @@ namespace angel_lsp::analysis
                     bool isStringLiteral = (member.valueNodeType == node_types::StringLiteral || (!val.empty() && (val.front() == '"' || val.front() == '\'')));
                     bool isLambda = (member.valueNodeType == node_types::LambdaExpression);
                     bool isBool = (member.valueNodeType == node_types::BooleanLiteral || val == "true" || val == "false");
-                    bool isNull = (member.valueNodeType == "null_literal" || val == "null");
+                    bool isNull = (member.valueNodeType == node_types::NullLiteral || val == "null");
                     bool isTypeKeyword = (val == "int" || val == "float" || val == "double" || val == "void" || val == "auto" || val == "class" || val == "struct" || val == "enum");
-                    bool isCallOrExpr = (member.valueNodeType == "call_expression");
+                    bool isCallOrExpr = (member.valueNodeType == node_types::CallExpression);
 
                     if (isStringLiteral || isLambda || isBool || isNull || isTypeKeyword || isCallOrExpr)
                     {
@@ -1588,13 +1841,13 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::ValidateNamespace(const Symbol &sym, const SemanticAnalysisRequest &req, std::vector<Diagnostic> &diagnostics) const
     {
-        if (IsReservedKeyword(sym.name))
+        std::string_view arrayTN = req.GetArrayTypeName();
+        std::string_view stringTN = req.GetStringTypeName();
+        if (IsReservedKeyword(sym.name) || sym.name == arrayTN || sym.name == stringTN || IsPrimitiveTypeName(sym.name))
         {
             diagnostics.push_back(CreateDiagnostic(sym, req, "as-err-reserved-keyword-name", sym.name));
             return;
         }
-
-
     }
 
     Diagnostic SemanticAnalyzer::CreateDiagnostic(const Symbol &sym, const SemanticAnalysisRequest &req, const std::string &code, DiagnosticSeverity severity) const

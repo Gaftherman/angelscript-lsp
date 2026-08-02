@@ -20,6 +20,8 @@ namespace angel_lsp::analysis
         constexpr std::string_view BooleanLiteral = "boolean_literal";
         constexpr std::string_view NumberLiteral = "number_literal";
         constexpr std::string_view ImportDeclaration = "import_declaration";
+        constexpr std::string_view NullLiteral = "null_literal";
+        constexpr std::string_view CallExpression = "call_expression";
     }
     struct SemanticAnalysisRequest
     {

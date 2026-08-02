@@ -14,10 +14,24 @@ using namespace angel_lsp::parser;
 
 TEST_CASE("SemanticAnalyzer - OpIndex Declaration Validity")
 {
-    // Variant 1: 0 params -> ACEPTADO (Legal method declaration in class)
+    // Variant 1: 1 param -> ACEPTADO (Legal method declaration in class)
     {
-        std::string sourceCode = "class C { void opIndex() {} }\n";
+        std::string sourceCode = "class C { void opIndex(uint idx) {} }\n";
         std::string fileUri = "file:///opindex1.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        CHECK(diagnostics.empty());
+    }
+    // Variant 2: 0 params -> ACEPTADO (Legal method declaration in class)
+    {
+        std::string sourceCode = "class C { int opIndex() { return 0; } }\n";
+        std::string fileUri = "file:///opindex2.as";
         SymbolTable table;
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);
@@ -2979,7 +2993,7 @@ TEST_CASE("SemanticAnalyzer - Enum Suite 03: Enum Return Type Valid")
 
 TEST_CASE("SemanticAnalyzer - Enum Suite 04: Undefined Enum Return Type Flagged")
 {
-    std::string sourceCode = "UndefinedMode GetMode() {}\n";
+    std::string sourceCode = "UndefinedMode GetMode() { return 0; }\n";
     std::string fileUri = "file:///test_enum4.as";
     SymbolTable table; AngelScriptParser parser; SymbolCollector collector(nullptr);
     collector.CollectSymbols(fileUri, sourceCode, parser, table);
@@ -3872,7 +3886,8 @@ TEST_CASE("SemanticAnalyzer - Phase A 9 Sample Cases Test")
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);
 
-        auto syntaxDiags = collector.CollectSymbols(fileUri, tc.code, parser, table);
+        std::string codeWithNL = tc.code + "\n";
+        auto syntaxDiags = collector.CollectSymbols(fileUri, codeWithNL, parser, table);
 
         SemanticAnalyzer analyzer;
         angel_lsp::config::TypeConfig typeConfig{"string", "array"};
@@ -3882,6 +3897,227 @@ TEST_CASE("SemanticAnalyzer - Phase A 9 Sample Cases Test")
         std::cout << "[LSP Phase A Output] ID:" << tc.id << " [" << tc.cat << "] SyntaxDiags:" << syntaxDiags.size() << " SemanticDiags:" << semanticDiags.size() << "\n";
     }
 }
+
+TEST_CASE("SemanticAnalyzer - ID 250 Mutation Test Exact Snippet")
+{
+    std::string sourceCode = "namespace N { class C {} }\n::N::C f(::N::C@ arg) { return C(); }\n";
+    std::string fileUri = "file:///test_id250.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-unresolved-type");
+}
+
+TEST_CASE("SemanticAnalyzer - Mixin Final Method Test")
+{
+    std::string sourceCode = "mixin class M { void f() final {} }\n";
+    std::string fileUri = "file:///test_mixin_final.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Multiple Mixin Declarations Test")
+{
+    std::string sourceCode = "mixin class M1 {} mixin class M2 {}\n";
+    std::string fileUri = "file:///test_mixin_m1_m2.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    auto diagnostics = collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Mixin Virtual Property Test")
+{
+    std::string sourceCode = "mixin class M { int p { get { return 0; } } }\n";
+    std::string fileUri = "file:///test_mixin_prop.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-mixin-virtual-property");
+}
+
+TEST_CASE("SemanticAnalyzer - Hallazgo B: Mixin Target Identifier Test")
+{
+    std::string sourceCode = "mixin class M { void f() { int target = 0; int offset = 0; } }\n";
+    std::string fileUri = "file:///test_mixin_target.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Hallazgo C: External Import Modifier Test")
+{
+    std::string sourceCode = "import void f(int &inout) from \"mod\";\n";
+    std::string fileUri = "file:///test_import_inout.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-syntax-error");
+}
+
+TEST_CASE("SemanticAnalyzer - Hallazgo D: Void Ctor Dtor No Return Test")
+{
+    std::string sourceCode = "void f() { int x = 1; }\nclass C { C() { int x = 1; } ~C() { int x = 1; } }\n";
+    std::string fileUri = "file:///test_void_ctor_dtor.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("SemanticAnalyzer - Hallazgo E: Nested Array Depth Test")
+{
+    std::string sourceCode = "array<array<int>> a = { 1 };\n";
+    std::string fileUri = "file:///test_array_depth.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-syntax-error");
+}
+
+TEST_CASE("SemanticAnalyzer - Hallazgo F: Array Bool Initializer Tokenization Test")
+{
+    std::string sourceCode = "array<bool> b = { 1, 0 };\n";
+    std::string fileUri = "file:///test_array_bool.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-syntax-error");
+}
+
+TEST_CASE("SemanticAnalyzer - Hallazgo G: Enum Invalid Initializer Node Types Test")
+{
+    std::string sourceCode = "enum E { A = null }\n";
+    std::string fileUri = "file:///test_enum_null.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-enum-invalid-initializer");
+}
+
+TEST_CASE("SemanticAnalyzer - Hallazgo H: Namespace Custom Type Config Test")
+{
+    std::string sourceCode = "namespace MyString {}\n";
+    std::string fileUri = "file:///test_ns_mystring.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    angel_lsp::config::TypeConfig config;
+    config.stringTypeName = "MyString";
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n, &config};
+    auto diagnostics = analyzer.Analyze(req);
+
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics[0].code == "as-err-reserved-keyword-name");
+}
+
+TEST_CASE("SemanticAnalyzer - Hallazgo I: Primitive Template Name int8 Test")
+{
+    std::string sourceCode = "int8 x;\n";
+    std::string fileUri = "file:///test_array_int8.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    SemanticAnalyzer analyzer;
+    angel_lsp::i18n::I18n i18n("en");
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    auto diagnostics = analyzer.Analyze(req);
+
+    CHECK(diagnostics.empty());
+}
+
 
 
 
