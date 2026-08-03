@@ -150,7 +150,7 @@ namespace angel_lsp::analysis::rules
                 isInsideClass = true;
         }
 
-        if (sig.baseTypeName == "auto" && (isInsideClass || sig.defaultValue == "null"))
+        if (sig.baseTypeName == "auto" && (isInsideClass || sig.defaultValue == "null" || sig.defaultValue.starts_with("function")))
         {
             ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
             ctx.Emit(sym, "as-err-unresolved-type", "auto");
@@ -199,13 +199,12 @@ namespace angel_lsp::analysis::rules
             }
         }
 
-        static const ankerl::unordered_dense::set<std::string_view> invalidTemplateArgs = {
-            "void", "auto", "class", "struct", "enum", "funcdef",
-            "interface", "namespace", "using", "import", "export",
-            "external", "shared", "final", "abstract", "true", "false", "null"
+        auto isInvalidTemplateArg = [](const std::string &typeName) -> bool {
+            if (typeName == "void" || typeName == "auto" || typeName == "null") return true;
+            return IsReservedKeyword(typeName) && !IsPrimitiveTypeName(typeName);
         };
 
-        if (sig.isArray && invalidTemplateArgs.count(sig.baseTypeName))
+        if (sig.isArray && isInvalidTemplateArg(sig.baseTypeName))
         {
             ctx.LogRule("Rule_VariableTypeResolution", "as-err-array-invalid-template", sym);
             ctx.Emit(sym, "as-err-array-invalid-template", sig.baseTypeName);
@@ -213,7 +212,7 @@ namespace angel_lsp::analysis::rules
 
         if (!sig.templateName.empty() && sig.templateName != stringTypeName && sig.templateName != arrayTypeName && sig.templateName != "auto")
         {
-            if (invalidTemplateArgs.count(sig.templateName))
+            if (isInvalidTemplateArg(sig.templateName))
             {
                 ctx.LogRule("Rule_VariableTypeResolution", "as-err-array-invalid-template", sym);
                 ctx.Emit(sym, "as-err-array-invalid-template", sig.templateName);

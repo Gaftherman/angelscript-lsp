@@ -792,6 +792,20 @@ namespace angel_lsp::analysis
         return parameters;
     }
 
+    static std::string ExtractTSNodeText(TSNode node, const std::string &sourceCode)
+    {
+        if (ts_node_is_null(node))
+            return "";
+
+        uint32_t start = ts_node_start_byte(node);
+        uint32_t end = ts_node_end_byte(node);
+
+        if (start >= end || end > sourceCode.size())
+            return "";
+
+        return sourceCode.substr(start, end - start);
+    }
+
     static void InspectFunctionBodyAST(TSNode node, FunctionSignature &sig, const std::string &sourceCode)
     {
         if (ts_node_is_null(node))
@@ -809,12 +823,7 @@ namespace angel_lsp::analysis
             else
             {
                 sig.hasValueReturn = true;
-                uint32_t start = ts_node_start_byte(valNode);
-                uint32_t end = ts_node_end_byte(valNode);
-                if (start < end && end <= sourceCode.size())
-                {
-                    sig.returnExpression = sourceCode.substr(start, end - start);
-                }
+                sig.returnExpression = ExtractTSNodeText(valNode, sourceCode);
                 if (strcmp(ts_node_type(valNode), "null_literal") == 0)
                 {
                     sig.hasNullReturn = true;
@@ -824,96 +833,111 @@ namespace angel_lsp::analysis
                     TSNode funcNode = SymbolCollector::GetChildByFieldName(valNode, "function");
                     if (!ts_node_is_null(funcNode))
                     {
-                        uint32_t fStart = ts_node_start_byte(funcNode);
-                        uint32_t fEnd = ts_node_end_byte(funcNode);
-                        if (fStart < fEnd && fEnd <= sourceCode.size())
-                        {
-                            sig.returnCallTargetName = sourceCode.substr(fStart, fEnd - fStart);
-                        }
+                        sig.returnCallTargetName = ExtractTSNodeText(funcNode, sourceCode);
                     }
                 }
             }
         }
 
-        std::string nodeText;
-        uint32_t start = ts_node_start_byte(node);
-        uint32_t end = ts_node_end_byte(node);
-        if (start < end && end <= sourceCode.size())
+        if (strcmp(nodeType, "call_expression") == 0)
         {
-            nodeText = sourceCode.substr(start, end - start);
-        }
-
-        if (!nodeText.empty())
-        {
-            if (nodeText.find("super(") != std::string::npos || nodeText.find("super (") != std::string::npos)
+            TSNode funcChild = SymbolCollector::GetChildByFieldName(node, "function");
+            if (!ts_node_is_null(funcChild))
             {
-                sig.hasSuperCall = true;
-            }
-
-            if (nodeText.find("goto ") != std::string::npos)
-            {
-                size_t gotoPos = nodeText.find("goto ");
-                while (gotoPos != std::string::npos)
+                std::string fText = ExtractTSNodeText(funcChild, sourceCode);
+                if (fText == "super")
                 {
-                    size_t labelStart = gotoPos + 5;
-                    while (labelStart < nodeText.size() && isspace(static_cast<unsigned char>(nodeText[labelStart])))
-                    {
-                        labelStart++;
-                    }
-                    size_t labelEnd = labelStart;
-                    while (labelEnd < nodeText.size() && (isalnum(static_cast<unsigned char>(nodeText[labelEnd])) || nodeText[labelEnd] == '_'))
-                    {
-                        labelEnd++;
-                    }
-                    std::string labelName = nodeText.substr(labelStart, labelEnd - labelStart);
-                    if (!labelName.empty())
-                    {
-                        sig.gotoTargetLabels.push_back(labelName);
-                    }
-                    gotoPos = nodeText.find("goto ", gotoPos + 5);
+                    sig.hasSuperCall = true;
                 }
             }
-
-            if (nodeText.find("cast<") != std::string::npos)
+        }
+        else if (strcmp(nodeType, "goto_statement") == 0)
+        {
+            TSNode labelChild = SymbolCollector::GetChildByFieldName(node, "label");
+            if (ts_node_is_null(labelChild))
             {
-                size_t castPos = nodeText.find("cast<");
+                labelChild = SymbolCollector::GetChildByFieldName(node, "name");
+            }
+            std::string lName;
+            if (!ts_node_is_null(labelChild))
+            {
+                lName = ExtractTSNodeText(labelChild, sourceCode);
+            }
+            else
+            {
+                std::string gText = ExtractTSNodeText(node, sourceCode);
+                size_t gPos = gText.find("goto");
+                if (gPos != std::string::npos)
+                {
+                    size_t sStart = gPos + 4;
+                    while (sStart < gText.size() && isspace(static_cast<unsigned char>(gText[sStart]))) sStart++;
+                    size_t sEnd = sStart;
+                    while (sEnd < gText.size() && (isalnum(static_cast<unsigned char>(gText[sEnd])) || gText[sEnd] == '_')) sEnd++;
+                    lName = gText.substr(sStart, sEnd - sStart);
+                }
+            }
+            if (!lName.empty())
+            {
+                sig.gotoTargetLabels.push_back(lName);
+            }
+        }
+        else if (strcmp(nodeType, "cast_expression") == 0)
+        {
+            TSNode typeChild = SymbolCollector::GetChildByFieldName(node, "type");
+            if (!ts_node_is_null(typeChild))
+            {
+                std::string cType = ExtractTSNodeText(typeChild, sourceCode);
+                if (!cType.empty())
+                {
+                    sig.bodyCastTypes.push_back(cType);
+                }
+            }
+        }
+        else if (strcmp(nodeType, "scoped_identifier") == 0 || strcmp(nodeType, "scoped_type") == 0 || strcmp(nodeType, "scope_resolution") == 0)
+        {
+            std::string qName = ExtractTSNodeText(node, sourceCode);
+            if (!qName.empty() && qName.find("::") != std::string::npos)
+            {
+                sig.bodyQualifiedNames.push_back(qName);
+            }
+        }
+
+        std::string nText = ExtractTSNodeText(node, sourceCode);
+        if (!nText.empty())
+        {
+            if (nText.find("goto ") != std::string::npos && sig.gotoTargetLabels.empty())
+            {
+                size_t gPos = nText.find("goto ");
+                while (gPos != std::string::npos)
+                {
+                    size_t sStart = gPos + 5;
+                    while (sStart < nText.size() && isspace(static_cast<unsigned char>(nText[sStart]))) sStart++;
+                    size_t sEnd = sStart;
+                    while (sEnd < nText.size() && (isalnum(static_cast<unsigned char>(nText[sEnd])) || nText[sEnd] == '_')) sEnd++;
+                    std::string lName = nText.substr(sStart, sEnd - sStart);
+                    if (!lName.empty())
+                    {
+                        sig.gotoTargetLabels.push_back(lName);
+                    }
+                    gPos = nText.find("goto ", gPos + 5);
+                }
+            }
+            if (nText.find("cast<") != std::string::npos && sig.bodyCastTypes.empty())
+            {
+                size_t castPos = nText.find("cast<");
                 while (castPos != std::string::npos)
                 {
                     size_t typeStart = castPos + 5;
-                    size_t typeEnd = nodeText.find('>', typeStart);
+                    size_t typeEnd = nText.find('>', typeStart);
                     if (typeEnd != std::string::npos)
                     {
-                        std::string castType = nodeText.substr(typeStart, typeEnd - typeStart);
+                        std::string castType = nText.substr(typeStart, typeEnd - typeStart);
                         if (!castType.empty())
                         {
                             sig.bodyCastTypes.push_back(castType);
                         }
                     }
-                    castPos = nodeText.find("cast<", castPos + 5);
-                }
-            }
-
-            if (nodeText.find("::") != std::string::npos)
-            {
-                size_t scopePos = nodeText.find("::");
-                while (scopePos != std::string::npos && scopePos > 0)
-                {
-                    size_t startIdent = scopePos;
-                    while (startIdent > 0 && (isalnum(static_cast<unsigned char>(nodeText[startIdent - 1])) || nodeText[startIdent - 1] == '_'))
-                    {
-                        startIdent--;
-                    }
-                    size_t endIdent = scopePos + 2;
-                    while (endIdent < nodeText.size() && (isalnum(static_cast<unsigned char>(nodeText[endIdent])) || nodeText[endIdent] == '_'))
-                    {
-                        endIdent++;
-                    }
-                    std::string qualifiedName = nodeText.substr(startIdent, endIdent - startIdent);
-                    if (!qualifiedName.empty())
-                    {
-                        sig.bodyQualifiedNames.push_back(qualifiedName);
-                    }
-                    scopePos = nodeText.find("::", endIdent);
+                    castPos = nText.find("cast<", castPos + 5);
                 }
             }
         }
@@ -931,6 +955,19 @@ namespace angel_lsp::analysis
         TSNode typeNode = GetChildByFieldName(funcNode, "return_type");
         TSNode paramsNode = GetChildByFieldName(funcNode, "parameters");
         TSNode bodyNode = GetChildByFieldName(funcNode, "body");
+        if (ts_node_is_null(bodyNode))
+        {
+            uint32_t cCount = ts_node_child_count(funcNode);
+            for (uint32_t i = 0; i < cCount; ++i)
+            {
+                TSNode ch = ts_node_child(funcNode, i);
+                if (strcmp(ts_node_type(ch), "compound_statement") == 0 || strcmp(ts_node_type(ch), "statement_block") == 0 || strcmp(ts_node_type(ch), "block") == 0)
+                {
+                    bodyNode = ch;
+                    break;
+                }
+            }
+        }
 
         TypeExtractionResult retInfo = ExtractTypeInfo(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(funcNode, sourceCode);

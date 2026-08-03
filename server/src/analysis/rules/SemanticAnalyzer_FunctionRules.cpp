@@ -7,7 +7,13 @@ namespace angel_lsp::analysis::rules
     FunctionContext BuildFunctionContext(const Symbol &sym, const SemanticAnalysisRequest &req)
     {
         FunctionContext ctx;
-        ctx.isCtor = (!sym.containerName.empty() && sym.name == sym.containerName);
+        std::string unqualifiedContainer = sym.containerName;
+        size_t lastColons = unqualifiedContainer.rfind("::");
+        if (lastColons != std::string::npos)
+        {
+            unqualifiedContainer = unqualifiedContainer.substr(lastColons + 2);
+        }
+        ctx.isCtor = (!sym.containerName.empty() && (sym.name == sym.containerName || sym.name == unqualifiedContainer));
         ctx.isDtor = (!sym.name.empty() && sym.name[0] == '~');
 
         if (!sym.containerName.empty())
@@ -32,6 +38,10 @@ namespace angel_lsp::analysis::rules
         return ctx;
     }
 
+    /**
+     * @brief Validates function name against reserved keywords and registered types.
+     * @return true if an error is detected (stops further signature validation), false if OK.
+     */
     static bool Rule_FunctionName(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
     {
         std::string_view stringTypeName = ctx.request.GetStringTypeName();
@@ -41,17 +51,17 @@ namespace angel_lsp::analysis::rules
         {
             ctx.LogRule("Rule_FunctionName", "as-err-name-conflict", sym);
             ctx.Emit(sym, "as-err-name-conflict", sym.name, "registered object type");
-            return false;
+            return true;
         }
 
         if (IsReservedKeyword(sym.name))
         {
             ctx.LogRule("Rule_FunctionName", "as-err-reserved-keyword-name", sym);
             ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
-            return false;
+            return true;
         }
 
-        return true;
+        return false;
     }
 
     static void Rule_FunctionBody(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
@@ -70,7 +80,7 @@ namespace angel_lsp::analysis::rules
             ctx.Emit(sym, "as-err-delete-with-body", sym.name);
         }
 
-        if (!sym.containerName.empty() && sig.returnType.empty() && sym.name != sym.containerName && sym.name[0] != '~')
+        if (!sym.containerName.empty() && sig.returnType.empty() && !fctx.isCtor && !fctx.isDtor)
         {
             ctx.LogRule("Rule_FunctionBody", "as-err-missing-body", sym);
             ctx.Emit(sym, "as-err-missing-body", sym.name);
@@ -83,7 +93,7 @@ namespace angel_lsp::analysis::rules
         std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
         const auto &sig = sym.GetFunction();
 
-        if (sig.modifiers.isReturnReference && (IsPrimitiveTypeName(sig.returnBaseTypeName) || sig.returnBaseTypeName == stringTypeName))
+        if (sig.modifiers.isReturnReference && !sig.returnIsConst && (IsPrimitiveTypeName(sig.returnBaseTypeName) || sig.returnBaseTypeName == stringTypeName))
         {
             ctx.LogRule("Rule_FunctionReturnType", "as-err-invalid-reference-return", sym);
             ctx.Emit(sym, "as-err-invalid-reference-return", sig.returnBaseTypeName);
@@ -185,7 +195,7 @@ namespace angel_lsp::analysis::rules
                 ctx.LogRule("Rule_CtorDtor", "as-syntax-error", sym);
                 ctx.Emit(sym, "as-syntax-error");
             }
-            if (sig.modifiers.isFinal)
+            if (sig.modifiers.isFinal || sig.modifiers.isAbstract)
             {
                 ctx.LogRule("Rule_CtorDtor", "as-syntax-error", sym);
                 ctx.Emit(sym, "as-syntax-error");
@@ -198,13 +208,31 @@ namespace angel_lsp::analysis::rules
                     ctx.LogRule("Rule_CtorDtor", "as-err-destructor-param", sym);
                     ctx.Emit(sym, "as-err-destructor-param", sym.name);
                 }
+                if (!sig.returnType.empty() && sig.returnType != "void")
+                {
+                    ctx.LogRule("Rule_CtorDtor", "as-err-destructor-return-type", sym);
+                    ctx.Emit(sym, "as-err-destructor-return-type", sym.name);
+                }
+                if (sig.modifiers.isDelete)
+                {
+                    ctx.LogRule("Rule_CtorDtor", "as-err-destructor-delete", sym);
+                    ctx.Emit(sym, "as-err-destructor-delete", sym.name);
+                }
             }
-
-            if (!sig.returnType.empty() && sig.returnType != "void")
+            else if (fctx.isCtor)
             {
-                ctx.LogRule("Rule_CtorDtor", "as-syntax-error", sym);
-                ctx.Emit(sym, "as-syntax-error");
+                if (!sig.returnType.empty() && sig.returnType != "void")
+                {
+                    ctx.LogRule("Rule_CtorDtor", "as-syntax-error", sym);
+                    ctx.Emit(sym, "as-syntax-error");
+                }
             }
+        }
+
+        if (sig.modifiers.isDelete && (sig.modifiers.isConst || sig.modifiers.isFinal || sig.modifiers.isOverride || sig.modifiers.isAbstract))
+        {
+            ctx.LogRule("Rule_FunctionModifiers", "as-err-delete-with-other-qualifier", sym);
+            ctx.Emit(sym, "as-err-delete-with-other-qualifier", sym.name);
         }
     }
 
@@ -420,17 +448,17 @@ namespace angel_lsp::analysis::rules
         if (!sym.containerName.empty())
         {
             auto parentOpt = ctx.request.symbolTable.FindFirstSymbol(sym.containerName);
-            if (parentOpt && (parentOpt->type == SymbolType::Class || parentOpt->type == SymbolType::Interface))
+            if (parentOpt && parentOpt->type == SymbolType::Class && parentOpt->GetClass().modifiers.isMixin)
             {
-                if (parentOpt->type == SymbolType::Class && parentOpt->GetClass().modifiers.isMixin)
+                if (fctx.isCtor)
                 {
-                    bool isCtorCheck = (sym.name == sym.containerName);
-                    bool isDtorCheck = (!sym.name.empty() && sym.name[0] == '~');
-                    if (isCtorCheck || isDtorCheck || sig.modifiers.isDelete)
-                    {
-                        ctx.LogRule("Rule_MixinConstraints", "as-syntax-error", sym);
-                        ctx.Emit(sym, "as-syntax-error");
-                    }
+                    ctx.LogRule("Rule_MixinConstraints", "as-err-mixin-constructor", sym);
+                    ctx.Emit(sym, "as-err-mixin-constructor", sym.name);
+                }
+                else if (fctx.isDtor)
+                {
+                    ctx.LogRule("Rule_MixinConstraints", "as-err-mixin-destructor", sym);
+                    ctx.Emit(sym, "as-err-mixin-destructor", sym.name);
                 }
             }
         }
@@ -438,7 +466,7 @@ namespace angel_lsp::analysis::rules
 
     bool ValidateFunctionSignature(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
     {
-        if (!Rule_FunctionName(sym, fctx, ctx))
+        if (Rule_FunctionName(sym, fctx, ctx))
         {
             return false;
         }

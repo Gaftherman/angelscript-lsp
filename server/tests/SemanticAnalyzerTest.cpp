@@ -4118,6 +4118,72 @@ TEST_CASE("SemanticAnalyzer - Hallazgo I: Primitive Template Name int8 Test")
     CHECK(diagnostics.empty());
 }
 
+TEST_CASE("SemanticAnalyzer - Signature vs Body Rule Isolation & AST Body Constructs")
+{
+    // Test 1: Top-level auto lambda without prior funcdef fails with auto resolution error
+    {
+        std::string sourceCode = "auto f = function() {};\n";
+        std::string fileUri = "file:///test_lambda_nofuncdef.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        REQUIRE(diagnostics.size() >= 1);
+        CHECK(diagnostics[0].code == "as-err-unresolved-type");
+    }
+
+    // Test 2: Valid signature with body containing cast to void
+    {
+        std::string sourceCode = "void testCast() { cast<void>(0); }\n";
+        std::string fileUri = "file:///test_cast_isolation.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        REQUIRE(diagnostics.size() >= 1);
+        CHECK(diagnostics[0].code == "as-err-unresolved-type");
+    }
+
+    // Test 3: Invalid signature (reserved keyword name) halts early before body rules
+    {
+        std::string sourceCode = "void class() { cast<void>(0); }\n";
+        std::string fileUri = "file:///test_sig_halt.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        REQUIRE(diagnostics.size() >= 1);
+        CHECK(diagnostics[0].code == "as-err-reserved-keyword-name");
+    }
+
+    // Test 4: Anonymous function with prior funcdef is accepted cleanly
+    {
+        std::string sourceCode = "funcdef void Callback(); void testLambda() { Callback@ f = function() {}; }\n";
+        std::string fileUri = "file:///test_lambda_valid.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        CHECK(diagnostics.empty());
+    }
+}
+
 
 
 

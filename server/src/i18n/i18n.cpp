@@ -40,6 +40,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-void-reference"] = "Type 'void' cannot be a reference.";
         m_messages["as-err-property-accessor-missing-body"] = "Property accessor '{}' must be implemented.";
         m_messages["as-err-destructor-param"] = "The destructor '{}' must not have any parameters.";
+        m_messages["as-err-destructor-return-type"] = "The destructor '{}' must not have a return type.";
         m_messages["as-err-destructor-delete"] = "Cannot flag destructor '{}' with delete.";
         m_messages["as-err-class-member-const"] = "Class member '{}' cannot be declared as const.";
         m_messages["as-err-delete-with-body"] = "Deleted function '{}' cannot have a body.";
@@ -60,6 +61,10 @@ namespace angel_lsp::i18n
         m_messages["as-err-mixin-child-type"] = "Mixin class '{}' cannot have child type declarations.";
         m_messages["as-err-mixin-virtual-property"] = "The virtual property syntax is currently not supported for mixin classes";
         m_messages["as-err-double-reference"] = "Invalid parameter reference qualifier format for type '{}'.";
+        m_messages["as-err-interface-constructor"] = "Interface '{}' cannot declare constructors or destructors.";
+        m_messages["as-err-mixin-constructor"] = "Mixin class '{}' cannot declare a constructor.";
+        m_messages["as-err-mixin-destructor"] = "Mixin class '{}' cannot declare a destructor.";
+        m_messages["as-err-op-overload-global"] = "Operator overload '{}' must be a class member method.";
 
         if (locale == "es")
         {
@@ -97,7 +102,32 @@ namespace angel_lsp::i18n
             m_messages["as-err-global-variable-access-modifier"] = "La variable global o de namespace '{}' no puede tener modificadores de acceso (private/protected).";
             m_messages["as-err-void-reference"] = "El tipo 'void' no puede ser una referencia.";
             m_messages["as-err-property-accessor-missing-body"] = "El accesor de propiedad '{}' debe tener una implementación.";
-            m_messages["as-err-opindex-arity"] = "El operador de índice 'opIndex' debe tener al menos 1 parámetro.";
+            m_messages["as-err-destructor-param"] = "El destructor '{}' no debe tener ningún parámetro.";
+            m_messages["as-err-destructor-return-type"] = "El destructor '{}' no debe tener un tipo de retorno.";
+            m_messages["as-err-destructor-delete"] = "No se puede marcar el destructor '{}' con '= delete'.";
+            m_messages["as-err-class-member-const"] = "El miembro de clase '{}' no puede ser declarado como 'const'.";
+            m_messages["as-err-delete-with-body"] = "La función eliminada con '= delete' ('{}') no puede tener un cuerpo.";
+            m_messages["as-err-void-parameter"] = "El parámetro '{}' en la función '{}' no puede ser de tipo 'void'.";
+            m_messages["as-err-binary-operator-arity"] = "La sobrecarga del operador binario '{}' debe tomar exactamente 1 parámetro.";
+            m_messages["as-err-opindex-arity"] = "El operador de índice 'opIndex' debe tomar al menos 1 parámetro.";
+            m_messages["as-err-opindex-no-params"] = "El operador de índice 'opIndex' debe tomar al menos 1 parámetro.";
+            m_messages["as-err-opequals-return-bool"] = "El operador de igualdad 'opEquals' debe retornar 'bool'.";
+            m_messages["as-err-opcmp-return-int"] = "El operador de comparación 'opCmp' debe retornar 'int'.";
+            m_messages["as-err-override-final-method"] = "No se puede sobrescribir el método '{}' declarado como 'final' en la clase base '{}'.";
+            m_messages["as-err-enum-invalid-initializer"] = "El inicializador del miembro de enum '{}' debe ser una expresión entera constante.";
+            m_messages["as-err-standalone-reference"] = "La variable de referencia independiente '{}' no está soportada.";
+            m_messages["as-err-delete-with-other-qualifier"] = "No se puede marcar con modificadores adicionales la función '{}' que será eliminada con '= delete'.";
+            m_messages["as-err-array-invalid-template"] = "Intento de instanciar un parámetro de plantilla no válido ('{}').";
+            m_messages["as-err-typedef-non-primitive"] = "El tipo base del typedef ('{}') debe ser un tipo de dato primitivo.";
+            m_messages["as-err-invalid-reference-return"] = "No es un tipo de retorno por referencia válido ('{}').";
+            m_messages["as-err-external-not-found"] = "Entidad compartida externa ('{}') no encontrada.";
+            m_messages["as-err-mixin-child-type"] = "La clase mixin ('{}') no puede contener declaraciones de tipos hijos.";
+            m_messages["as-err-mixin-virtual-property"] = "La sintaxis de propiedad virtual actualmente no está soportada para clases mixin.";
+            m_messages["as-err-double-reference"] = "Formato inválido de cualificador de referencia de parámetro para el tipo '{}'.";
+            m_messages["as-err-interface-constructor"] = "La interfaz '{}' no puede declarar constructores ni destructores.";
+            m_messages["as-err-mixin-constructor"] = "La clase mixin '{}' no puede declarar un constructor.";
+            m_messages["as-err-mixin-destructor"] = "La clase mixin '{}' no puede declarar un destructor.";
+            m_messages["as-err-op-overload-global"] = "La sobrecarga del operador '{}' debe ser un método miembro de clase.";
         }
     }
 
