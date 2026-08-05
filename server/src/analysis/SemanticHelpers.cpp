@@ -1,7 +1,10 @@
 #include "analysis/SemanticHelpers.h"
+#include "analysis/SymbolTable.h"
+#include "analysis/DiagnosticContext.h"
 
 namespace angel_lsp::analysis
 {
+
     bool IsReservedKeyword(const std::string &name)
     {
         static const ankerl::unordered_dense::set<std::string> kReserved = {
@@ -56,4 +59,39 @@ namespace angel_lsp::analysis
 
         return InitializerItemKind::NumericOrExpression;
     }
+
+    bool IsMixinClass(std::string_view baseTypeName, const SymbolTable &table)
+    {
+        if (baseTypeName.empty())
+        {
+            return false;
+        }
+
+        std::string searchName(baseTypeName);
+        auto symsPtr = table.FindSymbolsPtr(searchName);
+        if (!symsPtr)
+        {
+            return false;
+        }
+
+        for (const auto &sym : *symsPtr)
+        {
+            if (sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool IsKnownType(const std::string &baseName, const DiagnosticContext &ctx)
+    {
+        if (baseName.empty()) return true;
+        if (IsPrimitiveTypeName(baseName)) return true;
+        if (baseName == ctx.request.GetStringTypeName()) return true;
+        if (baseName == ctx.request.GetArrayTypeName()) return true;
+        if (ctx.request.symbolTable.HasSymbolAnywhere(baseName)) return true;
+        return false;
+    }
 }
+

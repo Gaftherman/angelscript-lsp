@@ -195,6 +195,79 @@ namespace angel_lsp::analysis
         diagnostics.push_back(std::move(diag));
     }
 
+    void DiagnosticContext::EmitAtRange(const Symbol &parentSym, const SourceRange &range, std::string_view code, DiagnosticSeverity severity) const
+    {
+        Diagnostic diag;
+        diag.range.start.line = range.startLine;
+        diag.range.start.character = range.startCharacter;
+        diag.range.end.line = range.endLine;
+        diag.range.end.character = range.endCharacter;
+        diag.severity = severity;
+
+        std::string codeStr(code);
+        if (request.severityOverrides)
+        {
+            auto it = request.severityOverrides->find(codeStr);
+            if (it != request.severityOverrides->end())
+            {
+                diag.severity = it->second;
+            }
+        }
+        diag.code = codeStr;
+        diag.source = "AngelScript";
+        diag.fileUri = parentSym.fileUri;
+
+        if (request.i18n)
+        {
+            diag.message = request.i18n->GetMessage(codeStr);
+        }
+        if (diag.message.empty())
+        {
+            diag.message = "[" + codeStr + "] Diagnostic code: " + codeStr;
+        }
+
+        diagnostics.push_back(std::move(diag));
+    }
+
+    void DiagnosticContext::EmitAtRange(const Symbol &parentSym, const SourceRange &range, std::string_view code, std::string_view arg1, DiagnosticSeverity severity) const
+    {
+        Diagnostic diag;
+        diag.range.start.line = range.startLine;
+        diag.range.start.character = range.startCharacter;
+        diag.range.end.line = range.endLine;
+        diag.range.end.character = range.endCharacter;
+        diag.severity = severity;
+
+        std::string codeStr(code);
+        if (request.severityOverrides)
+        {
+            auto it = request.severityOverrides->find(codeStr);
+            if (it != request.severityOverrides->end())
+            {
+                diag.severity = it->second;
+            }
+        }
+        diag.code = codeStr;
+        diag.source = "AngelScript";
+        diag.fileUri = parentSym.fileUri;
+        std::string a1(arg1);
+
+        if (request.i18n)
+        {
+            std::string pattern = request.i18n->GetMessage(codeStr);
+            if (!pattern.empty())
+            {
+                diag.message = fmt::format(fmt::runtime(pattern), a1);
+            }
+        }
+        if (diag.message.empty() || diag.message.starts_with("["))
+        {
+            diag.message = "[" + codeStr + "] " + a1;
+        }
+
+        diagnostics.push_back(std::move(diag));
+    }
+
     void DiagnosticContext::LogRule(std::string_view ruleName, std::string_view code, const Symbol &sym) const
     {
         if (!logger)

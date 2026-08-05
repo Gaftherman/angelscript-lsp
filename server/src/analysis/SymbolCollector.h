@@ -54,6 +54,50 @@ namespace angel_lsp::analysis
         TSSymbol m_symBooleanLiteral = 0;
         TSSymbol m_symImportDeclaration = 0;
 
+        TSSymbol m_symBreakStatement = 0;
+        TSSymbol m_symContinueStatement = 0;
+        TSSymbol m_symReturnStatement = 0;
+        TSSymbol m_symForStatement = 0;
+        TSSymbol m_symWhileStatement = 0;
+        TSSymbol m_symDoWhileStatement = 0;
+        TSSymbol m_symSwitchStatement = 0;
+        TSSymbol m_symCaseClause = 0;
+        TSSymbol m_symCastExpression = 0;
+        TSSymbol m_symScopedIdentifier = 0;
+        TSSymbol m_symScopedType = 0;
+        TSSymbol m_symVariableDeclaration = 0;
+        TSSymbol m_symGotoStatement = 0;
+        TSSymbol m_symMixinDeclaration = 0;
+        TSSymbol m_symClassDeclaration = 0;
+        TSSymbol m_symUsingDeclaration = 0;
+        TSSymbol m_symInterfaceDeclaration = 0;
+        TSSymbol m_symVirtualProperty = 0;
+        TSSymbol m_symCompoundStatement = 0;
+        TSSymbol m_symBlock = 0;
+        TSSymbol m_symBaseClassList = 0;
+
+        // Anonymous token symbols (resolved once, compared via ts_node_symbol)
+        TSSymbol m_tokConst = 0;
+        TSSymbol m_tokIn = 0;
+        TSSymbol m_tokOut = 0;
+        TSSymbol m_tokInout = 0;
+        TSSymbol m_tokAmp = 0;
+        TSSymbol m_tokAt = 0;
+        TSSymbol m_tokPrivate = 0;
+        TSSymbol m_tokProtected = 0;
+        TSSymbol m_tokPublic = 0;
+        TSSymbol m_tokShared = 0;
+        TSSymbol m_tokMixin = 0;
+        TSSymbol m_tokAbstract = 0;
+        TSSymbol m_tokFinal = 0;
+        TSSymbol m_tokOverride = 0;
+        TSSymbol m_tokExplicit = 0;
+        TSSymbol m_tokProperty = 0;
+        TSSymbol m_tokDelete = 0;
+        TSSymbol m_tokExternal = 0;
+        TSSymbol m_tokImport = 0;
+        TSSymbol m_tokOpenBrace = 0;
+
         ankerl::unordered_dense::map<TSSymbol, TypeKind> m_primitiveKindMap;
 
         struct CollectionContext
@@ -102,6 +146,8 @@ namespace angel_lsp::analysis
         CollectionContext BuildContext(TSNode node, const std::string &sourceCode) const;
 
         SymbolModifiers ExtractModifiers(TSNode node, const std::string &sourceCode) const;
+        void ApplyModifierToken(TSSymbol tokenSymbol, SymbolModifiers &modifiers) const;
+        bool HasNullLiteral(TSNode node) const;
         ParameterInformation ExtractParameterInfo(TSNode paramNode, const std::string &sourceCode) const;
         std::vector<ParameterInformation> ExtractParameters(TSNode paramsNode, const std::string &sourceCode) const;
 

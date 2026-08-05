@@ -1,6 +1,15 @@
 .DS_Store
 Thumbs.db
 *.log
+doctest_failures*.txt
+*.txt
+!**/CMakeLists.txt
+!**/corpus/**/*.txt
+!**/test/**/*.txt
+audit_temp_*.as
+scratch_*.as
+test_disc*.as
+opencode.json
 client/node_modules/
 client/out/
 client/.vscode/tasks.log
@@ -11,3 +20,4 @@ server/.cache/
 build/
 .vscode/
 client/bin/
+

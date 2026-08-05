@@ -65,6 +65,12 @@ namespace angel_lsp::i18n
         m_messages["as-err-mixin-constructor"] = "Mixin class '{}' cannot declare a constructor.";
         m_messages["as-err-mixin-destructor"] = "Mixin class '{}' cannot declare a destructor.";
         m_messages["as-err-op-overload-global"] = "Operator overload '{}' must be a class member method.";
+        m_messages["as-err-break-outside-loop"] = "'break' statement can only be used within loop or switch.";
+        m_messages["as-err-continue-outside-loop"] = "'continue' statement can only be used within loop.";
+        m_messages["as-err-invalid-case-type"] = "Case value must be an integer, char, or enum constant expression.";
+        m_messages["as-err-duplicate-case-value"] = "Duplicate case value '{}' in switch statement.";
+        m_messages["as-err-default-must-be-last"] = "The default case must be the last one.";
+        m_messages["as-err-mixin-not-a-type"] = "Mixin '{}' cannot be used as a data type.";
 
         if (locale == "es")
         {
@@ -128,6 +134,8 @@ namespace angel_lsp::i18n
             m_messages["as-err-mixin-constructor"] = "La clase mixin '{}' no puede declarar un constructor.";
             m_messages["as-err-mixin-destructor"] = "La clase mixin '{}' no puede declarar un destructor.";
             m_messages["as-err-op-overload-global"] = "La sobrecarga del operador '{}' debe ser un método miembro de clase.";
+            m_messages["as-err-default-must-be-last"] = "El caso por defecto (default) debe ser el último.";
+            m_messages["as-err-mixin-not-a-type"] = "El mixin '{}' no puede ser usado como un tipo de dato.";
         }
     }
 

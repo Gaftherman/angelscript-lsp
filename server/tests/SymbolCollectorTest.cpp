@@ -558,4 +558,98 @@ TEST_CASE("SymbolCollector - Duplicate Declaration Modifier Warning")
     CHECK(diagnostics[1].severity == DiagnosticSeverity::Warning);
 }
 
+TEST_CASE("SymbolCollector - Goto Statement AST Extraction")
+{
+    std::string sourceCode = "void test() {\n    goto my_target;\nmy_target:\n}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    CHECK(table.HasSymbol("test") == true);
+    auto syms = table.FindSymbols("test");
+    REQUIRE(syms.size() == 1);
+
+    const auto &fnSig = syms[0].GetFunction();
+    REQUIRE(fnSig.bodyAnalysis.gotoTargetLabels.size() == 1);
+    CHECK(fnSig.bodyAnalysis.gotoTargetLabels[0] == "my_target");
+}
+
+TEST_CASE("SymbolCollector - Syntax Error Recovery Test")
+{
+    // Source code with broken syntax before a valid function
+    std::string sourceCode = "class BrokenClass {\n  int invalid syntax here\n}\nvoid validFunction() {}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    // Verify validFunction was recovered and collected despite syntax error in BrokenClass
+    CHECK(table.HasSymbol("validFunction") == true);
+    auto syms = table.FindSymbols("validFunction");
+    REQUIRE(syms.size() == 1);
+    CHECK(syms[0].type == SymbolType::Function);
+}
+
+TEST_CASE("SymbolCollector - Exact Position Accuracy Test")
+{
+    std::string sourceCode = "class Foo {}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    CHECK(table.HasSymbol("Foo") == true);
+    auto syms = table.FindSymbols("Foo");
+    REQUIRE(syms.size() == 1);
+
+    const auto &sym = syms[0];
+    CHECK(sym.startLine == 0);
+    CHECK(sym.startCharacter == 0);
+    CHECK(sym.endLine == 0);
+    CHECK(sym.endCharacter == 12);
+}
+
+TEST_CASE("SymbolCollector - Mixin Name False Positive Edge Case")
+{
+    std::string sourceCode = "class MixinHelper {}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    CHECK(table.HasSymbol("MixinHelper") == true);
+    auto syms = table.FindSymbols("MixinHelper");
+    REQUIRE(syms.size() == 1);
+
+    const auto &classSig = syms[0].GetClass();
+    CHECK(classSig.modifiers.isMixin == false);
+}
+
+TEST_CASE("SymbolCollector - Goto In String Literal False Positive Edge Case")
+{
+    std::string sourceCode = "void foo() {\n    string s = \"goto fake_label;\";\n}\n";
+    std::string fileUri = "file:///test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    CHECK(table.HasSymbol("foo") == true);
+    auto syms = table.FindSymbols("foo");
+    REQUIRE(syms.size() == 1);
+
+    const auto &fnSig = syms[0].GetFunction();
+    CHECK(fnSig.bodyAnalysis.gotoTargetLabels.empty() == true);
+}
+
 

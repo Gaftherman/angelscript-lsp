@@ -31,6 +31,10 @@ namespace angel_lsp::analysis
         void Emit(const ParameterInformation &param, const Symbol &parentSym, std::string_view code, std::string_view arg1, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
         void Emit(const ParameterInformation &param, const Symbol &parentSym, std::string_view code, std::string_view arg1, std::string_view arg2, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
+        // --- Diagnostic Emission for SourceRange ---
+        void EmitAtRange(const Symbol &parentSym, const SourceRange &range, std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+        void EmitAtRange(const Symbol &parentSym, const SourceRange &range, std::string_view code, std::string_view arg1, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+
         // --- Debug Logging ---
         void LogRule(std::string_view ruleName, std::string_view code, const Symbol &sym) const;
         void LogParam(std::string_view ruleName, std::string_view code, const ParameterInformation &param, const Symbol &parentSym) const;

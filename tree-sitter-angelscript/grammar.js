@@ -224,6 +224,7 @@ module.exports = grammar({
         $.func_declaration,
         $.variable_declaration,
         $.funcdef_declaration,
+        ";",
       )),
       "}",
     ),
@@ -266,6 +267,7 @@ module.exports = grammar({
       repeat(choice(
         $.virtual_property,
         $.interface_method,
+        ";",
       )),
       "}",
     ),
@@ -375,6 +377,8 @@ module.exports = grammar({
       $.return_statement,
       $.break_statement,
       $.continue_statement,
+      $.goto_statement,
+      $.labeled_statement,
       $.try_statement,
       $.statement_block,
       $.expression_statement,
@@ -384,6 +388,17 @@ module.exports = grammar({
     expression_statement: $ => seq(
       $._expression,
       ";",
+    ),
+
+    goto_statement: $ => seq(
+      "goto",
+      field("label", $.identifier),
+      ";",
+    ),
+
+    labeled_statement: $ => seq(
+      field("label", $.identifier),
+      ":",
     ),
 
     return_statement: $ => seq(
@@ -443,7 +458,7 @@ module.exports = grammar({
     ),
 
     case_clause: $ => seq(
-      choice(seq("case", $._expression), "default"),
+      choice(seq("case", field("value", $._expression)), "default"),
       ":",
       repeat(choice($.variable_declaration, $._statement)),
     ),

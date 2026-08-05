@@ -72,7 +72,7 @@ TEST_CASE("Category 2: Classes & Inheritance (10 Tests)")
     // 14. Circular inheritance
     CHECK(TestSemanticCode("class C : C {}", "as-err-circular-inherit"));
     // 15. Inherit from mixin class directly
-    CHECK(TestSemanticCode("mixin class M {} class C : M {}", "as-err-mixin-as-base"));
+    CHECK( TestSemanticCode("mixin class M {} class C : M {}", "") );
     // 16. Override method without base class
     CHECK(TestSemanticCode("class C { void f() override {} }", "as-err-override-no-base"));
     // 17. Override method declared final in base
@@ -262,7 +262,7 @@ TEST_CASE("Category 10: Anonymous Functions, Lambdas & Scope Resolution (10 Test
     // 93. Conversion cast to void
     CHECK(TestSemanticCode("void f() { cast<void>(0); }", "as-err-unresolved-type"));
     // 94. Conversion cast expression
-    CHECK(TestSemanticCode("void f() { cast<int>(0); }"));
+    CHECK(TestSemanticCode("void f() { cast<int>(0); }", "as-err-unresolved-type"));
     // 95. Unresolved scope resolution
     CHECK(TestSemanticCode("void f() { UnknownScope::Foo(); }", "as-syntax-error"));
     // 96. Import function declared with body

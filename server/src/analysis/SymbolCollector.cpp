@@ -1,10 +1,12 @@
 #include "analysis/SymbolCollector.h"
+#include "analysis/FunctionBodyInspector.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
 
 #include <cstring>
 #include <cctype>
+#include <unordered_set>
 
 extern "C" const TSLanguage *tree_sitter_angelscript();
 
@@ -12,43 +14,43 @@ namespace angel_lsp::analysis
 {
 
 
-    void ApplyModifierToken(const char *nodeType, SymbolModifiers &modifiers)
+    void SymbolCollector::ApplyModifierToken(TSSymbol tokenSymbol, SymbolModifiers &modifiers) const
     {
-        if (strcmp(nodeType, "const") == 0)
+        if (tokenSymbol == m_tokConst)
             modifiers.isConst = true;
-        else if (strcmp(nodeType, "in") == 0)
+        else if (tokenSymbol == m_tokIn)
             modifiers.paramModifier = ParameterModifier::In;
-        else if (strcmp(nodeType, "out") == 0)
+        else if (tokenSymbol == m_tokOut)
             modifiers.paramModifier = ParameterModifier::Out;
-        else if (strcmp(nodeType, "inout") == 0)
+        else if (tokenSymbol == m_tokInout)
             modifiers.paramModifier = ParameterModifier::InOut;
-        else if (strcmp(nodeType, "&") == 0)
+        else if (tokenSymbol == m_tokAmp)
             modifiers.isReturnReference = true;
-        else if (strcmp(nodeType, "@") == 0)
+        else if (tokenSymbol == m_tokAt)
             modifiers.isHandle = true;
-        else if (strcmp(nodeType, "private") == 0)
+        else if (tokenSymbol == m_tokPrivate)
             modifiers.access = AccessModifier::Private;
-        else if (strcmp(nodeType, "protected") == 0)
+        else if (tokenSymbol == m_tokProtected)
             modifiers.access = AccessModifier::Protected;
-        else if (strcmp(nodeType, "public") == 0)
+        else if (tokenSymbol == m_tokPublic)
             modifiers.access = AccessModifier::Public;
-        else if (strcmp(nodeType, "shared") == 0)
+        else if (tokenSymbol == m_tokShared)
             modifiers.isShared = true;
-        else if (strcmp(nodeType, "mixin") == 0)
+        else if (tokenSymbol == m_tokMixin)
             modifiers.isMixin = true;
-        else if (strcmp(nodeType, "abstract") == 0)
+        else if (tokenSymbol == m_tokAbstract)
             modifiers.isAbstract = true;
-        else if (strcmp(nodeType, "final") == 0)
+        else if (tokenSymbol == m_tokFinal)
             modifiers.isFinal = true;
-        else if (strcmp(nodeType, "override") == 0)
+        else if (tokenSymbol == m_tokOverride)
             modifiers.isOverride = true;
-        else if (strcmp(nodeType, "explicit") == 0)
+        else if (tokenSymbol == m_tokExplicit)
             modifiers.isExplicit = true;
-        else if (strcmp(nodeType, "property") == 0)
+        else if (tokenSymbol == m_tokProperty)
             modifiers.isProperty = true;
-        else if (strcmp(nodeType, "delete") == 0)
+        else if (tokenSymbol == m_tokDelete)
             modifiers.isDelete = true;
-        else if (strcmp(nodeType, "external") == 0 || strcmp(nodeType, "import") == 0)
+        else if (tokenSymbol == m_tokExternal || tokenSymbol == m_tokImport)
             modifiers.isExternal = true;
     }
 
@@ -84,6 +86,49 @@ namespace angel_lsp::analysis
         m_symLambdaExpression = ts_language_symbol_for_name(lang, SYM_NAME("lambda_expression"), true);
         m_symBooleanLiteral = ts_language_symbol_for_name(lang, SYM_NAME("boolean_literal"), true);
         m_symImportDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("import_declaration"), true);
+
+        m_symBreakStatement = ts_language_symbol_for_name(lang, SYM_NAME("break_statement"), true);
+        m_symContinueStatement = ts_language_symbol_for_name(lang, SYM_NAME("continue_statement"), true);
+        m_symReturnStatement = ts_language_symbol_for_name(lang, SYM_NAME("return_statement"), true);
+        m_symForStatement = ts_language_symbol_for_name(lang, SYM_NAME("for_statement"), true);
+        m_symWhileStatement = ts_language_symbol_for_name(lang, SYM_NAME("while_statement"), true);
+        m_symDoWhileStatement = ts_language_symbol_for_name(lang, SYM_NAME("do_while_statement"), true);
+        m_symSwitchStatement = ts_language_symbol_for_name(lang, SYM_NAME("switch_statement"), true);
+        m_symCaseClause = ts_language_symbol_for_name(lang, SYM_NAME("case_clause"), true);
+        m_symCastExpression = ts_language_symbol_for_name(lang, SYM_NAME("cast_expression"), true);
+        m_symScopedIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("scoped_identifier"), true);
+        m_symScopedType = ts_language_symbol_for_name(lang, SYM_NAME("scoped_type"), true);
+        m_symVariableDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("variable_declaration"), true);
+        m_symGotoStatement = ts_language_symbol_for_name(lang, SYM_NAME("goto_statement"), true);
+        m_symMixinDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("mixin_declaration"), true);
+        m_symClassDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("class_declaration"), true);
+        m_symUsingDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("using_declaration"), true);
+        m_symInterfaceDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("interface_declaration"), true);
+        m_symVirtualProperty = ts_language_symbol_for_name(lang, SYM_NAME("virtual_property"), true);
+        m_symCompoundStatement = ts_language_symbol_for_name(lang, SYM_NAME("compound_statement"), true);
+        m_symBlock = ts_language_symbol_for_name(lang, SYM_NAME("block"), true);
+        m_symBaseClassList = ts_language_symbol_for_name(lang, SYM_NAME("base_class_list"), true);
+
+        m_tokConst = ts_language_symbol_for_name(lang, SYM_NAME("const"), false);
+        m_tokIn = ts_language_symbol_for_name(lang, SYM_NAME("in"), false);
+        m_tokOut = ts_language_symbol_for_name(lang, SYM_NAME("out"), false);
+        m_tokInout = ts_language_symbol_for_name(lang, SYM_NAME("inout"), false);
+        m_tokAmp = ts_language_symbol_for_name(lang, SYM_NAME("&"), false);
+        m_tokAt = ts_language_symbol_for_name(lang, SYM_NAME("@"), false);
+        m_tokPrivate = ts_language_symbol_for_name(lang, SYM_NAME("private"), false);
+        m_tokProtected = ts_language_symbol_for_name(lang, SYM_NAME("protected"), false);
+        m_tokPublic = ts_language_symbol_for_name(lang, SYM_NAME("public"), false);
+        m_tokShared = ts_language_symbol_for_name(lang, SYM_NAME("shared"), false);
+        m_tokMixin = ts_language_symbol_for_name(lang, SYM_NAME("mixin"), false);
+        m_tokAbstract = ts_language_symbol_for_name(lang, SYM_NAME("abstract"), false);
+        m_tokFinal = ts_language_symbol_for_name(lang, SYM_NAME("final"), false);
+        m_tokOverride = ts_language_symbol_for_name(lang, SYM_NAME("override"), false);
+        m_tokExplicit = ts_language_symbol_for_name(lang, SYM_NAME("explicit"), false);
+        m_tokProperty = ts_language_symbol_for_name(lang, SYM_NAME("property"), false);
+        m_tokDelete = ts_language_symbol_for_name(lang, SYM_NAME("delete"), false);
+        m_tokExternal = ts_language_symbol_for_name(lang, SYM_NAME("external"), false);
+        m_tokImport = ts_language_symbol_for_name(lang, SYM_NAME("import"), false);
+        m_tokOpenBrace = ts_language_symbol_for_name(lang, SYM_NAME("{"), false);
 
         auto addPrimitive = [&](const char *name, uint32_t len, TypeKind kind)
         {
@@ -133,7 +178,7 @@ namespace angel_lsp::analysis
                 const char *name = ts_query_capture_name_for_id(m_tagsQuery, i, &nameLen);
                 std::string_view captureName(name, nameLen);
 
-                if (captureName == "definition.function" || captureName == "definition.import" || captureName == "local.definition.import" || captureName.find("import") != std::string_view::npos)
+                if (captureName == "definition.function" || captureName == "definition.import" || captureName == "local.definition.import")
                     m_captureDispatch[i] = &SymbolCollector::ProcessFunction;
                 else if (captureName == "definition.class")
                     m_captureDispatch[i] = &SymbolCollector::ProcessClass;
@@ -170,7 +215,7 @@ namespace angel_lsp::analysis
 
 
 
-        if (ts_node_is_missing(node) || strcmp(ts_node_type(node), "ERROR") == 0)
+        if (ts_node_is_missing(node) || ts_node_is_error(node))
         {
             TSPoint startPt = ts_node_start_point(node);
             TSPoint endPt = ts_node_end_point(node);
@@ -247,7 +292,7 @@ namespace angel_lsp::analysis
 
     void SymbolCollector::CheckUsingDeclarations(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const
     {
-        if (strcmp(ts_node_type(node), "using_declaration") == 0)
+        if (ts_node_symbol(node) == m_symUsingDeclaration)
         {
             uint32_t uCount = ts_node_child_count(node);
             for (uint32_t u = 0; u < uCount; ++u)
@@ -291,10 +336,10 @@ namespace angel_lsp::analysis
         if (ts_node_is_null(node))
             return;
 
-        const char *nodeType = ts_node_type(node);
-        if (strcmp(nodeType, "class_declaration") == 0 ||
-            strcmp(nodeType, "interface_declaration") == 0 ||
-            strcmp(nodeType, "mixin_declaration") == 0)
+        TSSymbol nodeSym = ts_node_symbol(node);
+        if (nodeSym == m_symClassDeclaration ||
+            nodeSym == m_symInterfaceDeclaration ||
+            nodeSym == m_symMixinDeclaration)
         {
             ankerl::unordered_dense::set<std::string> seenModifiers;
             uint32_t count = ts_node_child_count(node);
@@ -453,7 +498,7 @@ namespace angel_lsp::analysis
             return result;
         }
 
-        if (nodeSymbol == m_symIdentifier || strcmp(ts_node_type(typeNode), "scoped_type") == 0)
+        if (nodeSymbol == m_symIdentifier || nodeSymbol == m_symScopedType)
         {
             result.baseTypeName = GetNodeText(typeNode, sourceCode);
             result.kind = TypeKind::Unknown;
@@ -469,7 +514,7 @@ namespace angel_lsp::analysis
             TSNode child = ts_node_child(typeNode, i);
             TSSymbol childSym = ts_node_symbol(child);
 
-            if (strcmp(ts_node_type(child), "scoped_type") == 0)
+            if (childSym == m_symScopedType)
             {
                 result.baseTypeName = GetNodeText(child, sourceCode);
                 result.kind = TypeKind::Unknown;
@@ -572,10 +617,10 @@ namespace angel_lsp::analysis
         return result;
     }
 
-    static bool HasNullLiteral(TSNode node)
+    bool SymbolCollector::HasNullLiteral(TSNode node) const
     {
         if (ts_node_is_null(node)) return false;
-        if (strcmp(ts_node_type(node), "null_literal") == 0) return true;
+        if (ts_node_symbol(node) == m_symNullLiteral) return true;
         uint32_t count = ts_node_child_count(node);
         for (uint32_t i = 0; i < count; ++i)
         {
@@ -589,7 +634,7 @@ namespace angel_lsp::analysis
         if (ctx.isInsideFunction)
             return;
 
-        if (strcmp(ts_node_type(varDeclNode), "virtual_property") == 0)
+        if (ts_node_symbol(varDeclNode) == m_symVirtualProperty)
         {
             TSNode typeNode = GetChildByFieldName(varDeclNode, "prop_type");
             TSNode nameNode = GetChildByFieldName(varDeclNode, "name");
@@ -615,7 +660,7 @@ namespace angel_lsp::analysis
             for (uint32_t i = 0; i < count; ++i)
             {
                 TSNode accNode = ts_node_named_child(varDeclNode, i);
-                if (strcmp(ts_node_type(accNode), "accessor") == 0)
+                if (ts_node_symbol(accNode) == m_symAccessor)
                 {
                     TSNode kindNode = GetChildByFieldName(accNode, "kind");
                     TSNode bodyNode = GetChildByFieldName(accNode, "body");
@@ -639,10 +684,10 @@ namespace angel_lsp::analysis
                     uint32_t accChildCount = ts_node_child_count(accNode);
                     for (uint32_t c = 0; c < accChildCount; ++c)
                     {
-                        const char *cType = ts_node_type(ts_node_child(accNode, c));
-                        if (strcmp(cType, "const") == 0 && isGet) varSig.isGetConst = true;
-                        else if (strcmp(cType, "override") == 0) { if (isGet) varSig.isGetOverride = true; else if (isSet) varSig.isSetOverride = true; }
-                        else if (strcmp(cType, "final") == 0) { if (isGet) varSig.isGetFinal = true; else if (isSet) varSig.isSetFinal = true; }
+                        TSSymbol cSym = ts_node_symbol(ts_node_child(accNode, c));
+                        if (cSym == m_tokConst && isGet) varSig.isGetConst = true;
+                        else if (cSym == m_tokOverride) { if (isGet) varSig.isGetOverride = true; else if (isSet) varSig.isSetOverride = true; }
+                        else if (cSym == m_tokFinal) { if (isGet) varSig.isGetFinal = true; else if (isSet) varSig.isSetFinal = true; }
                     }
                 }
             }
@@ -663,7 +708,7 @@ namespace angel_lsp::analysis
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode declaratorNode = ts_node_named_child(varDeclNode, i);
-            if (strcmp(ts_node_type(declaratorNode), "variable_declarator") != 0)
+            if (ts_node_symbol(declaratorNode) != m_symVariableDeclarator)
                 continue;
 
             TSNode nameNode = GetChildByFieldName(declaratorNode, "name");
@@ -789,6 +834,10 @@ namespace angel_lsp::analysis
         {
             parameters.push_back(ExtractParameterInfo(ts_node_named_child(paramsNode, p), sourceCode));
         }
+        if (parameters.size() == 1 && parameters[0].typeName == "void" && parameters[0].name.empty())
+        {
+            parameters.clear();
+        }
         return parameters;
     }
 
@@ -806,148 +855,14 @@ namespace angel_lsp::analysis
         return sourceCode.substr(start, end - start);
     }
 
-    static void InspectFunctionBodyAST(TSNode node, FunctionSignature &sig, const std::string &sourceCode)
+    static SourceRange GetSourceRange(TSNode node)
     {
-        if (ts_node_is_null(node))
-            return;
-
-        const char *nodeType = ts_node_type(node);
-
-        if (strcmp(nodeType, "return_statement") == 0)
-        {
-            TSNode valNode = SymbolCollector::GetChildByFieldName(node, "value");
-            if (ts_node_is_null(valNode))
-            {
-                sig.hasEmptyReturn = true;
-            }
-            else
-            {
-                sig.hasValueReturn = true;
-                sig.returnExpression = ExtractTSNodeText(valNode, sourceCode);
-                if (strcmp(ts_node_type(valNode), "null_literal") == 0)
-                {
-                    sig.hasNullReturn = true;
-                }
-                else if (strcmp(ts_node_type(valNode), "call_expression") == 0)
-                {
-                    TSNode funcNode = SymbolCollector::GetChildByFieldName(valNode, "function");
-                    if (!ts_node_is_null(funcNode))
-                    {
-                        sig.returnCallTargetName = ExtractTSNodeText(funcNode, sourceCode);
-                    }
-                }
-            }
-        }
-
-        if (strcmp(nodeType, "call_expression") == 0)
-        {
-            TSNode funcChild = SymbolCollector::GetChildByFieldName(node, "function");
-            if (!ts_node_is_null(funcChild))
-            {
-                std::string fText = ExtractTSNodeText(funcChild, sourceCode);
-                if (fText == "super")
-                {
-                    sig.hasSuperCall = true;
-                }
-            }
-        }
-        else if (strcmp(nodeType, "goto_statement") == 0)
-        {
-            TSNode labelChild = SymbolCollector::GetChildByFieldName(node, "label");
-            if (ts_node_is_null(labelChild))
-            {
-                labelChild = SymbolCollector::GetChildByFieldName(node, "name");
-            }
-            std::string lName;
-            if (!ts_node_is_null(labelChild))
-            {
-                lName = ExtractTSNodeText(labelChild, sourceCode);
-            }
-            else
-            {
-                std::string gText = ExtractTSNodeText(node, sourceCode);
-                size_t gPos = gText.find("goto");
-                if (gPos != std::string::npos)
-                {
-                    size_t sStart = gPos + 4;
-                    while (sStart < gText.size() && isspace(static_cast<unsigned char>(gText[sStart]))) sStart++;
-                    size_t sEnd = sStart;
-                    while (sEnd < gText.size() && (isalnum(static_cast<unsigned char>(gText[sEnd])) || gText[sEnd] == '_')) sEnd++;
-                    lName = gText.substr(sStart, sEnd - sStart);
-                }
-            }
-            if (!lName.empty())
-            {
-                sig.gotoTargetLabels.push_back(lName);
-            }
-        }
-        else if (strcmp(nodeType, "cast_expression") == 0)
-        {
-            TSNode typeChild = SymbolCollector::GetChildByFieldName(node, "type");
-            if (!ts_node_is_null(typeChild))
-            {
-                std::string cType = ExtractTSNodeText(typeChild, sourceCode);
-                if (!cType.empty())
-                {
-                    sig.bodyCastTypes.push_back(cType);
-                }
-            }
-        }
-        else if (strcmp(nodeType, "scoped_identifier") == 0 || strcmp(nodeType, "scoped_type") == 0 || strcmp(nodeType, "scope_resolution") == 0)
-        {
-            std::string qName = ExtractTSNodeText(node, sourceCode);
-            if (!qName.empty() && qName.find("::") != std::string::npos)
-            {
-                sig.bodyQualifiedNames.push_back(qName);
-            }
-        }
-
-        std::string nText = ExtractTSNodeText(node, sourceCode);
-        if (!nText.empty())
-        {
-            if (nText.find("goto ") != std::string::npos && sig.gotoTargetLabels.empty())
-            {
-                size_t gPos = nText.find("goto ");
-                while (gPos != std::string::npos)
-                {
-                    size_t sStart = gPos + 5;
-                    while (sStart < nText.size() && isspace(static_cast<unsigned char>(nText[sStart]))) sStart++;
-                    size_t sEnd = sStart;
-                    while (sEnd < nText.size() && (isalnum(static_cast<unsigned char>(nText[sEnd])) || nText[sEnd] == '_')) sEnd++;
-                    std::string lName = nText.substr(sStart, sEnd - sStart);
-                    if (!lName.empty())
-                    {
-                        sig.gotoTargetLabels.push_back(lName);
-                    }
-                    gPos = nText.find("goto ", gPos + 5);
-                }
-            }
-            if (nText.find("cast<") != std::string::npos && sig.bodyCastTypes.empty())
-            {
-                size_t castPos = nText.find("cast<");
-                while (castPos != std::string::npos)
-                {
-                    size_t typeStart = castPos + 5;
-                    size_t typeEnd = nText.find('>', typeStart);
-                    if (typeEnd != std::string::npos)
-                    {
-                        std::string castType = nText.substr(typeStart, typeEnd - typeStart);
-                        if (!castType.empty())
-                        {
-                            sig.bodyCastTypes.push_back(castType);
-                        }
-                    }
-                    castPos = nText.find("cast<", castPos + 5);
-                }
-            }
-        }
-
-        uint32_t count = ts_node_child_count(node);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            InspectFunctionBodyAST(ts_node_child(node, i), sig, sourceCode);
-        }
+        TSPoint start = ts_node_start_point(node);
+        TSPoint end = ts_node_end_point(node);
+        return SourceRange{ start.row, start.column, end.row, end.column };
     }
+
+
 
     void SymbolCollector::ProcessFunction(TSNode funcNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
     {
@@ -961,7 +876,8 @@ namespace angel_lsp::analysis
             for (uint32_t i = 0; i < cCount; ++i)
             {
                 TSNode ch = ts_node_child(funcNode, i);
-                if (strcmp(ts_node_type(ch), "compound_statement") == 0 || strcmp(ts_node_type(ch), "statement_block") == 0 || strcmp(ts_node_type(ch), "block") == 0)
+                TSSymbol chSym = ts_node_symbol(ch);
+                if (chSym == m_symCompoundStatement || chSym == m_symStatementBlock || chSym == m_symBlock)
                 {
                     bodyNode = ch;
                     break;
@@ -972,14 +888,16 @@ namespace angel_lsp::analysis
         TypeExtractionResult retInfo = ExtractTypeInfo(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(funcNode, sourceCode);
 
-        if (strcmp(ts_node_type(funcNode), "import_declaration") == 0 || strcmp(ts_node_type(funcNode), "import") == 0)
+        TSSymbol funcNodeSym = ts_node_symbol(funcNode);
+        if (funcNodeSym == m_symImportDeclaration || funcNodeSym == m_tokImport)
         {
             modifiers.isExternal = true;
         }
         else
         {
             TSNode p2 = ts_node_parent(funcNode);
-            if (!ts_node_is_null(p2) && (strcmp(ts_node_type(p2), "import_declaration") == 0 || strcmp(ts_node_type(p2), "import") == 0))
+            TSSymbol p2Sym = !ts_node_is_null(p2) ? ts_node_symbol(p2) : 0;
+            if (p2Sym == m_symImportDeclaration || p2Sym == m_tokImport)
             {
                 modifiers.isExternal = true;
             }
@@ -992,7 +910,7 @@ namespace angel_lsp::analysis
         for (uint32_t i = 0; i < funcChildCount; ++i)
         {
             TSNode child = ts_node_child(funcNode, i);
-            if (strcmp(ts_node_type(child), "delete") == 0)
+            if (ts_node_symbol(child) == m_tokDelete)
             {
                 modifiers.isDelete = true;
             }
@@ -1014,7 +932,7 @@ namespace angel_lsp::analysis
         funcSig.hasBody = !ts_node_is_null(bodyNode);
         if (funcSig.hasBody)
         {
-            InspectFunctionBodyAST(bodyNode, funcSig, sourceCode);
+            InspectFunctionBodyAST(bodyNode, funcSig.bodyAnalysis.emplace(), sourceCode);
         }
         funcSig.defaultValue = funcSig.hasBody ? GetNodeText(bodyNode, sourceCode) : funcText;
         funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_symInterfaceMethod);
@@ -1026,14 +944,39 @@ namespace angel_lsp::analysis
     void SymbolCollector::ProcessClass(TSNode classNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
     {
         TSNode nameNode = GetChildByFieldName(classNode, "name");
-        TSNode tParamNode = GetChildByFieldName(classNode, "template_param");
-
         Symbol sym = CreateSymbol(SymbolType::Class, classNode, nameNode, sourceCode, fileUri, ctx.containerPath);
         ClassSignature classSig;
         classSig.modifiers = ExtractModifiers(classNode, sourceCode);
+        if (ts_node_symbol(classNode) == m_symMixinDeclaration)
+        {
+            classSig.modifiers.isMixin = true;
+        }
         classSig.bases = ExtractBases(classNode, sourceCode);
-        classSig.isTemplate = !ts_node_is_null(tParamNode);
-        classSig.hasBraces = (GetNodeText(classNode, sourceCode).find('{') != std::string::npos);
+
+        uint32_t childCount = ts_node_child_count(classNode);
+        for (uint32_t i = 0; i < childCount; ++i)
+        {
+            const char *fieldName = ts_node_field_name_for_child(classNode, i);
+            if (fieldName && strcmp(fieldName, "template_param") == 0)
+            {
+                TSNode paramNode = ts_node_child(classNode, i);
+                std::string paramText = GetNodeText(paramNode, sourceCode);
+                if (!paramText.empty())
+                {
+                    classSig.isTemplate = true;
+                    classSig.templateParams.push_back(std::move(paramText));
+                }
+            }
+        }
+
+        size_t angleInName = sym.name.find('<');
+        if (angleInName != std::string::npos)
+        {
+            sym.name = sym.name.substr(0, angleInName);
+            sym.qualifiedName = ctx.containerPath.empty() ? sym.name : ctx.containerPath + "::" + sym.name;
+        }
+
+        classSig.hasBraces = !ts_node_is_null(GetChildByFieldName(classNode, "body"));
 
         sym.signature = classSig;
         symbolTable.AddSymbol(sym);
@@ -1053,7 +996,18 @@ namespace angel_lsp::analysis
 
         EnumSignature enumSig;
         enumSig.modifiers = ExtractModifiers(node, sourceCode);
-        enumSig.hasBraces = (GetNodeText(node, sourceCode).find('{') != std::string::npos);
+        
+        bool hasBraces = false;
+        uint32_t cCount = ts_node_child_count(node);
+        for (uint32_t c = 0; c < cCount; ++c)
+        {
+            if (ts_node_symbol(ts_node_child(node, c)) == m_tokOpenBrace)
+            {
+                hasBraces = true;
+                break;
+            }
+        }
+        enumSig.hasBraces = hasBraces;
 
         uint32_t count = ts_node_named_child_count(node);
         for (uint32_t i = 0; i < count; ++i)
@@ -1077,6 +1031,30 @@ namespace angel_lsp::analysis
 
         sym.signature = enumSig;
         symbolTable.AddSymbol(sym);
+
+        std::string enumContainer = ctx.containerPath.empty() ? sym.name : ctx.containerPath + "::" + sym.name;
+        for (const auto &m : enumSig.members)
+        {
+            if (!m.name.empty())
+            {
+                VariableSignature varSig;
+                varSig.typeName = sym.name;
+
+                Symbol mSym = CreateSymbol(SymbolType::Variable, node, nameNode, sourceCode, fileUri, ctx.containerPath);
+                mSym.name = m.name;
+                mSym.qualifiedName = ctx.containerPath.empty() ? m.name : ctx.containerPath + "::" + m.name;
+                mSym.containerName = ctx.containerPath;
+                mSym.signature = varSig;
+                symbolTable.AddSymbol(mSym);
+
+                Symbol mSymScoped = CreateSymbol(SymbolType::Variable, node, nameNode, sourceCode, fileUri, enumContainer);
+                mSymScoped.name = m.name;
+                mSymScoped.qualifiedName = enumContainer + "::" + m.name;
+                mSymScoped.containerName = enumContainer;
+                mSymScoped.signature = varSig;
+                symbolTable.AddSymbol(mSymScoped);
+            }
+        }
     }
 
     void SymbolCollector::ProcessTypedef(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
@@ -1093,6 +1071,13 @@ namespace angel_lsp::analysis
             typedefSig.baseType = info.baseTypeName;
             typedefSig.typeKind = info.kind;
         }
+
+        std::string rawNodeText = GetNodeText(node, sourceCode);
+        while (!rawNodeText.empty() && isspace(static_cast<unsigned char>(rawNodeText.back())))
+        {
+            rawNodeText.pop_back();
+        }
+        typedefSig.hasSemicolon = (!rawNodeText.empty() && rawNodeText.back() == ';');
 
         sym.signature = typedefSig;
         symbolTable.AddSymbol(sym);
@@ -1111,18 +1096,18 @@ namespace angel_lsp::analysis
         modifiers.isConst = retInfo.isConst || modifiers.isConst;
 
         Symbol sym = CreateSymbol(SymbolType::Funcdef, node, nameNode, sourceCode, fileUri, ctx.containerPath);
-        FunctionSignature funcSig;
-        funcSig.returnType = GetNodeText(typeNode, sourceCode);
-        funcSig.returnBaseTypeName = retInfo.baseTypeName;
-        funcSig.returnTemplateName = retInfo.templateName;
-        funcSig.returnTypeKind = retInfo.kind;
-        funcSig.returnIsArray = retInfo.isArray;
-        funcSig.returnArrayDepth = retInfo.arrayDepth;
-        funcSig.returnHasPrimitiveHandle = retInfo.hasPrimitiveHandle;
-        funcSig.modifiers = modifiers;
-        funcSig.parameters = ExtractParameters(paramsNode, sourceCode);
+        FuncdefSignature funcdefSig;
+        funcdefSig.returnType = GetNodeText(typeNode, sourceCode);
+        funcdefSig.returnBaseTypeName = retInfo.baseTypeName;
+        funcdefSig.returnTemplateName = retInfo.templateName;
+        funcdefSig.returnTypeKind = retInfo.kind;
+        funcdefSig.returnIsArray = retInfo.isArray;
+        funcdefSig.returnArrayDepth = retInfo.arrayDepth;
+        funcdefSig.returnHasPrimitiveHandle = retInfo.hasPrimitiveHandle;
+        funcdefSig.modifiers = modifiers;
+        funcdefSig.parameters = ExtractParameters(paramsNode, sourceCode);
 
-        sym.signature = funcSig;
+        sym.signature = funcdefSig;
         symbolTable.AddSymbol(sym);
     }
 
@@ -1163,7 +1148,7 @@ namespace angel_lsp::analysis
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode accNode = ts_node_named_child(node, i);
-            if (strcmp(ts_node_type(accNode), "accessor") == 0)
+            if (ts_node_symbol(accNode) == m_symAccessor)
             {
                 TSNode kindNode = GetChildByFieldName(accNode, "kind");
                 TSNode bodyNode = GetChildByFieldName(accNode, "body");
@@ -1187,10 +1172,10 @@ namespace angel_lsp::analysis
                 uint32_t accChildCount = ts_node_child_count(accNode);
                 for (uint32_t c = 0; c < accChildCount; ++c)
                 {
-                    const char *cType = ts_node_type(ts_node_child(accNode, c));
-                    if (strcmp(cType, "const") == 0 && isGet) varSig.isGetConst = true;
-                    else if (strcmp(cType, "override") == 0) { if (isGet) varSig.isGetOverride = true; else if (isSet) varSig.isSetOverride = true; }
-                    else if (strcmp(cType, "final") == 0) { if (isGet) varSig.isGetFinal = true; else if (isSet) varSig.isSetFinal = true; }
+                    TSSymbol cSym = ts_node_symbol(ts_node_child(accNode, c));
+                    if (cSym == m_tokConst && isGet) varSig.isGetConst = true;
+                    else if (cSym == m_tokOverride) { if (isGet) varSig.isGetOverride = true; else if (isSet) varSig.isSetOverride = true; }
+                    else if (cSym == m_tokFinal) { if (isGet) varSig.isGetFinal = true; else if (isSet) varSig.isSetFinal = true; }
                 }
             }
         }
@@ -1243,12 +1228,12 @@ namespace angel_lsp::analysis
                 uint32_t modCount = ts_node_child_count(child);
                 for (uint32_t m = 0; m < modCount; ++m)
                 {
-                    const char *tokType = ts_node_type(ts_node_child(child, m));
-                    ApplyModifierToken(tokType, modifiers);
+                    TSSymbol tokSym = ts_node_symbol(ts_node_child(child, m));
+                    ApplyModifierToken(tokSym, modifiers);
                     // Track declaration-level modifiers separately from func_attributes
-                    if (strcmp(tokType, "final") == 0)
+                    if (tokSym == m_tokFinal)
                         modifiers.isDeclarationFinal = true;
-                    else if (strcmp(tokType, "abstract") == 0)
+                    else if (tokSym == m_tokAbstract)
                         modifiers.isDeclarationAbstract = true;
                 }
             }
@@ -1257,12 +1242,12 @@ namespace angel_lsp::analysis
                 uint32_t modCount = ts_node_child_count(child);
                 for (uint32_t m = 0; m < modCount; ++m)
                 {
-                    ApplyModifierToken(ts_node_type(ts_node_child(child, m)), modifiers);
+                    ApplyModifierToken(ts_node_symbol(ts_node_child(child, m)), modifiers);
                 }
             }
             else if (!ts_node_is_named(child))
             {
-                ApplyModifierToken(ts_node_type(child), modifiers);
+                ApplyModifierToken(ts_node_symbol(child), modifiers);
             }
         }
         return modifiers;
@@ -1297,7 +1282,7 @@ namespace angel_lsp::analysis
         for (uint32_t i = 0; i < namedCount; ++i)
         {
             TSNode child = ts_node_named_child(classNode, i);
-            if (strcmp(ts_node_type(child), "base_class_list") != 0)
+            if (ts_node_symbol(child) != m_symBaseClassList)
                 continue;
 
             uint32_t baseCount = ts_node_named_child_count(child);

@@ -99,6 +99,12 @@ namespace angel_lsp::analysis::rules
             ctx.Emit(sym, "as-err-invalid-reference-return", sig.returnBaseTypeName);
         }
 
+        if (IsMixinClass(sig.returnBaseTypeName, ctx.request.symbolTable))
+        {
+            ctx.LogRule("Rule_FunctionReturnType", "as-err-mixin-not-a-type", sym);
+            ctx.Emit(sym, "as-err-mixin-not-a-type", sig.returnBaseTypeName);
+        }
+
         if ((sig.returnHasPrimitiveHandle && !sig.returnIsArray && sig.returnType.find("[]") == std::string::npos && sig.returnType.find("array<") == std::string::npos) || (sig.modifiers.isHandle && sig.returnBaseTypeName == stringTypeName && !sig.returnIsArray))
         {
             ctx.LogRule("Rule_FunctionReturnType", "as-err-handle-on-primitive", sym);
@@ -117,7 +123,7 @@ namespace angel_lsp::analysis::rules
             ctx.Emit(sym, "as-err-const-void-return");
         }
 
-        if (!sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" && !IsPrimitiveTypeName(sig.returnBaseTypeName) && sig.returnBaseTypeName != stringTypeName && sig.returnBaseTypeName != arrayTypeName && !ctx.request.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
+        if (!sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" && !IsKnownType(sig.returnBaseTypeName, ctx))
         {
             ctx.LogRule("Rule_FunctionReturnType", "as-err-unresolved-type", sym);
             ctx.Emit(sym, "as-err-unresolved-type", sig.returnBaseTypeName);
@@ -129,13 +135,13 @@ namespace angel_lsp::analysis::rules
             ctx.Emit(sym, "as-err-void-reference");
         }
 
-        if (sig.returnTypeKind == TypeKind::Void && sig.hasValueReturn)
+        if (sig.returnTypeKind == TypeKind::Void && sig.bodyAnalysis && sig.bodyAnalysis->hasValueReturn)
         {
             ctx.LogRule("Rule_FunctionReturnType", "as-syntax-error", sym);
             ctx.Emit(sym, "as-syntax-error");
         }
 
-        if (IsPrimitiveTypeName(sig.returnBaseTypeName) && !sig.returnIsArray && sig.returnTypeKind != TypeKind::Array && sig.returnType.find("[]") == std::string::npos && sig.returnType.find("array<") == std::string::npos && sig.returnExpression == "null")
+        if (IsPrimitiveTypeName(sig.returnBaseTypeName) && !sig.returnIsArray && sig.returnTypeKind != TypeKind::Array && sig.returnType.find("[]") == std::string::npos && sig.returnType.find("array<") == std::string::npos && sig.bodyAnalysis && sig.bodyAnalysis->returnExpression == "null")
         {
             ctx.LogRule("Rule_FunctionReturnType", "as-err-handle-on-primitive", sym);
             ctx.Emit(sym, "as-err-handle-on-primitive", sig.returnBaseTypeName);
@@ -143,7 +149,7 @@ namespace angel_lsp::analysis::rules
 
         if (sig.returnBaseTypeName != "void" && sig.returnTypeKind != TypeKind::Void && !sig.returnBaseTypeName.empty() && !fctx.isCtor && (!sym.name.empty() && sym.name[0] != '~'))
         {
-            if (sig.hasBody && !sig.hasValueReturn && !sig.hasEmptyReturn)
+            if (sig.bodyAnalysis && !sig.bodyAnalysis->hasValueReturn && !sig.bodyAnalysis->hasEmptyReturn)
             {
                 ctx.LogRule("Rule_FunctionReturnType", "as-err-not-all-paths-return", sym);
                 ctx.Emit(sym, "as-err-not-all-paths-return", sym.name);
@@ -182,6 +188,21 @@ namespace angel_lsp::analysis::rules
             ctx.LogRule("Rule_FunctionModifiers", "as-syntax-error", sym);
             ctx.Emit(sym, "as-syntax-error");
         }
+
+        if (sig.modifiers.isDelete)
+        {
+            if (!fctx.isInsideClass || sig.hasBody || (sig.defaultValue.find("= delete") == std::string::npos && sig.defaultValue.find("=delete") == std::string::npos))
+            {
+                ctx.LogRule("Rule_FunctionModifiers", "as-syntax-error", sym);
+                ctx.Emit(sym, "as-syntax-error");
+            }
+        }
+
+        if (sig.modifiers.isProperty && sig.hasBody)
+        {
+            ctx.LogRule("Rule_FunctionModifiers", "as-syntax-error", sym);
+            ctx.Emit(sym, "as-syntax-error");
+        }
     }
 
     static void Rule_CtorDtor(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
@@ -190,25 +211,27 @@ namespace angel_lsp::analysis::rules
 
         if (fctx.isCtor || fctx.isDtor)
         {
-            if (sig.modifiers.isConst)
+            if (fctx.isCtor)
             {
-                ctx.LogRule("Rule_CtorDtor", "as-syntax-error", sym);
-                ctx.Emit(sym, "as-syntax-error");
+                if (sig.modifiers.isConst || sig.modifiers.isFinal || sig.modifiers.isAbstract)
+                {
+                    ctx.LogRule("Rule_CtorDtor", "as-syntax-error", sym);
+                    ctx.Emit(sym, "as-syntax-error");
+                }
+                if (!sig.returnType.empty() && sig.returnType != "void")
+                {
+                    ctx.LogRule("Rule_CtorDtor", "as-syntax-error", sym);
+                    ctx.Emit(sym, "as-syntax-error");
+                }
             }
-            if (sig.modifiers.isFinal || sig.modifiers.isAbstract)
-            {
-                ctx.LogRule("Rule_CtorDtor", "as-syntax-error", sym);
-                ctx.Emit(sym, "as-syntax-error");
-            }
-
-            if (fctx.isDtor)
+            else if (fctx.isDtor)
             {
                 if (!sig.parameters.empty())
                 {
                     ctx.LogRule("Rule_CtorDtor", "as-err-destructor-param", sym);
                     ctx.Emit(sym, "as-err-destructor-param", sym.name);
                 }
-                if (!sig.returnType.empty() && sig.returnType != "void")
+                if (!sig.returnType.empty() || (sig.bodyAnalysis && sig.bodyAnalysis->hasValueReturn))
                 {
                     ctx.LogRule("Rule_CtorDtor", "as-err-destructor-return-type", sym);
                     ctx.Emit(sym, "as-err-destructor-return-type", sym.name);
@@ -218,10 +241,7 @@ namespace angel_lsp::analysis::rules
                     ctx.LogRule("Rule_CtorDtor", "as-err-destructor-delete", sym);
                     ctx.Emit(sym, "as-err-destructor-delete", sym.name);
                 }
-            }
-            else if (fctx.isCtor)
-            {
-                if (!sig.returnType.empty() && sig.returnType != "void")
+                if (sig.modifiers.isShared || sig.modifiers.isExternal)
                 {
                     ctx.LogRule("Rule_CtorDtor", "as-syntax-error", sym);
                     ctx.Emit(sym, "as-syntax-error");
@@ -240,8 +260,11 @@ namespace angel_lsp::analysis::rules
     static void Rule_FunctionBodyFlow(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
     {
         const auto &sig = sym.GetFunction();
+        if (!sig.bodyAnalysis)
+            return;
+        const auto &body = *sig.bodyAnalysis;
 
-        for (const auto &labelName : sig.gotoTargetLabels)
+        for (const auto &labelName : body.gotoTargetLabels)
         {
             std::string targetLabel = labelName + ":";
             if (sig.defaultValue.find(targetLabel) == std::string::npos)
@@ -250,27 +273,292 @@ namespace angel_lsp::analysis::rules
                 ctx.Emit(sym, "as-err-unresolved-symbol", labelName);
             }
         }
+
+        for (const auto &range : body.invalidBreakStatements)
+        {
+            ctx.LogRule("Rule_FunctionBodyFlow", "as-err-break-outside-loop", sym);
+            ctx.EmitAtRange(sym, range, "as-err-break-outside-loop");
+        }
+
+        for (const auto &range : body.invalidContinueStatements)
+        {
+            ctx.LogRule("Rule_FunctionBodyFlow", "as-err-continue-outside-loop", sym);
+            ctx.EmitAtRange(sym, range, "as-err-continue-outside-loop");
+        }
+    }
+
+    static void Rule_FunctionBodySwitch(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
+    {
+        const auto &sig = sym.GetFunction();
+        if (!sig.bodyAnalysis)
+            return;
+        const auto &body = *sig.bodyAnalysis;
+
+        for (const auto &range : body.invalidDefaultStatements)
+        {
+            ctx.LogRule("Rule_FunctionBodySwitch", "as-err-default-must-be-last", sym);
+            ctx.EmitAtRange(sym, range, "as-err-default-must-be-last");
+        }
+
+        for (const auto &item : body.invalidCaseStatements)
+        {
+            if (item.reason == "invalid_type")
+            {
+                ctx.LogRule("Rule_FunctionBodySwitch", "as-err-invalid-case-type", sym);
+                ctx.EmitAtRange(sym, item.range, "as-err-invalid-case-type");
+            }
+            else if (item.reason == "duplicate_value")
+            {
+                ctx.LogRule("Rule_FunctionBodySwitch", "as-err-duplicate-case-value", sym);
+                ctx.EmitAtRange(sym, item.range, "as-err-duplicate-case-value", item.valueText);
+            }
+        }
+    }
+
+    static void ValidateTypeAndTemplateArgs(const std::string &typeStr, const Symbol &sym, const DiagnosticContext &ctx, bool isTopLevelCastTarget = true)
+    {
+        std::string tName = typeStr;
+        size_t start = tName.find_first_not_of(" \t\r\n");
+        if (start != std::string::npos) tName = tName.substr(start);
+        size_t end = tName.find_last_not_of(" \t\r\n");
+        if (end != std::string::npos) tName = tName.substr(0, end + 1);
+
+        while (!tName.empty() && (tName.back() == '@' || tName.back() == '&'))
+        {
+            tName.pop_back();
+            end = tName.find_last_not_of(" \t\r\n");
+            if (end != std::string::npos) tName = tName.substr(0, end + 1);
+        }
+        if (tName.rfind("const ", 0) == 0)
+        {
+            tName = tName.substr(6);
+        }
+
+        if (tName.empty()) return;
+
+        std::string_view stringTypeName = ctx.request.GetStringTypeName();
+        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
+
+        std::string baseName = tName;
+        size_t anglePos = baseName.find('<');
+        std::string templateArgsStr;
+        if (anglePos != std::string::npos)
+        {
+            size_t lastAngle = tName.rfind('>');
+            if (lastAngle != std::string::npos && lastAngle > anglePos)
+            {
+                templateArgsStr = tName.substr(anglePos + 1, lastAngle - anglePos - 1);
+            }
+            baseName = baseName.substr(0, anglePos);
+        }
+
+        if (IsMixinClass(baseName, ctx.request.symbolTable))
+        {
+            ctx.LogRule("ValidateTypeAndTemplateArgs", "as-err-mixin-not-a-type", sym);
+            ctx.Emit(sym, "as-err-mixin-not-a-type", baseName);
+        }
+        else if (baseName == "void" || baseName == "auto" || baseName == "null")
+        {
+            ctx.LogRule("ValidateTypeAndTemplateArgs", "as-err-unresolved-type", sym);
+            ctx.Emit(sym, "as-err-unresolved-type", baseName);
+        }
+        else if (isTopLevelCastTarget && (IsPrimitiveTypeName(baseName) || (baseName == stringTypeName && tName.find('@') == std::string::npos)))
+        {
+            ctx.LogRule("ValidateTypeAndTemplateArgs", "as-err-unresolved-type", sym);
+            ctx.Emit(sym, "as-err-unresolved-type", baseName);
+        }
+        else if (!IsKnownType(baseName, ctx))
+        {
+            bool isTemplatePlaceholder = false;
+            if (!sym.containerName.empty())
+            {
+                const auto *cSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
+                if (cSyms)
+                {
+                    for (const auto &cS : *cSyms)
+                    {
+                        if (cS.type == SymbolType::Class && cS.GetClass().isTemplate)
+                        {
+                            isTemplatePlaceholder = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!isTemplatePlaceholder)
+            {
+                ctx.LogRule("ValidateTypeAndTemplateArgs", "as-err-unresolved-type", sym);
+                ctx.Emit(sym, "as-err-unresolved-type", baseName);
+            }
+        }
+
+        if (!templateArgsStr.empty())
+        {
+            int depth = 0;
+            std::string currentArg;
+            for (char c : templateArgsStr)
+            {
+                if (c == '<') depth++;
+                else if (c == '>') depth--;
+                else if (c == ',' && depth == 0)
+                {
+                    ValidateTypeAndTemplateArgs(currentArg, sym, ctx, false);
+                    currentArg.clear();
+                    continue;
+                }
+                currentArg += c;
+            }
+            if (!currentArg.empty())
+            {
+                ValidateTypeAndTemplateArgs(currentArg, sym, ctx, false);
+            }
+        }
+    }
+
+    static std::string ExtractBaseTemplateName(const std::string &tName)
+    {
+        std::string base = tName;
+        while (!base.empty() && (base.back() == '@' || base.back() == '&' || isspace(static_cast<unsigned char>(base.back()))))
+        {
+            base.pop_back();
+        }
+        if (base.rfind("const ", 0) == 0) base = base.substr(6);
+        size_t anglePos = base.find('<');
+        if (anglePos != std::string::npos) base = base.substr(0, anglePos);
+        return base;
+    }
+
+    static std::string ExtractTemplateArgsString(const std::string &tName)
+    {
+        size_t anglePos = tName.find('<');
+        if (anglePos == std::string::npos) return "";
+        size_t lastAngle = tName.rfind('>');
+        if (lastAngle != std::string::npos && lastAngle > anglePos)
+        {
+            return tName.substr(anglePos + 1, lastAngle - anglePos - 1);
+        }
+        return "";
+    }
+
+    static std::string NormalizeTypeArg(std::string arg)
+    {
+        while (!arg.empty() && (arg.back() == '@' || arg.back() == '&' || isspace(static_cast<unsigned char>(arg.back()))))
+        {
+            arg.pop_back();
+        }
+        while (!arg.empty() && (arg.front() == ' ' || arg.front() == '\t'))
+        {
+            arg = arg.substr(1);
+        }
+        if (arg.rfind("const ", 0) == 0) arg = arg.substr(6);
+        return arg;
+    }
+
+    static bool AreTemplateArgsCompatible(const std::string &targetArgsStr, const std::string &operandArgsStr)
+    {
+        std::string normTarget = NormalizeTypeArg(targetArgsStr);
+        std::string normOperand = NormalizeTypeArg(operandArgsStr);
+        return normTarget == normOperand;
     }
 
     static void Rule_FunctionBodyCast(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
     {
         const auto &sig = sym.GetFunction();
 
-        for (const auto &castType : sig.bodyCastTypes)
+        if (sig.bodyAnalysis)
         {
-            if (castType == "void")
+            const auto &body = *sig.bodyAnalysis;
+            for (const auto &castTypeRaw : body.bodyCastTypes)
             {
-                ctx.LogRule("Rule_FunctionBodyCast", "as-err-unresolved-type", sym);
-                ctx.Emit(sym, "as-err-unresolved-type", "cast");
+                ValidateTypeAndTemplateArgs(castTypeRaw, sym, ctx, true);
+            }
+
+            for (const auto &castExpr : body.bodyCastExpressions)
+            {
+                if (!castExpr.operandText.empty())
+                {
+                    std::string operandType;
+                    for (const auto &vInfo : body.bodyVariableTypes)
+                    {
+                        if (!vInfo.varName.empty() && vInfo.varName == castExpr.operandText)
+                        {
+                            operandType = vInfo.fullType;
+                            break;
+                        }
+                    }
+                    if (operandType.empty())
+                    {
+                        for (const auto &param : sig.parameters)
+                        {
+                            if (param.name == castExpr.operandText)
+                            {
+                                operandType = param.typeName;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!operandType.empty())
+                    {
+                        std::string targetBase = ExtractBaseTemplateName(castExpr.targetType);
+                        std::string operandBase = ExtractBaseTemplateName(operandType);
+
+                        if (!targetBase.empty() && targetBase == operandBase)
+                        {
+                            std::string targetArgs = ExtractTemplateArgsString(castExpr.targetType);
+                            std::string operandArgs = ExtractTemplateArgsString(operandType);
+
+                            if (!targetArgs.empty() && !operandArgs.empty())
+                            {
+                                if (!AreTemplateArgsCompatible(targetArgs, operandArgs))
+                                {
+                                    ctx.LogRule("Rule_FunctionBodyCast", "as-err-unresolved-type", sym);
+                                    ctx.Emit(sym, "as-err-unresolved-type", castExpr.targetType);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (sig.defaultValue.find("cast<") != std::string::npos)
+        {
+            size_t cPos = sig.defaultValue.find("cast<");
+            while (cPos != std::string::npos)
+            {
+                size_t rParen = sig.defaultValue.find(')', cPos);
+                if (rParen != std::string::npos)
+                {
+                    std::string castExpr = sig.defaultValue.substr(cPos, rParen - cPos + 1);
+                    size_t commaOrParen = castExpr.find('>');
+                    if (commaOrParen != std::string::npos && commaOrParen + 1 < castExpr.size())
+                    {
+                        std::string argStr = castExpr.substr(commaOrParen + 1);
+                        if (argStr.size() >= 2 && argStr.front() == '(') argStr = argStr.substr(1);
+                        size_t endDigit = argStr.find_first_of("),;\t\r\n ");
+                        if (endDigit != std::string::npos) argStr = argStr.substr(0, endDigit);
+                        if (!argStr.empty() && isdigit(static_cast<unsigned char>(argStr.front())))
+                        {
+                            ctx.LogRule("Rule_FunctionBodyCast", "as-err-unresolved-type", sym);
+                            ctx.Emit(sym, "as-err-unresolved-type", "cast");
+                            break;
+                        }
+                    }
+                }
+                cPos = sig.defaultValue.find("cast<", cPos + 5);
             }
         }
     }
 
+
     static void Rule_FunctionBodyScope(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
     {
         const auto &sig = sym.GetFunction();
+        if (!sig.bodyAnalysis)
+            return;
 
-        for (const auto &qualifiedName : sig.bodyQualifiedNames)
+        for (const auto &qualifiedName : sig.bodyAnalysis->bodyQualifiedNames)
         {
             size_t scopePos = qualifiedName.find("::");
             if (scopePos != std::string::npos)
@@ -295,15 +583,21 @@ namespace angel_lsp::analysis::rules
         std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
         const auto &sig = sym.GetFunction();
 
-        if (sig.hasValueReturn && IsReservedKeyword(sig.returnExpression) && sig.returnExpression != "null" && sig.returnExpression != "true" && sig.returnExpression != "false")
+        if (sig.returnType != "void" && !sig.returnType.empty() && (!fctx.isCtor && !fctx.isDtor) && sig.bodyAnalysis.hasEmptyReturn)
+        {
+            ctx.LogRule("Rule_FunctionReturnExpr", "as-err-not-all-paths-return", sym);
+            ctx.Emit(sym, "as-err-not-all-paths-return", sym.name);
+        }
+
+        if (sig.bodyAnalysis.hasValueReturn && IsReservedKeyword(sig.bodyAnalysis.returnExpression) && sig.bodyAnalysis.returnExpression != "null" && sig.bodyAnalysis.returnExpression != "true" && sig.bodyAnalysis.returnExpression != "false")
         {
             ctx.LogRule("Rule_FunctionReturnExpr", "as-syntax-error", sym);
             ctx.Emit(sym, "as-syntax-error");
         }
 
-        if (sig.hasValueReturn && !sig.returnCallTargetName.empty())
+        if (sig.bodyAnalysis.hasValueReturn && !sig.bodyAnalysis.returnCallTargetName.empty())
         {
-            const std::string &target = sig.returnCallTargetName;
+            const std::string &target = sig.bodyAnalysis.returnCallTargetName;
             if (target.find("::") == std::string::npos &&
                 !IsPrimitiveTypeName(target) && target != stringTypeName && target != arrayTypeName &&
                 !target.starts_with("array<") && !target.starts_with(std::string(arrayTypeName) + "<") &&
@@ -318,7 +612,7 @@ namespace angel_lsp::analysis::rules
             }
         }
 
-        if (sig.hasSuperCall)
+        if (sig.bodyAnalysis.hasSuperCall)
         {
             if (!sym.containerName.empty())
             {
@@ -342,7 +636,7 @@ namespace angel_lsp::analysis::rules
     {
         const auto &sig = sym.GetFunction();
 
-        if (sig.modifiers.isOverride && fctx.isInsideClass)
+        if (sig.modifiers.isOverride && fctx.isInsideClass && !fctx.isDtor)
         {
             bool hasBaseMethod = false;
             auto parentOpt = ctx.request.symbolTable.FindFirstSymbol(sym.containerName);
@@ -482,11 +776,27 @@ namespace angel_lsp::analysis::rules
         return true;
     }
 
+    static void Rule_FunctionBodyVariables(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
+    {
+        const auto &sig = sym.GetFunction();
+
+        for (const auto &varInfo : sig.bodyAnalysis.bodyVariableTypes)
+        {
+            if (IsMixinClass(varInfo.typeName, ctx.request.symbolTable))
+            {
+                ctx.LogRule("Rule_FunctionBodyVariables", "as-err-mixin-not-a-type", sym);
+                ctx.EmitAtRange(sym, varInfo.range, "as-err-mixin-not-a-type", varInfo.typeName);
+            }
+        }
+    }
+
     void ValidateFunctionBody(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
     {
         Rule_FunctionBody(sym, fctx, ctx);
         Rule_FunctionBodyFlow(sym, fctx, ctx);
+        Rule_FunctionBodySwitch(sym, fctx, ctx);
         Rule_FunctionBodyCast(sym, fctx, ctx);
+        Rule_FunctionBodyVariables(sym, fctx, ctx);
         Rule_FunctionBodyScope(sym, fctx, ctx);
         Rule_FunctionReturnExpr(sym, fctx, ctx);
     }
@@ -503,16 +813,15 @@ namespace angel_lsp::analysis::rules
         ValidateFunctionBody(sym, fctx, ctx);
     }
 
-    void ValidateFunctionParameters(const Symbol &sym, const FunctionSignature &sig, const DiagnosticContext &ctx)
+    static void ValidateParametersInternal(const Symbol &sym, const std::vector<ParameterInformation> &parameters, bool isExternalFunc, const DiagnosticContext &ctx)
     {
         std::string_view stringTypeName = ctx.request.GetStringTypeName();
         std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
 
         ankerl::unordered_dense::set<std::string> seenParamNames;
         bool seenDefault = false;
-        bool isExternalFunc = sig.modifiers.isExternal;
 
-        for (const auto &param : sig.parameters)
+        for (const auto &param : parameters)
         {
             if (isExternalFunc && param.modifier == ParameterModifier::InOut)
             {
@@ -520,7 +829,13 @@ namespace angel_lsp::analysis::rules
                 ctx.Emit(param, sym, "as-syntax-error");
             }
 
-            if (isExternalFunc && !param.baseTypeName.empty() && !IsPrimitiveTypeName(param.baseTypeName) && param.baseTypeName != stringTypeName && param.baseTypeName != arrayTypeName && !param.baseTypeName.starts_with("array<") && !ctx.request.symbolTable.HasSymbolAnywhere(param.baseTypeName))
+            if (IsMixinClass(param.baseTypeName, ctx.request.symbolTable))
+            {
+                ctx.LogParam("ValidateFunctionParameters", "as-err-mixin-not-a-type", param, sym);
+                ctx.Emit(param, sym, "as-err-mixin-not-a-type", param.name, sym.name);
+            }
+
+            if (isExternalFunc && !param.baseTypeName.empty() && !IsKnownType(param.baseTypeName, ctx) && !param.baseTypeName.starts_with("array<"))
             {
                 ctx.LogParam("ValidateFunctionParameters", "as-err-unresolved-type", param, sym);
                 ctx.Emit(param, sym, "as-err-unresolved-type", param.baseTypeName);
@@ -538,7 +853,7 @@ namespace angel_lsp::analysis::rules
 
             if (param.typeKind == TypeKind::Void || param.baseTypeName == "void")
             {
-                bool isUnnamedVoid = (sig.parameters.size() == 1 && param.name.empty());
+                bool isUnnamedVoid = (parameters.size() == 1 && param.name.empty());
                 if (!isUnnamedVoid && sym.type != SymbolType::Funcdef)
                 {
                     ctx.LogParam("ValidateFunctionParameters", "as-err-void-parameter", param, sym);
@@ -613,7 +928,7 @@ namespace angel_lsp::analysis::rules
                 ctx.Emit(param, sym, "as-err-handle-on-primitive", param.baseTypeName);
             }
 
-            if (!param.baseTypeName.empty() && !IsPrimitiveTypeName(param.baseTypeName) && param.baseTypeName != stringTypeName && param.baseTypeName != arrayTypeName && !ctx.request.symbolTable.HasSymbol(param.baseTypeName) && !ctx.request.symbolTable.HasSymbolAnywhere(param.baseTypeName))
+            if (!param.baseTypeName.empty() && !IsKnownType(param.baseTypeName, ctx))
             {
                 ctx.LogParam("ValidateFunctionParameters", "as-err-unresolved-type", param, sym);
                 ctx.Emit(param, sym, "as-err-unresolved-type", param.baseTypeName);
@@ -636,5 +951,15 @@ namespace angel_lsp::analysis::rules
                 }
             }
         }
+    }
+
+    void ValidateFunctionParameters(const Symbol &sym, const FunctionSignature &sig, const DiagnosticContext &ctx)
+    {
+        ValidateParametersInternal(sym, sig.parameters, sig.modifiers.isExternal, ctx);
+    }
+
+    void ValidateFunctionParameters(const Symbol &sym, const FuncdefSignature &sig, const DiagnosticContext &ctx)
+    {
+        ValidateParametersInternal(sym, sig.parameters, sig.modifiers.isExternal, ctx);
     }
 }

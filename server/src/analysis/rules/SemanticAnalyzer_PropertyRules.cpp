@@ -93,8 +93,8 @@ namespace angel_lsp::analysis::rules
 
         if (isInterfaceProperty && (sig.hasBodyGet || sig.hasBodySet))
         {
-            ctx.LogRule("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
-            ctx.Emit(sym, "as-err-property-accessor-missing-body", sym.name);
+            ctx.LogRule("Rule_PropertyAccessors", "as-syntax-error", sym);
+            ctx.Emit(sym, "as-syntax-error");
         }
 
         if (!isInterfaceProperty && ((sig.hasGet && !sig.hasBodyGet) || (sig.hasSet && !sig.hasBodySet)))
@@ -105,8 +105,8 @@ namespace angel_lsp::analysis::rules
 
         if (sig.hasDuplicateGet || sig.hasDuplicateSet)
         {
-            ctx.LogRule("Rule_PropertyAccessors", "as-err-property-accessor-missing-body", sym);
-            ctx.Emit(sym, "as-err-property-accessor-missing-body", sym.name);
+            ctx.LogRule("Rule_PropertyAccessors", "as-syntax-error", sym);
+            ctx.Emit(sym, "as-syntax-error");
         }
 
         if (isInterfaceProperty && (sig.isGetFinal || sig.isGetOverride || sig.isSetFinal || sig.isSetOverride))

@@ -294,6 +294,13 @@ namespace angel_lsp::analysis::rules
 
     void ValidateTypedef(const Symbol &sym, const DiagnosticContext &ctx)
     {
+        const auto &sig = sym.GetTypedef();
+        if (!sig.hasSemicolon)
+        {
+            ctx.LogRule("ValidateTypedef", "as-syntax-error", sym);
+            ctx.Emit(sym, "as-syntax-error");
+        }
+
         if (Rule_TypedefName(sym, ctx))
         {
             return;
@@ -307,7 +314,7 @@ namespace angel_lsp::analysis::rules
         std::string_view stringTypeName = ctx.request.GetStringTypeName();
         std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
 
-        const auto &sig = sym.GetFunction();
+        const auto &sig = sym.GetFuncdef();
         if (sig.modifiers.isExternal)
         {
             ctx.LogRule("Rule_FuncdefName", "as-err-external-not-found", sym);
@@ -328,7 +335,7 @@ namespace angel_lsp::analysis::rules
     {
         std::string_view stringTypeName = ctx.request.GetStringTypeName();
         std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
-        const auto &sig = sym.GetFunction();
+        const auto &sig = sym.GetFuncdef();
 
         if (sig.returnHasPrimitiveHandle)
         {
@@ -336,13 +343,10 @@ namespace angel_lsp::analysis::rules
             ctx.Emit(sym, "as-err-handle-on-primitive", sig.returnBaseTypeName);
         }
 
-        if (!sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" && !IsPrimitiveTypeName(sig.returnBaseTypeName) && sig.returnBaseTypeName != stringTypeName && sig.returnBaseTypeName != arrayTypeName)
+        if (!sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" && !IsKnownType(sig.returnBaseTypeName, ctx))
         {
-            if (!ctx.request.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName))
-            {
-                ctx.LogRule("Rule_FuncdefReturn", "as-err-unresolved-type", sym);
-                ctx.Emit(sym, "as-err-unresolved-type", sig.returnBaseTypeName);
-            }
+            ctx.LogRule("Rule_FuncdefReturn", "as-err-unresolved-type", sym);
+            ctx.Emit(sym, "as-err-unresolved-type", sig.returnBaseTypeName);
         }
     }
 
@@ -353,7 +357,7 @@ namespace angel_lsp::analysis::rules
             return;
         }
 
-        const auto &sig = sym.GetFunction();
+        const auto &sig = sym.GetFuncdef();
         Rule_FuncdefReturn(sym, ctx);
         ValidateFunctionParameters(sym, sig, ctx);
     }
@@ -415,7 +419,7 @@ namespace angel_lsp::analysis::rules
                     bool isTypeKeyword = (IsPrimitiveTypeName(val) || IsReservedKeyword(val));
                     bool isCallOrExpr = (member.valueNodeType == node_types::CallExpression);
 
-                    if (isStringLiteral || isLambda || isBool || isNull || isTypeKeyword || isCallOrExpr)
+                    if (isStringLiteral || isLambda || isBool || isNull || isTypeKeyword || isCallOrExpr || val == "struct")
                     {
                         ctx.LogRule("Rule_EnumMembers", "as-err-enum-invalid-initializer", sym);
                         ctx.Emit(sym, "as-err-enum-invalid-initializer", member.name);

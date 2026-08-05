@@ -478,7 +478,7 @@ TEST_CASE("SemanticAnalyzer - SA-08: Const out parameter error")
     REQUIRE(diagnostics.size() == 0);
 }
 
-TEST_CASE("SemanticAnalyzer - SA-09: Mixin cannot be base of non-mixin class")
+TEST_CASE("SemanticAnalyzer - SA-09: Mixin can be base of non-mixin class")
 {
     std::string sourceCode =
         "mixin class MyMixin {}\n"
@@ -495,8 +495,7 @@ TEST_CASE("SemanticAnalyzer - SA-09: Mixin cannot be base of non-mixin class")
     SemanticAnalysisRequest req{table, fileUri, "", &i18n};
     auto diagnostics = analyzer.Analyze(req);
 
-    REQUIRE(diagnostics.size() == 1);
-    CHECK(diagnostics[0].code == "as-err-mixin-as-base");
+    REQUIRE(diagnostics.size() == 0);
 }
 
 TEST_CASE("SemanticAnalyzer - SA-07: Known types do NOT generate unresolved-type (false positive guard)")

@@ -92,6 +92,12 @@ namespace angel_lsp::analysis::rules
             rawBaseType = rawBaseType.substr(2);
         }
 
+        if (IsMixinClass(rawBaseType, ctx.request.symbolTable))
+        {
+            ctx.LogRule("Rule_VariableTypeResolution", "as-err-mixin-not-a-type", sym);
+            ctx.Emit(sym, "as-err-mixin-not-a-type", sym.name);
+        }
+
         if (rawBaseType.find("::") != std::string::npos)
         {
             std::string currentPrefix = "";
@@ -171,7 +177,12 @@ namespace angel_lsp::analysis::rules
         {
             for (const auto &innerType : sig.templateArgumentTypes)
             {
-                if (!innerType.empty() && !IsPrimitiveTypeName(innerType) && innerType != stringTypeName && innerType != arrayTypeName && !ctx.request.symbolTable.HasSymbolAnywhere(innerType))
+                if (IsMixinClass(innerType, ctx.request.symbolTable))
+                {
+                    ctx.LogRule("Rule_VariableTypeResolution", "as-err-mixin-not-a-type", sym);
+                    ctx.Emit(sym, "as-err-mixin-not-a-type", innerType);
+                }
+                else if (!innerType.empty() && !IsKnownType(innerType, ctx))
                 {
                     ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
                     ctx.Emit(sym, "as-err-unresolved-type", innerType);
@@ -182,7 +193,12 @@ namespace angel_lsp::analysis::rules
         if (sig.templateArgumentTypes.empty() && (sig.baseTypeName == arrayTypeName || sig.isArray) && !sig.templateName.empty())
         {
             std::string tName = sig.templateName;
-            if (!IsPrimitiveTypeName(tName) && tName != stringTypeName && tName != arrayTypeName && !ctx.request.symbolTable.HasSymbolAnywhere(tName))
+            if (IsMixinClass(tName, ctx.request.symbolTable))
+            {
+                ctx.LogRule("Rule_VariableTypeResolution", "as-err-mixin-not-a-type", sym);
+                ctx.Emit(sym, "as-err-mixin-not-a-type", tName);
+            }
+            else if (!IsKnownType(tName, ctx))
             {
                 ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
                 ctx.Emit(sym, "as-err-unresolved-type", tName);
@@ -191,8 +207,7 @@ namespace angel_lsp::analysis::rules
 
         if (sig.typeKind == TypeKind::Unknown && sig.baseTypeName != "auto" && !sig.baseTypeName.empty() && sig.baseTypeName.find("::") == std::string::npos)
         {
-            if (sig.baseTypeName != stringTypeName && sig.baseTypeName != arrayTypeName &&
-                !ctx.request.symbolTable.HasSymbolAnywhere(sig.baseTypeName))
+            if (!IsKnownType(sig.baseTypeName, ctx))
             {
                 ctx.LogRule("Rule_VariableTypeResolution", "as-err-unresolved-type", sym);
                 ctx.Emit(sym, "as-err-unresolved-type", sig.baseTypeName);

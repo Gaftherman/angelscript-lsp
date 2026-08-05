@@ -3,6 +3,8 @@
 #include <string>
 #include <string_view>
 #include <ankerl/unordered_dense.h>
+#include "analysis/DiagnosticContext.h"
+
 
 namespace angel_lsp::analysis
 {
@@ -49,4 +51,21 @@ namespace angel_lsp::analysis
      * @return InitializerItemKind classification.
      */
     InitializerItemKind ClassifyInitializerItem(std::string_view item);
+
+    /**
+     * @brief Checks if a given base type name resolves to a mixin class symbol.
+     * @param baseTypeName The name of the type to check.
+     * @param table SymbolTable to look up the type.
+     * @return True if baseTypeName resolves to a mixin class.
+     */
+    bool IsMixinClass(std::string_view baseTypeName, const class SymbolTable &table);
+
+    /**
+     * @brief Checks whether the given base type name is a known type (primitive, string, array, or in SymbolTable).
+     * @param baseName Type base name to check.
+     * @param ctx DiagnosticContext containing request and SymbolTable.
+     * @return True if baseName is a known valid type.
+     */
+    bool IsKnownType(const std::string &baseName, const DiagnosticContext &ctx);
 }
+

@@ -8,7 +8,10 @@ namespace angel_lsp::analysis::rules
         std::string_view stringTypeName = ctx.request.GetStringTypeName();
         std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
 
-        if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName)
+        bool isPredefined = sym.fileUri.find("as.predefined") != std::string::npos ||
+                            sym.fileUri.find(".predefined") != std::string::npos;
+
+        if (!isPredefined && (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == stringTypeName || sym.name == arrayTypeName))
         {
             ctx.LogRule("Rule_ClassName", "as-err-reserved-keyword-name", sym);
             ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
@@ -133,13 +136,10 @@ namespace angel_lsp::analysis::rules
 
                         if (bSym.type == SymbolType::Class)
                         {
-                            if (bSym.GetClass().modifiers.isMixin && !sig.modifiers.isMixin)
+                            if (!bSym.GetClass().modifiers.isMixin)
                             {
-                                ctx.LogRule("Rule_ClassInheritance", "as-err-mixin-as-base", sym);
-                                ctx.Emit(sym, "as-err-mixin-as-base", sym.name, baseName);
+                                isBaseClass = true;
                             }
-
-                            isBaseClass = true;
                             if (bSym.GetClass().modifiers.isFinal)
                             {
                                 ctx.LogRule("Rule_ClassInheritance", "as-err-inherit-final", sym);

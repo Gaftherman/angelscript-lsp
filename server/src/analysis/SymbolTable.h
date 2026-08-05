@@ -109,6 +109,54 @@ namespace angel_lsp::analysis
         uint32_t endCharacter = 0;
     };
 
+    struct SourceRange
+    {
+        uint32_t startLine = 0;
+        uint32_t startCharacter = 0;
+        uint32_t endLine = 0;
+        uint32_t endCharacter = 0;
+    };
+
+    struct InvalidCaseStatement
+    {
+        SourceRange range;
+        std::string valueText;
+        std::string reason; // "invalid_type" or "duplicate_value"
+    };
+
+    struct LocalVarTypeInformation
+    {
+        SourceRange range;
+        std::string typeName;
+        std::string varName;
+        std::string fullType;
+    };
+
+    struct CastExpressionInformation
+    {
+        std::string targetType;
+        std::string operandText;
+    };
+
+    struct FunctionBodyAnalysis
+    {
+        bool hasEmptyReturn = false;
+        bool hasValueReturn = false;
+        bool hasNullReturn = false;
+        std::string returnExpression;
+        std::string returnCallTargetName;
+        bool hasSuperCall = false;
+        std::vector<std::string> gotoTargetLabels;
+        std::vector<std::string> bodyCastTypes;
+        std::vector<CastExpressionInformation> bodyCastExpressions;
+        std::vector<std::string> bodyQualifiedNames;
+        std::vector<LocalVarTypeInformation> bodyVariableTypes;
+        std::vector<SourceRange> invalidBreakStatements;
+        std::vector<SourceRange> invalidContinueStatements;
+        std::vector<SourceRange> invalidDefaultStatements;
+        std::vector<InvalidCaseStatement> invalidCaseStatements;
+    };
+
     struct FunctionSignature
     {
         std::string returnType;
@@ -123,17 +171,11 @@ namespace angel_lsp::analysis
         std::vector<ParameterInformation> parameters;
         bool hasBody = false;
         bool isInterfaceMethod = false;
-        bool hasEmptyReturn = false;
-        bool hasValueReturn = false;
-        bool hasNullReturn = false;
-        std::string returnExpression;
-        std::string returnCallTargetName;
         std::string defaultValue;
-        bool hasSuperCall = false;
-        std::vector<std::string> gotoTargetLabels;
-        std::vector<std::string> bodyCastTypes;
-        std::vector<std::string> bodyQualifiedNames;
+
+        std::optional<FunctionBodyAnalysis> bodyAnalysis;
     };
+
 
     struct VariableSignature
     {
@@ -179,6 +221,7 @@ namespace angel_lsp::analysis
     struct ClassSignature
     {
         std::vector<std::string> bases;
+        std::vector<std::string> templateParams;
         SymbolModifiers modifiers;
         bool isTemplate = false;
         bool hasBraces = false;
@@ -194,6 +237,21 @@ namespace angel_lsp::analysis
     {
         std::string baseType;
         TypeKind typeKind = TypeKind::Unknown;
+        bool hasSemicolon = true;
+    };
+
+    struct FuncdefSignature
+    {
+        std::string returnType;
+        std::string returnBaseTypeName;
+        std::string returnTemplateName;
+        TypeKind returnTypeKind = TypeKind::Unknown;
+        bool returnIsArray = false;
+        bool returnIsConst = false;
+        bool returnHasPrimitiveHandle = false;
+        uint32_t returnArrayDepth = 0;
+        SymbolModifiers modifiers;
+        std::vector<ParameterInformation> parameters;
     };
 
     struct Symbol
@@ -216,7 +274,8 @@ namespace angel_lsp::analysis
             EnumSignature,
             ClassSignature,
             InterfaceSignature,
-            TypedefSignature
+            TypedefSignature,
+            FuncdefSignature
         > signature;
 
         FunctionSignature &GetFunction()
@@ -277,6 +336,16 @@ namespace angel_lsp::analysis
         const TypedefSignature &GetTypedef() const
         {
             return std::get<TypedefSignature>(signature);
+        }
+
+        FuncdefSignature &GetFuncdef()
+        {
+            return std::get<FuncdefSignature>(signature);
+        }
+
+        const FuncdefSignature &GetFuncdef() const
+        {
+            return std::get<FuncdefSignature>(signature);
         }
     };
 

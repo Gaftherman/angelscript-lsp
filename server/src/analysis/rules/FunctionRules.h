@@ -43,6 +43,14 @@ namespace angel_lsp::analysis::rules
     void ValidateFunctionParameters(const Symbol &sym, const FunctionSignature &sig, const DiagnosticContext &ctx);
 
     /**
+     * @brief Validates parameter rules for a funcdef signature.
+     * @param sym Funcdef parent symbol.
+     * @param sig Funcdef signature info.
+     * @param ctx Diagnostic context.
+     */
+    void ValidateFunctionParameters(const Symbol &sym, const FuncdefSignature &sig, const DiagnosticContext &ctx);
+
+    /**
      * @brief Validates function body rules (INSIDE THE BODY: statements, flow control, cast, local variables scope, return expressions).
      * @param sym Function symbol to validate.
      * @param fctx Function context info.
