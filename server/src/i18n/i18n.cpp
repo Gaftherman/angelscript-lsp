@@ -71,6 +71,8 @@ namespace angel_lsp::i18n
         m_messages["as-err-duplicate-case-value"] = "Duplicate case value '{}' in switch statement.";
         m_messages["as-err-default-must-be-last"] = "The default case must be the last one.";
         m_messages["as-err-mixin-not-a-type"] = "Mixin '{}' cannot be used as a data type.";
+        m_messages["as-err-undeclared-identifier"] = "Undeclared identifier '{}'.";
+        m_messages["as-err-implicit-conversion"] = "Implicit conversion from '{}' is invalid.";
 
         if (locale == "es")
         {

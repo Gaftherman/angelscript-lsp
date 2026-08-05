@@ -75,6 +75,55 @@ TEST_CASE("Group C1: Cast with Nested Template Types")
         )";
         CHECK(TestSemanticCodeGroupC(code, ""));
     }
+
+    SUBCASE("Variant 4: Invalid primitive cast target")
+    {
+        std::string code = R"(
+            class Dummy {}
+            void main() {
+                Dummy@ d = null;
+                int x = cast<int>(d);
+            }
+        )";
+        CHECK(TestSemanticCodeGroupC(code, "as-err-unresolved-type"));
+    }
+
+    SUBCASE("Variant 5: Mixin class target in cast")
+    {
+        std::string code = R"(
+            mixin class M {}
+            class Dummy {}
+            void main() {
+                Dummy@ d = null;
+                M@ m = cast<M@>(d);
+            }
+        )";
+        CHECK(TestSemanticCodeGroupC(code, "as-err-mixin-not-a-type"));
+    }
+
+    SUBCASE("Variant 6: Unknown template argument in cast target")
+    {
+        std::string code = R"(
+            class Dummy {}
+            void main() {
+                Dummy@ d = null;
+                array<UnknownType>@ arr = cast<array<UnknownType>@>(d);
+            }
+        )";
+        CHECK(TestSemanticCodeGroupC(code, "as-err-unresolved-type"));
+    }
+
+    SUBCASE("Variant 7: Cast to deep nested template with unknown inner type")
+    {
+        std::string code = R"(
+            class Dummy {}
+            void main() {
+                Dummy@ d = null;
+                array<array<TipoQueNoExiste>>@ arr = cast<array<array<TipoQueNoExiste>>@>(d);
+            }
+        )";
+        CHECK(TestSemanticCodeGroupC(code, "as-err-unresolved-type"));
+    }
 }
 
 TEST_CASE("Group C2: Compound Integer Expressions in Switch Case Labels")

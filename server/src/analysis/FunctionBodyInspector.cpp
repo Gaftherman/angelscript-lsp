@@ -1,8 +1,10 @@
 #include "analysis/FunctionBodyInspector.h"
+#include "analysis/TypeExtraction.h"
 #include <tree_sitter/api.h>
 #include <unordered_set>
 #include <cstring>
 #include <cctype>
+#include <cstdint>
 #include <optional>
 
 extern "C" const TSLanguage *tree_sitter_angelscript();
@@ -35,6 +37,19 @@ namespace angel_lsp::analysis
         return sourceCode.substr(start, end - start);
     }
 
+    static std::string_view ExtractTSNodeView(TSNode node, const std::string &sourceCode)
+    {
+        if (ts_node_is_null(node))
+            return {};
+
+        uint32_t start = ts_node_start_byte(node);
+        uint32_t end = ts_node_end_byte(node);
+        if (start >= sourceCode.size() || end > sourceCode.size() || start >= end)
+            return {};
+
+        return std::string_view(sourceCode.data() + start, end - start);
+    }
+
     static SourceRange GetSourceRange(TSNode node)
     {
         TSPoint start = ts_node_start_point(node);
@@ -65,6 +80,9 @@ namespace angel_lsp::analysis
         TSSymbol symBinaryExpression = 0;
         TSSymbol symIdentifier = 0;
         TSSymbol symVariableDeclarator = 0;
+        TSSymbol symMemberExpression = 0;
+        TSSymbol symMemberAccess = 0;
+        TSSymbol symParameter = 0;
         TSSymbol tokOpenParen = 0;
         TSSymbol tokCloseParen = 0;
         TSSymbol tokDefault = 0;
@@ -93,6 +111,9 @@ namespace angel_lsp::analysis
             symBinaryExpression = ts_language_symbol_for_name(lang, SYM_NAME("binary_expression"), true);
             symIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("identifier"), true);
             symVariableDeclarator = ts_language_symbol_for_name(lang, SYM_NAME("variable_declarator"), true);
+            symMemberExpression = ts_language_symbol_for_name(lang, SYM_NAME("member_expression"), true);
+            symMemberAccess = ts_language_symbol_for_name(lang, SYM_NAME("member_access"), true);
+            symParameter = ts_language_symbol_for_name(lang, SYM_NAME("parameter"), true);
             tokOpenParen = ts_language_symbol_for_name(lang, SYM_NAME("("), false);
             tokCloseParen = ts_language_symbol_for_name(lang, SYM_NAME(")"), false);
             tokDefault = ts_language_symbol_for_name(lang, SYM_NAME("default"), false);
@@ -153,11 +174,11 @@ namespace angel_lsp::analysis
         {
             TSNode opNode = GetChildByFieldName(node, "operand");
             TSNode operatorNode = GetChildByFieldName(node, "operator");
-            std::string opStr = ExtractTSNodeText(operatorNode, sourceCode);
+            std::string_view opStr = ExtractTSNodeView(operatorNode, sourceCode);
             auto val = EvaluateConstantIntExpr(opNode, sourceCode);
             if (val.has_value())
             {
-                if (opStr == "-") return -(*val);
+                if (opStr == "-") return (*val != INT64_MIN) ? std::optional<int64_t>(-(*val)) : std::nullopt;
                 if (opStr == "+") return +(*val);
                 if (opStr == "~") return ~(*val);
                 if (opStr == "!") return !(*val);
@@ -168,7 +189,7 @@ namespace angel_lsp::analysis
             TSNode leftNode = GetChildByFieldName(node, "left");
             TSNode rightNode = GetChildByFieldName(node, "right");
             TSNode operatorNode = GetChildByFieldName(node, "operator");
-            std::string opStr = ExtractTSNodeText(operatorNode, sourceCode);
+            std::string_view opStr = ExtractTSNodeView(operatorNode, sourceCode);
 
             auto leftVal = EvaluateConstantIntExpr(leftNode, sourceCode);
             auto rightVal = EvaluateConstantIntExpr(rightNode, sourceCode);
@@ -181,8 +202,8 @@ namespace angel_lsp::analysis
                 if (opStr == "*") return l * r;
                 if (opStr == "/") return (r != 0) ? std::optional<int64_t>(l / r) : std::nullopt;
                 if (opStr == "%") return (r != 0) ? std::optional<int64_t>(l % r) : std::nullopt;
-                if (opStr == "<<") return l << r;
-                if (opStr == ">>") return l >> r;
+                if (opStr == "<<") return (r >= 0 && r < 64) ? std::optional<int64_t>(l << r) : std::nullopt;
+                if (opStr == ">>") return (r >= 0 && r < 64) ? std::optional<int64_t>(l >> r) : std::nullopt;
                 if (opStr == "&") return l & r;
                 if (opStr == "|") return l | r;
                 if (opStr == "^") return l ^ r;
@@ -235,9 +256,11 @@ namespace angel_lsp::analysis
         return false;
     }
 
-    static void InspectFunctionBodyASTInternal(TSNode node, FunctionBodyAnalysis &analysis, const std::string &sourceCode, FlowTraversalContext flowCtx)
+    static void InspectFunctionBodyASTInternal(TSNode node, FunctionBodyAnalysis &analysis, const std::string &sourceCode, FlowTraversalContext flowCtx, int depth)
     {
         if (ts_node_is_null(node))
+            return;
+        if (depth >= 256)
             return;
 
         const auto &symbols = GetBodyInspectorSymbols();
@@ -361,7 +384,7 @@ namespace angel_lsp::analysis
             TSNode funcChild = GetChildByFieldName(node, "function");
             if (!ts_node_is_null(funcChild))
             {
-                std::string fText = ExtractTSNodeText(funcChild, sourceCode);
+                std::string_view fText = ExtractTSNodeView(funcChild, sourceCode);
                 if (fText == "super")
                 {
                     analysis.hasSuperCall = true;
@@ -399,8 +422,7 @@ namespace angel_lsp::analysis
                 std::string opText = !ts_node_is_null(valueChild) ? ExtractTSNodeText(valueChild, sourceCode) : "";
                 if (!cType.empty())
                 {
-                    analysis.bodyCastTypes.push_back(cType);
-                    analysis.bodyCastExpressions.push_back({ cType, opText });
+                    analysis.bodyCastExpressions.push_back({ cType, opText, ExtractTypeInfoFromAST(typeChild, sourceCode) });
                 }
             }
         }
@@ -468,7 +490,105 @@ namespace angel_lsp::analysis
                 }
                 if (!vType.empty())
                 {
-                    analysis.bodyVariableTypes.push_back({ GetSourceRange(node), vType, varName, fullVType });
+                    std::string initText;
+                    TSNode initNode = GetChildByFieldName(node, "value");
+                    if (ts_node_is_null(initNode)) initNode = GetChildByFieldName(node, "initializer");
+                    if (ts_node_is_null(initNode) && !ts_node_is_null(declNode))
+                    {
+                        initNode = GetChildByFieldName(declNode, "value");
+                        if (ts_node_is_null(initNode)) initNode = GetChildByFieldName(declNode, "initializer");
+                    }
+                    if (!ts_node_is_null(initNode))
+                    {
+                        initText = ExtractTSNodeText(initNode, sourceCode);
+                    }
+                    else if (!ts_node_is_null(declNode))
+                    {
+                        std::string declText = ExtractTSNodeText(declNode, sourceCode);
+                        size_t eqPos = declText.find('=');
+                        if (eqPos != std::string::npos)
+                        {
+                            initText = declText.substr(eqPos + 1);
+                            while (!initText.empty() && isspace(static_cast<unsigned char>(initText.front())))
+                                initText.erase(initText.begin());
+                        }
+                    }
+
+                    analysis.bodyVariableTypes.push_back({ GetSourceRange(node), vType, varName, fullVType, initText });
+                }
+            }
+        }
+
+        if (sym == symbols.symIdentifier)
+        {
+            TSNode parentNode = ts_node_parent(node);
+            bool isDecl = false;
+            bool isMemberAccess = false;
+            bool isCall = false;
+
+            if (!ts_node_is_null(parentNode))
+            {
+                TSSymbol pSym = ts_node_symbol(parentNode);
+                if (pSym == symbols.symVariableDeclarator || pSym == symbols.symVariableDeclaration || pSym == symbols.symParameter)
+                {
+                    TSNode declName = GetChildByFieldName(parentNode, "name");
+                    if (ts_node_is_null(declName))
+                    {
+                        declName = GetChildByFieldName(parentNode, "declarator");
+                    }
+                    if (!ts_node_is_null(declName) && ts_node_eq(declName, node))
+                    {
+                        isDecl = true;
+                    }
+                    else if (pSym == symbols.symVariableDeclarator)
+                    {
+                        if (ts_node_child_count(parentNode) > 0 && ts_node_eq(ts_node_child(parentNode, 0), node))
+                        {
+                            isDecl = true;
+                        }
+                    }
+                }
+                else if (pSym == symbols.symMemberExpression || pSym == symbols.symMemberAccess)
+                {
+                    TSNode memberChild = GetChildByFieldName(parentNode, "member");
+                    if (!ts_node_is_null(memberChild) && ts_node_eq(memberChild, node))
+                    {
+                        isMemberAccess = true;
+                    }
+                    else if (ts_node_child_count(parentNode) >= 2 && ts_node_eq(ts_node_child(parentNode, ts_node_child_count(parentNode) - 1), node))
+                    {
+                        isMemberAccess = true;
+                    }
+                }
+
+                if (pSym == symbols.symCallExpression)
+                {
+                    TSNode funcChild = GetChildByFieldName(parentNode, "function");
+                    if (!ts_node_is_null(funcChild) && ts_node_eq(funcChild, node))
+                    {
+                        isCall = true;
+                    }
+                }
+                else
+                {
+                    TSNode grandParent = ts_node_parent(parentNode);
+                    if (!ts_node_is_null(grandParent) && ts_node_symbol(grandParent) == symbols.symCallExpression)
+                    {
+                        TSNode funcChild = GetChildByFieldName(grandParent, "function");
+                        if (!ts_node_is_null(funcChild) && ts_node_eq(funcChild, parentNode))
+                        {
+                            isCall = true;
+                        }
+                    }
+                }
+            }
+
+            if (!isDecl)
+            {
+                std::string idText = ExtractTSNodeText(node, sourceCode);
+                if (!idText.empty())
+                {
+                    analysis.bodyIdentifierRefs.push_back({ idText, GetSourceRange(node), isCall, isMemberAccess });
                 }
             }
         }
@@ -476,12 +596,12 @@ namespace angel_lsp::analysis
         uint32_t count = ts_node_child_count(node);
         for (uint32_t i = 0; i < count; ++i)
         {
-            InspectFunctionBodyASTInternal(ts_node_child(node, i), sig, sourceCode, childCtx);
+            InspectFunctionBodyASTInternal(ts_node_child(node, i), analysis, sourceCode, childCtx, depth + 1);
         }
     }
 
     void InspectFunctionBodyAST(TSNode bodyNode, FunctionBodyAnalysis &analysis, const std::string &sourceCode)
     {
-        InspectFunctionBodyASTInternal(bodyNode, analysis, sourceCode, {});
+        InspectFunctionBodyASTInternal(bodyNode, analysis, sourceCode, {}, 0);
     }
 }

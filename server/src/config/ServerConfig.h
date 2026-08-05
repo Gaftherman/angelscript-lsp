@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string_view>
+#include <unordered_set>
+#include <string>
 
 namespace angel_lsp::config
 {
@@ -26,6 +28,7 @@ namespace angel_lsp::config
     {
         std::string_view stringTypeName = "string";
         std::string_view arrayTypeName = "array";
+        std::unordered_set<std::string> registeredSymbols;
     };
 
     struct ServerConfig

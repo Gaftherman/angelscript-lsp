@@ -14,6 +14,8 @@
 #include <lsp/messagehandler.h>
 #include <ankerl/unordered_dense.h>
 
+#include <tree_sitter/api.h>
+#include <unordered_map>
 #include <string>
 #include <vector>
 #include <thread>
@@ -38,6 +40,7 @@ namespace angel_lsp
         std::unique_ptr<angel_lsp::analysis::SymbolCollector> m_symbolCollector;
         std::unique_ptr<angel_lsp::analysis::SemanticAnalyzer> m_semanticAnalyzer;
         ankerl::unordered_dense::map<std::string, std::string> m_openDocuments;
+        std::unordered_map<std::string, TSTree*> m_documentTrees;
         std::mutex m_predefinedMutex;
         ankerl::unordered_dense::set<std::string> m_predefinedUris;
 

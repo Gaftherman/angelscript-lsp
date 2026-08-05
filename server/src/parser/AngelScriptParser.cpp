@@ -21,7 +21,7 @@ namespace angel_lsp::parser
         }
     }
 
-    TSTree *AngelScriptParser::Parse(const std::string &sourceCode)
+    TSTree *AngelScriptParser::Parse(const std::string &sourceCode, TSTree *oldTree)
     {
         if (sourceCode.empty())
         {
@@ -30,7 +30,7 @@ namespace angel_lsp::parser
             return nullptr;
         }
 
-        TSTree *tree = ts_parser_parse_string(m_parser, nullptr, sourceCode.c_str(), static_cast<uint32_t>(sourceCode.size()));
+        TSTree *tree = ts_parser_parse_string(m_parser, oldTree, sourceCode.c_str(), static_cast<uint32_t>(sourceCode.size()));
 
         if (!tree && m_logger)
         {

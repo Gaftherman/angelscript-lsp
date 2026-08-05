@@ -8,7 +8,7 @@ namespace angel_lsp::analysis::rules
 
         if (!sym.containerName.empty() && (sig.isVirtualProperty || sig.hasGet || sig.hasSet))
         {
-            const auto *containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
+            auto containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
             if (containerSyms)
             {
                 for (const auto &cSym : *containerSyms)
@@ -31,7 +31,7 @@ namespace angel_lsp::analysis::rules
 
         if (!sym.containerName.empty() && sig.modifiers.isConst)
         {
-            const auto *containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
+            auto containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
             if (containerSyms)
             {
                 for (const auto &cSym : *containerSyms)
@@ -71,7 +71,7 @@ namespace angel_lsp::analysis::rules
         bool isInterfaceProperty = false;
         if (!sym.containerName.empty())
         {
-            const auto *containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
+            auto containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
             if (containerSyms)
             {
                 for (const auto &cSym : *containerSyms)
@@ -85,7 +85,7 @@ namespace angel_lsp::analysis::rules
             }
         }
 
-        if (sym.containerName.empty() && (sig.modifiers.isProperty || sig.isVirtualProperty || sig.hasGet || sig.hasSet))
+        if (sym.containerName.empty() && (sig.isGetConst || sig.isGetOverride || sig.isSetOverride || sig.isGetFinal || sig.isSetFinal))
         {
             ctx.LogRule("Rule_PropertyAccessors", "as-err-global-function-qualifiers", sym);
             ctx.Emit(sym, "as-err-global-function-qualifiers", sym.name);
@@ -148,7 +148,7 @@ namespace angel_lsp::analysis::rules
 
         if (!isInterfaceProperty && sig.modifiers.isProperty && !sym.GetVariable().modifiers.isExternal)
         {
-            const auto *funcSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.name);
+            auto funcSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.name);
             if (funcSyms)
             {
                 for (const auto &fSym : *funcSyms)

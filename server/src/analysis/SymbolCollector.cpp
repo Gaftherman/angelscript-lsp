@@ -61,12 +61,7 @@ namespace angel_lsp::analysis
     {
         const TSLanguage *lang = tree_sitter_angelscript();
 
-        m_symPrimitiveType = ts_language_symbol_for_name(lang, SYM_NAME("primitive_type"), true);
-        m_symDatatype = ts_language_symbol_for_name(lang, SYM_NAME("datatype"), true);
-        m_symTemplateTypeList = ts_language_symbol_for_name(lang, SYM_NAME("template_type_list"), true);
-        m_symIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("identifier"), true);
         m_symDeclarationModifier = ts_language_symbol_for_name(lang, SYM_NAME("declaration_modifier"), true);
-        m_symType = ts_language_symbol_for_name(lang, SYM_NAME("type"), true);
         m_symParameter = ts_language_symbol_for_name(lang, SYM_NAME("parameter"), true);
         m_symClassBody = ts_language_symbol_for_name(lang, SYM_NAME("class_body"), true);
         m_symNamespaceBody = ts_language_symbol_for_name(lang, SYM_NAME("namespace_body"), true);
@@ -97,7 +92,6 @@ namespace angel_lsp::analysis
         m_symCaseClause = ts_language_symbol_for_name(lang, SYM_NAME("case_clause"), true);
         m_symCastExpression = ts_language_symbol_for_name(lang, SYM_NAME("cast_expression"), true);
         m_symScopedIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("scoped_identifier"), true);
-        m_symScopedType = ts_language_symbol_for_name(lang, SYM_NAME("scoped_type"), true);
         m_symVariableDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("variable_declaration"), true);
         m_symGotoStatement = ts_language_symbol_for_name(lang, SYM_NAME("goto_statement"), true);
         m_symMixinDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("mixin_declaration"), true);
@@ -129,32 +123,6 @@ namespace angel_lsp::analysis
         m_tokExternal = ts_language_symbol_for_name(lang, SYM_NAME("external"), false);
         m_tokImport = ts_language_symbol_for_name(lang, SYM_NAME("import"), false);
         m_tokOpenBrace = ts_language_symbol_for_name(lang, SYM_NAME("{"), false);
-
-        auto addPrimitive = [&](const char *name, uint32_t len, TypeKind kind)
-        {
-            TSSymbol sym = ts_language_symbol_for_name(lang, name, len, false);
-            if (sym != 0)
-            {
-                m_primitiveKindMap.emplace(sym, kind);
-            }
-        };
-
-        addPrimitive("void", 4, TypeKind::Void);
-        addPrimitive("int", 3, TypeKind::Int32);
-        addPrimitive("int32", 5, TypeKind::Int32);
-        addPrimitive("int8", 4, TypeKind::Int8);
-        addPrimitive("int16", 5, TypeKind::Int16);
-        addPrimitive("int64", 5, TypeKind::Int64);
-        addPrimitive("uint", 4, TypeKind::UInt32);
-        addPrimitive("uint32", 6, TypeKind::UInt32);
-        addPrimitive("uint8", 5, TypeKind::UInt8);
-        addPrimitive("uint16", 6, TypeKind::UInt16);
-        addPrimitive("uint64", 6, TypeKind::UInt64);
-        addPrimitive("float", 5, TypeKind::Float);
-        addPrimitive("double", 6, TypeKind::Double);
-        addPrimitive("bool", 4, TypeKind::Bool);
-        addPrimitive("string", 6, TypeKind::String);
-        addPrimitive("auto", 4, TypeKind::Auto);
 
         uint32_t errorOffset = 0;
         TSQueryError errorType = TSQueryErrorNone;
@@ -208,9 +176,11 @@ namespace angel_lsp::analysis
         }
     }
 
-    void SymbolCollector::ReportParseErrors(TSNode node, const std::string &fileUri, const std::string &sourceCode, std::vector<Diagnostic> &diagnostics, const angel_lsp::i18n::I18n *i18n) const
+    void SymbolCollector::ReportParseErrors(TSNode node, const std::string &fileUri, const std::string &sourceCode, std::vector<Diagnostic> &diagnostics, const angel_lsp::i18n::I18n *i18n, int depth) const
     {
         if (!ts_node_has_error(node))
+            return;
+        if (depth >= 256)
             return;
 
 
@@ -285,13 +255,15 @@ namespace angel_lsp::analysis
             TSNode child = ts_node_child(node, i);
             if (ts_node_has_error(child))
             {
-                ReportParseErrors(child, fileUri, sourceCode, diagnostics, i18n);
+                ReportParseErrors(child, fileUri, sourceCode, diagnostics, i18n, depth + 1);
             }
         }
     }
 
-    void SymbolCollector::CheckUsingDeclarations(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const
+    void SymbolCollector::CheckUsingDeclarations(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics, int depth) const
     {
+        if (depth >= 256)
+            return;
         if (ts_node_symbol(node) == m_symUsingDeclaration)
         {
             uint32_t uCount = ts_node_child_count(node);
@@ -327,13 +299,15 @@ namespace angel_lsp::analysis
         uint32_t count = ts_node_child_count(node);
         for (uint32_t i = 0; i < count; ++i)
         {
-            CheckUsingDeclarations(ts_node_child(node, i), sourceCode, fileUri, i18n, diagnostics);
+            CheckUsingDeclarations(ts_node_child(node, i), sourceCode, fileUri, i18n, diagnostics, depth + 1);
         }
     }
 
-    void SymbolCollector::CheckDuplicateModifiers(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const
+    void SymbolCollector::CheckDuplicateModifiers(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics, int depth) const
     {
         if (ts_node_is_null(node))
+            return;
+        if (depth >= 256)
             return;
 
         TSSymbol nodeSym = ts_node_symbol(node);
@@ -382,25 +356,15 @@ namespace angel_lsp::analysis
         uint32_t count = ts_node_child_count(node);
         for (uint32_t i = 0; i < count; ++i)
         {
-            CheckDuplicateModifiers(ts_node_child(node, i), sourceCode, fileUri, i18n, diagnostics);
+            CheckDuplicateModifiers(ts_node_child(node, i), sourceCode, fileUri, i18n, diagnostics, depth + 1);
         }
     }
 
-    std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, const angel_lsp::config::TypeConfig *typeConfig)
+    void SymbolCollector::CollectFromTree(TSNode rootNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics)
     {
-        std::vector<Diagnostic> diagnostics;
-        TSTree *tree = parser.Parse(sourceCode);
-
-        if (!tree)
-            return diagnostics;
-
-        TSNode rootNode = ts_tree_root_node(tree);
-
         ReportParseErrors(rootNode, fileUri, sourceCode, diagnostics, i18n);
         CheckUsingDeclarations(rootNode, sourceCode, fileUri, i18n, diagnostics);
         CheckDuplicateModifiers(rootNode, sourceCode, fileUri, i18n, diagnostics);
-
-
 
         TSQueryCursor *cursor = ts_query_cursor_new();
         ts_query_cursor_exec(cursor, m_tagsQuery, rootNode);
@@ -420,7 +384,32 @@ namespace angel_lsp::analysis
         }
 
         ts_query_cursor_delete(cursor);
+    }
+
+    std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, const angel_lsp::config::TypeConfig *typeConfig)
+    {
+        std::vector<Diagnostic> diagnostics;
+        TSTree *tree = parser.Parse(sourceCode);
+
+        if (!tree)
+            return diagnostics;
+
+        TSNode rootNode = ts_tree_root_node(tree);
+        CollectFromTree(rootNode, sourceCode, fileUri, symbolTable, i18n, diagnostics);
+
         ts_tree_delete(tree);
+        return diagnostics;
+    }
+
+    std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const std::string &fileUri, const std::string &sourceCode, TSTree *tree, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, const angel_lsp::config::TypeConfig *typeConfig)
+    {
+        std::vector<Diagnostic> diagnostics;
+        if (!tree)
+            return diagnostics;
+
+        TSNode rootNode = ts_tree_root_node(tree);
+        CollectFromTree(rootNode, sourceCode, fileUri, symbolTable, i18n, diagnostics);
+
         return diagnostics;
     }
 
@@ -461,162 +450,6 @@ namespace angel_lsp::analysis
         return ctx;
     }
 
-    TypeKind SymbolCollector::LookupPrimitiveKind(TSSymbol symbol) const
-    {
-        auto it = m_primitiveKindMap.find(symbol);
-        if (it != m_primitiveKindMap.end())
-        {
-            return it->second;
-        }
-        return TypeKind::Unknown;
-    }
-
-    SymbolCollector::TypeExtractionResult SymbolCollector::ExtractTypeInfo(TSNode typeNode, const std::string &sourceCode) const
-    {
-        TypeExtractionResult result;
-        if (ts_node_is_null(typeNode))
-            return result;
-
-        TSSymbol nodeSymbol = ts_node_symbol(typeNode);
-
-        if (nodeSymbol == m_symPrimitiveType)
-        {
-            result.baseTypeName = GetNodeText(typeNode, sourceCode);
-            TSNode parentDatatype = ts_node_parent(typeNode);
-            if (!ts_node_is_null(parentDatatype))
-            {
-                TSNode innerToken = ts_node_child(typeNode, 0);
-                if (!ts_node_is_null(innerToken))
-                {
-                    result.kind = LookupPrimitiveKind(ts_node_symbol(innerToken));
-                }
-            }
-            if (result.kind == TypeKind::Unknown)
-            {
-                result.kind = LookupPrimitiveKind(nodeSymbol);
-            }
-            return result;
-        }
-
-        if (nodeSymbol == m_symIdentifier || nodeSymbol == m_symScopedType)
-        {
-            result.baseTypeName = GetNodeText(typeNode, sourceCode);
-            result.kind = TypeKind::Unknown;
-            return result;
-        }
-
-        std::string datatypeText;
-        uint32_t count = ts_node_child_count(typeNode);
-        TSNode prevChild = ts_node_child(typeNode, 0);
-
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            TSNode child = ts_node_child(typeNode, i);
-            TSSymbol childSym = ts_node_symbol(child);
-
-            if (childSym == m_symScopedType)
-            {
-                result.baseTypeName = GetNodeText(child, sourceCode);
-                result.kind = TypeKind::Unknown;
-                datatypeText = result.baseTypeName;
-                prevChild = child;
-            }
-            else if (childSym == m_symDatatype)
-            {
-                TSNode inner = ts_node_named_child(child, 0);
-                if (!ts_node_is_null(inner))
-                {
-                    TypeExtractionResult innerInfo = ExtractTypeInfo(inner, sourceCode);
-                    result.baseTypeName = innerInfo.baseTypeName;
-                    result.kind = innerInfo.kind;
-                    datatypeText = innerInfo.baseTypeName;
-                }
-                else
-                {
-                    datatypeText = GetNodeText(child, sourceCode);
-                    result.baseTypeName = datatypeText;
-                }
-                prevChild = child;
-            }
-            else if (childSym == m_symTemplateTypeList)
-            {
-                result.isArray = true;
-                result.arrayDepth++;
-                result.templateName = datatypeText;
-
-                uint32_t tCount = ts_node_named_child_count(child);
-                for (uint32_t t = 0; t < tCount; ++t)
-                {
-                    TSNode innerType = ts_node_named_child(child, t);
-                    if (ts_node_symbol(innerType) == m_symType)
-                    {
-                        TypeExtractionResult inner = ExtractTypeInfo(innerType, sourceCode);
-                        result.templateArguments.push_back(inner);
-                        if (result.templateArguments.size() == 1)
-                        {
-                            result.baseTypeName = inner.baseTypeName;
-                            result.isHandle = inner.isHandle || result.isHandle;
-                            result.hasPrimitiveHandle = inner.hasPrimitiveHandle;
-                            result.arrayDepth += inner.arrayDepth;
-                            if (inner.kind != TypeKind::Unknown)
-                            {
-                                result.kind = inner.kind;
-                            }
-                        }
-                    }
-                }
-                prevChild = child;
-            }
-            else if (!ts_node_is_named(child))
-            {
-                std::string_view tok = GetNodeView(child, sourceCode);
-                if (tok == "[")
-                {
-                    result.isArray = true;
-                    result.arrayDepth++;
-                }
-                else if (tok == "@")
-                {
-                    std::string_view prevTok = !ts_node_is_null(prevChild) ? GetNodeView(prevChild, sourceCode) : "";
-                    if (result.isHandle && prevTok != "const")
-                    {
-                        // Double handle @@ or @ @ without 'const' in between is not allowed in AngelScript
-                        result.hasPrimitiveHandle = true;
-                    }
-                    result.isHandle = true;
-                    if (!result.isArray && !ts_node_is_null(prevChild) && ts_node_symbol(prevChild) == m_symDatatype)
-                    {
-                        TSNode innerChild = ts_node_named_child(prevChild, 0);
-                        if (!ts_node_is_null(innerChild) && ts_node_symbol(innerChild) == m_symPrimitiveType)
-                        {
-                            result.hasPrimitiveHandle = true;
-                        }
-                    }
-                }
-                else if (tok == "&")
-                {
-                    result.isReference = true;
-                }
-                else if (tok == "const")
-                {
-                    result.isConst = true;
-                }
-            }
-            prevChild = child;
-        }
-
-        if (result.isArray)
-        {
-            result.kind = TypeKind::Array;
-        }
-        else if (result.isHandle && result.kind == TypeKind::Unknown)
-        {
-            result.kind = TypeKind::Handle;
-        }
-
-        return result;
-    }
-
     bool SymbolCollector::HasNullLiteral(TSNode node) const
     {
         if (ts_node_is_null(node)) return false;
@@ -639,7 +472,7 @@ namespace angel_lsp::analysis
             TSNode typeNode = GetChildByFieldName(varDeclNode, "prop_type");
             TSNode nameNode = GetChildByFieldName(varDeclNode, "name");
             std::string typeStr = GetNodeText(typeNode, sourceCode);
-            TypeExtractionResult typeInfo = ExtractTypeInfo(typeNode, sourceCode);
+            TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
             SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sourceCode);
             modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
 
@@ -699,10 +532,17 @@ namespace angel_lsp::analysis
 
         TSNode typeNode = GetChildByFieldName(varDeclNode, "var_type");
         std::string typeStr = GetNodeText(typeNode, sourceCode);
-        TypeExtractionResult typeInfo = ExtractTypeInfo(typeNode, sourceCode);
+        TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sourceCode);
         modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
         modifiers.isReturnReference = typeInfo.isReference || modifiers.isReturnReference;
+
+        std::string_view rawVarText = GetNodeView(varDeclNode, sourceCode);
+        while (!rawVarText.empty() && isspace(static_cast<unsigned char>(rawVarText.back())))
+        {
+            rawVarText.remove_suffix(1);
+        }
+        bool hasSemicolon = (!rawVarText.empty() && rawVarText.back() == ';');
 
         uint32_t count = ts_node_named_child_count(varDeclNode);
         for (uint32_t i = 0; i < count; ++i)
@@ -713,6 +553,26 @@ namespace angel_lsp::analysis
 
             TSNode nameNode = GetChildByFieldName(declaratorNode, "name");
             TSNode valueNode = GetChildByFieldName(declaratorNode, "value");
+            if (ts_node_is_null(valueNode)) valueNode = GetChildByFieldName(declaratorNode, "initializer");
+            if (ts_node_is_null(valueNode))
+            {
+                uint32_t cCnt = ts_node_child_count(declaratorNode);
+                bool foundEq = false;
+                for (uint32_t c = 0; c < cCnt; ++c)
+                {
+                    TSNode ch = ts_node_child(declaratorNode, c);
+                    std::string chText = GetNodeText(ch, sourceCode);
+                    if (chText == "=")
+                    {
+                        foundEq = true;
+                    }
+                    else if (foundEq)
+                    {
+                        valueNode = ch;
+                        break;
+                    }
+                }
+            }
 
             Symbol sym = CreateSymbol(SymbolType::Variable, varDeclNode, nameNode, sourceCode, fileUri, ctx.containerPath);
             VariableSignature varSig;
@@ -729,6 +589,7 @@ namespace angel_lsp::analysis
             varSig.arrayDepth = typeInfo.arrayDepth;
             varSig.defaultValue = GetNodeText(valueNode, sourceCode);
             varSig.hasNullInitializer = HasNullLiteral(valueNode);
+            varSig.hasSemicolon = hasSemicolon;
             varSig.modifiers = modifiers;
             if (typeInfo.isConst)
             {
@@ -746,7 +607,7 @@ namespace angel_lsp::analysis
         TSNode pTypeNode = GetChildByFieldName(paramNode, "param_type");
         TSNode pDefaultNode = GetChildByFieldName(paramNode, "default_value");
 
-        TypeExtractionResult pInfo = ExtractTypeInfo(pTypeNode, sourceCode);
+        TypeExtractionResult pInfo = ExtractTypeInfoFromAST(pTypeNode, sourceCode);
 
         TSPoint startPt = ts_node_start_point(paramNode);
         TSPoint endPt = ts_node_end_point(paramNode);
@@ -885,7 +746,7 @@ namespace angel_lsp::analysis
             }
         }
 
-        TypeExtractionResult retInfo = ExtractTypeInfo(typeNode, sourceCode);
+        TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(funcNode, sourceCode);
 
         TSSymbol funcNodeSym = ts_node_symbol(funcNode);
@@ -1032,6 +893,26 @@ namespace angel_lsp::analysis
         sym.signature = enumSig;
         symbolTable.AddSymbol(sym);
 
+        struct MemberNodes
+        {
+            TSNode declNode;
+            TSNode nameNode;
+        };
+        ankerl::unordered_dense::map<std::string, MemberNodes> memberNodeMap;
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            TSNode child = ts_node_named_child(node, i);
+            if (ts_node_symbol(child) == m_symEnumMember)
+            {
+                TSNode mNameNode = GetChildByFieldName(child, "name");
+                std::string mName = GetNodeText(mNameNode, sourceCode);
+                if (!mName.empty())
+                {
+                    memberNodeMap[mName] = MemberNodes{ child, mNameNode };
+                }
+            }
+        }
+
         std::string enumContainer = ctx.containerPath.empty() ? sym.name : ctx.containerPath + "::" + sym.name;
         for (const auto &m : enumSig.members)
         {
@@ -1040,14 +921,23 @@ namespace angel_lsp::analysis
                 VariableSignature varSig;
                 varSig.typeName = sym.name;
 
-                Symbol mSym = CreateSymbol(SymbolType::Variable, node, nameNode, sourceCode, fileUri, ctx.containerPath);
+                TSNode memberDeclNode = node;
+                TSNode memberNameNode = nameNode;
+                auto it = memberNodeMap.find(m.name);
+                if (it != memberNodeMap.end())
+                {
+                    memberDeclNode = it->second.declNode;
+                    memberNameNode = it->second.nameNode;
+                }
+
+                Symbol mSym = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, sourceCode, fileUri, ctx.containerPath);
                 mSym.name = m.name;
                 mSym.qualifiedName = ctx.containerPath.empty() ? m.name : ctx.containerPath + "::" + m.name;
                 mSym.containerName = ctx.containerPath;
                 mSym.signature = varSig;
                 symbolTable.AddSymbol(mSym);
 
-                Symbol mSymScoped = CreateSymbol(SymbolType::Variable, node, nameNode, sourceCode, fileUri, enumContainer);
+                Symbol mSymScoped = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, sourceCode, fileUri, enumContainer);
                 mSymScoped.name = m.name;
                 mSymScoped.qualifiedName = enumContainer + "::" + m.name;
                 mSymScoped.containerName = enumContainer;
@@ -1067,15 +957,15 @@ namespace angel_lsp::analysis
 
         if (!ts_node_is_null(baseTypeNode))
         {
-            TypeExtractionResult info = ExtractTypeInfo(baseTypeNode, sourceCode);
+            TypeExtractionResult info = ExtractTypeInfoFromAST(baseTypeNode, sourceCode);
             typedefSig.baseType = info.baseTypeName;
             typedefSig.typeKind = info.kind;
         }
 
-        std::string rawNodeText = GetNodeText(node, sourceCode);
+        std::string_view rawNodeText = GetNodeView(node, sourceCode);
         while (!rawNodeText.empty() && isspace(static_cast<unsigned char>(rawNodeText.back())))
         {
-            rawNodeText.pop_back();
+            rawNodeText.remove_suffix(1);
         }
         typedefSig.hasSemicolon = (!rawNodeText.empty() && rawNodeText.back() == ';');
 
@@ -1089,7 +979,7 @@ namespace angel_lsp::analysis
         TSNode typeNode = GetChildByFieldName(node, "return_type");
         TSNode paramsNode = GetChildByFieldName(node, "parameters");
 
-        TypeExtractionResult retInfo = ExtractTypeInfo(typeNode, sourceCode);
+        TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(node, sourceCode);
         modifiers.isHandle = retInfo.isHandle || modifiers.isHandle;
         modifiers.isReturnReference = retInfo.isReference || modifiers.isReturnReference;
@@ -1128,7 +1018,7 @@ namespace angel_lsp::analysis
         TSNode nameNode = GetChildByFieldName(node, "name");
         TSNode typeNode = GetChildByFieldName(node, "prop_type");
 
-        TypeExtractionResult typeInfo = ExtractTypeInfo(typeNode, sourceCode);
+        TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         SymbolModifiers modifiers = ExtractModifiers(node, sourceCode);
 
         Symbol sym = CreateSymbol(SymbolType::Property, node, nameNode, sourceCode, fileUri, ctx.containerPath);

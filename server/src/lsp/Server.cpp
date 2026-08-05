@@ -33,6 +33,14 @@ namespace angel_lsp
     Server::~Server()
     {
         m_running = false;
+        for (auto &[uri, tree] : m_documentTrees)
+        {
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
+        }
+        m_documentTrees.clear();
     }
 
     void Server::Run()
@@ -187,6 +195,14 @@ namespace angel_lsp
 
         m_openDocuments[uriStr] = text;
 
+        if (auto treeIt = m_documentTrees.find(uriStr); treeIt != m_documentTrees.end())
+        {
+            if (treeIt->second)
+                ts_tree_delete(treeIt->second);
+        }
+        TSTree *tree = m_parser->Parse(text);
+        m_documentTrees[uriStr] = tree;
+
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
             {
@@ -194,7 +210,7 @@ namespace angel_lsp
                 if (!m_predefinedUris.contains(uriStr))
                 {
                     m_symbolTable.ClearDocumentSymbols(uriStr);
-                    m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable, m_i18n.get());
+                    m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, m_symbolTable, m_i18n.get());
                     m_predefinedUris.insert(uriStr);
                 }
             }
@@ -203,7 +219,7 @@ namespace angel_lsp
         }
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
-        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable, m_i18n.get());
+        auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, m_symbolTable, m_i18n.get());
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension), m_i18n.get()};
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
@@ -221,11 +237,63 @@ namespace angel_lsp
 
         std::string &buffer = it->second;
 
+        auto treeIt = m_documentTrees.find(uriStr);
+        TSTree *tree = (treeIt != m_documentTrees.end()) ? treeIt->second : nullptr;
+
         for (const auto &change : params.contentChanges)
         {
             if (std::holds_alternative<lsp::TextDocumentContentChangeEvent_Range_Text>(change))
             {
                 const auto &rt = std::get<lsp::TextDocumentContentChangeEvent_Range_Text>(change);
+
+                if (tree)
+                {
+                    uint32_t startLine = rt.range.start.line;
+                    uint32_t startChar = rt.range.start.character;
+                    uint32_t endLine = rt.range.end.line;
+                    uint32_t endChar = rt.range.end.character;
+
+                    uint32_t start_byte = static_cast<uint32_t>(angel_lsp::utils::PositionToOffset(buffer, startLine, startChar));
+                    uint32_t old_end_byte = static_cast<uint32_t>(angel_lsp::utils::PositionToOffset(buffer, endLine, endChar));
+                    uint32_t new_end_byte = static_cast<uint32_t>(start_byte + rt.text.size());
+
+                    TSPoint start_point = { startLine, startChar };
+                    TSPoint old_end_point = { endLine, endChar };
+
+                    uint32_t newlineCount = 0;
+                    size_t lastNewlinePos = std::string::npos;
+                    for (size_t i = 0; i < rt.text.size(); ++i)
+                    {
+                        if (rt.text[i] == '\n')
+                        {
+                            newlineCount++;
+                            lastNewlinePos = i;
+                        }
+                    }
+
+                    TSPoint new_end_point;
+                    if (newlineCount > 0)
+                    {
+                        new_end_point.row = startLine + newlineCount;
+                        new_end_point.column = static_cast<uint32_t>(rt.text.size() - (lastNewlinePos + 1));
+                    }
+                    else
+                    {
+                        new_end_point.row = startLine;
+                        new_end_point.column = static_cast<uint32_t>(startChar + rt.text.size());
+                    }
+
+                    TSInputEdit edit;
+                    edit.start_byte = start_byte;
+                    edit.old_end_byte = old_end_byte;
+                    edit.new_end_byte = new_end_byte;
+                    edit.start_point = start_point;
+                    edit.old_end_point = old_end_point;
+                    edit.new_end_point = new_end_point;
+
+                    ts_tree_edit(tree, &edit);
+                }
+
                 angel_lsp::utils::ApplyIncrementalChange(buffer,
                                                          rt.range.start.line, rt.range.start.character,
                                                          rt.range.end.line, rt.range.end.character,
@@ -235,19 +303,33 @@ namespace angel_lsp
             {
                 const auto &t = std::get<lsp::TextDocumentContentChangeEvent_Text>(change);
                 buffer = t.text;
+                if (tree)
+                {
+                    ts_tree_delete(tree);
+                    tree = nullptr;
+                    m_documentTrees.erase(uriStr);
+                }
             }
         }
+
+        TSTree *oldTree = tree;
+        TSTree *newTree = m_parser->Parse(buffer, oldTree);
+        if (oldTree)
+        {
+            ts_tree_delete(oldTree);
+        }
+        m_documentTrees[uriStr] = newTree;
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
-            m_symbolCollector->CollectSymbols(uriStr, buffer, *m_parser, m_symbolTable, m_i18n.get());
+            m_symbolCollector->CollectSymbolsWithTree(uriStr, buffer, newTree, m_symbolTable, m_i18n.get());
             PublishDiagnostics(uriStr, {});
             return;
         }
 
-        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, buffer, *m_parser, m_symbolTable, m_i18n.get());
+        auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, buffer, newTree, m_symbolTable, m_i18n.get());
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension), m_i18n.get()};
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
@@ -260,6 +342,16 @@ namespace angel_lsp
     {
         std::string uriStr = params.textDocument.uri.toString();
         m_openDocuments.erase(uriStr);
+
+        auto it = m_documentTrees.find(uriStr);
+        if (it != m_documentTrees.end())
+        {
+            if (it->second)
+            {
+                ts_tree_delete(it->second);
+            }
+            m_documentTrees.erase(it);
+        }
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {

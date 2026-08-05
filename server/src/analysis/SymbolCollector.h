@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/SymbolTable.h"
+#include "analysis/TypeExtraction.h"
 #include "analysis/Diagnostics.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
@@ -8,6 +9,7 @@
 
 #include "config/ServerConfig.h"
 #include <tree_sitter/api.h>
+#include <cstring>
 #include <string_view>
 
 namespace angel_lsp::analysis
@@ -24,17 +26,13 @@ namespace angel_lsp::analysis
         }
 
         std::vector<Diagnostic> CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n = nullptr, const angel_lsp::config::TypeConfig *typeConfig = nullptr);
+        std::vector<Diagnostic> CollectSymbolsWithTree(const std::string &fileUri, const std::string &sourceCode, TSTree *tree, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n = nullptr, const angel_lsp::config::TypeConfig *typeConfig = nullptr);
 
     private:
         utils::LspLogger *m_logger;
         TSQuery *m_tagsQuery;
 
-        TSSymbol m_symPrimitiveType = 0;
-        TSSymbol m_symDatatype = 0;
-        TSSymbol m_symTemplateTypeList = 0;
-        TSSymbol m_symIdentifier = 0;
         TSSymbol m_symDeclarationModifier = 0;
-        TSSymbol m_symType = 0;
         TSSymbol m_symParameter = 0;
         TSSymbol m_symClassBody = 0;
         TSSymbol m_symNamespaceBody = 0;
@@ -64,7 +62,6 @@ namespace angel_lsp::analysis
         TSSymbol m_symCaseClause = 0;
         TSSymbol m_symCastExpression = 0;
         TSSymbol m_symScopedIdentifier = 0;
-        TSSymbol m_symScopedType = 0;
         TSSymbol m_symVariableDeclaration = 0;
         TSSymbol m_symGotoStatement = 0;
         TSSymbol m_symMixinDeclaration = 0;
@@ -98,8 +95,6 @@ namespace angel_lsp::analysis
         TSSymbol m_tokImport = 0;
         TSSymbol m_tokOpenBrace = 0;
 
-        ankerl::unordered_dense::map<TSSymbol, TypeKind> m_primitiveKindMap;
-
         struct CollectionContext
         {
             std::string containerPath;
@@ -111,22 +106,6 @@ namespace angel_lsp::analysis
         using ProcessFn = void (SymbolCollector::*)(TSNode, const std::string &, const std::string &, SymbolTable &, const CollectionContext &);
         std::vector<ProcessFn> m_captureDispatch;
 
-        struct TypeExtractionResult
-        {
-            std::string baseTypeName;
-            std::string templateName;
-            TypeKind kind = TypeKind::Unknown;
-            bool isArray = false;
-            bool isHandle = false;
-            bool isReference = false;
-            bool isConst = false;
-            bool hasPrimitiveHandle = false;
-            uint32_t arrayDepth = 0;
-            std::vector<TypeExtractionResult> templateArguments;
-        };
-
-        TypeExtractionResult ExtractTypeInfo(TSNode typeNode, const std::string &sourceCode) const;
-
         void ProcessVariable(TSNode varDeclNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
         void ProcessFunction(TSNode funcNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
         void ProcessClass(TSNode classNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
@@ -137,11 +116,12 @@ namespace angel_lsp::analysis
         void ProcessProperty(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
         void ProcessInterface(TSNode node, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx);
 
+        void CollectFromTree(TSNode rootNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics);
         std::string GetNodeText(TSNode node, const std::string &sourceCode) const;
         std::string_view GetNodeView(TSNode node, const std::string &sourceCode) const;
-        void ReportParseErrors(TSNode node, const std::string &fileUri, const std::string &sourceCode, std::vector<Diagnostic> &diagnostics, const angel_lsp::i18n::I18n *i18n = nullptr) const;
-        void CheckUsingDeclarations(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const;
-        void CheckDuplicateModifiers(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics) const;
+        void ReportParseErrors(TSNode node, const std::string &fileUri, const std::string &sourceCode, std::vector<Diagnostic> &diagnostics, const angel_lsp::i18n::I18n *i18n = nullptr, int depth = 0) const;
+        void CheckUsingDeclarations(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics, int depth = 0) const;
+        void CheckDuplicateModifiers(TSNode node, const std::string &sourceCode, const std::string &fileUri, const angel_lsp::i18n::I18n *i18n, std::vector<Diagnostic> &diagnostics, int depth = 0) const;
 
         CollectionContext BuildContext(TSNode node, const std::string &sourceCode) const;
 
@@ -153,6 +133,5 @@ namespace angel_lsp::analysis
 
         Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const std::string &sourceCode, const std::string &fileUri, const std::string &containerPath) const;
         std::vector<std::string> ExtractBases(TSNode classNode, const std::string &sourceCode) const;
-        TypeKind LookupPrimitiveKind(TSSymbol symbol) const;
     };
 }

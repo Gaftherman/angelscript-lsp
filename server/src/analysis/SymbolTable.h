@@ -2,6 +2,7 @@
 
 #include "utils/LspLogger.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <shared_mutex>
@@ -130,12 +131,36 @@ namespace angel_lsp::analysis
         std::string typeName;
         std::string varName;
         std::string fullType;
+        std::string initializerText;
+    };
+
+    struct TypeExtractionResult
+    {
+        std::string baseTypeName;
+        std::string templateName;
+        TypeKind kind = TypeKind::Unknown;
+        bool isArray = false;
+        bool isHandle = false;
+        bool isReference = false;
+        bool isConst = false;
+        bool hasPrimitiveHandle = false;
+        uint32_t arrayDepth = 0;
+        std::vector<TypeExtractionResult> templateArguments;
     };
 
     struct CastExpressionInformation
     {
         std::string targetType;
         std::string operandText;
+        TypeExtractionResult targetTypeInfo;
+    };
+
+    struct BodyIdentifierRef
+    {
+        std::string name;
+        SourceRange range;
+        bool isCall = false;
+        bool isMemberAccess = false;
     };
 
     struct FunctionBodyAnalysis
@@ -147,7 +172,6 @@ namespace angel_lsp::analysis
         std::string returnCallTargetName;
         bool hasSuperCall = false;
         std::vector<std::string> gotoTargetLabels;
-        std::vector<std::string> bodyCastTypes;
         std::vector<CastExpressionInformation> bodyCastExpressions;
         std::vector<std::string> bodyQualifiedNames;
         std::vector<LocalVarTypeInformation> bodyVariableTypes;
@@ -155,6 +179,7 @@ namespace angel_lsp::analysis
         std::vector<SourceRange> invalidContinueStatements;
         std::vector<SourceRange> invalidDefaultStatements;
         std::vector<InvalidCaseStatement> invalidCaseStatements;
+        std::vector<BodyIdentifierRef> bodyIdentifierRefs;
     };
 
     struct FunctionSignature
@@ -202,6 +227,7 @@ namespace angel_lsp::analysis
         bool isGetFinal = false;
         bool isSetFinal = false;
         bool hasNullInitializer = false;
+        bool hasSemicolon = true;
     };
 
     struct EnumMemberInformation
@@ -361,10 +387,11 @@ namespace angel_lsp::analysis
         bool HasSymbol(const std::string &qualifiedName) const;
         bool HasSymbolAnywhere(const std::string &name) const;
 
-        /** @brief Returns a pointer to the overload list for the given qualified name.
-         *  @return Pointer into the internal map (valid until the next write), or nullptr if not found.
+        /** @brief Returns a snapshot handle to the overload list for the given qualified name.
+         *  @return Shared pointer to an immutable symbol list. The snapshot stays valid even if
+         *          the table is mutated afterwards (copy-on-write), or nullptr if not found.
          *  @note Prefer this over FindSymbols() for hot read paths (Hover, Completion) to avoid vector copy. */
-        const std::vector<Symbol> *FindSymbolsPtr(const std::string &qualifiedName) const;
+        std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(const std::string &qualifiedName) const;
 
         /** @brief Returns a copy of all symbols matching qualifiedName. Safe across mutations. */
         std::vector<Symbol> FindSymbols(const std::string &qualifiedName) const;
@@ -380,7 +407,7 @@ namespace angel_lsp::analysis
 
     private:
         mutable std::shared_mutex m_mutex;
-        ankerl::unordered_dense::map<std::string, std::vector<Symbol>> m_symbols;
+        ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>> m_symbols;
     };
 
     /** @brief Converts SymbolType enum to lower/string representation. */

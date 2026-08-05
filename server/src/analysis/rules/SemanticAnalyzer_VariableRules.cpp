@@ -33,7 +33,7 @@ namespace angel_lsp::analysis::rules
 
         if (!sym.containerName.empty())
         {
-            const auto *containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
+            auto containerSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
             if (containerSyms)
             {
                 bool isClassContainer = false;
@@ -370,6 +370,23 @@ namespace angel_lsp::analysis::rules
                 ctx.LogRule("Rule_VariableInitializer", "as-err-handle-on-primitive", sym);
                 ctx.Emit(sym, "as-err-handle-on-primitive", sig.baseTypeName);
             }
+
+            std::string rhsName = val;
+            while (!rhsName.empty() && isspace(static_cast<unsigned char>(rhsName.back()))) rhsName.pop_back();
+            auto rhsSymOpt = ctx.request.symbolTable.FindFirstSymbol(rhsName);
+            if (rhsSymOpt && rhsSymOpt->type == SymbolType::Variable)
+            {
+                std::string rhsType = rhsSymOpt->GetVariable().baseTypeName;
+                std::string lhsType = sig.baseTypeName;
+                if (IsPrimitiveTypeName(lhsType) && IsPrimitiveTypeName(rhsType))
+                {
+                    if ((lhsType == "bool" && rhsType != "bool") || (lhsType != "bool" && rhsType == "bool"))
+                    {
+                        ctx.LogRule("Rule_VariableInitializer", "as-err-implicit-conversion", sym);
+                        ctx.Emit(sym, "as-err-implicit-conversion", rhsType);
+                    }
+                }
+            }
         }
     }
 
@@ -385,6 +402,12 @@ namespace angel_lsp::analysis::rules
         {
             ValidateProperty(sym, ctx);
             return;
+        }
+
+        if (!sig.hasSemicolon)
+        {
+            ctx.LogRule("ValidateVariable", "as-syntax-error-missing", sym);
+            ctx.Emit(sym, "as-syntax-error-missing", ";");
         }
 
         Rule_VariableModifiers(sym, ctx);

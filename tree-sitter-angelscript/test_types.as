@@ -1,1 +1,0 @@
-ObjectHandle@[]@[]@ someArrayObjectHandle;

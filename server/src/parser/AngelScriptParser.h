@@ -17,7 +17,7 @@ namespace angel_lsp::parser
     public:
         AngelScriptParser(utils::LspLogger *logger = nullptr);
         ~AngelScriptParser();
-        TSTree *Parse(const std::string &sourceCode);
+        TSTree *Parse(const std::string &sourceCode, TSTree *oldTree = nullptr);
         static std::string_view GetNodeText(TSNode node, const std::string &sourceCode);
         TSParser *GetRawParser() const { return m_parser; }
     };

@@ -113,7 +113,7 @@ namespace angel_lsp::analysis::rules
             }
             else
             {
-                const auto *baseSyms = ctx.request.symbolTable.FindSymbolsPtr(baseName);
+                auto baseSyms = ctx.request.symbolTable.FindSymbolsPtr(baseName);
                 if (baseSyms)
                 {
                     bool isBaseClass = false;
@@ -213,7 +213,7 @@ namespace angel_lsp::analysis::rules
                                 bool implemented = false;
                                 auto checkMatchInClass = [&](const std::string &container) -> bool {
                                     const std::string expectedQN = container.empty() ? ifaceMethod.name : container + "::" + ifaceMethod.name;
-                                    const auto *classMethodSyms = ctx.request.symbolTable.FindSymbolsPtr(expectedQN);
+                                    auto classMethodSyms = ctx.request.symbolTable.FindSymbolsPtr(expectedQN);
                                     if (!classMethodSyms) return false;
 
                                     for (const auto &cMethodSym : *classMethodSyms)
@@ -252,7 +252,7 @@ namespace angel_lsp::analysis::rules
                                 {
                                     for (const auto &bName : sig.bases)
                                     {
-                                        const auto *bSyms = ctx.request.symbolTable.FindSymbolsPtr(bName);
+                                        auto bSyms = ctx.request.symbolTable.FindSymbolsPtr(bName);
                                         if (bSyms)
                                         {
                                             bool isClassBase = false;
@@ -285,7 +285,7 @@ namespace angel_lsp::analysis::rules
                                 bool propImplemented = false;
                                 bool ifaceNeedsSet = ifaceProp.hasSet;
                                 const std::string expectedPropQN = classContainer.empty() ? ifaceProp.name : classContainer + "::" + ifaceProp.name;
-                                const auto *classPropSyms = ctx.request.symbolTable.FindSymbolsPtr(expectedPropQN);
+                                auto classPropSyms = ctx.request.symbolTable.FindSymbolsPtr(expectedPropQN);
                                 if (classPropSyms)
                                 {
                                     for (const auto &cPropSym : *classPropSyms)

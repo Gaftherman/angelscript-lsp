@@ -38,5 +38,13 @@ namespace angel_lsp::analysis
         {
             return (typeConfig && !typeConfig->arrayTypeName.empty()) ? std::string_view(typeConfig->arrayTypeName) : std::string_view("array");
         }
+
+        /**
+         * @brief Checks if a symbol name is in the registered engine symbol allowlist.
+         */
+        bool IsRegisteredSymbol(const std::string &name) const
+        {
+            return typeConfig && typeConfig->registeredSymbols.contains(name);
+        }
     };
 }

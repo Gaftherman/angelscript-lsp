@@ -14,7 +14,7 @@ using namespace angel_lsp::parser;
 
 TEST_CASE("SemanticAnalyzer - OpIndex Declaration Validity")
 {
-    // Variant 1: 1 param -> ACEPTADO (Legal method declaration in class)
+    // Variant 1: 1 param -> ACCEPTED (Legal method declaration in class)
     {
         std::string sourceCode = "class C { void opIndex(uint idx) {} }\n";
         std::string fileUri = "file:///opindex1.as";
@@ -28,7 +28,7 @@ TEST_CASE("SemanticAnalyzer - OpIndex Declaration Validity")
         auto diagnostics = analyzer.Analyze(req);
         CHECK(diagnostics.empty());
     }
-    // Variant 2: 0 params -> ACEPTADO (Legal method declaration in class)
+    // Variant 2: 0 params -> ACCEPTED (Legal method declaration in class)
     {
         std::string sourceCode = "class C { int opIndex() { return 0; } }\n";
         std::string fileUri = "file:///opindex2.as";
@@ -43,7 +43,7 @@ TEST_CASE("SemanticAnalyzer - OpIndex Declaration Validity")
         CHECK(diagnostics.empty());
     }
 
-    // Variant 2: 1 param -> ACEPTADO
+    // Variant 2: 1 param -> ACCEPTED
     {
         std::string sourceCode = "class C { void opIndex(int i) {} }\n";
         std::string fileUri = "file:///opindex2.as";
@@ -58,7 +58,7 @@ TEST_CASE("SemanticAnalyzer - OpIndex Declaration Validity")
         CHECK(diagnostics.empty());
     }
 
-    // Variant 3: 2 params -> ACEPTADO
+    // Variant 3: 2 params -> ACCEPTED
     {
         std::string sourceCode = "class C { void opIndex(int i, int j) {} }\n";
         std::string fileUri = "file:///opindex3.as";
@@ -76,7 +76,7 @@ TEST_CASE("SemanticAnalyzer - OpIndex Declaration Validity")
 
 TEST_CASE("SemanticAnalyzer - Namespace Class Scope Resolution")
 {
-    // Variant 1 (ID 250 Unqualified Return): namespace N { class C {} } ::N::C f(::N::C@ arg) { return C(); } -> RECHAZADO
+    // Variant 1 (ID 250 Unqualified Return): namespace N { class C {} } ::N::C f(::N::C@ arg) { return C(); } -> REJECTED
     {
         std::string sourceCode = "namespace N { class C {} }\n::N::C f(::N::C@ arg) { return C(); }\n";
         std::string fileUri = "file:///ns1.as";
@@ -92,7 +92,7 @@ TEST_CASE("SemanticAnalyzer - Namespace Class Scope Resolution")
         CHECK(diagnostics[0].code == "as-err-unresolved-type");
     }
 
-    // Variant 2 (Qualified Return): namespace N { class C {} } ::N::C f(::N::C@ arg) { return N::C(); } -> ACEPTADO
+    // Variant 2 (Qualified Return): namespace N { class C {} } ::N::C f(::N::C@ arg) { return N::C(); } -> ACCEPTED
     {
         std::string sourceCode = "namespace N { class C {} }\n::N::C f(::N::C@ arg) { return N::C(); }\n";
         std::string fileUri = "file:///ns2.as";
@@ -1010,7 +1010,7 @@ TEST_CASE("Batch_Broken200_Harness_Comparison")
         }
 
         std::cout << "ID:" << tc.id << "|"
-                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "STATUS:" << (rejected ? "REJECTED" : "ACCEPTED") << "|"
                   << "ERR:" << firstErr << "\n";
     }
 
@@ -1342,7 +1342,7 @@ TEST_CASE("Batch_NewEdge200_Harness_Comparison")
         }
 
         std::cout << "ID:" << tc.id << "|"
-                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "STATUS:" << (rejected ? "REJECTED" : "ACCEPTED") << "|"
                   << "ERR:" << firstErr << "\n";
     }
 
@@ -1602,7 +1602,7 @@ TEST_CASE("Batch_Array600_Harness_Comparison")
         }
 
         std::cout << "ID:" << tc.id << "|"
-                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "STATUS:" << (rejected ? "REJECTED" : "ACCEPTED") << "|"
                   << "ERR:" << firstErr << "\n";
     }
 
@@ -1863,7 +1863,7 @@ TEST_CASE("Batch_StringTypedef800_Harness_Comparison")
         }
 
         std::cout << "ID:" << tc.id << "|"
-                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "STATUS:" << (rejected ? "REJECTED" : "ACCEPTED") << "|"
                   << "ERR:" << firstErr << "\n";
     }
 
@@ -2123,7 +2123,7 @@ TEST_CASE("Batch_TopLevel1000_Harness_Comparison")
         }
 
         std::cout << "ID:" << tc.id << "|"
-                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "STATUS:" << (rejected ? "REJECTED" : "ACCEPTED") << "|"
                   << "ERR:" << firstErr << "\n";
     }
 
@@ -2382,7 +2382,7 @@ TEST_CASE("Batch_Keyword1200_Harness_Comparison")
         }
 
         std::cout << "ID:" << tc.id << "|"
-                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "STATUS:" << (rejected ? "REJECTED" : "ACCEPTED") << "|"
                   << "ERR:" << firstErr << "\n";
     }
 
@@ -2799,7 +2799,7 @@ TEST_CASE("Batch_Expanded1500_Harness_Comparison")
         }
 
         std::cout << "ID:" << tc.id << "|"
-                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "STATUS:" << (rejected ? "REJECTED" : "ACCEPTED") << "|"
                   << "ERR:" << firstErr << "\n";
     }
 
@@ -3775,7 +3775,7 @@ TEST_CASE("Batch_2050_Harness_Comparison")
         }
 
         std::cout << "ID:" << tc.id << "|"
-                  << "STATUS:" << (rejected ? "RECHAZADO" : "ACEPTADO") << "|"
+                  << "STATUS:" << (rejected ? "REJECTED" : "ACCEPTED") << "|"
                   << "ERR:" << firstErr << "\n";
     }
 
@@ -4182,6 +4182,73 @@ TEST_CASE("SemanticAnalyzer - Signature vs Body Rule Isolation & AST Body Constr
         CHECK(diagnostics.empty());
     }
 }
+
+TEST_CASE("SemanticAnalyzer - Function Body Unresolved Symbols & Allowlist")
+{
+    // Case 1: Unresolved symbol in body generates error
+    {
+        std::string sourceCode = "void main() { unknownSymbol(); }\n";
+        std::string fileUri = "file:///unresolved1.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        REQUIRE(!diagnostics.empty());
+        CHECK(diagnostics[0].code == "as-err-undeclared-identifier");
+    }
+
+    // Case 2: Registered symbol via TypeConfig allowlist is accepted
+    {
+        std::string sourceCode = "void main() { PrintEngineString(); }\n";
+        std::string fileUri = "file:///registered1.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        angel_lsp::config::TypeConfig tConfig;
+        tConfig.registeredSymbols.insert("PrintEngineString");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n, &tConfig};
+        auto diagnostics = analyzer.Analyze(req);
+        CHECK(diagnostics.empty());
+    }
+
+    // Case 3: Local variable and parameter scopes prevent false positives
+    {
+        std::string sourceCode = "void main(int paramVar) { int local = paramVar + 1; local = 2; }\n";
+        std::string fileUri = "file:///local_scope.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        CHECK(diagnostics.empty());
+    }
+
+    // Case 4: Member call on object is skipped
+    {
+        std::string sourceCode = "class Foo { void bar() {} }\nvoid main() { Foo obj; obj.bar(); }\n";
+        std::string fileUri = "file:///member_call.as";
+        SymbolTable table;
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        collector.CollectSymbols(fileUri, sourceCode, parser, table);
+        SemanticAnalyzer analyzer;
+        angel_lsp::i18n::I18n i18n("en");
+        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        auto diagnostics = analyzer.Analyze(req);
+        CHECK(diagnostics.empty());
+    }
+}
+
 
 
 

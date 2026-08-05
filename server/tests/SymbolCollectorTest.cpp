@@ -573,8 +573,9 @@ TEST_CASE("SymbolCollector - Goto Statement AST Extraction")
     REQUIRE(syms.size() == 1);
 
     const auto &fnSig = syms[0].GetFunction();
-    REQUIRE(fnSig.bodyAnalysis.gotoTargetLabels.size() == 1);
-    CHECK(fnSig.bodyAnalysis.gotoTargetLabels[0] == "my_target");
+    REQUIRE(fnSig.bodyAnalysis.has_value());
+    REQUIRE(fnSig.bodyAnalysis->gotoTargetLabels.size() == 1);
+    CHECK(fnSig.bodyAnalysis->gotoTargetLabels[0] == "my_target");
 }
 
 TEST_CASE("SymbolCollector - Syntax Error Recovery Test")
@@ -649,7 +650,8 @@ TEST_CASE("SymbolCollector - Goto In String Literal False Positive Edge Case")
     REQUIRE(syms.size() == 1);
 
     const auto &fnSig = syms[0].GetFunction();
-    CHECK(fnSig.bodyAnalysis.gotoTargetLabels.empty() == true);
+    CHECK(fnSig.bodyAnalysis.has_value());
+    CHECK(fnSig.bodyAnalysis->gotoTargetLabels.empty() == true);
 }
 
 

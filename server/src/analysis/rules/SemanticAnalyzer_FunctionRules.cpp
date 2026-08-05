@@ -315,64 +315,32 @@ namespace angel_lsp::analysis::rules
         }
     }
 
-    static void ValidateTypeAndTemplateArgs(const std::string &typeStr, const Symbol &sym, const DiagnosticContext &ctx, bool isTopLevelCastTarget = true)
+    static void ValidateTypeInfoAndTemplateArgs(const TypeExtractionResult &info, const Symbol &sym, const DiagnosticContext &ctx, bool isTopLevelCastTarget)
     {
-        std::string tName = typeStr;
-        size_t start = tName.find_first_not_of(" \t\r\n");
-        if (start != std::string::npos) tName = tName.substr(start);
-        size_t end = tName.find_last_not_of(" \t\r\n");
-        if (end != std::string::npos) tName = tName.substr(0, end + 1);
+        std::string effectiveName = info.templateName.empty() ? info.baseTypeName : info.templateName;
+        if (effectiveName.empty()) return;
 
-        while (!tName.empty() && (tName.back() == '@' || tName.back() == '&'))
-        {
-            tName.pop_back();
-            end = tName.find_last_not_of(" \t\r\n");
-            if (end != std::string::npos) tName = tName.substr(0, end + 1);
-        }
-        if (tName.rfind("const ", 0) == 0)
-        {
-            tName = tName.substr(6);
-        }
-
-        if (tName.empty()) return;
-
-        std::string_view stringTypeName = ctx.request.GetStringTypeName();
-        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
-
-        std::string baseName = tName;
-        size_t anglePos = baseName.find('<');
-        std::string templateArgsStr;
-        if (anglePos != std::string::npos)
-        {
-            size_t lastAngle = tName.rfind('>');
-            if (lastAngle != std::string::npos && lastAngle > anglePos)
-            {
-                templateArgsStr = tName.substr(anglePos + 1, lastAngle - anglePos - 1);
-            }
-            baseName = baseName.substr(0, anglePos);
-        }
-
-        if (IsMixinClass(baseName, ctx.request.symbolTable))
+        if (IsMixinClass(effectiveName, ctx.request.symbolTable))
         {
             ctx.LogRule("ValidateTypeAndTemplateArgs", "as-err-mixin-not-a-type", sym);
-            ctx.Emit(sym, "as-err-mixin-not-a-type", baseName);
+            ctx.Emit(sym, "as-err-mixin-not-a-type", effectiveName);
         }
-        else if (baseName == "void" || baseName == "auto" || baseName == "null")
+        else if (effectiveName == "void" || effectiveName == "auto" || effectiveName == "null")
         {
             ctx.LogRule("ValidateTypeAndTemplateArgs", "as-err-unresolved-type", sym);
-            ctx.Emit(sym, "as-err-unresolved-type", baseName);
+            ctx.Emit(sym, "as-err-unresolved-type", effectiveName);
         }
-        else if (isTopLevelCastTarget && (IsPrimitiveTypeName(baseName) || (baseName == stringTypeName && tName.find('@') == std::string::npos)))
+        else if (isTopLevelCastTarget && (IsPrimitiveTypeName(effectiveName) || effectiveName == ctx.request.GetStringTypeName()))
         {
             ctx.LogRule("ValidateTypeAndTemplateArgs", "as-err-unresolved-type", sym);
-            ctx.Emit(sym, "as-err-unresolved-type", baseName);
+            ctx.Emit(sym, "as-err-unresolved-type", effectiveName);
         }
-        else if (!IsKnownType(baseName, ctx))
+        else if (!IsKnownType(effectiveName, ctx))
         {
             bool isTemplatePlaceholder = false;
             if (!sym.containerName.empty())
             {
-                const auto *cSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
+                auto cSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
                 if (cSyms)
                 {
                     for (const auto &cS : *cSyms)
@@ -388,30 +356,13 @@ namespace angel_lsp::analysis::rules
             if (!isTemplatePlaceholder)
             {
                 ctx.LogRule("ValidateTypeAndTemplateArgs", "as-err-unresolved-type", sym);
-                ctx.Emit(sym, "as-err-unresolved-type", baseName);
+                ctx.Emit(sym, "as-err-unresolved-type", effectiveName);
             }
         }
 
-        if (!templateArgsStr.empty())
+        for (const auto &arg : info.templateArguments)
         {
-            int depth = 0;
-            std::string currentArg;
-            for (char c : templateArgsStr)
-            {
-                if (c == '<') depth++;
-                else if (c == '>') depth--;
-                else if (c == ',' && depth == 0)
-                {
-                    ValidateTypeAndTemplateArgs(currentArg, sym, ctx, false);
-                    currentArg.clear();
-                    continue;
-                }
-                currentArg += c;
-            }
-            if (!currentArg.empty())
-            {
-                ValidateTypeAndTemplateArgs(currentArg, sym, ctx, false);
-            }
+            ValidateTypeInfoAndTemplateArgs(arg, sym, ctx, false);
         }
     }
 
@@ -468,9 +419,9 @@ namespace angel_lsp::analysis::rules
         if (sig.bodyAnalysis)
         {
             const auto &body = *sig.bodyAnalysis;
-            for (const auto &castTypeRaw : body.bodyCastTypes)
+            for (const auto &castExpr : body.bodyCastExpressions)
             {
-                ValidateTypeAndTemplateArgs(castTypeRaw, sym, ctx, true);
+                ValidateTypeInfoAndTemplateArgs(castExpr.targetTypeInfo, sym, ctx, true);
             }
 
             for (const auto &castExpr : body.bodyCastExpressions)
@@ -582,22 +533,24 @@ namespace angel_lsp::analysis::rules
         std::string_view stringTypeName = ctx.request.GetStringTypeName();
         std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
         const auto &sig = sym.GetFunction();
+        if (!sig.bodyAnalysis)
+            return;
 
-        if (sig.returnType != "void" && !sig.returnType.empty() && (!fctx.isCtor && !fctx.isDtor) && sig.bodyAnalysis.hasEmptyReturn)
+        if (sig.returnType != "void" && !sig.returnType.empty() && (!fctx.isCtor && !fctx.isDtor) && sig.bodyAnalysis->hasEmptyReturn)
         {
             ctx.LogRule("Rule_FunctionReturnExpr", "as-err-not-all-paths-return", sym);
             ctx.Emit(sym, "as-err-not-all-paths-return", sym.name);
         }
 
-        if (sig.bodyAnalysis.hasValueReturn && IsReservedKeyword(sig.bodyAnalysis.returnExpression) && sig.bodyAnalysis.returnExpression != "null" && sig.bodyAnalysis.returnExpression != "true" && sig.bodyAnalysis.returnExpression != "false")
+        if (sig.bodyAnalysis->hasValueReturn && IsReservedKeyword(sig.bodyAnalysis->returnExpression) && sig.bodyAnalysis->returnExpression != "null" && sig.bodyAnalysis->returnExpression != "true" && sig.bodyAnalysis->returnExpression != "false")
         {
             ctx.LogRule("Rule_FunctionReturnExpr", "as-syntax-error", sym);
             ctx.Emit(sym, "as-syntax-error");
         }
 
-        if (sig.bodyAnalysis.hasValueReturn && !sig.bodyAnalysis.returnCallTargetName.empty())
+        if (sig.bodyAnalysis->hasValueReturn && !sig.bodyAnalysis->returnCallTargetName.empty())
         {
-            const std::string &target = sig.bodyAnalysis.returnCallTargetName;
+            const std::string &target = sig.bodyAnalysis->returnCallTargetName;
             if (target.find("::") == std::string::npos &&
                 !IsPrimitiveTypeName(target) && target != stringTypeName && target != arrayTypeName &&
                 !target.starts_with("array<") && !target.starts_with(std::string(arrayTypeName) + "<") &&
@@ -612,11 +565,11 @@ namespace angel_lsp::analysis::rules
             }
         }
 
-        if (sig.bodyAnalysis.hasSuperCall)
+        if (sig.bodyAnalysis->hasSuperCall)
         {
             if (!sym.containerName.empty())
             {
-                const auto *classSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
+                auto classSyms = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
                 if (classSyms)
                 {
                     for (const auto &cSym : *classSyms)
@@ -779,13 +732,144 @@ namespace angel_lsp::analysis::rules
     static void Rule_FunctionBodyVariables(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
     {
         const auto &sig = sym.GetFunction();
+        if (!sig.bodyAnalysis)
+            return;
 
-        for (const auto &varInfo : sig.bodyAnalysis.bodyVariableTypes)
+        for (const auto &varInfo : sig.bodyAnalysis->bodyVariableTypes)
         {
             if (IsMixinClass(varInfo.typeName, ctx.request.symbolTable))
             {
                 ctx.LogRule("Rule_FunctionBodyVariables", "as-err-mixin-not-a-type", sym);
                 ctx.EmitAtRange(sym, varInfo.range, "as-err-mixin-not-a-type", varInfo.typeName);
+            }
+        }
+    }
+
+    static void Rule_FunctionBodyUnresolved(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
+    {
+        const auto &sig = sym.GetFunction();
+        if (!sig.bodyAnalysis)
+        {
+            return;
+        }
+        const auto &body = *sig.bodyAnalysis;
+
+        std::unordered_set<std::string> localScope;
+        for (const auto &param : sig.parameters)
+        {
+            if (!param.name.empty())
+            {
+                localScope.insert(param.name);
+            }
+        }
+        for (const auto &vInfo : body.bodyVariableTypes)
+        {
+            if (!vInfo.varName.empty())
+            {
+                localScope.insert(vInfo.varName);
+            }
+        }
+
+        std::string_view stringTypeName = ctx.request.GetStringTypeName();
+        std::string_view arrayTypeName = ctx.request.GetArrayTypeName();
+
+        for (const auto &ref : body.bodyIdentifierRefs)
+        {
+            if (ref.isMemberAccess)
+            {
+                continue;
+            }
+
+            const std::string &name = ref.name;
+
+            if (name == "null" || name == "true" || name == "false" || name == "this" ||
+                name == "super" || name == "cast" || name == "void" || name == "auto" ||
+                name == "int" || name == "int8" || name == "int16" || name == "int32" || name == "int64" ||
+                name == "uint" || name == "uint8" || name == "uint16" || name == "uint32" || name == "uint64" ||
+                name == "float" || name == "double" || name == "bool" ||
+                name == stringTypeName || name == arrayTypeName ||
+                IsReservedKeyword(name))
+            {
+                continue;
+            }
+
+            if (localScope.contains(name))
+            {
+                continue;
+            }
+
+            if (ctx.request.IsRegisteredSymbol(name))
+            {
+                continue;
+            }
+
+            if (!sym.containerName.empty())
+            {
+                std::string memberQN = sym.containerName + "::" + name;
+                if (ctx.request.symbolTable.HasSymbol(memberQN))
+                {
+                    continue;
+                }
+            }
+
+            if (ctx.request.symbolTable.HasSymbolAnywhere(name) || ctx.request.symbolTable.HasSymbol(name))
+            {
+                continue;
+            }
+
+            ctx.LogRule("Rule_FunctionBodyUnresolved", "as-err-undeclared-identifier", sym);
+            ctx.EmitAtRange(sym, ref.range, "as-err-undeclared-identifier", name);
+        }
+    }
+
+    static void Rule_FunctionBodyTypeMismatch(const Symbol &sym, const FunctionContext &fctx, const DiagnosticContext &ctx)
+    {
+        const auto &sig = sym.GetFunction();
+        if (!sig.bodyAnalysis)
+        {
+            return;
+        }
+        const auto &body = *sig.bodyAnalysis;
+
+        std::unordered_map<std::string, std::string> scopeTypes;
+        for (const auto &param : sig.parameters)
+        {
+            if (!param.name.empty() && !param.baseTypeName.empty())
+            {
+                scopeTypes[param.name] = param.baseTypeName;
+            }
+        }
+
+        for (const auto &varInfo : body.bodyVariableTypes)
+        {
+            if (!varInfo.initializerText.empty() && !varInfo.typeName.empty())
+            {
+                std::string rhsName = varInfo.initializerText;
+                while (!rhsName.empty() && (rhsName.back() == ';' || isspace(static_cast<unsigned char>(rhsName.back()))))
+                {
+                    rhsName.pop_back();
+                }
+
+                auto it = scopeTypes.find(rhsName);
+                if (it != scopeTypes.end())
+                {
+                    const std::string &rhsType = it->second;
+                    const std::string &lhsType = varInfo.typeName;
+
+                    if (IsPrimitiveTypeName(lhsType) && IsPrimitiveTypeName(rhsType))
+                    {
+                        if ((lhsType == "bool" && rhsType != "bool") || (lhsType != "bool" && rhsType == "bool"))
+                        {
+                            ctx.LogRule("Rule_FunctionBodyTypeMismatch", "as-err-implicit-conversion", sym);
+                            ctx.EmitAtRange(sym, varInfo.range, "as-err-implicit-conversion", rhsType);
+                        }
+                    }
+                }
+            }
+
+            if (!varInfo.varName.empty() && !varInfo.typeName.empty())
+            {
+                scopeTypes[varInfo.varName] = varInfo.typeName;
             }
         }
     }
@@ -799,6 +883,8 @@ namespace angel_lsp::analysis::rules
         Rule_FunctionBodyVariables(sym, fctx, ctx);
         Rule_FunctionBodyScope(sym, fctx, ctx);
         Rule_FunctionReturnExpr(sym, fctx, ctx);
+        Rule_FunctionBodyUnresolved(sym, fctx, ctx);
+        Rule_FunctionBodyTypeMismatch(sym, fctx, ctx);
     }
 
     void ValidateFunction(const Symbol &sym, const DiagnosticContext &ctx)
@@ -906,7 +992,7 @@ namespace angel_lsp::analysis::rules
                 }
                 else
                 {
-                    const auto *globalSyms = ctx.request.symbolTable.FindSymbolsPtr(param.name);
+                    auto globalSyms = ctx.request.symbolTable.FindSymbolsPtr(param.name);
                     if (globalSyms)
                     {
                         for (const auto &gSym : *globalSyms)
@@ -936,7 +1022,7 @@ namespace angel_lsp::analysis::rules
 
             if (!param.isHandle)
             {
-                const auto *typeSyms = ctx.request.symbolTable.FindSymbolsPtr(param.baseTypeName);
+                auto typeSyms = ctx.request.symbolTable.FindSymbolsPtr(param.baseTypeName);
                 if (typeSyms)
                 {
                     for (const auto &tSym : *typeSyms)

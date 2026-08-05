@@ -1,23 +1,33 @@
+# OS & Editor Files
 .DS_Store
 Thumbs.db
+.vscode/
+opencode.json
+
+# Temporary Logs & Output Files
 *.log
 doctest_failures*.txt
+temp_*.txt
 *.txt
 !**/CMakeLists.txt
 !**/corpus/**/*.txt
 !**/test/**/*.txt
+
+# Scratch Scripts & Temporary Tests
 audit_temp_*.as
 scratch_*.as
+temp*.as
+test*.as
 test_disc*.as
-opencode.json
+
+# Build & Compiled Binaries
+build/
+server/build/
+server/.cache/
 client/node_modules/
 client/out/
 client/.vscode/tasks.log
 client/.vscode-test/
 client/package-lock.json
-server/build/
-server/.cache/
-build/
-.vscode/
 client/bin/
 

@@ -297,8 +297,8 @@ namespace angel_lsp::analysis::rules
         const auto &sig = sym.GetTypedef();
         if (!sig.hasSemicolon)
         {
-            ctx.LogRule("ValidateTypedef", "as-syntax-error", sym);
-            ctx.Emit(sym, "as-syntax-error");
+            ctx.LogRule("ValidateTypedef", "as-syntax-error-missing", sym);
+            ctx.Emit(sym, "as-syntax-error-missing", ";");
         }
 
         if (Rule_TypedefName(sym, ctx))

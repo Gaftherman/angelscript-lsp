@@ -1,2 +1,0 @@
-﻿// comment line
-void main() {}

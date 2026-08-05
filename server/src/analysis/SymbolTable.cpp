@@ -58,6 +58,15 @@ namespace angel_lsp::analysis
             return "[" + JoinStrings(flags) + "]";
         }
 
+        std::vector<Symbol> &MutableBucket(std::shared_ptr<std::vector<Symbol>> &bucket)
+        {
+            if (!bucket)
+                bucket = std::make_shared<std::vector<Symbol>>();
+            else if (bucket.use_count() > 1)
+                bucket = std::make_shared<std::vector<Symbol>>(*bucket);
+            return *bucket;
+        }
+
         void BuildParamStrings(const std::vector<ParameterInformation> &params,
                                std::string &outParamsStr,
                                std::vector<std::string> &outParamLines)
@@ -105,7 +114,7 @@ namespace angel_lsp::analysis
     {
         std::unique_lock<std::shared_mutex> lock(m_mutex);
         const std::string &key = symbol.qualifiedName.empty() ? symbol.name : symbol.qualifiedName;
-        m_symbols[key].push_back(symbol);
+        MutableBucket(m_symbols[key]).push_back(symbol);
     }
 
     void SymbolTable::ClearDocumentSymbols(const std::string &fileUri)
@@ -114,7 +123,7 @@ namespace angel_lsp::analysis
 
         for (auto it = m_symbols.begin(); it != m_symbols.end();)
         {
-            auto &vec = it->second;
+            auto &vec = MutableBucket(it->second);
 
             std::erase_if(vec, [&fileUri](const Symbol &sym)
                           { return sym.fileUri == fileUri; });
@@ -140,12 +149,12 @@ namespace angel_lsp::analysis
         return m_symbols.contains(search);
     }
 
-    const std::vector<Symbol> *SymbolTable::FindSymbolsPtr(const std::string &qualifiedName) const
+    std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindSymbolsPtr(const std::string &qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         std::string search = std::string(CleanScope(qualifiedName));
         auto it = m_symbols.find(search);
-        return it != m_symbols.end() ? &it->second : nullptr;
+        return it != m_symbols.end() ? it->second : nullptr;
     }
 
     std::vector<Symbol> SymbolTable::FindSymbols(const std::string &qualifiedName) const
@@ -153,7 +162,7 @@ namespace angel_lsp::analysis
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         std::string search = std::string(CleanScope(qualifiedName));
         auto it = m_symbols.find(search);
-        return it != m_symbols.end() ? it->second : std::vector<Symbol>{};
+        return it != m_symbols.end() ? *it->second : std::vector<Symbol>{};
     }
 
     std::optional<Symbol> SymbolTable::FindFirstSymbol(const std::string &qualifiedName) const
@@ -161,8 +170,8 @@ namespace angel_lsp::analysis
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         std::string search = std::string(CleanScope(qualifiedName));
         auto it = m_symbols.find(search);
-        if (it != m_symbols.end() && !it->second.empty())
-            return it->second.front();
+        if (it != m_symbols.end() && !it->second->empty())
+            return it->second->front();
         return std::nullopt;
     }
 
@@ -178,7 +187,7 @@ namespace angel_lsp::analysis
 
         for (const auto &[key, symbols] : m_symbols)
         {
-            for (const auto &sym : symbols)
+            for (const auto &sym : *symbols)
             {
                 if (sym.name == searchName || sym.name == name || sym.qualifiedName == searchName || sym.qualifiedName == name)
                     return true;
@@ -191,7 +200,7 @@ namespace angel_lsp::analysis
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         for (const auto &[key, symbols] : m_symbols)
-            visitor(key, symbols);
+            visitor(key, *symbols);
     }
 
     void SymbolTable::PrintSymbols(angel_lsp::utils::LspLogger *logger) const
@@ -204,7 +213,7 @@ namespace angel_lsp::analysis
 
         for (const auto &[key, symbols] : m_symbols)
         {
-            for (const auto &sym : symbols)
+            for (const auto &sym : *symbols)
             {
                 const std::string typeStr = SymbolTypeToString(sym.type);
                 const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
