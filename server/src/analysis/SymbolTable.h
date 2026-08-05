@@ -228,6 +228,7 @@ namespace angel_lsp::analysis
         bool isSetFinal = false;
         bool hasNullInitializer = false;
         bool hasSemicolon = true;
+        bool isLocal = false;
     };
 
     struct EnumMemberInformation

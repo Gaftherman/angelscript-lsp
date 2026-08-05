@@ -37,10 +37,10 @@ TEST_CASE("SymbolCollector - Global Variable Test")
     CHECK(sym.GetVariable().defaultValue.empty() == true);
 }
 
-TEST_CASE("SymbolCollector - Function Main and Local Variable Isolation Test")
+TEST_CASE("SymbolCollector - Function Main and Local Variable Symbol Indexing Test")
 {
     // Test Code: "void main() { int i = 0; }"
-    // Expectation: Function 'main' is collected, but local variable 'i' inside function body is NOT collected in global SymbolTable
+    // Expectation: Function 'main' is collected, and local variable 'i' inside function body is collected with containerName 'main'
     std::string sourceCode = "void main()\n{\n    int i = 0;\n}";
     std::string fileUri = "file:///test.as";
 
@@ -62,8 +62,11 @@ TEST_CASE("SymbolCollector - Function Main and Local Variable Isolation Test")
     CHECK(mainSym.GetFunction().returnType == "void");
     CHECK(mainSym.GetFunction().parameters.empty() == true);
 
-    // 2. Verify local variable 'i' inside main() was NOT collected in global SymbolTable
-    CHECK(symbolTable.HasSymbol("i") == false);
+    // 2. Verify local variable 'i' inside main() was collected with containerName 'main'
+    CHECK(symbolTable.HasSymbolAnywhere("i") == true);
+    auto iSymbols = symbolTable.FindSymbols("main::i");
+    REQUIRE(iSymbols.size() == 1);
+    CHECK(iSymbols[0].containerName == "main");
 }
 
 TEST_CASE("SymbolCollector - Reference Return Function Test")
@@ -652,6 +655,53 @@ TEST_CASE("SymbolCollector - Goto In String Literal False Positive Edge Case")
     const auto &fnSig = syms[0].GetFunction();
     CHECK(fnSig.bodyAnalysis.has_value());
     CHECK(fnSig.bodyAnalysis->gotoTargetLabels.empty() == true);
+}
+
+TEST_CASE("SymbolCollector - Import Declaration Indexing")
+{
+    std::string sourceCode = "import void ExternalFunction(int a, float b) from \"MyModule\";\n";
+    std::string fileUri = "file:///import_test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    CHECK(table.HasSymbol("ExternalFunction") == true);
+    auto syms = table.FindSymbols("ExternalFunction");
+    REQUIRE(syms.size() == 1);
+
+    const auto &sym = syms[0];
+    CHECK(sym.type == SymbolType::Function);
+    CHECK(sym.name == "ExternalFunction");
+    CHECK(sym.GetFunction().modifiers.isExternal == true);
+    CHECK(sym.GetFunction().returnType == "void");
+    REQUIRE(sym.GetFunction().parameters.size() == 2);
+    CHECK(sym.GetFunction().parameters[0].name == "a");
+    CHECK(sym.GetFunction().parameters[1].name == "b");
+}
+
+TEST_CASE("SymbolCollector - Local Variable Symbol Indexing & Ranges")
+{
+    std::string sourceCode = "void process() {\n    int localVar = 42;\n}\n";
+    std::string fileUri = "file:///local_test.as";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
+
+    CHECK(table.HasSymbolAnywhere("localVar") == true);
+    auto syms = table.FindSymbols("process::localVar");
+    REQUIRE(syms.size() == 1);
+
+    const auto &sym = syms[0];
+    CHECK(sym.type == SymbolType::Variable);
+    CHECK(sym.name == "localVar");
+    CHECK(sym.containerName == "process");
+    CHECK(sym.startLine == 1);
+    CHECK(sym.GetVariable().typeName == "int");
+    CHECK(sym.GetVariable().defaultValue == "42");
 }
 
 

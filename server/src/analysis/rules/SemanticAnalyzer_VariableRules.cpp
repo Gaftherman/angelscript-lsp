@@ -398,6 +398,11 @@ namespace angel_lsp::analysis::rules
         }
 
         const auto &sig = sym.GetVariable();
+        if (sig.isLocal)
+        {
+            return;
+        }
+
         if (sig.isVirtualProperty)
         {
             ValidateProperty(sym, ctx);

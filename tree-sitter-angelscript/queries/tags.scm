@@ -40,6 +40,10 @@
 (virtual_property
   name: (identifier) @name) @definition.property
 
+; Import declarations
+(import_declaration
+  name: (identifier) @name) @definition.import
+
 ; Function calls (references)
 (call_expression
   function: (identifier) @name) @reference.call

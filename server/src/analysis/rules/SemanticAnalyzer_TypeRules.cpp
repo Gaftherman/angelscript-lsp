@@ -88,6 +88,11 @@ namespace angel_lsp::analysis::rules
             }
         }
 
+        if (allSameType && firstType == SymbolType::Variable && symbols[0].GetVariable().isLocal)
+        {
+            return;
+        }
+
         if (allSameType && firstType != SymbolType::Function && firstType != SymbolType::Funcdef)
         {
             std::vector<const Symbol *> currentFileSymbols;

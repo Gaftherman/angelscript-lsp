@@ -800,6 +800,33 @@ namespace angel_lsp::analysis
 
         sym.signature = funcSig;
         symbolTable.AddSymbol(sym);
+
+        if (funcSig.bodyAnalysis)
+        {
+            std::string funcContainer = sym.containerName.empty() ? sym.name : (sym.containerName + "::" + sym.name);
+            for (const auto &localVar : funcSig.bodyAnalysis->bodyVariableTypes)
+            {
+                if (!localVar.varName.empty())
+                {
+                    Symbol localSym;
+                    localSym.type = SymbolType::Variable;
+                    localSym.name = localVar.varName;
+                    localSym.containerName = funcContainer;
+                    localSym.qualifiedName = funcContainer.empty() ? localSym.name : (funcContainer + "::" + localSym.name);
+                    localSym.startLine = localVar.range.startLine;
+                    localSym.startCharacter = localVar.range.startCharacter;
+                    localSym.endLine = localVar.range.endLine;
+                    localSym.endCharacter = localVar.range.endCharacter;
+                    localSym.fileUri = fileUri;
+                    VariableSignature varSig;
+                    varSig.defaultValue = localVar.initializerText;
+                    varSig.typeName = localVar.typeName;
+                    varSig.isLocal = true;
+                    localSym.signature = varSig;
+                    symbolTable.AddSymbol(localSym);
+                }
+            }
+        }
     }
 
     void SymbolCollector::ProcessClass(TSNode classNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)
