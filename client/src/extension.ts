@@ -19,7 +19,7 @@ function getServerPath(context: ExtensionContext): string {
     const binaryName = isWindows ? 'angel_lsp.exe' : 'angel_lsp';
 
     if (context.extensionMode === ExtensionMode.Development) {
-        let devPath = context.asAbsolutePath(path.join('..', 'server', 'build', 'Debug', binaryName));
+        let devPath = context.asAbsolutePath(path.join('..', 'build', 'Debug', binaryName));
         if (fs.existsSync(devPath)) {
             return devPath;
         }

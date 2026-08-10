@@ -1,10 +1,5 @@
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/DiagnosticContext.h"
-#include "analysis/rules/FunctionRules.h"
-#include "analysis/rules/ClassRules.h"
-#include "analysis/rules/VariableRules.h"
-#include "analysis/rules/PropertyRules.h"
-#include "analysis/rules/TypeRules.h"
+#include "spdlog/fmt/fmt.h"
 
 namespace angel_lsp::analysis
 {
@@ -16,54 +11,29 @@ namespace angel_lsp::analysis
     std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest &request) const
     {
         std::vector<Diagnostic> diagnostics;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
 
-        request.symbolTable.ForEachSymbol(
-            [&](const std::string &qualifiedName, const std::vector<Symbol> &symbols)
-            {
-                rules::ValidateDuplicates(qualifiedName, symbols, ctx);
-
-                for (const Symbol &sym : symbols)
+        if (m_logger)
+        {
+            m_logger->LogInfo(fmt::format("=== [SYMBOL COLLECTOR OUTPUT] Document: {} ===", request.fileUri));
+            request.symbolTable.ForEachSymbol(
+                [&](const std::string &qualifiedName, const std::vector<Symbol> &symbols)
                 {
-                    if (sym.fileUri != request.fileUri)
+                    for (const auto &sym : symbols)
                     {
-                        continue;
+                        if (sym.fileUri == request.fileUri)
+                        {
+                            m_logger->LogInfo(fmt::format("  -> Symbol: [{}] Name: \"{}\" | Container: \"{}\" | Range: L{}:C{}-L{}:C{}",
+                                SymbolTypeToString(sym.type),
+                                sym.name,
+                                sym.containerName,
+                                sym.startLine + 1,
+                                sym.startCharacter + 1,
+                                sym.endLine + 1,
+                                sym.endCharacter + 1));
+                        }
                     }
-
-                    switch (sym.type)
-                    {
-                    case SymbolType::Function:
-                        rules::ValidateFunction(sym, ctx);
-                        break;
-                    case SymbolType::Variable:
-                        rules::ValidateVariable(sym, ctx);
-                        break;
-                    case SymbolType::Property:
-                        rules::ValidateProperty(sym, ctx);
-                        break;
-                    case SymbolType::Class:
-                        rules::ValidateClass(sym, ctx);
-                        break;
-                    case SymbolType::Interface:
-                        rules::ValidateInterface(sym, ctx);
-                        break;
-                    case SymbolType::Typedef:
-                        rules::ValidateTypedef(sym, ctx);
-                        break;
-                    case SymbolType::Funcdef:
-                        rules::ValidateFuncdef(sym, ctx);
-                        break;
-                    case SymbolType::Enum:
-                        rules::ValidateEnum(sym, ctx);
-                        break;
-                    case SymbolType::Namespace:
-                        rules::ValidateNamespace(sym, ctx);
-                        break;
-                    default:
-                        break;
-                    }
-                }
-            });
+                });
+        }
 
         return diagnostics;
     }

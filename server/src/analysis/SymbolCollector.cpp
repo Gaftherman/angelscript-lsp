@@ -1,5 +1,4 @@
 #include "analysis/SymbolCollector.h"
-#include "analysis/FunctionBodyInspector.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
@@ -791,42 +790,11 @@ namespace angel_lsp::analysis
         funcSig.modifiers = modifiers;
         funcSig.parameters = ExtractParameters(paramsNode, sourceCode);
         funcSig.hasBody = !ts_node_is_null(bodyNode);
-        if (funcSig.hasBody)
-        {
-            InspectFunctionBodyAST(bodyNode, funcSig.bodyAnalysis.emplace(), sourceCode);
-        }
         funcSig.defaultValue = funcSig.hasBody ? GetNodeText(bodyNode, sourceCode) : funcText;
         funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_symInterfaceMethod);
 
         sym.signature = funcSig;
         symbolTable.AddSymbol(sym);
-
-        if (funcSig.bodyAnalysis)
-        {
-            std::string funcContainer = sym.containerName.empty() ? sym.name : (sym.containerName + "::" + sym.name);
-            for (const auto &localVar : funcSig.bodyAnalysis->bodyVariableTypes)
-            {
-                if (!localVar.varName.empty())
-                {
-                    Symbol localSym;
-                    localSym.type = SymbolType::Variable;
-                    localSym.name = localVar.varName;
-                    localSym.containerName = funcContainer;
-                    localSym.qualifiedName = funcContainer.empty() ? localSym.name : (funcContainer + "::" + localSym.name);
-                    localSym.startLine = localVar.range.startLine;
-                    localSym.startCharacter = localVar.range.startCharacter;
-                    localSym.endLine = localVar.range.endLine;
-                    localSym.endCharacter = localVar.range.endCharacter;
-                    localSym.fileUri = fileUri;
-                    VariableSignature varSig;
-                    varSig.defaultValue = localVar.initializerText;
-                    varSig.typeName = localVar.typeName;
-                    varSig.isLocal = true;
-                    localSym.signature = varSig;
-                    symbolTable.AddSymbol(localSym);
-                }
-            }
-        }
     }
 
     void SymbolCollector::ProcessClass(TSNode classNode, const std::string &sourceCode, const std::string &fileUri, SymbolTable &symbolTable, const CollectionContext &ctx)

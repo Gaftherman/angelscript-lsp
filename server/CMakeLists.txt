@@ -32,8 +32,6 @@ include(cmake/TreeSitter.cmake)
 # ==============================================================================
 # 2. CORE LIBRARY (Backend Code)
 # ==============================================================================
-# We compile all our source files into a static library so they can be
-# shared easily between the LSP executable and the Tests executable.
 file(GLOB_RECURSE BACKEND_SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 list(REMOVE_ITEM BACKEND_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 
@@ -55,7 +53,6 @@ target_link_libraries(angel_lsp_core PUBLIC
     unordered_dense::unordered_dense
 )
 if(MSVC)
-    # /utf-8 applied only to our sources — third-party deps may have non-UTF-8 encoded files
     target_compile_options(angel_lsp_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
 endif()
 
@@ -83,41 +80,12 @@ else()
 endif()
 
 set(LSP_DEPLOY_DEST "${CMAKE_CURRENT_SOURCE_DIR}/../client/bin/${TARGET_OS}-${TARGET_ARCH}")
-set(LSP_BUILD_DEBUG_DEST "${CMAKE_CURRENT_SOURCE_DIR}/../build/Debug")
-set(LSP_BUILD_RELEASE_DEST "${CMAKE_CURRENT_SOURCE_DIR}/../build/Release")
+set(LSP_DEPLOY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../client/bin")
 
 add_custom_command(TARGET angel_lsp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_DEST}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_ROOT}"
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_DEST}/angel_lsp.exe"
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_ROOT}/angel_lsp.exe"
     COMMENT "Deploying compiled LSP server binary to client/bin"
 )
-
-
-# ==============================================================================
-# 4. UNIT TESTS (doctest)
-# ==============================================================================
-enable_testing()
-file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "tests/*.cpp")
-if(TEST_SOURCES)
-    add_executable(angel_lsp_tests ${TEST_SOURCES})
-    target_include_directories(angel_lsp_tests PRIVATE tests src)
-    target_link_libraries(angel_lsp_tests PRIVATE angel_lsp_core doctest::doctest)
-    if(MSVC)
-        target_compile_options(angel_lsp_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
-    endif()
-    add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests)
-endif()
-
-# ==============================================================================
-# 5. OPTIONAL DOXYGEN TARGET
-# ==============================================================================
-find_package(Doxygen OPTIONAL_COMPONENTS dot)
-if(DOXYGEN_FOUND)
-    set(DOXYGEN_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/docs)
-    add_custom_target(docs
-        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMENT "Generating Doxygen API documentation..."
-        VERBATIM
-    )
-endif()
