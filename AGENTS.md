@@ -32,33 +32,34 @@ AngelLSP is a high-performance C++20 Language Server Protocol (LSP) implementati
   npm run compile
   ```
 
-## Advanced Hybrid Architecture: Kimi K3 (Director) + Gemini `agy` (Ejecutor)
+## Advanced Hybrid Architecture: Kimi K3 (Director) + Gemini `agy` (Executor)
 
-### Flags de Máxima Eficiencia para `agy`:
-- `--dangerously-skip-permissions`: Permite a `agy` modificar archivos y ejecutar scripts en modo no interactivo sin bloquearse pidiendo permisos.
-- `--mode accept-edits`: Acepta automáticamente los cambios de código realizados por Gemini.
-- `--output-format json`: Retorna la respuesta en formato JSON estructurado para que Kimi pueda parsear el resultado con precisión.
+### Maximum Efficiency Flags for `agy`:
+- `--dangerously-skip-permissions`: Allows `agy` to modify files and execute scripts non-interactively without prompting for permissions.
+- `--mode accept-edits`: Automatically accepts code modifications made by Gemini.
+- `--output-format json`: Returns the response in structured JSON format for Kimi to parse the result accurately.
 
-### Comando Estándar de Ejecución de `agy`:
+### Standard Execution Command for `agy`:
 ```powershell
 agy -p "<prompt>" --dangerously-skip-permissions --mode accept-edits
 ```
 
 ---
 
-### Protocolo de Trabajo y Verificación Obligatoria:
+### Work Protocol & Mandatory Verification:
 
-1. **Delegación a Gemini (`agy`):**
-   Kimi K3 envía la tarea pesada a `agy` para ahorrar tokens en OpenRouter:
-   `agy -p "Modifica <archivo> para aplicar <cambio>" --dangerously-skip-permissions`
+1. **Delegation to Gemini (`agy`):**
+   Kimi K3 sends heavy tasks to `agy` to conserve OpenRouter tokens:
+   `agy -p "Modify <file> to apply <change>" --dangerously-skip-permissions`
 
-2. **Verificación de Calidad (Control de Calidad por Kimi K3):**
-   Inmediatamente después de que `agy` termine, Kimi K3 DEBE verificar el trabajo realizado usando `git diff` o revisando el archivo:
-   `git diff <archivo>`
-   - Kimi K3 analiza el `diff` producido por Gemini.
-   - Si detecta algún error de lógica o sintaxis en el cambio de Gemini, Kimi K3 aplica el ajuste fino.
+2. **Quality Verification (Quality Control by Kimi K3):**
+   Immediately after `agy` finishes, Kimi K3 MUST verify the completed work using `git diff` or by reviewing the file:
+   `git diff <file>`
+   - Kimi K3 analyzes the `diff` produced by Gemini.
+   - If any logic or syntax error is detected in Gemini's edits, Kimi K3 applies fine-tuning adjustments.
 
-3. **Verificación de Compilación y Tests:**
-   Kimi K3 ejecuta la compilación y prueba para garantizar el 100% de funcionamiento:
+3. **Build & Test Verification:**
+   Kimi K3 runs the compilation and tests to guarantee 100% functionality:
    `cmake --build server/build --config Debug`
    `ctest --test-dir server/build -C Debug --output-on-failure`
+

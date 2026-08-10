@@ -9,7 +9,8 @@ if(MSVC)
 endif()
 
 # ── Tree-Sitter AngelScript Grammar ───────────────────────────────────────
-set(tree_sitter_angelscript_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tree-sitter-angelscript")
+FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG master)
+FetchContent_MakeAvailable(tree_sitter_angelscript)
 
 add_library(tree_sitter_angelscript_lib STATIC 
     "${tree_sitter_angelscript_SOURCE_DIR}/src/parser.c"

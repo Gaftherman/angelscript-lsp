@@ -1,31 +1,31 @@
-# Protocolo Estándar de Desarrollo (SOP) - AngelScript LSP
+# Standard Operating Procedure (SOP) - AngelScript LSP
 
-Esta guía es la referencia de oro para el diseño, desarrollo, refactorización y prueba de cualquier funcionalidad dentro de la base de código de AngelScript LSP.
+This guide is the golden reference for designing, developing, refactoring, and testing any feature within the AngelScript LSP codebase.
 
 ---
 
-## 1. La Regla Inquebrantable de los `#include` (Matriz de Capas)
+## 1. The Unbreakable Rule of `#include`s (Layer Matrix)
 
-Para evitar dependencias circulares y errores en cascada, revisa esta tabla antes de escribir cualquier `#include`:
+To prevent circular dependencies and cascading build errors, review this matrix before writing any `#include`:
 
-| Capa actual de tu archivo | ✅ Puede hacer `#include` de: | ❌ PROHIBIDO hacer `#include` de: |
+| Current File Layer | ✅ May `#include`: | ❌ FORBIDDEN to `#include`: |
 | --- | --- | --- |
-| **Capa 1: Core / Config**<br>(`config/`, `document/`, `parser/`, `utils/`) | Únicamente librerías estándar de C++ (`<string>`, `<vector>`, etc.) o headers de su propia capa. | Capa 2 (Analysis), Capa 3 (Features), Capa 4 (Server). |
-| **Capa 2: Analysis**<br>(`analysis/`) | Capa 1 (Core/Config) y librerías C++. | Capa 3 (Features), Capa 4 (Server). |
-| **Capa 3: Features**<br>(`features/hover/`, `features/completion/`, etc.) | Capa 1 (Core) y Capa 2 (Analysis). | **Otras Features** (ej. Hover NO incluye Completion) y Capa 4 (Server). |
-| **Capa 4: Server / Listener**<br>(`lsp/`, `main.cpp`) | Capa 1, Capa 2 y Capa 3. | Nada (es la capa superior). |
+| **Layer 1: Core / Config**<br>(`config/`, `document/`, `parser/`, `utils/`) | Only standard C++ libraries (`<string>`, `<vector>`, etc.) or headers from its own layer. | Layer 2 (Analysis), Layer 3 (Features), Layer 4 (Server). |
+| **Layer 2: Analysis**<br>(`analysis/`) | Layer 1 (Core/Config) and C++ libraries. | Layer 3 (Features), Layer 4 (Server). |
+| **Layer 3: Features**<br>(`features/hover/`, `features/completion/`, etc.) | Layer 1 (Core) and Layer 2 (Analysis). | **Other Features** (e.g. Hover MUST NOT include Completion) and Layer 4 (Server). |
+| **Layer 4: Server / Listener**<br>(`lsp/`, `main.cpp`) | Layer 1, Layer 2, and Layer 3. | None (topmost layer). |
 
-> **Prueba de fuego:** Si abres `HoverHandler.h` y ves un `#include "../completion/CompletionHandler.h"`, **detente inmediatamente**. Ese cambio romperá la modularidad.
+> **Litmus test:** If you open `HoverHandler.h` and see `#include "../completion/CompletionHandler.h"`, **stop immediately**. That change breaks modularity.
 
 ---
 
-## 2. Paso a Paso: Cómo agregar o refactorizar una Feature
+## 2. Step-by-Step: How to Add or Refactor a Feature
 
-Cuando vayas a crear una nueva funcionalidad (por ejemplo, `SignatureHelp`) o a corregir una existente, sigue estrictamente estos **5 pasos**:
+When creating a new feature (e.g. `SignatureHelp`) or fixing an existing one, strictly follow these **5 steps**:
 
-### Paso 1: Define el contrato puro (`SignatureHelpHandler.h`)
+### Step 1: Define the pure contract (`SignatureHelpHandler.h`)
 
-Crea la firma en la **Capa 3**. Debe ser una función **pura** que acepte únicamente referencias constantes (`const &`).
+Create the function declaration in **Layer 3**. It must be a **pure** function accepting only const references (`const &`).
 
 ```cpp
 #pragma once
@@ -52,15 +52,15 @@ namespace lsp::features
 }
 ```
 
-### Paso 2: Implementa la lógica aislada (`SignatureHelpHandler.cpp`)
+### Step 2: Implement isolated logic (`SignatureHelpHandler.cpp`)
 
-Escribe el código sin guardar estado global ni variables estáticas.
-* Si el cursor no está sobre una llamada a función válida, retorna `std::nullopt` o un resultado vacío.
-* **Nunca** lances excepciones (`throw`). Retorna estado vacío si algo falla.
+Write the code without storing global state or static variables.
+* If the cursor is not over a valid function call, return `std::nullopt` or an empty result.
+* **Never** throw exceptions (`throw`). Return an empty state if something fails.
 
-### Paso 3: Crea el test unitario en memoria (`tests/SignatureHelpTest.cpp`)
+### Step 3: Create the in-memory unit test (`tests/SignatureHelpTest.cpp`)
 
-Prueba la función **sin tocar el disco duro** usando el helper `TestUtils.h`:
+Test the function **without touching the disk** using the `TestUtils.h` helper:
 
 ```cpp
 #include <doctest/doctest.h>
@@ -69,22 +69,22 @@ Prueba la función **sin tocar el disco duro** usando el helper `TestUtils.h`:
 
 TEST_CASE("ShouldProvideArgumentsForFunctionCall")
 {
-    // 1. Crear documento ficticio en memoria
+    // 1. Create fake in-memory document
     std::string code = "void test(int a, float b) {}\nvoid main() { test(|); }";
     auto doc = angel_lsp::test::CreateTestDocument("file:///test.as", code);
     angel_lsp::analysis::SymbolTable table;
     angel_lsp::test::PopulateTestSymbolTable(doc, table);
 
-    // 2. Ejecutar la función pura...
+    // 2. Execute pure function...
 }
 ```
 
-### Paso 4: Registra el Kill-Switch y la Capacidad
+### Step 4: Register the Kill-Switch and Capability
 
-1. **Verifica `ServerConfig.h`:** Asegúrate de que exista la bandera correspondiente (`enableSignatureHelp`).
-2. **Actualiza `Server.cpp`:**
-   * En `ComputeCapabilities()` / `Initialize`: Anuncia la capacidad al cliente **solo si** la bandera está activa.
-   * En los handlers: Envuelve la llamada con el protector del flag.
+1. **Check `ServerConfig.h`:** Ensure the corresponding flag exists (`enableSignatureHelp`).
+2. **Update `Server.cpp`:**
+   * In `ComputeCapabilities()` / `Initialize`: Announce the capability to the client **only if** the flag is active.
+   * In handlers: Wrap the call with the flag guard.
 
 ```cpp
 messageHandler->add<lsp::requests::TextDocument_SignatureHelp>(
@@ -98,22 +98,22 @@ messageHandler->add<lsp::requests::TextDocument_SignatureHelp>(
     });
 ```
 
-### Paso 5: Compila y Valida
+### Step 5: Compile and Validate
 
-Corre los comandos de verificación en tu terminal:
+Run verification commands in your terminal:
 
 ```powershell
-# 1. Compilar todo
+# 1. Build everything
 cmake --build server/build --config Debug
 
-# 2. Ejecutar los tests con CTest
+# 2. Run test suite with CTest
 cd server/build
 ctest -C Debug --output-on-failure
 ```
 
 ---
 
-## 3. Estilo de Código y Documentación
+## 3. Code Style and Documentation
 
-1. **Allman Style**: Apertura de llaves `{` siempre en una línea nueva para clases, structs, funciones, loops e `if`/`switch`.
-2. **Comentarios Doxygen en Inglés**: Documentar cada clase, función y struct usando formato `/** ... */` en inglés.
+1. **Allman Style**: Opening braces `{` always on a new line for classes, structs, functions, loops, and `if`/`switch`.
+2. **Doxygen Comments in English**: Document every class, function, and struct using `/** ... */` format in English.
