@@ -199,8 +199,8 @@ namespace angel_lsp::features
             }
             else if (captureName == "type.builtin")
             {
-                tokenType = Type_Type;
-                tokenMod = Mod_DefaultLibrary;
+                tokenType = Type_Keyword;
+                tokenMod = 0;
                 priority = 7;
             }
             else if (captureName == "type")

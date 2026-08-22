@@ -11,10 +11,15 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
   - **Syntax Pass**: Instant syntax error detection (`TSNode` error/missing node catching).
   - **Semantic Pass**: Workspace and document-level symbol resolution diagnostics.
 - **Hover Information (`textDocument/hover`)**: Rich Markdown tooltips displaying function signatures, variable types, class properties, and parsed Doxygen documentation.
-- **Go to Definition & Type Definition (`textDocument/definition`, `textDocument/typeDefinition`)**: Precise symbol lookup across documents, namespaces, classes, and global scopes.
+- **Go to Definition & Type Definition (`textDocument/definition`, `textDocument/typeDefinition`)**: Precise symbol lookup across documents, namespaces, classes, and global scopes with inheritance traversal.
 - **Auto-Completion (`textDocument/completion`)**: Context-aware completion suggestions for global symbols, class member functions/properties, and namespace scopes.
 - **Semantic Tokens (`textDocument/semanticTokens/full`)**: Full semantic syntax highlighting for keywords, types, functions, variables, parameters, and enum members.
 - **Signature Help (`textDocument/signatureHelp`)**: Active parameter highlight and signature preview for function calls.
+- **Document Symbols Outline (`textDocument/documentSymbol`)**: Hierarchical symbol tree for classes, methods, fields, enums, and namespaces powering VS Code Outline and Breadcrumbs.
+- **Workspace Symbol Search (`workspace/symbol`)**: Multi-tiered fuzzy search across all translation units and predefined headers for fast `Ctrl+T` symbol navigation.
+- **Find References (`textDocument/references`)**: Project-wide reference lookup for local variables, parameters, class members, and global declarations with shadowing protection.
+- **Symbol Rename (`textDocument/prepareRename`, `textDocument/rename`)**: Safe identifier refactoring generating accurate multi-file `WorkspaceEdit` blocks.
+- **Include Directive Resolution (`#include`)**: Preprocessor include extraction and resolution with search path configuration and cyclic dependency guards.
 - **Workspace Predefined Loader (`as.predefined`)**: Native Tree-Sitter parsing of host application declarations (`as.predefined` or `.as` files).
 - **Diagnostic Localization (`i18n`)**: Multi-language diagnostic error reporting supporting English (`en-US`) and Spanish (`es-ES`).
 - **Protected JSON-RPC Stream**: Internal server logging routes strictly to `stderr` (`spdlog::stderr_color_mt`) and `window/logMessage` notifications, ensuring `stdout` is 100% clean for VS Code JSON-RPC streams.
@@ -114,6 +119,7 @@ server/build/angel_lsp_tests
 | Test Suite File | Coverage Area |
 | :--- | :--- |
 | `UtilsTest.cpp` | Layer 1 primitives validation (`IsPrimitiveType`), predefined file matching (`IsPredefinedFile`), `Document` struct integrity. |
+| `IncludeResolutionTest.cpp` | Layer 1 `#include` extraction, search path resolution, cyclic inclusion guards, and comment safety. |
 | `SymbolCollectorTest.cpp` | Layer 2 AST symbol extraction (functions, classes, interfaces, enums, mixins, typedefs, funcdefs, variables, and syntax error diagnostics). |
 | `LocalScopeCollectorTest.cpp` | Layer 2 lexical block scopes, nested compound statements, function/method parameters, and local variables. |
 | `SemanticAnalyzerTest.cpp` | Layer 2 semantic diagnostics, undeclared identifier checks, type resolution, and `as.predefined` stub integration. |
@@ -122,6 +128,10 @@ server/build/angel_lsp_tests
 | `CompletionTest.cpp` | Layer 3 Context-aware auto-completion (lexical variables, class members via `.` / `->`, enum members via `::`, keywords). |
 | `SemanticTokensTest.cpp` | Layer 3 Full semantic tokens generation with delta-encoded integer streams and standard LSP token legends. |
 | `SignatureHelpTest.cpp` | Layer 3 Function signature preview, parameter information, and active parameter indexing during call expressions. |
+| `DocumentSymbolTest.cpp` | Layer 3 Hierarchical document symbol outline (classes, methods, fields, enums, namespaces, interfaces). |
+| `WorkspaceSymbolTest.cpp` | Layer 3 Multi-tiered fuzzy search, scoring, and ranking across all indexed files. |
+| `ReferencesTest.cpp` | Layer 3 Project-wide references lookup with lexical shadowing and class inheritance awareness. |
+| `RenameTest.cpp` | Layer 3 Prepare rename validation and safe `WorkspaceEdit` generation across multiple documents. |
 | `ServerConfigTest.cpp` | Layer 1/4 CLI argument parsing, boolean feature flag toggles, option syntax (`--flag=value` / `--flag value`), and robustness. |
 
 ---
@@ -142,8 +152,17 @@ The `angel_lsp` executable accepts command-line arguments to enable or disable i
 | `--disable-semantic-tokens` | Explicitly disable semantic tokens. | - |
 | `--enable-signature-help[=true\|false]` | Enable or disable signature help and active parameter index. | `true` |
 | `--disable-signature-help` | Explicitly disable signature help. | - |
+| `--enable-document-symbols[=true\|false]` | Enable or disable document symbols outline. | `true` |
+| `--disable-document-symbols` | Explicitly disable document symbols outline. | - |
+| `--enable-workspace-symbols[=true\|false]` | Enable or disable workspace symbol search. | `true` |
+| `--disable-workspace-symbols` | Explicitly disable workspace symbol search. | - |
+| `--enable-references[=true\|false]` | Enable or disable find references. | `true` |
+| `--disable-references` | Explicitly disable find references. | - |
+| `--enable-rename[=true\|false]` | Enable or disable symbol rename refactoring. | `true` |
+| `--disable-rename` | Explicitly disable symbol rename. | - |
 | `--enable-predefined-loader[=true\|false]` | Enable or disable background predefined symbols loader. | `true` |
 | `--disable-predefined-loader` | Explicitly disable predefined symbols loader. | - |
+| `--search-dir=<path>` | Add directory search path for `#include` resolution. | - |
 | `--locale=<string>` | Set diagnostic language/locale (`en` or `es-ES`). | `en` |
 | `--file-ext=<string>` | Set AngelScript script file extension. | `.as` |
 | `--predefined-ext=<string>` | Set predefined host API symbols file extension. | `.as.predefined` |

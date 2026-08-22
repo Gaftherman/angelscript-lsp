@@ -63,11 +63,30 @@ namespace angel_lsp::config
                   << "  --enable-signature-help[=true|false]    Enable/disable signature help (default: true)\n"
                   << "  --disable-signature-help                Disable signature help\n"
                   << "  --enable-predefined-loader[=true|false] Enable/disable predefined file loader (default: true)\n"
-                  << "  --disable-predefined-loader             Disable predefined loader\n\n"
+                  << "  --disable-predefined-loader             Disable predefined loader\n"
+                  << "  --enable-document-symbols[=true|false]  Enable/disable document symbols outline (default: true)\n"
+                  << "  --disable-document-symbols              Disable document symbols outline\n"
+                  << "  --enable-workspace-symbols[=true|false] Enable/disable workspace symbol search (default: true)\n"
+                  << "  --disable-workspace-symbols             Disable workspace symbol search\n"
+                  << "  --enable-references[=true|false]        Enable/disable find references (default: true)\n"
+                  << "  --disable-references                    Disable find references\n"
+                  << "  --enable-rename[=true|false]            Enable/disable symbol rename (default: true)\n"
+                  << "  --disable-rename                        Disable symbol rename\n"
+                  << "  --enable-document-highlight[=true|false] Enable/disable document highlight (default: true)\n"
+                  << "  --disable-document-highlight            Disable document highlight\n"
+                  << "  --enable-folding-range[=true|false]     Enable/disable folding ranges (default: true)\n"
+                  << "  --disable-folding-range                 Disable folding ranges\n"
+                  << "  --enable-inlay-hints[=true|false]       Enable/disable inlay hints (default: true)\n"
+                  << "  --disable-inlay-hints                   Disable inlay hints\n"
+                  << "  --enable-code-action[=true|false]       Enable/disable code actions (default: true)\n"
+                  << "  --disable-code-action                   Disable code actions\n"
+                  << "  --enable-formatting[=true|false]        Enable/disable formatting (default: true)\n"
+                  << "  --disable-formatting                    Disable formatting\n\n"
                   << "Options:\n"
                   << "  --locale=<string>                       Set diagnostic language/locale (default: en)\n"
                   << "  --file-ext=<string>                     Set script file extension (default: .as)\n"
                   << "  --predefined-ext=<string>               Set predefined symbols file extension (default: .as.predefined)\n"
+                  << "  --search-dir=<string>                   Add directory to search path for #include resolution\n"
                   << "  -h, --help                              Show this help message and exit\n"
                   << "  -v, --version                           Show version information and exit\n";
     }
@@ -200,6 +219,78 @@ namespace angel_lsp::config
             {
                 config.features.enablePredefinedLoader = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
+            else if (key == "--enable-document-symbols" || key == "--enable-documentsymbols")
+            {
+                config.features.enableDocumentSymbols = getBoolValue(true);
+            }
+            else if (key == "--disable-document-symbols" || key == "--disable-documentsymbols")
+            {
+                config.features.enableDocumentSymbols = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-workspace-symbols" || key == "--enable-workspacesymbols")
+            {
+                config.features.enableWorkspaceSymbols = getBoolValue(true);
+            }
+            else if (key == "--disable-workspace-symbols" || key == "--disable-workspacesymbols")
+            {
+                config.features.enableWorkspaceSymbols = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-references")
+            {
+                config.features.enableReferences = getBoolValue(true);
+            }
+            else if (key == "--disable-references")
+            {
+                config.features.enableReferences = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-rename")
+            {
+                config.features.enableRename = getBoolValue(true);
+            }
+            else if (key == "--disable-rename")
+            {
+                config.features.enableRename = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-document-highlight" || key == "--enable-documenthighlight")
+            {
+                config.features.enableDocumentHighlight = getBoolValue(true);
+            }
+            else if (key == "--disable-document-highlight" || key == "--disable-documenthighlight")
+            {
+                config.features.enableDocumentHighlight = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-folding-range" || key == "--enable-foldingrange")
+            {
+                config.features.enableFoldingRange = getBoolValue(true);
+            }
+            else if (key == "--disable-folding-range" || key == "--disable-foldingrange")
+            {
+                config.features.enableFoldingRange = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-inlay-hints" || key == "--enable-inlayhints")
+            {
+                config.features.enableInlayHints = getBoolValue(true);
+            }
+            else if (key == "--disable-inlay-hints" || key == "--disable-inlayhints")
+            {
+                config.features.enableInlayHints = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-code-action" || key == "--enable-codeaction")
+            {
+                config.features.enableCodeAction = getBoolValue(true);
+            }
+            else if (key == "--disable-code-action" || key == "--disable-codeaction")
+            {
+                config.features.enableCodeAction = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-formatting")
+            {
+                config.features.enableFormatting = getBoolValue(true);
+            }
+            else if (key == "--disable-formatting")
+            {
+                config.features.enableFormatting = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
             else if (key == "--locale")
             {
                 std::string_view val;
@@ -222,6 +313,14 @@ namespace angel_lsp::config
                 if (getStringValue(val))
                 {
                     config.info.predefinedFileExtension = std::string(val);
+                }
+            }
+            else if (key == "--search-dir" || key == "--search-directory" || key == "--search-path")
+            {
+                std::string_view val;
+                if (getStringValue(val))
+                {
+                    config.searchDirectories.push_back(std::string(val));
                 }
             }
         }

@@ -319,7 +319,12 @@ namespace angel_lsp::analysis
                 if (!ts_node_is_null(parent) && ts_node_symbol(parent) == m_symMemberExpression)
                 {
                     TSNode memberField = ts_node_child_by_field_name(parent, "member", static_cast<uint32_t>(strlen("member")));
-                    ref.isMemberAccess = ts_node_eq(memberField, capture.node);
+                    if (ts_node_is_null(memberField) && ts_node_named_child_count(parent) > 1)
+                    {
+                        memberField = ts_node_named_child(parent, 1);
+                    }
+                    ref.isMemberAccess = ts_node_eq(memberField, capture.node) ||
+                        (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(capture.node));
                 }
 
                 current->references.push_back(std::move(ref));
@@ -354,6 +359,18 @@ namespace angel_lsp::analysis
             return;
 
         TSNode typeNode = ts_node_child_by_field_name(declarationNode, "var_type", static_cast<uint32_t>(strlen("var_type")));
+        if (ts_node_is_null(typeNode))
+        {
+            typeNode = ts_node_child_by_field_name(declarationNode, "type", static_cast<uint32_t>(strlen("type")));
+        }
+        if (ts_node_is_null(typeNode) && ts_node_named_child_count(declarationNode) > 0)
+        {
+            TSNode firstChild = ts_node_named_child(declarationNode, 0);
+            if (!ts_node_eq(firstChild, declaratorNode))
+            {
+                typeNode = firstChild;
+            }
+        }
         if (!ts_node_is_null(typeNode))
         {
             TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);

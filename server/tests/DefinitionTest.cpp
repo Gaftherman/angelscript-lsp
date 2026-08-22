@@ -158,3 +158,62 @@ TEST_CASE("DefinitionHandler - Invalid Position Returns Nullopt")
     auto def = env.DefAt(0, 12);
     CHECK(!def.has_value());
 }
+
+TEST_CASE("DefinitionHandler - Go to Definition for Class Method and Inherited Method")
+{
+    std::string code =
+        "class Entity {\n"
+        "    void TakeDamage(int dmg) {}\n" // line 1
+        "}\n"
+        "class Player : Entity {\n"
+        "    void Attack() {\n"             // line 4
+        "        TakeDamage(10);\n"          // line 5, col 9
+        "    }\n"
+        "}\n"
+        "void main() {\n"
+        "    Player p;\n"
+        "    p.Attack();\n"                  // line 10, col 7
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Go to def of 'TakeDamage' in TakeDamage(10) on line 5
+    auto defInherited = env.DefAt(5, 10);
+    REQUIRE(defInherited.has_value());
+    REQUIRE(defInherited->size() == 1);
+    CHECK((*defInherited)[0].range.start.line == 1);
+
+    // Go to def of 'Attack' in p.Attack() on line 10
+    auto defAttack = env.DefAt(10, 7);
+    REQUIRE(defAttack.has_value());
+    REQUIRE(defAttack->size() == 1);
+    CHECK((*defAttack)[0].range.start.line == 4);
+}
+
+TEST_CASE("DefinitionHandler - Go to Definition for Namespace Function")
+{
+    std::string code =
+        "namespace Game {\n"
+        "    void Spawn() {}\n" // line 1
+        "    void Init() {\n"
+        "        Spawn();\n"    // line 3, col 9
+        "    }\n"
+        "}\n"
+        "void main() {\n"
+        "    Game::Spawn();\n"  // line 7, col 11
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Go to def of unqualified 'Spawn()' inside namespace on line 3
+    auto defInside = env.DefAt(3, 9);
+    REQUIRE(defInside.has_value());
+    REQUIRE(defInside->size() == 1);
+    CHECK((*defInside)[0].range.start.line == 1);
+
+    // Go to def of qualified 'Game::Spawn()' from outside on line 7
+    auto defOutside = env.DefAt(7, 11);
+    REQUIRE(defOutside.has_value());
+    REQUIRE(defOutside->size() == 1);
+    CHECK((*defOutside)[0].range.start.line == 1);
+}

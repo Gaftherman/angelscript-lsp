@@ -253,6 +253,9 @@ namespace angel_lsp::analysis
         uint32_t endLine = 0;
         uint32_t endCharacter = 0;
 
+        SourceRange fullRange;       ///< Full enclosing source range of the declaration (for DocumentSymbol).
+        SourceRange selectionRange;  ///< Source range of the identifier token itself (for DocumentSymbol/Rename).
+
         std::variant<
             std::monostate,
             FunctionSignature,

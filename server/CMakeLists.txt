@@ -16,6 +16,7 @@ if(MSVC)
     add_compile_definitions(_SILENCE_ALL_MS_EXT_DEPRECATION_WARNINGS)
     # Apply warning suppression ONLY to C and C++ (prevents sending /wd to MASM .asm assembler)
     add_compile_options(
+        $<$<COMPILE_LANGUAGE:C,CXX>:/FS>
         $<$<COMPILE_LANGUAGE:C,CXX>:/wd4018>
         $<$<COMPILE_LANGUAGE:C,CXX>:/wd4244>
         $<$<COMPILE_LANGUAGE:C,CXX>:/wd4267>
@@ -103,7 +104,7 @@ if(TEST_SOURCES)
         ANGELSCRIPT_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../angelscript"
     )
     if(MSVC)
-        target_compile_options(angel_lsp_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
+        target_compile_options(angel_lsp_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8> $<$<COMPILE_LANGUAGE:CXX>:/FS>)
     endif()
     add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests)
 

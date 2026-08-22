@@ -70,3 +70,81 @@ TEST_CASE("SemanticTokensHandler - Empty Code Returns Empty Tokens")
     CHECK(tokens.data.empty());
     if (tree) ts_tree_delete(tree);
 }
+
+TEST_CASE("SemanticTokensHandler - Primitive Types Map to Type_Keyword")
+{
+    std::string code = "int a = 1;\nfloat b = 2.0f;\nbool c = true;\nauto d = 4;\n";
+
+    AngelScriptParser parser;
+    TSTree *tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolTable table;
+    SemanticTokensRequest req{ "file:///test.as", code, tree, table };
+    auto tokens = GetSemanticTokens(req);
+
+    REQUIRE(tokens.data.size() % 5 == 0);
+
+    struct DecodedToken
+    {
+        uint32_t line;
+        uint32_t startCol;
+        uint32_t length;
+        uint32_t tokenType;
+        uint32_t tokenMod;
+    };
+
+    std::vector<DecodedToken> decoded;
+    uint32_t curLine = 0;
+    uint32_t curCol = 0;
+    for (size_t i = 0; i < tokens.data.size(); i += 5)
+    {
+        uint32_t deltaLine = tokens.data[i];
+        uint32_t deltaCol = tokens.data[i + 1];
+        uint32_t len = tokens.data[i + 2];
+        uint32_t type = tokens.data[i + 3];
+        uint32_t mod = tokens.data[i + 4];
+
+        if (deltaLine > 0)
+        {
+            curLine += deltaLine;
+            curCol = deltaCol;
+        }
+        else
+        {
+            curCol += deltaCol;
+        }
+
+        decoded.push_back({ curLine, curCol, len, type, mod });
+    }
+
+    // Check that int (line 0, col 0, len 3) is tokenType 15 (Type_Keyword)
+    auto itInt = std::find_if(decoded.begin(), decoded.end(),
+        [](const DecodedToken &t) { return t.line == 0 && t.startCol == 0 && t.length == 3; });
+    REQUIRE(itInt != decoded.end());
+    CHECK(itInt->tokenType == 15);
+    CHECK(itInt->tokenMod == 0);
+
+    // Check that float (line 1, col 0, len 5) is tokenType 15
+    auto itFloat = std::find_if(decoded.begin(), decoded.end(),
+        [](const DecodedToken &t) { return t.line == 1 && t.startCol == 0 && t.length == 5; });
+    REQUIRE(itFloat != decoded.end());
+    CHECK(itFloat->tokenType == 15);
+    CHECK(itFloat->tokenMod == 0);
+
+    // Check that bool (line 2, col 0, len 4) is tokenType 15
+    auto itBool = std::find_if(decoded.begin(), decoded.end(),
+        [](const DecodedToken &t) { return t.line == 2 && t.startCol == 0 && t.length == 4; });
+    REQUIRE(itBool != decoded.end());
+    CHECK(itBool->tokenType == 15);
+    CHECK(itBool->tokenMod == 0);
+
+    // Check that auto (line 3, col 0, len 4) is tokenType 15
+    auto itAuto = std::find_if(decoded.begin(), decoded.end(),
+        [](const DecodedToken &t) { return t.line == 3 && t.startCol == 0 && t.length == 4; });
+    REQUIRE(itAuto != decoded.end());
+    CHECK(itAuto->tokenType == 15);
+    CHECK(itAuto->tokenMod == 0);
+
+    ts_tree_delete(tree);
+}

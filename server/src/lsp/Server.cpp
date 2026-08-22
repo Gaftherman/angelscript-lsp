@@ -5,6 +5,15 @@
 #include "features/completion/CompletionHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "features/signature_help/SignatureHelpHandler.h"
+#include "features/document_symbol/DocumentSymbolHandler.h"
+#include "features/workspace_symbol/WorkspaceSymbolHandler.h"
+#include "features/references/ReferencesHandler.h"
+#include "features/rename/RenameHandler.h"
+#include "features/document_highlight/DocumentHighlightHandler.h"
+#include "features/folding_range/FoldingRangeHandler.h"
+#include "features/inlay_hint/InlayHintHandler.h"
+#include "features/code_action/CodeActionHandler.h"
+#include "features/formatting/FormattingHandler.h"
 
 #include <filesystem>
 #include <fstream>
@@ -118,6 +127,54 @@ namespace angel_lsp
             lsp::SignatureHelpOptions sigOpts;
             sigOpts.triggerCharacters = lsp::Array<lsp::String>{ "(", "," };
             result.capabilities.signatureHelpProvider = sigOpts;
+        }
+
+        if (m_config.features.enableDocumentSymbols)
+        {
+            result.capabilities.documentSymbolProvider = true;
+        }
+
+        if (m_config.features.enableWorkspaceSymbols)
+        {
+            result.capabilities.workspaceSymbolProvider = true;
+        }
+
+        if (m_config.features.enableReferences)
+        {
+            result.capabilities.referencesProvider = true;
+        }
+
+        if (m_config.features.enableRename)
+        {
+            lsp::RenameOptions renameOpts;
+            renameOpts.prepareProvider = true;
+            result.capabilities.renameProvider = renameOpts;
+        }
+
+        if (m_config.features.enableDocumentHighlight)
+        {
+            result.capabilities.documentHighlightProvider = true;
+        }
+
+        if (m_config.features.enableFoldingRange)
+        {
+            result.capabilities.foldingRangeProvider = true;
+        }
+
+        if (m_config.features.enableInlayHints)
+        {
+            result.capabilities.inlayHintProvider = true;
+        }
+
+        if (m_config.features.enableCodeAction)
+        {
+            result.capabilities.codeActionProvider = true;
+        }
+
+        if (m_config.features.enableFormatting)
+        {
+            result.capabilities.documentFormattingProvider = true;
+            result.capabilities.documentRangeFormattingProvider = true;
         }
 
         return result;
@@ -643,6 +700,280 @@ namespace angel_lsp
                 if (sig.has_value())
                 {
                     return sig.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_DocumentSymbol>(
+            [this](lsp::requests::TextDocument_DocumentSymbol::Params &&req) -> lsp::requests::TextDocument_DocumentSymbol::Result
+            {
+                if (!m_config.features.enableDocumentSymbols)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::DocumentSymbolRequest dr{ uriStr, docIt->second, tree, m_symbolTable };
+                auto symbols = features::GetDocumentSymbols(dr);
+                if (symbols.has_value())
+                {
+                    return symbols.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::Workspace_Symbol>(
+            [this](lsp::requests::Workspace_Symbol::Params &&req) -> lsp::requests::Workspace_Symbol::Result
+            {
+                if (!m_config.features.enableWorkspaceSymbols)
+                {
+                    return lsp::Array<lsp::SymbolInformation>{};
+                }
+                features::WorkspaceSymbolRequest wr{ req.query, m_symbolTable };
+                auto symbols = features::GetWorkspaceSymbols(wr);
+                if (symbols.has_value())
+                {
+                    return symbols.value();
+                }
+                return lsp::Array<lsp::SymbolInformation>{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_References>(
+            [this](lsp::requests::TextDocument_References::Params &&req) -> lsp::requests::TextDocument_References::Result
+            {
+                if (!m_config.features.enableReferences)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::ReferencesRequest rr{ uriStr, docIt->second, tree, req.position, req.context.includeDeclaration, m_symbolTable, m_scopeIndex };
+                auto refs = features::GetReferences(rr);
+                if (refs.has_value())
+                {
+                    return refs.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_PrepareRename>(
+            [this](lsp::requests::TextDocument_PrepareRename::Params &&req) -> lsp::requests::TextDocument_PrepareRename::Result
+            {
+                if (!m_config.features.enableRename)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                std::unordered_set<std::string> predefinedUris;
+                {
+                    std::lock_guard<std::mutex> lock(m_predefinedMutex);
+                    predefinedUris.insert(m_predefinedUris.begin(), m_predefinedUris.end());
+                }
+
+                features::PrepareRenameRequest pr{ uriStr, docIt->second, tree, req.position, m_symbolTable, m_scopeIndex, predefinedUris };
+                auto prep = features::PrepareRename(pr);
+                if (prep.has_value())
+                {
+                    return prep.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_Rename>(
+            [this](lsp::requests::TextDocument_Rename::Params &&req) -> lsp::requests::TextDocument_Rename::Result
+            {
+                if (!m_config.features.enableRename)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                std::unordered_set<std::string> predefinedUris;
+                {
+                    std::lock_guard<std::mutex> lock(m_predefinedMutex);
+                    predefinedUris.insert(m_predefinedUris.begin(), m_predefinedUris.end());
+                }
+
+                features::RenameRequest rr{ uriStr, docIt->second, tree, req.position, req.newName, m_symbolTable, m_scopeIndex, predefinedUris };
+                auto edit = features::Rename(rr);
+                if (edit.has_value())
+                {
+                    return edit.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_DocumentHighlight>(
+            [this](lsp::requests::TextDocument_DocumentHighlight::Params &&req) -> lsp::requests::TextDocument_DocumentHighlight::Result
+            {
+                if (!m_config.features.enableDocumentHighlight)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::DocumentHighlightRequest hr{ uriStr, docIt->second, tree, req.position, m_symbolTable, m_scopeIndex };
+                auto highlights = features::GetDocumentHighlights(hr);
+                if (highlights.has_value() && !highlights->empty())
+                {
+                    return highlights.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_FoldingRange>(
+            [this](lsp::requests::TextDocument_FoldingRange::Params &&req) -> lsp::requests::TextDocument_FoldingRange::Result
+            {
+                if (!m_config.features.enableFoldingRange)
+                {
+                    return lsp::Array<lsp::FoldingRange>{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Array<lsp::FoldingRange>{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::FoldingRangeRequest fr{ uriStr, docIt->second, tree };
+                auto ranges = features::GetFoldingRanges(fr);
+                if (ranges.has_value())
+                {
+                    return ranges.value();
+                }
+                return lsp::Array<lsp::FoldingRange>{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_InlayHint>(
+            [this](lsp::requests::TextDocument_InlayHint::Params &&req) -> lsp::requests::TextDocument_InlayHint::Result
+            {
+                if (!m_config.features.enableInlayHints)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::InlayHintRequest ihr{ uriStr, docIt->second, tree, req.range, m_symbolTable, m_scopeIndex };
+                auto hints = features::GetInlayHints(ihr);
+                if (hints.has_value())
+                {
+                    return hints.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_CodeAction>(
+            [this](lsp::requests::TextDocument_CodeAction::Params &&req) -> lsp::requests::TextDocument_CodeAction::Result
+            {
+                if (!m_config.features.enableCodeAction)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::CodeActionRequest car{ uriStr, docIt->second, tree, req.range, req.context, m_symbolTable, m_scopeIndex };
+                auto actions = features::GetCodeActions(car);
+                if (actions.has_value())
+                {
+                    lsp::Array<lsp::OneOf<lsp::Command, lsp::CodeAction>> resultList;
+                    resultList.reserve(actions->size());
+                    for (auto &action : *actions)
+                    {
+                        resultList.push_back(std::move(action));
+                    }
+                    return resultList;
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_Formatting>(
+            [this](lsp::requests::TextDocument_Formatting::Params &&req) -> lsp::requests::TextDocument_Formatting::Result
+            {
+                if (!m_config.features.enableFormatting)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::FormattingRequest fr{ uriStr, docIt->second, tree, req.options };
+                auto edits = features::FormatDocument(fr);
+                if (edits.has_value())
+                {
+                    return edits.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_RangeFormatting>(
+            [this](lsp::requests::TextDocument_RangeFormatting::Params &&req) -> lsp::requests::TextDocument_RangeFormatting::Result
+            {
+                if (!m_config.features.enableFormatting)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::RangeFormattingRequest rfr{ uriStr, docIt->second, tree, req.range, req.options };
+                auto edits = features::FormatRange(rfr);
+                if (edits.has_value())
+                {
+                    return edits.value();
                 }
                 return lsp::Null{};
             });

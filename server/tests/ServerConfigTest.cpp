@@ -48,6 +48,15 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config1.features.enableSemanticTokens == true);
             CHECK(config1.features.enableSignatureHelp == true);
             CHECK(config1.features.enablePredefinedLoader == true);
+            CHECK(config1.features.enableDocumentSymbols == true);
+            CHECK(config1.features.enableWorkspaceSymbols == true);
+            CHECK(config1.features.enableReferences == true);
+            CHECK(config1.features.enableRename == true);
+            CHECK(config1.features.enableDocumentHighlight == true);
+            CHECK(config1.features.enableFoldingRange == true);
+            CHECK(config1.features.enableInlayHints == true);
+            CHECK(config1.features.enableCodeAction == true);
+            CHECK(config1.features.enableFormatting == true);
             CHECK(config1.info.name == "AngelScript Language Server");
             CHECK(config1.info.version == "1.0.0");
             CHECK(config1.info.fileExtension == ".as");
@@ -70,6 +79,15 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config.features.enableSemanticTokens == true);
             CHECK(config.features.enableSignatureHelp == true);
             CHECK(config.features.enablePredefinedLoader == true);
+            CHECK(config.features.enableDocumentSymbols == true);
+            CHECK(config.features.enableWorkspaceSymbols == true);
+            CHECK(config.features.enableReferences == true);
+            CHECK(config.features.enableRename == true);
+            CHECK(config.features.enableDocumentHighlight == true);
+            CHECK(config.features.enableFoldingRange == true);
+            CHECK(config.features.enableInlayHints == true);
+            CHECK(config.features.enableCodeAction == true);
+            CHECK(config.features.enableFormatting == true);
             CHECK(config.info.showHelp == false);
             CHECK(config.info.showVersion == false);
             CHECK(config.info.locale == "en");
@@ -169,6 +187,141 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             ArgvHelper args4{"angel_lsp", "--enable-predefined-loader=1"};
             CHECK(FromArgs(args4.argc(), args4.data()).features.enablePredefinedLoader == true);
         }
+
+        SUBCASE("Document symbols flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-document-symbols=false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableDocumentSymbols == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-document-symbols=true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableDocumentSymbols == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-document-symbols=0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableDocumentSymbols == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-document-symbols=1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableDocumentSymbols == true);
+        }
+
+        SUBCASE("Workspace symbols flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-workspace-symbols=false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableWorkspaceSymbols == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-workspace-symbols=true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableWorkspaceSymbols == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-workspace-symbols=0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableWorkspaceSymbols == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-workspace-symbols=1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableWorkspaceSymbols == true);
+        }
+
+        SUBCASE("References flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-references=false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableReferences == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-references=true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableReferences == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-references=0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableReferences == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-references=1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableReferences == true);
+        }
+
+        SUBCASE("Rename flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-rename=false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableRename == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-rename=true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableRename == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-rename=0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableRename == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-rename=1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableRename == true);
+        }
+
+        SUBCASE("Document highlight flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-document-highlight=false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableDocumentHighlight == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-document-highlight=true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableDocumentHighlight == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-document-highlight=0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableDocumentHighlight == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-document-highlight=1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableDocumentHighlight == true);
+        }
+
+        SUBCASE("Folding range flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-folding-range=false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableFoldingRange == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-folding-range=true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableFoldingRange == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-folding-range=0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableFoldingRange == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-folding-range=1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableFoldingRange == true);
+        }
+
+        SUBCASE("Inlay hints flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-inlay-hints=false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableInlayHints == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-inlay-hints=true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableInlayHints == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-inlay-hints=0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableInlayHints == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-inlay-hints=1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableInlayHints == true);
+        }
+
+        SUBCASE("Code action flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-code-action=false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableCodeAction == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-code-action=true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableCodeAction == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-code-action=0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableCodeAction == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-code-action=1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableCodeAction == true);
+        }
+
+        SUBCASE("Formatting flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-formatting=false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableFormatting == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-formatting=true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableFormatting == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-formatting=0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableFormatting == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-formatting=1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableFormatting == true);
+        }
     }
 
     TEST_CASE("Boolean feature flags with space-separated syntax (--flag value)")
@@ -232,6 +385,141 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             ArgvHelper args2{"angel_lsp", "--enable-predefined-loader", "true"};
             CHECK(FromArgs(args2.argc(), args2.data()).features.enablePredefinedLoader == true);
         }
+
+        SUBCASE("Document symbols flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-document-symbols", "false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableDocumentSymbols == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-document-symbols", "true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableDocumentSymbols == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-document-symbols", "0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableDocumentSymbols == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-document-symbols", "1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableDocumentSymbols == true);
+        }
+
+        SUBCASE("Workspace symbols flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-workspace-symbols", "false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableWorkspaceSymbols == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-workspace-symbols", "true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableWorkspaceSymbols == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-workspace-symbols", "0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableWorkspaceSymbols == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-workspace-symbols", "1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableWorkspaceSymbols == true);
+        }
+
+        SUBCASE("References flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-references", "false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableReferences == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-references", "true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableReferences == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-references", "0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableReferences == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-references", "1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableReferences == true);
+        }
+
+        SUBCASE("Rename flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-rename", "false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableRename == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-rename", "true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableRename == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-rename", "0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableRename == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-rename", "1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableRename == true);
+        }
+
+        SUBCASE("Document highlight flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-document-highlight", "false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableDocumentHighlight == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-document-highlight", "true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableDocumentHighlight == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-document-highlight", "0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableDocumentHighlight == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-document-highlight", "1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableDocumentHighlight == true);
+        }
+
+        SUBCASE("Folding range flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-folding-range", "false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableFoldingRange == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-folding-range", "true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableFoldingRange == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-folding-range", "0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableFoldingRange == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-folding-range", "1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableFoldingRange == true);
+        }
+
+        SUBCASE("Inlay hints flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-inlay-hints", "false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableInlayHints == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-inlay-hints", "true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableInlayHints == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-inlay-hints", "0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableInlayHints == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-inlay-hints", "1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableInlayHints == true);
+        }
+
+        SUBCASE("Code action flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-code-action", "false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableCodeAction == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-code-action", "true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableCodeAction == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-code-action", "0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableCodeAction == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-code-action", "1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableCodeAction == true);
+        }
+
+        SUBCASE("Formatting flag")
+        {
+            ArgvHelper args1{"angel_lsp", "--enable-formatting", "false"};
+            CHECK(FromArgs(args1.argc(), args1.data()).features.enableFormatting == false);
+
+            ArgvHelper args2{"angel_lsp", "--enable-formatting", "true"};
+            CHECK(FromArgs(args2.argc(), args2.data()).features.enableFormatting == true);
+
+            ArgvHelper args3{"angel_lsp", "--enable-formatting", "0"};
+            CHECK(FromArgs(args3.argc(), args3.data()).features.enableFormatting == false);
+
+            ArgvHelper args4{"angel_lsp", "--enable-formatting", "1"};
+            CHECK(FromArgs(args4.argc(), args4.data()).features.enableFormatting == true);
+        }
     }
 
     TEST_CASE("Disable flags (--disable-*)")
@@ -244,7 +532,16 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
                              "--disable-completion",
                              "--disable-semantic-tokens",
                              "--disable-signature-help",
-                             "--disable-predefined-loader"};
+                             "--disable-predefined-loader",
+                             "--disable-document-symbols",
+                             "--disable-workspace-symbols",
+                             "--disable-references",
+                             "--disable-rename",
+                             "--disable-document-highlight",
+                             "--disable-folding-range",
+                             "--disable-inlay-hints",
+                             "--disable-code-action",
+                             "--disable-formatting"};
 
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.features.enableHover == false);
@@ -253,21 +550,52 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config.features.enableSemanticTokens == false);
             CHECK(config.features.enableSignatureHelp == false);
             CHECK(config.features.enablePredefinedLoader == false);
+            CHECK(config.features.enableDocumentSymbols == false);
+            CHECK(config.features.enableWorkspaceSymbols == false);
+            CHECK(config.features.enableReferences == false);
+            CHECK(config.features.enableRename == false);
+            CHECK(config.features.enableDocumentHighlight == false);
+            CHECK(config.features.enableFoldingRange == false);
+            CHECK(config.features.enableInlayHints == false);
+            CHECK(config.features.enableCodeAction == false);
+            CHECK(config.features.enableFormatting == false);
         }
 
         SUBCASE("Disable flags with inline values")
         {
-            ArgvHelper args1{"angel_lsp", "--disable-hover=true"};
-            CHECK(FromArgs(args1.argc(), args1.data()).features.enableHover == false);
+            ArgvHelper args1{"angel_lsp", "--disable-hover=true", "--disable-document-symbols=true", "--disable-workspace-symbols=true", "--disable-inlay-hints=true", "--disable-formatting=true"};
+            ServerConfig config1 = FromArgs(args1.argc(), args1.data());
+            CHECK(config1.features.enableHover == false);
+            CHECK(config1.features.enableDocumentSymbols == false);
+            CHECK(config1.features.enableWorkspaceSymbols == false);
+            CHECK(config1.features.enableInlayHints == false);
+            CHECK(config1.features.enableFormatting == false);
 
-            ArgvHelper args2{"angel_lsp", "--disable-hover=false"};
-            CHECK(FromArgs(args2.argc(), args2.data()).features.enableHover == true);
+            ArgvHelper args2{"angel_lsp", "--disable-hover=false", "--disable-document-symbols=false", "--disable-workspace-symbols=false", "--disable-inlay-hints=false", "--disable-formatting=false"};
+            ServerConfig config2 = FromArgs(args2.argc(), args2.data());
+            CHECK(config2.features.enableHover == true);
+            CHECK(config2.features.enableDocumentSymbols == true);
+            CHECK(config2.features.enableWorkspaceSymbols == true);
+            CHECK(config2.features.enableInlayHints == true);
+            CHECK(config2.features.enableFormatting == true);
 
-            ArgvHelper args3{"angel_lsp", "--disable-completion=1"};
-            CHECK(FromArgs(args3.argc(), args3.data()).features.enableCompletion == false);
+            ArgvHelper args3{"angel_lsp", "--disable-completion=1", "--disable-references=1", "--disable-rename=1", "--disable-document-highlight=1", "--disable-folding-range=1", "--disable-code-action=1"};
+            ServerConfig config3 = FromArgs(args3.argc(), args3.data());
+            CHECK(config3.features.enableCompletion == false);
+            CHECK(config3.features.enableReferences == false);
+            CHECK(config3.features.enableRename == false);
+            CHECK(config3.features.enableDocumentHighlight == false);
+            CHECK(config3.features.enableFoldingRange == false);
+            CHECK(config3.features.enableCodeAction == false);
 
-            ArgvHelper args4{"angel_lsp", "--disable-completion=0"};
-            CHECK(FromArgs(args4.argc(), args4.data()).features.enableCompletion == true);
+            ArgvHelper args4{"angel_lsp", "--disable-completion=0", "--disable-references=0", "--disable-rename=0", "--disable-document-highlight=0", "--disable-folding-range=0", "--disable-code-action=0"};
+            ServerConfig config4 = FromArgs(args4.argc(), args4.data());
+            CHECK(config4.features.enableCompletion == true);
+            CHECK(config4.features.enableReferences == true);
+            CHECK(config4.features.enableRename == true);
+            CHECK(config4.features.enableDocumentHighlight == true);
+            CHECK(config4.features.enableFoldingRange == true);
+            CHECK(config4.features.enableCodeAction == true);
         }
     }
 
@@ -277,11 +605,38 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
                          "--disable-hover",
                          "--enable-hover",
                          "--disable-completion",
-                         "--enable-completion"};
+                         "--enable-completion",
+                         "--disable-document-symbols",
+                         "--enable-document-symbols",
+                         "--disable-workspace-symbols",
+                         "--enable-workspace-symbols",
+                         "--disable-references",
+                         "--enable-references",
+                         "--disable-rename",
+                         "--enable-rename",
+                         "--disable-document-highlight",
+                         "--enable-document-highlight",
+                         "--disable-folding-range",
+                         "--enable-folding-range",
+                         "--disable-inlay-hints",
+                         "--enable-inlay-hints",
+                         "--disable-code-action",
+                         "--enable-code-action",
+                         "--disable-formatting",
+                         "--enable-formatting"};
 
         ServerConfig config = FromArgs(args.argc(), args.data());
         CHECK(config.features.enableHover == true);
         CHECK(config.features.enableCompletion == true);
+        CHECK(config.features.enableDocumentSymbols == true);
+        CHECK(config.features.enableWorkspaceSymbols == true);
+        CHECK(config.features.enableReferences == true);
+        CHECK(config.features.enableRename == true);
+        CHECK(config.features.enableDocumentHighlight == true);
+        CHECK(config.features.enableFoldingRange == true);
+        CHECK(config.features.enableInlayHints == true);
+        CHECK(config.features.enableCodeAction == true);
+        CHECK(config.features.enableFormatting == true);
     }
 
     TEST_CASE("String options (--locale, --file-ext, --predefined-ext)")
@@ -347,19 +702,63 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
     TEST_CASE("Case-insensitivity and alternative boolean spellings")
     {
-        ArgvHelper args1{"angel_lsp", "--enable-hover=FALSE", "--enable-definition=False", "--enable-completion=OFF", "--enable-semantic-tokens=no"};
+        ArgvHelper args1{"angel_lsp",
+                         "--enable-hover=FALSE",
+                         "--enable-definition=False",
+                         "--enable-completion=OFF",
+                         "--enable-semantic-tokens=no",
+                         "--enable-document-symbols=FALSE",
+                         "--enable-workspace-symbols=Off",
+                         "--enable-references=no",
+                         "--enable-rename=0",
+                         "--enable-document-highlight=FALSE",
+                         "--enable-folding-range=False",
+                         "--enable-inlay-hints=OFF",
+                         "--enable-code-action=no",
+                         "--enable-formatting=0"};
         ServerConfig config1 = FromArgs(args1.argc(), args1.data());
         CHECK(config1.features.enableHover == false);
         CHECK(config1.features.enableDefinition == false);
         CHECK(config1.features.enableCompletion == false);
         CHECK(config1.features.enableSemanticTokens == false);
+        CHECK(config1.features.enableDocumentSymbols == false);
+        CHECK(config1.features.enableWorkspaceSymbols == false);
+        CHECK(config1.features.enableReferences == false);
+        CHECK(config1.features.enableRename == false);
+        CHECK(config1.features.enableDocumentHighlight == false);
+        CHECK(config1.features.enableFoldingRange == false);
+        CHECK(config1.features.enableInlayHints == false);
+        CHECK(config1.features.enableCodeAction == false);
+        CHECK(config1.features.enableFormatting == false);
 
-        ArgvHelper args2{"angel_lsp", "--enable-hover=TRUE", "--enable-definition=True", "--enable-completion=ON", "--enable-semantic-tokens=yes"};
+        ArgvHelper args2{"angel_lsp",
+                         "--enable-hover=TRUE",
+                         "--enable-definition=True",
+                         "--enable-completion=ON",
+                         "--enable-semantic-tokens=yes",
+                         "--enable-document-symbols=TRUE",
+                         "--enable-workspace-symbols=On",
+                         "--enable-references=yes",
+                         "--enable-rename=1",
+                         "--enable-document-highlight=TRUE",
+                         "--enable-folding-range=True",
+                         "--enable-inlay-hints=ON",
+                         "--enable-code-action=yes",
+                         "--enable-formatting=1"};
         ServerConfig config2 = FromArgs(args2.argc(), args2.data());
         CHECK(config2.features.enableHover == true);
         CHECK(config2.features.enableDefinition == true);
         CHECK(config2.features.enableCompletion == true);
         CHECK(config2.features.enableSemanticTokens == true);
+        CHECK(config2.features.enableDocumentSymbols == true);
+        CHECK(config2.features.enableWorkspaceSymbols == true);
+        CHECK(config2.features.enableReferences == true);
+        CHECK(config2.features.enableRename == true);
+        CHECK(config2.features.enableDocumentHighlight == true);
+        CHECK(config2.features.enableFoldingRange == true);
+        CHECK(config2.features.enableInlayHints == true);
+        CHECK(config2.features.enableCodeAction == true);
+        CHECK(config2.features.enableFormatting == true);
     }
 
     TEST_CASE("Complex combinations of multiple flags")
@@ -370,6 +769,15 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
                          "--enable-completion", "false",
                          "--enable-semantic-tokens=1",
                          "--enable-signature-help", "0",
+                         "--disable-document-symbols",
+                         "--enable-workspace-symbols=false",
+                         "--enable-references=true",
+                         "--disable-rename=false",
+                         "--enable-document-highlight=false",
+                         "--disable-folding-range",
+                         "--enable-inlay-hints=1",
+                         "--disable-code-action",
+                         "--enable-formatting=true",
                          "--locale=es-ES",
                          "--file-ext", ".angelscript",
                          "--predefined-ext=.custom.predef"};
@@ -381,6 +789,15 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         CHECK(config.features.enableSemanticTokens == true);
         CHECK(config.features.enableSignatureHelp == false);
         CHECK(config.features.enablePredefinedLoader == true);
+        CHECK(config.features.enableDocumentSymbols == false);
+        CHECK(config.features.enableWorkspaceSymbols == false);
+        CHECK(config.features.enableReferences == true);
+        CHECK(config.features.enableRename == true);
+        CHECK(config.features.enableDocumentHighlight == false);
+        CHECK(config.features.enableFoldingRange == false);
+        CHECK(config.features.enableInlayHints == true);
+        CHECK(config.features.enableCodeAction == false);
+        CHECK(config.features.enableFormatting == true);
         CHECK(config.info.locale == "es-ES");
         CHECK(config.info.fileExtension == ".angelscript");
         CHECK(config.info.predefinedFileExtension == ".custom.predef");
@@ -462,20 +879,44 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             ArgvHelper args{"angel_lsp",
                              "--disable-semantictokens",
                              "--disable-signaturehelp",
-                             "--disable-predefinedloader"};
+                             "--disable-predefinedloader",
+                             "--disable-documentsymbols",
+                             "--disable-workspacesymbols",
+                             "--disable-documenthighlight",
+                             "--disable-foldingrange",
+                             "--disable-inlayhints",
+                             "--disable-codeaction"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.features.enableSemanticTokens == false);
             CHECK(config.features.enableSignatureHelp == false);
             CHECK(config.features.enablePredefinedLoader == false);
+            CHECK(config.features.enableDocumentSymbols == false);
+            CHECK(config.features.enableWorkspaceSymbols == false);
+            CHECK(config.features.enableDocumentHighlight == false);
+            CHECK(config.features.enableFoldingRange == false);
+            CHECK(config.features.enableInlayHints == false);
+            CHECK(config.features.enableCodeAction == false);
 
             ArgvHelper args2{"angel_lsp",
                               "--enable-semantictokens=1",
                               "--enable-signaturehelp=1",
-                              "--enable-predefinedloader=1"};
+                              "--enable-predefinedloader=1",
+                              "--enable-documentsymbols=1",
+                              "--enable-workspacesymbols=1",
+                              "--enable-documenthighlight=1",
+                              "--enable-foldingrange=1",
+                              "--enable-inlayhints=1",
+                              "--enable-codeaction=1"};
             ServerConfig config2 = FromArgs(args2.argc(), args2.data());
             CHECK(config2.features.enableSemanticTokens == true);
             CHECK(config2.features.enableSignatureHelp == true);
             CHECK(config2.features.enablePredefinedLoader == true);
+            CHECK(config2.features.enableDocumentSymbols == true);
+            CHECK(config2.features.enableWorkspaceSymbols == true);
+            CHECK(config2.features.enableDocumentHighlight == true);
+            CHECK(config2.features.enableFoldingRange == true);
+            CHECK(config2.features.enableInlayHints == true);
+            CHECK(config2.features.enableCodeAction == true);
         }
 
         SUBCASE("Flag override precedence (last argument wins)")
@@ -495,7 +936,47 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
                               "--disable-definition"};
             ServerConfig config2 = FromArgs(args2.argc(), args2.data());
             CHECK(config2.features.enableDefinition == false);
+
+            ArgvHelper args3{"angel_lsp",
+                              "--enable-references=false",
+                              "--enable-references=true",
+                              "--disable-references=true"};
+            ServerConfig config3 = FromArgs(args3.argc(), args3.data());
+            CHECK(config3.features.enableReferences == false);
+
+            ArgvHelper args4{"angel_lsp",
+                              "--disable-rename",
+                              "--enable-rename=true"};
+            ServerConfig config4 = FromArgs(args4.argc(), args4.data());
+            CHECK(config4.features.enableRename == true);
+
+            ArgvHelper args5{"angel_lsp",
+                              "--disable-formatting",
+                              "--enable-formatting=true",
+                              "--disable-formatting"};
+            ServerConfig config5 = FromArgs(args5.argc(), args5.data());
+            CHECK(config5.features.enableFormatting == false);
+
+            ArgvHelper args6{"angel_lsp",
+                              "--disable-inlay-hints",
+                              "--enable-inlay-hints"};
+            ServerConfig config6 = FromArgs(args6.argc(), args6.data());
+            CHECK(config6.features.enableInlayHints == true);
+        }
+
+        SUBCASE("Search directories arguments")
+        {
+            ArgvHelper args{"angel_lsp",
+                            "--search-dir=E:/Include/Path1",
+                            "--search-directory=E:/Include/Path2",
+                            "--search-path=E:/Include/Path3"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            REQUIRE(config.searchDirectories.size() == 3);
+            CHECK(config.searchDirectories[0] == "E:/Include/Path1");
+            CHECK(config.searchDirectories[1] == "E:/Include/Path2");
+            CHECK(config.searchDirectories[2] == "E:/Include/Path3");
         }
     }
 }
+
 

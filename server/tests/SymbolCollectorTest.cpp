@@ -136,7 +136,32 @@ TEST_CASE("SymbolCollector - Global Function Call Inside A Function Body Is Not 
     CHECK(doStuffSymbols[0].type == SymbolType::Function);
 }
 
+TEST_CASE("SymbolCollector - FullRange And SelectionRange Captured Accurately")
+{
+    std::string sourceCode = "class MyClass\n{\n    void DoWork(int a) {}\n}\n";
+    SymbolTable table;
+    CollectFromSource(sourceCode, table);
+
+    auto classSyms = table.FindSymbols("MyClass");
+    REQUIRE(classSyms.size() == 1);
+    // Full class extends from line 0 to line 3
+    CHECK(classSyms[0].fullRange.startLine == 0);
+    CHECK(classSyms[0].fullRange.endLine == 3);
+    // Selection range is just the identifier "MyClass" on line 0
+    CHECK(classSyms[0].selectionRange.startLine == 0);
+    CHECK(classSyms[0].selectionRange.startCharacter == 6);
+    CHECK(classSyms[0].selectionRange.endCharacter == 13);
+
+    auto methodSyms = table.FindSymbols("MyClass::DoWork");
+    REQUIRE(methodSyms.size() == 1);
+    CHECK(methodSyms[0].fullRange.startLine == 2);
+    CHECK(methodSyms[0].selectionRange.startLine == 2);
+    CHECK(methodSyms[0].selectionRange.startCharacter == 9);
+    CHECK(methodSyms[0].selectionRange.endCharacter == 15);
+}
+
 // =====================================================================================
+
 // hasNullInitializer detection (IsNullInitializer must look only at the initializer's
 // own top-level node, not recurse into call arguments / operands)
 // =====================================================================================

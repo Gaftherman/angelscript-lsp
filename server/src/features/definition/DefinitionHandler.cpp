@@ -50,104 +50,6 @@ namespace angel_lsp::features
             return current;
         }
 
-        std::string CleanBaseType(std::string typeName)
-        {
-            while (!typeName.empty() && (typeName.back() == '@' || typeName.back() == '&' || typeName.back() == ' '))
-            {
-                typeName.pop_back();
-            }
-            if (typeName.starts_with("const "))
-            {
-                typeName = typeName.substr(6);
-            }
-            while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == ']'))
-            {
-                if (typeName.back() == ']')
-                {
-                    size_t bracket = typeName.rfind('[');
-                    if (bracket != std::string::npos)
-                    {
-                        typeName = typeName.substr(0, bracket);
-                    }
-                    else
-                    {
-                        typeName.pop_back();
-                    }
-                }
-                else
-                {
-                    typeName.pop_back();
-                }
-            }
-            // If template like array<Player@>, extract Player or array
-            if (typeName.starts_with("array<") && typeName.ends_with(">"))
-            {
-                std::string inner = typeName.substr(6, typeName.size() - 7);
-                return CleanBaseType(inner);
-            }
-            return typeName;
-        }
-
-        /**
-         * @brief Recursively collects the class and interface inheritance hierarchy for a type.
-         * @param symbolTable The symbol table to look up class and interface definitions.
-         * @param initialTypeName The starting type name.
-         * @return Vector of type names in the hierarchy including initialTypeName and its transitive bases.
-         */
-        std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable &symbolTable, const std::string &initialTypeName)
-        {
-            std::vector<std::string> hierarchy;
-            std::unordered_set<std::string> visited;
-            std::vector<std::string> queue;
-
-            std::string rootType = CleanBaseType(initialTypeName);
-            if (rootType.empty())
-            {
-                return hierarchy;
-            }
-
-            visited.insert(rootType);
-            queue.push_back(rootType);
-
-            size_t head = 0;
-            while (head < queue.size())
-            {
-                std::string curType = queue[head++];
-                hierarchy.push_back(curType);
-
-                auto symbols = symbolTable.FindSymbols(curType);
-                for (const auto &sym : symbols)
-                {
-                    if (sym.type == analysis::SymbolType::Class)
-                    {
-                        const auto &cls = sym.GetClass();
-                        for (const auto &base : cls.bases)
-                        {
-                            std::string cleanBase = CleanBaseType(base);
-                            if (!cleanBase.empty() && visited.insert(cleanBase).second)
-                            {
-                                queue.push_back(cleanBase);
-                            }
-                        }
-                    }
-                    else if (sym.type == analysis::SymbolType::Interface)
-                    {
-                        const auto &iface = sym.GetInterface();
-                        for (const auto &base : iface.inheritedInterfaces)
-                        {
-                            std::string cleanBase = CleanBaseType(base);
-                            if (!cleanBase.empty() && visited.insert(cleanBase).second)
-                            {
-                                queue.push_back(cleanBase);
-                            }
-                        }
-                    }
-                }
-            }
-
-            return hierarchy;
-        }
-
         std::string GetNodeTextAt(const DefinitionRequest &request, TSNode &outNode)
         {
             if (!request.tree || request.sourceCode.empty())
@@ -273,7 +175,7 @@ namespace angel_lsp::features
                     const analysis::LocalDefinition *objDef = analysis::ResolveInScope(scope, objText);
                     if (objDef && !objDef->typeName.empty())
                     {
-                        receiverTypeName = CleanBaseType(objDef->typeName);
+                        receiverTypeName = analysis::CleanBaseType(objDef->typeName);
                     }
                 }
             }
@@ -288,7 +190,7 @@ namespace angel_lsp::features
                         const auto &var = sym.GetVariable();
                         if (!var.typeName.empty())
                         {
-                            receiverTypeName = CleanBaseType(var.typeName);
+                            receiverTypeName = analysis::CleanBaseType(var.typeName);
                             break;
                         }
                     }
@@ -298,7 +200,7 @@ namespace angel_lsp::features
             if (!receiverTypeName.empty())
             {
                 std::vector<analysis::Symbol> memberSymbols;
-                auto hierarchy = GetInheritedTypeHierarchy(request.symbolTable, receiverTypeName);
+                auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, request.symbolTable);
                 for (const auto &typeName : hierarchy)
                 {
                     std::string qualifiedMember = typeName + "::" + nodeText;
@@ -344,14 +246,15 @@ namespace angel_lsp::features
             }
         }
 
-        // 2. Local Scope Definition
+        // 2. Local Scope Definition (Parameters and Variables in Function Scope)
         if (rootScope)
         {
             const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
             if (scope)
             {
                 const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, nodeText);
-                if (def)
+                if (def && (def->kind == analysis::LocalDefinitionKind::Parameter ||
+                            def->kind == analysis::LocalDefinitionKind::Variable))
                 {
                     locations.push_back(lsp::Location{
                         lsp::DocumentUri::parse(request.uri),
@@ -375,8 +278,8 @@ namespace angel_lsp::features
             }
         }
 
-        // 3. Global / Scoped Symbol Lookup
-        auto symbols = request.symbolTable.FindSymbols(nodeText);
+        // 4. Container / Scoped / Global Symbol Lookup
+        auto symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
         if (symbols.empty())
         {
             if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "scoped_identifier")
@@ -386,32 +289,30 @@ namespace angel_lsp::features
                 if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size())
                 {
                     std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
-                    symbols = request.symbolTable.FindSymbols(scopedText);
+                    symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
                 }
             }
         }
 
-        // 4. Enum member search if symbol not directly found
-        if (symbols.empty())
+        // Fallback to local scope definition (e.g. Field or non-function scope definition) if not in SymbolTable
+        if (symbols.empty() && rootScope)
         {
-            request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symList)
+            const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+            if (scope)
             {
-                for (const auto &sym : symList)
+                const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, nodeText);
+                if (def)
                 {
-                    if (sym.type == analysis::SymbolType::Enum)
-                    {
-                        const auto &eSig = sym.GetEnum();
-                        for (const auto &mem : eSig.members)
-                        {
-                            if (mem.name == nodeText)
-                            {
-                                symbols.push_back(sym);
-                                break;
-                            }
+                    locations.push_back(lsp::Location{
+                        lsp::DocumentUri::parse(request.uri),
+                        lsp::Range{
+                            lsp::Position{ def->startLine, def->startCharacter },
+                            lsp::Position{ def->endLine, def->endCharacter }
                         }
-                    }
+                    });
+                    return locations;
                 }
-            });
+            }
         }
 
         for (const auto &sym : symbols)
@@ -457,7 +358,7 @@ namespace angel_lsp::features
                 const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, nodeText);
                 if (def && !def->typeName.empty())
                 {
-                    typeNameToFind = CleanBaseType(def->typeName);
+                    typeNameToFind = analysis::CleanBaseType(def->typeName);
                 }
             }
         }
@@ -473,7 +374,7 @@ namespace angel_lsp::features
                     const auto &var = sym.GetVariable();
                     if (!var.typeName.empty())
                     {
-                        typeNameToFind = CleanBaseType(var.typeName);
+                        typeNameToFind = analysis::CleanBaseType(var.typeName);
                         break;
                     }
                 }
@@ -482,7 +383,7 @@ namespace angel_lsp::features
                     const auto &fn = sym.GetFunction();
                     if (!fn.returnType.empty())
                     {
-                        typeNameToFind = CleanBaseType(fn.returnType);
+                        typeNameToFind = analysis::CleanBaseType(fn.returnType);
                         break;
                     }
                 }
@@ -501,7 +402,7 @@ namespace angel_lsp::features
         // 3. Fallback: maybe nodeText itself is a type name (e.g. Player in Player@ p)
         if (typeNameToFind.empty())
         {
-            typeNameToFind = CleanBaseType(nodeText);
+            typeNameToFind = analysis::CleanBaseType(nodeText);
         }
 
         if (typeNameToFind.empty() || analysis::IsPrimitiveTypeName(typeNameToFind))

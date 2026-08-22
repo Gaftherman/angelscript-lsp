@@ -154,3 +154,65 @@ TEST_CASE("HoverHandler - Invalid Position Returns Nullopt")
     auto hover = env.HoverAt(0, 14); // inside whitespace
     CHECK(!hover.has_value());
 }
+
+TEST_CASE("HoverHandler - Class Method Declaration and Sibling Method Call")
+{
+    std::string code =
+        "class Entity {\n"
+        "    /// Takes damage.\n"
+        "    void TakeDamage(int dmg) {}\n"
+        "}\n"
+        "class Player : Entity {\n"
+        "    /// Attacks enemy.\n"
+        "    void Attack() {\n"
+        "        TakeDamage(5);\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Hover on 'Attack' declaration at line 6
+    auto hoverDecl = env.HoverAt(6, 9);
+    REQUIRE(hoverDecl.has_value());
+    auto contentDecl = std::get<lsp::MarkupContent>(hoverDecl->contents);
+    CHECK(contentDecl.value.find("void Player::Attack()") != std::string::npos);
+    CHECK(contentDecl.value.find("Attacks enemy.") != std::string::npos);
+
+    // Hover on unqualified inherited 'TakeDamage' call at line 7
+    auto hoverCall = env.HoverAt(7, 10);
+    REQUIRE(hoverCall.has_value());
+    auto contentCall = std::get<lsp::MarkupContent>(hoverCall->contents);
+    CHECK(contentCall.value.find("void Entity::TakeDamage(int dmg)") != std::string::npos);
+    CHECK(contentCall.value.find("Takes damage.") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Namespace Function Hover")
+{
+    std::string code =
+        "namespace Game {\n"
+        "    /// Spawns entity at location.\n"
+        "    void Spawn(int id) {}\n"
+        "    void Init() {\n"
+        "        Spawn(1);\n"
+        "    }\n"
+        "}\n"
+        "void main() {\n"
+        "    Game::Spawn(2);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Hover on 'Spawn' inside namespace at line 4
+    auto hoverInside = env.HoverAt(4, 9);
+    REQUIRE(hoverInside.has_value());
+    auto contentInside = std::get<lsp::MarkupContent>(hoverInside->contents);
+    CHECK(contentInside.value.find("void Game::Spawn(int id)") != std::string::npos);
+    CHECK(contentInside.value.find("Spawns entity at location.") != std::string::npos);
+
+    // Hover on 'Game::Spawn' from outside at line 8
+    auto hoverOutside = env.HoverAt(8, 12);
+    REQUIRE(hoverOutside.has_value());
+    auto contentOutside = std::get<lsp::MarkupContent>(hoverOutside->contents);
+    CHECK(contentOutside.value.find("void Game::Spawn(int id)") != std::string::npos);
+    CHECK(contentOutside.value.find("Spawns entity at location.") != std::string::npos);
+}

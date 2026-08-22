@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <vector>
 
 namespace angel_lsp::config
 {
@@ -17,6 +18,15 @@ namespace angel_lsp::config
         bool enableSemanticTokens = true;
         bool enableSignatureHelp = true;
         bool enablePredefinedLoader = true;
+        bool enableDocumentSymbols = true;
+        bool enableWorkspaceSymbols = true;
+        bool enableReferences = true;
+        bool enableRename = true;
+        bool enableDocumentHighlight = true;
+        bool enableFoldingRange = true;
+        bool enableInlayHints = true;
+        bool enableCodeAction = true;
+        bool enableFormatting = true;
     };
 
     /**
@@ -51,6 +61,7 @@ namespace angel_lsp::config
         FeatureFlags features;
         Info info;
         TypeConfig types;
+        std::vector<std::string> searchDirectories;
     };
 
     /**

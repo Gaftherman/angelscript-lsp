@@ -1137,6 +1137,8 @@ namespace angel_lsp::analysis
     {
         TSPoint startPt = ts_node_start_point(node);
         TSPoint endPt = ts_node_end_point(node);
+        TSPoint nameStartPt = ts_node_is_null(nameNode) ? startPt : ts_node_start_point(nameNode);
+        TSPoint nameEndPt = ts_node_is_null(nameNode) ? endPt : ts_node_end_point(nameNode);
 
         Symbol sym;
         sym.type = type;
@@ -1148,6 +1150,9 @@ namespace angel_lsp::analysis
         sym.startCharacter = startPt.column;
         sym.endLine = endPt.row;
         sym.endCharacter = endPt.column;
+
+        sym.fullRange = { startPt.row, startPt.column, endPt.row, endPt.column };
+        sym.selectionRange = { nameStartPt.row, nameStartPt.column, nameEndPt.row, nameEndPt.column };
 
         return sym;
     }
