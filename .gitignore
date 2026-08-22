@@ -30,4 +30,6 @@ client/.vscode/tasks.log
 client/.vscode-test/
 client/package-lock.json
 client/bin/
-
+angelscript/
+.agents/*
+!.agents/AGENTS.md

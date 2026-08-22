@@ -352,6 +352,17 @@ namespace angel_lsp::analysis
                                                 typeStr, nameStr, range));
                     break;
                 }
+                case SymbolType::CallReference:
+                {
+                    const auto &sig = sym.GetCallReference();
+                    std::string objStr = sig.objectExpression.empty()
+                                             ? ""
+                                             : fmt::format(" | Object: \"{}\"", sig.objectExpression);
+                    logger->LogInfo(fmt::format("  \u2022 [{}] Callee: \"{}\"{}  | Method: {} | {}",
+                                                typeStr, sig.calleeName, objStr,
+                                                sig.isMethodCall ? "true" : "false", range));
+                    break;
+                }
                 default:
                 {
                     logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\" | {}",

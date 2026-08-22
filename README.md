@@ -88,9 +88,9 @@ npm run compile
 
 ---
 
-## Running Modular Unit & Integration Tests
+## Running Unit & Integration Tests
 
-The test suite uses Doctest and is split into modular executables compiled against `angel_lsp_core` and `doctest_main`.
+The test suite uses [doctest](https://github.com/doctest/doctest) and is compiled into a single unified test executable target, `angel_lsp_tests`, registered with CMake and CTest.
 
 To run all unit and integration tests via CTest:
 
@@ -99,37 +99,67 @@ cd server/build
 ctest -C Debug --output-on-failure
 ```
 
-### Test Executables Summary
+Or run the test executable directly:
 
-| Executable Target | Description |
+```powershell
+# Windows
+server/build/Debug/angel_lsp_tests.exe
+
+# Linux / macOS
+server/build/angel_lsp_tests
+```
+
+### Test Suites Summary
+
+| Test Suite File | Coverage Area |
 | :--- | :--- |
-| `test_core` | Document tree creation, Tree-Sitter AST parsing, and script function/class definitions. |
-| `test_analysis` | Symbol collection, symbol resolution, `as.predefined` loading, and validation oracle. |
-| `RealIntegrationTests` | Integration tests verifying real `as.predefined` parsing and dual-pass syntax & semantic diagnostic catching. |
-| `test_feature_hover` | Hover rendering, Markdown formatting, template rendering, and edge cases. |
-| `test_feature_definition` | Goto definition and Goto type definition resolution. |
-| `test_feature_semantic_tokens` | Full semantic token extraction and legend mapping. |
-| `test_feature_completion` | Context-aware auto-completion items and scope filtering. |
-| `test_feature_signature_help` | Function signature help and parameter index calculation. |
-| `test_i18n` | Diagnostic localization and string translations for `en-US` and `es-ES`. |
+| `UtilsTest.cpp` | Layer 1 primitives validation (`IsPrimitiveType`), predefined file matching (`IsPredefinedFile`), `Document` struct integrity. |
+| `SymbolCollectorTest.cpp` | Layer 2 AST symbol extraction (functions, classes, interfaces, enums, mixins, typedefs, funcdefs, variables, and syntax error diagnostics). |
+| `LocalScopeCollectorTest.cpp` | Layer 2 lexical block scopes, nested compound statements, function/method parameters, and local variables. |
+| `SemanticAnalyzerTest.cpp` | Layer 2 semantic diagnostics, undeclared identifier checks, type resolution, and `as.predefined` stub integration. |
+| `HoverTest.cpp` | Layer 3 Hover tooltips, markdown rendering, Doxygen documentation extraction, and type signatures. |
+| `DefinitionTest.cpp` | Layer 3 Go to Definition and Go to Type Definition across global, class member, and local symbols. |
+| `CompletionTest.cpp` | Layer 3 Context-aware auto-completion (lexical variables, class members via `.` / `->`, enum members via `::`, keywords). |
+| `SemanticTokensTest.cpp` | Layer 3 Full semantic tokens generation with delta-encoded integer streams and standard LSP token legends. |
+| `SignatureHelpTest.cpp` | Layer 3 Function signature preview, parameter information, and active parameter indexing during call expressions. |
+| `ServerConfigTest.cpp` | Layer 1/4 CLI argument parsing, boolean feature flag toggles, option syntax (`--flag=value` / `--flag value`), and robustness. |
 
 ---
 
 ## Command Line Configuration Flags
 
-The `angel_lsp` executable accepts command-line flags to enable or disable individual LSP features at runtime:
+The `angel_lsp` executable accepts command-line arguments to enable or disable individual LSP features and configure runtime options. Both `--flag=value` and `--flag value` syntaxes are supported.
 
 | Flag | Description | Default |
 | :--- | :--- | :--- |
-| `--enable-hover=<bool>` | Enable or disable hover tooltips. | `true` |
-| `--enable-definition=<bool>` | Enable or disable Goto Definition / Type Definition. | `true` |
-| `--enable-completion=<bool>` | Enable or disable auto-completion. | `true` |
-| `--enable-semantic-tokens=<bool>` | Enable or disable semantic token highlighting. | `true` |
-| `--enable-signature-help=<bool>` | Enable or disable signature help. | `true` |
-| `--locale=<lang>` | Set diagnostic language (`en-US` or `es-ES`). | `en-US` |
+| `--enable-hover[=true\|false]` | Enable or disable hover tooltips. | `true` |
+| `--disable-hover` | Explicitly disable hover tooltips. | - |
+| `--enable-definition[=true\|false]` | Enable or disable Go to Definition / Type Definition. | `true` |
+| `--disable-definition` | Explicitly disable Go to Definition. | - |
+| `--enable-completion[=true\|false]` | Enable or disable context-aware auto-completion. | `true` |
+| `--disable-completion` | Explicitly disable auto-completion. | - |
+| `--enable-semantic-tokens[=true\|false]` | Enable or disable semantic syntax highlighting. | `true` |
+| `--disable-semantic-tokens` | Explicitly disable semantic tokens. | - |
+| `--enable-signature-help[=true\|false]` | Enable or disable signature help and active parameter index. | `true` |
+| `--disable-signature-help` | Explicitly disable signature help. | - |
+| `--enable-predefined-loader[=true\|false]` | Enable or disable background predefined symbols loader. | `true` |
+| `--disable-predefined-loader` | Explicitly disable predefined symbols loader. | - |
+| `--locale=<string>` | Set diagnostic language/locale (`en` or `es-ES`). | `en` |
+| `--file-ext=<string>` | Set AngelScript script file extension. | `.as` |
+| `--predefined-ext=<string>` | Set predefined host API symbols file extension. | `.as.predefined` |
+| `-h`, `--help` | Show command-line help message and exit. | - |
+| `-v`, `--version` | Show server version and exit. | - |
 
-Example usage:
+### Example Usage
 
 ```bash
+# Start server with completion and semantic tokens, Spanish localization
 angel_lsp --enable-completion=true --enable-semantic-tokens=true --locale=es-ES
+
+# Disable predefined loader and signature help using space-separated flags
+angel_lsp --disable-predefined-loader --enable-signature-help false
+
+# Show CLI options
+angel_lsp --help
 ```
+

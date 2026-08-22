@@ -58,4 +58,14 @@ namespace angel_lsp::utils
             return false;
         return fileUri.ends_with(extension) || fileUri.ends_with(fmt::format("/{}", extension));
     }
+
+    bool IsPrimitiveType(const std::string &typeName)
+    {
+        static const std::unordered_set<std::string> primitiveTypes = {
+            "int", "int8", "int16", "int32", "int64",
+            "uint", "uint8", "uint16", "uint32", "uint64",
+            "float", "double", "bool", "void"
+        };
+        return primitiveTypes.find(typeName) != primitiveTypes.end();
+    }
 }

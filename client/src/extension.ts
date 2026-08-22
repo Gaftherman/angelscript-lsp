@@ -8,7 +8,7 @@ let client: LanguageClient;
 let lspOutputChannel: OutputChannel;
 
 /**
- * @brief Resolves the absolute path of the engine binary based on runtime platform and extension mode.
+ * @brief Resolves the absolute path of the engine binary based on runtime platform, architecture, and fallback paths.
  * @param context The extension execution context framework.
  * @return String representation of the target binary file location path.
  */
@@ -18,28 +18,47 @@ function getServerPath(context: ExtensionContext): string {
     const isWindows = platform === 'win32';
     const binaryName = isWindows ? 'angel_lsp.exe' : 'angel_lsp';
 
+    const candidates: string[] = [];
+
+    // 1. Development mode paths
     if (context.extensionMode === ExtensionMode.Development) {
-        let devPath = context.asAbsolutePath(path.join('..', 'build', 'Debug', binaryName));
-        if (fs.existsSync(devPath)) {
-            return devPath;
-        }
+        candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', 'Debug', binaryName)));
+        candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', 'Release', binaryName)));
+        candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', binaryName)));
     }
 
+    // 2. Primary production platform-architecture path: bin/${platform}-${architecture}/${binaryName}
     const platformFolder = `${platform}-${architecture}`;
-    const productionPath = context.asAbsolutePath(path.join('bin', platformFolder, binaryName));
+    candidates.push(context.asAbsolutePath(path.join('bin', platformFolder, binaryName)));
 
-    if (fs.existsSync(productionPath)) {
-        if (!isWindows) {
-            try {
-                fs.chmodSync(productionPath, '755');
-            } catch (err) {
-                // Non-blocking permission failure log tracking
-            }
-        }
-        return productionPath;
+    // 3. Fallback generic bin path: bin/${binaryName}
+    candidates.push(context.asAbsolutePath(path.join('bin', binaryName)));
+
+    // 4. Windows fallback architecture: bin/win32-x86/${binaryName} / bin/win32-ia32/${binaryName}
+    if (isWindows) {
+        candidates.push(context.asAbsolutePath(path.join('bin', 'win32-x86', binaryName)));
+        candidates.push(context.asAbsolutePath(path.join('bin', 'win32-ia32', binaryName)));
     }
 
-    return productionPath;
+    // 5. Development / build fallback paths (e.g. when testing compiled extension against local build)
+    candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', 'Debug', binaryName)));
+    candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', 'Release', binaryName)));
+    candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', binaryName)));
+
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            if (!isWindows) {
+                try {
+                    fs.chmodSync(candidate, '755');
+                } catch {
+                    // Non-blocking permission failure log tracking
+                }
+            }
+            return candidate;
+        }
+    }
+
+    return context.asAbsolutePath(path.join('bin', platformFolder, binaryName));
 }
 
 /**

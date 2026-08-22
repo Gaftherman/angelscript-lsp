@@ -1,5 +1,10 @@
 #include "Server.h"
 #include "utils/Utils.h"
+#include "features/hover/HoverHandler.h"
+#include "features/definition/DefinitionHandler.h"
+#include "features/completion/CompletionHandler.h"
+#include "features/semantic_tokens/SemanticTokensHandler.h"
+#include "features/signature_help/SignatureHelpHandler.h"
 
 #include <filesystem>
 #include <fstream>
@@ -23,9 +28,11 @@ namespace angel_lsp
 
         m_symbolCollector = std::make_unique<angel_lsp::analysis::SymbolCollector>(m_logger.get());
 
+        m_localScopeCollector = std::make_unique<angel_lsp::analysis::LocalScopeCollector>(m_logger.get());
+
         m_semanticAnalyzer = std::make_unique<angel_lsp::analysis::SemanticAnalyzer>(m_logger.get());
 
-        m_i18n = std::make_unique<angel_lsp::i18n::I18n>();
+        m_i18n = std::make_unique<angel_lsp::i18n::I18n>(m_config.info.locale.empty() ? "en" : m_config.info.locale);
 
         InitHandles();
     }
@@ -61,11 +68,11 @@ namespace angel_lsp
             }
         }
 
-        m_i18n = std::make_unique<angel_lsp::i18n::I18n>(params.locale.value_or("en"));
+        m_i18n = std::make_unique<angel_lsp::i18n::I18n>(params.locale.value_or(m_config.info.locale.empty() ? "en" : m_config.info.locale));
 
         lsp::requests::Initialize::Result result;
 
-        lsp::InitializeResultServerInfo info;
+        lsp::ServerInfo info;
         info.name = m_config.info.name;
         info.version = m_config.info.version;
         result.serverInfo = info;
@@ -80,17 +87,58 @@ namespace angel_lsp
 
         result.capabilities.textDocumentSync = sync;
 
+        if (m_config.features.enableHover)
+        {
+            result.capabilities.hoverProvider = true;
+        }
+
+        if (m_config.features.enableDefinition)
+        {
+            result.capabilities.definitionProvider = true;
+            result.capabilities.typeDefinitionProvider = true;
+        }
+
+        if (m_config.features.enableCompletion)
+        {
+            lsp::CompletionOptions completionOpts;
+            completionOpts.triggerCharacters = lsp::Array<lsp::String>{ ".", "::", "->" };
+            result.capabilities.completionProvider = completionOpts;
+        }
+
+        if (m_config.features.enableSemanticTokens)
+        {
+            lsp::SemanticTokensOptions semOpts;
+            semOpts.legend = features::GetSemanticTokensLegend();
+            semOpts.full = true;
+            result.capabilities.semanticTokensProvider = semOpts;
+        }
+
+        if (m_config.features.enableSignatureHelp)
+        {
+            lsp::SignatureHelpOptions sigOpts;
+            sigOpts.triggerCharacters = lsp::Array<lsp::String>{ "(", "," };
+            result.capabilities.signatureHelpProvider = sigOpts;
+        }
+
         return result;
     }
 
     void Server::HandleNotificationsInitialized(lsp::notifications::Initialized::Params &&params)
     {
-        m_workspaceThread = std::jthread([this](std::stop_token stopToken)
-                                         { this->ReadWorkspaceFiles(stopToken); });
+        if (m_config.features.enablePredefinedLoader)
+        {
+            m_workspaceThread = std::jthread([this](std::stop_token stopToken)
+                                             { this->ReadWorkspaceFiles(stopToken); });
+        }
     }
 
     void Server::ReadWorkspaceFiles(std::stop_token stopToken)
     {
+        if (!m_config.features.enablePredefinedLoader)
+        {
+            return;
+        }
+
         angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
 
         try
@@ -135,6 +183,9 @@ namespace angel_lsp
         m_symbolTable.ClearDocumentSymbols(uri);
         m_symbolCollector->CollectSymbols(uri, content, parser, m_symbolTable);
 
+        m_scopeIndex.ClearDocument(uri);
+        m_scopeIndex.SetScopeTree(uri, m_localScopeCollector->CollectScopes(content, parser));
+
         {
             std::lock_guard<std::mutex> lock(m_predefinedMutex);
             m_predefinedUris.insert(uri);
@@ -171,17 +222,21 @@ namespace angel_lsp
             text = m_openDocuments[uriStr];
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
+        m_scopeIndex.ClearDocument(uriStr);
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
             m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
+            m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopes(text, *m_parser));
             PublishDiagnostics(uriStr, {});
             return;
         }
 
         auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable, m_i18n.get());
+        m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopes(text, *m_parser));
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension), m_i18n.get()};
+        req.scopeRoot = m_scopeIndex.GetRoot(uriStr);
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
@@ -211,6 +266,9 @@ namespace angel_lsp
                 {
                     m_symbolTable.ClearDocumentSymbols(uriStr);
                     m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, m_symbolTable, m_i18n.get());
+                    m_scopeIndex.ClearDocument(uriStr);
+                    if (tree)
+                        m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
                     m_predefinedUris.insert(uriStr);
                 }
             }
@@ -221,7 +279,12 @@ namespace angel_lsp
         m_symbolTable.ClearDocumentSymbols(uriStr);
         auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, m_symbolTable, m_i18n.get());
 
+        m_scopeIndex.ClearDocument(uriStr);
+        if (tree)
+            m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
+
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension), m_i18n.get()};
+        req.scopeRoot = m_scopeIndex.GetRoot(uriStr);
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
@@ -242,9 +305,9 @@ namespace angel_lsp
 
         for (const auto &change : params.contentChanges)
         {
-            if (std::holds_alternative<lsp::TextDocumentContentChangeEvent_Range_Text>(change))
+            if (std::holds_alternative<lsp::TextDocumentContentChangePartial>(change))
             {
-                const auto &rt = std::get<lsp::TextDocumentContentChangeEvent_Range_Text>(change);
+                const auto &rt = std::get<lsp::TextDocumentContentChangePartial>(change);
 
                 if (tree)
                 {
@@ -299,9 +362,9 @@ namespace angel_lsp
                                                          rt.range.end.line, rt.range.end.character,
                                                          rt.text);
             }
-            else if (std::holds_alternative<lsp::TextDocumentContentChangeEvent_Text>(change))
+            else if (std::holds_alternative<lsp::TextDocumentContentChangeWholeDocument>(change))
             {
-                const auto &t = std::get<lsp::TextDocumentContentChangeEvent_Text>(change);
+                const auto &t = std::get<lsp::TextDocumentContentChangeWholeDocument>(change);
                 buffer = t.text;
                 if (tree)
                 {
@@ -321,17 +384,23 @@ namespace angel_lsp
         m_documentTrees[uriStr] = newTree;
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
+        m_scopeIndex.ClearDocument(uriStr);
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
             m_symbolCollector->CollectSymbolsWithTree(uriStr, buffer, newTree, m_symbolTable, m_i18n.get());
+            if (newTree)
+                m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(newTree), buffer));
             PublishDiagnostics(uriStr, {});
             return;
         }
 
         auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, buffer, newTree, m_symbolTable, m_i18n.get());
+        if (newTree)
+            m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(newTree), buffer));
 
         angel_lsp::analysis::SemanticAnalysisRequest req{m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension), m_i18n.get()};
+        req.scopeRoot = m_scopeIndex.GetRoot(uriStr);
         auto semanticDiagnostics = m_semanticAnalyzer->Analyze(req);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
@@ -360,6 +429,7 @@ namespace angel_lsp
         }
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
+        m_scopeIndex.ClearDocument(uriStr);
         PublishDiagnostics(uriStr, {});
     }
 
@@ -441,6 +511,140 @@ namespace angel_lsp
             [this](lsp::notifications::TextDocument_DidClose::Params &&params)
             {
                 this->HandleNotificationsTextDocument_DidClose(std::move(params));
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_Hover>(
+            [this](lsp::requests::TextDocument_Hover::Params &&req) -> lsp::requests::TextDocument_Hover::Result
+            {
+                if (!m_config.features.enableHover)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::HoverRequest hr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, req.position };
+                auto hover = features::GetHover(hr);
+                if (hover.has_value())
+                {
+                    return hover.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_Definition>(
+            [this](lsp::requests::TextDocument_Definition::Params &&req) -> lsp::requests::TextDocument_Definition::Result
+            {
+                if (!m_config.features.enableDefinition)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::DefinitionRequest dr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, req.position };
+                auto defs = features::GetDefinition(dr);
+                if (defs.has_value() && !defs->empty())
+                {
+                    return defs.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_TypeDefinition>(
+            [this](lsp::requests::TextDocument_TypeDefinition::Params &&req) -> lsp::requests::TextDocument_TypeDefinition::Result
+            {
+                if (!m_config.features.enableDefinition)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::DefinitionRequest dr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, req.position };
+                auto defs = features::GetTypeDefinition(dr);
+                if (defs.has_value() && !defs->empty())
+                {
+                    return defs.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_Completion>(
+            [this](lsp::requests::TextDocument_Completion::Params &&req) -> lsp::requests::TextDocument_Completion::Result
+            {
+                if (!m_config.features.enableCompletion)
+                {
+                    return lsp::Array<lsp::CompletionItem>{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Array<lsp::CompletionItem>{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::CompletionRequest cr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, req.position, &m_config };
+                return features::GetCompletion(cr);
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Full>(
+            [this](lsp::requests::TextDocument_SemanticTokens_Full::Params &&req) -> lsp::requests::TextDocument_SemanticTokens_Full::Result
+            {
+                if (!m_config.features.enableSemanticTokens)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::SemanticTokensRequest sr{ uriStr, docIt->second, tree, m_symbolTable };
+                return features::GetSemanticTokens(sr);
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_SignatureHelp>(
+            [this](lsp::requests::TextDocument_SignatureHelp::Params &&req) -> lsp::requests::TextDocument_SignatureHelp::Result
+            {
+                if (!m_config.features.enableSignatureHelp)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::SignatureHelpRequest sr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, req.position };
+                auto sig = features::GetSignatureHelp(sr);
+                if (sig.has_value())
+                {
+                    return sig.value();
+                }
+                return lsp::Null{};
             });
     }
 }

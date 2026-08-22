@@ -19,10 +19,19 @@ add_library(tree_sitter_angelscript_lib STATIC
 target_include_directories(tree_sitter_angelscript_lib PUBLIC "${tree_sitter_angelscript_SOURCE_DIR}/src")
 target_link_libraries(tree_sitter_angelscript_lib PUBLIC tree_sitter_runtime)
 set_target_properties(tree_sitter_angelscript_lib PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+if(MSVC)
+    target_compile_options(tree_sitter_angelscript_lib PRIVATE /w)
+endif()
 
 # ── Tree-Sitter Doxygen Grammar ───────────────────────────────────────────
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+endif()
 FetchContent_Declare(tree_sitter_doxygen GIT_REPOSITORY https://github.com/tree-sitter-grammars/tree-sitter-doxygen.git GIT_TAG master)
-FetchContent_MakeAvailable(tree_sitter_doxygen)
+FetchContent_GetProperties(tree_sitter_doxygen)
+if(NOT tree_sitter_doxygen_POPULATED)
+    FetchContent_Populate(tree_sitter_doxygen)
+endif()
 
 add_library(tree_sitter_doxygen_lib STATIC 
     "${tree_sitter_doxygen_SOURCE_DIR}/src/parser.c"
@@ -31,3 +40,6 @@ add_library(tree_sitter_doxygen_lib STATIC
 target_include_directories(tree_sitter_doxygen_lib PUBLIC "${tree_sitter_doxygen_SOURCE_DIR}/src")
 target_link_libraries(tree_sitter_doxygen_lib PUBLIC tree_sitter_runtime)
 set_target_properties(tree_sitter_doxygen_lib PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+if(MSVC)
+    target_compile_options(tree_sitter_doxygen_lib PRIVATE /w)
+endif()

@@ -89,3 +89,28 @@ add_custom_command(TARGET angel_lsp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_ROOT}/angel_lsp.exe"
     COMMENT "Deploying compiled LSP server binary to client/bin"
 )
+
+# ==============================================================================
+# 4. UNIT TESTS (doctest)
+# ==============================================================================
+enable_testing()
+file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "tests/*.cpp")
+if(TEST_SOURCES)
+    add_executable(angel_lsp_tests ${TEST_SOURCES})
+    target_include_directories(angel_lsp_tests PRIVATE tests src)
+    target_link_libraries(angel_lsp_tests PRIVATE angel_lsp_core doctest::doctest)
+    target_compile_definitions(angel_lsp_tests PRIVATE
+        ANGELSCRIPT_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../angelscript"
+    )
+    if(MSVC)
+        target_compile_options(angel_lsp_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
+    endif()
+    add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests)
+
+    # The full angelscript/ corpus audit test case is skip()-decorated in-code, so it is
+    # excluded from the angel_lsp_tests run above. It is deliberately NOT registered as its
+    # own add_test() - any add_test() runs on every plain `ctest` invocation regardless of
+    # doctest-level skip(), which would silently make the default test run slow again. Run it
+    # on demand instead:
+    #   Debug/angel_lsp_tests.exe --no-skip --test-case="*Corpus Audit*"
+endif()

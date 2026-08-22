@@ -23,7 +23,8 @@ namespace angel_lsp::analysis
         Typedef,
         Namespace,
         Funcdef,
-        Property
+        Property,
+        CallReference
     };
 
     enum class AccessModifier
@@ -50,19 +51,20 @@ namespace angel_lsp::analysis
         Int16,
         Int32,
         Int64,
-        Int = Int32,
         UInt8,
         UInt16,
         UInt32,
         UInt64,
-        UInt = UInt32,
         Float,
         Double,
         Bool,
         String,
         Object,
         Array,
-        Handle
+        Handle,
+        // Aliases placed last so they don't reset the implicit counter for the entries above.
+        Int = Int32,
+        UInt = UInt32
     };
 
     struct SymbolModifiers
@@ -118,22 +120,6 @@ namespace angel_lsp::analysis
         uint32_t endCharacter = 0;
     };
 
-    struct InvalidCaseStatement
-    {
-        SourceRange range;
-        std::string valueText;
-        std::string reason; // "invalid_type" or "duplicate_value"
-    };
-
-    struct LocalVarTypeInformation
-    {
-        SourceRange range;
-        std::string typeName;
-        std::string varName;
-        std::string fullType;
-        std::string initializerText;
-    };
-
     struct TypeExtractionResult
     {
         std::string baseTypeName;
@@ -146,40 +132,6 @@ namespace angel_lsp::analysis
         bool hasPrimitiveHandle = false;
         uint32_t arrayDepth = 0;
         std::vector<TypeExtractionResult> templateArguments;
-    };
-
-    struct CastExpressionInformation
-    {
-        std::string targetType;
-        std::string operandText;
-        TypeExtractionResult targetTypeInfo;
-    };
-
-    struct BodyIdentifierRef
-    {
-        std::string name;
-        SourceRange range;
-        bool isCall = false;
-        bool isMemberAccess = false;
-    };
-
-    struct FunctionBodyAnalysis
-    {
-        bool hasEmptyReturn = false;
-        bool hasValueReturn = false;
-        bool hasNullReturn = false;
-        std::string returnExpression;
-        std::string returnCallTargetName;
-        bool hasSuperCall = false;
-        std::vector<std::string> gotoTargetLabels;
-        std::vector<CastExpressionInformation> bodyCastExpressions;
-        std::vector<std::string> bodyQualifiedNames;
-        std::vector<LocalVarTypeInformation> bodyVariableTypes;
-        std::vector<SourceRange> invalidBreakStatements;
-        std::vector<SourceRange> invalidContinueStatements;
-        std::vector<SourceRange> invalidDefaultStatements;
-        std::vector<InvalidCaseStatement> invalidCaseStatements;
-        std::vector<BodyIdentifierRef> bodyIdentifierRefs;
     };
 
     struct FunctionSignature
@@ -197,8 +149,6 @@ namespace angel_lsp::analysis
         bool hasBody = false;
         bool isInterfaceMethod = false;
         std::string defaultValue;
-
-        std::optional<FunctionBodyAnalysis> bodyAnalysis;
     };
 
 
@@ -281,6 +231,15 @@ namespace angel_lsp::analysis
         std::vector<ParameterInformation> parameters;
     };
 
+    /** @brief Describes a function/method call that occurs outside of any function body
+     *         (e.g. a global variable initializer, a class field initializer, or an enum value). */
+    struct CallReferenceSignature
+    {
+        std::string calleeName;
+        bool isMethodCall = false;
+        std::string objectExpression;
+    };
+
     struct Symbol
     {
         SymbolType type;
@@ -302,7 +261,8 @@ namespace angel_lsp::analysis
             ClassSignature,
             InterfaceSignature,
             TypedefSignature,
-            FuncdefSignature
+            FuncdefSignature,
+            CallReferenceSignature
         > signature;
 
         FunctionSignature &GetFunction()
@@ -374,6 +334,16 @@ namespace angel_lsp::analysis
         {
             return std::get<FuncdefSignature>(signature);
         }
+
+        CallReferenceSignature &GetCallReference()
+        {
+            return std::get<CallReferenceSignature>(signature);
+        }
+
+        const CallReferenceSignature &GetCallReference() const
+        {
+            return std::get<CallReferenceSignature>(signature);
+        }
     };
 
     class SymbolTable
@@ -425,6 +395,7 @@ namespace angel_lsp::analysis
         case SymbolType::Namespace: return "namespace";
         case SymbolType::Funcdef:   return "funcdef";
         case SymbolType::Property:  return "property";
+        case SymbolType::CallReference: return "call_reference";
         default:                    return "unknown";
         }
     }

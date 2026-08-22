@@ -27,7 +27,7 @@ namespace angel_lsp::parser::queries
 (typedef_declaration name: (identifier) @type)
 (funcdef_declaration name: (identifier) @type)
 (mixin_declaration name: (identifier) @type)
-(base_class_list base: (identifier) @type)
+(base_class_list base: (scoped_identifier) @type)
 
 ; Enum members
 (enum_member name: (identifier) @constant)
@@ -87,6 +87,7 @@ namespace angel_lsp::parser::queries
 
 ; Modifiers
 (declaration_modifier) @keyword.modifier
+(shared_external_modifier) @keyword.modifier
 [
   "private"
   "protected"
@@ -117,7 +118,7 @@ namespace angel_lsp::parser::queries
 (null_literal) @constant.builtin
 
 ; Function calls
-(call_expression function: (identifier) @function.call)
+(call_expression function: (scoped_identifier) @function.call)
 (call_expression function: (member_expression member: (identifier) @function.method.call))
 
 ; Named arguments
@@ -138,6 +139,7 @@ namespace angel_lsp::parser::queries
 (assignment_expression operator: _ @operator)
 (unary_expression operator: _ @operator)
 (postfix_expression operator: _ @operator)
+(typed_initializer_list "=" @operator)
 
 ; Index expression
 (index_expression index_name: (identifier) @variable.parameter)
@@ -181,6 +183,12 @@ namespace angel_lsp::parser::queries
 
 ; Parameters
 (parameter
+  name: (identifier) @local.definition.parameter)
+
+; Lambda parameters. lambda_parameter_list does not wrap each entry in its own
+; parameter node like a regular function/method - the name field sits directly
+; on the list node, once per parameter - so it needs its own pattern.
+(lambda_parameter_list
   name: (identifier) @local.definition.parameter)
 
 ; Variables (locals and globals)
@@ -290,13 +298,28 @@ namespace angel_lsp::parser::queries
 ; Variables
 (variable_declaration) @definition.variable
 
-; Function calls (references)
+; Function calls (references), including namespace-qualified calls (e.g. NS::Func()).
+; The grammar always parses a call target without a member access as scoped_identifier,
+; even for a plain unqualified call like Foo() - there is no bare (identifier) call target.
 (call_expression
-  function: (identifier) @name) @reference.call
+  function: (scoped_identifier) @name) @reference.call
 
 ; Method calls (references)
 (call_expression
   function: (member_expression
     member: (identifier) @name)) @reference.call
+
+; Using-declaration validation: flags `using namespace <reserved-keyword>;`.
+(using_declaration) @validation.using
+
+; Declaration-modifier duplicate validation. class_declaration/mixin_declaration
+; expose "modifier" as declaration_modifier; interface_declaration exposes it as
+; shared_external_modifier instead - the handler checks for both node types on
+; whichever of these three declarations it is dispatched against.
+[
+  (class_declaration)
+  (interface_declaration)
+  (mixin_declaration)
+] @validation.modifiers
 )SCM";
 }

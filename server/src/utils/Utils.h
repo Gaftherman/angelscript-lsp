@@ -14,5 +14,11 @@ namespace angel_lsp::utils
                                 uint32_t endLine, uint32_t endCharacter,
                                 const std::string &newText);
     bool IsPredefinedFile(const std::string_view &fileUri, const std::string_view extension);
+
+    /**
+     * @brief Checks whether the given type name is a standard AngelScript primitive type.
+     * @param typeName The name of the type to check.
+     * @return True if the type is a standard AngelScript primitive type; otherwise false.
+     */
     bool IsPrimitiveType(const std::string &typeName);
 }

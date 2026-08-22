@@ -20,8 +20,13 @@ int main(int argc, char **argv)
 #endif
 
     angel_lsp::config::ServerConfig config = angel_lsp::config::FromArgs(argc, argv);
+    if (config.info.showHelp || config.info.showVersion)
+    {
+        return 0;
+    }
+
     angel_lsp::Server server(config);
     server.Run();
 
     return 0;
-}
+}

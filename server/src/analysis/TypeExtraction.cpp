@@ -17,6 +17,8 @@ namespace angel_lsp::analysis
         TSSymbol symIdentifier = 0;
         TSSymbol symScopedType = 0;
         TSSymbol symType = 0;
+        TSSymbol symNullLiteral = 0;
+        TSSymbol symParenthesizedExpression = 0;
 
         ankerl::unordered_dense::map<TSSymbol, TypeKind> primitiveKindMap;
 
@@ -30,6 +32,8 @@ namespace angel_lsp::analysis
             symIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("identifier"), true);
             symScopedType = ts_language_symbol_for_name(lang, SYM_NAME("scoped_type"), true);
             symType = ts_language_symbol_for_name(lang, SYM_NAME("type"), true);
+            symNullLiteral = ts_language_symbol_for_name(lang, SYM_NAME("null_literal"), true);
+            symParenthesizedExpression = ts_language_symbol_for_name(lang, SYM_NAME("parenthesized_expression"), true);
 
             auto addPrimitive = [&](const char *name, uint32_t len, TypeKind kind)
             {
@@ -248,5 +252,22 @@ namespace angel_lsp::analysis
         }
 
         return result;
+    }
+
+    bool IsNullInitializer(TSNode valueNode)
+    {
+        if (ts_node_is_null(valueNode))
+            return false;
+
+        const auto &symbols = GetTypeExtractionSymbols();
+        TSNode node = valueNode;
+        while (ts_node_symbol(node) == symbols.symParenthesizedExpression)
+        {
+            TSNode inner = ts_node_named_child(node, 0);
+            if (ts_node_is_null(inner))
+                break;
+            node = inner;
+        }
+        return ts_node_symbol(node) == symbols.symNullLiteral;
     }
 }

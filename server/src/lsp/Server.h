@@ -6,6 +6,8 @@
 #include "parser/AngelScriptParser.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/SymbolCollector.h"
+#include "analysis/ScopeTree.h"
+#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalyzer.h"
 
 #include <lsp/messages.h>
@@ -38,6 +40,8 @@ namespace angel_lsp
         std::unique_ptr<angel_lsp::parser::AngelScriptParser> m_parser;
         angel_lsp::analysis::SymbolTable m_symbolTable;
         std::unique_ptr<angel_lsp::analysis::SymbolCollector> m_symbolCollector;
+        angel_lsp::analysis::ScopeIndex m_scopeIndex;
+        std::unique_ptr<angel_lsp::analysis::LocalScopeCollector> m_localScopeCollector;
         std::unique_ptr<angel_lsp::analysis::SemanticAnalyzer> m_semanticAnalyzer;
         ankerl::unordered_dense::map<std::string, std::string> m_openDocuments;
         std::unordered_map<std::string, TSTree*> m_documentTrees;

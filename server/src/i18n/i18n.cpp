@@ -73,6 +73,8 @@ namespace angel_lsp::i18n
         m_messages["as-err-mixin-not-a-type"] = "Mixin '{}' cannot be used as a data type.";
         m_messages["as-err-undeclared-identifier"] = "Undeclared identifier '{}'.";
         m_messages["as-err-implicit-conversion"] = "Implicit conversion from '{}' is invalid.";
+        m_messages["as-warn-unused-variable"] = "Local variable '{}' is never used.";
+        m_messages["as-err-null-non-handle"] = "Cannot assign 'null' to non-handle type '{}'.";
 
         if (locale == "es")
         {
@@ -138,6 +140,9 @@ namespace angel_lsp::i18n
             m_messages["as-err-op-overload-global"] = "La sobrecarga del operador '{}' debe ser un método miembro de clase.";
             m_messages["as-err-default-must-be-last"] = "El caso por defecto (default) debe ser el último.";
             m_messages["as-err-mixin-not-a-type"] = "El mixin '{}' no puede ser usado como un tipo de dato.";
+            m_messages["as-err-undeclared-identifier"] = "Identificador no declarado '{}'.";
+            m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";
+            m_messages["as-err-null-non-handle"] = "No se puede asignar 'null' al tipo no-handle '{}'.";
         }
     }
 
