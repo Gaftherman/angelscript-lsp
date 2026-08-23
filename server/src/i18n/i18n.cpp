@@ -1,10 +1,40 @@
 #include "i18n.h"
 
+#include <cctype>
+
 namespace angel_lsp::i18n
 {
-    I18n::I18n(const std::string &locale)
-        : m_locale(locale)
+    namespace
     {
+        /**
+         * @brief Reduces a locale tag to its lowercased primary language subtag.
+         *
+         * The tag arrives from two places and neither is under this server's control: the client's
+         * `initialize` params, where BCP 47 is the rule and an editor may send `es-ES`, `es-419` or
+         * `es_MX`, and `--locale`, which this project's own README documents as `es-ES`. Comparing
+         * the whole tag meant every one of those fell through to English, so a Spanish user got
+         * Spanish only by asking for exactly "es".
+         */
+        std::string PrimaryLanguageSubtag(const std::string &locale)
+        {
+            std::string language;
+            for (const char c : locale)
+            {
+                if (c == '-' || c == '_')
+                {
+                    break;
+                }
+                language.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            }
+            return language;
+        }
+    }
+
+    I18n::I18n(const std::string &localeTag)
+        : m_locale(PrimaryLanguageSubtag(localeTag))
+    {
+        const std::string &locale = m_locale;
+
         m_messages["as-err-duplicate-symbol"] = "Duplicate symbol declaration '{}' in the same scope.";
         m_messages["as-err-mixin-final"] = "A mixin ('{}') cannot be declared as 'final'.";
         m_messages["as-err-mixin-abstract"] = "A mixin ('{}') cannot be declared as 'abstract'.";
@@ -15,6 +45,8 @@ namespace angel_lsp::i18n
         m_messages["as-syntax-error"] = "Syntax error: \"{}\"";
         m_messages["as-syntax-error-missing"] = "Syntax error: missing '{}'";
         m_messages["as-syntax-error-generic"] = "Syntax error";
+        m_messages["as-err-declaration-missing-body"] = "'{}' must have a body '{{}}'. Only 'external shared' declares one without.";
+        m_messages["as-err-external-not-shared"] = "'external' requires 'shared' on '{}'.";
         m_messages["as-err-unresolved-type"] = "Unknown type '{}'.";
         m_messages["as-err-handle-on-primitive"] = "Cannot use handle '@' on primitive type '{}'.";
         m_messages["as-err-void-variable"] = "Cannot declare a variable of type 'void'.";
@@ -93,6 +125,9 @@ namespace angel_lsp::i18n
             m_messages["as-syntax-error"] = "Error de sintaxis: \"{}\"";
             m_messages["as-syntax-error-missing"] = "Error de sintaxis: falta '{}'";
             m_messages["as-syntax-error-generic"] = "Error de sintaxis";
+            m_messages["as-err-declaration-missing-body"] = "'{}' debe tener un cuerpo '{{}}'. Solo 'external shared' se declara sin él.";
+            m_messages["as-err-external-not-shared"] = "'external' requiere 'shared' en '{}'.";
+            m_messages["as-err-implicit-conversion"] = "La conversión implícita desde '{}' no es válida.";
             m_messages["as-err-unresolved-type"] = "Tipo desconocido '{}'.";
             m_messages["as-err-handle-on-primitive"] = "No se puede usar handle '@' en el tipo primitivo '{}'.";
             m_messages["as-err-void-variable"] = "No se puede declarar una variable de tipo 'void'.";

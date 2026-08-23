@@ -219,7 +219,8 @@ TEST_CASE("TypeRules - Type Rules Corpus Audit" * doctest::skip(true))
     static const std::vector<std::string> k_codes = {
         "as-err-typedef-non-primitive", "as-err-typedef-unresolved", "as-err-enum-invalid-initializer",
         "as-err-interface-constructor", "as-err-duplicate-symbol", "as-err-name-conflict",
-        "as-err-handle-on-primitive", "as-syntax-error-missing"
+        "as-err-handle-on-primitive", "as-syntax-error-missing",
+        "as-err-declaration-missing-body", "as-err-external-not-shared"
     };
 
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)

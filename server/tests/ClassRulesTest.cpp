@@ -227,12 +227,31 @@ TEST_CASE("ClassRules - An ordinary mixin is accepted")
 
 TEST_CASE("ClassRules - Reports 'external' without 'shared'")
 {
-    CHECK(HasCode(AnalyzeClassSnippet("external class Lonely;\n"), "as-syntax-error"));
+    CHECK(HasCode(AnalyzeClassSnippet("external class Lonely;\n"), "as-err-external-not-shared"));
 }
 
 TEST_CASE("ClassRules - 'external shared' with no body is the one accepted bodyless form")
 {
-    CHECK_FALSE(HasCode(AnalyzeClassSnippet("external shared class Known;\n"), "as-syntax-error"));
+    const auto diagnostics = AnalyzeClassSnippet("external shared class Known;\n");
+    CHECK_FALSE(HasCode(diagnostics, "as-err-external-not-shared"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-declaration-missing-body"));
+}
+
+TEST_CASE("ClassRules - Reports a class declared with no body")
+{
+    CHECK(HasCode(AnalyzeClassSnippet("class Lonely;\n"), "as-err-declaration-missing-body"));
+}
+
+TEST_CASE("ClassRules - A method modifier on a class never reaches this module")
+{
+    // `override` and `explicit` are absent from the grammar's declaration_modifier, which is
+    // choice("shared", "external", "abstract", "final"). ClassSignature::modifiers.isOverride is
+    // therefore unreachable, and the rule that used to test it was dead code emitting
+    // `Syntax error: "Foo"` for a condition that could not occur. Removed; this pins the reason.
+    // The class itself still collects cleanly, so nothing else misfires on it either.
+    const auto diagnostics = AnalyzeClassSnippet("override class Foo {}\n");
+    CHECK_FALSE(HasCode(diagnostics, "as-err-declaration-missing-body"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-external-not-shared"));
 }
 
 TEST_CASE("ClassRules - A template class is left to the parser to report")
@@ -251,7 +270,7 @@ TEST_CASE("ClassRules - A predefined stub is exempt from the declaration rules")
     const auto diagnostics = AnalyzeClassSnippet("mixin final class Helper {}\n",
                                                  "file:///engine.as.predefined");
     CHECK_FALSE(HasCode(diagnostics, "as-err-mixin-final"));
-    CHECK_FALSE(HasCode(diagnostics, "as-syntax-error"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-declaration-missing-body"));
 }
 
 TEST_CASE("ClassRules - Reports a class named after a reserved word or a built-in type")
@@ -279,7 +298,8 @@ TEST_CASE("ClassRules - An ordinary class produces nothing")
         CHECK(diag.code != "as-err-circular-inherit");
         CHECK(diag.code != "as-err-multi-class-inherit");
         CHECK(diag.code != "as-err-inherit-final");
-        CHECK(diag.code != "as-syntax-error");
+        CHECK(diag.code != "as-err-declaration-missing-body");
+        CHECK(diag.code != "as-err-external-not-shared");
     }
 }
 
@@ -312,7 +332,8 @@ TEST_CASE("ClassRules - Class Rules Corpus Audit" * doctest::skip(true))
     static const std::vector<std::string> k_codes = {
         "as-err-circular-inherit", "as-err-inherit-final", "as-err-multi-class-inherit",
         "as-err-mixin-final", "as-err-mixin-abstract", "as-err-mixin-child-type",
-        "as-err-reserved-keyword-name", "as-syntax-error",
+        "as-err-reserved-keyword-name", "as-err-declaration-missing-body",
+        "as-err-external-not-shared",
         "as-err-interface-impl-missing", "as-err-override-final-method"
     };
 

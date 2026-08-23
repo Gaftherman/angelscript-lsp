@@ -152,11 +152,19 @@ namespace angel_lsp::analysis::rules
 
         const auto &sig = sym.GetEnum();
 
-        // 'external shared enum X;' is the one bodyless form, same as for classes.
+        // 'external shared enum X;' is the one bodyless form, same as for classes. Reported with
+        // the declaration code rather than as-syntax-error: the parser accepted this, so telling
+        // the user "syntax error" points them at the wrong thing entirely.
         if (!sig.hasBraces && !sig.modifiers.isExternal)
         {
-            ctx.LogRule("ValidateEnum", "as-syntax-error", sym);
-            ctx.Emit(sym, "as-syntax-error", sym.name);
+            ctx.LogRule("ValidateEnum", "as-err-declaration-missing-body", sym);
+            ctx.Emit(sym, "as-err-declaration-missing-body", sym.name);
+        }
+
+        if (sig.modifiers.isExternal && !sig.modifiers.isShared)
+        {
+            ctx.LogRule("ValidateEnum", "as-err-external-not-shared", sym);
+            ctx.Emit(sym, "as-err-external-not-shared", sym.name);
         }
 
         for (const auto &member : sig.members)

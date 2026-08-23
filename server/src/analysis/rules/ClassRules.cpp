@@ -20,24 +20,28 @@ namespace angel_lsp::analysis::rules
         /** @brief Modifier and shape rules a class declaration must satisfy on its own. */
         void CheckClassModifiers(const Symbol &sym, const ClassSignature &sig, const DiagnosticContext &ctx)
         {
+            // These three used to borrow as-syntax-error, whose message reads `Syntax error: "Foo"`.
+            // None of them is one: the parser accepted the declaration and handed it over intact.
+            // What the user needs told is which rule the declaration broke.
+
             // 'external shared class X;' is the one form allowed to have no body.
             if (!sig.hasBraces && !sig.modifiers.isExternal)
             {
-                ctx.LogRule("CheckClassModifiers", "as-syntax-error", sym);
-                ctx.Emit(sym, "as-syntax-error", sym.name);
+                ctx.LogRule("CheckClassModifiers", "as-err-declaration-missing-body", sym);
+                ctx.Emit(sym, "as-err-declaration-missing-body", sym.name);
             }
 
             if (sig.modifiers.isExternal && !sig.modifiers.isShared)
             {
-                ctx.LogRule("CheckClassModifiers", "as-syntax-error", sym);
-                ctx.Emit(sym, "as-syntax-error", sym.name);
+                ctx.LogRule("CheckClassModifiers", "as-err-external-not-shared", sym);
+                ctx.Emit(sym, "as-err-external-not-shared", sym.name);
             }
 
-            if (sig.modifiers.isOverride || sig.modifiers.isExplicit)
-            {
-                ctx.LogRule("CheckClassModifiers", "as-syntax-error", sym);
-                ctx.Emit(sym, "as-syntax-error", sym.name);
-            }
+            // REMOVED: a check for 'override'/'explicit' on a class. It could never fire. The
+            // grammar's declaration_modifier is choice("shared", "external", "abstract", "final"),
+            // so `override class Foo {}` does not parse as a class declaration at all and the
+            // parser pass reports it. ClassSignature::modifiers.isOverride is unreachable for the
+            // same reason ClassSignature::isTemplate is - see the note further down.
 
             if (!sig.modifiers.isMixin)
             {
