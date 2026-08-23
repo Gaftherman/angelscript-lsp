@@ -2,6 +2,7 @@
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/rules/TypeRules.h"
+#include "analysis/rules/VariableRules.h"
 #include "spdlog/fmt/fmt.h"
 
 namespace angel_lsp::analysis
@@ -116,6 +117,10 @@ namespace angel_lsp::analysis
                         break;
                     case SymbolType::Enum:
                         rules::ValidateEnum(sym, ctx);
+                        break;
+                    case SymbolType::Variable:
+                    case SymbolType::Property:
+                        rules::ValidateVariable(sym, ctx);
                         break;
                     default:
                         break;

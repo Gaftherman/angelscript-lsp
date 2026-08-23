@@ -79,6 +79,27 @@ namespace angel_lsp::test
             return m_output.find(fragment) != std::string::npos;
         }
 
+        /**
+         * @brief The body of the reply to one request id, or an empty string if there was none.
+         *
+         * Assertions about a specific answer belong here rather than over the whole transcript:
+         * the server also writes log notifications and diagnostics from its background threads, so
+         * searching everything makes a test depend on thread timing.
+         */
+        std::string ResponseFor(int id) const
+        {
+            const std::string marker = "\"id\":" + std::to_string(id) + ",\"result\":";
+            const size_t start = m_output.find(marker);
+            if (start == std::string::npos)
+            {
+                return "";
+            }
+
+            // One JSON body per frame, so the reply ends where the next frame's header begins.
+            const size_t end = m_output.find("Content-Length:", start);
+            return m_output.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        }
+
         /** @brief Number of times a fragment appears in everything written back. */
         size_t CountInOutput(const std::string &fragment) const
         {

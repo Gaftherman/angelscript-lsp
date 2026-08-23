@@ -184,8 +184,11 @@ TEST_CASE("Server - A watched file deleted on disk stops contributing symbols")
     config::ServerConfig serverConfig;
     RunScript(serverConfig, stream);
 
-    // Present in the first answer, gone from the second: exactly one mention across both.
-    CHECK(stream.CountInOutput("\"name\":\"Helper\"") == 1);
+    // Asserted per reply rather than over the whole transcript: the server also writes log
+    // notifications and background-thread diagnostics, so counting across everything would make
+    // this depend on thread timing.
+    CHECK(stream.ResponseFor(2).find("\"name\":\"Helper\"") != std::string::npos);
+    CHECK(stream.ResponseFor(3).find("\"name\":\"Helper\"") == std::string::npos);
 }
 
 TEST_CASE("Server - Survives a watched-file event naming a path it never indexed")

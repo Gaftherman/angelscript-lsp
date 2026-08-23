@@ -192,7 +192,10 @@ namespace angel_lsp::analysis
                         if (result.templateArguments.size() == 1)
                         {
                             result.baseTypeName = inner.baseTypeName;
-                            result.isHandle = inner.isHandle || result.isHandle;
+                            // The element's handle-ness is the element's. Folding it into the outer
+                            // type made `array<Foo@>` look like a handle, and then the outer '@' of
+                            // `array<Foo@>@` read as a double handle - which is ordinary AngelScript
+                            // and was being reported as a handle on a primitive.
                             result.hasPrimitiveHandle = inner.hasPrimitiveHandle;
                             result.arrayDepth += inner.arrayDepth;
                             if (inner.kind != TypeKind::Unknown)
