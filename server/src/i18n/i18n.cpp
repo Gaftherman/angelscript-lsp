@@ -47,6 +47,7 @@ namespace angel_lsp::i18n
         m_messages["as-syntax-error-generic"] = "Syntax error";
         m_messages["as-err-declaration-missing-body"] = "'{}' must have a body '{{}}'. Only 'external shared' declares one without.";
         m_messages["as-err-external-not-shared"] = "'external' requires 'shared' on '{}'.";
+        m_messages["as-err-property-duplicate-accessor"] = "Virtual property '{}' declares '{}' more than once.";
         m_messages["as-err-unresolved-type"] = "Unknown type '{}'.";
         m_messages["as-err-handle-on-primitive"] = "Cannot use handle '@' on primitive type '{}'.";
         m_messages["as-err-void-variable"] = "Cannot declare a variable of type 'void'.";
@@ -127,6 +128,7 @@ namespace angel_lsp::i18n
             m_messages["as-syntax-error-generic"] = "Error de sintaxis";
             m_messages["as-err-declaration-missing-body"] = "'{}' debe tener un cuerpo '{{}}'. Solo 'external shared' se declara sin él.";
             m_messages["as-err-external-not-shared"] = "'external' requiere 'shared' en '{}'.";
+            m_messages["as-err-property-duplicate-accessor"] = "La propiedad virtual '{}' declara '{}' más de una vez.";
             m_messages["as-err-implicit-conversion"] = "La conversión implícita desde '{}' no es válida.";
             m_messages["as-err-unresolved-type"] = "Tipo desconocido '{}'.";
             m_messages["as-err-handle-on-primitive"] = "No se puede usar handle '@' en el tipo primitivo '{}'.";

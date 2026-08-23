@@ -72,7 +72,8 @@ namespace angel_lsp::analysis
      * @brief Renders a variable, field or property declaration, modifiers included.
      * @param var Variable signature to render.
      * @param name Declared name.
-     * @return Text such as "private const string m_name".
+     * @return Text such as "private const string m_name", or, for a virtual property, the accessor
+     *         block that makes it one: "string Name { get const; set; }".
      */
     std::string FormatVariableDeclaration(const VariableSignature &var, const std::string &name);
 

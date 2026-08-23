@@ -198,6 +198,38 @@ TEST_CASE("VariableRules - A property with bodies is accepted")
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-property-accessor-missing-body"));
 }
 
+TEST_CASE("VariableRules - Reports a duplicated property accessor")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    private string m_name;\n"
+        "    string Name\n"
+        "    {\n"
+        "        get const { return m_name; }\n"
+        "        get const { return m_name; }\n"
+        "    }\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-property-duplicate-accessor"));
+}
+
+TEST_CASE("VariableRules - One get and one set are not duplicates")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    private string m_name;\n"
+        "    string Name\n"
+        "    {\n"
+        "        get const { return m_name; }\n"
+        "        set { m_name = value; }\n"
+        "    }\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-property-duplicate-accessor"));
+}
+
 TEST_CASE("VariableRules - Reports a virtual property on a mixin class")
 {
     const std::string code =
@@ -228,6 +260,7 @@ TEST_CASE("VariableRules - Variable Rules Corpus Audit" * doctest::skip(true))
         "as-err-void-variable", "as-err-handle-on-primitive", "as-err-funcdef-not-handle",
         "as-err-mixin-not-a-type", "as-err-global-variable-access-modifier",
         "as-err-property-accessor-missing-body", "as-err-mixin-virtual-property",
+        "as-err-property-duplicate-accessor",
         "as-err-class-member-const"
     };
 

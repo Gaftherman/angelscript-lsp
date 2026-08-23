@@ -162,6 +162,53 @@ TEST_CASE("SignatureFormatter - const and handle flags survive an unmarked type 
     CHECK(FormatParameter(param) == "const Foo@ &in value");
 }
 
+TEST_CASE("SignatureFormatter - renders a virtual property's accessor block")
+{
+    // A virtual property reaches the formatter as a VariableSignature, so it used to render as
+    // `string Name` - nothing said it was a property, let alone which half of it existed. The
+    // collector had the accessors all along.
+    VariableSignature property;
+    property.typeName = "string";
+    property.isVirtualProperty = true;
+    property.hasGet = true;
+    property.isGetConst = true;
+    property.hasSet = true;
+
+    CHECK(FormatVariableDeclaration(property, "Name") == "string Name { get const; set; }");
+}
+
+TEST_CASE("SignatureFormatter - renders override and final on an accessor")
+{
+    VariableSignature property;
+    property.typeName = "int";
+    property.isVirtualProperty = true;
+    property.hasGet = true;
+    property.isGetOverride = true;
+    property.hasSet = true;
+    property.isSetFinal = true;
+
+    CHECK(FormatVariableDeclaration(property, "Health") == "int Health { get override; set final; }");
+}
+
+TEST_CASE("SignatureFormatter - a get-only property renders only its get")
+{
+    VariableSignature property;
+    property.typeName = "string";
+    property.isVirtualProperty = true;
+    property.hasGet = true;
+
+    CHECK(FormatVariableDeclaration(property, "Name") == "string Name { get; }");
+}
+
+TEST_CASE("SignatureFormatter - an ordinary field gains no accessor block")
+{
+    VariableSignature field;
+    field.typeName = "string";
+    field.modifiers.access = AccessModifier::Private;
+
+    CHECK(FormatVariableDeclaration(field, "m_name") == "private string m_name");
+}
+
 TEST_CASE("SignatureFormatter - undirected reference still renders an ampersand")
 {
     ParameterInformation param;

@@ -216,6 +216,33 @@ namespace angel_lsp::analysis
 
         const std::string typeText = ApplyConstAndHandle(var.typeName, var.modifiers.isConst, var.modifiers.isHandle);
         oss << (typeText.empty() ? "auto" : typeText) << " " << name;
+
+        // A virtual property is a variable to the symbol table and an accessor pair to the reader.
+        // Rendering only the former gave hover `string Name` for `string Name { get const {...} }`,
+        // with nothing to say it was a property at all, let alone which half of it exists.
+        if (var.isVirtualProperty)
+        {
+            const auto accessor = [](const char *keyword, bool isConst, bool isOverride, bool isFinal)
+            {
+                std::string text = keyword;
+                if (isConst)    { text += " const"; }
+                if (isOverride) { text += " override"; }
+                if (isFinal)    { text += " final"; }
+                return text + "; ";
+            };
+
+            oss << " { ";
+            if (var.hasGet)
+            {
+                oss << accessor("get", var.isGetConst, var.isGetOverride, var.isGetFinal);
+            }
+            if (var.hasSet)
+            {
+                oss << accessor("set", false, var.isSetOverride, var.isSetFinal);
+            }
+            oss << "}";
+        }
+
         return oss.str();
     }
 

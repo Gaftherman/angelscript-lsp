@@ -48,6 +48,7 @@ TEST_CASE("I18n - Every code the analyzer emits has both languages")
     // with nothing to indicate anything is wrong.
     static const std::vector<std::string> k_codes = {
         "as-err-declaration-missing-body", "as-err-external-not-shared",
+        "as-err-property-duplicate-accessor",
         "as-err-not-all-paths-return",
         "as-err-break-outside-loop", "as-err-continue-outside-loop",
         "as-err-invalid-case-type", "as-err-duplicate-case-value", "as-err-default-must-be-last",

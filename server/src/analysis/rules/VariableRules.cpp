@@ -160,6 +160,20 @@ namespace angel_lsp::analysis::rules
                 return;
             }
 
+            // Two `get` blocks in one property is something the engine rejects outright, and the
+            // collector has always worked it out - nothing read the answer until now. Independent
+            // of the container, so it is checked before the mixin and interface exemptions.
+            if (sig.hasDuplicateGet)
+            {
+                ctx.LogRule("CheckVirtualProperty", "as-err-property-duplicate-accessor", sym);
+                ctx.Emit(sym, "as-err-property-duplicate-accessor", sym.name, "get");
+            }
+            if (sig.hasDuplicateSet)
+            {
+                ctx.LogRule("CheckVirtualProperty", "as-err-property-duplicate-accessor", sym);
+                ctx.Emit(sym, "as-err-property-duplicate-accessor", sym.name, "set");
+            }
+
             const SymbolTable &table = ctx.request.symbolTable;
 
             if (IsMixinMember(sym, table))
