@@ -456,12 +456,23 @@ namespace angel_lsp::analysis
         }
         classSig.bases = ExtractBases(classNode, sourceCode);
 
-        // REMOVED: a scan for a "template_param" field, which set ClassSignature::isTemplate and
-        // filled templateParams. The grammar defines no such field and no production for a template
-        // class at all, so the loop ran over every child of every class declaration in the workspace
-        // and could not match. `class Holder<T>` parses with an ERROR node over the `<T>`, which the
-        // parser pass reports; the `<` is stripped from the name just below. If the grammar ever
-        // gains the production, this is where detection goes back.
+        // Template parameters of `class array<T>`. The grammar gained the production in a61afd4;
+        // before that this scanned for a "template_param" field the grammar never defined, so
+        // isTemplate was permanently false and `<T>` reached here as an ERROR node.
+        TSNode templateParams = GetChildByFieldName(classNode, "template_params");
+        if (!ts_node_is_null(templateParams))
+        {
+            const uint32_t paramCount = ts_node_named_child_count(templateParams);
+            for (uint32_t i = 0; i < paramCount; ++i)
+            {
+                std::string paramName = GetNodeText(ts_node_named_child(templateParams, i), sourceCode);
+                if (!paramName.empty())
+                {
+                    classSig.isTemplate = true;
+                    classSig.templateParams.push_back(std::move(paramName));
+                }
+            }
+        }
 
         size_t angleInName = sym.name.find('<');
         if (angleInName != std::string::npos)

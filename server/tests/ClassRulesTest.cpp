@@ -254,12 +254,36 @@ TEST_CASE("ClassRules - A method modifier on a class never reaches this module")
     CHECK_FALSE(HasCode(diagnostics, "as-err-external-not-shared"));
 }
 
-TEST_CASE("ClassRules - A template class is left to the parser to report")
+TEST_CASE("ClassRules - Reports a template class declared in a script")
 {
-    // The grammar has no production for a template class declaration, so `<T>` parses as an ERROR
-    // node that the parser pass already reports. ClassSignature::isTemplate is never set, which is
-    // why as-err-template-class-not-supported is deliberately not implemented in this module.
-    CHECK_FALSE(HasCode(AnalyzeClassSnippet("class Holder<T> { T value; }\n"),
+    // A script cannot declare one; the application registers template types. Until the grammar
+    // gained the production this parsed with an ERROR node over the `<T>` and the user got a
+    // generic syntax error pointing at the angle brackets instead of at the class.
+    CHECK(HasCode(AnalyzeClassSnippet("class Holder<T> { T value; }\n"),
+                  "as-err-template-class-not-supported"));
+}
+
+TEST_CASE("ClassRules - A template class in a predefined stub is accepted")
+{
+    // Which is what the message says: only allowed in predefined files. `class array<T>` is the
+    // first declaration in every stub.
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet("class array<T> { uint length() const; }\n",
+                                            "file:///engine.as.predefined"),
+                        "as-err-template-class-not-supported"));
+}
+
+TEST_CASE("ClassRules - A template parameter is not an undeclared identifier")
+{
+    // `T` is introduced by the declaration, so its uses in the class body resolve. Eight of these
+    // fired on the real engine stub before the parameters were collected.
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet("class array<T> { void insertLast(const T &in v); }\n",
+                                            "file:///engine.as.predefined"),
+                        "as-err-undeclared-identifier"));
+}
+
+TEST_CASE("ClassRules - An ordinary class is not reported as a template")
+{
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet("class Plain { int x; }\n"),
                         "as-err-template-class-not-supported"));
 }
 
@@ -333,7 +357,7 @@ TEST_CASE("ClassRules - Class Rules Corpus Audit" * doctest::skip(true))
         "as-err-circular-inherit", "as-err-inherit-final", "as-err-multi-class-inherit",
         "as-err-mixin-final", "as-err-mixin-abstract", "as-err-mixin-child-type",
         "as-err-reserved-keyword-name", "as-err-declaration-missing-body",
-        "as-err-external-not-shared",
+        "as-err-external-not-shared", "as-err-template-class-not-supported",
         "as-err-interface-impl-missing", "as-err-override-final-method"
     };
 

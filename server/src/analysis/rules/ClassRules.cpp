@@ -350,14 +350,18 @@ namespace angel_lsp::analysis::rules
 
         const auto &sig = sym.GetClass();
 
-        // NOT IMPLEMENTED: as-err-template-class-not-supported.
+        // A script cannot declare a template class - the application registers template types, and a
+        // predefined stub is where it writes them down. Stubs never reach here at all, thanks to the
+        // early return above, which is precisely the distinction the message draws.
         //
-        // It would key off ClassSignature::isTemplate, which is never true. SymbolCollector sets it
-        // from a "template_param" field that the tree-sitter grammar does not define - there is no
-        // production for a template class declaration at all, so `class Holder<T>` parses with an
-        // ERROR node over the `<T>` and is already reported as a syntax error by the parser pass.
-        // Implementing the rule here would only duplicate that. Re-enable if the grammar ever
-        // gains the production; the collector's detection needs fixing at the same time.
+        // Reachable only since the grammar gained the production. Before that `class Holder<T>`
+        // parsed with an ERROR node over the `<T>`, so all the user got was a generic syntax error
+        // pointing at the angle brackets rather than at the class.
+        if (sig.isTemplate)
+        {
+            ctx.LogRule("ValidateClass", "as-err-template-class-not-supported", sym);
+            ctx.Emit(sym, "as-err-template-class-not-supported", sym.name);
+        }
 
         CheckClassModifiers(sym, sig, ctx);
         CheckBases(sym, sig, ctx);
