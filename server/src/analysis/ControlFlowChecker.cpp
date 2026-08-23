@@ -1,4 +1,5 @@
 #include "analysis/ControlFlowChecker.h"
+#include "analysis/SemanticHelpers.h"
 
 #include <algorithm>
 #include <cctype>
@@ -50,10 +51,25 @@ namespace angel_lsp::analysis
             return text;
         }
 
-        /** @brief True when the clause is spelled `default:` rather than `case <expr>:`. */
-        bool IsDefaultClause(TSNode clause, std::string_view sourceCode)
+        /**
+         * @brief The keyword a switch clause opens with: "case", "default", or empty if malformed.
+         *
+         * Read as a node type rather than by matching the clause's source text. The grammar makes
+         * both keywords their own anonymous token, so the type is exact; the text is not. Anything
+         * the parser steps over on the way to the keyword - a fall-through comment written just
+         * before `default:`, say - shifts the text, and the old test then answered "case" for a
+         * default clause. That silenced the default-must-be-last rule on exactly the switch
+         * statements most likely to carry the bug.
+         */
+        std::string_view ClauseKeyword(TSNode clause)
         {
-            return Trim(NodeText(clause, sourceCode)).starts_with("default");
+            return NodeType(ts_node_child(clause, 0));
+        }
+
+        /** @brief True when the clause is spelled `default:` rather than `case <expr>:`. */
+        bool IsDefaultClause(TSNode clause)
+        {
+            return ClauseKeyword(clause) == "default";
         }
 
         /**
@@ -63,9 +79,9 @@ namespace angel_lsp::analysis
          * counting children directly reads `case 2:` as a clause with one statement when it is
          * really an empty one falling through to the next.
          */
-        uint32_t FirstStatementIndex(TSNode clause, std::string_view sourceCode)
+        uint32_t FirstStatementIndex(TSNode clause)
         {
-            return IsDefaultClause(clause, sourceCode) ? 0u : 1u;
+            return IsDefaultClause(clause) ? 0u : 1u;
         }
 
         void EmitAtNode(TSNode node, DiagnosticContext &ctx, std::string_view code)
@@ -107,7 +123,7 @@ namespace angel_lsp::analysis
 
             if (type == "statement_block" || type == "case_clause")
             {
-                const uint32_t first = type == "case_clause" ? FirstStatementIndex(node, sourceCode) : 0u;
+                const uint32_t first = type == "case_clause" ? FirstStatementIndex(node) : 0u;
                 const uint32_t count = ts_node_named_child_count(node);
                 for (uint32_t i = first; i < count; ++i)
                 {
@@ -142,14 +158,14 @@ namespace angel_lsp::analysis
                     {
                         continue;
                     }
-                    if (IsDefaultClause(clause, sourceCode))
+                    if (IsDefaultClause(clause))
                     {
                         hasDefault = true;
                     }
                     // An empty clause falls through to the next one, which is ordinary and says
                     // nothing about whether the switch returns.
                     const bool hasStatements =
-                        ts_node_named_child_count(clause) > FirstStatementIndex(clause, sourceCode);
+                        ts_node_named_child_count(clause) > FirstStatementIndex(clause);
                     if (hasStatements && !DefinitelyReturns(clause, sourceCode))
                     {
                         allReturn = false;
@@ -160,8 +176,12 @@ namespace angel_lsp::analysis
 
             if (type == "while_statement")
             {
-                // `while (true)` has no normal exit, so whatever follows it is unreachable.
-                return Trim(NodeText(ts_node_named_child(node, 0), sourceCode)) == "true";
+                // `while (true)` has no normal exit, so whatever follows it is unreachable. The
+                // condition has to be the literal itself, not merely text reading "true": gating on
+                // the node type keeps an identifier that happens to be named `true` out of it.
+                TSNode condition = ts_node_named_child(node, 0);
+                return NodeType(condition) == node_types::BooleanLiteral &&
+                       Trim(NodeText(condition, sourceCode)) == "true";
             }
 
             if (type == "do_while_statement")
@@ -222,7 +242,7 @@ namespace angel_lsp::analysis
                     continue;
                 }
 
-                if (IsDefaultClause(clause, sourceCode))
+                if (IsDefaultClause(clause))
                 {
                     defaultClause = clause;
                     haveDefault = true;
@@ -243,10 +263,9 @@ namespace angel_lsp::analysis
                     continue;
                 }
 
-                // A clause body's first statement would sit where the label does when the label is
+                // A clause body's first statement sits where the label would when the label is
                 // absent, which only happens on a malformed switch the parser already reported.
-                const std::string_view labelText = Trim(NodeText(clause, sourceCode));
-                if (!labelText.starts_with("case"))
+                if (ClauseKeyword(clause) != "case")
                 {
                     continue;
                 }

@@ -198,6 +198,40 @@ TEST_CASE("ControlFlow - Reports default that is not the last clause")
     CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-default-must-be-last"));
 }
 
+TEST_CASE("ControlFlow - A comment before the keyword does not hide the clause")
+{
+    // Regression: the clause keyword used to be read by matching the clause's source text, so
+    // anything the parser stepped over on the way to it - a fall-through comment, most obviously -
+    // made a default clause read as a case one and silenced this rule. The keyword is a node type
+    // now, which no amount of trivia can shift.
+    const std::string code =
+        "void Think(int mode)\n"
+        "{\n"
+        "    switch (mode)\n"
+        "    {\n"
+        "        /* fall through */ default: break;\n"
+        "        case 1: break;\n"
+        "    }\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-default-must-be-last"));
+}
+
+TEST_CASE("ControlFlow - A comment before a case keyword still leaves the label readable")
+{
+    const std::string code =
+        "void Think(int mode)\n"
+        "{\n"
+        "    switch (mode)\n"
+        "    {\n"
+        "        /* first */ case 1: break;\n"
+        "        case 1: break;\n"
+        "    }\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+}
+
 TEST_CASE("ControlFlow - default as the last clause is accepted")
 {
     const std::string code =
