@@ -123,6 +123,17 @@ server/build/angel_lsp_tests
 | `SymbolCollectorTest.cpp` | Layer 2 AST symbol extraction (functions, classes, interfaces, enums, mixins, typedefs, funcdefs, variables, and syntax error diagnostics). |
 | `LocalScopeCollectorTest.cpp` | Layer 2 lexical block scopes, nested compound statements, function/method parameters, and local variables. |
 | `SemanticAnalyzerTest.cpp` | Layer 2 semantic diagnostics, undeclared identifier checks, type resolution, and `as.predefined` stub integration. |
+| `ClassRulesTest.cpp` | Layer 2 class and interface declaration rules: inheritance cycles, final and multiple bases, unimplemented interface methods, mixin constraints. |
+| `TypeRulesTest.cpp` | Layer 2 typedef, funcdef and enum declaration rules, plus redeclaration and cross-kind name conflicts. |
+| `VariableRulesTest.cpp` | Layer 2 variable, field and virtual property rules: void and handle-on-primitive types, misplaced modifiers, accessor bodies. |
+| `FunctionRulesTest.cpp` | Layer 2 function declaration rules: missing bodies, return types, member qualifiers, constructors and destructors, `override`, parameter lists. |
+| `OperatorRulesTest.cpp` | Layer 2 operator overload rules: `opCmp` / `opEquals` return types, binary and index arity, placement inside a class. |
+| `ControlFlowTest.cpp` | Layer 2 control-flow rules over the syntax tree: `break` / `continue` placement, `switch` clauses, and non-void functions that can fall off the end. |
+| `TypeConversionTest.cpp` | Layer 2 conversion diagnostics for `T v = expr;`, `T(expr)` and `cast<T>(expr)` against constructors and the `opConv` / `opCast` family. |
+| `RuleCostTest.cpp` | Layer 2 opt-in cost measurement of each analysis pass over 300 corpus files. |
+| `SignatureFormatterTest.cpp` | Layer 2 source-faithful declaration rendering: access modifiers, `const`, handles, and `&in` / `&out` / `&inout`. |
+| `DocCommentTest.cpp` | Layer 2 Doxygen and line-comment documentation extraction shared by hover and completion. |
+| `ServerHarnessTest.cpp` | Layer 4 end-to-end protocol coverage over a scripted in-memory transport: capabilities, diagnostics, watched files, workspace folders, semantic token deltas. |
 | `HoverTest.cpp` | Layer 3 Hover tooltips, markdown rendering, Doxygen documentation extraction, and type signatures. |
 | `DefinitionTest.cpp` | Layer 3 Go to Definition and Go to Type Definition across global, class member, and local symbols. |
 | `CompletionTest.cpp` | Layer 3 Context-aware auto-completion (lexical variables, class members via `.` / `->`, enum members via `::`, keywords). |

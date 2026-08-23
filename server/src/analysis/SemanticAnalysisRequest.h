@@ -2,6 +2,7 @@
 
 #include "analysis/SymbolTable.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/rules/RuleIndex.h"
 #include "analysis/Diagnostics.h"
 #include "i18n/i18n.h"
 #include "config/ServerConfig.h"
@@ -28,6 +29,22 @@ namespace angel_lsp::analysis
 
         /** @brief Kill-switch for the conversion rules (see TypeConversionChecker.h). */
         bool enableTypeConversionChecks = true;
+
+        /**
+         * @brief Member and enum-member index for the declaration rules, built on first use.
+         *
+         * Mutable and lazy because most passes never ask for it, and the ones that do would
+         * otherwise each rebuild it. Valid for as long as the request is: the analyzer treats the
+         * symbol table as fixed for the duration of one Analyze() call.
+         */
+        const rules::RuleIndex &GetRuleIndex() const
+        {
+            if (!ruleIndex)
+            {
+                ruleIndex = rules::RuleIndex::Build(symbolTable);
+            }
+            return *ruleIndex;
+        }
 
         /** @brief Root of the document's lexical Scope tree (see ScopeTree.h), or nullptr if none was collected. */
         std::shared_ptr<const Scope> scopeRoot;
@@ -72,5 +89,8 @@ namespace angel_lsp::analysis
         {
             return typeConfig && typeConfig->registeredSymbols.contains(name);
         }
+
+        /** @brief Cache behind GetRuleIndex(). Never set by a caller; see that accessor. */
+        mutable std::shared_ptr<const rules::RuleIndex> ruleIndex;
     };
 }

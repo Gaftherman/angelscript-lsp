@@ -120,6 +120,36 @@ namespace angel_lsp::analysis::rules
                 ctx.LogRule("CheckPlacement", "as-err-global-variable-access-modifier", sym);
                 ctx.Emit(sym, "as-err-global-variable-access-modifier", sym.name);
             }
+
+            // A class property has no initialization phase in which a const could be given its
+            // value, so AngelScript does not allow one. Two things it is not:
+            //
+            // - a namespace-scope const, which is ordinary and which the corpus is full of. A
+            //   namespace and a class may carry the same name in one file, and containerName cannot
+            //   tell them apart, so an ambiguous container is left alone;
+            // - `const T@ m`, where the const qualifies what the handle points at rather than the
+            //   member. A read-only handle to an object is legal and idiomatic.
+            if (isMember && sig.modifiers.isConst && !sig.isVirtualProperty && !sig.modifiers.isHandle)
+            {
+                const SymbolTable &table = ctx.request.symbolTable;
+                const auto container = table.FindSymbolsPtr(sym.containerName);
+                bool inClass = false;
+                bool ambiguous = false;
+                if (container)
+                {
+                    for (const auto &owner : *container)
+                    {
+                        inClass = inClass || owner.type == SymbolType::Class;
+                        ambiguous = ambiguous || owner.type == SymbolType::Namespace;
+                    }
+                }
+
+                if (inClass && !ambiguous)
+                {
+                    ctx.LogRule("CheckPlacement", "as-err-class-member-const", sym);
+                    ctx.Emit(sym, "as-err-class-member-const", sym.name);
+                }
+            }
         }
 
         /** @brief Rules for a virtual property's accessors. */

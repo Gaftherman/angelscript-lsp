@@ -327,30 +327,15 @@ namespace angel_lsp::analysis::rules
             }
 
             bool found = false;
-            table.ForEachSymbol(
-                [&](const std::string &, const std::vector<Symbol> &symbols)
+            const RuleIndex &index = ctx.request.GetRuleIndex();
+            for (const auto &ancestor : hierarchy)
+            {
+                if (ancestor != sym.containerName && index.Members(ancestor).methodNames.contains(sym.name))
                 {
-                    if (found)
-                    {
-                        return;
-                    }
-                    for (const auto &member : symbols)
-                    {
-                        if (member.type != SymbolType::Function || member.name != sym.name)
-                        {
-                            continue;
-                        }
-                        if (member.containerName == sym.containerName)
-                        {
-                            continue;
-                        }
-                        if (std::find(hierarchy.begin(), hierarchy.end(), member.containerName) != hierarchy.end())
-                        {
-                            found = true;
-                            return;
-                        }
-                    }
-                });
+                    found = true;
+                    break;
+                }
+            }
 
             if (!found)
             {

@@ -698,6 +698,9 @@ namespace angel_lsp::analysis
                 return;
             }
 
+            // NOT IMPLEMENTED: as-err-implicit-conversion, the older code for this same condition.
+            // Its message names only the source type; as-err-no-implicit-conversion names both and
+            // says which declaration would fix it, so it is the one emitted.
             EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName, declared.baseName);
         }
 

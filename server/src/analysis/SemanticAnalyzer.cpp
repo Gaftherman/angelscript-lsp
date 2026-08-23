@@ -1,4 +1,5 @@
 #include "analysis/SemanticAnalyzer.h"
+#include "analysis/ControlFlowChecker.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/rules/FunctionRules.h"
@@ -65,6 +66,15 @@ namespace angel_lsp::analysis
             CheckUnusedVariables(request.scopeRoot.get(), used, ctx);
 
             CheckNullAssignedToNonHandleInScope(request.scopeRoot.get(), ctx);
+        }
+
+        // Statements, not declarations: whether a break sits inside a loop or a path falls off the
+        // end of a function is nowhere in the symbol table.
+        if (request.tree && !request.sourceCode.empty())
+        {
+            DiagnosticContext ctx{request, diagnostics, m_logger};
+            const ControlFlowCheckRequest flowRequest{ts_tree_root_node(request.tree), request.sourceCode};
+            CheckControlFlow(flowRequest, ctx);
         }
 
         // Needs the tree, not just the symbol table: an initializer or a cast is an expression, and

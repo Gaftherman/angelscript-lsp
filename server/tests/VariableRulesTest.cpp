@@ -130,6 +130,29 @@ TEST_CASE("VariableRules - An access modifier on a class field is accepted")
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-global-variable-access-modifier"));
 }
 
+TEST_CASE("VariableRules - Reports a const class member")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    const int m_max = 10;\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-class-member-const"));
+}
+
+TEST_CASE("VariableRules - A const at namespace or global scope is accepted")
+{
+    const std::string code =
+        "const int MAX = 10;\n"
+        "namespace Weapon\n"
+        "{\n"
+        "    const string MODEL = \"axe.mdl\";\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-class-member-const"));
+}
+
 // =====================================================================================
 // Virtual properties
 // =====================================================================================
@@ -204,7 +227,8 @@ TEST_CASE("VariableRules - Variable Rules Corpus Audit" * doctest::skip(true))
     static const std::vector<std::string> k_codes = {
         "as-err-void-variable", "as-err-handle-on-primitive", "as-err-funcdef-not-handle",
         "as-err-mixin-not-a-type", "as-err-global-variable-access-modifier",
-        "as-err-property-accessor-missing-body", "as-err-mixin-virtual-property"
+        "as-err-property-accessor-missing-body", "as-err-mixin-virtual-property",
+        "as-err-class-member-const"
     };
 
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)

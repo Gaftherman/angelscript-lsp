@@ -58,30 +58,11 @@ namespace angel_lsp::analysis::rules
 
             // A mixin is textually merged into whatever includes it, so it can declare neither a
             // base nor a nested type of its own.
-            bool reportedChildType = false;
-            ctx.request.symbolTable.ForEachSymbol(
-                [&](const std::string &, const std::vector<Symbol> &symbols)
-                {
-                    if (reportedChildType)
-                    {
-                        return;
-                    }
-                    for (const auto &member : symbols)
-                    {
-                        const bool isNestedType = member.type == SymbolType::Funcdef ||
-                                                  member.type == SymbolType::Class ||
-                                                  member.type == SymbolType::Enum ||
-                                                  member.type == SymbolType::Typedef ||
-                                                  member.type == SymbolType::Interface;
-                        if (member.containerName == sym.qualifiedName && isNestedType)
-                        {
-                            ctx.LogRule("CheckClassModifiers", "as-err-mixin-child-type", sym);
-                            ctx.Emit(sym, "as-err-mixin-child-type", sym.name);
-                            reportedChildType = true;
-                            return;
-                        }
-                    }
-                });
+            if (ctx.request.GetRuleIndex().Members(sym.qualifiedName).hasNestedType)
+            {
+                ctx.LogRule("CheckClassModifiers", "as-err-mixin-child-type", sym);
+                ctx.Emit(sym, "as-err-mixin-child-type", sym.name);
+            }
         }
 
         /**
@@ -91,7 +72,8 @@ namespace angel_lsp::analysis::rules
          *       every class trivially satisfy every interface it names.
          */
         ankerl::unordered_dense::set<std::string> CollectImplementedMethodNames(const std::string &typeName,
-                                                                               const SymbolTable &table)
+                                                                               const SymbolTable &table,
+                                                                               const RuleIndex &index)
         {
             ankerl::unordered_dense::set<std::string> names;
 
@@ -106,17 +88,10 @@ namespace angel_lsp::analysis::rules
                     continue;
                 }
 
-                table.ForEachSymbol(
-                    [&](const std::string &, const std::vector<Symbol> &symbols)
-                    {
-                        for (const auto &member : symbols)
-                        {
-                            if (member.type == SymbolType::Function && member.containerName == ancestor)
-                            {
-                                names.insert(member.name);
-                            }
-                        }
-                    });
+                for (const auto &name : index.Members(ancestor).methodNames)
+                {
+                    names.insert(name);
+                }
             }
             return names;
         }
@@ -140,7 +115,7 @@ namespace angel_lsp::analysis::rules
 
             const SymbolTable &table = ctx.request.symbolTable;
             const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            const auto implemented = CollectImplementedMethodNames(container, table);
+            const auto implemented = CollectImplementedMethodNames(container, table, ctx.request.GetRuleIndex());
 
             for (const auto &baseName : sig.bases)
             {
@@ -158,20 +133,7 @@ namespace angel_lsp::analysis::rules
                     continue;
                 }
 
-                std::vector<std::string> required;
-                table.ForEachSymbol(
-                    [&](const std::string &, const std::vector<Symbol> &symbols)
-                    {
-                        for (const auto &member : symbols)
-                        {
-                            if (member.type == SymbolType::Function && member.containerName == cleanBase)
-                            {
-                                required.push_back(member.name);
-                            }
-                        }
-                    });
-
-                for (const auto &methodName : required)
+                for (const auto &methodName : ctx.request.GetRuleIndex().Members(cleanBase).methodNames)
                 {
                     if (!implemented.contains(methodName))
                     {
@@ -196,28 +158,16 @@ namespace angel_lsp::analysis::rules
                     continue;
                 }
 
-                table.ForEachSymbol(
-                    [&](const std::string &, const std::vector<Symbol> &symbols)
+                for (const auto &methodName : ctx.request.GetRuleIndex().Members(cleanBase).finalMethodNames)
+                {
+                    const std::string derivedName = container.empty() ? methodName
+                                                                      : container + "::" + methodName;
+                    if (table.HasSymbol(derivedName))
                     {
-                        for (const auto &baseMethod : symbols)
-                        {
-                            if (baseMethod.type != SymbolType::Function ||
-                                baseMethod.containerName != cleanBase ||
-                                !baseMethod.GetFunction().modifiers.isFinal)
-                            {
-                                continue;
-                            }
-
-                            const std::string derivedName = container.empty()
-                                                                ? baseMethod.name
-                                                                : container + "::" + baseMethod.name;
-                            if (table.HasSymbol(derivedName))
-                            {
-                                ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", sym);
-                                ctx.Emit(sym, "as-err-override-final-method", baseMethod.name, cleanBase);
-                            }
-                        }
-                    });
+                        ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", sym);
+                        ctx.Emit(sym, "as-err-override-final-method", methodName, cleanBase);
+                    }
+                }
             }
         }
 
@@ -237,10 +187,11 @@ namespace angel_lsp::analysis::rules
                 const auto baseSymbols = ctx.request.symbolTable.FindSymbolsPtr(cleanBase);
                 if (!baseSymbols || baseSymbols->empty())
                 {
-                    // Deliberately silent. A base this analyzer cannot resolve is almost always a
-                    // host application type whose stub is not loaded, not a typo - and reporting
-                    // those would bury the real findings. The unresolved-type rule owns that
-                    // question, gated on stub visibility.
+                    // NOT IMPLEMENTED: as-err-base-not-found, and as-err-external-not-found for the
+                    // same reason. A base this analyzer cannot resolve is almost always a host
+                    // application type whose stub is not loaded, not a typo - and reporting those
+                    // would bury the real findings. Deciding it would need the workspace's stubs
+                    // known to be complete, which a single document's analysis cannot establish.
                     continue;
                 }
 

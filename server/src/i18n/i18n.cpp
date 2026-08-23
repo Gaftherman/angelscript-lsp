@@ -71,6 +71,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-invalid-case-type"] = "Case value must be an integer, char, or enum constant expression.";
         m_messages["as-err-duplicate-case-value"] = "Duplicate case value '{}' in switch statement.";
         m_messages["as-err-default-must-be-last"] = "The default case must be the last one.";
+        m_messages["as-err-not-all-paths-return"] = "Not all paths of '{}' return a value.";
         m_messages["as-err-mixin-not-a-type"] = "Mixin '{}' cannot be used as a data type.";
         m_messages["as-err-undeclared-identifier"] = "Undeclared identifier '{}'.";
         m_messages["as-err-implicit-conversion"] = "Implicit conversion from '{}' is invalid.";
@@ -143,7 +144,12 @@ namespace angel_lsp::i18n
             m_messages["as-err-mixin-constructor"] = "La clase mixin '{}' no puede declarar un constructor.";
             m_messages["as-err-mixin-destructor"] = "La clase mixin '{}' no puede declarar un destructor.";
             m_messages["as-err-op-overload-global"] = "La sobrecarga del operador '{}' debe ser un método miembro de clase.";
+            m_messages["as-err-break-outside-loop"] = "La sentencia 'break' solo puede usarse dentro de un bucle o un 'switch'.";
+            m_messages["as-err-continue-outside-loop"] = "La sentencia 'continue' solo puede usarse dentro de un bucle.";
+            m_messages["as-err-invalid-case-type"] = "El valor de 'case' debe ser una expresión constante entera, de carácter o de enumeración.";
+            m_messages["as-err-duplicate-case-value"] = "Valor de 'case' duplicado ('{}') en la sentencia 'switch'.";
             m_messages["as-err-default-must-be-last"] = "El caso por defecto (default) debe ser el último.";
+            m_messages["as-err-not-all-paths-return"] = "No todos los caminos de '{}' devuelven un valor.";
             m_messages["as-err-mixin-not-a-type"] = "El mixin '{}' no puede ser usado como un tipo de dato.";
             m_messages["as-err-undeclared-identifier"] = "Identificador no declarado '{}'.";
             m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";

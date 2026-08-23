@@ -231,8 +231,23 @@ namespace angel_lsp::analysis
 
     void SymbolTable::ForEachSymbol(const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const
     {
-        std::shared_lock<std::shared_mutex> lock(m_mutex);
-        for (const auto &[key, symbols] : m_symbols)
+        // The buckets are snapshotted under the lock and visited outside it, which costs one vector
+        // of (name, shared_ptr) pairs and buys freedom from a deadlock that had already been built
+        // in: a visitor that looks another symbol up - and the declaration rules do that constantly
+        // - re-enters FindSymbolsPtr while this shared lock is still held. std::shared_mutex is
+        // writer-preferring, so the moment the workspace scanner is waiting to write, that second
+        // shared_lock blocks behind it and the two threads wait on each other for good. Holding
+        // shared_ptr copies also keeps every bucket alive for the whole walk even if a writer
+        // replaces it mid-visit.
+        std::vector<std::pair<std::string, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
+        {
+            std::shared_lock<std::shared_mutex> lock(m_mutex);
+            snapshot.reserve(m_symbols.size());
+            for (const auto &[key, symbols] : m_symbols)
+                snapshot.emplace_back(key, symbols);
+        }
+
+        for (const auto &[key, symbols] : snapshot)
             visitor(key, *symbols);
     }
 

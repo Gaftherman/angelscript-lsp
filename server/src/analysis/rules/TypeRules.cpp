@@ -53,39 +53,6 @@ namespace angel_lsp::analysis::rules
                                [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
         }
 
-        /** @brief True when the name belongs to some enum's member list.
-         *  @note Enum members land in the table under their own name, and two enums in one scope
-         *        declaring the same member name is ordinary AngelScript rather than a redeclaration.
-         *        Matched against every enum's member list rather than through containerName, which
-         *        for an enum nested in a namespace names the namespace, not the enum. */
-        bool IsEnumMemberName(const std::string &name, const SymbolTable &table)
-        {
-            bool found = false;
-            table.ForEachSymbol(
-                [&](const std::string &, const std::vector<Symbol> &symbols)
-                {
-                    if (found)
-                    {
-                        return;
-                    }
-                    for (const auto &sym : symbols)
-                    {
-                        if (sym.type != SymbolType::Enum)
-                        {
-                            continue;
-                        }
-                        for (const auto &member : sym.GetEnum().members)
-                        {
-                            if (member.name == name)
-                            {
-                                found = true;
-                                return;
-                            }
-                        }
-                    }
-                });
-            return found;
-        }
 
         /** @brief Renders a symbol kind the way the name-conflict message reads. */
         std::string KindWord(SymbolType type)
@@ -263,7 +230,7 @@ namespace angel_lsp::analysis::rules
             {
                 continue;
             }
-            if (IsDestructorDeclaration(sym, ctx) || IsEnumMemberName(sym.name, ctx.request.symbolTable))
+            if (IsDestructorDeclaration(sym, ctx) || ctx.request.GetRuleIndex().enumMemberNames.contains(sym.name))
             {
                 continue;
             }
