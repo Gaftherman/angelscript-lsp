@@ -9,12 +9,6 @@ namespace angel_lsp::analysis::rules
 {
     namespace
     {
-        bool IsFromPredefinedStub(const Symbol &sym, const DiagnosticContext &ctx)
-        {
-            const std::string &extension = ctx.request.predefinedFileExtension;
-            return !extension.empty() && sym.fileUri.ends_with(extension);
-        }
-
         /** @brief Looks up what kind of declaration a type name refers to, if this analyzer sees one. */
         const Symbol *FindTypeDeclaration(const std::string &typeName,
                                           const SymbolTable &table,

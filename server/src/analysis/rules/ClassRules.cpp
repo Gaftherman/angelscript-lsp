@@ -8,15 +8,6 @@ namespace angel_lsp::analysis::rules
 {
     namespace
     {
-        /** @brief True when the symbol was declared in a predefined stub.
-         *  @note Stubs describe a host application's already-registered API, so the rules about how
-         *        a declaration may be written do not apply to them: the engine accepted it already. */
-        bool IsFromPredefinedStub(const Symbol &sym, const DiagnosticContext &ctx)
-        {
-            const std::string &extension = ctx.request.predefinedFileExtension;
-            return !extension.empty() && sym.fileUri.ends_with(extension);
-        }
-
         /** @brief Modifier and shape rules a class declaration must satisfy on its own. */
         void CheckClassModifiers(const Symbol &sym, const ClassSignature &sig, const DiagnosticContext &ctx)
         {

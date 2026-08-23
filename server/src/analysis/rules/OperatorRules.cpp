@@ -50,13 +50,6 @@ namespace angel_lsp::analysis::rules
                    name == "opForValue" || name == "opCall" || name == "opHndlAssign";
         }
 
-        /** @brief True when the symbol was declared in a predefined stub, which the rules exempt. */
-        bool IsFromPredefinedStub(const Symbol &sym, const DiagnosticContext &ctx)
-        {
-            const std::string &extension = ctx.request.predefinedFileExtension;
-            return !extension.empty() && sym.fileUri.ends_with(extension);
-        }
-
         /** @brief True when the container resolves to a class or an interface this analyzer can read. */
         bool IsDeclaredInAClass(const Symbol &sym, const DiagnosticContext &ctx)
         {

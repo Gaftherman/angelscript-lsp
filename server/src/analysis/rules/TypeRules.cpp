@@ -10,13 +10,6 @@ namespace angel_lsp::analysis::rules
 {
     namespace
     {
-        /** @brief True when the symbol was declared in a predefined stub, which the rules exempt. */
-        bool IsFromPredefinedStub(const Symbol &sym, const DiagnosticContext &ctx)
-        {
-            const std::string &extension = ctx.request.predefinedFileExtension;
-            return !extension.empty() && sym.fileUri.ends_with(extension);
-        }
-
         /** @brief True when the name collides with a keyword or a built-in type name. */
         bool IsUnusableName(const std::string &name, const DiagnosticContext &ctx)
         {
@@ -52,7 +45,6 @@ namespace angel_lsp::analysis::rules
             return std::all_of(text.begin(), text.end(),
                                [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
         }
-
 
         /** @brief Renders a symbol kind the way the name-conflict message reads. */
         std::string KindWord(SymbolType type)

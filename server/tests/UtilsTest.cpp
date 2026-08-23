@@ -30,6 +30,34 @@ TEST_CASE("IsPredefinedFile - an empty extension never matches")
     CHECK_FALSE(IsPredefinedFile("file:///project/stubs.as.predefined", ""));
 }
 
+TEST_CASE("IsPredefinedFile - the conventional 'as.predefined' filename matches")
+{
+    // AngelScript's own convention, and what the community's stubs are called. It is not a suffix
+    // match: the default `.as.predefined` wants a dot where such a path has a separator, so the
+    // 646 KB Sven Coop stub was never picked up by a workspace scan and every host type stayed
+    // invisible. The extension already registers this filename as AngelScript in package.json.
+    CHECK(IsPredefinedFile("file:///c%3A/Users/Fano/Documents/LSP/as.predefined", ".as.predefined"));
+    CHECK(IsPredefinedFile("C:\\Users\\Fano\\Documents\\LSP\\as.predefined", ".as.predefined"));
+    CHECK(IsPredefinedFile("as.predefined", ".as.predefined"));
+
+    // Still recognised when no suffix is configured at all - it stands on its own name.
+    CHECK(IsPredefinedFile("file:///project/as.predefined", ""));
+}
+
+TEST_CASE("IsPredefinedFile - a file merely ending in 'as.predefined' does not match")
+{
+    // `overloads.predefined` is not the conventional name, and neither is anything that only ends
+    // with those characters. The name has to start at a path separator.
+    CHECK_FALSE(IsPredefinedFile("file:///project/nonsenseas.predefined", ""));
+    CHECK_FALSE(IsPredefinedFile("file:///project/my-as.predefined", ""));
+}
+
+TEST_CASE("IsPredefinedFile - the configured suffix keeps working alongside it")
+{
+    CHECK(IsPredefinedFile("file:///project/engine.as.predefined", ".as.predefined"));
+    CHECK_FALSE(IsPredefinedFile("file:///project/engine.as.predefined", ".stub"));
+}
+
 // =====================================================================================
 // IsPrimitiveType - validates AngelScript built-in primitive type names
 // =====================================================================================

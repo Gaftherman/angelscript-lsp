@@ -1,6 +1,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/DiagnosticContext.h"
+#include "utils/Utils.h"
 
 namespace angel_lsp::analysis
 {
@@ -75,6 +76,11 @@ namespace angel_lsp::analysis
         }
 
         return InitializerItemKind::NumericOrExpression;
+    }
+
+    bool IsFromPredefinedStub(const Symbol &sym, const DiagnosticContext &ctx)
+    {
+        return utils::IsPredefinedFile(sym.fileUri, ctx.request.predefinedFileExtension);
     }
 
     bool IsDestructorDeclaration(const Symbol &sym, const DiagnosticContext &ctx)

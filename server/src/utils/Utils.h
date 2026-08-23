@@ -29,6 +29,19 @@ namespace angel_lsp::utils
                                 uint32_t endLine, uint32_t endCharacter,
                                 const std::string &newText,
                                 PositionEncoding enc);
+    /**
+     * @brief Checks whether a file is a predefined stub describing the host application's API.
+     *
+     * Two spellings count. One is the configured suffix, which this project writes as
+     * `<name>.as.predefined`. The other is a file named exactly `as.predefined`, which is
+     * AngelScript's own convention and what the community's stubs are called - the extension
+     * registers that filename as AngelScript in package.json, so the server recognising it too is
+     * what makes the two halves agree.
+     *
+     * @param fileUri URI or path of the file.
+     * @param extension Configured stub suffix, e.g. ".as.predefined". Empty disables suffix matching.
+     * @return True if the file should be treated as a stub.
+     */
     bool IsPredefinedFile(const std::string_view &fileUri, const std::string_view extension);
 
     /**

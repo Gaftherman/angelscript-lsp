@@ -56,6 +56,19 @@ namespace angel_lsp::utils
 
     bool IsPredefinedFile(const std::string_view &fileUri, const std::string_view extension)
     {
+        // AngelScript's own convention is a file named exactly `as.predefined`, and that is what
+        // the community's stubs are called. It is not matched by the configured suffix - the
+        // default `.as.predefined` wants a dot where such a path has a separator - so it is
+        // recognised on its own. Without this the Sven Coop stub, 646 KB describing the entire
+        // engine API, is never picked up by a workspace scan and every host type stays invisible.
+        constexpr std::string_view k_conventionalName = "as.predefined";
+        if (fileUri.ends_with(k_conventionalName))
+        {
+            const size_t nameStart = fileUri.size() - k_conventionalName.size();
+            if (nameStart == 0 || fileUri[nameStart - 1] == '/' || fileUri[nameStart - 1] == '\\')
+                return true;
+        }
+
         if (extension.empty())
             return false;
         return fileUri.ends_with(extension) || fileUri.ends_with(fmt::format("/{}", extension));

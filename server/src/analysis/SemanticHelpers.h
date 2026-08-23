@@ -75,6 +75,23 @@ namespace angel_lsp::analysis
     InitializerItemKind ClassifyInitializerItem(std::string_view item);
 
     /**
+     * @brief True when the symbol was declared in a predefined stub.
+     *
+     * Stubs describe a host application's API that the engine already accepted, so the rules about
+     * how a declaration may be written do not apply to them - a stub's functions have no bodies by
+     * design, and judging one as script produces thousands of findings and no information.
+     *
+     * Shared rather than reimplemented per module: every rule module had its own copy comparing the
+     * URI against the configured suffix directly, which meant a stub recognised by the workspace
+     * scanner could still be judged as script by the rules. One implementation, delegating to
+     * utils::IsPredefinedFile, keeps the two answers from drifting apart again.
+     *
+     * @param sym Symbol whose declaring file is in question.
+     * @param ctx DiagnosticContext carrying the configured stub suffix.
+     */
+    bool IsFromPredefinedStub(const Symbol &sym, const DiagnosticContext &ctx);
+
+    /**
      * @brief True when a function symbol is a destructor declaration.
      *
      * SymbolCollector records `~Foo()` under the bare name "Foo", so a class with both a

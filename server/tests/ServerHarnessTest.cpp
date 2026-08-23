@@ -526,3 +526,50 @@ TEST_CASE("Server - A warning is published as a warning")
     REQUIRE(frames.find("\"as-warn-unused-variable\"") != std::string::npos);
     CHECK(frames.find("\"severity\":2") != std::string::npos);
 }
+
+TEST_CASE("Server - An opened predefined stub is not judged as a script")
+{
+    // A stub's functions have no bodies by design. Recognising the file is what stands between the
+    // user and one error per declaration - the real Sven Coop stub produces 3144 of them when it is
+    // read as ordinary script. The file is named `as.predefined`, AngelScript's own convention,
+    // which the configured `.as.predefined` suffix does not match on its own.
+    const std::string stub =
+        "class CBaseEntity\n"
+        "{\n"
+        "    void Spawn();\n"
+        "    void Precache();\n"
+        "    int TakeDamage(CBaseEntity@ attacker, float damage);\n"
+        "}\n"
+        "void ServerCommand(const string &in command);\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("as.predefined", stub);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("as.predefined"), stub));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string frames = PublishedFrames(stream.Output());
+    CHECK(frames.find("\"as-err-missing-body\"") == std::string::npos);
+    CHECK(frames.find("\"as-err-declaration-missing-body\"") == std::string::npos);
+
+    // The same content under a name that is not a stub must still be reported, or the check above
+    // would pass for the wrong reason - a server that simply never analysed the file would satisfy
+    // it just as well.
+    WorkspaceFixture asScript;
+    asScript.Write("main.as", stub);
+
+    test::ScriptedStream scriptStream;
+    scriptStream.Push(InitializeMessage(asScript.RootUri()));
+    scriptStream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    scriptStream.Push(DidOpenMessage(asScript.Uri("main.as"), stub));
+    scriptStream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    RunScript(serverConfig, scriptStream);
+    CHECK(PublishedFrames(scriptStream.Output()).find("\"as-err-missing-body\"") != std::string::npos);
+}

@@ -19,13 +19,6 @@ namespace angel_lsp::analysis::rules
             bool isDestructor = false;
         };
 
-        /** @brief True when the symbol was declared in a predefined stub, which the rules exempt. */
-        bool IsFromPredefinedStub(const Symbol &sym, const DiagnosticContext &ctx)
-        {
-            const std::string &extension = ctx.request.predefinedFileExtension;
-            return !extension.empty() && sym.fileUri.ends_with(extension);
-        }
-
         FunctionContext BuildFunctionContext(const Symbol &sym, const DiagnosticContext &ctx)
         {
             FunctionContext fctx;
