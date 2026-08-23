@@ -1,0 +1,235 @@
+#include <doctest/doctest.h>
+
+#include "helpers/RuleCorpusAudit.h"
+#include "analysis/rules/OperatorRules.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/LocalScopeCollector.h"
+#include "analysis/SymbolTable.h"
+#include "i18n/i18n.h"
+#include "parser/AngelScriptParser.h"
+
+#include <algorithm>
+#include <string>
+#include <vector>
+
+using namespace angel_lsp::analysis;
+using namespace angel_lsp::parser;
+
+namespace
+{
+    std::vector<Diagnostic> AnalyzeOperatorSnippet(const std::string &code,
+                                                   const std::string &fileUri = "file:///ops.as")
+    {
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        LocalScopeCollector scopes(nullptr);
+        SymbolTable table;
+        static angel_lsp::i18n::I18n i18n;
+
+        collector.CollectSymbols(fileUri, code, parser, table);
+
+        SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
+        request.scopeRoot = scopes.CollectScopes(code, parser);
+        request.sourceCode = code;
+
+        SemanticAnalyzer analyzer(nullptr);
+        return analyzer.Analyze(request);
+    }
+
+    bool HasCode(const std::vector<Diagnostic> &diagnostics, const std::string &code)
+    {
+        return std::any_of(diagnostics.begin(), diagnostics.end(),
+                           [&code](const Diagnostic &diag) { return diag.code == code; });
+    }
+
+    /** @brief Wraps member declarations in a class, which is where an operator has to live. */
+    std::string InClass(const std::string &members)
+    {
+        return "class Vec\n{\n" + members + "}\n";
+    }
+}
+
+// =====================================================================================
+// Return types
+// =====================================================================================
+
+TEST_CASE("OperatorRules - Reports opCmp returning something other than int")
+{
+    CHECK(HasCode(AnalyzeOperatorSnippet(InClass("    float opCmp(const Vec &in other) const { return 0; }\n")),
+                  "as-err-opcmp-return-int"));
+}
+
+TEST_CASE("OperatorRules - opCmp returning int is accepted")
+{
+    CHECK_FALSE(HasCode(AnalyzeOperatorSnippet(InClass("    int opCmp(const Vec &in other) const { return 0; }\n")),
+                        "as-err-opcmp-return-int"));
+}
+
+TEST_CASE("OperatorRules - Reports opEquals returning something other than bool")
+{
+    CHECK(HasCode(AnalyzeOperatorSnippet(InClass("    int opEquals(const Vec &in other) const { return 0; }\n")),
+                  "as-err-opequals-return-bool"));
+}
+
+TEST_CASE("OperatorRules - opEquals returning bool is accepted")
+{
+    CHECK_FALSE(HasCode(AnalyzeOperatorSnippet(InClass("    bool opEquals(const Vec &in other) const { return true; }\n")),
+                        "as-err-opequals-return-bool"));
+}
+
+// =====================================================================================
+// Arity
+// =====================================================================================
+
+TEST_CASE("OperatorRules - Reports a binary operator taking the wrong number of arguments")
+{
+    CHECK(HasCode(AnalyzeOperatorSnippet(InClass("    Vec opAdd() const { return this; }\n")),
+                  "as-err-binary-operator-arity"));
+    CHECK(HasCode(AnalyzeOperatorSnippet(InClass("    Vec opMul(float a, float b) const { return this; }\n")),
+                  "as-err-binary-operator-arity"));
+}
+
+TEST_CASE("OperatorRules - A binary operator taking one argument is accepted")
+{
+    const std::string members =
+        "    Vec opAdd(const Vec &in other) const { return this; }\n"
+        "    Vec opMul_r(float scale) const { return this; }\n"
+        "    Vec@ opAssign(const Vec &in other) { return this; }\n";
+
+    CHECK_FALSE(HasCode(AnalyzeOperatorSnippet(InClass(members)), "as-err-binary-operator-arity"));
+}
+
+TEST_CASE("OperatorRules - Reports opIndex declared without an argument")
+{
+    CHECK(HasCode(AnalyzeOperatorSnippet(InClass("    float opIndex() { return 0; }\n")),
+                  "as-err-opindex-no-params"));
+}
+
+TEST_CASE("OperatorRules - opIndex with an argument is accepted")
+{
+    CHECK_FALSE(HasCode(AnalyzeOperatorSnippet(InClass("    float opIndex(uint i) { return 0; }\n")),
+                        "as-err-opindex-no-params"));
+}
+
+// =====================================================================================
+// Placement
+// =====================================================================================
+
+TEST_CASE("OperatorRules - Reports an operator declared outside a class")
+{
+    CHECK(HasCode(AnalyzeOperatorSnippet("int opCmp(int a) { return 0; }\n"),
+                  "as-err-op-overload-global"));
+}
+
+TEST_CASE("OperatorRules - An operator inside an interface is accepted")
+{
+    const std::string code =
+        "interface IComparable\n"
+        "{\n"
+        "    int opCmp(const IComparable &in other) const;\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeOperatorSnippet(code), "as-err-op-overload-global"));
+}
+
+TEST_CASE("OperatorRules - A method that is not an operator is left alone")
+{
+    const std::string members =
+        "    void Open() { }\n"
+        "    int Compare(const Vec &in a, const Vec &in b) const { return 0; }\n";
+
+    const auto diagnostics = AnalyzeOperatorSnippet(InClass(members));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-binary-operator-arity"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-op-overload-global"));
+}
+
+TEST_CASE("OperatorRules - A conversion operator's shape is not judged here")
+{
+    const std::string members =
+        "    float opConv() const { return 0; }\n"
+        "    int opImplConv() const { return 0; }\n";
+
+    const auto diagnostics = AnalyzeOperatorSnippet(InClass(members));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-binary-operator-arity"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-opcmp-return-int"));
+}
+
+TEST_CASE("OperatorRules - A predefined stub is exempt")
+{
+    const auto diagnostics = AnalyzeOperatorSnippet("float opCmp(int a) { return 0; }\n",
+                                                    "file:///engine.as.predefined");
+    CHECK_FALSE(HasCode(diagnostics, "as-err-op-overload-global"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-opcmp-return-int"));
+}
+
+// =====================================================================================
+// Out parameters (validated by FunctionRules, exercised here with the operator set)
+// =====================================================================================
+
+TEST_CASE("OperatorRules - Reports a const &out parameter")
+{
+    CHECK(HasCode(AnalyzeOperatorSnippet("void Fetch(const int &out value) { }\n"),
+                  "as-err-const-out-param"));
+}
+
+TEST_CASE("OperatorRules - Reports an &out parameter given a default value")
+{
+    CHECK(HasCode(AnalyzeOperatorSnippet("void Fetch(int &out value = 0) { }\n"),
+                  "as-err-out-param-default"));
+}
+
+TEST_CASE("OperatorRules - A plain &out parameter is accepted")
+{
+    const auto diagnostics = AnalyzeOperatorSnippet("void Fetch(int &out value) { }\n");
+    CHECK_FALSE(HasCode(diagnostics, "as-err-const-out-param"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-out-param-default"));
+}
+
+TEST_CASE("OperatorRules - An &out parameter defaulted to void is accepted")
+{
+    // AngelScript's spelling of "the caller may omit this argument and discard the value", used in
+    // the engine's own documentation.
+    CHECK_FALSE(HasCode(AnalyzeOperatorSnippet("void Fetch(int &out value = void) { value = 42; }\n"),
+                        "as-err-out-param-default"));
+}
+
+// =====================================================================================
+// Corpus audit (opt-in - run via
+// `angel_lsp_tests.exe --no-skip --test-case="*Operator Rules Corpus Audit*"`)
+// =====================================================================================
+
+TEST_CASE("OperatorRules - Operator Rules Corpus Audit" * doctest::skip(true))
+{
+    static const std::vector<std::string> k_codes = {
+        "as-err-opcmp-return-int", "as-err-opequals-return-bool", "as-err-opindex-no-params",
+        "as-err-binary-operator-arity", "as-err-op-overload-global", "as-err-const-out-param",
+        "as-err-out-param-default"
+    };
+
+    const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)
+    {
+        return std::find(k_codes.begin(), k_codes.end(), code) != k_codes.end();
+    });
+
+    MESSAGE("Operator-rule corpus audit: files=" << result.filesAnalysed
+            << " totalFlagged=" << result.Total()
+            << " seconds=" << result.seconds);
+
+    for (const auto &[code, count] : result.countByCode)
+    {
+        MESSAGE("  " << code << ": " << count);
+    }
+    for (const auto &hit : result.hits)
+    {
+        MESSAGE("  " << hit.fileName << ":" << hit.line << " [" << hit.code << "] " << hit.message);
+    }
+
+    CHECK(result.filesAnalysed > 0);
+
+    // Nothing survives triage. The one finding the rules produced before hardening was on
+    // `void func(int &out output = void)`, taken verbatim from the engine's documentation - `= void`
+    // is the one default an &out parameter is allowed.
+    CHECK(result.Total() == 0);
+}

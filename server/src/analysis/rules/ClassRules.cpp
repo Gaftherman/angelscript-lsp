@@ -253,6 +253,11 @@ namespace angel_lsp::analysis::rules
                         {
                             sawClassBase = true;
                         }
+                        // NOT IMPLEMENTED: as-err-mixin-as-base, whose message claims a class
+                        // cannot list a mixin among its bases. That is exactly how a mixin is
+                        // included - `class weapon_p90 : ScriptBasePlayerWeaponEntity,
+                        // CS16BASE::WeaponBase` is the idiom, and the corpus uses it in hundreds of
+                        // files. The code describes a rule the language does not have.
                         if (base.GetClass().modifiers.isFinal)
                         {
                             ctx.LogRule("CheckBases", "as-err-inherit-final", sym);

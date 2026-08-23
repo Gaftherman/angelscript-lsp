@@ -975,8 +975,13 @@ namespace angel_lsp::analysis
                         modifiers.isDeclarationAbstract = true;
                 }
             }
-            else if (ts_node_symbol(child) == m_symFuncAttributes)
+            else if (ts_node_symbol(child) == m_symFuncAttributes ||
+                     ts_node_symbol(child) == m_symSharedExternalModifier)
             {
+                // shared_external_modifier is the strict subset the grammar gives to declarations
+                // that admit neither 'abstract' nor 'final' - functions, funcdefs, enums and
+                // interfaces. Without it here, `external void Think();` and `shared enum E` reached
+                // the symbol table with no modifiers set at all.
                 uint32_t modCount = ts_node_child_count(child);
                 for (uint32_t m = 0; m < modCount; ++m)
                 {

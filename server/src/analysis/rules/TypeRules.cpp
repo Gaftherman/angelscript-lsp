@@ -53,47 +53,6 @@ namespace angel_lsp::analysis::rules
                                [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
         }
 
-        /**
-         * @brief True when the declaration is a destructor.
-         *
-         * SymbolCollector records `~Foo()` under the bare name "Foo", so a class with both a
-         * constructor and a destructor puts two zero-parameter functions in one bucket. Nothing on
-         * the signature distinguishes them, so the tilde is read back from the source.
-         */
-        bool IsDestructor(const Symbol &sym, const DiagnosticContext &ctx)
-        {
-            const std::string_view source = ctx.request.sourceCode;
-            if (source.empty() || sym.fileUri != ctx.request.fileUri)
-            {
-                return false;
-            }
-
-            // Walk to the start of the declaration's line, then to the identifier.
-            size_t offset = 0;
-            for (uint32_t line = 0; line < sym.selectionRange.startLine; ++line)
-            {
-                offset = source.find('\n', offset);
-                if (offset == std::string_view::npos)
-                {
-                    return false;
-                }
-                ++offset;
-            }
-
-            offset += sym.selectionRange.startCharacter;
-            if (offset == 0 || offset > source.size())
-            {
-                return false;
-            }
-
-            size_t back = offset;
-            while (back > 0 && (source[back - 1] == ' ' || source[back - 1] == '\t'))
-            {
-                --back;
-            }
-            return back > 0 && source[back - 1] == '~';
-        }
-
         /** @brief True when the name belongs to some enum's member list.
          *  @note Enum members land in the table under their own name, and two enums in one scope
          *        declaring the same member name is ordinary AngelScript rather than a redeclaration.
@@ -304,7 +263,7 @@ namespace angel_lsp::analysis::rules
             {
                 continue;
             }
-            if (IsDestructor(sym, ctx) || IsEnumMemberName(sym.name, ctx.request.symbolTable))
+            if (IsDestructorDeclaration(sym, ctx) || IsEnumMemberName(sym.name, ctx.request.symbolTable))
             {
                 continue;
             }

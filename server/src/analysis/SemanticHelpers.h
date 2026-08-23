@@ -75,6 +75,20 @@ namespace angel_lsp::analysis
     InitializerItemKind ClassifyInitializerItem(std::string_view item);
 
     /**
+     * @brief True when a function symbol is a destructor declaration.
+     *
+     * SymbolCollector records `~Foo()` under the bare name "Foo", so a class with both a
+     * constructor and a destructor puts two zero-parameter functions in one bucket. Nothing on the
+     * signature distinguishes them, so the tilde is read back from the source - which means this
+     * only answers for the document under analysis, where sourceCode is available.
+     *
+     * @param sym Function symbol to classify.
+     * @param ctx DiagnosticContext carrying the request's source text and file URI.
+     * @return True if the declaration is spelled with a leading '~'.
+     */
+    bool IsDestructorDeclaration(const Symbol &sym, const DiagnosticContext &ctx);
+
+    /**
      * @brief Checks if a given base type name resolves to a mixin class symbol.
      * @param baseTypeName The name of the type to check.
      * @param table SymbolTable to look up the type.

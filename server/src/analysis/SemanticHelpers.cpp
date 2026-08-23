@@ -77,6 +77,40 @@ namespace angel_lsp::analysis
         return InitializerItemKind::NumericOrExpression;
     }
 
+    bool IsDestructorDeclaration(const Symbol &sym, const DiagnosticContext &ctx)
+    {
+        const std::string_view source = ctx.request.sourceCode;
+        if (source.empty() || sym.fileUri != ctx.request.fileUri)
+        {
+            return false;
+        }
+
+        // Walk to the start of the declaration's line, then to the identifier.
+        size_t offset = 0;
+        for (uint32_t line = 0; line < sym.selectionRange.startLine; ++line)
+        {
+            offset = source.find('\n', offset);
+            if (offset == std::string_view::npos)
+            {
+                return false;
+            }
+            ++offset;
+        }
+
+        offset += sym.selectionRange.startCharacter;
+        if (offset == 0 || offset > source.size())
+        {
+            return false;
+        }
+
+        size_t back = offset;
+        while (back > 0 && (source[back - 1] == ' ' || source[back - 1] == '\t'))
+        {
+            --back;
+        }
+        return back > 0 && source[back - 1] == '~';
+    }
+
     bool IsMixinClass(std::string_view baseTypeName, const SymbolTable &table)
     {
         if (baseTypeName.empty())

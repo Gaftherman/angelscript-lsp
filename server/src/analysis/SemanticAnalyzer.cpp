@@ -1,6 +1,8 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
+#include "analysis/rules/FunctionRules.h"
+#include "analysis/rules/OperatorRules.h"
 #include "analysis/rules/TypeRules.h"
 #include "analysis/rules/VariableRules.h"
 #include "spdlog/fmt/fmt.h"
@@ -112,8 +114,15 @@ namespace angel_lsp::analysis
                     case SymbolType::Typedef:
                         rules::ValidateTypedef(sym, ctx);
                         break;
+                    case SymbolType::Function:
+                        rules::ValidateFunction(sym, ctx);
+                        rules::ValidateOperator(sym, ctx);
+                        break;
                     case SymbolType::Funcdef:
                         rules::ValidateFuncdef(sym, ctx);
+                        // A funcdef's parameter list obeys the same rules as a function's, minus
+                        // everything that presumes a body or a container.
+                        rules::ValidateParameters(sym, sym.GetFuncdef().parameters, true, ctx);
                         break;
                     case SymbolType::Enum:
                         rules::ValidateEnum(sym, ctx);
