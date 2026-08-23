@@ -16,7 +16,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries" FORCE)
 FetchContent_Declare(
     lsp_framework
     GIT_REPOSITORY https://github.com/leon-bckl/lsp-framework.git
-    GIT_TAG master
+    GIT_TAG c5cd680693d9f03e105df5de64d2483b28dd7604
 )
 FetchContent_MakeAvailable(lsp_framework)
 

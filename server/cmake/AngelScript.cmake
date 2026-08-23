@@ -1,5 +1,5 @@
 # ── AngelScript Compiler ──────────────────────────────────────────────────
-FetchContent_Declare(angelscript_repo GIT_REPOSITORY https://github.com/anjo76/angelscript.git GIT_TAG master)
+FetchContent_Declare(angelscript_repo GIT_REPOSITORY https://github.com/anjo76/angelscript.git GIT_TAG 0e6b5503c27f1df1e48f75dde7166c4e66a3b03f)
 FetchContent_MakeAvailable(angelscript_repo)
 
 file(GLOB AS_SOURCES "${angelscript_repo_SOURCE_DIR}/sdk/angelscript/source/*.cpp")

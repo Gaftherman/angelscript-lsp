@@ -6,9 +6,11 @@ project(AngelLSP VERSION 1.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-    enable_language(ASM_MASM)
-endif()
+# The AngelScript SDK is not linked: nothing in server/src references asIScriptEngine or any
+# other symbol from it (verified by grep), and building the whole SDK on every configure cost
+# real time for nothing. Re-add cmake/AngelScript.cmake, the include directory and the
+# AngelScriptLib link - plus the MASM language below, needed by as_callfunc_x64_msvc_asm.asm -
+# when real-compiler diagnostics are actually built.
 
 if(MSVC)
     # Suppress spdlog/fmt C++20 deprecation warnings on Windows
@@ -27,7 +29,6 @@ endif()
 # 1. DEPENDENCIES
 # ==============================================================================
 include(cmake/Dependencies.cmake)
-include(cmake/AngelScript.cmake)
 include(cmake/TreeSitter.cmake)
 
 # ==============================================================================
@@ -42,13 +43,11 @@ target_include_directories(angel_lsp_core PUBLIC
     src 
     "${tree_sitter_angelscript_SOURCE_DIR}/src" 
     "${tree_sitter_runtime_SOURCE_DIR}/lib/include"
-    "${angelscript_repo_SOURCE_DIR}/sdk/angelscript/source"
 )
 target_link_libraries(angel_lsp_core PUBLIC 
     tree_sitter_angelscript_lib
     tree_sitter_doxygen_lib
     spdlog::spdlog
-    AngelScriptLib
     nlohmann_json::nlohmann_json
     lsp
     unordered_dense::unordered_dense

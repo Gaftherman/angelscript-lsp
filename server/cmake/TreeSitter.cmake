@@ -9,7 +9,7 @@ if(MSVC)
 endif()
 
 # ── Tree-Sitter AngelScript Grammar ───────────────────────────────────────
-FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG master)
+FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG 98b5f4dd890085bf9750e7c699dbc1c21bb8c54e)
 FetchContent_MakeAvailable(tree_sitter_angelscript)
 
 add_library(tree_sitter_angelscript_lib STATIC 
@@ -27,7 +27,7 @@ endif()
 if(POLICY CMP0169)
     cmake_policy(SET CMP0169 OLD)
 endif()
-FetchContent_Declare(tree_sitter_doxygen GIT_REPOSITORY https://github.com/tree-sitter-grammars/tree-sitter-doxygen.git GIT_TAG master)
+FetchContent_Declare(tree_sitter_doxygen GIT_REPOSITORY https://github.com/tree-sitter-grammars/tree-sitter-doxygen.git GIT_TAG 6069b1815b139080d6c562b5ff9ae2296cbc6602)
 FetchContent_GetProperties(tree_sitter_doxygen)
 if(NOT tree_sitter_doxygen_POPULATED)
     FetchContent_Populate(tree_sitter_doxygen)
