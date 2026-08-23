@@ -1,5 +1,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/TypeConversionChecker.h"
+#include "analysis/rules/ClassRules.h"
+#include "analysis/rules/TypeRules.h"
 #include "spdlog/fmt/fmt.h"
 
 namespace angel_lsp::analysis
@@ -39,6 +41,7 @@ namespace angel_lsp::analysis
         {
             DiagnosticContext ctx{request, diagnostics, m_logger};
             CheckNullAssignedToNonHandle(request.symbolTable, ctx);
+            CheckDeclarationRules(request.symbolTable, ctx);
         }
 
         if (request.scopeRoot)
@@ -75,6 +78,50 @@ namespace angel_lsp::analysis
         }
 
         return diagnostics;
+    }
+
+    void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable &symbolTable, DiagnosticContext &ctx) const
+    {
+        symbolTable.ForEachSymbol(
+            [&](const std::string &, const std::vector<Symbol> &symbols)
+            {
+                // Whether a name is redeclared is a property of the whole overload bucket, so this
+                // one is handed the set rather than each member of it.
+                rules::ValidateDuplicates(symbols, ctx);
+
+                for (const auto &sym : symbols)
+                {
+                    // Only the document under analysis is reported on. Its module's other files are
+                    // indexed alongside it so their declarations resolve, but diagnosing them here
+                    // would attach findings to files the user did not open.
+                    if (sym.fileUri != ctx.request.fileUri)
+                    {
+                        continue;
+                    }
+
+                    switch (sym.type)
+                    {
+                    case SymbolType::Class:
+                        rules::ValidateClass(sym, ctx);
+                        break;
+                    case SymbolType::Interface:
+                        rules::ValidateClass(sym, ctx);
+                        rules::ValidateInterfaceMembers(sym, ctx);
+                        break;
+                    case SymbolType::Typedef:
+                        rules::ValidateTypedef(sym, ctx);
+                        break;
+                    case SymbolType::Funcdef:
+                        rules::ValidateFuncdef(sym, ctx);
+                        break;
+                    case SymbolType::Enum:
+                        rules::ValidateEnum(sym, ctx);
+                        break;
+                    default:
+                        break;
+                    }
+                }
+            });
     }
 
     void SemanticAnalyzer::CheckUndefinedIdentifiers(const Scope *scope, const ankerl::unordered_dense::set<std::string> &knownGlobalNames, DiagnosticContext &ctx) const

@@ -76,6 +76,16 @@ namespace angel_lsp::analysis
         void CheckNullAssignedToNonHandle(const SymbolTable &symbolTable, DiagnosticContext &ctx) const;
 
         /**
+         * @brief Dispatches every declaration in the analysed document to its rule module.
+         *
+         * The rule modules under analysis/rules/ each own one declaration kind and read only the
+         * SymbolTable, so this is a single pass over it. Declarations belonging to other files of
+         * the same #include module are skipped: they are indexed so this document's references
+         * resolve, not so they can be diagnosed here.
+         */
+        void CheckDeclarationRules(const SymbolTable &symbolTable, DiagnosticContext &ctx) const;
+
+        /**
          * @brief Same rule as CheckNullAssignedToNonHandle, applied to function-body locals -
          *        ScopeTree::LocalDefinition entries of kind Variable in an isFunctionScope-nested
          *        scope (same ancestor-walk pattern as CheckUnusedVariables), using the
