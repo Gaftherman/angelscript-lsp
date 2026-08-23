@@ -581,16 +581,12 @@ namespace angel_lsp::analysis
 
         if (nodeType == "member_expression")
         {
+            // member_expression names both children unconditionally in the grammar, so the fields
+            // are the answer. Falling back to positional children was strictly worse: named_child(1)
+            // is not the member once anything else lands between the two, and a null field here
+            // means a malformed tree worth surfacing rather than guessing around.
             TSNode objNode = ts_node_child_by_field_name(exprNode, "object", 6);
-            if (ts_node_is_null(objNode) && ts_node_named_child_count(exprNode) > 0)
-            {
-                objNode = ts_node_named_child(exprNode, 0);
-            }
             TSNode memNode = ts_node_child_by_field_name(exprNode, "member", 6);
-            if (ts_node_is_null(memNode) && ts_node_named_child_count(exprNode) > 1)
-            {
-                memNode = ts_node_named_child(exprNode, 1);
-            }
             if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
             {
                 return "";

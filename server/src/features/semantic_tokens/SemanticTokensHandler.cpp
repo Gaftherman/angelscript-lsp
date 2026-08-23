@@ -2,6 +2,7 @@
 #include "parser/queries/BuiltQueries.h"
 #include <algorithm>
 #include <cstring>
+#include <ankerl/unordered_dense.h>
 #include <string_view>
 #include <vector>
 
@@ -51,6 +52,44 @@ namespace angel_lsp::features
             Mod_Documentation = 1 << 8,
             Mod_DefaultLibrary = 1 << 9
         };
+
+        /**
+         * @brief Packs a position into one key, so reference kinds can be looked up by where they are.
+         */
+        constexpr uint64_t PositionKey(uint32_t line, uint32_t character)
+        {
+            return (static_cast<uint64_t>(line) << 32) | character;
+        }
+
+        /**
+         * @brief Resolves every identifier reference in the scope tree to what it declares.
+         *
+         * Same walk SemanticAnalyzer uses for its unused-variable pass: each reference is already
+         * stored in the scope that contains it, so ResolveInScope answers directly and no scope
+         * lookup by position is needed. Member accesses are skipped - resolving "obj.field" needs
+         * the type of "obj", which is a different question from the one asked here.
+         */
+        void CollectReferenceKinds(const analysis::Scope *scope,
+                                   ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind> &out)
+        {
+            for (const auto &ref : scope->references)
+            {
+                if (ref.isMemberAccess)
+                {
+                    continue;
+                }
+
+                if (const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, ref.name))
+                {
+                    out[PositionKey(ref.startLine, ref.startCharacter)] = def->kind;
+                }
+            }
+
+            for (const auto &child : scope->children)
+            {
+                CollectReferenceKinds(child.get(), out);
+            }
+        }
 
         struct RawToken
         {
@@ -152,6 +191,14 @@ namespace angel_lsp::features
         if (!query)
         {
             return lsp::SemanticTokens{};
+        }
+
+        // Resolved once for the whole document rather than per identifier: the map is keyed by
+        // position, and every reference is looked up in the scope that already holds it.
+        ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind> referenceKinds;
+        if (request.scopeRoot)
+        {
+            CollectReferenceKinds(request.scopeRoot.get(), referenceKinds);
         }
 
         TSQueryCursor *cursor = ts_query_cursor_new();
@@ -287,6 +334,26 @@ namespace angel_lsp::features
 
             TSPoint startPoint = ts_node_start_point(node);
             TSPoint endPoint = ts_node_end_point(node);
+
+            // The query can only say "this is an identifier being used". What it is a use OF comes
+            // from the scope tree: a parameter reads as a parameter, a class field as a property.
+            if (tokenType == Type_Variable)
+            {
+                const auto resolved = referenceKinds.find(PositionKey(startPoint.row, startPoint.column));
+                if (resolved != referenceKinds.end())
+                {
+                    switch (resolved->second)
+                    {
+                        case analysis::LocalDefinitionKind::Parameter: tokenType = Type_Parameter; break;
+                        case analysis::LocalDefinitionKind::Field: tokenType = Type_Property; break;
+                        case analysis::LocalDefinitionKind::Function: tokenType = Type_Function; break;
+                        case analysis::LocalDefinitionKind::Method: tokenType = Type_Method; break;
+                        case analysis::LocalDefinitionKind::Type: tokenType = Type_Type; break;
+                        case analysis::LocalDefinitionKind::Constant: tokenType = Type_EnumMember; break;
+                        default: break;
+                    }
+                }
+            }
 
             if (startPoint.row == endPoint.row)
             {

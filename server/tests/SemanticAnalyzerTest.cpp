@@ -923,3 +923,109 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
 
     CHECK(totalFiles > 0);
 }
+
+// =====================================================================================
+// What counts as a local and what counts as a global.
+//
+// LOCALS_QUERY gives locals and module/namespace-scope globals the identical kind
+// (LocalDefinitionKind::Variable), so the only thing separating them is where they were
+// declared: a definition is a LOCAL when its scope, or any scope above it, was opened by
+// a func_declaration or a lambda_expression (Scope::isFunctionScope). Everything else at
+// Variable kind is a GLOBAL.
+//
+// That distinction is load-bearing in three places, which have to agree: the unused
+// variable warning, the null-to-non-handle check, and the "remove unused variable" quick
+// fix. Only locals are reported, because "unused" is not decidable for a global from one
+// file - another file in the workspace, or the engine itself, may reference it.
+// =====================================================================================
+
+TEST_CASE("Local vs global - a variable in a function body is a local and is reported unused")
+{
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource("void Main()\n{\n    int unusedLocal = 1;\n}\n", table, i18n);
+
+    CHECK(HasUnusedVariableDiagnostic(diagnostics, "unusedLocal"));
+}
+
+TEST_CASE("Local vs global - a variable in a nested block is still a local")
+{
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "void Main()\n{\n    if (true)\n    {\n        int nested = 1;\n    }\n}\n", table, i18n);
+
+    CHECK(HasUnusedVariableDiagnostic(diagnostics, "nested"));
+}
+
+TEST_CASE("Local vs global - a variable in a method body is a local")
+{
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "class Weapon\n{\n    void Fire()\n    {\n        int shots = 1;\n    }\n}\n", table, i18n);
+
+    CHECK(HasUnusedVariableDiagnostic(diagnostics, "shots"));
+}
+
+TEST_CASE("Local vs global - a variable in a lambda body is a local")
+{
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "void Main()\n{\n    auto fn = function() { int inner = 1; };\n}\n", table, i18n);
+
+    CHECK(HasUnusedVariableDiagnostic(diagnostics, "inner"));
+}
+
+TEST_CASE("Local vs global - a module-scope variable is a global and is never reported unused")
+{
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource("string WPN_NAME = \"ak47\";\n", table, i18n);
+
+    CHECK_FALSE(HasUnusedVariableDiagnostic(diagnostics, "WPN_NAME"));
+}
+
+TEST_CASE("Local vs global - a namespace-scope variable is a global")
+{
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "namespace Weapons\n{\n    int roundCount = 0;\n}\n", table, i18n);
+
+    CHECK_FALSE(HasUnusedVariableDiagnostic(diagnostics, "roundCount"));
+}
+
+TEST_CASE("Local vs global - a class field is neither, and is never reported unused")
+{
+    // A field is LocalDefinitionKind::Field, so it never reaches the Variable-only check -
+    // and class_body is not a function scope either way.
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource("class Weapon\n{\n    int ammo;\n}\n", table, i18n);
+
+    CHECK_FALSE(HasUnusedVariableDiagnostic(diagnostics, "ammo"));
+}
+
+TEST_CASE("Local vs global - an unused parameter is not reported, unlike an unused local")
+{
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "void Main(int ignored)\n{\n    int unusedLocal = 1;\n}\n", table, i18n);
+
+    CHECK(HasUnusedVariableDiagnostic(diagnostics, "unusedLocal"));
+    CHECK_FALSE(HasUnusedVariableDiagnostic(diagnostics, "ignored"));
+}
+
+TEST_CASE("Local vs global - a local shadowing a global is reported independently of it")
+{
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "int count = 0;\nvoid Main()\n{\n    int count = 1;\n}\n", table, i18n);
+
+    // Exactly one warning: the local. The global with the same name must not be swept in.
+    CHECK(CountUnusedVariableDiagnostics(diagnostics, "count") == 1);
+}

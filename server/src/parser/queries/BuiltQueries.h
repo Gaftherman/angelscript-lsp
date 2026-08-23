@@ -43,15 +43,41 @@ namespace angel_lsp::parser::queries
 ; Variable names
 (variable_declarator name: (identifier) @variable)
 
+; Class member variables are properties, not plain variables. Anchored to class_body, which is
+; also what distinguishes them in LOCALS_QUERY.
+(class_body
+  (variable_declaration
+    (variable_declarator
+      name: (identifier) @property)))
+
 ; Parameter names
 (parameter name: (identifier) @variable.parameter)
 
 ; Foreach variable names
 (foreach_variable name: (identifier) @variable)
 
-; Namespace
+; Namespace.
+;
+; The qualifier pattern is anchored to identifiers immediately followed by "::" on purpose.
+; scoped_identifier is not only used for qualified names: the grammar wraps EVERY bare
+; identifier expression in one, so "f = 1;" parses as (scoped_identifier (identifier)). An
+; unanchored "(scoped_identifier (identifier)) @module" therefore matched every variable read,
+; parameter read and unqualified call in the language, and at priority 6 it outranked all of
+; them - which is why plain identifiers were being painted as namespaces.
 (namespace_declaration name: (scoped_identifier) @module)
-(scoped_identifier (identifier) @module)
+(scoped_identifier (identifier) @module . "::")
+
+; Qualifiers of a qualified TYPE take a different shape: "Weapons::Rifle r;" parses the
+; namespace part into a (scope (scoped_identifier ...) "::") node, so the "::" is a sibling of
+; the scoped_identifier rather than a child of it and the anchor above cannot see it. Every
+; identifier under a scope node is a qualifier by construction.
+(scope (scoped_identifier (identifier) @module))
+
+; The trailing anchor picks the final name of a scoped_identifier: the actual thing being
+; referred to, as opposed to the namespaces qualifying it. Calls override this through
+; @function.call below, which is captured on the same node at a higher priority.
+(scoped_identifier (identifier) @variable .)
+
 
 ; Keywords
 [
@@ -117,8 +143,9 @@ namespace angel_lsp::parser::queries
 (boolean_literal) @boolean
 (null_literal) @constant.builtin
 
-; Function calls
-(call_expression function: (scoped_identifier) @function.call)
+; Function calls. Captured on the final identifier rather than the whole scoped_identifier so
+; that a qualified call colours the callee and leaves the qualifier to the namespace pattern.
+(call_expression function: (scoped_identifier (identifier) @function.call .))
 (call_expression function: (member_expression member: (identifier) @function.method.call))
 
 ; Named arguments
@@ -191,9 +218,41 @@ namespace angel_lsp::parser::queries
 (lambda_parameter_list
   name: (identifier) @local.definition.parameter)
 
-; Variables (locals and globals)
-(variable_declarator
-  name: (identifier) @local.definition.var)
+; Variables (locals and module/namespace-scope globals).
+;
+; Anchored to every context a variable_declaration can appear in EXCEPT class_body, which is
+; covered by the @local.definition.field pattern below. An unanchored
+; "(variable_declarator name: (identifier))" also matches class fields, so every field used to be
+; captured twice - once as a variable and once as a field - and downstream code had to
+; disambiguate by walking ancestors to work out which capture was the real one. Enumerating the
+; contexts here removes the ambiguity at the source; tree-sitter queries cannot express "not
+; inside a class_body" directly, so the list is explicit and has to track the grammar:
+; script, namespace_body, statement_block, for_statement init, and case_clause.
+(script
+  (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
+(namespace_body
+  (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
+(statement_block
+  (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
+(for_statement
+  init: (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
+(case_clause
+  (variable_declaration
+    (variable_declarator
+      name: (identifier) @local.definition.var)))
+
 
 ; Class member variables are fields
 (class_body

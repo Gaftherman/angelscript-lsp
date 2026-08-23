@@ -603,3 +603,137 @@ TEST_CASE("LocalScopeCollector - Local Scope Corpus Audit Across All angelscript
     CHECK(totalFiles > 0);
     CHECK(totalDefinitions > 0);
 }
+
+// =====================================================================================
+// Capture disambiguation. LOCALS_QUERY used to capture every variable_declarator as
+// @local.definition.var without anchoring it to a context, which meant a class field
+// matched both that pattern and the class_body @local.definition.field one. Anchoring
+// the variable pattern to the contexts a variable_declaration can actually appear in
+// outside a class body settles it in the query rather than downstream.
+// =====================================================================================
+
+namespace
+{
+    /** @brief Counts definitions of the given name and kind anywhere in the scope tree. */
+    size_t CountDefinitions(const Scope *scope, const std::string &name, LocalDefinitionKind kind)
+    {
+        size_t total = 0;
+
+        for (const auto &def : scope->definitions)
+        {
+            if (def.name == name && def.kind == kind)
+                ++total;
+        }
+
+        for (const auto &child : scope->children)
+            total += CountDefinitions(child.get(), name, kind);
+
+        return total;
+    }
+}
+
+TEST_CASE("LOCALS_QUERY - a class field is captured as a field and not also as a variable")
+{
+    const std::string source =
+        "class Weapon\n"
+        "{\n"
+        "    int ammo;\n"
+        "}\n";
+
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    CHECK(CountDefinitions(root.get(), "ammo", LocalDefinitionKind::Field) == 1);
+    CHECK(CountDefinitions(root.get(), "ammo", LocalDefinitionKind::Variable) == 0);
+}
+
+TEST_CASE("LOCALS_QUERY - a function-body local is still captured as a variable")
+{
+    const std::string source =
+        "void Fire()\n"
+        "{\n"
+        "    int ammo = 30;\n"
+        "}\n";
+
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    CHECK(CountDefinitions(root.get(), "ammo", LocalDefinitionKind::Variable) == 1);
+    CHECK(CountDefinitions(root.get(), "ammo", LocalDefinitionKind::Field) == 0);
+}
+
+TEST_CASE("LOCALS_QUERY - a module-scope global is still captured as a variable")
+{
+    const std::string source = "string WPN_NAME = \"ak47\";\n";
+
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    CHECK(CountDefinitions(root.get(), "WPN_NAME", LocalDefinitionKind::Variable) == 1);
+}
+
+TEST_CASE("LOCALS_QUERY - a namespace-scope variable is still captured")
+{
+    const std::string source =
+        "namespace Weapons\n"
+        "{\n"
+        "    int shared_count = 0;\n"
+        "}\n";
+
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    CHECK(CountDefinitions(root.get(), "shared_count", LocalDefinitionKind::Variable) == 1);
+}
+
+TEST_CASE("LOCALS_QUERY - a for-loop init variable is still captured")
+{
+    const std::string source =
+        "void Loop()\n"
+        "{\n"
+        "    for (int i = 0; i < 10; i++) { }\n"
+        "}\n";
+
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    CHECK(CountDefinitions(root.get(), "i", LocalDefinitionKind::Variable) == 1);
+}
+
+TEST_CASE("LOCALS_QUERY - a variable declared inside a case clause is still captured")
+{
+    const std::string source =
+        "void Pick(int mode)\n"
+        "{\n"
+        "    switch (mode)\n"
+        "    {\n"
+        "        case 1:\n"
+        "            int chosen = 5;\n"
+        "            break;\n"
+        "    }\n"
+        "}\n";
+
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    CHECK(CountDefinitions(root.get(), "chosen", LocalDefinitionKind::Variable) == 1);
+}
+
+TEST_CASE("LOCALS_QUERY - a field and a local sharing a name stay distinct")
+{
+    const std::string source =
+        "class Weapon\n"
+        "{\n"
+        "    int ammo;\n"
+        "    void Fire()\n"
+        "    {\n"
+        "        int ammo = 1;\n"
+        "    }\n"
+        "}\n";
+
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    CHECK(CountDefinitions(root.get(), "ammo", LocalDefinitionKind::Field) == 1);
+    CHECK(CountDefinitions(root.get(), "ammo", LocalDefinitionKind::Variable) == 1);
+}

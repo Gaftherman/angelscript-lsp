@@ -1159,7 +1159,9 @@ namespace angel_lsp::features
 
         lsp::TextEdit edit;
         edit.range.start = lsp::Position{ 0, 0 };
-        edit.range.end = lsp::Position{ lineCount, lastLineLen };
+        // Narrowing: size_t is 64-bit on x64, so the braced initialiser is a hard error there
+        // even though the 32-bit build accepts it silently.
+        edit.range.end = lsp::Position{ lineCount, static_cast<uint32_t>(lastLineLen) };
         edit.newText = std::move(formatted);
 
         return std::vector<lsp::TextEdit>{ std::move(edit) };

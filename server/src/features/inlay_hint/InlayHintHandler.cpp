@@ -419,11 +419,13 @@ namespace angel_lsp::features
                     if (nodeTxt.back() == 'd' || nodeTxt.back() == 'D') return "double";
                     return "double";
                 }
+                // AngelScript only defines f/F and d/D suffixes, and only on floating-point
+                // literals. The C-style integer suffixes this used to sniff for (42u, 1000L,
+                // 2000u64) are not part of the language: the grammar tokenises decimal_int as
+                // plain /[0-9]+/, so "42u" never reaches here as one literal - it parses as 42
+                // followed by a stray identifier. Guessing a type from them invented information.
                 if (nodeTxt.back() == 'f' || nodeTxt.back() == 'F') return "float";
                 if (nodeTxt.back() == 'd' || nodeTxt.back() == 'D') return "double";
-                if (nodeTxt.ends_with("u64") || nodeTxt.ends_with("U64") || nodeTxt.ends_with("ull") || nodeTxt.ends_with("ULL") || nodeTxt.ends_with("ui64") || nodeTxt.ends_with("UI64")) return "uint64";
-                if (nodeTxt.ends_with("i64") || nodeTxt.ends_with("I64") || nodeTxt.ends_with("ll") || nodeTxt.ends_with("LL") || nodeTxt.back() == 'l' || nodeTxt.back() == 'L') return "int64";
-                if (nodeTxt.ends_with("ui") || nodeTxt.ends_with("UI") || nodeTxt.back() == 'u' || nodeTxt.back() == 'U') return "uint";
                 return "int";
             }
 
@@ -836,58 +838,25 @@ namespace angel_lsp::features
                                     continue;
                                 }
 
-                                TSNode initExpr{};
-                                uint32_t dCount = ts_node_child_count(child);
-                                for (uint32_t k = 0; k < dCount; ++k)
+                                // The grammar names both initialiser shapes: "value" for "= expr"
+                                // and "arguments" for a constructor call such as "Player p(1, 2)".
+                                // This used to be a manual child walk hunting for the "=" token,
+                                // which is what an unnamed initialiser forced.
+                                TSNode initExpr = ts_node_child_by_field_name(child, "value", 5);
+                                if (ts_node_is_null(initExpr))
                                 {
-                                    TSNode dChild = ts_node_child(child, k);
-                                    std::string_view dType = ts_node_type(dChild);
-                                    if (dType == "=" && k + 1 < dCount)
-                                    {
-                                        initExpr = ts_node_child(child, k + 1);
-                                        break;
-                                    }
-                                    else if (dType == "argument_list")
-                                    {
-                                        initExpr = dChild;
-                                        break;
-                                    }
+                                    initExpr = ts_node_child_by_field_name(child, "arguments", 9);
                                 }
+
 
                                 if (!ts_node_is_null(initExpr))
                                 {
+                                    // The initialiser type comes from the AST alone. This used to be
+                                    // followed by a second pass that re-read the declaration as raw
+                                    // text, hunting for the '=' with substr and sniffing C-style
+                                    // integer suffixes off the tail - suffixes AngelScript does not
+                                    // have, on text that does not parse as one literal when present.
                                     std::string deduced = DeduceExpressionType(initExpr, request);
-
-                                    // Check for literal suffixes directly from the declaration text
-                                    std::string nodeFullText = GetNodeText(node, request.sourceCode);
-                                    std::string varName = GetNodeText(nameNode, request.sourceCode);
-                                    size_t namePos = nodeFullText.find(varName);
-                                    size_t eqPos = (namePos != std::string::npos) ? nodeFullText.find('=', namePos) : nodeFullText.find('=');
-                                    if (eqPos != std::string::npos)
-                                    {
-                                        size_t endPos = nodeFullText.find_first_of(",;\r\n", eqPos);
-                                        std::string initTxt = (endPos != std::string::npos) ? nodeFullText.substr(eqPos + 1, endPos - (eqPos + 1)) : nodeFullText.substr(eqPos + 1);
-                                        while (!initTxt.empty() && isspace(static_cast<unsigned char>(initTxt.front()))) initTxt.erase(initTxt.begin());
-                                        while (!initTxt.empty() && isspace(static_cast<unsigned char>(initTxt.back()))) initTxt.pop_back();
-
-                                        if (!initTxt.empty() && (isdigit(static_cast<unsigned char>(initTxt[0])) ||
-                                            (initTxt.size() > 1 && (initTxt[0] == '-' || initTxt[0] == '+') && isdigit(static_cast<unsigned char>(initTxt[1]))) ||
-                                            initTxt.starts_with("0x") || initTxt.starts_with("0X") || initTxt.starts_with("0b") || initTxt.starts_with("0B")))
-                                        {
-                                            if (initTxt.ends_with("u64") || initTxt.ends_with("U64") || initTxt.ends_with("ull") || initTxt.ends_with("ULL") || initTxt.ends_with("ui64") || initTxt.ends_with("UI64"))
-                                            {
-                                                deduced = "uint64";
-                                            }
-                                            else if (initTxt.ends_with("i64") || initTxt.ends_with("I64") || initTxt.ends_with("ll") || initTxt.ends_with("LL") || initTxt.back() == 'l' || initTxt.back() == 'L')
-                                            {
-                                                deduced = "int64";
-                                            }
-                                            else if (initTxt.ends_with("ui") || initTxt.ends_with("UI") || initTxt.back() == 'u' || initTxt.back() == 'U')
-                                            {
-                                                deduced = "uint";
-                                            }
-                                        }
-                                    }
 
                                     if (!deduced.empty() && deduced != "auto")
                                     {

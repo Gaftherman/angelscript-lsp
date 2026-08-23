@@ -380,3 +380,64 @@ TEST_CASE("DocumentHighlight - Non-Identifier & Edge Cases")
     auto hlOob = env.HighlightsAt(100, 100);
     CHECK(!hlOob.has_value());
 }
+
+// =====================================================================================
+// Class fields. LOCALS_QUERY used to capture a member variable twice - once as a
+// variable, once as a field - and ResolveInScope returned whichever landed first, so
+// which branch these handlers took was decided by query-match order. Anchoring the
+// variable pattern away from class_body leaves exactly one definition, of kind Field.
+// =====================================================================================
+
+TEST_CASE("DocumentHighlight - a class field is highlighted from its declaration through its uses")
+{
+    std::string code =
+        "class Weapon\n"
+        "{\n"
+        "    int ammo;\n"
+        "\n"
+        "    void Fire()\n"
+        "    {\n"
+        "        ammo = ammo - 1;\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // From the declaration.
+    auto fromDecl = env.HighlightsAt(2, 8);
+    REQUIRE(fromDecl.has_value());
+    CHECK(fromDecl->size() == 3);
+
+    // From a use inside the method, the same three occurrences come back.
+    auto fromUse = env.HighlightsAt(6, 8);
+    REQUIRE(fromUse.has_value());
+    CHECK(fromUse->size() == 3);
+}
+
+TEST_CASE("DocumentHighlight - a local shadowing a field highlights only the local")
+{
+    std::string code =
+        "class Weapon\n"
+        "{\n"
+        "    int ammo;\n"
+        "\n"
+        "    void Reload()\n"
+        "    {\n"
+        "        int ammo = 30;\n"
+        "        ammo = ammo + 1;\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // The local declaration plus its two uses on the next line - never the field on line 2.
+    auto highlights = env.HighlightsAt(6, 12);
+    REQUIRE(highlights.has_value());
+    CHECK(highlights->size() == 3);
+
+    for (const auto &highlight : *highlights)
+    {
+        INFO("highlight on line ", highlight.range.start.line);
+        CHECK(highlight.range.start.line >= 6);
+    }
+}

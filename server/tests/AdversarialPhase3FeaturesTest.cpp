@@ -189,26 +189,42 @@ TEST_SUITE("Adversarial Phase 3 - Inlay Hints")
             "    auto v_dbl = 3.14159;\n"
             "    auto v_str = \"text\";\n"
             "    auto v_bool = false;\n"
-            "    auto v_uint = 42u;\n"
-            "    auto v_i64 = 1000L;\n"
-            "    auto v_u64 = 2000u64;\n"
             "}\n";
 
         Phase3TestEnvironment env(code);
         auto hints = env.InlayHints();
 
         REQUIRE(hints.has_value());
-        REQUIRE(hints->size() == 8);
+        REQUIRE(hints->size() == 5);
 
         CHECK(GetHintLabel(hints->at(0)) == ": int");
         CHECK(GetHintLabel(hints->at(1)) == ": float");
         CHECK(GetHintLabel(hints->at(2)) == ": double");
         CHECK(GetHintLabel(hints->at(3)) == ": string");
         CHECK(GetHintLabel(hints->at(4)) == ": bool");
-        CHECK(GetHintLabel(hints->at(5)) == ": uint");
-        CHECK(GetHintLabel(hints->at(6)) == ": int64");
-        CHECK(GetHintLabel(hints->at(7)) == ": uint64");
     }
+
+    TEST_CASE("C-style integer suffixes are not AngelScript and are not deduced from")
+    {
+        // AngelScript defines f/F and d/D on floating-point literals and nothing else - no u, L,
+        // ull or u64. The grammar agrees: decimal_int is /[0-9]+/, so "42u" parses as the literal
+        // 42 followed by an ERROR node holding a stray identifier "u" (confirmed with
+        // `tree-sitter parse`). Deducing "uint" here, as an earlier text-scanning pass did, meant
+        // reporting a type for source that does not compile. The literal that was actually parsed
+        // is what gets reported; the stray token is already flagged as a syntax error elsewhere.
+        std::string code =
+            "void main() {\n"
+            "    auto v_uint = 42u;\n"
+            "}\n";
+
+        Phase3TestEnvironment env(code);
+        auto hints = env.InlayHints();
+
+        REQUIRE(hints.has_value());
+        REQUIRE(hints->size() == 1);
+        CHECK(GetHintLabel(hints->at(0)) == ": int");
+    }
+
 
     TEST_CASE("Auto type deduction for constructor and template construct calls")
     {

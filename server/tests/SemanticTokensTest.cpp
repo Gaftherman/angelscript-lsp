@@ -5,6 +5,7 @@
 #include "analysis/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
 
+
 using namespace angel_lsp;
 using namespace angel_lsp::features;
 using namespace angel_lsp::analysis;

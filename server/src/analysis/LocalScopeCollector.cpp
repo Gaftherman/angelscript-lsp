@@ -318,11 +318,9 @@ namespace angel_lsp::analysis
                 TSNode parent = ts_node_parent(capture.node);
                 if (!ts_node_is_null(parent) && ts_node_symbol(parent) == m_symMemberExpression)
                 {
+                    // The grammar always names this field; positional fallbacks used to stand in for
+                    // it here and would mis-identify the member in anything but the simplest access.
                     TSNode memberField = ts_node_child_by_field_name(parent, "member", static_cast<uint32_t>(strlen("member")));
-                    if (ts_node_is_null(memberField) && ts_node_named_child_count(parent) > 1)
-                    {
-                        memberField = ts_node_named_child(parent, 1);
-                    }
                     ref.isMemberAccess = ts_node_eq(memberField, capture.node) ||
                         (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(capture.node));
                 }

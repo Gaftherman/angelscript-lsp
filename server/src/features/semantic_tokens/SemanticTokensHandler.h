@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/SymbolTable.h"
+#include "analysis/ScopeTree.h"
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <tree_sitter/api.h>
@@ -17,6 +18,16 @@ namespace angel_lsp::features
         const std::string &sourceCode;
         TSTree *tree = nullptr;
         const analysis::SymbolTable &symbolTable;
+
+        /**
+         * @brief Scope tree of the document, used to tell what an identifier reference refers to.
+         *
+         * The highlights query is purely syntactic and cannot distinguish a parameter read from a
+         * field read from a local read - all three are just an identifier in an expression. Given
+         * the scope tree, each reference is resolved to its declaration and reported as whatever
+         * that declaration is. Optional: left null, references fall back to plain "variable".
+         */
+        std::shared_ptr<const analysis::Scope> scopeRoot;
     };
 
     /**
