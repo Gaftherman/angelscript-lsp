@@ -81,10 +81,80 @@ namespace
                R"("workspaceFolders":[{"uri":")" + rootUri + R"(","name":"fixture"}]}})";
     }
 
+    /** @brief Escapes a document so it can be carried inside a JSON string literal. */
+    std::string JsonEscape(const std::string &text)
+    {
+        std::string escaped;
+        escaped.reserve(text.size() + 16);
+        for (const char c : text)
+        {
+            switch (c)
+            {
+            case '"':  escaped += "\\\""; break;
+            case '\\': escaped += "\\\\"; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default:   escaped.push_back(c); break;
+            }
+        }
+        return escaped;
+    }
+
     std::string DidOpenMessage(const std::string &uri, const std::string &text)
     {
         return R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{)"
-               R"("uri":")" + uri + R"(","languageId":"angelscript","version":1,"text":")" + text + R"("}}})";
+               R"("uri":")" + uri + R"(","languageId":"angelscript","version":1,"text":")" +
+               JsonEscape(text) + R"("}}})";
+    }
+
+    /**
+     * @brief Opens one document and returns everything the server wrote back.
+     *
+     * The shape every rule-module test below shares: initialize, open a document written to trip
+     * one module's rules, shut down. What it proves is the part unit tests cannot - that a
+     * diagnostic survives the trip through publishDiagnostics and reaches the client at all.
+     */
+    std::string DiagnosticsFor(const std::string &source, config::ServerConfig serverConfig = {})
+    {
+        WorkspaceFixture fixture;
+        fixture.Write("main.as", source);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeMessage(fixture.RootUri()));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+        RunScript(serverConfig, stream);
+        return stream.Output();
+    }
+
+    /**
+     * @brief Just the publishDiagnostics frames of a transcript, concatenated.
+     *
+     * Searching the whole transcript is not good enough: the server also writes window/logMessage
+     * notifications that quote the rule name and the diagnostic code verbatim, so a test looking
+     * for a code would pass on the debug log alone while the diagnostic never reached the client -
+     * which is the one thing these tests exist to prove.
+     */
+    std::string PublishedFrames(const std::string &output)
+    {
+        static const std::string k_marker = R"("method":"textDocument/publishDiagnostics")";
+        std::string frames;
+
+        for (size_t at = output.find(k_marker); at != std::string::npos; at = output.find(k_marker, at + 1))
+        {
+            const size_t end = output.find("Content-Length:", at);
+            frames += output.substr(at, end == std::string::npos ? std::string::npos : end - at);
+        }
+        return frames;
+    }
+
+    /** @brief True when a diagnostic carrying this code was published to the client. */
+    bool Published(const std::string &output, const std::string &code)
+    {
+        return PublishedFrames(output).find("\"" + code + "\"") != std::string::npos;
     }
 }
 
@@ -312,4 +382,147 @@ TEST_CASE("Server - Falls back to a full stream when the delta base is unknown")
 
     CHECK(stream.OutputContains(R"("id":2,"result":{"data":)"));
     CHECK_FALSE(stream.OutputContains(R"("edits")"));
+}
+
+// =====================================================================================
+// Every rule module, over the protocol
+//
+// The unit tests prove a rule fires; these prove the finding reaches the client. Nothing between
+// the analyzer and publishDiagnostics was covered before - a code could be dropped by the severity
+// mapping, the debounce or the serializer and every unit test would still pass.
+//
+// One document per module rather than one carrying every error: rules interact, and a class that
+// is simultaneously final, abstract and missing an interface method stops being a test of anything
+// in particular.
+// =====================================================================================
+
+TEST_CASE("Server - Publishes the class rule diagnostics")
+{
+    const std::string source =
+        "mixin final class Helper {}\n"
+        "final class Sealed {}\n"
+        "class Derived : Sealed {}\n"
+        "interface IThink { void Think(); }\n"
+        "class Idle : IThink {}\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-mixin-final"));
+    CHECK(Published(output, "as-err-inherit-final"));
+    CHECK(Published(output, "as-err-interface-impl-missing"));
+}
+
+TEST_CASE("Server - Publishes the type rule diagnostics")
+{
+    // A floating point initializer, not an identifier one: referring to a constant is legal and the
+    // rule deliberately leaves it alone.
+    const std::string source =
+        "enum Mode { First = 1, Second = 1.5 }\n"
+        "void Repeated() {}\n"
+        "void Repeated() {}\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-enum-invalid-initializer"));
+    CHECK(Published(output, "as-err-duplicate-symbol"));
+}
+
+TEST_CASE("Server - Publishes the variable rule diagnostics")
+{
+    const std::string source =
+        "void g_nothing;\n"
+        "int@ g_broken;\n"
+        "private int g_scoped;\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-void-variable"));
+    CHECK(Published(output, "as-err-handle-on-primitive"));
+    CHECK(Published(output, "as-err-global-variable-access-modifier"));
+}
+
+TEST_CASE("Server - Publishes the function rule diagnostics")
+{
+    const std::string source =
+        "void Orphan();\n"
+        "void Move(int x, int x) {}\n"
+        "void Think() const {}\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-missing-body"));
+    CHECK(Published(output, "as-err-duplicate-param"));
+    CHECK(Published(output, "as-err-global-function-qualifiers"));
+}
+
+TEST_CASE("Server - Publishes the operator rule diagnostics")
+{
+    const std::string source =
+        "class Vec\n"
+        "{\n"
+        "    float opCmp(const Vec &in other) const { return 0; }\n"
+        "    Vec opAdd() const { return this; }\n"
+        "}\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-opcmp-return-int"));
+    CHECK(Published(output, "as-err-binary-operator-arity"));
+}
+
+TEST_CASE("Server - Publishes the control flow diagnostics")
+{
+    const std::string source =
+        "void Loose() { break; }\n"
+        "int Silent() { int x = 1; }\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-break-outside-loop"));
+    CHECK(Published(output, "as-err-not-all-paths-return"));
+}
+
+TEST_CASE("Server - Publishes the type conversion diagnostics")
+{
+    const std::string source =
+        "class Money {}\n"
+        "void main() { Money m = 1; }\n";
+
+    CHECK(Published(DiagnosticsFor(source), "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("Server - A severity override reaches a restored diagnostic")
+{
+    // The only part of the configuration the restored codes had never exercised: nothing proved a
+    // code that did not exist when the override plumbing was written could be retargeted by it.
+    const std::string source = "void g_nothing;\n";
+
+    config::ServerConfig serverConfig;
+    serverConfig.diagnosticSeverities["as-err-void-variable"] = "hint";
+
+    const std::string output = DiagnosticsFor(source, serverConfig);
+    REQUIRE(Published(output, "as-err-void-variable"));
+
+    // Hint is severity 4 in the protocol; the rule's own severity is Error, which is 1.
+    // Hint is 4 on the wire. Before the severity mapping was fixed this arrived as 0, because a
+    // cast between the two enumerations ran Hint off the end of the protocol's table.
+    CHECK(PublishedFrames(output).find("\"severity\":4") != std::string::npos);
+}
+
+TEST_CASE("Server - An error is published as an error, not as a warning")
+{
+    // Regression, and the reason the Layer 4 coverage above was worth writing. lsp::
+    // DiagnosticSeverity is a 0-based enum whose serializer maps its index onto the wire values
+    // {1,2,3,4}; analysis::DiagnosticSeverity is numbered 1..4 to match those values directly.
+    // Casting one to the other shifted every diagnostic by one, so every error this server
+    // published had been arriving in the editor as a warning, and every warning as information.
+    const std::string source = "void g_nothing;\n";
+
+    const std::string frames = PublishedFrames(DiagnosticsFor(source));
+    REQUIRE(frames.find("\"as-err-void-variable\"") != std::string::npos);
+    CHECK(frames.find("\"severity\":1") != std::string::npos);
+    CHECK(frames.find("\"severity\":2") == std::string::npos);
+}
+
+TEST_CASE("Server - A warning is published as a warning")
+{
+    const std::string source = "void main() { int unused = 1; }\n";
+
+    const std::string frames = PublishedFrames(DiagnosticsFor(source));
+    REQUIRE(frames.find("\"as-warn-unused-variable\"") != std::string::npos);
+    CHECK(frames.find("\"severity\":2") != std::string::npos);
 }

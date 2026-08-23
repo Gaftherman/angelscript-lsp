@@ -26,6 +26,32 @@
 
 namespace angel_lsp
 {
+    namespace
+    {
+        /**
+         * @brief Maps this analyzer's severity onto the protocol's.
+         *
+         * Not a cast, though it was one until an end-to-end test looked at what actually went over
+         * the wire. The two enumerations disagree about where they start: analysis::
+         * DiagnosticSeverity numbers Error as 1 to match the LSP wire values directly, while the
+         * generated lsp::DiagnosticSeverity is an ordinary 0-based enum whose serializer maps its
+         * index onto {1,2,3,4}. Casting between them shifted every diagnostic one step - every
+         * error the server had ever published arrived in the editor as a warning - and pushed Hint
+         * off the end of the table, where it serialized as 0 and meant nothing at all.
+         */
+        lsp::DiagnosticSeverity ToProtocolSeverity(analysis::DiagnosticSeverity severity)
+        {
+            switch (severity)
+            {
+            case analysis::DiagnosticSeverity::Error:       return lsp::DiagnosticSeverity::Error;
+            case analysis::DiagnosticSeverity::Warning:     return lsp::DiagnosticSeverity::Warning;
+            case analysis::DiagnosticSeverity::Information: return lsp::DiagnosticSeverity::Information;
+            case analysis::DiagnosticSeverity::Hint:        return lsp::DiagnosticSeverity::Hint;
+            }
+            return lsp::DiagnosticSeverity::Error;
+        }
+    }
+
     Server::Server(const angel_lsp::config::ServerConfig &config, lsp::io::Stream &stream)
     {
         m_config = config;
@@ -1391,7 +1417,7 @@ namespace angel_lsp
             lspDiag.range.end.line = diag.range.end.line;
             lspDiag.range.end.character = diag.range.end.character;
             lspDiag.message = diag.message;
-            lspDiag.severity = static_cast<lsp::DiagnosticSeverity>(diag.severity);
+            lspDiag.severity = ToProtocolSeverity(diag.severity);
             lspDiag.source = diag.source;
             lspDiag.code = diag.code;
 

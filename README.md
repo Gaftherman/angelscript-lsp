@@ -131,6 +131,8 @@ server/build/angel_lsp_tests
 | `ControlFlowTest.cpp` | Layer 2 control-flow rules over the syntax tree: `break` / `continue` placement, `switch` clauses, and non-void functions that can fall off the end. |
 | `TypeConversionTest.cpp` | Layer 2 conversion diagnostics for `T v = expr;`, `T(expr)` and `cast<T>(expr)` against constructors and the `opConv` / `opCast` family. |
 | `RuleCostTest.cpp` | Layer 2 opt-in cost measurement of each analysis pass over 300 corpus files. |
+| `SymbolTableIndexTest.cpp` | Layer 2 per-file bucket index, document replacement, and rule-index invalidation against the table version. |
+| `I18nTest.cpp` | Layer 1 locale tag selection (`es`, `es-ES`, `es-419`, `es_MX`) and English/Spanish coverage of every emitted code. |
 | `SignatureFormatterTest.cpp` | Layer 2 source-faithful declaration rendering: access modifiers, `const`, handles, and `&in` / `&out` / `&inout`. |
 | `DocCommentTest.cpp` | Layer 2 Doxygen and line-comment documentation extraction shared by hover and completion. |
 | `ServerHarnessTest.cpp` | Layer 4 end-to-end protocol coverage over a scripted in-memory transport: capabilities, diagnostics, watched files, workspace folders, semantic token deltas. |
@@ -174,7 +176,7 @@ The `angel_lsp` executable accepts command-line arguments to enable or disable i
 | `--enable-predefined-loader[=true\|false]` | Enable or disable background predefined symbols loader. | `true` |
 | `--disable-predefined-loader` | Explicitly disable predefined symbols loader. | - |
 | `--search-dir=<path>` | Add directory search path for `#include` resolution. | - |
-| `--locale=<string>` | Set diagnostic language/locale (`en` or `es-ES`). | `en` |
+| `--locale=<string>` | Set diagnostic language/locale. Any BCP 47 spelling works — only the primary subtag selects the table, so `es`, `es-ES` and `es-419` are equivalent. Unknown languages fall back to English. | `en` |
 | `--file-ext=<string>` | Set AngelScript script file extension. | `.as` |
 | `--predefined-ext=<string>` | Set predefined host API symbols file extension. | `.as.predefined` |
 | `-h`, `--help` | Show command-line help message and exit. | - |
