@@ -1,5 +1,6 @@
 #include "features/hover/HoverHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/SignatureFormatter.h"
 #include "utils/Utils.h"
 #include <sstream>
 #include <vector>
@@ -81,127 +82,150 @@ namespace angel_lsp::features
 
         std::string FormatFunctionSignature(const analysis::Symbol &sym)
         {
-            if (sym.type != analysis::SymbolType::Function && sym.type != analysis::SymbolType::Funcdef)
-            {
-                return "";
-            }
-
-            std::ostringstream oss;
-            std::string returnType;
-            const std::vector<analysis::ParameterInformation> *parameters = nullptr;
-
-            if (sym.type == analysis::SymbolType::Funcdef)
-            {
-                oss << "funcdef ";
-                const auto &sig = sym.GetFuncdef();
-                returnType = sig.returnType;
-                parameters = &sig.parameters;
-            }
-            else
-            {
-                const auto &sig = sym.GetFunction();
-                returnType = sig.returnType;
-                parameters = &sig.parameters;
-            }
-
-            if (!returnType.empty())
-            {
-                oss << returnType << " ";
-            }
-            else
-            {
-                oss << "void ";
-            }
-
-            if (!sym.containerName.empty())
-            {
-                oss << sym.containerName << "::";
-            }
-            oss << sym.name << "(";
-
-            if (parameters)
-            {
-                for (size_t i = 0; i < parameters->size(); ++i)
-                {
-                    if (i > 0)
-                    {
-                        oss << ", ";
-                    }
-                    const auto &param = (*parameters)[i];
-                    if (!param.typeName.empty())
-                    {
-                        oss << param.typeName;
-                    }
-                    if (!param.name.empty())
-                    {
-                        oss << " " << param.name;
-                    }
-                    if (!param.defaultValue.empty())
-                    {
-                        oss << " = " << param.defaultValue;
-                    }
-                }
-            }
-
-            oss << ")";
-            return oss.str();
+            return analysis::FormatFunctionDeclaration(sym);
         }
 
         std::string FormatClassSignature(const analysis::Symbol &sym)
         {
-            if (sym.type != analysis::SymbolType::Class && sym.type != analysis::SymbolType::Interface)
+            return analysis::FormatTypeDeclaration(sym);
+        }
+
+        /** @brief Squeezes runs of whitespace into single spaces so a declaration that was wrapped
+         *         across several source lines still renders as one hover line. */
+        std::string CollapseWhitespace(const std::string &text)
+        {
+            std::string result;
+            result.reserve(text.size());
+            bool pendingSpace = false;
+
+            for (const char c : text)
+            {
+                if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+                {
+                    pendingSpace = !result.empty();
+                    continue;
+                }
+                if (pendingSpace)
+                {
+                    result += ' ';
+                    pendingSpace = false;
+                }
+                result += c;
+            }
+            return result;
+        }
+
+        /** @brief Reads a declaration back verbatim from the source at the position it was declared.
+         *  @param root Root node of the document tree.
+         *  @param sourceCode Document source text.
+         *  @param line Zero-based line of the declared identifier.
+         *  @param character Zero-based column of the declared identifier.
+         *  @param wantedNodeType AST node type to climb to, e.g. "parameter".
+         *  @return Whitespace-collapsed declaration text, or an empty string if not found.
+         *  @note LocalDefinition only records a type for variables, so a parameter hovered at a use
+         *        site inside the body has nothing to show. The declaration position it does record
+         *        is enough to find the declaring node and read it back with every modifier the user
+         *        wrote ('const', '@', '&in'/'&out'/'&inout') still attached. */
+        std::string ExtractDeclarationTextAt(TSNode root,
+                                             const std::string &sourceCode,
+                                             uint32_t line,
+                                             uint32_t character,
+                                             std::string_view wantedNodeType)
+        {
+            if (ts_node_is_null(root))
             {
                 return "";
             }
 
-            std::ostringstream oss;
-            if (sym.type == analysis::SymbolType::Class)
+            const TSPoint point{ line, character };
+            TSNode current = ts_node_descendant_for_point_range(root, point, point);
+
+            for (int depth = 0; depth < 8 && !ts_node_is_null(current); ++depth, current = ts_node_parent(current))
             {
-                const auto &sig = sym.GetClass();
-                if (sig.modifiers.isAbstract)
+                if (std::string_view(ts_node_type(current)) != wantedNodeType)
                 {
-                    oss << "abstract ";
+                    continue;
                 }
-                if (sig.modifiers.isFinal)
+
+                const uint32_t start = ts_node_start_byte(current);
+                const uint32_t end = ts_node_end_byte(current);
+                if (start < end && end <= sourceCode.size())
                 {
-                    oss << "final ";
+                    return CollapseWhitespace(sourceCode.substr(start, end - start));
                 }
-                if (sig.modifiers.isShared)
-                {
-                    oss << "shared ";
-                }
-                oss << "class " << sym.name;
-                if (!sig.bases.empty())
-                {
-                    oss << " : ";
-                    for (size_t i = 0; i < sig.bases.size(); ++i)
+                break;
+            }
+            return "";
+        }
+
+        /** @brief Renders the hover line for a variable-like symbol, tagged with its role.
+         *  @param sym Symbol of type Variable or Property.
+         *  @param role Prefix shown to the user, e.g. "(property) " or "(global variable) ". */
+        std::string FormatVariableSignature(const analysis::Symbol &sym, const char *role)
+        {
+            if (sym.type != analysis::SymbolType::Variable)
+            {
+                return std::string(role) + sym.name;
+            }
+            return std::string(role) + analysis::FormatVariableDeclaration(sym.GetVariable(), sym.name);
+        }
+
+        /** @brief Renders the single hover line that describes a symbol of any kind. */
+        std::string FormatDeclarationText(const analysis::Symbol &sym)
+        {
+            switch (sym.type)
+            {
+            case analysis::SymbolType::Function:
+            case analysis::SymbolType::Funcdef:
+                return FormatFunctionSignature(sym);
+            case analysis::SymbolType::Class:
+            case analysis::SymbolType::Interface:
+                return FormatClassSignature(sym);
+            case analysis::SymbolType::Enum:
+                return "enum " + sym.name;
+            case analysis::SymbolType::Variable:
+                return FormatVariableSignature(sym, sym.containerName.empty() ? "(global variable) " : "(property) ");
+            case analysis::SymbolType::Typedef:
+                return "typedef " + sym.GetTypedef().baseType + " " + sym.name;
+            case analysis::SymbolType::Namespace:
+                return "namespace " + sym.name;
+            case analysis::SymbolType::Property:
+                return "(property) " + sym.name;
+            default:
+                return sym.name;
+            }
+        }
+
+        /** @brief Drops symbols that are the same declaration seen twice.
+         *  @note A file reachable under two URI spellings (workspace scan vs. client didOpen) used
+         *        to be collected once per spelling, which showed every overload twice in the hover.
+         *        The server de-duplicates at index time; this is the last line of defence so a
+         *        stale duplicate can never reach the user. */
+        void RemoveDuplicateSymbols(std::vector<analysis::Symbol> &symbols)
+        {
+            std::vector<analysis::Symbol> unique;
+            unique.reserve(symbols.size());
+
+            for (auto &sym : symbols)
+            {
+                const bool alreadyPresent = std::any_of(unique.begin(), unique.end(),
+                    [&sym](const analysis::Symbol &kept)
                     {
-                        if (i > 0)
-                        {
-                            oss << ", ";
-                        }
-                        oss << sig.bases[i];
-                    }
+                        return kept.type == sym.type &&
+                               kept.name == sym.name &&
+                               kept.qualifiedName == sym.qualifiedName &&
+                               kept.startLine == sym.startLine &&
+                               kept.startCharacter == sym.startCharacter &&
+                               FormatDeclarationText(kept) == FormatDeclarationText(sym);
+                    });
+
+                if (!alreadyPresent)
+                {
+                    unique.push_back(std::move(sym));
                 }
             }
-            else
-            {
-                const auto &sig = sym.GetInterface();
-                oss << "interface " << sym.name;
-                if (!sig.inheritedInterfaces.empty())
-                {
-                    oss << " : ";
-                    for (size_t i = 0; i < sig.inheritedInterfaces.size(); ++i)
-                    {
-                        if (i > 0)
-                        {
-                            oss << ", ";
-                        }
-                        oss << sig.inheritedInterfaces[i];
-                    }
-                }
-            }
-            return oss.str();
+
+            symbols = std::move(unique);
         }
     }
 
@@ -676,6 +700,8 @@ namespace angel_lsp::features
 
                 if (!memberSymbols.empty())
                 {
+                    RemoveDuplicateSymbols(memberSymbols);
+
                     std::ostringstream oss;
                     oss << "```angelscript\n";
                     for (size_t i = 0; i < memberSymbols.size(); ++i)
@@ -684,20 +710,7 @@ namespace angel_lsp::features
                         {
                             oss << "\n";
                         }
-                        const auto &sym = memberSymbols[i];
-                        if (sym.type == analysis::SymbolType::Function)
-                        {
-                            oss << FormatFunctionSignature(sym);
-                        }
-                        else if (sym.type == analysis::SymbolType::Variable)
-                        {
-                            const auto &var = sym.GetVariable();
-                            oss << "(property) " << (var.typeName.empty() ? "auto" : var.typeName) << " " << sym.name;
-                        }
-                        else if (sym.type == analysis::SymbolType::Property)
-                        {
-                            oss << "(property) " << sym.name;
-                        }
+                        oss << FormatDeclarationText(memberSymbols[i]);
                     }
                     oss << "\n```";
 
@@ -771,13 +784,26 @@ namespace angel_lsp::features
                     switch (def->kind)
                     {
                     case analysis::LocalDefinitionKind::Parameter:
+                    {
                         oss << "(parameter) ";
-                        if (!typeName.empty())
+                        // Preferred over the recorded type: only the declaration itself carries the
+                        // reference direction ('&in'/'&out'/'&inout') the user wrote.
+                        const std::string declText = ExtractDeclarationTextAt(
+                            rootNode, request.sourceCode, def->startLine, def->startCharacter, "parameter");
+                        if (!declText.empty())
                         {
-                            oss << typeName << " ";
+                            oss << declText;
                         }
-                        oss << def->name;
+                        else
+                        {
+                            if (!typeName.empty())
+                            {
+                                oss << typeName << " ";
+                            }
+                            oss << def->name;
+                        }
                         break;
+                    }
                     case analysis::LocalDefinitionKind::Variable:
                         oss << "(local variable) ";
                         if (!typeName.empty())
@@ -871,6 +897,8 @@ namespace angel_lsp::features
             return std::nullopt;
         }
 
+        RemoveDuplicateSymbols(symbols);
+
         std::ostringstream oss;
         oss << "```angelscript\n";
 
@@ -880,42 +908,7 @@ namespace angel_lsp::features
             {
                 oss << "\n";
             }
-            const auto &sym = symbols[i];
-            switch (sym.type)
-            {
-            case analysis::SymbolType::Function:
-            case analysis::SymbolType::Funcdef:
-                oss << FormatFunctionSignature(sym);
-                break;
-            case analysis::SymbolType::Class:
-            case analysis::SymbolType::Interface:
-                oss << FormatClassSignature(sym);
-                break;
-            case analysis::SymbolType::Enum:
-                oss << "enum " << sym.name;
-                break;
-            case analysis::SymbolType::Variable:
-                {
-                    const auto &var = sym.GetVariable();
-                    oss << "(global variable) " << (var.typeName.empty() ? "auto" : var.typeName) << " " << sym.name;
-                }
-                break;
-            case analysis::SymbolType::Typedef:
-                {
-                    const auto &td = sym.GetTypedef();
-                    oss << "typedef " << td.baseType << " " << sym.name;
-                }
-                break;
-            case analysis::SymbolType::Namespace:
-                oss << "namespace " << sym.name;
-                break;
-            case analysis::SymbolType::Property:
-                oss << "(property) " << sym.name;
-                break;
-            default:
-                oss << sym.name;
-                break;
-            }
+            oss << FormatDeclarationText(symbols[i]);
         }
         oss << "\n```";
 

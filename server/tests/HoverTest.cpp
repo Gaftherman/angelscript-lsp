@@ -216,3 +216,143 @@ TEST_CASE("HoverHandler - Namespace Function Hover")
     CHECK(contentOutside.value.find("void Game::Spawn(int id)") != std::string::npos);
     CHECK(contentOutside.value.find("Spawns entity at location.") != std::string::npos);
 }
+
+TEST_CASE("HoverHandler - Shows parameter reference direction on a method")
+{
+    std::string code =
+        "class Store\n"
+        "{\n"
+        "    void Put(const string &in key, int64 &inout value, bool &out ok) {}\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Store s;\n"
+        "    s.Put('a', 1, true);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    auto hover = env.HoverAt(7, 7);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(content.value.find("&in key") != std::string::npos);
+    CHECK(content.value.find("&inout value") != std::string::npos);
+    CHECK(content.value.find("&out ok") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Shows access modifiers, const and handles on members")
+{
+    std::string code =
+        "class Node\n"
+        "{\n"
+        "    private const string m_name;\n"
+        "    protected Node@ m_next;\n"
+        "    private void Detach() const {}\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Node n;\n"
+        "    n.m_name;\n"
+        "    n.m_next;\n"
+        "    n.Detach();\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    auto name = env.HoverAt(9, 7);
+    REQUIRE(name.has_value());
+    CHECK(std::get<lsp::MarkupContent>(name->contents).value.find("private const string m_name") != std::string::npos);
+
+    auto next = env.HoverAt(10, 7);
+    REQUIRE(next.has_value());
+    CHECK(std::get<lsp::MarkupContent>(next->contents).value.find("protected Node@ m_next") != std::string::npos);
+
+    auto detach = env.HoverAt(11, 7);
+    REQUIRE(detach.has_value());
+    CHECK(std::get<lsp::MarkupContent>(detach->contents).value.find("private void Node::Detach() const") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Shows declaration modifiers on a class")
+{
+    std::string code =
+        "shared abstract class Base {}\n"
+        "void main()\n"
+        "{\n"
+        "    Base@ b = null;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    auto hover = env.HoverAt(3, 6);
+    REQUIRE(hover.has_value());
+    CHECK(std::get<lsp::MarkupContent>(hover->contents).value.find("shared abstract class Base") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Parameter hover keeps its declared type and direction")
+{
+    std::string code =
+        "class Foo {}\n"
+        "void run(const string &in key, Foo@ owner, int &out count)\n"
+        "{\n"
+        "    key;\n"
+        "    owner;\n"
+        "    count;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    auto key = env.HoverAt(3, 5);
+    REQUIRE(key.has_value());
+    CHECK(std::get<lsp::MarkupContent>(key->contents).value.find("(parameter) const string &in key") != std::string::npos);
+
+    auto owner = env.HoverAt(4, 5);
+    REQUIRE(owner.has_value());
+    CHECK(std::get<lsp::MarkupContent>(owner->contents).value.find("(parameter) Foo@ owner") != std::string::npos);
+
+    auto count = env.HoverAt(5, 5);
+    REQUIRE(count.has_value());
+    CHECK(std::get<lsp::MarkupContent>(count->contents).value.find("(parameter) int &out count") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - The same declaration indexed twice is shown once")
+{
+    // A predefined stub reachable under two URI spellings used to be collected once per spelling.
+    // The hover must collapse the identical copies instead of printing the signature twice.
+    std::string code =
+        "void Ping(int id) {}\n"
+        "void main()\n"
+        "{\n"
+        "    Ping(1);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    env.symbolCollector.CollectSymbols("file:///other-spelling.as", code, env.parser, env.symbolTable);
+
+    auto hover = env.HoverAt(3, 5);
+    REQUIRE(hover.has_value());
+    const std::string rendered = std::get<lsp::MarkupContent>(hover->contents).value;
+
+    const size_t first = rendered.find("void Ping(int id)");
+    REQUIRE(first != std::string::npos);
+    CHECK(rendered.find("void Ping(int id)", first + 1) == std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Distinct overloads are all shown")
+{
+    std::string code =
+        "void Emit(int id) {}\n"
+        "void Emit(const string &in name) {}\n"
+        "void main()\n"
+        "{\n"
+        "    Emit(1);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    auto hover = env.HoverAt(4, 5);
+    REQUIRE(hover.has_value());
+    const std::string rendered = std::get<lsp::MarkupContent>(hover->contents).value;
+
+    CHECK(rendered.find("void Emit(int id)") != std::string::npos);
+    CHECK(rendered.find("void Emit(const string &in name)") != std::string::npos);
+}
