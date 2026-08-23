@@ -37,6 +37,15 @@ namespace angel_lsp::utils
         static std::vector<IncludeDirective> ExtractIncludes(std::string_view sourceCode);
 
         /**
+         * @brief Canonicalizes a path to the single spelling the rest of the server compares against.
+         *        Resolves symlinks and ".." where possible, strips Windows long-path prefixes, and
+         * .       normalizes separators to forward slashes.
+         * @param path The path to normalize.
+         * @return Normalized path string.
+         */
+        static std::string NormalizePath(const std::filesystem::path &path);
+
+        /**
          * @brief Resolves a single include path against the current file's directory and search directories.
          * @param includePath The raw include path from the directive.
          * @param currentFilePath The path of the file containing the include directive.

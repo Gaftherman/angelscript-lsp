@@ -36,6 +36,11 @@ namespace angel_lsp::utils
         }
     }
 
+    std::string IncludeResolver::NormalizePath(const std::filesystem::path &path)
+    {
+        return NormalizePathString(path);
+    }
+
     std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view sourceCode)
     {
         std::vector<IncludeDirective> directives;
