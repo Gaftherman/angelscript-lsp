@@ -98,6 +98,7 @@ namespace angel_lsp::analysis
         TSSymbol m_symCompoundStatement = 0;
         TSSymbol m_symBlock = 0;
         TSSymbol m_symBaseClassList = 0;
+        TSSymbol m_symParameter = 0;
         TSSymbol m_symMemberExpression = 0;
 
         // Anonymous token symbols (resolved once, compared via ts_node_symbol)

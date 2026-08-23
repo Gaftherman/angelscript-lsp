@@ -45,6 +45,15 @@ namespace angel_lsp::config
             return lower == "true" || lower == "1" || lower == "yes" || lower == "on" ||
                    lower == "false" || lower == "0" || lower == "no" || lower == "off";
         }
+
+        /** @brief True for the four LSP severity names a diagnostic can be remapped to.
+         *  @note Validated here rather than at use: an unrecognised name silently dropped at
+         *        startup is far easier to diagnose than one that reaches the analyzer and picks a
+         *        severity by accident. */
+        bool IsDiagnosticSeverityName(std::string_view val)
+        {
+            return val == "error" || val == "warning" || val == "information" || val == "hint";
+        }
     }
 
     void PrintHelp()
@@ -81,12 +90,18 @@ namespace angel_lsp::config
                   << "  --enable-code-action[=true|false]       Enable/disable code actions (default: true)\n"
                   << "  --disable-code-action                   Disable code actions\n"
                   << "  --enable-formatting[=true|false]        Enable/disable formatting (default: true)\n"
-                  << "  --disable-formatting                    Disable formatting\n\n"
+                  << "  --disable-formatting                    Disable formatting\n"
+                  << "  --enable-document-link[=true|false]     Enable/disable #include links (default: true)\n"
+                  << "  --disable-document-link                 Disable #include links\n"
+                  << "  --enable-type-conversion-checks[=true|false] Enable/disable type conversion diagnostics (default: true)\n"
+                  << "  --disable-type-conversion-checks        Disable type conversion diagnostics\n\n"
                   << "Options:\n"
                   << "  --locale=<string>                       Set diagnostic language/locale (default: en)\n"
                   << "  --file-ext=<string>                     Set script file extension (default: .as)\n"
                   << "  --predefined-ext=<string>               Set predefined symbols file extension (default: .as.predefined)\n"
+                  << "  --predefined-file=<path>                Load a predefined stub by path, even outside the workspace (repeatable)\n"
                   << "  --search-dir=<string>                   Add directory to search path for #include resolution\n"
+                  << "  --diagnostic-severity=<code>=<severity> Override one diagnostic's severity: error|warning|information|hint (repeatable)\n"
                   << "  -h, --help                              Show this help message and exit\n"
                   << "  -v, --version                           Show version information and exit\n";
     }
@@ -283,6 +298,22 @@ namespace angel_lsp::config
             {
                 config.features.enableCodeAction = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
+            else if (key == "--enable-document-link" || key == "--enable-documentlink")
+            {
+                config.features.enableDocumentLink = getBoolValue(true);
+            }
+            else if (key == "--disable-document-link" || key == "--disable-documentlink")
+            {
+                config.features.enableDocumentLink = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-type-conversion-checks" || key == "--enable-typeconversionchecks")
+            {
+                config.features.enableTypeConversionChecks = getBoolValue(true);
+            }
+            else if (key == "--disable-type-conversion-checks" || key == "--disable-typeconversionchecks")
+            {
+                config.features.enableTypeConversionChecks = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
             else if (key == "--enable-formatting")
             {
                 config.features.enableFormatting = getBoolValue(true);
@@ -323,8 +354,35 @@ namespace angel_lsp::config
                     config.searchDirectories.push_back(std::string(val));
                 }
             }
+            else if (key == "--predefined-file" || key == "--predefined-path")
+            {
+                std::string_view val;
+                if (getStringValue(val) && !val.empty())
+                {
+                    config.predefinedFiles.push_back(std::string(val));
+                }
+            }
+            else if (key == "--diagnostic-severity" || key == "--severity")
+            {
+                // Value is "<code>=<severity>". The outer split above consumed only the first '=',
+                // so the pair arrives intact here.
+                std::string_view val;
+                if (getStringValue(val))
+                {
+                    const size_t sep = val.find('=');
+                    if (sep != std::string_view::npos && sep > 0 && sep + 1 < val.size())
+                    {
+                        std::string code(val.substr(0, sep));
+                        std::string severity = ToLower(val.substr(sep + 1));
+                        if (IsDiagnosticSeverityName(severity))
+                        {
+                            config.diagnosticSeverities[std::move(code)] = std::move(severity);
+                        }
+                    }
+                }
+            }
         }
 
         return config;
     }
-}
+}

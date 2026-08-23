@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import { ExtensionContext, window, OutputChannel, ExtensionMode } from 'vscode';
+import { ExtensionContext, window, workspace, env, OutputChannel, ExtensionMode } from 'vscode';
 import { LanguageClient, LanguageClientOptions, ServerOptions } from 'vscode-languageclient/node';
 
 let client: LanguageClient;
@@ -62,26 +62,150 @@ function getServerPath(context: ExtensionContext): string {
 }
 
 /**
- * @brief Activates the AngelScript Language Client extension interface handlers.
- * @param context The extension context provided by VS Code.
+ * @brief Builds the command line the server is launched with from the user's `angelscript.*` settings.
+ *
+ * The server exposes every one of these as a CLI flag (see ServerConfig::FromArgs); without this
+ * the settings declared in package.json would be inert, because the language client passes no
+ * arguments of its own.
+ *
+ * @return Argument list for the server process.
  */
-export async function activate(context: ExtensionContext) {
+/**
+ * @brief Maps `angelscript.features.*` settings onto the server's kill-switch flags.
+ *
+ * Every entry is enabled by default server-side, so only a setting the user turned off produces
+ * an argument.
+ */
+const FEATURE_FLAGS: ReadonlyArray<readonly [string, string]> = [
+    ['hover', '--disable-hover'],
+    ['definition', '--disable-definition'],
+    ['completion', '--disable-completion'],
+    ['semanticTokens', '--disable-semantic-tokens'],
+    ['signatureHelp', '--disable-signature-help'],
+    ['predefinedLoader', '--disable-predefined-loader'],
+    ['documentSymbols', '--disable-document-symbols'],
+    ['workspaceSymbols', '--disable-workspace-symbols'],
+    ['references', '--disable-references'],
+    ['rename', '--disable-rename'],
+    ['documentHighlight', '--disable-document-highlight'],
+    ['foldingRange', '--disable-folding-range'],
+    ['inlayHints', '--disable-inlay-hints'],
+    ['codeAction', '--disable-code-action'],
+    ['formatting', '--disable-formatting'],
+    ['documentLink', '--disable-document-link'],
+    ['typeConversionChecks', '--disable-type-conversion-checks']
+];
+
+/**
+ * @brief Expands a possibly relative path into the absolute forms to pass to the server.
+ *
+ * The server's working directory is not the project root, so a relative entry only means anything
+ * once resolved - and in a multi-root workspace it can legitimately mean one path per folder.
+ */
+function resolveAgainstWorkspace(entry: string): string[] {
+    const trimmed = entry.trim();
+    if (trimmed.length === 0) {
+        return [];
+    }
+    if (path.isAbsolute(trimmed)) {
+        return [trimmed];
+    }
+    return (workspace.workspaceFolders ?? []).map(folder => path.resolve(folder.uri.fsPath, trimmed));
+}
+
+function buildServerArgs(): string[] {
+    const config = workspace.getConfiguration('angelscript');
+    const args: string[] = [];
+
+    // #include search paths.
+    for (const entry of config.get<string[]>('searchDirectories', [])) {
+        for (const resolved of resolveAgainstWorkspace(entry)) {
+            args.push(`--search-dir=${resolved}`);
+        }
+    }
+
+    // Predefined stubs, loaded by path. Note this is NOT the same as predefinedExtension below:
+    // the extension is a suffix used while scanning the workspace, these are specific files, and
+    // the two used to be conflated - a configured path was passed as the suffix, which silently
+    // matched nothing.
+    for (const entry of config.get<string[]>('predefinedFiles', [])) {
+        for (const resolved of resolveAgainstWorkspace(entry)) {
+            args.push(`--predefined-file=${resolved}`);
+        }
+    }
+
+    // Migration path for the old `angelscript.predefinedFile` string setting, which promised a
+    // path and delivered a suffix. Read as what it always claimed to be so existing settings start
+    // working rather than silently staying broken.
+    const legacyPredefined = config.get<string>('predefinedFile', '').trim();
+    if (legacyPredefined.length > 0) {
+        for (const resolved of resolveAgainstWorkspace(legacyPredefined)) {
+            args.push(`--predefined-file=${resolved}`);
+        }
+    }
+
+    const predefinedExtension = config.get<string>('predefinedExtension', '').trim();
+    if (predefinedExtension.length > 0) {
+        args.push(`--predefined-ext=${predefinedExtension}`);
+    }
+
+    const fileExtension = config.get<string>('fileExtension', '').trim();
+    if (fileExtension.length > 0) {
+        args.push(`--file-ext=${fileExtension}`);
+    }
+
+    for (const [setting, flag] of FEATURE_FLAGS) {
+        if (config.get<boolean>(`features.${setting}`, true) === false) {
+            args.push(flag);
+        }
+    }
+
+    const severities = config.get<Record<string, string>>('diagnosticSeverity', {});
+    for (const [code, severity] of Object.entries(severities ?? {})) {
+        if (code.trim().length > 0 && typeof severity === 'string' && severity.trim().length > 0) {
+            args.push(`--diagnostic-severity=${code.trim()}=${severity.trim()}`);
+        }
+    }
+
+    // The server localises its diagnostics; align them with the editor's display language.
+    if (env.language) {
+        args.push(`--locale=${env.language}`);
+    }
+
+    return args;
+}
+
+/**
+ * @brief Builds and starts a language client against the settings in force right now.
+ *
+ * Separate from activate() because most `angelscript.*` settings become server command-line
+ * arguments, and ServerOptions captures those when it is constructed. Applying changed settings
+ * therefore means building a new client, not restarting the existing one.
+ *
+ * @param context The extension execution context.
+ */
+async function startClient(context: ExtensionContext): Promise<void> {
     const serverPath = getServerPath(context);
-    
-    lspOutputChannel = window.createOutputChannel('AngelScript C++ Language Server');
+
     lspOutputChannel.appendLine("--- AngelScript C++ Language Server Activation ---");
     lspOutputChannel.appendLine(`Runtime Platform Context: ${os.platform()}-${os.arch()}`);
     lspOutputChannel.appendLine(`Resolved Server Binary Path: ${serverPath}`);
 
+    const serverArgs = buildServerArgs();
+    lspOutputChannel.appendLine(`Server Arguments: ${serverArgs.join(" ") || "(none)"}`);
+
     const serverOptions: ServerOptions = {
-        run: { command: serverPath },
-        debug: { command: serverPath }
+        run: { command: serverPath, args: serverArgs },
+        debug: { command: serverPath, args: serverArgs }
     };
 
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: 'file', language: 'angelscript' }],
         synchronize: {
-            configurationSection: 'angelscript'
+            configurationSection: 'angelscript',
+            // Without this the server only ever learns about files the user opened: a branch
+            // switch, a pull, or a generated script would leave every stale symbol in the index.
+            fileEvents: workspace.createFileSystemWatcher('**/*.{as,angelscript,predefined}')
         },
         outputChannel: lspOutputChannel
     };
@@ -93,7 +217,7 @@ export async function activate(context: ExtensionContext) {
         clientOptions
     );
 
-    try {        
+    try {
         await client.start();
         client.onNotification("angelscript/debug", (params: { message: string }) => {
             lspOutputChannel.appendLine(`[AST Debug] ${params.message}`);
@@ -101,6 +225,35 @@ export async function activate(context: ExtensionContext) {
     } catch (error) {
         lspOutputChannel.appendLine(`Failed to start Language Client: ${error instanceof Error ? error.message : String(error)}`);
     }
+}
+
+/**
+ * @brief Activates the AngelScript Language Client extension interface handlers.
+ * @param context The extension context provided by VS Code.
+ */
+export async function activate(context: ExtensionContext) {
+    lspOutputChannel = window.createOutputChannel('AngelScript C++ Language Server');
+
+    await startClient(context);
+
+    // Settings that become command-line arguments cannot take effect in a running server, so the
+    // client is rebuilt instead. Without this the user has to reload the whole window for a
+    // setting to do anything, which reads as the setting being broken.
+    context.subscriptions.push(
+        workspace.onDidChangeConfiguration(async event => {
+            if (!event.affectsConfiguration('angelscript')) {
+                return;
+            }
+
+            lspOutputChannel.appendLine('Configuration changed; restarting the language server.');
+            try {
+                await client?.stop();
+            } catch (error) {
+                lspOutputChannel.appendLine(`Failed to stop Language Client: ${error instanceof Error ? error.message : String(error)}`);
+            }
+            await startClient(context);
+        })
+    );
 }
 
 /**7

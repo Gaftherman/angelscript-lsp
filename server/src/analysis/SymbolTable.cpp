@@ -135,6 +135,39 @@ namespace angel_lsp::analysis
         }
     }
 
+    void SymbolTable::ReplaceDocumentSymbols(const std::string &fileUri, const SymbolTable &staging)
+    {
+        // Snapshot staging first: it is a separate object with its own lock, and reading it while
+        // holding this table's write lock is what keeps the replacement a single atomic step.
+        std::vector<Symbol> fresh;
+        staging.ForEachSymbol(
+            [&fresh](const std::string &, const std::vector<Symbol> &symbols)
+            {
+                fresh.insert(fresh.end(), symbols.begin(), symbols.end());
+            });
+
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+
+        for (auto it = m_symbols.begin(); it != m_symbols.end();)
+        {
+            auto &vec = MutableBucket(it->second);
+
+            std::erase_if(vec, [&fileUri](const Symbol &sym)
+                          { return sym.fileUri == fileUri; });
+
+            if (vec.empty())
+                it = m_symbols.erase(it);
+            else
+                ++it;
+        }
+
+        for (const auto &symbol : fresh)
+        {
+            const std::string &key = symbol.qualifiedName.empty() ? symbol.name : symbol.qualifiedName;
+            MutableBucket(m_symbols[key]).push_back(symbol);
+        }
+    }
+
     static inline std::string_view CleanScope(const std::string &name)
     {
         if (name.rfind("::", 0) == 0)

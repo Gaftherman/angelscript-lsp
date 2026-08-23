@@ -56,17 +56,6 @@
       "type": "object",
       "title": "AngelScript Language Server",
       "properties": {
-        "angelscript.preprocessorDefines": {
-          "type": "array",
-          "scope": "resource",
-          "items": {
-            "type": "string"
-          },
-          "default": [
-            "DEBUG_MODE"
-          ],
-          "markdownDescription": "List of preprocessor words defined for conditional compilation (`#if WORD` / `#endif`)."
-        },
         "angelscript.searchDirectories": {
           "type": "array",
           "scope": "resource",
@@ -76,11 +65,126 @@
           "default": [],
           "markdownDescription": "Custom directory search paths for resolving included script files (`#include \"path.as\"`)."
         },
-        "angelscript.predefinedFile": {
+        "angelscript.predefinedFiles": {
+          "type": "array",
+          "scope": "resource",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Predefined stub files declaring the host application's API, loaded by path. Absolute paths are used as-is, so the stub can live outside the workspace (e.g. `C:/Games/svencoop/as.predefined`); relative paths are resolved against each workspace folder. Files inside the workspace whose name ends with `#angelscript.predefinedExtension` are picked up automatically and need no entry here."
+        },
+        "angelscript.predefinedExtension": {
           "type": "string",
           "scope": "resource",
-          "default": "as.predefined",
-          "markdownDescription": "Path to the custom C++ engine predefine file (`as.predefined`)."
+          "default": ".as.predefined",
+          "markdownDescription": "Filename suffix that marks a file found in the workspace as a predefined stub. This is a suffix, not a path - use `#angelscript.predefinedFiles` to load a specific file."
+        },
+        "angelscript.fileExtension": {
+          "type": "string",
+          "scope": "resource",
+          "default": ".as",
+          "markdownDescription": "Filename suffix of AngelScript source files, used when scanning the workspace to build the `#include` graph."
+        },
+        "angelscript.diagnosticSeverity": {
+          "type": "object",
+          "scope": "resource",
+          "default": {},
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning",
+              "information",
+              "hint"
+            ]
+          },
+          "markdownDescription": "Overrides the severity of individual diagnostics, keyed by diagnostic code. Example: `{ \"as-warn-unused-variable\": \"hint\" }`."
+        },
+        "angelscript.features.hover": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show type and documentation tooltips on hover."
+        },
+        "angelscript.features.definition": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable Go to Definition and Go to Type Definition."
+        },
+        "angelscript.features.completion": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable auto-completion suggestions."
+        },
+        "angelscript.features.semanticTokens": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable semantic syntax highlighting."
+        },
+        "angelscript.features.signatureHelp": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show parameter hints while typing a call."
+        },
+        "angelscript.features.predefinedLoader": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Load predefined stub files describing the host application's API."
+        },
+        "angelscript.features.documentSymbols": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Populate the Outline view and breadcrumbs."
+        },
+        "angelscript.features.workspaceSymbols": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable workspace-wide symbol search (Ctrl+T)."
+        },
+        "angelscript.features.references": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable Find All References."
+        },
+        "angelscript.features.rename": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable symbol rename."
+        },
+        "angelscript.features.documentHighlight": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Highlight other occurrences of the symbol under the cursor."
+        },
+        "angelscript.features.foldingRange": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Provide code folding regions."
+        },
+        "angelscript.features.inlayHints": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show inline parameter-name and deduced-type hints."
+        },
+        "angelscript.features.codeAction": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Offer quick fixes and refactorings."
+        },
+        "angelscript.features.formatting": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Enable document and range formatting."
+        },
+        "angelscript.features.documentLink": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Turn `#include` directives into clickable links."
+        },
+        "angelscript.features.typeConversionChecks": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Report conversions with no constructor, `opConv`/`opImplConv` or `opCast`/`opImplCast` to back them."
         }
       }
     }

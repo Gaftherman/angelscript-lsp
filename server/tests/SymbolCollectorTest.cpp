@@ -499,3 +499,35 @@ TEST_CASE("SymbolCollector - Corpus Audit Across All angelscript Files" * doctes
     CHECK(totalFiles > 0);
     CHECK(totalSymbols > 0);
 }
+
+TEST_CASE("SymbolCollector - A comment inside a parameter list is not collected as a parameter")
+{
+    // Regression: ExtractParameters walked every NAMED child of parameter_list, and tree-sitter
+    // comments are named nodes - so a trailing '/* ... */' inside the parentheses became an extra,
+    // empty parameter. That inflated the declared arity everywhere it is shown or matched (hover,
+    // signature help, inlay hints, conversion checks).
+    const std::string source =
+        "class CLogger\n"
+        "{\n"
+        "    CLogger(const string &in name, bool isStatic = false /* cannot be detected */)\n"
+        "    {\n"
+        "    }\n"
+        "}\n"
+        "void Trace(int level /* 0-5 */, const string &in message) {}\n";
+
+    SymbolTable table;
+    CollectFromSource(source, table);
+
+    const auto constructor = table.FindFirstSymbol("CLogger::CLogger");
+    REQUIRE(constructor.has_value());
+    REQUIRE(constructor->GetFunction().parameters.size() == 2);
+    CHECK(constructor->GetFunction().parameters[0].name == "name");
+    CHECK(constructor->GetFunction().parameters[1].name == "isStatic");
+    CHECK(constructor->GetFunction().parameters[1].defaultValue == "false");
+
+    const auto trace = table.FindFirstSymbol("Trace");
+    REQUIRE(trace.has_value());
+    REQUIRE(trace->GetFunction().parameters.size() == 2);
+    CHECK(trace->GetFunction().parameters[0].name == "level");
+    CHECK(trace->GetFunction().parameters[1].name == "message");
+}

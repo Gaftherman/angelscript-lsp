@@ -1,4 +1,5 @@
 #include "analysis/SemanticAnalyzer.h"
+#include "analysis/TypeConversionChecker.h"
 #include "spdlog/fmt/fmt.h"
 
 namespace angel_lsp::analysis
@@ -58,6 +59,19 @@ namespace angel_lsp::analysis
             CheckUnusedVariables(request.scopeRoot.get(), used, ctx);
 
             CheckNullAssignedToNonHandleInScope(request.scopeRoot.get(), ctx);
+        }
+
+        // Needs the tree, not just the symbol table: an initializer or a cast is an expression, and
+        // expressions are exactly what the symbol table does not record.
+        if (request.enableTypeConversionChecks && request.tree && !request.sourceCode.empty())
+        {
+            DiagnosticContext ctx{request, diagnostics, m_logger};
+            const TypeConversionCheckRequest conversionRequest{
+                ts_tree_root_node(request.tree),
+                request.sourceCode,
+                request.scopeRoot.get()
+            };
+            CheckTypeConversions(conversionRequest, ctx);
         }
 
         return diagnostics;

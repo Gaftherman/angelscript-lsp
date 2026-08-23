@@ -358,6 +358,15 @@ namespace angel_lsp::analysis
         void AddSymbol(const Symbol &symbol);
         void ClearDocumentSymbols(const std::string &fileUri);
 
+        /** @brief Atomically swaps every symbol belonging to fileUri for the ones collected in staging.
+         *  @param fileUri Document whose symbols are being replaced.
+         *  @param staging Table the fresh symbols were collected into.
+         *  @note Clearing and then re-collecting takes two locks, and between them the document has
+         *        no symbols at all - a window a reader on another thread can land in and see an
+         *        empty file. Since analysis moved off the message loop that window is on the hot
+         *        editing path, so the swap happens under a single write lock instead. */
+        void ReplaceDocumentSymbols(const std::string &fileUri, const SymbolTable &staging);
+
         bool HasSymbol(const std::string &qualifiedName) const;
         bool HasSymbolAnywhere(const std::string &name) const;
 

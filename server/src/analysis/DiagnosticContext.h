@@ -39,6 +39,7 @@ namespace angel_lsp::analysis
         //     fileUri comes from request.fileUri instead of a Symbol's own fileUri. ---
         void EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
         void EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, std::string_view arg1, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+        void EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, std::string_view arg1, std::string_view arg2, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
         // --- Debug Logging ---
         void LogRule(std::string_view ruleName, std::string_view code, const Symbol &sym) const;

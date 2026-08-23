@@ -45,6 +45,7 @@ namespace angel_lsp::analysis
         m_symCompoundStatement = ts_language_symbol_for_name(lang, SYM_NAME("compound_statement"), true);
         m_symBlock = ts_language_symbol_for_name(lang, SYM_NAME("block"), true);
         m_symBaseClassList = ts_language_symbol_for_name(lang, SYM_NAME("base_class_list"), true);
+        m_symParameter = ts_language_symbol_for_name(lang, SYM_NAME("parameter"), true);
         m_symMemberExpression = ts_language_symbol_for_name(lang, SYM_NAME("member_expression"), true);
 
         m_tokConst = ts_language_symbol_for_name(lang, SYM_NAME("const"), false);
@@ -1122,7 +1123,15 @@ namespace angel_lsp::analysis
         parameters.reserve(paramCount);
         for (uint32_t p = 0; p < paramCount; ++p)
         {
-            parameters.push_back(ExtractParameterInfo(ts_node_named_child(paramsNode, p), sourceCode));
+            // Filtered by node type rather than taken as "every named child": comments are named
+            // nodes too, so a trailing '/* ... */' inside the parentheses used to be collected as
+            // an extra, empty parameter - inflating the arity of the declaration everywhere it is
+            // shown or matched (hover, signature help, inlay hints, overload resolution).
+            TSNode child = ts_node_named_child(paramsNode, p);
+            if (ts_node_symbol(child) != m_symParameter)
+                continue;
+
+            parameters.push_back(ExtractParameterInfo(child, sourceCode));
         }
         if (parameters.size() == 1 && parameters[0].typeName == "void" && parameters[0].name.empty())
         {

@@ -24,27 +24,29 @@ namespace angel_lsp::utils
 #endif
     }
 
-    size_t PositionToOffset(const std::string &text, uint32_t line, uint32_t character)
+    size_t PositionToOffset(const std::string &text, uint32_t line, uint32_t character, PositionEncoding enc)
     {
-        size_t currentLine = 0;
-        size_t offset = 0;
+        // character is in the negotiated encoding (UTF-16 code units unless the client agreed to
+        // UTF-8), while every offset the rest of the server deals in is a byte offset. Resolving it
+        // against the line content instead of adding it to the line start is what keeps documents
+        // containing non-ASCII text from drifting: the byte offset of a column only equals the
+        // column itself on a pure-ASCII line.
+        const size_t lineStart = LineStartOffset(text, line);
+        if (lineStart >= text.size())
+            return text.size();
 
-        while (offset < text.size() && currentLine < line)
-        {
-            if (text[offset] == '\n')
-                currentLine++;
-            offset++;
-        }
-        return std::min(offset + character, text.size());
+        const std::string_view lineText = GetLine(text, line);
+        return std::min(lineStart + LspCharToByteColumn(lineText, character, enc), text.size());
     }
 
     void ApplyIncrementalChange(std::string &buffer,
                                 uint32_t startLine, uint32_t startCharacter,
                                 uint32_t endLine, uint32_t endCharacter,
-                                const std::string &newText)
+                                const std::string &newText,
+                                PositionEncoding enc)
     {
-        size_t startOffset = PositionToOffset(buffer, startLine, startCharacter);
-        size_t endOffset = PositionToOffset(buffer, endLine, endCharacter);
+        size_t startOffset = PositionToOffset(buffer, startLine, startCharacter, enc);
+        size_t endOffset = PositionToOffset(buffer, endLine, endCharacter, enc);
 
         if (startOffset <= endOffset)
         {

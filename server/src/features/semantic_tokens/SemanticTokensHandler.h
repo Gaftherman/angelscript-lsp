@@ -5,6 +5,7 @@
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <tree_sitter/api.h>
+#include <optional>
 #include <string>
 
 namespace angel_lsp::features
@@ -28,6 +29,17 @@ namespace angel_lsp::features
          * that declaration is. Optional: left null, references fall back to plain "variable".
          */
         std::shared_ptr<const analysis::Scope> scopeRoot;
+
+        /**
+         * @brief Restricts the result to the tokens overlapping this range. Empty means the whole
+         *        document, which is what textDocument/semanticTokens/full asks for.
+         *
+         * The token stream is delta-encoded against its own predecessor, so a client cannot slice
+         * a full result itself - the first token of any slice would still be encoded relative to
+         * whatever preceded it. Narrowing has to happen before encoding, which is why it is a
+         * request field rather than post-processing.
+         */
+        std::optional<lsp::Range> range;
     };
 
     /**

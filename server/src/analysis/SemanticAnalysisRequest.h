@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <ankerl/unordered_dense.h>
+#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -25,8 +26,28 @@ namespace angel_lsp::analysis
         const config::TypeConfig *typeConfig = nullptr;
         const ankerl::unordered_dense::map<std::string, DiagnosticSeverity> *severityOverrides = nullptr;
 
+        /** @brief Kill-switch for the conversion rules (see TypeConversionChecker.h). */
+        bool enableTypeConversionChecks = true;
+
         /** @brief Root of the document's lexical Scope tree (see ScopeTree.h), or nullptr if none was collected. */
         std::shared_ptr<const Scope> scopeRoot;
+
+        /**
+         * @brief Document source text, owned by the caller and required to outlive Analyze().
+         *
+         * Empty when the caller has no text to offer. Rules that need to read an expression back
+         * (type conversions) are skipped rather than guessed at when it is.
+         */
+        std::string_view sourceCode;
+
+        /**
+         * @brief Parsed syntax tree of the document, or nullptr.
+         *
+         * The SymbolTable records declarations, not expressions, so a rule about what an
+         * initializer or a cast actually contains has no other source of truth. Also owned by the
+         * caller: it must not be deleted until Analyze() returns.
+         */
+        const TSTree *tree = nullptr;
 
         /**
          * @brief Gets configured name for the string type or 'string' default.

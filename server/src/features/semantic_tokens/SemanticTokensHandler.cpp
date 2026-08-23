@@ -440,6 +440,30 @@ namespace angel_lsp::features
             }
         }
 
+        // Narrowed after de-duplication rather than before, so a ranged request and a full request
+        // resolve every overlap identically. Filtering the raw tokens first would let a token that
+        // loses an overlap in the full document win it in a range that excludes its competitor.
+        if (request.range.has_value())
+        {
+            const lsp::Range &range = *request.range;
+            std::erase_if(filteredTokens, [&range](const RawToken &tok)
+            {
+                if (tok.line < range.start.line || tok.line > range.end.line)
+                {
+                    return true;
+                }
+                if (tok.line == range.start.line && tok.startChar + tok.length <= range.start.character)
+                {
+                    return true;
+                }
+                if (tok.line == range.end.line && tok.startChar >= range.end.character)
+                {
+                    return true;
+                }
+                return false;
+            });
+        }
+
         // Delta Encode 5-tuple
         std::vector<lsp::uint> data;
         data.reserve(filteredTokens.size() * 5);

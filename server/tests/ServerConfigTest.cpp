@@ -977,6 +977,126 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config.searchDirectories[2] == "E:/Include/Path3");
         }
     }
+
+    TEST_CASE("Type conversion checks flag")
+    {
+        SUBCASE("Enabled by default")
+        {
+            ArgvHelper args{"angel_lsp"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.features.enableTypeConversionChecks == true);
+        }
+
+        SUBCASE("Disabled via --disable-type-conversion-checks")
+        {
+            ArgvHelper args{"angel_lsp", "--disable-type-conversion-checks"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.features.enableTypeConversionChecks == false);
+        }
+
+        SUBCASE("Disabled via --enable-type-conversion-checks=false")
+        {
+            ArgvHelper args{"angel_lsp", "--enable-type-conversion-checks=false"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.features.enableTypeConversionChecks == false);
+        }
+
+        SUBCASE("Re-enabled explicitly")
+        {
+            ArgvHelper args{"angel_lsp", "--enable-type-conversion-checks=true"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.features.enableTypeConversionChecks == true);
+        }
+    }
+
+    TEST_CASE("Predefined file paths")
+    {
+        SUBCASE("Empty by default")
+        {
+            ArgvHelper args{"angel_lsp"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.predefinedFiles.empty());
+        }
+
+        SUBCASE("Repeatable and order-preserving")
+        {
+            ArgvHelper args{"angel_lsp",
+                            "--predefined-file=C:/Games/svencoop/as.predefined",
+                            "--predefined-path=./stubs/engine.as.predefined"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            REQUIRE(config.predefinedFiles.size() == 2);
+            CHECK(config.predefinedFiles[0] == "C:/Games/svencoop/as.predefined");
+            CHECK(config.predefinedFiles[1] == "./stubs/engine.as.predefined");
+        }
+
+        SUBCASE("Independent of the predefined extension")
+        {
+            // These two used to be conflated: a configured path was passed as the suffix, which
+            // matched no file at all and silently disabled stub loading.
+            ArgvHelper args{"angel_lsp",
+                            "--predefined-file=C:/Games/as.predefined",
+                            "--predefined-ext=.stub"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            REQUIRE(config.predefinedFiles.size() == 1);
+            CHECK(config.predefinedFiles[0] == "C:/Games/as.predefined");
+            CHECK(config.info.predefinedFileExtension == ".stub");
+        }
+
+        SUBCASE("Empty value is ignored")
+        {
+            ArgvHelper args{"angel_lsp", "--predefined-file="};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.predefinedFiles.empty());
+        }
+    }
+
+    TEST_CASE("Diagnostic severity overrides")
+    {
+        SUBCASE("Empty by default")
+        {
+            ArgvHelper args{"angel_lsp"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.diagnosticSeverities.empty());
+        }
+
+        SUBCASE("Repeatable, one entry per code")
+        {
+            ArgvHelper args{"angel_lsp",
+                            "--diagnostic-severity=as-warn-unused-variable=hint",
+                            "--diagnostic-severity=as-err-no-implicit-conversion=warning"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            REQUIRE(config.diagnosticSeverities.size() == 2);
+            CHECK(config.diagnosticSeverities.at("as-warn-unused-variable") == "hint");
+            CHECK(config.diagnosticSeverities.at("as-err-no-implicit-conversion") == "warning");
+        }
+
+        SUBCASE("Severity name is case-insensitive")
+        {
+            ArgvHelper args{"angel_lsp", "--diagnostic-severity=as-warn-unused-variable=HINT"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            REQUIRE(config.diagnosticSeverities.size() == 1);
+            CHECK(config.diagnosticSeverities.at("as-warn-unused-variable") == "hint");
+        }
+
+        SUBCASE("Unknown severity is dropped rather than guessed at")
+        {
+            ArgvHelper args{"angel_lsp", "--diagnostic-severity=as-warn-unused-variable=loud"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.diagnosticSeverities.empty());
+        }
+
+        SUBCASE("Malformed pairs are ignored without disturbing valid ones")
+        {
+            ArgvHelper args{"angel_lsp",
+                            "--diagnostic-severity=no-separator",
+                            "--diagnostic-severity==hint",
+                            "--diagnostic-severity=as-warn-unused-variable=",
+                            "--diagnostic-severity=as-warn-unused-variable=error"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            REQUIRE(config.diagnosticSeverities.size() == 1);
+            CHECK(config.diagnosticSeverities.at("as-warn-unused-variable") == "error");
+        }
+    }
 }
 
 

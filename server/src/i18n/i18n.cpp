@@ -24,6 +24,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-funcdef-not-handle"] = "Variables or parameters of funcdef type '{}' must be declared as handles ('{}@').";
         m_messages["as-err-duplicate-param"] = "Duplicate parameter name '{}' in function '{}'.";
         m_messages["as-warn-shadow-global"] = "Parameter '{}' shadows a global variable of the same name.";
+        m_messages["as-warn-include-not-found"] = "Included file '{}' was not found.";
         m_messages["as-err-circular-inherit"] = "Circular inheritance detected: '{}' inherits from itself.";
         m_messages["as-err-const-out-param"] = "Parameter '{}' cannot be both 'const' and '&out'.";
         m_messages["as-err-mixin-as-base"] = "Class '{}' cannot inherit from mixin '{}'. Mixins can only be included using 'mixin class'.";
@@ -75,6 +76,9 @@ namespace angel_lsp::i18n
         m_messages["as-err-implicit-conversion"] = "Implicit conversion from '{}' is invalid.";
         m_messages["as-warn-unused-variable"] = "Local variable '{}' is never used.";
         m_messages["as-err-null-non-handle"] = "Cannot assign 'null' to non-handle type '{}'.";
+        m_messages["as-err-no-implicit-conversion"] = "Cannot implicitly convert '{}' to '{}'. Declare a matching constructor, an 'opImplConv' or an 'opAssign' overload.";
+        m_messages["as-err-no-explicit-conversion"] = "No conversion from '{}' to '{}' exists. Declare a matching constructor on the target, or an 'opConv'/'opImplConv' overload on the source.";
+        m_messages["as-err-invalid-cast"] = "Cannot cast '{}' to '{}'. The types are unrelated and no 'opCast'/'opImplCast' overload is declared.";
 
         if (locale == "es")
         {
@@ -97,6 +101,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-funcdef-not-handle"] = "Variables o parámetros de tipo funcdef '{}' deben declararse como handle ('{}@').";
             m_messages["as-err-duplicate-param"] = "Nombre de parámetro '{}' duplicado en la función '{}'.";
             m_messages["as-warn-shadow-global"] = "El parámetro '{}' oculta una variable global con el mismo nombre.";
+            m_messages["as-warn-include-not-found"] = "No se encontró el archivo incluido '{}'.";
             m_messages["as-err-circular-inherit"] = "Herencia circular detectada: '{}' hereda de sí misma.";
             m_messages["as-err-const-out-param"] = "El parámetro '{}' no puede ser 'const' y '&out' al mismo tiempo.";
             m_messages["as-err-mixin-as-base"] = "La clase '{}' no puede heredar del mixin '{}'. Los mixins solo pueden incluirse con 'mixin class'.";
@@ -143,6 +148,9 @@ namespace angel_lsp::i18n
             m_messages["as-err-undeclared-identifier"] = "Identificador no declarado '{}'.";
             m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";
             m_messages["as-err-null-non-handle"] = "No se puede asignar 'null' al tipo no-handle '{}'.";
+            m_messages["as-err-no-implicit-conversion"] = "No se puede convertir implícitamente '{}' a '{}'. Declara un constructor compatible, un 'opImplConv' o una sobrecarga 'opAssign'.";
+            m_messages["as-err-no-explicit-conversion"] = "No existe conversión de '{}' a '{}'. Declara un constructor compatible en el destino, o una sobrecarga 'opConv'/'opImplConv' en el origen.";
+            m_messages["as-err-invalid-cast"] = "No se puede convertir '{}' a '{}' con cast. Los tipos no están relacionados y no hay sobrecarga 'opCast'/'opImplCast'.";
         }
     }
 

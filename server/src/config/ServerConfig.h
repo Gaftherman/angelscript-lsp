@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -27,6 +28,8 @@ namespace angel_lsp::config
         bool enableInlayHints = true;
         bool enableCodeAction = true;
         bool enableFormatting = true;
+        bool enableDocumentLink = true;
+        bool enableTypeConversionChecks = true;
     };
 
     /**
@@ -62,6 +65,26 @@ namespace angel_lsp::config
         Info info;
         TypeConfig types;
         std::vector<std::string> searchDirectories;
+
+        /**
+         * @brief Predefined stub files to load by path, on top of the workspace scan.
+         *
+         * The scan only ever finds stubs that live inside a workspace folder, but a host
+         * application's declarations usually ship with the application rather than with the
+         * scripts. Absolute entries are used as-is; relative ones are resolved against each
+         * workspace folder. Distinct from Info::predefinedFileExtension, which is the suffix that
+         * decides whether a file found by the scan is a stub at all.
+         */
+        std::vector<std::string> predefinedFiles;
+
+        /**
+         * @brief Per-rule diagnostic severity overrides, keyed by diagnostic code.
+         *
+         * Values are the LSP severity names ("error", "warning", "information", "hint"). Kept as
+         * strings because DiagnosticSeverity is a Layer 2 type and this is Layer 1; the server
+         * converts them once at startup.
+         */
+        std::unordered_map<std::string, std::string> diagnosticSeverities;
     };
 
     /**
