@@ -7,6 +7,7 @@
 #include <tree_sitter/api.h>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace angel_lsp::features
 {
@@ -53,4 +54,19 @@ namespace angel_lsp::features
      * @brief Returns server SemanticTokensLegend with token types and modifiers.
      */
     const lsp::SemanticTokensLegend &GetSemanticTokensLegend();
+
+    /**
+     * @brief Describes how to turn one token stream into another.
+     *
+     * A whole-document re-tokenisation is cheap here, but sending it is not: the payload is five
+     * integers per token, and a typing session re-sends all of them on every keystroke. Since an
+     * edit almost always leaves the run before it and the run after it untouched, the difference
+     * is expressible as a single splice.
+     *
+     * @param previous Token data the client already has.
+     * @param current Token data just computed.
+     * @return Edits to apply, in the order given. Empty when the two streams are identical.
+     */
+    std::vector<lsp::SemanticTokensEdit> ComputeSemanticTokensDelta(const std::vector<lsp::uint> &previous,
+                                                                    const std::vector<lsp::uint> &current);
 }

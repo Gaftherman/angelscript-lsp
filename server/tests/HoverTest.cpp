@@ -53,31 +53,6 @@ namespace
     };
 }
 
-TEST_CASE("HoverHandler - ExtractDocComment parsing")
-{
-    std::string source = 
-        "/**\n"
-        " * @brief Calculates the sum.\n"
-        " * @param a First value.\n"
-        " * @param b Second value.\n"
-        " * @return The sum.\n"
-        " * @note Important function.\n"
-        " * @warning Use with care.\n"
-        " * @see OtherFunc\n"
-        " */\n"
-        "int Add(int a, int b);\n";
-
-    std::string doc = ExtractDocComment(source, 9);
-    CHECK(doc.find("Calculates the sum.") != std::string::npos);
-    CHECK(doc.find("**Parameters:**") != std::string::npos);
-    CHECK(doc.find("`a`: First value.") != std::string::npos);
-    CHECK(doc.find("`b`: Second value.") != std::string::npos);
-    CHECK(doc.find("**Returns:**") != std::string::npos);
-    CHECK(doc.find("> **Note:** Important function.") != std::string::npos);
-    CHECK(doc.find("> **Warning:** Use with care.") != std::string::npos);
-    CHECK(doc.find("**See also:** OtherFunc") != std::string::npos);
-}
-
 TEST_CASE("HoverHandler - Primitive Type Hover")
 {
     TestEnvironment env("void main() { int x = 42; }");

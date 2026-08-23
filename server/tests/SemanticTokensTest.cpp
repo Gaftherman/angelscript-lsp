@@ -274,3 +274,83 @@ TEST_CASE("SemanticTokensHandler - A range covering no tokens returns an empty s
 
     ts_tree_delete(tree);
 }
+
+TEST_CASE("SemanticTokensHandler - An unchanged stream produces no edits")
+{
+    const std::vector<lsp::uint> tokens{ 0, 0, 3, 15, 0, 0, 4, 5, 8, 0 };
+    CHECK(ComputeSemanticTokensDelta(tokens, tokens).empty());
+}
+
+TEST_CASE("SemanticTokensHandler - A delta splices only the run that changed")
+{
+    const std::vector<lsp::uint> previous{ 0, 0, 3, 15, 0, /**/ 1, 0, 4, 12, 0, /**/ 1, 0, 5, 8, 0 };
+    const std::vector<lsp::uint> current{ 0, 0, 3, 15, 0, /**/ 1, 0, 7, 12, 0, /**/ 1, 0, 5, 8, 0 };
+
+    const auto edits = ComputeSemanticTokensDelta(previous, current);
+    REQUIRE(edits.size() == 1);
+
+    // Only the one changed integer is resent: the untouched runs on either side are what the
+    // prefix/suffix scan is for.
+    CHECK(edits[0].start == 7);
+    CHECK(edits[0].deleteCount == 1);
+    REQUIRE(edits[0].data.has_value());
+    REQUIRE(edits[0].data->size() == 1);
+    CHECK((*edits[0].data)[0] == 7);
+}
+
+TEST_CASE("SemanticTokensHandler - A delta describes an appended token")
+{
+    const std::vector<lsp::uint> previous{ 0, 0, 3, 15, 0 };
+    const std::vector<lsp::uint> current{ 0, 0, 3, 15, 0, 1, 0, 4, 12, 0 };
+
+    const auto edits = ComputeSemanticTokensDelta(previous, current);
+    REQUIRE(edits.size() == 1);
+    CHECK(edits[0].start == 5);
+    CHECK(edits[0].deleteCount == 0);
+    REQUIRE(edits[0].data.has_value());
+    CHECK(edits[0].data->size() == 5);
+}
+
+TEST_CASE("SemanticTokensHandler - A delta describes a removed token")
+{
+    const std::vector<lsp::uint> previous{ 0, 0, 3, 15, 0, 1, 0, 4, 12, 0 };
+    const std::vector<lsp::uint> current{ 0, 0, 3, 15, 0 };
+
+    const auto edits = ComputeSemanticTokensDelta(previous, current);
+    REQUIRE(edits.size() == 1);
+    CHECK(edits[0].start == 5);
+    CHECK(edits[0].deleteCount == 5);
+    CHECK_FALSE(edits[0].data.has_value());
+}
+
+TEST_CASE("SemanticTokensHandler - A delta against an empty stream sends everything")
+{
+    const std::vector<lsp::uint> current{ 0, 0, 3, 15, 0 };
+
+    const auto edits = ComputeSemanticTokensDelta({}, current);
+    REQUIRE(edits.size() == 1);
+    CHECK(edits[0].start == 0);
+    CHECK(edits[0].deleteCount == 0);
+    REQUIRE(edits[0].data.has_value());
+    CHECK(*edits[0].data == lsp::Array<lsp::uint>(current.begin(), current.end()));
+}
+
+TEST_CASE("SemanticTokensHandler - Applying the edits reproduces the new stream")
+{
+    const std::vector<lsp::uint> previous{ 0, 0, 3, 15, 0, 1, 0, 4, 12, 0, 1, 0, 5, 8, 0 };
+    const std::vector<lsp::uint> current{ 0, 0, 3, 15, 0, 1, 0, 9, 12, 0, 2, 0, 5, 8, 0, 1, 0, 2, 8, 0 };
+
+    auto applied = previous;
+    for (const auto &edit : ComputeSemanticTokensDelta(previous, current))
+    {
+        const auto first = applied.begin() + static_cast<std::ptrdiff_t>(edit.start);
+        applied.erase(first, first + static_cast<std::ptrdiff_t>(edit.deleteCount));
+        if (edit.data.has_value())
+        {
+            applied.insert(applied.begin() + static_cast<std::ptrdiff_t>(edit.start),
+                           edit.data->begin(), edit.data->end());
+        }
+    }
+
+    CHECK(applied == current);
+}

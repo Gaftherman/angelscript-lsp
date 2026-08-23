@@ -6,6 +6,7 @@
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <tree_sitter/api.h>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -31,4 +32,36 @@ namespace angel_lsp::features
      * @return Vector of CompletionItem objects.
      */
     std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest &request);
+
+    /**
+     * @brief Context for filling in the details of one completion item.
+     */
+    struct CompletionResolveRequest
+    {
+        /** @brief The item the client picked, carrying the identity GetCompletion put on `data`. */
+        const lsp::CompletionItem &item;
+
+        const analysis::SymbolTable &symbolTable;
+
+        /**
+         * @brief Reads a document's text by URI, or returns nullptr when the server holds none.
+         *
+         * Injected rather than taken as a map: the documentation lives in the file that declares
+         * the symbol, which is rarely the file completion was invoked in, and only the server
+         * knows which documents it currently holds text for.
+         */
+        std::function<const std::string *(const std::string &)> readDocument;
+    };
+
+    /**
+     * @brief Fills in the documentation of a completion item, on demand.
+     *
+     * Extracting a doc comment means finding the declaring file and re-scanning the lines above the
+     * declaration. Doing that for every item of every completion request costs far more than doing
+     * it once for the item the user actually highlighted, which is what this exists for.
+     *
+     * @param request Item to complete plus the lookups needed to do it.
+     * @return The item with documentation attached, or unchanged when there is none to add.
+     */
+    lsp::CompletionItem ResolveCompletionItem(const CompletionResolveRequest &request);
 }

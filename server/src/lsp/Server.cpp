@@ -26,11 +26,11 @@
 
 namespace angel_lsp
 {
-    Server::Server(const angel_lsp::config::ServerConfig &config)
+    Server::Server(const angel_lsp::config::ServerConfig &config, lsp::io::Stream &stream)
     {
         m_config = config;
 
-        m_connection = std::make_unique<lsp::Connection>(lsp::io::standardIO());
+        m_connection = std::make_unique<lsp::Connection>(stream);
         m_messageHandler = std::make_unique<lsp::MessageHandler>(*m_connection);
 
         m_running = true;
@@ -59,12 +59,17 @@ namespace angel_lsp
     {
         m_running = false;
 
-        // Stopped and joined before the trees below are freed: the analysis thread reads member
-        // state and must not outlive it. jthread would join on destruction anyway, but ordering it
-        // explicitly keeps that guarantee independent of member declaration order.
+        // Stopped and joined before the trees below are freed: both threads read member state and
+        // must not outlive it. jthread would join on destruction anyway, but that happens in
+        // reverse declaration order - and m_workspaceThread is declared early enough that it would
+        // be joined only after the symbol table and include graph it reads were already gone.
         m_analysisThread.request_stop();
         if (m_analysisThread.joinable())
             m_analysisThread.join();
+
+        m_workspaceThread.request_stop();
+        if (m_workspaceThread.joinable())
+            m_workspaceThread.join();
 
         for (auto &[uri, tree] : m_documentTrees)
         {
@@ -80,7 +85,24 @@ namespace angel_lsp
     {
         while (m_running)
         {
-            m_messageHandler->processIncomingMessages();
+            // A closed transport is how this process normally ends: the editor exits, stdin hits
+            // end of file, and the framework reports it by throwing. Letting that escape main()
+            // would turn an ordinary shutdown into a crash, and the destructors that join the
+            // background threads would never run.
+            try
+            {
+                m_messageHandler->processIncomingMessages();
+            }
+            catch (const lsp::ConnectionError &e)
+            {
+                m_logger->LogInfo(fmt::format("Connection closed: {}", e.what()));
+                m_running = false;
+            }
+            catch (const lsp::io::Error &e)
+            {
+                m_logger->LogInfo(fmt::format("Transport closed: {}", e.what()));
+                m_running = false;
+            }
         }
     }
 
@@ -153,6 +175,10 @@ namespace angel_lsp
             // The spec requires single characters: a two-character "::" never fires, and AngelScript
             // has no "->" operator at all. Typing the first ":" of "::" is what has to trigger.
             completionOpts.triggerCharacters = lsp::Array<lsp::String>{ ".", ":" };
+            // Documentation is attached on demand: reading the doc comment above a declaration
+            // means finding its file and re-scanning lines, and a completion list is hundreds of
+            // items of which the user reads one.
+            completionOpts.resolveProvider = true;
             result.capabilities.completionProvider = completionOpts;
         }
 
@@ -160,7 +186,11 @@ namespace angel_lsp
         {
             lsp::SemanticTokensOptions semOpts;
             semOpts.legend = features::GetSemanticTokensLegend();
-            semOpts.full = true;
+            // Delta rather than a plain full: the payload is five integers per token, and a typing
+            // session would otherwise re-send every one of them on each keystroke.
+            lsp::SemanticTokensFullDelta fullDelta;
+            fullDelta.delta = true;
+            semOpts.full = fullDelta;
             // Lets the editor ask for just the visible viewport instead of the whole file, which is
             // the difference between re-tokenising a 3000-line script and re-tokenising 50 lines.
             semOpts.range = true;
@@ -474,6 +504,22 @@ namespace angel_lsp
         // Which files a directive resolves to depends entirely on these paths, so every edge in the
         // graph is now suspect.
         RestartWorkspaceScan();
+    }
+
+    lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string &uriStr, const std::string &text)
+    {
+        TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+        features::SemanticTokensRequest request{ uriStr, text, tree, m_symbolTable, m_scopeIndex.GetRoot(uriStr) };
+        lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
+        codec::EncodeSemanticTokens(text, m_positionEncoding, tokens.data);
+
+        // Cached after encoding, so a delta is computed against exactly the bytes the client holds.
+        const std::string resultId = std::to_string(++m_semanticTokensRevision);
+        tokens.resultId = resultId;
+        m_semanticTokensCache[uriStr] = SemanticTokensSnapshot{ resultId, tokens.data };
+
+        return tokens;
     }
 
     void Server::RestartWorkspaceScan()
@@ -860,6 +906,11 @@ namespace angel_lsp
     {
         std::string uriStr = params.textDocument.uri.toString();
         m_openDocuments.erase(uriStr);
+
+        // The cached token payload is only meaningful while the client still holds it. Dropping it
+        // here also means a reopened document starts from a full stream rather than a delta against
+        // a payload the client threw away when it closed the editor tab.
+        m_semanticTokensCache.erase(uriStr);
 
         auto it = m_documentTrees.find(uriStr);
         if (it != m_documentTrees.end())
@@ -1519,6 +1570,22 @@ namespace angel_lsp
                 return features::GetCompletion(cr);
             });
 
+        m_messageHandler->add<lsp::requests::CompletionItem_Resolve>(
+            [this](lsp::requests::CompletionItem_Resolve::Params &&req) -> lsp::requests::CompletionItem_Resolve::Result
+            {
+                if (!m_config.features.enableCompletion)
+                {
+                    return req;
+                }
+
+                features::CompletionResolveRequest rr{
+                    req,
+                    m_symbolTable,
+                    [this](const std::string &uri) { return FindDocumentText(uri); }
+                };
+                return features::ResolveCompletionItem(rr);
+            });
+
         m_messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Full>(
             [this](lsp::requests::TextDocument_SemanticTokens_Full::Params &&req) -> lsp::requests::TextDocument_SemanticTokens_Full::Result
             {
@@ -1534,10 +1601,42 @@ namespace angel_lsp
                 }
                 TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::SemanticTokensRequest sr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex.GetRoot(uriStr) };
-                lsp::SemanticTokens tokens = features::GetSemanticTokens(sr);
-                codec::EncodeSemanticTokens(docIt->second, m_positionEncoding, tokens.data);
-                return tokens;
+                return ComputeAndCacheSemanticTokens(uriStr, docIt->second);
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Full_Delta>(
+            [this](lsp::requests::TextDocument_SemanticTokens_Full_Delta::Params &&req) -> lsp::requests::TextDocument_SemanticTokens_Full_Delta::Result
+            {
+                if (!m_config.features.enableSemanticTokens)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+
+                const auto cached = m_semanticTokensCache.find(uriStr);
+                const bool canDiff = cached != m_semanticTokensCache.end() &&
+                                     cached->second.resultId == req.previousResultId;
+
+                // The previous payload has to be the one this server actually sent. Anything else -
+                // a reopened document, a result id from a past session - is answered with the full
+                // stream, which the protocol allows in place of a delta.
+                if (!canDiff)
+                {
+                    return ComputeAndCacheSemanticTokens(uriStr, docIt->second);
+                }
+
+                const std::vector<lsp::uint> previous = cached->second.data;
+                lsp::SemanticTokens tokens = ComputeAndCacheSemanticTokens(uriStr, docIt->second);
+
+                lsp::SemanticTokensDelta delta;
+                delta.resultId = tokens.resultId;
+                delta.edits = features::ComputeSemanticTokensDelta(previous, tokens.data);
+                return delta;
             });
 
         m_messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Range>(

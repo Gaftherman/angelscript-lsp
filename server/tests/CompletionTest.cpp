@@ -7,6 +7,9 @@
 #include "analysis/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
 
+#include <algorithm>
+#include <string>
+
 using namespace angel_lsp;
 using namespace angel_lsp::features;
 using namespace angel_lsp::analysis;
@@ -126,4 +129,119 @@ TEST_CASE("CompletionHandler - Global and Lexical Scope Completion")
     CHECK(HasItem(items, "int"));
     CHECK(HasItem(items, "return"));
     CHECK(HasItem(items, "if"));
+}
+
+TEST_CASE("CompletionHandler - Symbol items carry the identity a resolve needs")
+{
+    const std::string code =
+        "/// Spawns the entity at its start position.\n"
+        "void Spawn(int id) {}\n"
+        "void main() { Sp }\n";
+
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    ScopeIndex index;
+    const std::string uri = "file:///resolve.as";
+
+    TSTree *tree = parser.Parse(code);
+    collector.CollectSymbols(uri, code, parser, table);
+    if (auto root = scopes.CollectScopes(code, parser))
+    {
+        index.SetScopeTree(uri, std::move(root));
+    }
+
+    CompletionRequest request{ uri, code, tree, table, index, lsp::Position{ 2, 16 }, nullptr };
+    const auto items = GetCompletion(request);
+
+    const auto spawn = std::find_if(items.begin(), items.end(),
+                                    [](const lsp::CompletionItem &item) { return item.label == "Spawn"; });
+    REQUIRE(spawn != items.end());
+
+    // Nothing is resolved yet: the list is cheap on purpose.
+    REQUIRE(spawn->data.has_value());
+    CHECK(spawn->data->isString());
+    CHECK(spawn->data->string() == "Spawn");
+    CHECK_FALSE(spawn->documentation.has_value());
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("CompletionHandler - Resolve attaches the declaration's doc comment")
+{
+    const std::string code =
+        "/// Spawns the entity at its start position.\n"
+        "void Spawn(int id) {}\n";
+
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    SymbolTable table;
+    const std::string uri = "file:///resolve.as";
+    collector.CollectSymbols(uri, code, parser, table);
+
+    lsp::CompletionItem item;
+    item.label = "Spawn";
+    item.data = lsp::LSPAny(std::string("Spawn"));
+
+    CompletionResolveRequest request{
+        item,
+        table,
+        [&](const std::string &wanted) -> const std::string * { return wanted == uri ? &code : nullptr; }
+    };
+
+    const auto resolved = ResolveCompletionItem(request);
+    REQUIRE(resolved.documentation.has_value());
+    const auto &markup = std::get<lsp::MarkupContent>(*resolved.documentation);
+    CHECK(markup.value.find("Spawns the entity") != std::string::npos);
+}
+
+TEST_CASE("CompletionHandler - Resolve leaves an item it cannot identify alone")
+{
+    SymbolTable table;
+
+    SUBCASE("No data at all, as on a keyword item")
+    {
+        lsp::CompletionItem item;
+        item.label = "while";
+
+        CompletionResolveRequest request{
+            item, table, [](const std::string &) -> const std::string * { return nullptr; } };
+
+        CHECK_FALSE(ResolveCompletionItem(request).documentation.has_value());
+    }
+
+    SUBCASE("Names a symbol the table does not have")
+    {
+        lsp::CompletionItem item;
+        item.label = "Ghost";
+        item.data = lsp::LSPAny(std::string("Ghost"));
+
+        CompletionResolveRequest request{
+            item, table, [](const std::string &) -> const std::string * { return nullptr; } };
+
+        CHECK_FALSE(ResolveCompletionItem(request).documentation.has_value());
+    }
+}
+
+TEST_CASE("CompletionHandler - Resolve keeps documentation an item already had")
+{
+    const std::string code = "/// Fresh text.\nvoid Spawn() {}\n";
+
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    SymbolTable table;
+    collector.CollectSymbols("file:///resolve.as", code, parser, table);
+
+    lsp::CompletionItem item;
+    item.label = "Spawn";
+    item.data = lsp::LSPAny(std::string("Spawn"));
+    item.documentation = lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), "Already known." };
+
+    CompletionResolveRequest request{
+        item, table, [&](const std::string &) -> const std::string * { return &code; } };
+
+    const auto resolved = ResolveCompletionItem(request);
+    REQUIRE(resolved.documentation.has_value());
+    CHECK(std::get<lsp::MarkupContent>(*resolved.documentation).value == "Already known.");
 }

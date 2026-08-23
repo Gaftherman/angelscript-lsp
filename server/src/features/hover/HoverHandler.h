@@ -30,11 +30,4 @@ namespace angel_lsp::features
      */
     std::optional<lsp::Hover> GetHover(const HoverRequest &request);
 
-    /**
-     * @brief Extracts and formats Doxygen/doc comments preceding a declaration.
-     * @param sourceCode Source text.
-     * @param declStartLine Zero-based line where declaration begins.
-     * @return Formatted markdown docstring.
-     */
-    std::string ExtractDocComment(const std::string &sourceCode, uint32_t declStartLine);
 }

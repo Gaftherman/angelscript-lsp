@@ -488,4 +488,41 @@ namespace angel_lsp::features
 
         return lsp::SemanticTokens{ std::move(data) };
     }
+
+    std::vector<lsp::SemanticTokensEdit> ComputeSemanticTokensDelta(const std::vector<lsp::uint> &previous,
+                                                                     const std::vector<lsp::uint> &current)
+    {
+        if (previous == current)
+        {
+            return {};
+        }
+
+        // Longest common prefix, then longest common suffix over what is left. One splice between
+        // the two describes the change, which is what an edit confined to a few lines actually is.
+        size_t prefix = 0;
+        const size_t shortest = std::min(previous.size(), current.size());
+        while (prefix < shortest && previous[prefix] == current[prefix])
+        {
+            ++prefix;
+        }
+
+        size_t suffix = 0;
+        while (suffix < shortest - prefix &&
+               previous[previous.size() - 1 - suffix] == current[current.size() - 1 - suffix])
+        {
+            ++suffix;
+        }
+
+        lsp::SemanticTokensEdit edit;
+        edit.start = static_cast<lsp::uint>(prefix);
+        edit.deleteCount = static_cast<lsp::uint>(previous.size() - prefix - suffix);
+
+        if (current.size() - prefix - suffix > 0)
+        {
+            edit.data = lsp::Array<lsp::uint>(current.begin() + static_cast<std::ptrdiff_t>(prefix),
+                                              current.end() - static_cast<std::ptrdiff_t>(suffix));
+        }
+
+        return { std::move(edit) };
+    }
 }

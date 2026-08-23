@@ -1,5 +1,6 @@
 #include "features/completion/CompletionHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/DocComment.h"
 #include <unordered_set>
 #include <sstream>
 #include <regex>
@@ -185,7 +186,8 @@ namespace angel_lsp::features
                           const std::string &label,
                           lsp::CompletionItemKind kind,
                           const std::string &detail = "",
-                          const std::string &doc = "")
+                          const std::string &doc = "",
+                          const std::string &resolveKey = "")
         {
             if (label.empty() || seenLabels.contains(label))
             {
@@ -203,6 +205,12 @@ namespace angel_lsp::features
             if (!doc.empty())
             {
                 item.documentation = lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), doc };
+            }
+            if (!resolveKey.empty())
+            {
+                // The qualified name is all the identity a resolve needs: it finds the symbol,
+                // and the symbol knows which file - and which line - its documentation lives above.
+                item.data = lsp::LSPAny(std::string(resolveKey));
             }
             items.push_back(std::move(item));
         }
@@ -280,7 +288,7 @@ namespace angel_lsp::features
                             kind = lsp::CompletionItemKind::Enum;
                         }
 
-                        AddItemIfNew(items, seenLabels, sym.name, kind, detail);
+                        AddItemIfNew(items, seenLabels, sym.name, kind, detail, "", sym.qualifiedName);
                     }
                     else if (sym.type == analysis::SymbolType::Enum && sym.name == qualifier)
                     {
@@ -376,7 +384,7 @@ namespace angel_lsp::features
                                     kind = lsp::CompletionItemKind::Property;
                                 }
 
-                                AddItemIfNew(items, seenLabels, sym.name, kind, detail);
+                                AddItemIfNew(items, seenLabels, sym.name, kind, detail, "", sym.qualifiedName);
                             }
                         }
                     });
@@ -402,6 +410,7 @@ namespace angel_lsp::features
                 for (const auto &def : cur->definitions)
                 {
                     lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
+                    bool isCallable = false;
                     if (def.kind == analysis::LocalDefinitionKind::Parameter)
                     {
                         kind = lsp::CompletionItemKind::Variable;
@@ -410,8 +419,16 @@ namespace angel_lsp::features
                              def.kind == analysis::LocalDefinitionKind::Method)
                     {
                         kind = lsp::CompletionItemKind::Function;
+                        isCallable = true;
                     }
-                    AddItemIfNew(items, seenLabels, def.name, kind, def.typeName);
+
+                    // A resolve key only for the function-like definitions, which are the ones the
+                    // symbol table also holds and can therefore be resolved to a doc comment. A
+                    // local variable has no symbol-table entry to look up, and this path runs first
+                    // - so without the key here a module-level function would reach the client with
+                    // no identity at all and never resolve.
+                    AddItemIfNew(items, seenLabels, def.name, kind, def.typeName, "",
+                                 isCallable ? def.name : std::string{});
                 }
             }
         }
@@ -489,7 +506,7 @@ namespace angel_lsp::features
                     default:
                         break;
                     }
-                    AddItemIfNew(items, seenLabels, sym.name, kind, detail);
+                    AddItemIfNew(items, seenLabels, sym.name, kind, detail, "", sym.qualifiedName);
                 }
             }
         });
@@ -501,5 +518,46 @@ namespace angel_lsp::features
         }
 
         return items;
+    }
+
+    lsp::CompletionItem ResolveCompletionItem(const CompletionResolveRequest &request)
+    {
+        lsp::CompletionItem resolved = request.item;
+
+        // Already answered, or nothing to answer with: a keyword item carries no identity, and an
+        // item that arrived with documentation has nothing left to resolve.
+        if (resolved.documentation.has_value() || !resolved.data.has_value() || !resolved.data->isString())
+        {
+            return resolved;
+        }
+
+        const std::string qualifiedName = resolved.data->string();
+        if (qualifiedName.empty() || !request.readDocument)
+        {
+            return resolved;
+        }
+
+        for (const auto &symbol : request.symbolTable.FindSymbols(qualifiedName))
+        {
+            const std::string *text = request.readDocument(symbol.fileUri);
+            if (!text)
+            {
+                // The declaring file is not one the server holds text for - a workspace file that
+                // was indexed and released, say. Nothing to read the comment out of.
+                continue;
+            }
+
+            const std::string documentation = analysis::ExtractDocComment(*text, symbol.startLine);
+            if (documentation.empty())
+            {
+                continue;
+            }
+
+            resolved.documentation = lsp::MarkupContent{
+                lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), documentation };
+            break;
+        }
+
+        return resolved;
     }
 }

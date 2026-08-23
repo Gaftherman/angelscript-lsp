@@ -15,6 +15,7 @@
 #include <lsp/messages.h>
 #include <lsp/connection.h>
 #include <lsp/io/standardio.h>
+#include <lsp/io/stream.h>
 #include <lsp/messagehandler.h>
 #include <ankerl/unordered_dense.h>
 
@@ -60,6 +61,23 @@ namespace angel_lsp
         ankerl::unordered_dense::map<std::string, std::string> m_predefinedUriByPath;
 
 
+        /**
+         * @brief The last semantic token payload handed to the client for a document.
+         *
+         * Kept so a delta request can be answered with the difference instead of the whole stream.
+         * The id is what the client echoes back; when it does not match what is cached - because
+         * the document was closed, or another request overwrote the entry - the full stream is
+         * sent instead, which is always a valid answer to a delta request.
+         */
+        struct SemanticTokensSnapshot
+        {
+            std::string resultId;
+            std::vector<lsp::uint> data;
+        };
+
+        ankerl::unordered_dense::map<std::string, SemanticTokensSnapshot> m_semanticTokensCache;
+        uint64_t m_semanticTokensRevision = 0;
+
         // Per-rule severity overrides, typed from m_config.diagnosticSeverities at startup and
         // handed to every SemanticAnalysisRequest. Empty means "leave every rule at its own
         // severity", which is why BuildAnalysisRequest passes nullptr rather than an empty map.
@@ -100,7 +118,15 @@ namespace angel_lsp
         angel_lsp::utils::PositionEncoding m_positionEncoding = angel_lsp::utils::PositionEncoding::Utf16;
 
     public:
-        Server(const angel_lsp::config::ServerConfig &config);
+        /**
+         * @brief Constructs the server over a JSON-RPC transport.
+         * @param config Parsed configuration.
+         * @param stream Transport to speak LSP over. Defaults to the process's stdio, which is what
+         *        an editor launches; an injected stream is what makes this class testable at all,
+         *        since taking over the test process's stdin and stdout is not an option.
+         */
+        Server(const angel_lsp::config::ServerConfig &config,
+               lsp::io::Stream &stream = lsp::io::standardIO());
         ~Server();
 
         void Run();
@@ -140,6 +166,14 @@ namespace angel_lsp
          * suspect and a full rescan is the only correct answer.
          */
         void RestartWorkspaceScan();
+
+        /**
+         * @brief Computes a document's full token stream, encodes it, and records it for delta use.
+         * @param uriStr Document URI.
+         * @param text Document text, needed to encode byte columns into the client's encoding.
+         * @return Tokens carrying the freshly minted result id.
+         */
+        lsp::SemanticTokens ComputeAndCacheSemanticTokens(const std::string &uriStr, const std::string &text);
         void HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params &&params);
         void HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params);
         void HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params);
