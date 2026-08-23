@@ -18,6 +18,8 @@ namespace angel_lsp::analysis::rules
             {
                 for (const auto &sym : symbols)
                 {
+                    index->allNames.insert(sym.name);
+
                     if (sym.type == SymbolType::Enum)
                     {
                         for (const auto &member : sym.GetEnum().members)

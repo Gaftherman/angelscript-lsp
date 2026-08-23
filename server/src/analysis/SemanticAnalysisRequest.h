@@ -33,15 +33,16 @@ namespace angel_lsp::analysis
         /**
          * @brief Member and enum-member index for the declaration rules, built on first use.
          *
-         * Mutable and lazy because most passes never ask for it, and the ones that do would
-         * otherwise each rebuild it. Valid for as long as the request is: the analyzer treats the
-         * symbol table as fixed for the duration of one Analyze() call.
+         * Mutable and lazy because most passes never ask for it. The build itself lives on the
+         * SymbolTable, which rebuilds only when its version has moved - so an edit costs one walk
+         * and the analyses in between cost none. Held by shared_ptr here so the index stays alive
+         * for the whole request even if a writer supersedes it midway.
          */
         const rules::RuleIndex &GetRuleIndex() const
         {
             if (!ruleIndex)
             {
-                ruleIndex = rules::RuleIndex::Build(symbolTable);
+                ruleIndex = symbolTable.GetRuleIndex();
             }
             return *ruleIndex;
         }

@@ -30,6 +30,15 @@ namespace angel_lsp::analysis::rules
         ankerl::unordered_dense::map<std::string, ContainerMembers> byContainer;
         ankerl::unordered_dense::set<std::string> enumMemberNames;
 
+        /**
+         * @brief Every declared name in the workspace, for the undeclared-identifier rule.
+         *
+         * That rule genuinely needs all of them - a name declared in any indexed file counts - but
+         * it does not need the set rebuilt per document. Built here, it survives until the table
+         * changes instead of costing one full walk and fifty thousand insertions per keystroke.
+         */
+        ankerl::unordered_dense::set<std::string> allNames;
+
         /** @brief Members of one container, or an empty set of them when it declares none. */
         const ContainerMembers &Members(const std::string &containerName) const;
 

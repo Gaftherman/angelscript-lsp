@@ -50,16 +50,13 @@ namespace angel_lsp::analysis
 
         if (request.scopeRoot)
         {
-            ankerl::unordered_dense::set<std::string> knownGlobalNames;
-            request.symbolTable.ForEachSymbol(
-                [&](const std::string &, const std::vector<Symbol> &symbols)
-                {
-                    for (const auto &sym : symbols)
-                        knownGlobalNames.insert(sym.name);
-                });
-
             DiagnosticContext ctx{request, diagnostics, m_logger};
-            CheckUndefinedIdentifiers(request.scopeRoot.get(), knownGlobalNames, ctx);
+
+            // Taken from the version-cached index rather than rebuilt here. The set has to hold
+            // every name in the workspace for this rule to be right, but it does not have to be
+            // built afresh for each document - which is what it was, one full walk and fifty
+            // thousand insertions per analysis.
+            CheckUndefinedIdentifiers(request.scopeRoot.get(), request.GetRuleIndex().allNames, ctx);
 
             ankerl::unordered_dense::set<const LocalDefinition *> used;
             CollectUsedDefinitions(request.scopeRoot.get(), used);
@@ -95,7 +92,11 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable &symbolTable, DiagnosticContext &ctx) const
     {
-        symbolTable.ForEachSymbol(
+        // Only the buckets this document touches. Every rule below either filters to the analysed
+        // file or, in ValidateDuplicates' case, needs the whole bucket - which it still gets. The
+        // rest of the workspace's fifty thousand symbols have nothing to contribute here.
+        symbolTable.ForEachSymbolInFile(
+            ctx.request.fileUri,
             [&](const std::string &, const std::vector<Symbol> &symbols)
             {
                 // Whether a name is redeclared is a property of the whole overload bucket, so this
@@ -258,7 +259,8 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::CheckNullAssignedToNonHandle(const SymbolTable &symbolTable, DiagnosticContext &ctx) const
     {
-        symbolTable.ForEachSymbol(
+        symbolTable.ForEachSymbolInFile(
+            ctx.request.fileUri,
             [&](const std::string &, const std::vector<Symbol> &symbols)
             {
                 for (const auto &sym : symbols)

@@ -3,6 +3,7 @@
 #include "utils/LspLogger.h"
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <shared_mutex>
@@ -13,6 +14,11 @@
 
 namespace angel_lsp::analysis
 {
+    namespace rules
+    {
+        struct RuleIndex;
+    }
+
     enum class SymbolType
     {
         Variable,
@@ -383,14 +389,59 @@ namespace angel_lsp::analysis
 
         /** @brief Iterates all symbols in the table.
          *  @param visitor Callback invoked for each (qualifiedName, symbol_list) pair.
-         *  @note Holds a shared_lock for the duration of the iteration. */
+         *  @note The buckets are snapshotted under the lock and visited outside it, so a visitor
+         *        may safely look other symbols up - see the implementation for why that matters. */
         void ForEachSymbol(const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const;
+
+        /**
+         * @brief Iterates only the buckets holding at least one symbol from one document.
+         *
+         * The reason this exists: analysis runs per document, but the table is workspace-wide. A
+         * pass that walks everything and then discards by fileUri pays for all 50,000 symbols in
+         * the workspace to diagnose a forty-line file, on every debounced keystroke. A visitor
+         * still sees the whole bucket, which is what the redeclaration rule needs - the same name
+         * declared in a sibling file has to be visible for the comparison to mean anything.
+         *
+         * @param fileUri Document whose buckets to visit.
+         * @param visitor Callback invoked for each (qualifiedName, symbol_list) pair.
+         */
+        void ForEachSymbolInFile(const std::string &fileUri,
+                                 const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const;
+
+        /** @brief Counter bumped on every mutation, so a derived index can tell it is still current. */
+        uint64_t Version() const;
+
+        /**
+         * @brief The declaration rules' member index, rebuilt only when the table has changed.
+         *
+         * Hosted here rather than on the analysis request because the answer depends on the table
+         * and nothing else: built per request it was one full walk per keystroke, and the table
+         * usually has not changed between two of them.
+         */
+        std::shared_ptr<const rules::RuleIndex> GetRuleIndex() const;
 
         void PrintSymbols(angel_lsp::utils::LspLogger *logger) const;
 
     private:
+        /** @brief Records that a symbol's bucket now holds something from its file. Caller holds the write lock. */
+        void IndexKeyForFileLocked(const std::string &fileUri, const std::string &key);
+
+        /** @brief Erases every symbol belonging to fileUri, touching only that file's buckets. Caller holds the write lock. */
+        void EraseDocumentLocked(const std::string &fileUri);
+
         mutable std::shared_mutex m_mutex;
         ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>> m_symbols;
+
+        /** @brief Bucket keys touched by each document, so a per-file walk need not scan the rest. */
+        ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_keysByFile;
+
+        uint64_t m_version = 0;
+
+        // Guarded separately from m_mutex: building the index reads the table, so holding the
+        // table's lock across the build would be a lock taken twice by one thread.
+        mutable std::mutex m_ruleIndexMutex;
+        mutable std::shared_ptr<const rules::RuleIndex> m_ruleIndex;
+        mutable uint64_t m_ruleIndexVersion = 0;
     };
 
     /** @brief Converts SymbolType enum to lower/string representation. */

@@ -1,6 +1,8 @@
 #include "SymbolTable.h"
+#include "analysis/rules/RuleIndex.h"
 #include "spdlog/fmt/fmt.h"
 
+#include <algorithm>
 #include <functional>
 
 namespace angel_lsp::analysis
@@ -110,29 +112,59 @@ namespace angel_lsp::analysis
         }
     }
 
+    void SymbolTable::IndexKeyForFileLocked(const std::string &fileUri, const std::string &key)
+    {
+        auto &keys = m_keysByFile[fileUri];
+        // Linear, and deliberately: a document's symbols arrive grouped by declaration, so the key
+        // just added is almost always the one being added again for the next overload.
+        if (std::find(keys.begin(), keys.end(), key) == keys.end())
+        {
+            keys.push_back(key);
+        }
+    }
+
+    void SymbolTable::EraseDocumentLocked(const std::string &fileUri)
+    {
+        const auto fileEntry = m_keysByFile.find(fileUri);
+        if (fileEntry == m_keysByFile.end())
+        {
+            return;
+        }
+
+        for (const auto &key : fileEntry->second)
+        {
+            const auto bucket = m_symbols.find(key);
+            if (bucket == m_symbols.end())
+            {
+                continue;
+            }
+
+            auto &vec = MutableBucket(bucket->second);
+            std::erase_if(vec, [&fileUri](const Symbol &sym) { return sym.fileUri == fileUri; });
+
+            if (vec.empty())
+            {
+                m_symbols.erase(bucket);
+            }
+        }
+
+        m_keysByFile.erase(fileEntry);
+    }
+
     void SymbolTable::AddSymbol(const Symbol &symbol)
     {
         std::unique_lock<std::shared_mutex> lock(m_mutex);
         const std::string &key = symbol.qualifiedName.empty() ? symbol.name : symbol.qualifiedName;
         MutableBucket(m_symbols[key]).push_back(symbol);
+        IndexKeyForFileLocked(symbol.fileUri, key);
+        ++m_version;
     }
 
     void SymbolTable::ClearDocumentSymbols(const std::string &fileUri)
     {
         std::unique_lock<std::shared_mutex> lock(m_mutex);
-
-        for (auto it = m_symbols.begin(); it != m_symbols.end();)
-        {
-            auto &vec = MutableBucket(it->second);
-
-            std::erase_if(vec, [&fileUri](const Symbol &sym)
-                          { return sym.fileUri == fileUri; });
-
-            if (vec.empty())
-                it = m_symbols.erase(it);
-            else
-                ++it;
-        }
+        EraseDocumentLocked(fileUri);
+        ++m_version;
     }
 
     void SymbolTable::ReplaceDocumentSymbols(const std::string &fileUri, const SymbolTable &staging)
@@ -148,24 +180,18 @@ namespace angel_lsp::analysis
 
         std::unique_lock<std::shared_mutex> lock(m_mutex);
 
-        for (auto it = m_symbols.begin(); it != m_symbols.end();)
-        {
-            auto &vec = MutableBucket(it->second);
-
-            std::erase_if(vec, [&fileUri](const Symbol &sym)
-                          { return sym.fileUri == fileUri; });
-
-            if (vec.empty())
-                it = m_symbols.erase(it);
-            else
-                ++it;
-        }
+        EraseDocumentLocked(fileUri);
 
         for (const auto &symbol : fresh)
         {
             const std::string &key = symbol.qualifiedName.empty() ? symbol.name : symbol.qualifiedName;
             MutableBucket(m_symbols[key]).push_back(symbol);
+            // Keyed by the symbol's own file, not the argument: a symbol filed under a different
+            // URI would otherwise be indexed here and never erased by its own document's clear.
+            IndexKeyForFileLocked(symbol.fileUri, key);
         }
+
+        ++m_version;
     }
 
     static inline std::string_view CleanScope(const std::string &name)
@@ -249,6 +275,55 @@ namespace angel_lsp::analysis
 
         for (const auto &[key, symbols] : snapshot)
             visitor(key, *symbols);
+    }
+
+    void SymbolTable::ForEachSymbolInFile(const std::string &fileUri,
+                                          const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const
+    {
+        // Snapshotted outside the lock for the same reason ForEachSymbol does it: the declaration
+        // rules look other symbols up from inside the visitor.
+        std::vector<std::pair<std::string, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
+        {
+            std::shared_lock<std::shared_mutex> lock(m_mutex);
+            const auto fileEntry = m_keysByFile.find(fileUri);
+            if (fileEntry == m_keysByFile.end())
+            {
+                return;
+            }
+
+            snapshot.reserve(fileEntry->second.size());
+            for (const auto &key : fileEntry->second)
+            {
+                const auto bucket = m_symbols.find(key);
+                if (bucket != m_symbols.end())
+                {
+                    snapshot.emplace_back(key, bucket->second);
+                }
+            }
+        }
+
+        for (const auto &[key, symbols] : snapshot)
+            visitor(key, *symbols);
+    }
+
+    uint64_t SymbolTable::Version() const
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        return m_version;
+    }
+
+    std::shared_ptr<const rules::RuleIndex> SymbolTable::GetRuleIndex() const
+    {
+        const uint64_t version = Version();
+
+        std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+        if (!m_ruleIndex || m_ruleIndexVersion != version)
+        {
+            // Built without the table's lock held: RuleIndex::Build walks the table itself.
+            m_ruleIndex = rules::RuleIndex::Build(*this);
+            m_ruleIndexVersion = version;
+        }
+        return m_ruleIndex;
     }
 
     void SymbolTable::PrintSymbols(angel_lsp::utils::LspLogger *logger) const

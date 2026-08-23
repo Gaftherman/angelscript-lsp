@@ -135,7 +135,8 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
             SemanticAnalysisRequest request = makeRequest(i);
             DiagnosticContext ctx{ request, diagnostics, nullptr };
 
-            table.ForEachSymbol(
+            table.ForEachSymbolInFile(
+                request.fileUri,
                 [&](const std::string &, const std::vector<Symbol> &symbols)
                 {
                     validate(symbols, request, ctx);
@@ -182,7 +183,8 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
             SemanticAnalysisRequest request = makeRequest(i);
             DiagnosticContext ctx{ request, diagnostics, nullptr };
 
-            table.ForEachSymbol(
+            table.ForEachSymbolInFile(
+                request.fileUri,
                 [&](const std::string &, const std::vector<Symbol> &symbols)
                 {
                     rules::ValidateDuplicates(symbols, ctx);
@@ -257,7 +259,7 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
     MESSAGE("  control flow             : " << controlFlowMs << " ms  (" << controlFlowMs / files << " ms/file)");
     MESSAGE("  type conversions         : " << conversionMs << " ms  (" << conversionMs / files << " ms/file)");
     MESSAGE("  Analyze() as a whole     : " << wholeAnalysisMs << " ms  (" << wholeAnalysisMs / files << " ms/file)");
-    MESSAGE("  by declaration module (each includes the symbol-table walk it shares):");
+    MESSAGE("  by declaration module (each includes the per-file bucket walk it shares):");
     MESSAGE("    duplicates : " << duplicateMs << " ms");
     MESSAGE("    class      : " << classMs << " ms");
     MESSAGE("    variable   : " << variableMs << " ms");
