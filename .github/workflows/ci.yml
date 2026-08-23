@@ -70,3 +70,75 @@ jobs:
         working-directory: server/build
         shell: bash
         run: ctest -C Release --output-on-failure --parallel 4
+
+      # The server binary is what the extension ships, so keep every platform's build reachable
+      # from the run that produced and tested it.
+      - name: Upload Server Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: angel_lsp-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            server/build/Release/angel_lsp*
+            server/build/angel_lsp
+          if-no-files-found: warn
+          retention-days: 14
+
+  package-extension:
+    name: Package VS Code extension
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install Client Dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Lint and Compile Client
+        working-directory: client
+        run: npm run pretest
+
+      # Downloaded into the layout getServerPath() expects, so the packaged extension carries a
+      # server for every platform the matrix above built.
+      - name: Download Server Binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage Server Binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for platform in windows-x64:win32-x64 windows-x86:win32-ia32 linux-x64:linux-x64 linux-x86:linux-ia32; do
+            source_name="angel_lsp-${platform%%:*}"
+            dest_dir="client/bin/${platform##*:}"
+            [ -d "artifacts/$source_name" ] || continue
+            mkdir -p "$dest_dir"
+            find "artifacts/$source_name" -type f -name 'angel_lsp*' -exec cp {} "$dest_dir/" \;
+            chmod +x "$dest_dir"/angel_lsp 2>/dev/null || true
+          done
+          ls -R client/bin
+
+      # Packaged, not published: releasing is a deliberate act, and this only proves the extension
+      # is in a publishable state on every commit.
+      # Dependencies are deliberately bundled: the client is compiled by plain tsc with no bundler,
+      # so vscode-languageclient has to travel inside the .vsix or the extension fails to activate.
+      - name: Package Extension
+        working-directory: client
+        run: npx --yes @vscode/vsce package --out angelscript-lsp.vsix
+
+      - name: Upload Extension Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: angelscript-lsp-vsix
+          path: client/angelscript-lsp.vsix
+          retention-days: 14

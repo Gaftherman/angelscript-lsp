@@ -1,17 +1,31 @@
 {
   "name": "angelscript-lsp",
-  "displayName": "client",
-  "description": "AngelScript C++ LSP",
+  "displayName": "AngelScript Language Server",
+  "description": "Language support for AngelScript: hover, go to definition, completion, semantic highlighting, diagnostics, formatting and refactoring, powered by a native C++ Tree-sitter engine.",
   "version": "0.1.0",
+  "publisher": "Gaftherman",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.120.0"
   },
   "categories": [
-    "Other"
+    "Programming Languages",
+    "Linters",
+    "Formatters"
+  ],
+  "keywords": [
+    "angelscript",
+    "as",
+    "language server",
+    "lsp",
+    "sven co-op"
   ],
   "repository": {
     "type": "git",
     "url": "https://github.com/Gaftherman/angelscript-lsp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Gaftherman/angelscript-lsp/issues"
   },
   "main": "./out/extension.js",
   "contributes": {
