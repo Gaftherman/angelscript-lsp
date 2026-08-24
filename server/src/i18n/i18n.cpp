@@ -88,6 +88,9 @@ namespace angel_lsp::i18n
         m_messages["as-err-enum-invalid-initializer"] = "Enum member initializer '{}' must be a constant integer expression.";
         m_messages["as-err-standalone-reference"] = "Standalone reference variable '{}' is not supported.";
         m_messages["as-err-delete-with-other-qualifier"] = "Cannot flag function '{}' that will be deleted with other qualifiers.";
+        m_messages["as-err-delete-not-auto-generated"] = "Cannot flag function '{}' that will not be auto generated as deleted. Only a default constructor, a copy constructor or 'opAssign' may be deleted.";
+        m_messages["as-err-explicit-not-member"] = "'explicit' is only allowed on a class method, and '{}' is not one.";
+        m_messages["as-err-virtual-property-signature"] = "Invalid signature for virtual property '{}'. A 'get_' accessor returns a value and takes at most an index; a 'set_' accessor returns void and takes the value, optionally preceded by an index.";
         m_messages["as-err-array-invalid-template"] = "Attempting to instantiate invalid template parameter '{}'.";
         m_messages["as-err-typedef-non-primitive"] = "Typedef base type '{}' must be a primitive data type.";
         m_messages["as-err-invalid-reference-return"] = "Not a valid reference type '{}'.";
@@ -170,6 +173,9 @@ namespace angel_lsp::i18n
             m_messages["as-err-enum-invalid-initializer"] = "El inicializador del miembro de enum '{}' debe ser una expresión entera constante.";
             m_messages["as-err-standalone-reference"] = "La variable de referencia independiente '{}' no está soportada.";
             m_messages["as-err-delete-with-other-qualifier"] = "No se puede marcar con modificadores adicionales la función '{}' que será eliminada con '= delete'.";
+            m_messages["as-err-delete-not-auto-generated"] = "No se puede marcar como eliminada la función '{}' porque el motor no la autogenera. Solo pueden eliminarse el constructor por defecto, el constructor de copia u 'opAssign'.";
+            m_messages["as-err-explicit-not-member"] = "'explicit' solo se permite en un método de clase, y '{}' no lo es.";
+            m_messages["as-err-virtual-property-signature"] = "Firma no válida para la propiedad virtual '{}'. Un accesor 'get_' devuelve un valor y toma como mucho un índice; un accesor 'set_' devuelve void y toma el valor, precedido opcionalmente por un índice.";
             m_messages["as-err-array-invalid-template"] = "Intento de instanciar un parámetro de plantilla no válido ('{}').";
             m_messages["as-err-typedef-non-primitive"] = "El tipo base del typedef ('{}') debe ser un tipo de dato primitivo.";
             m_messages["as-err-invalid-reference-return"] = "No es un tipo de retorno por referencia válido ('{}').";

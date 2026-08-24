@@ -99,6 +99,200 @@ TEST_CASE("FunctionRules - Reports a deleted function carrying another qualifier
 }
 
 // =====================================================================================
+// Function attributes: delete, explicit, property
+//
+// Every expectation below was compiled with a real AngelScript build before it was written down,
+// so where a case looks surprising - a two-parameter `explicit` constructor, a by-value copy
+// constructor, a getter that takes an index - the engine is the reason.
+// =====================================================================================
+
+TEST_CASE("FunctionRules - The three auto generated functions may be deleted")
+{
+    // Only these exist for a script class, which is the whole meaning of `delete`: do not generate
+    // this one. The reference modifier and const take no part - the engine accepts `A(A a)`,
+    // `A(A &inout)` and `A(const A &in)` alike as the copy constructor.
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    Entity() delete;\n"
+        "    Entity(const Entity &in other) delete;\n"
+        "    Entity &opAssign(const Entity &in other) delete;\n"
+        "    Entity(int id) { }\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-delete-not-auto-generated"));
+}
+
+TEST_CASE("FunctionRules - Reports a deleted method the engine never generates")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    void Think() delete;\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-delete-not-auto-generated"));
+}
+
+TEST_CASE("FunctionRules - Reports a deleted constructor that is not the default or copy one")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    Entity(int id) delete;\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-delete-not-auto-generated"));
+}
+
+TEST_CASE("FunctionRules - Reports a deleted opAssign with a signature that is not generated")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    Entity &opAssign(int value) delete;\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-delete-not-auto-generated"));
+}
+
+TEST_CASE("FunctionRules - Reports a deleted global function")
+{
+    CHECK(HasCode(AnalyzeFunctionSnippet("void Think() delete;\n"), "as-err-delete-not-auto-generated"));
+}
+
+TEST_CASE("FunctionRules - A deleted destructor keeps its own diagnostic")
+{
+    // as-err-destructor-delete says exactly what is wrong; repeating it as "not auto generated"
+    // would be true but less useful, so the general rule stands aside for it.
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    ~Entity() delete;\n"
+        "}\n";
+
+    const auto diagnostics = AnalyzeFunctionSnippet(code);
+    CHECK(HasCode(diagnostics, "as-err-destructor-delete"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-delete-not-auto-generated"));
+}
+
+TEST_CASE("FunctionRules - Reports explicit on a global function")
+{
+    CHECK(HasCode(AnalyzeFunctionSnippet("void Convert() explicit { }\n"), "as-err-explicit-not-member"));
+}
+
+TEST_CASE("FunctionRules - An interface method cannot carry an attribute at all")
+{
+    // The engine's parser rejects `explicit` here, and so does the grammar: interface_method has no
+    // func_attributes. So the construct never reaches a semantic rule, and what the user sees is a
+    // syntax error - which is the same answer, from one step earlier. Asserted at the parse level
+    // rather than by checking that no semantic code came out, since that would pass for a build
+    // that had simply stopped analysing anything.
+    const std::string code =
+        "interface IThinker\n"
+        "{\n"
+        "    void Think() explicit;\n"
+        "}\n";
+
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
+
+    CHECK_FALSE(collector.CollectSymbols("file:///funcs.as", code, parser, table, &i18n).empty());
+}
+
+TEST_CASE("FunctionRules - explicit is accepted on any class method, whatever its arity")
+{
+    // Not only on a single-argument constructor: the engine takes it on a two-argument one and on
+    // an ordinary method without complaint, so neither is reported here.
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    Entity(int id) explicit { }\n"
+        "    Entity(int id, int team) explicit { }\n"
+        "    void Think() explicit { }\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-explicit-not-member"));
+}
+
+TEST_CASE("FunctionRules - Accepts the virtual property accessor signatures the engine accepts")
+{
+    // The index parameter is the reason a getter takes one argument and a setter two; the corpus
+    // writes both, and `a[i].prop` is what they are for.
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    int health;\n"
+        "    int get_hp() const property { return health; }\n"
+        "    void set_hp(int value) property { health = value; }\n"
+        "    int get_slot(int index) property { return index; }\n"
+        "    void set_slot(int index, int value) property { }\n"
+        "}\n"
+        "int get_globalCount() property { return 0; }\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-virtual-property-signature"));
+}
+
+TEST_CASE("FunctionRules - Reports a property attribute on a name that is not an accessor")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    void Think() property { }\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-virtual-property-signature"));
+}
+
+TEST_CASE("FunctionRules - Reports a getter that returns nothing and a setter that takes nothing")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    void get_hp() property { }\n"
+        "    void set_hp() property { }\n"
+        "}\n";
+
+    const auto diagnostics = AnalyzeFunctionSnippet(code);
+    CHECK(std::count_if(diagnostics.begin(), diagnostics.end(),
+                        [](const Diagnostic &diag)
+                        { return diag.code == "as-err-virtual-property-signature"; }) == 2);
+}
+
+TEST_CASE("FunctionRules - Reports an accessor carrying more than an index")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    int get_slot(int index, int extra) property { return 0; }\n"
+        "    void set_slot(int index, int extra, int value) property { }\n"
+        "}\n";
+
+    const auto diagnostics = AnalyzeFunctionSnippet(code);
+    CHECK(std::count_if(diagnostics.begin(), diagnostics.end(),
+                        [](const Diagnostic &diag)
+                        { return diag.code == "as-err-virtual-property-signature"; }) == 2);
+}
+
+TEST_CASE("FunctionRules - A stub declares attributes without being judged for them")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    void Think() delete;\n"
+        "    void Reset() explicit;\n"
+        "    void Broken() property;\n"
+        "}\n";
+
+    const auto diagnostics = AnalyzeFunctionSnippet(code, "file:///as.predefined");
+    CHECK_FALSE(HasCode(diagnostics, "as-err-delete-not-auto-generated"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-explicit-not-member"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-virtual-property-signature"));
+}
+
+// =====================================================================================
 // Return type
 // =====================================================================================
 
@@ -440,7 +634,8 @@ TEST_CASE("FunctionRules - Function Rules Corpus Audit" * doctest::skip(true))
         "as-err-destructor-return-type", "as-err-destructor-delete", "as-err-mixin-constructor",
         "as-err-mixin-destructor", "as-err-override-no-base", "as-err-duplicate-param",
         "as-err-void-parameter", "as-err-default-param-order", "as-err-inout-on-primitive",
-        "as-err-double-reference"
+        "as-err-double-reference", "as-err-delete-not-auto-generated",
+        "as-err-explicit-not-member", "as-err-virtual-property-signature"
     };
 
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)
