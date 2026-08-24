@@ -112,6 +112,85 @@ TEST_CASE("VariableRules - A type this analyzer cannot see is never judged")
 }
 
 // =====================================================================================
+// Abstract classes and interfaces
+//
+// Compiled against a real engine first, and two of the answers are not what the rule name would
+// suggest: `array<Shape>` by value is accepted, and `const Shape &in` as a parameter is not.
+// =====================================================================================
+
+TEST_CASE("VariableRules - Reports an abstract class or an interface declared by value")
+{
+    const std::string abstractClass =
+        "abstract class Shape { void Draw() {} }\n"
+        "Shape g_shape;\n";
+    CHECK(HasCode(AnalyzeVariableSnippet(abstractClass), "as-err-abstract-instantiated"));
+
+    const std::string iface =
+        "interface IThing { void Do(); }\n"
+        "IThing g_thing;\n";
+    CHECK(HasCode(AnalyzeVariableSnippet(iface), "as-err-interface-instantiated"));
+}
+
+TEST_CASE("VariableRules - Reports an abstract class or an interface as a class member")
+{
+    const std::string code =
+        "abstract class Shape { void Draw() {} }\n"
+        "interface IThing { void Do(); }\n"
+        "class Holder\n"
+        "{\n"
+        "    Shape m_shape;\n"
+        "    IThing m_thing;\n"
+        "}\n";
+
+    const auto diagnostics = AnalyzeVariableSnippet(code);
+    CHECK(HasCode(diagnostics, "as-err-abstract-instantiated"));
+    CHECK(HasCode(diagnostics, "as-err-interface-instantiated"));
+}
+
+TEST_CASE("VariableRules - A handle to an abstract class or an interface is the correct form")
+{
+    const std::string code =
+        "abstract class Shape { void Draw() {} }\n"
+        "interface IThing { void Do(); }\n"
+        "Shape@ g_shape;\n"
+        "IThing@ g_thing;\n";
+
+    const auto diagnostics = AnalyzeVariableSnippet(code);
+    CHECK_FALSE(HasCode(diagnostics, "as-err-abstract-instantiated"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-interface-instantiated"));
+}
+
+TEST_CASE("VariableRules - A template argument is not judged for instantiability")
+{
+    // Found by the corpus audit, on `array<IContext@>` - ordinary, correct code that this rule
+    // reported until the template case was excluded. The engine decides a subtype by the factory
+    // registered for it, not by abstractness: `array<Shape>` by value compiles, and
+    // `array<IThing>` fails with a message about a missing default factory instead.
+    const std::string code =
+        "abstract class Shape { void Draw() {} }\n"
+        "interface IThing { void Do(); }\n"
+        "array<IThing@> g_things;\n"
+        "array<Shape@> g_shapes;\n"
+        "array<Shape> g_byValue;\n";
+
+    const auto diagnostics = AnalyzeVariableSnippet(code);
+    CHECK_FALSE(HasCode(diagnostics, "as-err-abstract-instantiated"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-interface-instantiated"));
+}
+
+TEST_CASE("VariableRules - An ordinary class is not mistaken for an abstract one")
+{
+    const std::string code =
+        "class Circle { void Draw() {} }\n"
+        "Circle g_circle;\n"
+        "CBaseEntity g_engineType;\n";
+
+    const auto diagnostics = AnalyzeVariableSnippet(code);
+    CHECK_FALSE(HasCode(diagnostics, "as-err-abstract-instantiated"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-interface-instantiated"));
+}
+
+// =====================================================================================
 // Placement
 // =====================================================================================
 
@@ -334,7 +413,8 @@ TEST_CASE("VariableRules - Variable Rules Corpus Audit" * doctest::skip(true))
         "as-err-mixin-not-a-type", "as-err-global-variable-access-modifier",
         "as-err-property-accessor-missing-body", "as-err-mixin-virtual-property",
         "as-err-property-duplicate-accessor",
-        "as-err-class-member-const", "as-err-array-invalid-template"
+        "as-err-class-member-const", "as-err-array-invalid-template",
+        "as-err-abstract-instantiated", "as-err-interface-instantiated"
     };
 
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)

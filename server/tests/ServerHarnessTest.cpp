@@ -532,6 +532,23 @@ TEST_CASE("Server - Publishes the diagnostics the widened grammar made reachable
     CHECK(Published(output, "as-err-array-invalid-template"));
 }
 
+TEST_CASE("Server - Publishes the non-instantiable type diagnostics")
+{
+    const std::string source =
+        "abstract class Shape { void Draw() {} }\n"
+        "interface IThing { void Do(); }\n"
+        "Shape g_shape;\n"
+        "IThing g_thing;\n"
+        "void Take(Shape s) { }\n"
+        "Shape Make() { return Shape(); }\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-abstract-instantiated"));
+    CHECK(Published(output, "as-err-interface-instantiated"));
+    CHECK(Published(output, "as-err-parameter-not-instantiable"));
+    CHECK(Published(output, "as-err-return-not-instantiable"));
+}
+
 TEST_CASE("Server - An engine property reaches the rules that depend on it")
 {
     // The end of the wire the configuration exists for. A rule whose answer lives in the host's

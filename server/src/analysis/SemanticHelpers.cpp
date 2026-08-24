@@ -152,6 +152,33 @@ namespace angel_lsp::analysis
         return false;
     }
 
+    NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const SymbolTable &table)
+    {
+        if (baseTypeName.empty())
+        {
+            return NonInstantiableKind::None;
+        }
+
+        auto symsPtr = table.FindSymbolsPtr(std::string(baseTypeName));
+        if (!symsPtr)
+        {
+            return NonInstantiableKind::None;
+        }
+
+        for (const auto &sym : *symsPtr)
+        {
+            if (sym.type == SymbolType::Interface)
+            {
+                return NonInstantiableKind::Interface;
+            }
+            if (sym.type == SymbolType::Class && sym.GetClass().modifiers.isAbstract)
+            {
+                return NonInstantiableKind::Abstract;
+            }
+        }
+        return NonInstantiableKind::None;
+    }
+
     bool IsKnownType(const std::string &baseName, const DiagnosticContext &ctx)
     {
         if (baseName.empty()) return true;

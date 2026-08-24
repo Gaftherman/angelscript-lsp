@@ -667,6 +667,62 @@ TEST_CASE("FunctionRules - Reports a funcdef parameter declared without a handle
     CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-funcdef-not-handle"));
 }
 
+TEST_CASE("FunctionRules - Reports an abstract class or an interface passed by value")
+{
+    // The engine refuses the signature itself, not the calls to it, and says so in its own words:
+    // "Parameter type can't be 'Shape', because the type cannot be instantiated."
+    const std::string code =
+        "abstract class Shape { void Draw() {} }\n"
+        "interface IThing { void Do(); }\n"
+        "void Take(Shape s) { }\n"
+        "void Use(IThing t) { }\n";
+
+    CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-parameter-not-instantiable"));
+}
+
+TEST_CASE("FunctionRules - A reference does not make an abstract parameter legal")
+{
+    // Compiled against a real engine, which answers on `const Shape &in` exactly as it does on a
+    // plain `Shape` - a reference is still not a handle.
+    const std::string code =
+        "abstract class Shape { void Draw() {} }\n"
+        "void Take(const Shape &in s) { }\n";
+
+    CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-parameter-not-instantiable"));
+}
+
+TEST_CASE("FunctionRules - A handle parameter is the correct form and is accepted")
+{
+    const std::string code =
+        "abstract class Shape { void Draw() {} }\n"
+        "interface IThing { void Do(); }\n"
+        "void Take(Shape@ s, IThing@ t) { }\n"
+        "void Many(array<Shape@> shapes) { }\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-parameter-not-instantiable"));
+}
+
+TEST_CASE("FunctionRules - Reports an abstract class or an interface returned by value")
+{
+    const std::string code =
+        "abstract class Shape { void Draw() {} }\n"
+        "interface IThing { void Do(); }\n"
+        "Shape MakeShape() { return Shape(); }\n"
+        "IThing MakeThing() { return null; }\n";
+
+    CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-return-not-instantiable"));
+}
+
+TEST_CASE("FunctionRules - A handle return is the correct form and is accepted")
+{
+    const std::string code =
+        "abstract class Shape { void Draw() {} }\n"
+        "class Circle : Shape { }\n"
+        "Shape@ Make() { return Circle(); }\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-return-not-instantiable"));
+}
+
 TEST_CASE("FunctionRules - Reports a mixin used as a parameter type")
 {
     const std::string code =
@@ -717,6 +773,7 @@ TEST_CASE("FunctionRules - Function Rules Corpus Audit" * doctest::skip(true))
         "as-err-global-function-qualifiers", "as-err-destructor-param",
         "as-err-destructor-return-type", "as-err-destructor-delete", "as-err-mixin-constructor",
         "as-err-mixin-destructor", "as-err-override-no-base", "as-err-duplicate-param",
+        "as-err-parameter-not-instantiable", "as-err-return-not-instantiable",
         "as-err-void-parameter", "as-err-default-param-order", "as-err-inout-on-primitive",
         "as-err-double-reference", "as-err-delete-not-auto-generated",
         "as-err-explicit-not-member", "as-err-virtual-property-signature",

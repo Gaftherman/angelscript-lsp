@@ -135,6 +135,34 @@ namespace angel_lsp::analysis::rules
                 ctx.LogRule("CheckDeclaredType", "as-err-mixin-not-a-type", sym);
                 ctx.Emit(sym, "as-err-mixin-not-a-type", baseType);
             }
+
+            // Declaring one by value makes an instance of it, which is the one thing an abstract
+            // class and an interface exist not to allow. A handle is not an instance and is the
+            // whole point of both, so `Shape@ s;` is legal - and a reference does not save it,
+            // since even `const Shape &in` is refused as a parameter.
+            //
+            // A template instantiation is not judged at all. baseType is the *element* there,
+            // because CleanBaseType unwraps `array<T>` to T, and the engine decides a subtype by
+            // the factory registered for it rather than by whether it is abstract: `array<Shape>`
+            // by value compiles, while `array<IThing>` fails with a message about a missing
+            // default factory rather than about instantiating an interface. Found by the corpus
+            // audit, which flagged `array<IContext@>` - ordinary, correct code.
+            if (!sig.modifiers.isHandle && sig.templateName.empty())
+            {
+                switch (ClassifyNonInstantiable(baseType, ctx.request.symbolTable))
+                {
+                    case NonInstantiableKind::Abstract:
+                        ctx.LogRule("CheckDeclaredType", "as-err-abstract-instantiated", sym);
+                        ctx.Emit(sym, "as-err-abstract-instantiated", baseType, baseType);
+                        break;
+                    case NonInstantiableKind::Interface:
+                        ctx.LogRule("CheckDeclaredType", "as-err-interface-instantiated", sym);
+                        ctx.Emit(sym, "as-err-interface-instantiated", baseType, baseType);
+                        break;
+                    case NonInstantiableKind::None:
+                        break;
+                }
+            }
         }
 
         /** @brief Rules about the modifiers a declaration carries where it sits. */

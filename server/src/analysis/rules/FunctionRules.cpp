@@ -186,6 +186,21 @@ namespace angel_lsp::analysis::rules
                 ctx.Emit(sym, "as-err-mixin-not-a-type", sig.returnBaseTypeName);
             }
 
+            // Returning an abstract class or an interface by value means constructing one to
+            // return, so the engine answers "Return type can't be 'Shape'" at the declaration.
+            // Only a plain by-value return is judged: `Shape@` is the ordinary and correct way to
+            // write this, and a reference return is left alone because whether one is legal at all
+            // depends on asEP_ALLOW_UNSAFE_REFERENCES rather than on the type.
+            const bool returnsByValue = sig.returnType.find('@') == std::string::npos &&
+                                        sig.returnType.find('&') == std::string::npos &&
+                                        !sig.modifiers.isReturnReference;
+            if (returnsByValue && !sig.returnIsArray && sig.returnTemplateName.empty() &&
+                ClassifyNonInstantiable(sig.returnBaseTypeName, ctx.request.symbolTable) != NonInstantiableKind::None)
+            {
+                ctx.LogRule("CheckReturnType", "as-err-return-not-instantiable", sym);
+                ctx.Emit(sym, "as-err-return-not-instantiable", sig.returnBaseTypeName);
+            }
+
             // NOT IMPLEMENTED: as-err-invalid-reference-return.
             //
             // Not for want of an engine option, as this comment used to claim. Compiled against a
@@ -551,6 +566,22 @@ namespace angel_lsp::analysis::rules
             {
                 ctx.LogParam("ValidateParameters", "as-err-mixin-not-a-type", param, sym);
                 ctx.Emit(param, sym, "as-err-mixin-not-a-type", param.baseTypeName);
+            }
+
+            // A by-value parameter of an abstract class or an interface is an instance the caller
+            // has to make, so the engine refuses the signature itself rather than any call to it -
+            // and refuses `const Shape &in` too, since a reference is still not a handle. It has a
+            // message of its own here, naming the parameter's whole written type the way the
+            // engine's does.
+            // A template argument is left alone here for the same reason it is in VariableRules:
+            // baseTypeName is the element, and the engine decides a subtype by its registered
+            // factory rather than by abstractness.
+            if (!param.isHandle && param.templateName.empty() && !param.isArray &&
+                ClassifyNonInstantiable(param.baseTypeName, ctx.request.symbolTable) != NonInstantiableKind::None)
+            {
+                ctx.LogParam("ValidateParameters", "as-err-parameter-not-instantiable", param, sym);
+                ctx.Emit(param, sym, "as-err-parameter-not-instantiable",
+                         param.typeName.empty() ? param.baseTypeName : param.typeName);
             }
 
             if (!param.isHandle && !param.baseTypeName.empty())

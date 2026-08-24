@@ -162,6 +162,10 @@ namespace angel_lsp::i18n
         m_messages["as-err-duplicate-case-value"] = "Duplicate case value '{}' in switch statement.";
         m_messages["as-err-default-must-be-last"] = "The default case must be the last one.";
         m_messages["as-err-not-all-paths-return"] = "Not all paths of '{}' return a value.";
+        m_messages["as-err-abstract-instantiated"] = "Abstract class '{}' cannot be instantiated. Declare a handle ('{}@') instead.";
+        m_messages["as-err-interface-instantiated"] = "Interface '{}' cannot be instantiated. Declare a handle ('{}@') instead.";
+        m_messages["as-err-parameter-not-instantiable"] = "Parameter type can't be '{}', because the type cannot be instantiated.";
+        m_messages["as-err-return-not-instantiable"] = "Return type can't be '{}', because the type cannot be instantiated.";
         m_messages["as-err-mixin-not-a-type"] = "Mixin '{}' cannot be used as a data type.";
         m_messages["as-err-undeclared-identifier"] = "Undeclared identifier '{}'.";
         m_messages["as-warn-unused-variable"] = "Local variable '{}' is never used.";
@@ -248,6 +252,10 @@ namespace angel_lsp::i18n
             m_messages["as-err-duplicate-case-value"] = "Valor de 'case' duplicado ('{}') en la sentencia 'switch'.";
             m_messages["as-err-default-must-be-last"] = "El caso por defecto (default) debe ser el último.";
             m_messages["as-err-not-all-paths-return"] = "No todos los caminos de '{}' devuelven un valor.";
+            m_messages["as-err-abstract-instantiated"] = "No se puede instanciar la clase abstracta '{}'. Declara un handle ('{}@') en su lugar.";
+            m_messages["as-err-interface-instantiated"] = "No se puede instanciar la interfaz '{}'. Declara un handle ('{}@') en su lugar.";
+            m_messages["as-err-parameter-not-instantiable"] = "El tipo de parámetro no puede ser '{}', porque ese tipo no se puede instanciar.";
+            m_messages["as-err-return-not-instantiable"] = "El tipo de retorno no puede ser '{}', porque ese tipo no se puede instanciar.";
             m_messages["as-err-mixin-not-a-type"] = "El mixin '{}' no puede ser usado como un tipo de dato.";
             m_messages["as-err-undeclared-identifier"] = "Identificador no declarado '{}'.";
             m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";

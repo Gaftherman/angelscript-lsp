@@ -127,6 +127,29 @@ namespace angel_lsp::analysis
      */
     bool IsMixinClass(std::string_view baseTypeName, const class SymbolTable &table);
 
+    /** @brief What a type is when it cannot be instantiated, for the message that says so. */
+    enum class NonInstantiableKind
+    {
+        None,       ///< The type can be instantiated, or this analyzer cannot see its declaration.
+        Abstract,   ///< An abstract class.
+        Interface   ///< An interface.
+    };
+
+    /**
+     * @brief Classifies a type name as an abstract class, an interface, or neither.
+     *
+     * AngelScript refuses to make an instance of either. A handle to one is the whole point of
+     * both and is always legal, so the caller decides that part; this only answers what the type
+     * is. Verified against a real engine, which distinguishes them by name in its own messages:
+     * "Abstract class 'Shape' cannot be instantiated" against "Interface 'IThing' cannot be
+     * instantiated".
+     *
+     * A name with no visible declaration answers None, like every other rule here: an
+     * engine-registered type is exactly what an unresolved name looks like.
+     */
+    NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName,
+                                                const class SymbolTable &table);
+
     /**
      * @brief Checks whether the given base type name is a known type (primitive, string, array, or in SymbolTable).
      * @param baseName Type base name to check.
