@@ -199,6 +199,21 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Report conversions with no constructor, `opConv`/`opImplConv` or `opCast`/`opImplCast` to back them."
+        },
+        "angelscript.engine.allowUnsafeReferences": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Set this if the host calls `SetEngineProperty(asEP_ALLOW_UNSAFE_REFERENCES, true)`.\n\nWith it off — the engine's default — `&` on a parameter means `&inout` and only an object type that supports handles may use it, so `void f(int &x)` is an error. With it on, primitives may be passed by reference and the diagnostic is not reported."
+        },
+        "angelscript.engine.privatePropAsProtected": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Set this if the host calls `SetEngineProperty(asEP_PRIVATE_PROP_AS_PROTECTED, true)`.\n\nA `private` member then follows the `protected` rule, so a derived class may reach it and the access is no longer reported."
+        },
+        "angelscript.engine.disallowGlobalVars": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Set this if the host calls `SetEngineProperty(asEP_DISALLOW_GLOBAL_VARS, true)`.\n\nEvery global variable declaration is then a compile error — the engine answers \"Global variables have been disabled by the application\" — and is reported as one."
         }
       }
     }

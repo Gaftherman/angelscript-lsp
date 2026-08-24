@@ -188,12 +188,13 @@ namespace angel_lsp::analysis::rules
 
             // NOT IMPLEMENTED: as-err-invalid-reference-return.
             //
-            // Returning `int&` is legal AngelScript whenever the host built the engine with
-            // asEP_ALLOW_UNSAFE_REFERENCES, which is a host build option no analyzer reading only
-            // script text can observe. The engine's own documentation uses `int &Function()` as a
-            // worked example, and that example is in this corpus - so the rule would report the
-            // language's own manual. Same reasoning retires as-err-standalone-reference in
-            // ValidateParameters.
+            // Not for want of an engine option, as this comment used to claim. Compiled against a
+            // real engine at its defaults, `int& GetRef() { return g_value; }` builds clean and
+            // `int& Bad() { int local = 1; return local; }` answers "Not a valid reference" - so
+            // the declaration is never what is wrong. What the engine rejects is the returned
+            // expression, and judging that needs the return statement's type, not the signature's.
+            // It belongs with the use-site rules, and waits on the expression resolver reaching
+            // far enough to answer what a return statement yields.
             //
             // NOT IMPLEMENTED: as-err-unresolved-type on the return type.
             //
@@ -516,7 +517,19 @@ namespace angel_lsp::analysis::rules
                 }
             }
 
-            if (param.modifier == ParameterModifier::InOut && IsValueOnlyKind(param.typeKind) && !param.isArray)
+            // A bare `&` is `&inout` spelled shorter - the engine answers both with the very same
+            // sentence, "Only object types that support object handles can use &inout", so both
+            // arrive here. Verified against a real engine: `void f(int &x)` and `void f(int &inout
+            // x)` are refused identically, while `void f(Foo &x)` on a script class is accepted.
+            //
+            // Unless the host turned asEP_ALLOW_UNSAFE_REFERENCES on, in which case a primitive by
+            // reference is exactly what that option exists to permit and this rule would be
+            // reporting a legal program. Only primitives are judged either way: whether a
+            // registered type supports handles is not something script text says, and `string &x`
+            // is an error for that reason while `Foo &x` is not.
+            const bool isInOutReference = param.modifier == ParameterModifier::InOut || param.isStandaloneRef;
+            if (isInOutReference && IsValueOnlyKind(param.typeKind) && !param.isArray &&
+                !ctx.request.AllowsUnsafeReferences())
             {
                 ctx.LogParam("ValidateParameters", "as-err-inout-on-primitive", param, sym);
                 ctx.Emit(param, sym, "as-err-inout-on-primitive", param.baseTypeName);
@@ -565,13 +578,12 @@ namespace angel_lsp::analysis::rules
             }
         }
 
-        // NOT IMPLEMENTED: as-err-standalone-reference and as-warn-shadow-global.
+        // NOT IMPLEMENTED: as-warn-shadow-global.
         //
-        // A bare `&` on a parameter is only invalid when the engine was built without unsafe
-        // references, which is a host build option this analyzer cannot observe - and the corpus
-        // runs on an engine that permits it. Shadowing a global is legal AngelScript and extremely
-        // common in the corpus, where the warning fires on ordinary parameter naming rather than on
-        // anything a user would want to change.
+        // Shadowing a global is legal AngelScript and extremely common in the corpus, where the
+        // warning fires on ordinary parameter naming rather than on anything a user would want to
+        // change. Unlike the reference rules above, no engine option decides it - it is a matter
+        // of taste, and would belong behind a lint preference rather than a dialect one.
     }
 
     void ValidateFunction(const Symbol &sym, const DiagnosticContext &ctx)

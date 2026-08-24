@@ -35,6 +35,12 @@ namespace angel_lsp::i18n
     // real AngelScript rule, and deleted ones are not kept at all - a message describing a rule the
     // language does not have is worse than no message, since someone eventually implements it.
     //
+    // Note what is no longer on this list. Several of these were once filed as undecidable because
+    // the answer lives in the host's SetEngineProperty calls rather than in the script; the host
+    // can now say so through config::EngineProperties, and a rule that reads one is an ordinary
+    // rule again. When a reason below names an engine option, that is a rule waiting for a
+    // property to be plumbed through - not one that cannot exist.
+    //
     // Every reason here was checked against a real engine build rather than reasoned about, and the
     // full argument sits at each rule's site:
     //
@@ -47,11 +53,23 @@ namespace angel_lsp::i18n
     //   as-err-external-not-found   'external shared' resolves against another module. Modules are
     //                               not a concept this analyzer has. See ClassRules.cpp.
     //
-    //   as-err-invalid-reference-return   Both hinge on asEP_ALLOW_UNSAFE_REFERENCES, a host build
-    //   as-err-standalone-reference       option no reader of script text can observe. `int&
-    //                                     Function()` is the engine's own documented example, it is
-    //                                     in this corpus, and asharness compiles it without
-    //                                     complaint. See FunctionRules.cpp.
+    //   as-err-invalid-reference-return   Not an engine option after all, which is what this note
+    //                                     used to say. At the engine's defaults `int& GetRef() {
+    //                                     return g_value; }` builds clean and only `return local;`
+    //                                     answers "Not a valid reference" - so the declaration is
+    //                                     never what is wrong, and judging the returned expression
+    //                                     belongs with the use-site rules. See FunctionRules.cpp.
+    //
+    //   as-err-standalone-reference       `int &r = x;` is legal only under
+    //                                     asEP_ALLOW_UNSAFE_REFERENCES, which
+    //                                     EngineProperties::allowUnsafeReferences now supplies -
+    //                                     but the grammar refuses the declaration outright, the
+    //                                     way the engine's own parser does at its defaults. Parsing
+    //                                     it is what this rule waits on, not knowledge. The
+    //                                     parameter half of the same question is live: a bare `&`
+    //                                     on a primitive is reported through
+    //                                     as-err-inout-on-primitive, which is the sentence the
+    //                                     engine itself answers with. See FunctionRules.cpp.
     //
     //   as-warn-shadow-global       Shadowing a global is legal and ordinary; the warning fired on
     //                               plain parameter naming throughout the corpus rather than on
@@ -102,6 +120,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-default-param-order"] = "All subsequent parameters after the first default value must also have default values in function '{}'.";
         m_messages["as-err-inout-on-primitive"] = "Only object types that support object references can use &inout ('{}').";
         m_messages["as-err-global-variable-access-modifier"] = "Global or namespace variable '{}' cannot have access modifiers (private/protected).";
+        m_messages["as-err-global-vars-disallowed"] = "Global variable '{}' is not allowed: global variables have been disabled by the application.";
         m_messages["as-err-void-reference"] = "Type 'void' cannot be a reference.";
         m_messages["as-err-property-accessor-missing-body"] = "Property accessor '{}' must be implemented.";
         m_messages["as-err-destructor-param"] = "The destructor '{}' must not have any parameters.";
@@ -187,6 +206,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-default-param-order"] = "Todos los parámetros subsiguientes después del primer valor por defecto deben tener valores por defecto en la función '{}'.";
             m_messages["as-err-inout-on-primitive"] = "Solo los tipos de objeto que admiten referencias pueden usar &inout ('{}').";
             m_messages["as-err-global-variable-access-modifier"] = "La variable global o de namespace '{}' no puede tener modificadores de acceso (private/protected).";
+            m_messages["as-err-global-vars-disallowed"] = "La variable global '{}' no está permitida: la aplicación ha deshabilitado las variables globales.";
             m_messages["as-err-void-reference"] = "El tipo 'void' no puede ser una referencia.";
             m_messages["as-err-property-accessor-missing-body"] = "El accesor de propiedad '{}' debe tener una implementación.";
             m_messages["as-err-destructor-param"] = "El destructor '{}' no debe tener ningún parámetro.";

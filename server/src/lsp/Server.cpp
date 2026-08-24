@@ -686,6 +686,40 @@ namespace angel_lsp
         {
             m_logger->LogInfo(fmt::format("Diagnostic severity overrides active: {}", m_diagnosticSeverities.size()));
         }
+
+        // Engine options are reported only when they differ from AngelScript's own defaults. They
+        // change which diagnostics can appear at all, so a surprising silence is worth being able
+        // to explain from the log; saying so on every start when nothing was set is just noise.
+        LogNonDefaultEngineProperties();
+    }
+
+    void Server::LogNonDefaultEngineProperties() const
+    {
+        const config::EngineProperties defaults;
+        std::string changed;
+
+        const auto note = [&changed](bool current, bool byDefault, std::string_view name)
+        {
+            if (current == byDefault)
+            {
+                return;
+            }
+            if (!changed.empty())
+            {
+                changed += ", ";
+            }
+            changed += name;
+            changed += current ? "=true" : "=false";
+        };
+
+        note(m_config.engine.allowUnsafeReferences, defaults.allowUnsafeReferences, "allowUnsafeReferences");
+        note(m_config.engine.privatePropAsProtected, defaults.privatePropAsProtected, "privatePropAsProtected");
+        note(m_config.engine.disallowGlobalVars, defaults.disallowGlobalVars, "disallowGlobalVars");
+
+        if (!changed.empty())
+        {
+            m_logger->LogInfo(fmt::format("Engine properties differing from the defaults: {}", changed));
+        }
     }
 
     angel_lsp::analysis::SemanticAnalysisRequest Server::BuildAnalysisRequest(const std::string &uriStr,
@@ -696,6 +730,7 @@ namespace angel_lsp
             m_symbolTable, uriStr, std::string(m_config.info.predefinedFileExtension), m_i18n.get()};
 
         request.typeConfig = &m_config.types;
+        request.engineProperties = &m_config.engine;
         request.severityOverrides = m_diagnosticSeverities.empty() ? nullptr : &m_diagnosticSeverities;
         request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;
         request.scopeRoot = m_scopeIndex.GetRoot(uriStr);

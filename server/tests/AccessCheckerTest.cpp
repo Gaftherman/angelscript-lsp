@@ -8,6 +8,7 @@
 #include "analysis/SymbolTable.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+#include "config/ServerConfig.h"
 
 #include <algorithm>
 #include <string>
@@ -27,7 +28,8 @@ using namespace angel_lsp::parser;
 namespace
 {
     std::vector<Diagnostic> AnalyzeAccessSnippet(const std::string &code,
-                                                 const std::string &fileUri = "file:///access.as")
+                                                 const std::string &fileUri = "file:///access.as",
+                                                 const angel_lsp::config::EngineProperties *engine = nullptr)
     {
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);
@@ -38,6 +40,7 @@ namespace
         collector.CollectSymbols(fileUri, code, parser, table);
 
         SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
+        request.engineProperties = engine;
         request.scopeRoot = scopes.CollectScopes(code, parser);
         request.sourceCode = code;
         request.tree = parser.Parse(code);
@@ -346,6 +349,87 @@ TEST_CASE("AccessChecker - A stub is not read as if it used the API it declares"
         "}\n";
 
     CHECK(HasNoAccessFinding(AnalyzeAccessSnippet(code, "file:///as.predefined")));
+}
+
+// =====================================================================================
+// asEP_PRIVATE_PROP_AS_PROTECTED
+//
+// The one engine option that changes this pass. With it set, a private member follows the
+// protected rule instead of the private one - so what the option really moves is the boundary
+// between "only my own class" and "my class and everything derived from it".
+// =====================================================================================
+
+TEST_CASE("AccessChecker - privatePropAsProtected opens a private member to a derived class")
+{
+    const std::string code =
+        "class Base\n"
+        "{\n"
+        "    private int hidden;\n"
+        "}\n"
+        "class Derived : Base\n"
+        "{\n"
+        "    void Use()\n"
+        "    {\n"
+        "        Derived d;\n"
+        "        d.hidden = 1;\n"
+        "    }\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeAccessSnippet(code), "as-err-private-member-access"));
+
+    angel_lsp::config::EngineProperties engine;
+    engine.privatePropAsProtected = true;
+    CHECK(HasNoAccessFinding(AnalyzeAccessSnippet(code, "file:///access.as", &engine)));
+}
+
+TEST_CASE("AccessChecker - privatePropAsProtected does not open a private member to a stranger")
+{
+    // Protected is still an access rule, not the absence of one. An unrelated class gains nothing.
+    const std::string code =
+        "class Base\n"
+        "{\n"
+        "    private int hidden;\n"
+        "}\n"
+        "class Stranger\n"
+        "{\n"
+        "    void Use()\n"
+        "    {\n"
+        "        Base b;\n"
+        "        b.hidden = 1;\n"
+        "    }\n"
+        "}\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.privatePropAsProtected = true;
+
+    // Still reported, and still reported as private - the member was written `private`, and the
+    // option changes which rule decides the access rather than what the declaration says.
+    CHECK(HasCode(AnalyzeAccessSnippet(code, "file:///access.as", &engine),
+                  "as-err-private-member-access"));
+}
+
+TEST_CASE("AccessChecker - privatePropAsProtected leaves the protected rule where it was")
+{
+    // Reaching a base-typed object's protected member is an error even from a class that inherits
+    // it, and no engine option in play here changes that.
+    const std::string code =
+        "class Base\n"
+        "{\n"
+        "    protected int guarded;\n"
+        "}\n"
+        "class Derived : Base\n"
+        "{\n"
+        "    void Use()\n"
+        "    {\n"
+        "        Base b;\n"
+        "        b.guarded = 1;\n"
+        "    }\n"
+        "}\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.privatePropAsProtected = true;
+    CHECK(HasCode(AnalyzeAccessSnippet(code, "file:///access.as", &engine),
+                  "as-err-protected-member-access"));
 }
 
 // =====================================================================================

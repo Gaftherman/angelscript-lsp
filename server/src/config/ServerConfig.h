@@ -47,6 +47,52 @@ namespace angel_lsp::config
     };
 
     /**
+     * @brief Host engine options that change what a script is allowed to say.
+     *
+     * AngelScript is not one language but a family of them: the host picks its dialect with
+     * asIScriptEngine::SetEngineProperty before it compiles anything, and several of those choices
+     * decide whether a given line is legal. None of it is observable from script text, which is
+     * why the rules that depend on one used to be unimplementable and sat in i18n.cpp as codes
+     * nobody emitted. Telling the server which engine it is reading for is the missing input.
+     *
+     * Only the properties a rule actually consults are listed. AngelScript has forty of them and
+     * most decide runtime behaviour - stack sizes, garbage collection, bytecode - which no reader
+     * of source can see the effect of. A setting nobody reads is the same mistake as a message
+     * nobody emits, so each field here names the rule it gates.
+     *
+     * Defaults match the engine's own defaults, so a host that sets nothing gets a server that
+     * judges its scripts the way its engine will.
+     */
+    struct EngineProperties
+    {
+        /**
+         * @brief asEP_ALLOW_UNSAFE_REFERENCES (engine default: false).
+         *
+         * With it off, `&` on a parameter means `&inout` and is only legal for an object type that
+         * supports handles - `void f(int &x)` and `void f(int &inout x)` are both refused, with the
+         * same message. With it on, primitives may be passed by reference and a script may declare
+         * a standalone reference variable. Gates as-err-inout-on-primitive.
+         */
+        bool allowUnsafeReferences = false;
+
+        /**
+         * @brief asEP_PRIVATE_PROP_AS_PROTECTED (engine default: false).
+         *
+         * When set, a private member follows the protected rule instead: a derived class may reach
+         * it. Gates the private branch of AccessChecker.
+         */
+        bool privatePropAsProtected = false;
+
+        /**
+         * @brief asEP_DISALLOW_GLOBAL_VARS (engine default: false).
+         *
+         * Hosts that give each script its own isolated state turn this on, and then a global
+         * variable declaration is a compile error. Gates as-err-global-vars-disallowed.
+         */
+        bool disallowGlobalVars = false;
+    };
+
+    /**
      * @brief Type configuration for AngelScript analysis.
      */
     struct TypeConfig
@@ -64,6 +110,7 @@ namespace angel_lsp::config
         FeatureFlags features;
         Info info;
         TypeConfig types;
+        EngineProperties engine;
         std::vector<std::string> searchDirectories;
 
         /**

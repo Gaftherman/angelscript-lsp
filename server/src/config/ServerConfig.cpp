@@ -54,6 +54,33 @@ namespace angel_lsp::config
         {
             return val == "error" || val == "warning" || val == "information" || val == "hint";
         }
+
+        /** @brief Applies one `--engine-property=<name>=<bool>` pair.
+         *  @return False when the name is not one this server reads, so the caller can drop it.
+         *  @note Names are the asEEngineProp identifiers without the asEP_ prefix, in lowerCamel -
+         *        allowUnsafeReferences for asEP_ALLOW_UNSAFE_REFERENCES. Matching the engine's own
+         *        vocabulary means a host author can map its SetEngineProperty calls across without
+         *        translating anything, and it leaves room for the other thirty-odd properties to
+         *        arrive here the day a rule needs one. */
+        bool ApplyEngineProperty(EngineProperties &engine, std::string_view name, bool value)
+        {
+            if (name == "allowUnsafeReferences")
+            {
+                engine.allowUnsafeReferences = value;
+                return true;
+            }
+            if (name == "privatePropAsProtected")
+            {
+                engine.privatePropAsProtected = value;
+                return true;
+            }
+            if (name == "disallowGlobalVars")
+            {
+                engine.disallowGlobalVars = value;
+                return true;
+            }
+            return false;
+        }
     }
 
     void PrintHelp()
@@ -102,6 +129,11 @@ namespace angel_lsp::config
                   << "  --predefined-file=<path>                Load a predefined stub by path, even outside the workspace (repeatable)\n"
                   << "  --search-dir=<string>                   Add directory to search path for #include resolution\n"
                   << "  --diagnostic-severity=<code>=<severity> Override one diagnostic's severity: error|warning|information|hint (repeatable)\n"
+                  << "  --engine-property=<name>=<bool>         Describe the host engine's SetEngineProperty settings (repeatable).\n"
+                  << "                                          Known names, with the engine's own defaults:\n"
+                  << "                                            allowUnsafeReferences  (false) permit & on primitives and standalone references\n"
+                  << "                                            privatePropAsProtected (false) let a derived class reach a private member\n"
+                  << "                                            disallowGlobalVars     (false) reject global variable declarations\n"
                   << "  -h, --help                              Show this help message and exit\n"
                   << "  -v, --version                           Show version information and exit\n";
     }
@@ -360,6 +392,24 @@ namespace angel_lsp::config
                 if (getStringValue(val) && !val.empty())
                 {
                     config.predefinedFiles.push_back(std::string(val));
+                }
+            }
+            else if (key == "--engine-property" || key == "--engine-prop")
+            {
+                // Value is "<name>=<bool>", and like --diagnostic-severity the outer split above
+                // consumed only the first '=', so the pair arrives intact.
+                std::string_view val;
+                if (getStringValue(val))
+                {
+                    const size_t sep = val.find('=');
+                    const std::string_view name = val.substr(0, sep == std::string_view::npos ? val.size() : sep);
+                    // A bare name means "on", the way --enable-x does.
+                    const std::string_view raw = sep == std::string_view::npos
+                                                 ? std::string_view("true") : val.substr(sep + 1);
+                    if (!name.empty() && IsBoolLiteral(raw))
+                    {
+                        ApplyEngineProperty(config.engine, name, ParseBoolValue(raw, true));
+                    }
                 }
             }
             else if (key == "--diagnostic-severity" || key == "--severity")

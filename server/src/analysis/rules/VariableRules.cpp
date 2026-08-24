@@ -149,6 +149,17 @@ namespace angel_lsp::analysis::rules
                 ctx.Emit(sym, "as-err-global-variable-access-modifier", sym.name);
             }
 
+            // A host that gives each script its own isolated state builds its engine with
+            // asEP_DISALLOW_GLOBAL_VARS, and then a global is a compile error rather than a style
+            // question. Off by default, because the engine's default is off; a namespace member is
+            // still a global as far as the engine is concerned, and containerName cannot tell a
+            // namespace from a class, so only an unambiguous non-member is judged.
+            if (!isMember && ctx.request.DisallowsGlobalVars())
+            {
+                ctx.LogRule("CheckPlacement", "as-err-global-vars-disallowed", sym);
+                ctx.Emit(sym, "as-err-global-vars-disallowed", sym.name);
+            }
+
             // A class property has no initialization phase in which a const could be given its
             // value, so AngelScript does not allow one. Two things it is not:
             //

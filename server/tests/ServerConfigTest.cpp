@@ -1097,6 +1097,63 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config.diagnosticSeverities.at("as-warn-unused-variable") == "error");
         }
     }
+
+    TEST_CASE("Engine properties")
+    {
+        SUBCASE("Default to the engine's own defaults")
+        {
+            ServerConfig config = FromArgs(0, nullptr);
+            CHECK(config.engine.allowUnsafeReferences == false);
+            CHECK(config.engine.privatePropAsProtected == false);
+            CHECK(config.engine.disallowGlobalVars == false);
+        }
+
+        SUBCASE("Each known property is settable")
+        {
+            ArgvHelper args{"angel_lsp",
+                            "--engine-property=allowUnsafeReferences=true",
+                            "--engine-property=privatePropAsProtected=true",
+                            "--engine-property=disallowGlobalVars=true"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.allowUnsafeReferences == true);
+            CHECK(config.engine.privatePropAsProtected == true);
+            CHECK(config.engine.disallowGlobalVars == true);
+        }
+
+        SUBCASE("A bare name means on, the way --enable-x does")
+        {
+            ArgvHelper args{"angel_lsp", "--engine-property=allowUnsafeReferences"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.allowUnsafeReferences == true);
+        }
+
+        SUBCASE("false is honoured, and so is the --engine-prop spelling")
+        {
+            ArgvHelper args{"angel_lsp",
+                            "--engine-property=allowUnsafeReferences=true",
+                            "--engine-prop=allowUnsafeReferences=false"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.allowUnsafeReferences == false);
+        }
+
+        SUBCASE("An unknown name changes nothing")
+        {
+            // AngelScript has forty engine properties and this server reads three. Naming one of
+            // the other thirty-seven has to be inert rather than land on a neighbouring field.
+            ArgvHelper args{"angel_lsp",
+                            "--engine-property=allowMultilineStrings=true",
+                            "--engine-property=allowUnsafeReferences=true"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.allowUnsafeReferences == true);
+            CHECK(config.engine.privatePropAsProtected == false);
+            CHECK(config.engine.disallowGlobalVars == false);
+        }
+
+        SUBCASE("A non-boolean value is dropped rather than guessed at")
+        {
+            ArgvHelper args{"angel_lsp", "--engine-property=allowUnsafeReferences=maybe"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.allowUnsafeReferences == false);
+        }
+    }
 }
-
-

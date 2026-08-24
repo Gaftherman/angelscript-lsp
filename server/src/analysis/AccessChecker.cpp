@@ -253,8 +253,12 @@ namespace angel_lsp::analysis
                 return;
             }
 
-            const bool isPrivate = member.access == AccessModifier::Private;
-            if (isPrivate)
+            // asEP_PRIVATE_PROP_AS_PROTECTED makes a private member follow the protected rule
+            // instead, so a derived class may reach it. The declaration still says `private` and
+            // so does the message when the access is wrong anyway - what the option changes is
+            // which rule decides that, not what the member was written as.
+            const bool declaredPrivate = member.access == AccessModifier::Private;
+            if (declaredPrivate && !ctx.request.TreatsPrivateAsProtected())
             {
                 // Per class, not per instance: inside the declaring class every object of that
                 // class is open, and outside it none is.
@@ -279,7 +283,7 @@ namespace angel_lsp::analysis
             const TSPoint start = ts_node_start_point(memberNode);
             const TSPoint end = ts_node_end_point(memberNode);
             ctx.EmitAtRange(start.row, start.column, end.row, end.column,
-                            isPrivate ? "as-err-private-member-access" : "as-err-protected-member-access",
+                            declaredPrivate ? "as-err-private-member-access" : "as-err-protected-member-access",
                             memberName, member.declaringClass);
         }
 

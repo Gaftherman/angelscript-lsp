@@ -9,6 +9,7 @@
 #include "analysis/SymbolTable.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+#include "config/ServerConfig.h"
 
 #include <algorithm>
 #include <string>
@@ -20,7 +21,8 @@ using namespace angel_lsp::parser;
 namespace
 {
     std::vector<Diagnostic> AnalyzeFunctionSnippet(const std::string &code,
-                                                   const std::string &fileUri = "file:///funcs.as")
+                                                   const std::string &fileUri = "file:///funcs.as",
+                                                   const angel_lsp::config::EngineProperties *engine = nullptr)
     {
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);
@@ -31,6 +33,7 @@ namespace
         collector.CollectSymbols(fileUri, code, parser, table);
 
         SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
+        request.engineProperties = engine;
         request.scopeRoot = scopes.CollectScopes(code, parser);
         request.sourceCode = code;
 
@@ -591,12 +594,63 @@ TEST_CASE("FunctionRules - Reports inout on a primitive parameter")
 
 TEST_CASE("FunctionRules - inout on an object parameter is accepted")
 {
+    // `Entity &inout` is genuinely legal. `string &inout` is not - a value type registered without
+    // handle support gets the same refusal a primitive does - but nothing in script text says
+    // which registered types support handles, so this pass stays silent on all of them rather than
+    // guessing. A known false negative, and the safe direction.
     const std::string code =
         "class Entity {}\n"
         "void Move(Entity &inout e) { }\n"
         "void Rename(string &inout name) { }\n";
 
     CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-inout-on-primitive"));
+}
+
+TEST_CASE("FunctionRules - Reports a bare reference on a primitive parameter")
+{
+    // A bare `&` is `&inout` spelled shorter, and the engine answers both with the very same
+    // sentence. Compiled against a real engine: `void f(int &x)` is refused exactly as
+    // `void f(int &inout x)` is, while `void f(Foo &x)` on a script class builds clean.
+    CHECK(HasCode(AnalyzeFunctionSnippet("void Move(int &x) { }\n"), "as-err-inout-on-primitive"));
+    CHECK(HasCode(AnalyzeFunctionSnippet("void Scale(float& factor) { }\n"), "as-err-inout-on-primitive"));
+
+    const std::string classParam =
+        "class Entity {}\n"
+        "void Move(Entity &e) { }\n";
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(classParam), "as-err-inout-on-primitive"));
+}
+
+TEST_CASE("FunctionRules - allowUnsafeReferences retires the primitive reference rule")
+{
+    // This is the whole point of the engine-properties configuration: the rule is not wrong, it is
+    // conditional, and the condition lives in the host's SetEngineProperty call rather than in
+    // anything the script says.
+    angel_lsp::config::EngineProperties engine;
+    engine.allowUnsafeReferences = true;
+
+    for (const std::string code : { "void Move(int &x) { }\n", "void Move(int &inout x) { }\n" })
+    {
+        INFO("code: ", code);
+        CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-inout-on-primitive"));
+        CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code, "file:///funcs.as", &engine),
+                            "as-err-inout-on-primitive"));
+    }
+}
+
+TEST_CASE("FunctionRules - An in or out reference on a primitive is never the unsafe kind")
+{
+    // `&in` and `&out` are the two the engine suggests instead, and they are legal whatever the
+    // host chose - so the engine option must not start reporting them either way.
+    angel_lsp::config::EngineProperties engine;
+    engine.allowUnsafeReferences = true;
+
+    const std::string code =
+        "void Read(const int &in value) { }\n"
+        "void Write(int &out value) { }\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-inout-on-primitive"));
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code, "file:///funcs.as", &engine),
+                        "as-err-inout-on-primitive"));
 }
 
 TEST_CASE("FunctionRules - Reports a handle on a primitive parameter")

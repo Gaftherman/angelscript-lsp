@@ -532,6 +532,33 @@ TEST_CASE("Server - Publishes the diagnostics the widened grammar made reachable
     CHECK(Published(output, "as-err-array-invalid-template"));
 }
 
+TEST_CASE("Server - An engine property reaches the rules that depend on it")
+{
+    // The end of the wire the configuration exists for. A rule whose answer lives in the host's
+    // SetEngineProperty call is only useful if the setting travels all the way from the client to
+    // the pass, and every hop in between is somewhere it could quietly stop.
+    const std::string source = "void Move(int &x) { }\n";
+
+    CHECK(Published(DiagnosticsFor(source), "as-err-inout-on-primitive"));
+
+    config::ServerConfig unsafeReferences;
+    unsafeReferences.engine.allowUnsafeReferences = true;
+    CHECK_FALSE(Published(DiagnosticsFor(source, unsafeReferences), "as-err-inout-on-primitive"));
+}
+
+TEST_CASE("Server - Publishes a diagnostic only an engine property switches on")
+{
+    // The other direction: silent at the engine's defaults, and reported once the host says its
+    // engine forbids global variables.
+    const std::string source = "int g_count = 0;\nvoid main() { }\n";
+
+    CHECK_FALSE(Published(DiagnosticsFor(source), "as-err-global-vars-disallowed"));
+
+    config::ServerConfig noGlobals;
+    noGlobals.engine.disallowGlobalVars = true;
+    CHECK(Published(DiagnosticsFor(source, noGlobals), "as-err-global-vars-disallowed"));
+}
+
 TEST_CASE("Server - Publishes the type conversion diagnostics")
 {
     const std::string source =

@@ -9,6 +9,7 @@
 #include "analysis/SymbolTable.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+#include "config/ServerConfig.h"
 
 #include <algorithm>
 #include <string>
@@ -20,7 +21,8 @@ using namespace angel_lsp::parser;
 namespace
 {
     std::vector<Diagnostic> AnalyzeVariableSnippet(const std::string &code,
-                                                   const std::string &fileUri = "file:///vars.as")
+                                                   const std::string &fileUri = "file:///vars.as",
+                                                   const angel_lsp::config::EngineProperties *engine = nullptr)
     {
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);
@@ -31,6 +33,7 @@ namespace
         collector.CollectSymbols(fileUri, code, parser, table);
 
         SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
+        request.engineProperties = engine;
         request.scopeRoot = scopes.CollectScopes(code, parser);
         request.sourceCode = code;
 
@@ -247,6 +250,51 @@ TEST_CASE("VariableRules - A predefined stub is exempt")
                                                     "file:///engine.as.predefined");
     CHECK_FALSE(HasCode(diagnostics, "as-err-global-variable-access-modifier"));
     CHECK_FALSE(HasCode(diagnostics, "as-err-handle-on-primitive"));
+}
+
+// =====================================================================================
+// asEP_DISALLOW_GLOBAL_VARS
+// =====================================================================================
+
+TEST_CASE("VariableRules - Reports a global variable when the host disallows them")
+{
+    // The engine's own wording: "Global variables have been disabled by the application".
+    angel_lsp::config::EngineProperties engine;
+    engine.disallowGlobalVars = true;
+
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet("int g_count;\n"), "as-err-global-vars-disallowed"));
+    CHECK(HasCode(AnalyzeVariableSnippet("int g_count;\n", "file:///vars.as", &engine),
+                  "as-err-global-vars-disallowed"));
+}
+
+TEST_CASE("VariableRules - A class member is not a global variable")
+{
+    angel_lsp::config::EngineProperties engine;
+    engine.disallowGlobalVars = true;
+
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    int health;\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code, "file:///vars.as", &engine),
+                        "as-err-global-vars-disallowed"));
+}
+
+TEST_CASE("VariableRules - A local is not a global variable")
+{
+    angel_lsp::config::EngineProperties engine;
+    engine.disallowGlobalVars = true;
+
+    const std::string code =
+        "void Think()\n"
+        "{\n"
+        "    int ticks = 0;\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code, "file:///vars.as", &engine),
+                        "as-err-global-vars-disallowed"));
 }
 
 // =====================================================================================

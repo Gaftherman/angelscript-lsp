@@ -173,14 +173,57 @@ The `angel_lsp` executable accepts command-line arguments to enable or disable i
 | `--disable-references` | Explicitly disable find references. | - |
 | `--enable-rename[=true\|false]` | Enable or disable symbol rename refactoring. | `true` |
 | `--disable-rename` | Explicitly disable symbol rename. | - |
+| `--enable-document-highlight[=true\|false]` | Enable or disable read/write occurrence highlighting. | `true` |
+| `--disable-document-highlight` | Explicitly disable document highlight. | - |
+| `--enable-folding-range[=true\|false]` | Enable or disable folding ranges. | `true` |
+| `--disable-folding-range` | Explicitly disable folding ranges. | - |
+| `--enable-inlay-hints[=true\|false]` | Enable or disable parameter-name and `auto` type hints. | `true` |
+| `--disable-inlay-hints` | Explicitly disable inlay hints. | - |
+| `--enable-code-action[=true\|false]` | Enable or disable quick fixes. | `true` |
+| `--disable-code-action` | Explicitly disable code actions. | - |
+| `--enable-formatting[=true\|false]` | Enable or disable document and range formatting. | `true` |
+| `--disable-formatting` | Explicitly disable formatting. | - |
+| `--enable-document-link[=true\|false]` | Enable or disable `#include` links. | `true` |
+| `--disable-document-link` | Explicitly disable `#include` links. | - |
+| `--enable-type-conversion-checks[=true\|false]` | Enable or disable the type conversion diagnostics. | `true` |
+| `--disable-type-conversion-checks` | Explicitly disable type conversion diagnostics. | - |
 | `--enable-predefined-loader[=true\|false]` | Enable or disable background predefined symbols loader. | `true` |
 | `--disable-predefined-loader` | Explicitly disable predefined symbols loader. | - |
 | `--search-dir=<path>` | Add directory search path for `#include` resolution. | - |
+| `--predefined-file=<path>` | Load a predefined stub by path, even from outside the workspace. Repeatable. | - |
+| `--diagnostic-severity=<code>=<severity>` | Override one diagnostic's severity: `error`, `warning`, `information` or `hint`. Repeatable. | - |
+| `--engine-property=<name>=<bool>` | Describe how the host built its engine — see below. Repeatable. | - |
 | `--locale=<string>` | Set diagnostic language/locale. Any BCP 47 spelling works — only the primary subtag selects the table, so `es`, `es-ES` and `es-419` are equivalent. Unknown languages fall back to English. | `en` |
 | `--file-ext=<string>` | Set AngelScript script file extension. | `.as` |
 | `--predefined-ext=<string>` | Set predefined host API symbols file extension. | `.as.predefined` |
 | `-h`, `--help` | Show command-line help message and exit. | - |
 | `-v`, `--version` | Show server version and exit. | - |
+
+### Engine Properties
+
+AngelScript is not one language but a family of them: the host picks its dialect with
+`asIScriptEngine::SetEngineProperty` before it compiles anything, and several of those choices
+decide whether a given line is legal. None of it is visible in script text, so a rule that depends
+on one is undecidable until the host says which engine this is. `--engine-property` is where the
+answer arrives.
+
+Names are the `asEEngineProp` identifiers without their `asEP_` prefix, in lowerCamel, so a host
+author can map its own `SetEngineProperty` calls across without translating anything. Every default
+matches the engine's own, and only the properties a rule actually reads are accepted — an unknown
+name is inert rather than an error.
+
+| Property | Engine default | What it changes |
+| :--- | :--- | :--- |
+| `allowUnsafeReferences` | `false` | With it off, `&` on a parameter means `&inout` and only an object type that supports handles may use it, so `void f(int &x)` is reported. With it on, it is not. |
+| `privatePropAsProtected` | `false` | A `private` member follows the `protected` rule, so a derived class may reach it. |
+| `disallowGlobalVars` | `false` | Every global variable declaration becomes a compile error, and is reported as one. |
+
+```bash
+# A host that built its engine with unsafe references and isolated script state
+angel_lsp --engine-property=allowUnsafeReferences=true --engine-property=disallowGlobalVars=true
+```
+
+In VS Code the same three live under `angelscript.engine.*`.
 
 ### Example Usage
 

@@ -208,6 +208,14 @@ namespace angel_lsp
         void BuildDiagnosticSeverityOverrides();
 
         /**
+         * @brief Logs the engine properties that were configured away from AngelScript's defaults.
+         *
+         * These decide which diagnostics can appear at all, so an unexpectedly quiet - or
+         * unexpectedly loud - session is worth being able to explain from the log alone.
+         */
+        void LogNonDefaultEngineProperties() const;
+
+        /**
          * @brief Assembles the semantic-analysis request for a document.
          *
          * Every caller wires the same configuration into it, and forgetting one field is how a rule

@@ -97,6 +97,23 @@ const FEATURE_FLAGS: ReadonlyArray<readonly [string, string]> = [
 ];
 
 /**
+ * @brief `angelscript.engine.*` settings, in the order the server's --engine-property expects.
+ *
+ * These are not feature switches: each one states how the host built its AngelScript engine, and
+ * several language rules are decided by that rather than by anything in the script. The setting
+ * name is the asEEngineProp identifier without its asEP_ prefix, so a host author can map its own
+ * SetEngineProperty calls across without translating anything.
+ *
+ * Every default here is the engine's own default, which is why only a `true` is passed on: a
+ * property left alone should cost nothing on the command line.
+ */
+const ENGINE_PROPERTIES: ReadonlyArray<string> = [
+    'allowUnsafeReferences',
+    'privatePropAsProtected',
+    'disallowGlobalVars'
+];
+
+/**
  * @brief Expands a possibly relative path into the absolute forms to pass to the server.
  *
  * The server's working directory is not the project root, so a relative entry only means anything
@@ -157,6 +174,12 @@ function buildServerArgs(): string[] {
     for (const [setting, flag] of FEATURE_FLAGS) {
         if (config.get<boolean>(`features.${setting}`, true) === false) {
             args.push(flag);
+        }
+    }
+
+    for (const property of ENGINE_PROPERTIES) {
+        if (config.get<boolean>(`engine.${property}`, false) === true) {
+            args.push(`--engine-property=${property}=true`);
         }
     }
 
