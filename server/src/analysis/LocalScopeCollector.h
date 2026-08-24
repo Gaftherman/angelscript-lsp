@@ -61,6 +61,7 @@ namespace angel_lsp::analysis
          *         LocalDefinitionKind::Variable but has no declared-type/initializer node),
          *         before reading LocalDefinition::isHandleType/hasNullInitializer from it. */
         TSSymbol m_symVariableDeclarator = 0;
+        TSSymbol m_symParameter = 0;
 
         /** @brief What a LOCALS_QUERY capture index means, resolved once in the constructor by capture name. */
         enum class CaptureKind

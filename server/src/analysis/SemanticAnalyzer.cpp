@@ -1,5 +1,6 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/AccessChecker.h"
+#include "analysis/ConstChecker.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
@@ -91,6 +92,17 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckMemberAccess(accessRequest, ctx);
+        }
+
+        if (request.tree && !request.sourceCode.empty())
+        {
+            DiagnosticContext ctx{request, diagnostics, m_logger};
+            const ConstCheckRequest constRequest{
+                ts_tree_root_node(request.tree),
+                request.sourceCode,
+                request.scopeRoot.get()
+            };
+            CheckConstCorrectness(constRequest, ctx);
         }
 
         // Needs the tree, not just the symbol table: an initializer or a cast is an expression, and

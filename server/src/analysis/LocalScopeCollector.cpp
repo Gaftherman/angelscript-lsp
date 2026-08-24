@@ -19,6 +19,7 @@ namespace angel_lsp::analysis
         m_symFuncDeclaration = ts_language_symbol_for_name(lang, "func_declaration", static_cast<uint32_t>(strlen("func_declaration")), true);
         m_symLambdaExpression = ts_language_symbol_for_name(lang, "lambda_expression", static_cast<uint32_t>(strlen("lambda_expression")), true);
         m_symVariableDeclarator = ts_language_symbol_for_name(lang, "variable_declarator", static_cast<uint32_t>(strlen("variable_declarator")), true);
+        m_symParameter = ts_language_symbol_for_name(lang, "parameter", static_cast<uint32_t>(strlen("parameter")), true);
 
         uint32_t errorOffset = 0;
         TSQueryError errorType = TSQueryErrorNone;
@@ -302,7 +303,8 @@ namespace angel_lsp::analysis
                     capture.definitionKind,
                     startPt.row, startPt.column, endPt.row, endPt.column};
 
-                if (capture.definitionKind == LocalDefinitionKind::Variable)
+                if (capture.definitionKind == LocalDefinitionKind::Variable ||
+                    capture.definitionKind == LocalDefinitionKind::Parameter)
                 {
                     ReadVariableTypeInfo(capture.node, sourceCode, def);
                 }
@@ -349,7 +351,28 @@ namespace angel_lsp::analysis
     void LocalScopeCollector::ReadVariableTypeInfo(TSNode nameNode, const std::string &sourceCode, LocalDefinition &def) const
     {
         TSNode declaratorNode = ts_node_parent(nameNode);
-        if (ts_node_is_null(declaratorNode) || ts_node_symbol(declaratorNode) != m_symVariableDeclarator)
+        if (ts_node_is_null(declaratorNode))
+            return;
+
+        // A parameter carries its type on the same node as its name rather than on a parent
+        // declarator, so it is read here and not below. Without it a parameter reached the scope
+        // tree with no type at all, and every consumer that asks a scope what a name is - the
+        // expression resolver, and so the access and const passes behind it - resolved nothing for
+        // the most common object in any function body.
+        if (ts_node_symbol(declaratorNode) == m_symParameter)
+        {
+            TSNode paramTypeNode = ts_node_child_by_field_name(declaratorNode, "param_type", static_cast<uint32_t>(strlen("param_type")));
+            if (!ts_node_is_null(paramTypeNode))
+            {
+                TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(paramTypeNode, sourceCode);
+                def.isHandleType = typeInfo.isHandle;
+                def.typeKind = typeInfo.kind;
+                def.typeName = GetNodeText(paramTypeNode, sourceCode);
+            }
+            return;
+        }
+
+        if (ts_node_symbol(declaratorNode) != m_symVariableDeclarator)
             return;
 
         TSNode declarationNode = ts_node_parent(declaratorNode);

@@ -549,6 +549,19 @@ TEST_CASE("Server - Publishes the non-instantiable type diagnostics")
     CHECK(Published(output, "as-err-return-not-instantiable"));
 }
 
+TEST_CASE("Server - Publishes the const correctness diagnostics")
+{
+    const std::string source =
+        "const int g_max = 10;\n"
+        "class Entity { int v; void Mutate() { v = 1; } }\n"
+        "void main() { g_max = 5; }\n"
+        "void Take(const Entity &in e) { e.Mutate(); }\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-const-assignment"));
+    CHECK(Published(output, "as-err-const-method-required"));
+}
+
 TEST_CASE("Server - An engine property reaches the rules that depend on it")
 {
     // The end of the wire the configuration exists for. A rule whose answer lives in the host's

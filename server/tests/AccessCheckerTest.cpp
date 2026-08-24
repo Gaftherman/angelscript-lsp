@@ -268,10 +268,17 @@ TEST_CASE("AccessChecker - A public overload keeps the name reachable")
     CHECK(HasNoAccessFinding(AnalyzeAccessSnippet(code)));
 }
 
-TEST_CASE("AccessChecker - A mixin body is not judged")
+TEST_CASE("AccessChecker - A mixin body reaching another class's private member is still an error")
 {
-    // A mixin's methods are compiled into every class that includes it, so what they may reach is
-    // decided somewhere else entirely.
+    // This case used to assert the opposite, and passed for the wrong reason: the object was a
+    // parameter, and parameters carried no type in the scope tree, so nothing resolved and the
+    // silence looked like a rule. Compiled against a real engine it answers "Illegal access to
+    // private property 'hidden'" - twice, once per instantiation of the mixin.
+    //
+    // Which is the right answer whichever class includes the mixin: `hidden` is private to Target,
+    // and no includer is Target. What a mixin body genuinely cannot decide is an access to its own
+    // members, and that is handled where the member is attributed to the including class rather
+    // than by staying silent here.
     const std::string code =
         "class Target\n"
         "{\n"
@@ -282,7 +289,21 @@ TEST_CASE("AccessChecker - A mixin body is not judged")
         "    void Poke(Target@ t) { t.hidden = 1; }\n"
         "}\n";
 
-    CHECK(HasNoAccessFinding(AnalyzeAccessSnippet(code)));
+    CHECK(HasCode(AnalyzeAccessSnippet(code), "as-err-private-member-access"));
+}
+
+TEST_CASE("AccessChecker - A private member reached through a parameter is judged")
+{
+    // The plain form of what the case above turns on: a parameter is the most common object in any
+    // function body, and until the scope tree recorded parameter types none of them was judged.
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    private int hidden;\n"
+        "}\n"
+        "void Poke(Entity@ e) { e.hidden = 1; }\n";
+
+    CHECK(HasCode(AnalyzeAccessSnippet(code), "as-err-private-member-access"));
 }
 
 TEST_CASE("AccessChecker - A mixin's private member belongs to the class that includes it")
