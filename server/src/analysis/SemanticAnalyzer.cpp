@@ -20,17 +20,22 @@ namespace angel_lsp::analysis
     {
         std::vector<Diagnostic> diagnostics;
 
+        // A dump of the document's own symbols, at Debug because that is what it is - the client's
+        // log is not the place to narrate every declaration on every keystroke. Read through
+        // ForEachSymbolInFile for the same reason the rules are: walking the whole workspace to
+        // print one file's symbols was the last full-table walk left in the analysis path.
         if (m_logger)
         {
-            m_logger->LogInfo(fmt::format("=== [SYMBOL COLLECTOR OUTPUT] Document: {} ===", request.fileUri));
-            request.symbolTable.ForEachSymbol(
+            m_logger->LogDebug(fmt::format("=== [SYMBOL COLLECTOR OUTPUT] Document: {} ===", request.fileUri));
+            request.symbolTable.ForEachSymbolInFile(
+                request.fileUri,
                 [&](const std::string &qualifiedName, const std::vector<Symbol> &symbols)
                 {
                     for (const auto &sym : symbols)
                     {
                         if (sym.fileUri == request.fileUri)
                         {
-                            m_logger->LogInfo(fmt::format("  -> Symbol: [{}] Name: \"{}\" | Container: \"{}\" | Range: L{}:C{}-L{}:C{}",
+                            m_logger->LogDebug(fmt::format("  -> Symbol: [{}] Name: \"{}\" | Container: \"{}\" | Range: L{}:C{}-L{}:C{}",
                                 SymbolTypeToString(sym.type),
                                 sym.name,
                                 sym.containerName,

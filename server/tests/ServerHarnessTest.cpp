@@ -476,6 +476,43 @@ TEST_CASE("Server - Publishes the control flow diagnostics")
     CHECK(Published(output, "as-err-not-all-paths-return"));
 }
 
+TEST_CASE("Server - Publishes the member access diagnostics")
+{
+    // The case that started this rule, end to end: a user writing it in the editor should see it.
+    const std::string source =
+        "class MyClass\n"
+        "{\n"
+        "    private float f;\n"
+        "    protected int p;\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    MyClass myClass;\n"
+        "    myClass.f = 3.0f;\n"
+        "    myClass.p = 1;\n"
+        "}\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-private-member-access"));
+    CHECK(Published(output, "as-err-protected-member-access"));
+}
+
+TEST_CASE("Server - Publishes the function attribute diagnostics")
+{
+    const std::string source =
+        "class Entity\n"
+        "{\n"
+        "    void Think() delete;\n"
+        "    void Broken() property { }\n"
+        "}\n"
+        "void Convert() explicit { }\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-delete-not-auto-generated"));
+    CHECK(Published(output, "as-err-virtual-property-signature"));
+    CHECK(Published(output, "as-err-explicit-not-member"));
+}
+
 TEST_CASE("Server - Publishes the type conversion diagnostics")
 {
     const std::string source =
