@@ -1,5 +1,6 @@
 #include "analysis/rules/VariableRules.h"
 #include "analysis/SemanticHelpers.h"
+#include "spdlog/fmt/fmt.h"
 
 #include <algorithm>
 #include <string>
@@ -63,6 +64,39 @@ namespace angel_lsp::analysis::rules
                                                 return owner.type == SymbolType::Class &&
                                                        owner.GetClass().modifiers.isMixin;
                                             });
+        }
+
+        /**
+         * @brief Rules about the arguments a template type is instantiated with.
+         *
+         * Only one argument is invalid for every template, and it is invalid whatever the host
+         * registered: `void`. The engine answers "Attempting to instantiate invalid template
+         * 'array<void>'" - the message this code has always carried - and accepts everything else
+         * this analyzer can see, including a class, a handle, and a nested template.
+         *
+         * A text comparison rather than a resolution, deliberately. A template argument that
+         * resolves to no declaration is an engine-registered type, which is most of them here, and
+         * judging one would mean reporting every `array<CBasePlayer@>` in the corpus. `void` is the
+         * one answer that needs nothing looked up.
+         */
+        void CheckTemplateArguments(const Symbol &sym, const VariableSignature &sig, const DiagnosticContext &ctx)
+        {
+            if (sig.templateName.empty())
+            {
+                return;
+            }
+
+            for (const auto &argument : sig.templateArgumentTypes)
+            {
+                if (CleanBaseType(argument) != "void")
+                {
+                    continue;
+                }
+
+                ctx.LogRule("CheckTemplateArguments", "as-err-array-invalid-template", sym);
+                ctx.Emit(sym, "as-err-array-invalid-template",
+                         fmt::format("{}<{}>", sig.templateName, argument));
+            }
         }
 
         /** @brief Rules about what the declared type may be. */
@@ -214,15 +248,15 @@ namespace angel_lsp::analysis::rules
             return;
         }
 
-        // NOT IMPLEMENTED: as-err-standalone-reference and as-err-array-invalid-template.
+        // NOT IMPLEMENTED: as-err-standalone-reference.
         //
         // A standalone reference is only detectable through ParameterInformation::isStandaloneRef,
         // which exists for parameters and has no VariableSignature counterpart - a variable
-        // declared `int &x;` reaches the collector with nothing recording the ampersand. The array
-        // rule would need the template argument's own resolution, and VariableSignature keeps only
-        // templateArgumentTypes as text, so judging it would mean re-resolving types this pass
-        // deliberately leaves to the conversion checker.
+        // declared `int &x;` reaches the collector with nothing recording the ampersand. Whether it
+        // is even an error depends on asEP_ALLOW_UNSAFE_REFERENCES, a host build option no reader
+        // of script text can observe.
 
+        CheckTemplateArguments(sym, sig, ctx);
         CheckDeclaredType(sym, sig, ctx);
         CheckPlacement(sym, sig, ctx);
         CheckVirtualProperty(sym, sig, ctx);

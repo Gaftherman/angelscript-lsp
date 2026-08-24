@@ -211,14 +211,37 @@ namespace angel_lsp::analysis::rules
         void CheckModifiers(const Symbol &sym, const FunctionSignature &sig, const FunctionContext &fctx,
                             const DiagnosticContext &ctx)
         {
-            // const/override/final describe a method's relationship to a class. Outside one they
-            // describe nothing. Only reported when the container is known not to be a class: an
-            // unresolved container means the analyzer cannot tell.
-            if (fctx.containerIsKnown && !fctx.isMember &&
-                (sig.modifiers.isConst || sig.modifiers.isOverride || sig.modifiers.isFinal))
+            // Only judged when the container is known not to be a class: an unresolved container
+            // means the analyzer cannot tell what this declaration is.
+            if (!fctx.containerIsKnown || fctx.isMember)
+            {
+                return;
+            }
+
+            // `const` on a global function is a hard error - the engine's parser refuses the token
+            // outright, answering "Instead found reserved keyword 'const'".
+            if (sig.modifiers.isConst)
             {
                 ctx.LogRule("CheckModifiers", "as-err-global-function-qualifiers", sym);
                 ctx.Emit(sym, "as-err-global-function-qualifiers", sym.name);
+            }
+
+            // `override` and `final` are not. The engine accepts both on a global function and
+            // silently ignores them, so calling it an error would be this analyzer inventing a rule
+            // AngelScript does not have. Saying nothing would be worse - a global marked `override`
+            // is almost always a method that lost its class - so it is a warning, which is what a
+            // qualifier with no effect is worth.
+            if (sig.modifiers.isOverride)
+            {
+                ctx.LogRule("CheckModifiers", "as-warn-global-function-attribute", sym);
+                ctx.Emit(sym, "as-warn-global-function-attribute", "override", sym.name,
+                         DiagnosticSeverity::Warning);
+            }
+            if (sig.modifiers.isFinal)
+            {
+                ctx.LogRule("CheckModifiers", "as-warn-global-function-attribute", sym);
+                ctx.Emit(sym, "as-warn-global-function-attribute", "final", sym.name,
+                         DiagnosticSeverity::Warning);
             }
         }
 
@@ -280,11 +303,22 @@ namespace angel_lsp::analysis::rules
         void CheckAttributes(const Symbol &sym, const FunctionSignature &sig, const FunctionContext &fctx,
                              const DiagnosticContext &ctx)
         {
+            // An interface declares a contract, not an implementation, and the engine rejects every
+            // one of the five attributes on a method of one. The grammar parses them so this can
+            // name the offender instead of leaving a syntax error on the token.
+            if (sig.isInterfaceMethod)
+            {
+                const std::string_view attribute = FirstAttributeName(sig.modifiers);
+                if (!attribute.empty())
+                {
+                    ctx.LogRule("CheckAttributes", "as-err-interface-method-attribute", sym);
+                    ctx.Emit(sym, "as-err-interface-method-attribute", attribute, sym.name);
+                }
+                return;
+            }
+
             // `explicit` suppresses an implicit conversion through a constructor, so it only means
-            // anything inside a class body. The engine's own parser rejects the token on a global
-            // function, an interface method and a funcdef alike; of those three only the global one
-            // reaches here, because interface_method and funcdef_declaration carry no
-            // func_attributes in the grammar, so those two are already syntax errors.
+            // anything inside a class body; the engine's parser refuses the token anywhere else.
             if (sig.modifiers.isExplicit && fctx.containerIsKnown && !fctx.isMember)
             {
                 ctx.LogRule("CheckAttributes", "as-err-explicit-not-member", sym);

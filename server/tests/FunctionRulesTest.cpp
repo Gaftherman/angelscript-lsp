@@ -181,25 +181,37 @@ TEST_CASE("FunctionRules - Reports explicit on a global function")
     CHECK(HasCode(AnalyzeFunctionSnippet("void Convert() explicit { }\n"), "as-err-explicit-not-member"));
 }
 
-TEST_CASE("FunctionRules - An interface method cannot carry an attribute at all")
+TEST_CASE("FunctionRules - Reports every function attribute on an interface method")
 {
-    // The engine's parser rejects `explicit` here, and so does the grammar: interface_method has no
-    // func_attributes. So the construct never reaches a semantic rule, and what the user sees is a
-    // syntax error - which is the same answer, from one step earlier. Asserted at the parse level
-    // rather than by checking that no semantic code came out, since that would pass for a build
-    // that had simply stopped analysing anything.
+    // The engine rejects all five, each with its own parse error. The grammar parses them so this
+    // can name the offender instead of leaving the user a syntax error on the token.
+    for (const std::string attribute : { "override", "final", "explicit", "property", "delete" })
+    {
+        const std::string code =
+            "interface IThinker\n"
+            "{\n"
+            "    void Think() " + attribute + ";\n"
+            "}\n";
+
+        INFO("attribute: ", attribute);
+        const auto diagnostics = AnalyzeFunctionSnippet(code);
+        CHECK(HasCode(diagnostics, "as-err-interface-method-attribute"));
+        CHECK_FALSE(HasCode(diagnostics, "as-syntax-error"));
+    }
+}
+
+TEST_CASE("FunctionRules - An ordinary interface method carries no attribute finding")
+{
+    // `const` is not a function attribute - the grammar spells it separately and an interface
+    // method may carry it.
     const std::string code =
         "interface IThinker\n"
         "{\n"
-        "    void Think() explicit;\n"
+        "    void Think();\n"
+        "    int Count() const;\n"
         "}\n";
 
-    AngelScriptParser parser;
-    SymbolCollector collector(nullptr);
-    SymbolTable table;
-    static angel_lsp::i18n::I18n i18n;
-
-    CHECK_FALSE(collector.CollectSymbols("file:///funcs.as", code, parser, table, &i18n).empty());
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-interface-method-attribute"));
 }
 
 TEST_CASE("FunctionRules - explicit is accepted on any class method, whatever its arity")
@@ -376,12 +388,30 @@ TEST_CASE("FunctionRules - A prototype no variable declaration could be is still
 // Modifiers and placement
 // =====================================================================================
 
-TEST_CASE("FunctionRules - Reports member qualifiers on a global function")
+TEST_CASE("FunctionRules - Reports const on a global function as an error")
 {
+    // The engine's parser refuses the token: "Instead found reserved keyword 'const'".
     CHECK(HasCode(AnalyzeFunctionSnippet("void Think() const { }\n"),
                   "as-err-global-function-qualifiers"));
-    CHECK(HasCode(AnalyzeFunctionSnippet("void Think() override { }\n"),
-                  "as-err-global-function-qualifiers"));
+}
+
+TEST_CASE("FunctionRules - Reports override and final on a global function as a warning")
+{
+    // Not an error: the engine accepts both on a global function and silently ignores them, so
+    // reporting them as errors would be this analyzer inventing a rule AngelScript does not have.
+    // Still worth saying, because a global marked `override` is usually a method that lost its
+    // class - which is what a warning is for.
+    for (const std::string source : { "void Think() override { }\n", "void Think() final { }\n" })
+    {
+        const auto diagnostics = AnalyzeFunctionSnippet(source);
+        CHECK_FALSE(HasCode(diagnostics, "as-err-global-function-qualifiers"));
+
+        const auto found = std::find_if(diagnostics.begin(), diagnostics.end(),
+                                        [](const Diagnostic &diag)
+                                        { return diag.code == "as-warn-global-function-attribute"; });
+        REQUIRE(found != diagnostics.end());
+        CHECK(found->severity == DiagnosticSeverity::Warning);
+    }
 }
 
 TEST_CASE("FunctionRules - Member qualifiers on a method are accepted")
@@ -635,7 +665,8 @@ TEST_CASE("FunctionRules - Function Rules Corpus Audit" * doctest::skip(true))
         "as-err-mixin-destructor", "as-err-override-no-base", "as-err-duplicate-param",
         "as-err-void-parameter", "as-err-default-param-order", "as-err-inout-on-primitive",
         "as-err-double-reference", "as-err-delete-not-auto-generated",
-        "as-err-explicit-not-member", "as-err-virtual-property-signature"
+        "as-err-explicit-not-member", "as-err-virtual-property-signature",
+        "as-err-interface-method-attribute", "as-warn-global-function-attribute"
     };
 
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)

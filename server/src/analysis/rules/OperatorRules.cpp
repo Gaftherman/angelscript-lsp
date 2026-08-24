@@ -144,11 +144,9 @@ namespace angel_lsp::analysis::rules
         }
     }
 
-    // NOT IMPLEMENTED: as-err-opindex-arity.
-    //
-    // Its message is word for word as-err-opindex-no-params', in both languages - the two codes say
-    // the same sentence about the same condition. Emitting both would put the same finding on the
-    // line twice, so only one is used and this one is left as the historical spelling.
+    // as-err-opindex-arity was a byte-for-byte duplicate of as-err-opindex-no-params' message, in
+    // both languages: two codes, one sentence, one condition. Deleted rather than kept as a second
+    // spelling nothing could ever emit without doubling the finding.
     //
     // NOT IMPLEMENTED: an arity rule for the unary operators. opNeg and its neighbours take no
     // arguments, but nothing distinguishes "opPreInc declared wrong" from "a method that happens to

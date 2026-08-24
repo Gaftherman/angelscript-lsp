@@ -30,6 +30,39 @@ namespace angel_lsp::i18n
         }
     }
 
+    // ---------------------------------------------------------------------------------
+    // Six of the codes below are deliberately never emitted. They are kept because each names a
+    // real AngelScript rule, and deleted ones are not kept at all - a message describing a rule the
+    // language does not have is worse than no message, since someone eventually implements it.
+    //
+    // Every reason here was checked against a real engine build rather than reasoned about, and the
+    // full argument sits at each rule's site:
+    //
+    //   as-err-base-not-found       A base that resolves to nothing is what an engine-registered
+    //   as-err-unresolved-type      type looks like. The corpus is almost entirely those, so the
+    //                               rule would report the engine. Decidable only once a workspace's
+    //                               stubs are known complete, which one document cannot establish.
+    //                               See ClassRules.cpp and FunctionRules.cpp.
+    //
+    //   as-err-external-not-found   'external shared' resolves against another module. Modules are
+    //                               not a concept this analyzer has. See ClassRules.cpp.
+    //
+    //   as-err-invalid-reference-return   Both hinge on asEP_ALLOW_UNSAFE_REFERENCES, a host build
+    //   as-err-standalone-reference       option no reader of script text can observe. `int&
+    //                                     Function()` is the engine's own documented example, it is
+    //                                     in this corpus, and asharness compiles it without
+    //                                     complaint. See FunctionRules.cpp.
+    //
+    //   as-warn-shadow-global       Shadowing a global is legal and ordinary; the warning fired on
+    //                               plain parameter naming throughout the corpus rather than on
+    //                               anything a user would change. See FunctionRules.cpp.
+    //
+    // Deleted rather than left here: as-err-mixin-as-base (described the opposite of how a mixin is
+    // included), as-err-opindex-arity (byte-identical to as-err-opindex-no-params),
+    // as-err-implicit-conversion (superseded by as-err-no-implicit-conversion, which names both
+    // types), and as-err-typedef-unresolved (a second typedef failure mode AngelScript does not
+    // have - the type never gets far enough to be looked up).
+    // ---------------------------------------------------------------------------------
     I18n::I18n(const std::string &localeTag)
         : m_locale(PrimaryLanguageSubtag(localeTag))
     {
@@ -53,20 +86,18 @@ namespace angel_lsp::i18n
         m_messages["as-err-void-variable"] = "Cannot declare a variable of type 'void'.";
         m_messages["as-err-multi-class-inherit"] = "Class '{}' cannot inherit from multiple classes.";
         m_messages["as-err-base-not-found"] = "Base type '{}' not found.";
-        m_messages["as-err-typedef-unresolved"] = "Typedef base type '{}' is not defined.";
         m_messages["as-err-funcdef-not-handle"] = "Variables or parameters of funcdef type '{}' must be declared as handles ('{}@').";
         m_messages["as-err-duplicate-param"] = "Duplicate parameter name '{}' in function '{}'.";
         m_messages["as-warn-shadow-global"] = "Parameter '{}' shadows a global variable of the same name.";
         m_messages["as-warn-include-not-found"] = "Included file '{}' was not found.";
         m_messages["as-err-circular-inherit"] = "Circular inheritance detected: '{}' inherits from itself.";
         m_messages["as-err-const-out-param"] = "Parameter '{}' cannot be both 'const' and '&out'.";
-        m_messages["as-err-mixin-as-base"] = "Class '{}' cannot inherit from mixin '{}'. Mixins can only be included using 'mixin class'.";
         m_messages["as-err-interface-impl-missing"] = "Class '{}' does not implement interface method '{}' from interface '{}'.";
         m_messages["as-err-attribute-repeated"] = "Attribute '{}' is informed multiple times.";
         m_messages["as-err-reserved-keyword-name"] = "Instead found reserved keyword '{}'.";
         m_messages["as-err-name-conflict"] = "Name conflict. '{}' is already declared as a {}.";
         m_messages["as-err-const-void-return"] = "Return type can't be 'const void'.";
-        m_messages["as-err-global-function-qualifiers"] = "Global function '{}' cannot have member function qualifiers (const, override, final).";
+        m_messages["as-err-global-function-qualifiers"] = "Global function '{}' cannot be declared 'const'.";
         m_messages["as-err-override-no-base"] = "Method '{}' marked as override but class '{}' does not replace any base class or interface method.";
         m_messages["as-err-default-param-order"] = "All subsequent parameters after the first default value must also have default values in function '{}'.";
         m_messages["as-err-inout-on-primitive"] = "Only object types that support object references can use &inout ('{}').";
@@ -80,7 +111,6 @@ namespace angel_lsp::i18n
         m_messages["as-err-delete-with-body"] = "Deleted function '{}' cannot have a body.";
         m_messages["as-err-void-parameter"] = "Parameter '{}' in function '{}' cannot be of type 'void'.";
         m_messages["as-err-binary-operator-arity"] = "Binary operator overload '{}' must take exactly 1 parameter.";
-        m_messages["as-err-opindex-arity"] = "Index operator 'opIndex' must take at least 1 parameter.";
         m_messages["as-err-opindex-no-params"] = "Index operator 'opIndex' must take at least 1 parameter.";
         m_messages["as-err-opequals-return-bool"] = "Equality operator 'opEquals' must return 'bool'.";
         m_messages["as-err-opcmp-return-int"] = "Comparison operator 'opCmp' must return 'int'.";
@@ -90,6 +120,9 @@ namespace angel_lsp::i18n
         m_messages["as-err-delete-with-other-qualifier"] = "Cannot flag function '{}' that will be deleted with other qualifiers.";
         m_messages["as-err-delete-not-auto-generated"] = "Cannot flag function '{}' that will not be auto generated as deleted. Only a default constructor, a copy constructor or 'opAssign' may be deleted.";
         m_messages["as-err-explicit-not-member"] = "'explicit' is only allowed on a class method, and '{}' is not one.";
+        m_messages["as-err-interface-method-attribute"] = "An interface method cannot carry the '{}' attribute ('{}').";
+        m_messages["as-err-funcdef-attribute"] = "A funcdef cannot carry the '{}' attribute ('{}').";
+        m_messages["as-warn-global-function-attribute"] = "'{}' describes a method's relationship to a class, so it means nothing on global function '{}'. AngelScript accepts it and ignores it.";
         m_messages["as-err-private-member-access"] = "Illegal access to private member '{}', declared in class '{}'.";
         m_messages["as-err-protected-member-access"] = "Illegal access to protected member '{}', declared in class '{}'. A protected member is reachable from a derived class, and only through an object of that class's own type.";
         m_messages["as-err-virtual-property-signature"] = "Invalid signature for virtual property '{}'. A 'get_' accessor returns a value and takes at most an index; a 'set_' accessor returns void and takes the value, optionally preceded by an index.";
@@ -112,7 +145,6 @@ namespace angel_lsp::i18n
         m_messages["as-err-not-all-paths-return"] = "Not all paths of '{}' return a value.";
         m_messages["as-err-mixin-not-a-type"] = "Mixin '{}' cannot be used as a data type.";
         m_messages["as-err-undeclared-identifier"] = "Undeclared identifier '{}'.";
-        m_messages["as-err-implicit-conversion"] = "Implicit conversion from '{}' is invalid.";
         m_messages["as-warn-unused-variable"] = "Local variable '{}' is never used.";
         m_messages["as-err-null-non-handle"] = "Cannot assign 'null' to non-handle type '{}'.";
         m_messages["as-err-no-implicit-conversion"] = "Cannot implicitly convert '{}' to '{}'. Declare a matching constructor, an 'opImplConv' or an 'opAssign' overload.";
@@ -134,26 +166,23 @@ namespace angel_lsp::i18n
             m_messages["as-err-declaration-missing-body"] = "'{}' debe tener un cuerpo '{{}}'. Solo 'external shared' se declara sin él.";
             m_messages["as-err-external-not-shared"] = "'external' requiere 'shared' en '{}'.";
             m_messages["as-err-property-duplicate-accessor"] = "La propiedad virtual '{}' declara '{}' más de una vez.";
-            m_messages["as-err-implicit-conversion"] = "La conversión implícita desde '{}' no es válida.";
             m_messages["as-err-unresolved-type"] = "Tipo desconocido '{}'.";
             m_messages["as-err-handle-on-primitive"] = "No se puede usar handle '@' en el tipo primitivo '{}'.";
             m_messages["as-err-void-variable"] = "No se puede declarar una variable de tipo 'void'.";
             m_messages["as-err-multi-class-inherit"] = "La clase '{}' no puede heredar de múltiples clases.";
             m_messages["as-err-base-not-found"] = "Tipo base '{}' no encontrado.";
-            m_messages["as-err-typedef-unresolved"] = "El tipo base '{}' del typedef no está definido.";
             m_messages["as-err-funcdef-not-handle"] = "Variables o parámetros de tipo funcdef '{}' deben declararse como handle ('{}@').";
             m_messages["as-err-duplicate-param"] = "Nombre de parámetro '{}' duplicado en la función '{}'.";
             m_messages["as-warn-shadow-global"] = "El parámetro '{}' oculta una variable global con el mismo nombre.";
             m_messages["as-warn-include-not-found"] = "No se encontró el archivo incluido '{}'.";
             m_messages["as-err-circular-inherit"] = "Herencia circular detectada: '{}' hereda de sí misma.";
             m_messages["as-err-const-out-param"] = "El parámetro '{}' no puede ser 'const' y '&out' al mismo tiempo.";
-            m_messages["as-err-mixin-as-base"] = "La clase '{}' no puede heredar del mixin '{}'. Los mixins solo pueden incluirse con 'mixin class'.";
             m_messages["as-err-interface-impl-missing"] = "La clase '{}' no implementa el método de interfaz '{}' de la interfaz '{}'.";
             m_messages["as-err-attribute-repeated"] = "El atributo '{}' se informa múltiples veces.";
             m_messages["as-err-reserved-keyword-name"] = "Se encontró la palabra reservada '{}' en lugar de un identificador.";
             m_messages["as-err-name-conflict"] = "Conflicto de nombre. '{}' ya está declarado como {}.";
             m_messages["as-err-const-void-return"] = "El tipo de retorno no puede ser 'const void'.";
-            m_messages["as-err-global-function-qualifiers"] = "La función global '{}' no puede tener calificadores de función miembro (const, override, final).";
+            m_messages["as-err-global-function-qualifiers"] = "La función global '{}' no puede declararse 'const'.";
             m_messages["as-err-override-no-base"] = "El método '{}' marcado como override no reemplaza ningún método de clase base o interfaz en la clase '{}'.";
             m_messages["as-err-default-param-order"] = "Todos los parámetros subsiguientes después del primer valor por defecto deben tener valores por defecto en la función '{}'.";
             m_messages["as-err-inout-on-primitive"] = "Solo los tipos de objeto que admiten referencias pueden usar &inout ('{}').";
@@ -167,7 +196,6 @@ namespace angel_lsp::i18n
             m_messages["as-err-delete-with-body"] = "La función eliminada con '= delete' ('{}') no puede tener un cuerpo.";
             m_messages["as-err-void-parameter"] = "El parámetro '{}' en la función '{}' no puede ser de tipo 'void'.";
             m_messages["as-err-binary-operator-arity"] = "La sobrecarga del operador binario '{}' debe tomar exactamente 1 parámetro.";
-            m_messages["as-err-opindex-arity"] = "El operador de índice 'opIndex' debe tomar al menos 1 parámetro.";
             m_messages["as-err-opindex-no-params"] = "El operador de índice 'opIndex' debe tomar al menos 1 parámetro.";
             m_messages["as-err-opequals-return-bool"] = "El operador de igualdad 'opEquals' debe retornar 'bool'.";
             m_messages["as-err-opcmp-return-int"] = "El operador de comparación 'opCmp' debe retornar 'int'.";
@@ -177,6 +205,9 @@ namespace angel_lsp::i18n
             m_messages["as-err-delete-with-other-qualifier"] = "No se puede marcar con modificadores adicionales la función '{}' que será eliminada con '= delete'.";
             m_messages["as-err-delete-not-auto-generated"] = "No se puede marcar como eliminada la función '{}' porque el motor no la autogenera. Solo pueden eliminarse el constructor por defecto, el constructor de copia u 'opAssign'.";
             m_messages["as-err-explicit-not-member"] = "'explicit' solo se permite en un método de clase, y '{}' no lo es.";
+            m_messages["as-err-interface-method-attribute"] = "Un método de interfaz no puede llevar el atributo '{}' ('{}').";
+            m_messages["as-err-funcdef-attribute"] = "Un funcdef no puede llevar el atributo '{}' ('{}').";
+            m_messages["as-warn-global-function-attribute"] = "'{}' describe la relación de un método con su clase, así que no significa nada en la función global '{}'. AngelScript lo acepta y lo ignora.";
             m_messages["as-err-private-member-access"] = "Acceso ilegal al miembro privado '{}', declarado en la clase '{}'.";
             m_messages["as-err-protected-member-access"] = "Acceso ilegal al miembro protegido '{}', declarado en la clase '{}'. Un miembro protegido es accesible desde una clase derivada, y únicamente a través de un objeto del tipo de esa misma clase.";
             m_messages["as-err-virtual-property-signature"] = "Firma no válida para la propiedad virtual '{}'. Un accesor 'get_' devuelve un valor y toma como mucho un índice; un accesor 'set_' devuelve void y toma el valor, precedido opcionalmente por un índice.";

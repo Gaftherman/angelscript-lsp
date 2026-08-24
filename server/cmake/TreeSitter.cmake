@@ -9,7 +9,7 @@ if(MSVC)
 endif()
 
 # ── Tree-Sitter AngelScript Grammar ───────────────────────────────────────
-FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG a61afd4c709e10ee6569f67fef2046745b2c0077)
+FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG 0b482610855a5f7628b82c19b1cacca8d05e4f30)
 FetchContent_MakeAvailable(tree_sitter_angelscript)
 
 add_library(tree_sitter_angelscript_lib STATIC 

@@ -513,6 +513,25 @@ TEST_CASE("Server - Publishes the function attribute diagnostics")
     CHECK(Published(output, "as-err-explicit-not-member"));
 }
 
+TEST_CASE("Server - Publishes the diagnostics the widened grammar made reachable")
+{
+    // Each of these used to reach the user as `Syntax error: "<token>"`, because the grammar
+    // refused the construct. They now arrive as sentences, which is the whole point of parsing
+    // something the engine rejects.
+    const std::string source =
+        "class Entity {}\n"
+        "typedef Entity Alias;\n"
+        "interface IThing { IThing(); void Do(); }\n"
+        "funcdef void Callback() delete;\n"
+        "array<void> g_bad;\n";
+
+    const std::string output = DiagnosticsFor(source);
+    CHECK(Published(output, "as-err-typedef-non-primitive"));
+    CHECK(Published(output, "as-err-interface-constructor"));
+    CHECK(Published(output, "as-err-funcdef-attribute"));
+    CHECK(Published(output, "as-err-array-invalid-template"));
+}
+
 TEST_CASE("Server - Publishes the type conversion diagnostics")
 {
     const std::string source =

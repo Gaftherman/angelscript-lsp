@@ -117,6 +117,17 @@ namespace angel_lsp::analysis
         return back > 0 && source[back - 1] == '~';
     }
 
+    std::string_view FirstAttributeName(const SymbolModifiers &modifiers)
+    {
+        // Grammar order: choice("override", "final", "explicit", "property", "delete").
+        if (modifiers.isOverride) { return "override"; }
+        if (modifiers.isFinal)    { return "final"; }
+        if (modifiers.isExplicit) { return "explicit"; }
+        if (modifiers.isProperty) { return "property"; }
+        if (modifiers.isDelete)   { return "delete"; }
+        return {};
+    }
+
     bool IsMixinClass(std::string_view baseTypeName, const SymbolTable &table)
     {
         if (baseTypeName.empty())

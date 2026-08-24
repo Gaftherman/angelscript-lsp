@@ -250,6 +250,31 @@ TEST_CASE("VariableRules - A predefined stub is exempt")
 }
 
 // =====================================================================================
+// Template arguments
+// =====================================================================================
+
+TEST_CASE("VariableRules - Reports a template instantiated with void")
+{
+    // The engine's own wording: "Attempting to instantiate invalid template 'array<void>'".
+    CHECK(HasCode(AnalyzeVariableSnippet("array<void> g_bad;\n"), "as-err-array-invalid-template"));
+}
+
+TEST_CASE("VariableRules - Ordinary template arguments are not judged")
+{
+    // Everything else is either valid or decided by a host registration this analyzer cannot see -
+    // `array<CBasePlayer@>` is most of the corpus, and reporting it would be reporting the engine.
+    const std::string code =
+        "class Entity {}\n"
+        "array<int> g_numbers;\n"
+        "array<Entity> g_entities;\n"
+        "array<Entity@> g_handles;\n"
+        "array<CBaseUnknown@> g_engineTypes;\n"
+        "array<array<int>> g_nested;\n";
+
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-array-invalid-template"));
+}
+
+// =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Variable Rules Corpus Audit*"`)
 // =====================================================================================
@@ -261,7 +286,7 @@ TEST_CASE("VariableRules - Variable Rules Corpus Audit" * doctest::skip(true))
         "as-err-mixin-not-a-type", "as-err-global-variable-access-modifier",
         "as-err-property-accessor-missing-body", "as-err-mixin-virtual-property",
         "as-err-property-duplicate-accessor",
-        "as-err-class-member-const"
+        "as-err-class-member-const", "as-err-array-invalid-template"
     };
 
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)

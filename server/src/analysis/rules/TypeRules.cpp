@@ -86,14 +86,19 @@ namespace angel_lsp::analysis::rules
             ctx.Emit(sym, "as-syntax-error-missing", ";");
         }
 
-        // NOT IMPLEMENTED: as-err-typedef-non-primitive and as-err-typedef-unresolved.
+        // AngelScript only typedefs a primitive. Its own parser refuses anything else outright -
+        // `typedef Entity Alias;` answers "Unexpected token '<identifier>'" - so this is not a
+        // question of whether the named type exists: a class, an enum and a name that resolves to
+        // nothing are equally invalid here, and none of them needs looking up.
         //
-        // The grammar's typedef_declaration is `"typedef" primitive_type identifier ";"`, so a
-        // typedef of anything else never parses as a typedef at all - `typedef Entity Alias;` is
-        // recovered as a variable declaration and the parser pass reports the syntax error. There
-        // is no TypedefSignature for these rules to inspect, and the constraint is already enforced
-        // structurally. Re-enable only if the grammar widens base_type.
-        (void)baseType;
+        // NOT IMPLEMENTED: as-err-typedef-unresolved, deleted with this commit. It described a
+        // second failure mode - "typedef base type is not defined" - that AngelScript does not
+        // have, since the type never gets far enough to be resolved.
+        if (!baseType.empty() && !IsPrimitiveTypeName(baseType))
+        {
+            ctx.LogRule("ValidateTypedef", "as-err-typedef-non-primitive", sym);
+            ctx.Emit(sym, "as-err-typedef-non-primitive", baseType);
+        }
     }
 
     void ValidateFuncdef(const Symbol &sym, const DiagnosticContext &ctx)
@@ -111,6 +116,17 @@ namespace angel_lsp::analysis::rules
         }
 
         const auto &sig = sym.GetFuncdef();
+
+        // A funcdef names a signature; it has no body, no class and nothing to override, so none of
+        // the five function attributes means anything on one and the engine rejects all five. The
+        // grammar parses them so this can name the offender rather than leaving a syntax error on
+        // the token.
+        const std::string_view attribute = FirstAttributeName(sig.modifiers);
+        if (!attribute.empty())
+        {
+            ctx.LogRule("ValidateFuncdef", "as-err-funcdef-attribute", sym);
+            ctx.Emit(sym, "as-err-funcdef-attribute", attribute, sym.name);
+        }
 
         if (sig.returnHasPrimitiveHandle)
         {
@@ -185,15 +201,45 @@ namespace angel_lsp::analysis::rules
 
     void ValidateInterfaceMembers(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        // NOT IMPLEMENTED: as-err-interface-constructor.
+        if (sym.type != SymbolType::Interface || IsFromPredefinedStub(sym, ctx))
+        {
+            return;
+        }
+
+        // An interface declares a contract, never construction or destruction, and the engine
+        // refuses both: `IThing();` answers "Expected identifier / Instead found '('" and
+        // `~IThing();` answers "Expected data type / Instead found '~'". The grammar parses them
+        // now, which is what lets this say so in those terms.
         //
-        // The grammar's interface_method requires a return_type, so `IThing();` inside an interface
-        // never parses as a member and is not collected at all - there is nothing in the symbol
-        // table for this rule to find. The parser pass reports the construct as a syntax error,
-        // which is the diagnostic the user actually sees today. Re-enable if interface_method ever
-        // accepts a constructor form.
-        (void)sym;
-        (void)ctx;
+        // Both forms are spelled with the interface's own name and are the only members that reach
+        // the table with no return type at all - an ordinary method always carries one, even
+        // `void`. So the empty return type is what identifies them, and the name match is what
+        // keeps an unrelated member out.
+        const std::string qualified = sym.containerName.empty()
+                                          ? sym.name
+                                          : sym.containerName + "::" + sym.name;
+
+        const auto members = ctx.request.symbolTable.FindSymbolsPtr(qualified + "::" + sym.name);
+        if (!members)
+        {
+            return;
+        }
+
+        for (const auto &member : *members)
+        {
+            if (member.type != SymbolType::Function || member.fileUri != ctx.request.fileUri)
+            {
+                continue;
+            }
+            if (!std::holds_alternative<FunctionSignature>(member.signature) ||
+                !member.GetFunction().returnType.empty())
+            {
+                continue;
+            }
+
+            ctx.LogRule("ValidateInterfaceMembers", "as-err-interface-constructor", member);
+            ctx.Emit(member, "as-err-interface-constructor", sym.name);
+        }
     }
 
     void ValidateDuplicates(const std::vector<Symbol> &symbols, const DiagnosticContext &ctx)

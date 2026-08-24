@@ -106,6 +106,20 @@ namespace angel_lsp::analysis
     bool IsDestructorDeclaration(const Symbol &sym, const DiagnosticContext &ctx);
 
     /**
+     * @brief Names the function attribute a declaration carries, or empty when it carries none.
+     *
+     * The attributes are five independent flags on SymbolModifiers, but every rule that rejects
+     * one wants to say which - "cannot carry the 'explicit' attribute" rather than "carries an
+     * attribute". Shared because three rule modules ask the same question of three different
+     * declaration kinds, and const is deliberately not among them: it is a qualifier the grammar
+     * spells separately and several of those declarations accept it.
+     *
+     * @param modifiers Modifier set to inspect.
+     * @return Attribute name in the order the grammar lists them, or an empty view.
+     */
+    std::string_view FirstAttributeName(const SymbolModifiers &modifiers);
+
+    /**
      * @brief Checks if a given base type name resolves to a mixin class symbol.
      * @param baseTypeName The name of the type to check.
      * @param table SymbolTable to look up the type.

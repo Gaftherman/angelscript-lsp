@@ -53,21 +53,28 @@ TEST_CASE("TypeRules - A typedef of a primitive is accepted")
 {
     const auto diagnostics = AnalyzeTypeSnippet("typedef uint32 EntityId;\n");
     CHECK_FALSE(HasCode(diagnostics, "as-err-typedef-non-primitive"));
-    CHECK_FALSE(HasCode(diagnostics, "as-err-typedef-unresolved"));
 }
 
-TEST_CASE("TypeRules - A non-primitive typedef is left to the parser to report")
+TEST_CASE("TypeRules - Reports a typedef of a user-defined type")
 {
-    // The grammar's typedef_declaration only accepts a primitive_type, so this never parses as a
-    // typedef at all - it is recovered as a variable declaration and the parser reports the syntax
-    // error. That is why as-err-typedef-non-primitive is deliberately not implemented here.
+    // AngelScript typedefs a primitive and nothing else; its own parser refuses the rest outright.
+    // The grammar parses it now so the user gets this sentence instead of a syntax error pointing
+    // at the alias name.
     const std::string code =
         "class Entity {}\n"
         "typedef Entity Alias;\n";
 
     const auto diagnostics = AnalyzeTypeSnippet(code);
-    CHECK_FALSE(HasCode(diagnostics, "as-err-typedef-non-primitive"));
-    CHECK_FALSE(HasCode(diagnostics, "as-err-typedef-unresolved"));
+    CHECK(HasCode(diagnostics, "as-err-typedef-non-primitive"));
+    CHECK_FALSE(HasCode(diagnostics, "as-syntax-error"));
+}
+
+TEST_CASE("TypeRules - A typedef of a name that resolves to nothing reads the same way")
+{
+    // There is no second failure mode to distinguish. Whether the name is a class, an enum or a
+    // typo, it is not a primitive, and the engine never gets far enough to look it up - which is
+    // why as-err-typedef-unresolved described a condition AngelScript does not have and is gone.
+    CHECK(HasCode(AnalyzeTypeSnippet("typedef Missing Alias;\n"), "as-err-typedef-non-primitive"));
 }
 
 // =====================================================================================
@@ -127,19 +134,42 @@ TEST_CASE("TypeRules - An ordinary funcdef is accepted")
         "funcdef bool Predicate(const Entity@ &in candidate);\n";
 
     CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-handle-on-primitive"));
+    CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-funcdef-attribute"));
+}
+
+TEST_CASE("TypeRules - Reports every function attribute on a funcdef")
+{
+    // A funcdef names a signature: no body, no class, nothing to override. The engine rejects all
+    // five attributes on one, and the grammar parses them so this can name which.
+    for (const std::string attribute : { "override", "final", "explicit", "property", "delete" })
+    {
+        INFO("attribute: ", attribute);
+        const auto diagnostics = AnalyzeTypeSnippet("funcdef void Callback() " + attribute + ";\n");
+        CHECK(HasCode(diagnostics, "as-err-funcdef-attribute"));
+        CHECK_FALSE(HasCode(diagnostics, "as-syntax-error"));
+    }
+}
+
+TEST_CASE("TypeRules - A shared funcdef is not mistaken for one carrying an attribute")
+{
+    // 'shared' and 'external' are declaration modifiers, not function attributes, and they are the
+    // two a funcdef legitimately carries.
+    CHECK_FALSE(HasCode(AnalyzeTypeSnippet("shared funcdef void Callback();\n"),
+                        "as-err-funcdef-attribute"));
 }
 
 // =====================================================================================
 // Interface members
 // =====================================================================================
 
-TEST_CASE("TypeRules - An interface constructor is left to the parser to report")
+TEST_CASE("TypeRules - Reports a constructor or a destructor declared in an interface")
 {
-    // interface_method requires a return type, so `IThing();` is never collected as a member and
-    // there is nothing in the symbol table for a rule to find. as-err-interface-constructor is
-    // deliberately not implemented for that reason.
-    CHECK_FALSE(HasCode(AnalyzeTypeSnippet("interface IThing { IThing(); void Do(); }\n"),
-                        "as-err-interface-constructor"));
+    // An interface declares a contract, never construction. The engine refuses both forms and the
+    // grammar parses them now, so this names the construct rather than pointing at a token.
+    CHECK(HasCode(AnalyzeTypeSnippet("interface IThing { IThing(); void Do(); }\n"),
+                  "as-err-interface-constructor"));
+    CHECK(HasCode(AnalyzeTypeSnippet("interface IThing { ~IThing(); void Do(); }\n"),
+                  "as-err-interface-constructor"));
 }
 
 TEST_CASE("TypeRules - An ordinary interface is accepted")
@@ -217,10 +247,11 @@ TEST_CASE("TypeRules - A predefined stub is exempt")
 TEST_CASE("TypeRules - Type Rules Corpus Audit" * doctest::skip(true))
 {
     static const std::vector<std::string> k_codes = {
-        "as-err-typedef-non-primitive", "as-err-typedef-unresolved", "as-err-enum-invalid-initializer",
+        "as-err-typedef-non-primitive", "as-err-enum-invalid-initializer",
         "as-err-interface-constructor", "as-err-duplicate-symbol", "as-err-name-conflict",
         "as-err-handle-on-primitive", "as-syntax-error-missing",
-        "as-err-declaration-missing-body", "as-err-external-not-shared"
+        "as-err-declaration-missing-body", "as-err-external-not-shared",
+        "as-err-funcdef-attribute"
     };
 
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)
