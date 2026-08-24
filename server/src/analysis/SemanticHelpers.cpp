@@ -579,22 +579,68 @@ namespace angel_lsp::analysis
 
         std::string_view nodeType = ts_node_type(exprNode);
 
+        // `this` is its own production, not an identifier spelled "this".
+        if (nodeType == "this_expression")
+        {
+            for (const auto &container : GetEnclosingContainers(exprNode, sourceCode))
+            {
+                if (container.kind == ContainerKind::Class)
+                {
+                    return container.name;
+                }
+            }
+            return "";
+        }
+
+        // Every name written in an expression arrives wrapped in scoped_identifier, qualified or
+        // not - the grammar admits no bare identifier in expression position. Without this branch
+        // the whole identifier case below was unreachable from real source, and everything built on
+        // it resolved nothing: the type of `myClass` in `myClass.f`, of a variable used as an
+        // initializer, of an argument in a constructor call.
+        if (nodeType == "scoped_identifier")
+        {
+            // A qualification is asked for whole first, since `Game::config` is the key the
+            // collector stored it under. Only if that finds nothing does the last segment answer,
+            // which is both the unqualified case and the best reading of a namespace this analyzer
+            // cannot see.
+            TSNode lastIdentifier = {};
+            bool qualified = false;
+            const uint32_t childCount = ts_node_named_child_count(exprNode);
+            for (uint32_t i = 0; i < childCount; ++i)
+            {
+                TSNode child = ts_node_named_child(exprNode, i);
+                if (std::string_view(ts_node_type(child)) == "identifier")
+                {
+                    qualified = !ts_node_is_null(lastIdentifier);
+                    lastIdentifier = child;
+                }
+            }
+
+            if (qualified)
+            {
+                const std::string whole = GetNodeText(exprNode, sourceCode);
+                for (const auto &sym : symbolTable.FindSymbols(whole))
+                {
+                    if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                        !sym.GetVariable().typeName.empty())
+                    {
+                        return CleanBaseType(sym.GetVariable().typeName);
+                    }
+                    if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
+                    {
+                        return CleanBaseType(sym.GetFunction().returnType);
+                    }
+                }
+            }
+
+            return ts_node_is_null(lastIdentifier)
+                       ? std::string()
+                       : ResolveExpressionType(lastIdentifier, scope, symbolTable, sourceCode, uri);
+        }
+
         if (nodeType == "identifier")
         {
             std::string name = GetNodeText(exprNode, sourceCode);
-            if (name == "this")
-            {
-                auto containers = GetEnclosingContainers(exprNode, sourceCode);
-                for (const auto &c : containers)
-                {
-                    if (c.kind == ContainerKind::Class)
-                    {
-                        return c.name;
-                    }
-                }
-                return "";
-            }
-
             if (scope)
             {
                 const LocalDefinition *def = ResolveInScope(scope, name);

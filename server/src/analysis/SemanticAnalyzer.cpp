@@ -1,4 +1,5 @@
 #include "analysis/SemanticAnalyzer.h"
+#include "analysis/AccessChecker.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
@@ -72,6 +73,19 @@ namespace angel_lsp::analysis
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const ControlFlowCheckRequest flowRequest{ts_tree_root_node(request.tree), request.sourceCode};
             CheckControlFlow(flowRequest, ctx);
+        }
+
+        // The one pass that judges a use rather than a declaration, so it needs both the tree that
+        // holds the expression and the table that holds what the expression reaches.
+        if (request.tree && !request.sourceCode.empty())
+        {
+            DiagnosticContext ctx{request, diagnostics, m_logger};
+            const AccessCheckRequest accessRequest{
+                ts_tree_root_node(request.tree),
+                request.sourceCode,
+                request.scopeRoot.get()
+            };
+            CheckMemberAccess(accessRequest, ctx);
         }
 
         // Needs the tree, not just the symbol table: an initializer or a cast is an expression, and

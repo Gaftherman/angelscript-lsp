@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "analysis/AccessChecker.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
@@ -241,6 +242,19 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
         conversionMs = Milliseconds(start);
     }
 
+    double accessMs = 0.0;
+    {
+        const auto start = std::chrono::steady_clock::now();
+        for (size_t i = 0; i < samples.size(); ++i)
+        {
+            std::vector<Diagnostic> diagnostics;
+            SemanticAnalysisRequest request = makeRequest(i);
+            DiagnosticContext ctx{ request, diagnostics, nullptr };
+            CheckMemberAccess({ ts_tree_root_node(trees[i]), samples[i].sourceCode, scopes[i].get() }, ctx);
+        }
+        accessMs = Milliseconds(start);
+    }
+
     double wholeAnalysisMs = 0.0;
     {
         const auto start = std::chrono::steady_clock::now();
@@ -258,6 +272,7 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
     MESSAGE("  declaration rules        : " << declarationMs << " ms  (" << declarationMs / files << " ms/file)");
     MESSAGE("  control flow             : " << controlFlowMs << " ms  (" << controlFlowMs / files << " ms/file)");
     MESSAGE("  type conversions         : " << conversionMs << " ms  (" << conversionMs / files << " ms/file)");
+    MESSAGE("  member access            : " << accessMs << " ms  (" << accessMs / files << " ms/file)");
     MESSAGE("  Analyze() as a whole     : " << wholeAnalysisMs << " ms  (" << wholeAnalysisMs / files << " ms/file)");
     MESSAGE("  by declaration module (each includes the per-file bucket walk it shares):");
     MESSAGE("    duplicates : " << duplicateMs << " ms");
