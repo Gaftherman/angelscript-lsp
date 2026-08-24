@@ -193,7 +193,19 @@ namespace angel_lsp::analysis
         const SymbolTable &symbolTable);
 
     /**
-     * @brief Resolves the resulting type name of an arbitrary AST expression node (identifiers, member chains, calls, etc.).
+     * @brief Resolves the resulting type name of an AST expression node.
+     *
+     * Handles the forms that name a type rather than compute one: `this`, an identifier qualified
+     * or not, a member chain, a call, an index, a cast, a constructor call, a unary or postfix
+     * operator, and parentheses. Each of those either writes its type down or carries its
+     * operand's through, so none of them needs the engine's own rules to answer.
+     *
+     * Everything else - a literal, a binary or ternary expression, a lambda, an initializer list -
+     * returns empty on purpose rather than by omission. Their types come from promotion and
+     * operator-overload resolution, which this analyzer does not do, and every caller treats an
+     * empty answer as "stay silent". A guess here would turn that silence into a wrong sentence,
+     * which costs more than the check that was skipped.
+     *
      * @param exprNode The expression AST node.
      * @param scope Lexical scope if available (can be nullptr).
      * @param symbolTable Symbol table for lookups.

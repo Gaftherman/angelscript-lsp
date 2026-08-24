@@ -744,6 +744,82 @@ namespace angel_lsp::analysis
             return "";
         }
 
+        // A cast names its own result: `cast<CBasePlayer@>(ent)` is a CBasePlayer whatever `ent`
+        // was, which is the whole reason the construct exists and is how most of the corpus reaches
+        // a derived type at all. The same holds for a constructor call and a primitive functional
+        // cast - all three write the answer down, so none of them needs the operand resolved.
+        if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
+        {
+            TSNode typeNode = ts_node_child_by_field_name(exprNode, "type", 4);
+            return ts_node_is_null(typeNode) ? std::string()
+                                             : CleanBaseType(GetNodeText(typeNode, sourceCode));
+        }
+
+        if (nodeType == "construct_call_expression")
+        {
+            TSNode typeNode = ts_node_child_by_field_name(exprNode, "type", 4);
+            if (ts_node_is_null(typeNode))
+            {
+                return "";
+            }
+
+            // The template argument list is a sibling rather than part of the type field, and
+            // CleanBaseType is what unwraps `array<Foo@>` down to Foo - so it has to see the whole
+            // spelling to do it.
+            std::string written = GetNodeText(typeNode, sourceCode);
+            const uint32_t childCount = ts_node_named_child_count(exprNode);
+            for (uint32_t i = 0; i < childCount; ++i)
+            {
+                TSNode child = ts_node_named_child(exprNode, i);
+                if (std::string_view(ts_node_type(child)) == "template_type_list")
+                {
+                    written += GetNodeText(child, sourceCode);
+                    break;
+                }
+            }
+            return CleanBaseType(written);
+        }
+
+        // `arr[i]` is the element, and CleanBaseType already unwraps `array<T>` to T - so the
+        // object's own answer is the element's answer, and indexing needs nothing further. A
+        // container that is not an array resolves to the container, which finds no member and
+        // leaves the caller silent rather than wrong.
+        if (nodeType == "index_expression")
+        {
+            TSNode objNode = ts_node_child_by_field_name(exprNode, "object", 6);
+            return ts_node_is_null(objNode)
+                       ? std::string()
+                       : ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri);
+        }
+
+        // `@handle`, `-x` and `++i` all carry their operand's type through. `!x` and `not x` are
+        // the exception: they are bool whatever they were applied to.
+        if (nodeType == "unary_expression")
+        {
+            TSNode operatorNode = ts_node_child_by_field_name(exprNode, "operator", 8);
+            if (!ts_node_is_null(operatorNode))
+            {
+                const std::string op = GetNodeText(operatorNode, sourceCode);
+                if (op == "!" || op == "not")
+                {
+                    return "bool";
+                }
+            }
+
+            TSNode operandNode = ts_node_child_by_field_name(exprNode, "operand", 7);
+            return ts_node_is_null(operandNode)
+                       ? std::string()
+                       : ResolveExpressionType(operandNode, scope, symbolTable, sourceCode, uri);
+        }
+
+        if (nodeType == "postfix_expression")
+        {
+            TSNode operandNode = ts_node_child_by_field_name(exprNode, "operand", 7);
+            return ts_node_is_null(operandNode)
+                       ? std::string()
+                       : ResolveExpressionType(operandNode, scope, symbolTable, sourceCode, uri);
+        }
+
         if (nodeType == "parenthesized_expression")
         {
             uint32_t count = ts_node_child_count(exprNode);
@@ -759,6 +835,11 @@ namespace angel_lsp::analysis
             return "";
         }
 
+        // Everything else - a literal, a binary or ternary expression, a lambda, an initializer
+        // list - yields nothing on purpose. A literal's members are engine-registered and so never
+        // judged by the passes that ask this question; the rest need the engine's promotion and
+        // operator-overload rules, and answering them by guess would turn every consumer's
+        // deliberate silence into a wrong sentence.
         return "";
     }
 }

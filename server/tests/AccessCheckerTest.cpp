@@ -352,6 +352,110 @@ TEST_CASE("AccessChecker - A stub is not read as if it used the API it declares"
 }
 
 // =====================================================================================
+// Expression forms the object can arrive as
+//
+// This pass can only judge what it can resolve, so every expression shape ResolveExpressionType
+// learns is a shape access control starts covering. These are the ones that name a type rather
+// than compute one - a cast writes its answer down, an index and a unary operator carry their
+// operand's through - which is why they can be answered without the engine's promotion rules.
+// =====================================================================================
+
+TEST_CASE("AccessChecker - Reaches a private member through a cast")
+{
+    // The idiom the corpus is built on: an engine handle cast to the type that actually has the
+    // members. Before the cast resolved, every one of these was invisible to this pass.
+    const std::string code =
+        "class Base {}\n"
+        "class Derived : Base\n"
+        "{\n"
+        "    private int hidden;\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Base@ b;\n"
+        "    cast<Derived@>(b).hidden = 1;\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeAccessSnippet(code), "as-err-private-member-access"));
+}
+
+TEST_CASE("AccessChecker - Reaches a private member through an array element")
+{
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    private int hidden;\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    array<Entity@> entities;\n"
+        "    entities[0].hidden = 1;\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeAccessSnippet(code), "as-err-private-member-access"));
+}
+
+TEST_CASE("AccessChecker - Reaches a private member through a handle-of operator")
+{
+    // Written through the operator itself rather than through a variable holding its result, so
+    // the unary branch is what has to answer and not the identifier one.
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    private int hidden;\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Entity e;\n"
+        "    (@e).hidden = 1;\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeAccessSnippet(code), "as-err-private-member-access"));
+}
+
+TEST_CASE("AccessChecker - A public member reached the same ways stays quiet")
+{
+    // The other half of every one of the cases above: resolving more expressions must widen what
+    // is judged, not what is reported.
+    const std::string code =
+        "class Base {}\n"
+        "class Derived : Base\n"
+        "{\n"
+        "    int open;\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Base@ b;\n"
+        "    array<Derived@> many;\n"
+        "    cast<Derived@>(b).open = 1;\n"
+        "    many[0].open = 2;\n"
+        "}\n";
+
+    CHECK(HasNoAccessFinding(AnalyzeAccessSnippet(code)));
+}
+
+TEST_CASE("AccessChecker - An expression this analyzer cannot type is still never judged")
+{
+    // Binary and ternary expressions need the engine's promotion and operator-overload rules, so
+    // they resolve to nothing and the access is left alone - the same contract every unresolved
+    // object has always had.
+    const std::string code =
+        "class Entity\n"
+        "{\n"
+        "    private int hidden;\n"
+        "    Entity@ opAdd(Entity@ other) { return this; }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Entity@ a;\n"
+        "    Entity@ b;\n"
+        "    (a + b).hidden = 1;\n"
+        "}\n";
+
+    CHECK(HasNoAccessFinding(AnalyzeAccessSnippet(code)));
+}
+
+// =====================================================================================
 // asEP_PRIVATE_PROP_AS_PROTECTED
 //
 // The one engine option that changes this pass. With it set, a private member follows the
