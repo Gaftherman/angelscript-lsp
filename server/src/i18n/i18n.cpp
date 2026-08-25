@@ -144,6 +144,7 @@ namespace angel_lsp::i18n
         m_messages["as-warn-global-function-attribute"] = "'{}' describes a method's relationship to a class, so it means nothing on global function '{}'. AngelScript accepts it and ignores it.";
         m_messages["as-err-private-member-access"] = "Illegal access to private member '{}', declared in class '{}'.";
         m_messages["as-err-protected-member-access"] = "Illegal access to protected member '{}', declared in class '{}'. A protected member is reachable from a derived class, and only through an object of that class's own type.";
+        m_messages["as-err-member-not-found"] = "Class '{}' has no member '{}'.";
         m_messages["as-err-virtual-property-signature"] = "Invalid signature for virtual property '{}'. A 'get_' accessor returns a value and takes at most an index; a 'set_' accessor returns void and takes the value, optionally preceded by an index.";
         m_messages["as-err-array-invalid-template"] = "Attempting to instantiate invalid template parameter '{}'.";
         m_messages["as-err-typedef-non-primitive"] = "Typedef base type '{}' must be a primitive data type.";
@@ -258,6 +259,7 @@ namespace angel_lsp::i18n
             m_messages["as-warn-global-function-attribute"] = "'{}' describe la relación de un método con su clase, así que no significa nada en la función global '{}'. AngelScript lo acepta y lo ignora.";
             m_messages["as-err-private-member-access"] = "Acceso ilegal al miembro privado '{}', declarado en la clase '{}'.";
             m_messages["as-err-protected-member-access"] = "Acceso ilegal al miembro protegido '{}', declarado en la clase '{}'. Un miembro protegido es accesible desde una clase derivada, y únicamente a través de un objeto del tipo de esa misma clase.";
+            m_messages["as-err-member-not-found"] = "La clase '{}' no tiene ningún miembro '{}'.";
             m_messages["as-err-virtual-property-signature"] = "Firma no válida para la propiedad virtual '{}'. Un accesor 'get_' devuelve un valor y toma como mucho un índice; un accesor 'set_' devuelve void y toma el valor, precedido opcionalmente por un índice.";
             m_messages["as-err-array-invalid-template"] = "Intento de instanciar un parámetro de plantilla no válido ('{}').";
             m_messages["as-err-typedef-non-primitive"] = "El tipo base del typedef ('{}') debe ser un tipo de dato primitivo.";

@@ -37,7 +37,7 @@ namespace
         SymbolTable table;
         static angel_lsp::i18n::I18n i18n;
 
-        collector.CollectSymbols(fileUri, code, parser, table);
+        auto diagnostics = collector.CollectSymbols(fileUri, code, parser, table, &i18n);
 
         SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
         request.engineProperties = engine;
@@ -46,7 +46,8 @@ namespace
         request.tree = parser.Parse(code);
 
         SemanticAnalyzer analyzer(nullptr);
-        auto diagnostics = analyzer.Analyze(request);
+        auto semDiags = analyzer.Analyze(request);
+        diagnostics.insert(diagnostics.end(), semDiags.begin(), semDiags.end());
 
         if (request.tree)
         {
@@ -704,6 +705,79 @@ TEST_SUITE("AngelScript_MemberAccessControl_Verification")
 
         auto diagnostics = AnalyzeAccessSnippet(script, "file:///test_access_peer.as");
         CHECK(HasNoAccessFinding(diagnostics));
+    }
+}
+
+TEST_SUITE("AngelScript_MemberAccess_And_Recovery_Diagnostics")
+{
+    TEST_CASE("MemberAccess_And_Recovery_Diagnostics - Diagnostic Parity: Non-existent member access in function argument")
+    {
+        // Snippet exacto: 'pct.i' no existe en la clase.
+        // Debe reportar as-err-member-not-found en 'i' y no crashear en la resolucion de intFunc().
+        const std::string script =
+            "class PrivateClassTest {\n"
+            "    private int a;\n"
+            "}\n"
+            "\n"
+            "void intFunc(int i) {}\n"
+            "\n"
+            "void main() {\n"
+            "    PrivateClassTest@ pct = PrivateClassTest();\n"
+            "    intFunc(pct.i); // Error: 'i' no es miembro de PrivateClassTest\n"
+            "}\n";
+
+        auto diagnostics = AnalyzeAccessSnippet(script, "file:///test_nonexistent_member.as");
+        REQUIRE(diagnostics.size() == 1);
+
+        CHECK(diagnostics[0].code == "as-err-member-not-found");
+        CHECK(diagnostics[0].range.start.line == 8);
+        CHECK(diagnostics[0].range.start.character == 16);
+    }
+
+    TEST_CASE("MemberAccess_And_Recovery_Diagnostics - Diagnostic Parity: Private member access from global function")
+    {
+        // Variante con acceso al miembro privado 'a' desde main()
+        const std::string script =
+            "class PrivateClassTest {\n"
+            "    private int a;\n"
+            "}\n"
+            "\n"
+            "void intFunc(int i) {}\n"
+            "\n"
+            "void main() {\n"
+            "    PrivateClassTest@ pct = PrivateClassTest();\n"
+            "    intFunc(pct.a); // Error: as-err-private-member-access\n"
+            "}\n";
+
+        auto diagnostics = AnalyzeAccessSnippet(script, "file:///test_private_member_call.as");
+        REQUIRE(diagnostics.size() == 1);
+
+        CHECK(diagnostics[0].code == "as-err-private-member-access");
+        CHECK(diagnostics[0].range.start.line == 8);
+        CHECK(diagnostics[0].range.start.character == 16);
+    }
+
+    TEST_CASE("MemberAccess_And_Recovery_Diagnostics - Parser Error Recovery: Untyped/Malformed member declaration")
+    {
+        // Validacion de recuperacion sintactica frente a 'private a;' sin tipo
+        const std::string script =
+            "class MalformedClass {\n"
+            "    private a; // Error sintactico: falta tipo\n"
+            "}\n"
+            "\n"
+            "void intFunc(int i) {}\n"
+            "\n"
+            "void main() {\n"
+            "    MalformedClass@ mc = MalformedClass();\n"
+            "    intFunc(10); // Debe seguir resolviendo intFunc() sin corromper el AST global\n"
+            "}\n";
+
+        auto diagnostics = AnalyzeAccessSnippet(script, "file:///test_syntax_recovery.as");
+        REQUIRE_FALSE(diagnostics.empty());
+
+        // Asegura que el error sintactico este en la declaracion de la clase y no en main()
+        CHECK(diagnostics[0].code == "as-syntax-error");
+        CHECK(diagnostics[0].range.start.line == 1);
     }
 }
 

@@ -114,7 +114,8 @@ namespace angel_lsp::analysis
         /** @brief What the pass concluded about one `object.member` pair. */
         struct MemberAccess
         {
-            bool decided = false;   ///< False means stay silent, for any of the reasons below.
+            bool found = false;     ///< True if any member of this name exists in the hierarchy.
+            bool decided = false;   ///< True if an access restriction (private/protected) was found.
             AccessModifier access = AccessModifier::Public;
             std::string declaringClass;
         };
@@ -149,6 +150,14 @@ namespace angel_lsp::analysis
                 auto candidates = table.FindSymbols(owner + "::" + memberName);
                 if (candidates.empty())
                 {
+                    auto getCandidates = table.FindSymbols(owner + "::get_" + memberName);
+                    auto setCandidates = table.FindSymbols(owner + "::set_" + memberName);
+                    candidates.insert(candidates.end(), getCandidates.begin(), getCandidates.end());
+                    candidates.insert(candidates.end(), setCandidates.begin(), setCandidates.end());
+                }
+
+                if (candidates.empty())
+                {
                     // A member declared inside a namespaced class is registered under a qualified
                     // name the concatenation above does not reproduce, so fall back to matching on
                     // the container the collector recorded.
@@ -157,6 +166,23 @@ namespace angel_lsp::analysis
                         if (IsSameType(sym.containerName, owner))
                         {
                             candidates.push_back(sym);
+                        }
+                    }
+                    if (candidates.empty())
+                    {
+                        for (const auto &sym : table.FindSymbols("get_" + memberName))
+                        {
+                            if (IsSameType(sym.containerName, owner))
+                            {
+                                candidates.push_back(sym);
+                            }
+                        }
+                        for (const auto &sym : table.FindSymbols("set_" + memberName))
+                        {
+                            if (IsSameType(sym.containerName, owner))
+                            {
+                                candidates.push_back(sym);
+                            }
                         }
                     }
                 }
@@ -169,10 +195,15 @@ namespace angel_lsp::analysis
                         continue;
                     }
 
+                    result.found = true;
+
                     if (access == AccessModifier::Public)
                     {
                         // Reachable, so there is nothing to report whatever else shares the name.
-                        return MemberAccess{};
+                        result.decided = false;
+                        result.access = AccessModifier::Public;
+                        result.declaringClass = IsMixinClass(owner, table) ? typeName : owner;
+                        return result;
                     }
 
                     // Protected outranks private: the more permissive of two same-named
@@ -238,6 +269,15 @@ namespace angel_lsp::analysis
 
             const std::string memberName = NodeText(memberNode, request.sourceCode);
             const MemberAccess member = FindMember(objectType, memberName, table);
+            if (!member.found)
+            {
+                const TSPoint start = ts_node_start_point(memberNode);
+                const TSPoint end = ts_node_end_point(memberNode);
+                ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                "as-err-member-not-found", objectType, memberName);
+                return;
+            }
+
             if (!member.decided)
             {
                 return;
