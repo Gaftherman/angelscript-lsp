@@ -555,6 +555,158 @@ TEST_CASE("AccessChecker - privatePropAsProtected leaves the protected rule wher
                   "as-err-protected-member-access"));
 }
 
+TEST_SUITE("AngelScript_MemberAccessControl_Verification")
+{
+    TEST_CASE("MemberAccessControl - Self Access: Class accessing its own private and protected members")
+    {
+        const std::string script =
+            "class MyBase {\n"
+            "    int PublicProp;\n"
+            "    protected int ProtectedProp;\n"
+            "    private int PrivateProp;\n"
+            "\n"
+            "    protected void ProtectedFunc() {}\n"
+            "    private void PrivateFunc() {}\n"
+            "\n"
+            "    void PublicFunc() {\n"
+            "        PublicProp = 0;      // OK\n"
+            "        ProtectedProp = 0;   // OK\n"
+            "        PrivateProp = 0;     // OK\n"
+            "        ProtectedFunc();     // OK\n"
+            "        PrivateFunc();       // OK\n"
+            "    }\n"
+            "}\n";
+
+        auto diagnostics = AnalyzeAccessSnippet(script, "file:///test_access_self.as");
+        CHECK(HasNoAccessFinding(diagnostics));
+    }
+
+    TEST_CASE("MemberAccessControl - Derived Class: Accessing base protected (OK) vs private (Error)")
+    {
+        const std::string script =
+            "class MyBase {\n"
+            "    protected int ProtectedProp;\n"
+            "    private int PrivateProp;\n"
+            "    protected void ProtectedFunc() {}\n"
+            "    private void PrivateFunc() {}\n"
+            "}\n"
+            "\n"
+            "class MyDerived : MyBase {\n"
+            "    void Func() {\n"
+            "        ProtectedProp = 1; // OK\n"
+            "        ProtectedFunc();   // OK\n"
+            "        PrivateProp = 1;   // Error: as-err-private-member-access\n"
+            "        PrivateFunc();     // Error: as-err-private-member-access\n"
+            "    }\n"
+            "}\n";
+
+        auto diagnostics = AnalyzeAccessSnippet(script, "file:///test_access_derived.as");
+        std::vector<Diagnostic> accessDiags;
+        for (const auto &d : diagnostics)
+        {
+            if (d.code == "as-err-private-member-access" || d.code == "as-err-protected-member-access")
+            {
+                accessDiags.push_back(d);
+            }
+        }
+        REQUIRE(accessDiags.size() == 2);
+        CHECK(accessDiags[0].code == "as-err-private-member-access");
+        CHECK(accessDiags[0].range.start.line == 11);
+        CHECK(accessDiags[1].code == "as-err-private-member-access");
+        CHECK(accessDiags[1].range.start.line == 12);
+    }
+
+    TEST_CASE("MemberAccessControl - External Scope: Global function accessing protected and private members")
+    {
+        const std::string script =
+            "class MyBase {\n"
+            "    int PublicProp;\n"
+            "    void PublicFunc() {}\n"
+            "\n"
+            "    protected int ProtectedProp;\n"
+            "    protected void ProtectedFunc() {}\n"
+            "\n"
+            "    private int PrivateProp;\n"
+            "    private void PrivateFunc() {}\n"
+            "}\n"
+            "\n"
+            "void GlobalFunc() {\n"
+            "    MyBase obj;\n"
+            "    obj.PublicProp = 0;     // OK\n"
+            "    obj.PublicFunc();       // OK\n"
+            "\n"
+            "    obj.ProtectedProp = 0;  // Error: as-err-protected-member-access\n"
+            "    obj.ProtectedFunc();    // Error: as-err-protected-member-access\n"
+            "    obj.PrivateProp = 0;    // Error: as-err-private-member-access\n"
+            "    obj.PrivateFunc();      // Error: as-err-private-member-access\n"
+            "}\n";
+
+        auto diagnostics = AnalyzeAccessSnippet(script, "file:///test_access_global.as");
+        std::vector<Diagnostic> accessDiags;
+        for (const auto &d : diagnostics)
+        {
+            if (d.code == "as-err-private-member-access" || d.code == "as-err-protected-member-access")
+            {
+                accessDiags.push_back(d);
+            }
+        }
+        REQUIRE(accessDiags.size() == 4);
+        CHECK(accessDiags[0].code == "as-err-protected-member-access");
+        CHECK(accessDiags[1].code == "as-err-protected-member-access");
+        CHECK(accessDiags[2].code == "as-err-private-member-access");
+        CHECK(accessDiags[3].code == "as-err-private-member-access");
+    }
+
+    TEST_CASE("MemberAccessControl - Multi-level Inheritance: Transitive protected access and private encapsulation")
+    {
+        const std::string script =
+            "class RootBase {\n"
+            "    protected int rootProtected;\n"
+            "    private int rootPrivate;\n"
+            "}\n"
+            "\n"
+            "class MidDerived : RootBase {\n"
+            "    protected int midProtected;\n"
+            "}\n"
+            "\n"
+            "class LeafDerived : MidDerived {\n"
+            "    void Test() {\n"
+            "        rootProtected = 10; // OK: Protected inherited transitively\n"
+            "        midProtected = 20;  // OK: Protected from direct parent\n"
+            "        rootPrivate = 30;   // Error: Private encapsulation preserved\n"
+            "    }\n"
+            "}\n";
+
+        auto diagnostics = AnalyzeAccessSnippet(script, "file:///test_access_multilevel.as");
+        std::vector<Diagnostic> accessDiags;
+        for (const auto &d : diagnostics)
+        {
+            if (d.code == "as-err-private-member-access" || d.code == "as-err-protected-member-access")
+            {
+                accessDiags.push_back(d);
+            }
+        }
+        REQUIRE(accessDiags.size() == 1);
+        CHECK(accessDiags.front().code == "as-err-private-member-access");
+        CHECK(accessDiags.front().range.start.line == 13);
+    }
+
+    TEST_CASE("MemberAccessControl - Peer Instance: Accessing private members of another instance of the same class")
+    {
+        const std::string script =
+            "class Node {\n"
+            "    private int m_value;\n"
+            "\n"
+            "    void CopyFrom(const Node &in other) {\n"
+            "        m_value = other.m_value; // OK: Peer instance access within same class scope\n"
+            "    }\n"
+            "}\n";
+
+        auto diagnostics = AnalyzeAccessSnippet(script, "file:///test_access_peer.as");
+        CHECK(HasNoAccessFinding(diagnostics));
+    }
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Access Corpus Audit*"`)

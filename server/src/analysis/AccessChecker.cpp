@@ -291,6 +291,101 @@ namespace angel_lsp::analysis
                             memberName, member.declaringClass);
         }
 
+        void CheckIdentifierNode(TSNode node, const AccessCheckRequest &request,
+                                 const Scope *scope, DiagnosticContext &ctx)
+        {
+            TSNode parent = ts_node_parent(node);
+            if (ts_node_is_null(parent))
+            {
+                return;
+            }
+
+            const std::string_view parentType = ts_node_type(parent);
+
+            // Skip if this is the member field of a member_expression (e.g. the 'b' in 'a.b')
+            if (parentType == "member_expression")
+            {
+                TSNode memberField = ts_node_child_by_field_name(parent, "member", k_memberFieldLength);
+                if (ts_node_eq(node, memberField))
+                {
+                    return;
+                }
+            }
+
+            // Skip declarations (where the identifier defines a name)
+            if (parentType == "variable_declarator" || parentType == "parameter" ||
+                parentType == "func_declaration" || parentType == "class_declaration" ||
+                parentType == "interface_declaration" || parentType == "enum_declaration" ||
+                parentType == "enum_member" || parentType == "virtual_property" ||
+                parentType == "typedef_declaration" || parentType == "funcdef_declaration" ||
+                parentType == "import_declaration" || parentType == "mixin_declaration")
+            {
+                TSNode nameField = ts_node_child_by_field_name(parent, "name", 4);
+                if (ts_node_eq(node, nameField))
+                {
+                    return;
+                }
+            }
+
+            // Skip type references, base class list, comments, etc.
+            if (parentType == "datatype" || parentType == "primitive_type" ||
+                parentType == "base_class_list" || parentType == "comment")
+            {
+                return;
+            }
+
+            // If node is an identifier inside a scoped_identifier, let the scoped_identifier be checked instead
+            if (std::string_view(ts_node_type(node)) == "identifier" && parentType == "scoped_identifier")
+            {
+                return;
+            }
+
+            std::string idText = NodeText(node, request.sourceCode);
+            while (!idText.empty() && isspace(static_cast<unsigned char>(idText.front()))) idText.erase(idText.begin());
+            while (!idText.empty() && isspace(static_cast<unsigned char>(idText.back()))) idText.pop_back();
+
+            if (idText.empty() || idText == "this" || idText == "super" || idText == "value" ||
+                idText == "true" || idText == "false" || idText == "null")
+            {
+                return;
+            }
+
+            const SymbolTable &table = ctx.request.symbolTable;
+
+            bool insideMixin = false;
+            const std::string accessingClass = EnclosingClass(node, request.sourceCode, insideMixin, table);
+            if (accessingClass.empty())
+            {
+                return;
+            }
+
+            // If it resolves to a local variable or parameter in the current function scope, it's not an implicit member access
+            const LocalDefinition *localDef = ResolveInScope(scope, idText);
+            if (localDef && (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
+            {
+                return;
+            }
+
+            const MemberAccess member = FindMember(accessingClass, idText, table);
+            if (!member.decided)
+            {
+                return;
+            }
+
+            const bool declaredPrivate = member.access == AccessModifier::Private;
+            if (declaredPrivate && !ctx.request.TreatsPrivateAsProtected())
+            {
+                // In derived class, accessing base class's private member implicitly is an error
+                if (!IsSameType(accessingClass, member.declaringClass))
+                {
+                    const TSPoint start = ts_node_start_point(node);
+                    const TSPoint end = ts_node_end_point(node);
+                    ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                    "as-err-private-member-access", idText, member.declaringClass);
+                }
+            }
+        }
+
         /** @brief Locates the innermost scope containing a point, for local-variable resolution. */
         const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character)
         {
@@ -340,11 +435,18 @@ namespace angel_lsp::analysis
 
         void VisitNode(TSNode node, const AccessCheckRequest &request, DiagnosticContext &ctx)
         {
-            if (std::string_view(ts_node_type(node)) == "member_expression")
+            const std::string_view nodeType = ts_node_type(node);
+            if (nodeType == "member_expression")
             {
                 const TSPoint start = ts_node_start_point(node);
                 CheckMemberExpression(node, request,
                                       FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
+            }
+            else if (nodeType == "scoped_identifier" || nodeType == "identifier")
+            {
+                const TSPoint start = ts_node_start_point(node);
+                CheckIdentifierNode(node, request,
+                                    FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
             }
 
             const uint32_t childCount = ts_node_named_child_count(node);
