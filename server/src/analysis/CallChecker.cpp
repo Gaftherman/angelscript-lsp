@@ -494,6 +494,7 @@ namespace angel_lsp::analysis
                     }
                     else if (match.viableCandidates.empty() || match.bestScore >= 999)
                     {
+                        bool emittedSpecificConversion = false;
                         if (matchingArityCandidates.size() == 1)
                         {
                             const auto &fn = matchingArityCandidates[0].GetFunction();
@@ -506,15 +507,19 @@ namespace angel_lsp::analysis
                                     const TSPoint aEnd = ts_node_end_point(argNodes[i]);
                                     ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
                                                     "as-err-no-implicit-conversion", argTypes[i], fn.parameters[i].typeName);
+                                    emittedSpecificConversion = true;
                                     break;
                                 }
                             }
                         }
 
-                        const TSPoint start = ts_node_start_point(callee);
-                        const TSPoint end = ts_node_end_point(arguments);
-                        ctx.EmitAtRange(start.row, start.column, end.row, end.column,
-                                        "as-err-call-no-matching-signature", reportedName);
+                        if (!emittedSpecificConversion)
+                        {
+                            const TSPoint start = ts_node_start_point(callee);
+                            const TSPoint end = ts_node_end_point(arguments);
+                            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                            "as-err-call-no-matching-signature", reportedName);
+                        }
                     }
                 }
             }

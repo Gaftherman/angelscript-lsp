@@ -46,6 +46,10 @@ namespace angel_lsp::analysis
                     if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
                     {
                         const auto &sig = sym.GetFunction();
+                        if (sig.modifiers.isExplicit || sig.modifiers.isDelete)
+                        {
+                            continue;
+                        }
                         if (!sig.parameters.empty())
                         {
                             std::string paramBase = NormalizeType(sig.parameters[0].typeName);

@@ -433,6 +433,10 @@ namespace angel_lsp::analysis
             bool convertible = false;
             const auto acceptsFrom = [&](const Symbol &sym)
             {
+                if (sym.GetFunction().modifiers.isExplicit || sym.GetFunction().modifiers.isDelete)
+                {
+                    return false;
+                }
                 const auto &parameters = sym.GetFunction().parameters;
                 if (AcceptsSingleArgument(parameters) &&
                     IsConvertible(from, SingleArgumentType(parameters), ctx, depth + 1))
@@ -893,6 +897,137 @@ namespace angel_lsp::analysis
             }
         }
 
+        void CheckDefaultConstructor(TSNode declaratorNode,
+                                     const std::string &typeName,
+                                     DiagnosticContext &ctx)
+        {
+            if (typeName.empty() || IsBuiltInValueType(typeName, ctx))
+            {
+                return;
+            }
+
+            const SymbolTable &table = ctx.request.symbolTable;
+            const TypeDeclarationInfo decl = FindTypeDeclaration(typeName, table);
+            if (!decl.found || !decl.isClass || decl.isTemplate)
+            {
+                return;
+            }
+
+            std::vector<Symbol> constructors;
+            ForEachConstructor(typeName, table, [&](const Symbol &sym)
+            {
+                constructors.push_back(sym);
+                return false;
+            });
+
+            if (constructors.empty())
+            {
+                return;
+            }
+
+            bool hasZeroArg = false;
+            bool zeroArgDeleted = false;
+            for (const auto &ctor : constructors)
+            {
+                const auto &sig = ctor.GetFunction();
+                bool canTakeZero = sig.parameters.empty();
+                if (!canTakeZero)
+                {
+                    canTakeZero = std::all_of(sig.parameters.begin(), sig.parameters.end(),
+                                              [](const ParameterInformation &p) { return !p.defaultValue.empty(); });
+                }
+                if (canTakeZero)
+                {
+                    hasZeroArg = true;
+                    if (sig.modifiers.isDelete)
+                    {
+                        zeroArgDeleted = true;
+                    }
+                    break;
+                }
+            }
+
+            TSNode nameNode = ts_node_child_by_field_name(declaratorNode, "name", 4);
+            TSNode targetNode = ts_node_is_null(nameNode) ? declaratorNode : nameNode;
+
+            if (zeroArgDeleted)
+            {
+                EmitAtNode(targetNode, ctx, "as-err-deleted-method-called", typeName, typeName);
+            }
+            else if (!hasZeroArg)
+            {
+                EmitAtNode(targetNode, ctx, "as-err-no-default-constructor", typeName);
+            }
+        }
+
+        void CheckConstructorDelegation(TSNode funcNode,
+                                        DiagnosticContext &ctx,
+                                        std::string_view sourceCode)
+        {
+            TSNode parent = ts_node_parent(funcNode);
+            while (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) != "class_declaration")
+            {
+                parent = ts_node_parent(parent);
+            }
+            if (ts_node_is_null(parent))
+            {
+                return;
+            }
+
+            TSNode classNameNode = ts_node_child_by_field_name(parent, "name", 4);
+            if (ts_node_is_null(classNameNode))
+            {
+                return;
+            }
+            std::string className = NodeText(classNameNode, sourceCode);
+
+            TSNode funcNameNode = ts_node_child_by_field_name(funcNode, "name", 4);
+            if (ts_node_is_null(funcNameNode) || NodeText(funcNameNode, sourceCode) != className)
+            {
+                return;
+            }
+
+            TSNode bodyNode = ts_node_child_by_field_name(funcNode, "body", 4);
+            if (ts_node_is_null(bodyNode))
+            {
+                return;
+            }
+
+            const uint32_t stmtCount = ts_node_named_child_count(bodyNode);
+            for (uint32_t i = 0; i < stmtCount; ++i)
+            {
+                TSNode stmt = ts_node_named_child(bodyNode, i);
+                if (std::string_view(ts_node_type(stmt)) != "expression_statement")
+                {
+                    continue;
+                }
+
+                if (ts_node_named_child_count(stmt) == 0)
+                {
+                    continue;
+                }
+
+                TSNode expr = ts_node_named_child(stmt, 0);
+                std::string_view exprType = ts_node_type(expr);
+                if (exprType == node_types::CallExpression || exprType == "construct_call_expression")
+                {
+                    TSNode callee = ts_node_child_by_field_name(expr, "function", k_functionFieldLength);
+                    if (ts_node_is_null(callee))
+                    {
+                        callee = ts_node_child_by_field_name(expr, "type", k_typeFieldLength);
+                    }
+                    if (ts_node_is_null(callee) && ts_node_child_count(expr) > 0)
+                    {
+                        callee = ts_node_child(expr, 0);
+                    }
+                    if (!ts_node_is_null(callee) && NodeText(callee, sourceCode) == className)
+                    {
+                        EmitAtNode(expr, ctx, "as-err-constructor-delegation-disallowed");
+                    }
+                }
+            }
+        }
+
         /** @brief Rule for `cast<T>(expr)` - the reinterpreting route. */
         void CheckCast(TSNode castNode,
                        const Scope *scope,
@@ -1122,8 +1257,16 @@ namespace angel_lsp::analysis
 
                             if (!declared.isHandle)
                             {
-                                CheckConstruction(ts_node_child_by_field_name(child, "arguments", k_argsFieldLength),
-                                                  declared.baseName, scopeAt(), ctx, request.sourceCode);
+                                TSNode argsNode = ts_node_child_by_field_name(child, "arguments", k_argsFieldLength);
+                                TSNode valNode = ts_node_child_by_field_name(child, "value", k_valueFieldLength);
+                                if (ts_node_is_null(argsNode) && ts_node_is_null(valNode))
+                                {
+                                    CheckDefaultConstructor(child, declared.baseName, ctx);
+                                }
+                                else if (!ts_node_is_null(argsNode))
+                                {
+                                    CheckConstruction(argsNode, declared.baseName, scopeAt(), ctx, request.sourceCode);
+                                }
                             }
                         }
                     }
@@ -1453,6 +1596,10 @@ namespace angel_lsp::analysis
                     CheckConstruction(ts_node_child_by_field_name(node, "arguments", k_argsFieldLength),
                                       target.baseName, scopeAt(), ctx, request.sourceCode);
                 }
+            }
+            else if (nodeType == "func_declaration" || nodeType == "function_definition")
+            {
+                CheckConstructorDelegation(node, ctx, request.sourceCode);
             }
 
             // Named children only: every node these rules match is a named one, and anonymous

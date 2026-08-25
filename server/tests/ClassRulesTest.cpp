@@ -29,14 +29,43 @@ namespace
         SymbolTable table;
         static angel_lsp::i18n::I18n i18n;
 
-        collector.CollectSymbols(fileUri, code, parser, table);
+        auto diagnostics = collector.CollectSymbols(fileUri, code, parser, table, &i18n);
 
         SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
         request.scopeRoot = scopes.CollectScopes(code, parser);
         request.sourceCode = code;
+        request.tree = parser.Parse(code);
 
         SemanticAnalyzer analyzer(nullptr);
-        return analyzer.Analyze(request);
+        auto semDiags = analyzer.Analyze(request);
+        diagnostics.insert(diagnostics.end(), semDiags.begin(), semDiags.end());
+
+        if (request.tree)
+        {
+            ts_tree_delete(const_cast<TSTree *>(request.tree));
+        }
+        return diagnostics;
+    }
+
+    std::vector<Diagnostic> FilterErrors(const std::vector<Diagnostic> &diagnostics)
+    {
+        std::vector<Diagnostic> errors;
+        for (const auto &d : diagnostics)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                errors.push_back(d);
+            }
+        }
+        std::sort(errors.begin(), errors.end(), [](const Diagnostic &a, const Diagnostic &b)
+        {
+            if (a.range.start.line != b.range.start.line)
+            {
+                return a.range.start.line < b.range.start.line;
+            }
+            return a.range.start.character < b.range.start.character;
+        });
+        return errors;
     }
 
     bool HasCode(const std::vector<Diagnostic> &diagnostics, const std::string &code)
@@ -344,6 +373,120 @@ TEST_CASE("ClassRules - Only the analysed document is diagnosed")
 
     SemanticAnalyzer analyzer(nullptr);
     CHECK_FALSE(HasCode(analyzer.Analyze(request), "as-err-circular-inherit"));
+}
+
+TEST_SUITE("AngelScript_ClassConstructors_Verification")
+{
+    TEST_CASE("Auto-generation: Suppress default constructor when custom constructor exists")
+    {
+        const std::string script =
+            "class CustomOnly {\n"
+            "    CustomOnly(int x, string y) {}\n"
+            "}\n"
+            "\n"
+            "void Main() {\n"
+            "    CustomOnly valid(10, \"test\"); // OK: Matches explicit constructor\n"
+            "    CustomOnly invalid;           // Error: Default constructor was not synthesized\n"
+            "}\n";
+
+        auto rawDiagnostics = AnalyzeClassSnippet(script, "file:///test_suppressed_default_ctor.as");
+        auto errors = FilterErrors(rawDiagnostics);
+        REQUIRE(errors.size() == 1);
+        CHECK(errors[0].code == "as-err-no-default-constructor");
+        CHECK(errors[0].range.start.line == 6);
+    }
+
+    TEST_CASE("Conversion Constructors: Implicit vs Explicit decorators")
+    {
+        const std::string script =
+            "class NumberWrapper {\n"
+            "    int m_val;\n"
+            "    NumberWrapper(int v) { m_val = v; }             // Implicit conversion\n"
+            "    NumberWrapper(string s) explicit { m_val = 0; } // Explicit only\n"
+            "}\n"
+            "\n"
+            "void TakeWrapper(NumberWrapper w) {}\n"
+            "\n"
+            "void Main() {\n"
+            "    // 1. Implicit int conversion\n"
+            "    TakeWrapper(42); // OK: Invokes NumberWrapper(int)\n"
+            "\n"
+            "    // 2. Implicit string conversion (Should Fail)\n"
+            "    TakeWrapper(\"100\"); // Error: Constructor is marked explicit\n"
+            "\n"
+            "    // 3. Explicit string construction (Should Pass)\n"
+            "    TakeWrapper(NumberWrapper(\"100\")); // OK\n"
+            "}\n";
+
+        auto rawDiagnostics = AnalyzeClassSnippet(script, "file:///test_conversion_ctors.as");
+        auto errors = FilterErrors(rawDiagnostics);
+        REQUIRE(errors.size() == 1);
+        CHECK(errors[0].code == "as-err-no-implicit-conversion");
+        CHECK(errors[0].range.start.line == 13);
+    }
+
+    TEST_CASE("Deleted Constructors: Explicit deletion of default and copy constructors")
+    {
+        const std::string script =
+            "class NonInstantiable {\n"
+            "    NonInstantiable() delete;\n"
+            "    NonInstantiable(const NonInstantiable &inout) delete;\n"
+            "}\n"
+            "\n"
+            "void Main() {\n"
+            "    NonInstantiable a; // Error: as-err-deleted-method-called\n"
+            "}\n";
+
+        auto rawDiagnostics = AnalyzeClassSnippet(script, "file:///test_deleted_ctors.as");
+        auto errors = FilterErrors(rawDiagnostics);
+        REQUIRE(errors.size() == 1);
+        CHECK(errors[0].code == "as-err-deleted-method-called");
+        CHECK(errors[0].range.start.line == 6);
+    }
+
+    TEST_CASE("Delegation Restriction: Prohibit constructor calling another constructor")
+    {
+        const std::string script =
+            "class Node {\n"
+            "    int m_id;\n"
+            "    Node() {\n"
+            "        Node(0); // Error: Constructor delegation is prohibited\n"
+            "    }\n"
+            "    Node(int id) {\n"
+            "        m_id = id;\n"
+            "    }\n"
+            "}\n";
+
+        auto rawDiagnostics = AnalyzeClassSnippet(script, "file:///test_ctor_delegation.as");
+        auto errors = FilterErrors(rawDiagnostics);
+        REQUIRE(errors.size() == 1);
+        CHECK(errors[0].code == "as-err-constructor-delegation-disallowed");
+        CHECK(errors[0].range.start.line == 3);
+    }
+
+    TEST_CASE("Copy Constructor: Verification and member initialization order")
+    {
+        const std::string script =
+            "class Point {\n"
+            "    int x = 10;\n"
+            "    int y = 20;\n"
+            "\n"
+            "    Point() {}\n"
+            "    Point(const Point &inout other) {\n"
+            "        x = other.x;\n"
+            "        y = other.y;\n"
+            "    }\n"
+            "}\n"
+            "\n"
+            "void Main() {\n"
+            "    Point p1;\n"
+            "    Point p2 = p1; // Resolves to Point(const Point &inout)\n"
+            "}\n";
+
+        auto rawDiagnostics = AnalyzeClassSnippet(script, "file:///test_copy_ctor.as");
+        auto errors = FilterErrors(rawDiagnostics);
+        CHECK(errors.empty());
+    }
 }
 
 // =====================================================================================
