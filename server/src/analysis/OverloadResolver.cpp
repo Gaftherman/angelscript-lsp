@@ -24,6 +24,12 @@ namespace angel_lsp::analysis
             return typeName.starts_with("const ") || typeName.ends_with(" const");
         }
 
+        std::string LastScopeSegment(const std::string &name)
+        {
+            const size_t pos = name.rfind("::");
+            return pos == std::string::npos ? name : name.substr(pos + 2);
+        }
+
         bool HasUserConversion(const std::string &fromType, const std::string &toType, const SymbolTable &symbolTable)
         {
             if (fromType.empty() || toType.empty())
@@ -85,6 +91,23 @@ namespace angel_lsp::analysis
             }
 
             return false;
+        }
+
+        std::string UnwrapTypedef(const std::string &typeName, const SymbolTable &symbolTable)
+        {
+            std::string current = NormalizeType(typeName);
+            const auto syms = symbolTable.FindSymbolsPtr(current);
+            if (syms)
+            {
+                for (const auto &s : *syms)
+                {
+                    if (s.type == SymbolType::Typedef && std::holds_alternative<TypedefSignature>(s.signature))
+                    {
+                        return NormalizeType(s.GetTypedef().baseType);
+                    }
+                }
+            }
+            return current;
         }
     }
 
@@ -152,42 +175,25 @@ namespace angel_lsp::analysis
             return false;
         }
 
-        if (from == "double")
+        const auto isNumeric = [](const std::string &t)
         {
-            return to == "float" || to == "int64" || to == "uint64" || to == "int" ||
-                   to == "uint" || to == "int16" || to == "uint16" || to == "int8" ||
-                   to == "uint8" || to == "bool";
-        }
-        if (from == "float")
-        {
-            return to == "int64" || to == "uint64" || to == "int" || to == "uint" ||
-                   to == "int16" || to == "uint16" || to == "int8" || to == "uint8" ||
-                   to == "bool";
-        }
-        if (from == "int64" || from == "uint64")
-        {
-            return to == "int" || to == "uint" || to == "int16" || to == "uint16" ||
-                   to == "int8" || to == "uint8" || to == "bool" || to == "float";
-        }
-        if (from == "int")
-        {
-            return to == "uint" || to == "int16" || to == "uint16" || to == "int8" ||
-                   to == "uint8" || to == "bool";
-        }
-        if (from == "uint")
-        {
-            return to == "int" || to == "int16" || to == "uint16" || to == "int8" ||
-                   to == "uint8" || to == "bool";
-        }
-        if (from == "int16" || from == "uint16")
-        {
-            return to == "int8" || to == "uint8" || to == "bool";
-        }
-        if (from == "int8" || from == "uint8")
-        {
-            return to == "bool";
-        }
+            return t == "int8" || t == "uint8" || t == "int16" || t == "uint16" ||
+                   t == "int" || t == "uint" || t == "int64" || t == "uint64" ||
+                   t == "float" || t == "double";
+        };
 
+        if (isNumeric(from) && isNumeric(to))
+        {
+            return !IsPrimitiveWidening(from, to);
+        }
+        if (isNumeric(from) && to == "bool")
+        {
+            return true;
+        }
+        if (from == "bool" && isNumeric(to))
+        {
+            return true;
+        }
         return false;
     }
 
@@ -196,7 +202,7 @@ namespace angel_lsp::analysis
         const ParameterInformation &param,
         const SymbolTable &symbolTable)
     {
-        // Variadic wildcard accepts any argument
+        // Variadic parameter / ellipsis matches anything with a slight penalty
         if (param.rawText.find("...") != std::string::npos)
         {
             return 10;
@@ -224,15 +230,19 @@ namespace angel_lsp::analysis
             return static_cast<int>(OverloadMatchPenalty::Incompatible);
         }
 
-        const std::string cleanArg = NormalizeType(argType);
-        const std::string cleanParam = NormalizeType(param.typeName);
+        const std::string cleanArg = UnwrapTypedef(NormalizeType(argType), symbolTable);
+        const std::string cleanParam = UnwrapTypedef(NormalizeType(param.typeName), symbolTable);
         const bool argIsHandle = HasHandleModifier(argType);
         const bool argIsConst = HasConstModifier(argType);
+        const auto isMatchingType = [](const std::string &a, const std::string &b)
+        {
+            return a == b || LastScopeSegment(a) == LastScopeSegment(b);
+        };
 
         // Mutable non-const reference parameter requires exact type and non-const lvalue
         if (isMutableRef)
         {
-            if (cleanArg != cleanParam || argIsHandle != paramIsHandle || argIsConst)
+            if (!isMatchingType(cleanArg, cleanParam) || argIsHandle != paramIsHandle || argIsConst)
             {
                 return static_cast<int>(OverloadMatchPenalty::Incompatible);
             }
@@ -240,7 +250,7 @@ namespace angel_lsp::analysis
         }
 
         // 1. Exact match
-        if (cleanArg == cleanParam && argIsHandle == paramIsHandle)
+        if (isMatchingType(cleanArg, cleanParam) && argIsHandle == paramIsHandle)
         {
             if (argIsConst == paramIsConst)
             {
@@ -250,7 +260,7 @@ namespace angel_lsp::analysis
         }
 
         // 2. Same base type with const / handle qualification differences
-        if (cleanArg == cleanParam)
+        if (isMatchingType(cleanArg, cleanParam))
         {
             return static_cast<int>(OverloadMatchPenalty::ConstRef);
         }
@@ -261,7 +271,7 @@ namespace angel_lsp::analysis
             auto hierarchy = GetInheritedTypeHierarchy(cleanArg, symbolTable);
             for (size_t dist = 0; dist < hierarchy.size(); ++dist)
             {
-                if (NormalizeType(hierarchy[dist]) == cleanParam)
+                if (isMatchingType(NormalizeType(hierarchy[dist]), cleanParam))
                 {
                     int basePenalty = static_cast<int>(OverloadMatchPenalty::Inheritance);
                     if (!argIsHandle && paramIsHandle)

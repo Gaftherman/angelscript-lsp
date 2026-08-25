@@ -261,6 +261,7 @@ namespace angel_lsp::analysis
                                                const std::string &name,
                                                std::string_view sourceCode,
                                                const std::string &fileUri,
+                                               const std::string &predefinedExtension,
                                                const SymbolTable &table)
         {
             std::vector<Symbol> candidates;
@@ -276,7 +277,8 @@ namespace angel_lsp::analysis
 
             for (const auto &sym : *globals)
             {
-                if (IsFunctionSymbol(sym) && sym.containerName.empty() && sym.fileUri == fileUri)
+                if (IsFunctionSymbol(sym) && sym.containerName.empty() &&
+                    (sym.fileUri == fileUri || utils::IsPredefinedFile(sym.fileUri, predefinedExtension)))
                 {
                     candidates.push_back(sym);
                 }
@@ -430,7 +432,7 @@ namespace angel_lsp::analysis
                 else
                 {
                     candidates = FindFreeCandidates(node, written, request.sourceCode,
-                                                    ctx.request.fileUri, table);
+                                                    ctx.request.fileUri, ctx.request.predefinedFileExtension, table);
                 }
             }
             else

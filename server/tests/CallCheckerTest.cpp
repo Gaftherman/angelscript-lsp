@@ -367,6 +367,100 @@ TEST_CASE("CallChecker - User-defined constructor argument conversion resolves o
     CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
 }
 
+TEST_CASE("CallChecker - Typedef alias matches underlying parameter type")
+{
+    const std::string code =
+        "typedef uint EntityId;\n"
+        "void SetId(EntityId id) { }\n"
+        "void main()\n"
+        "{\n"
+        "    uint val = 10;\n"
+        "    SetId(val);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - Deeply nested namespace class and function calls resolve cleanly")
+{
+    const std::string code =
+        "namespace Engine\n"
+        "{\n"
+        "    namespace Graphics\n"
+        "    {\n"
+        "        class Texture { }\n"
+        "        void Bind(Texture@ t) { }\n"
+        "    }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Engine::Graphics::Texture tex;\n"
+        "    Engine::Graphics::Bind(tex);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - Predefined engine stubs (.as.predefined) integrate with script calls")
+{
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
+
+    const std::string engineCode =
+        "class Vector3 { Vector3(float x, float y, float z) { } }\n"
+        "void SpawnEntity(const Vector3 &in pos, string name) { }\n";
+    collector.CollectSymbols("file:///engine.as.predefined", engineCode, parser, table);
+
+    const std::string validScript =
+        "void main()\n"
+        "{\n"
+        "    Vector3 pos(1.0f, 2.0f, 3.0f);\n"
+        "    SpawnEntity(pos, \"Player\");\n"
+        "}\n";
+    collector.CollectSymbols("file:///script.as", validScript, parser, table);
+
+    SemanticAnalysisRequest request{ table, "file:///script.as", ".as.predefined", &i18n };
+    request.scopeRoot = scopes.CollectScopes(validScript, parser);
+    request.sourceCode = validScript;
+    request.tree = parser.Parse(validScript);
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto validDiags = analyzer.Analyze(request);
+    if (request.tree) { ts_tree_delete(const_cast<TSTree *>(request.tree)); }
+
+    CHECK_FALSE(HasCode(validDiags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(validDiags, "as-err-no-implicit-conversion"));
+
+    const std::string invalidScript =
+        "void main()\n"
+        "{\n"
+        "    SpawnEntity(\"bad_pos\", \"Player\");\n"
+        "}\n";
+
+    SymbolTable invalidTable;
+    collector.CollectSymbols("file:///engine.as.predefined", engineCode, parser, invalidTable);
+    collector.CollectSymbols("file:///script_invalid.as", invalidScript, parser, invalidTable);
+
+    SemanticAnalysisRequest invRequest{ invalidTable, "file:///script_invalid.as", ".as.predefined", &i18n };
+    invRequest.scopeRoot = scopes.CollectScopes(invalidScript, parser);
+    invRequest.sourceCode = invalidScript;
+    invRequest.tree = parser.Parse(invalidScript);
+
+    auto invDiags = analyzer.Analyze(invRequest);
+    if (invRequest.tree) { ts_tree_delete(const_cast<TSTree *>(invRequest.tree)); }
+
+    bool hasTypeError = HasCode(invDiags, "as-err-no-implicit-conversion") ||
+                        HasCode(invDiags, "as-err-call-no-matching-signature");
+    CHECK(hasTypeError);
+}
+
 
 
 // =====================================================================================
