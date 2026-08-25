@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <lsp/messages.h>
 #include <lsp/types.h>
@@ -33,6 +33,19 @@ namespace angel_lsp::features
         lsp::FormattingOptions options;
     };
 
+    /**
+     * @brief Context and options for on-type formatting.
+     */
+    struct OnTypeFormattingRequest
+    {
+        const std::string &uri;
+        const std::string &sourceCode;
+        TSTree *tree = nullptr;
+        lsp::Position position;
+        std::string ch;
+        lsp::FormattingOptions options;
+    };
+
     using FormattingResult = std::vector<lsp::TextEdit>;
 
     // Type aliases for naming compatibility
@@ -52,6 +65,13 @@ namespace angel_lsp::features
      * @return List of TextEdits for the specified range.
      */
     std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingRequest &request);
+
+    /**
+     * @brief Formats code triggered on typing specific characters (;, }, \n).
+     * @param request Immutable on-type formatting context.
+     * @return List of TextEdits for the formatted region.
+     */
+    std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingRequest &request);
 
     /**
      * @brief Directly formats an AngelScript source code string.

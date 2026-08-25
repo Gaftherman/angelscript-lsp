@@ -412,6 +412,14 @@ namespace angel_lsp::config
             {
                 config.features.enableFormatting = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
+            else if (key == "--enable-on-type-formatting" || key == "--enable-ontypeformatting")
+            {
+                config.features.enableOnTypeFormatting = getBoolValue(true);
+            }
+            else if (key == "--disable-on-type-formatting" || key == "--disable-ontypeformatting")
+            {
+                config.features.enableOnTypeFormatting = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
             else if (key == "--locale")
             {
                 std::string_view val;

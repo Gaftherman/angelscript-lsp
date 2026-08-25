@@ -304,6 +304,32 @@ TEST_SUITE("Formatting")
         REQUIRE(rangeEdits.has_value());
     }
 
+    TEST_CASE("FormatOnTypeAPI")
+    {
+        std::string uri = "file:///test.as";
+        std::string code = "void test()\n{\n    int x = 1;\n}\n";
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        OnTypeFormattingRequest req{ uri, code, nullptr, lsp::Position{ 2, 14 }, ";", options };
+        auto edits = FormatOnType(req);
+        REQUIRE(edits.has_value());
+    }
+
+    TEST_CASE("FormatOnTypeClosingBrace")
+    {
+        std::string uri = "file:///test.as";
+        std::string code = "void test(){\nint x=1;\n}";
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        OnTypeFormattingRequest req{ uri, code, nullptr, lsp::Position{ 2, 1 }, "}", options };
+        auto edits = FormatOnType(req);
+        REQUIRE(edits.has_value());
+    }
+
     TEST_CASE("EmptyDocumentRobustness")
     {
         std::string uri = "file:///empty.as";
@@ -314,6 +340,11 @@ TEST_SUITE("Formatting")
         auto docEdits = FormatDocument(docReq);
         REQUIRE(docEdits.has_value());
         CHECK(docEdits->empty());
+
+        OnTypeFormattingRequest onTypeReq{ uri, code, nullptr, lsp::Position{ 0, 0 }, ";", options };
+        auto onTypeEdits = FormatOnType(onTypeReq);
+        CHECK(!onTypeEdits.has_value());
     }
 }
+
 

@@ -1249,4 +1249,44 @@ namespace angel_lsp::features
         edit.newText = std::move(rangeFormattedText);
         return std::vector<lsp::TextEdit>{ std::move(edit) };
     }
+
+    std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingRequest &request)
+    {
+        if (request.sourceCode.empty())
+        {
+            return std::nullopt;
+        }
+
+        uint32_t targetLine = request.position.line;
+        uint32_t startLine = targetLine;
+
+        if (request.ch == "}")
+        {
+            for (int l = static_cast<int>(targetLine); l >= 0; --l)
+            {
+                startLine = static_cast<uint32_t>(l);
+                if (static_cast<int>(targetLine) - l >= 20)
+                {
+                    break;
+                }
+            }
+        }
+        else if (request.ch == "\n" && targetLine > 0)
+        {
+            startLine = targetLine - 1;
+        }
+
+        RangeFormattingRequest rangeReq{
+            request.uri,
+            request.sourceCode,
+            request.tree,
+            lsp::Range{
+                lsp::Position{ startLine, 0 },
+                lsp::Position{ targetLine, request.position.character }
+            },
+            request.options
+        };
+
+        return FormatRange(rangeReq);
+    }
 }

@@ -322,6 +322,14 @@ namespace angel_lsp
             result.capabilities.documentRangeFormattingProvider = true;
         }
 
+        if (m_config.features.enableOnTypeFormatting)
+        {
+            lsp::DocumentOnTypeFormattingOptions onTypeOpts;
+            onTypeOpts.firstTriggerCharacter = ";";
+            onTypeOpts.moreTriggerCharacter = lsp::Array<lsp::String>{ "}", "\n" };
+            result.capabilities.documentOnTypeFormattingProvider = onTypeOpts;
+        }
+
         if (m_config.features.enableDocumentLink)
         {
             lsp::DocumentLinkOptions linkOpts;
@@ -2493,6 +2501,38 @@ namespace angel_lsp
                 features::CodeLensResolveRequest clrr{ req, m_symbolTable, m_scopeIndex };
                 auto resolved = features::ResolveCodeLens(clrr);
                 return resolved.value_or(std::move(req));
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_OnTypeFormatting>(
+            [this](lsp::requests::TextDocument_OnTypeFormatting::Params &&req) -> lsp::requests::TextDocument_OnTypeFormatting::Result
+            {
+                if (!m_config.features.enableOnTypeFormatting)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::OnTypeFormattingRequest otfr{
+                    uriStr,
+                    docIt->second,
+                    tree,
+                    codec::Decode(docIt->second, m_positionEncoding, req.position),
+                    req.ch,
+                    req.options
+                };
+                auto edits = features::FormatOnType(otfr);
+                if (edits.has_value())
+                {
+                    EncodeIn(docIt->second, edits.value());
+                    return edits.value();
+                }
+                return lsp::Null{};
             });
     }
 }

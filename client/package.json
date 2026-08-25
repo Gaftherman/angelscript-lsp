@@ -225,6 +225,11 @@
           "default": true,
           "markdownDescription": "Show actionable code lenses (references, implementations) inline above declarations."
         },
+        "angelscript.features.onTypeFormatting": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Automatically format code on typing specific trigger characters (semicolon, closing brace, newline)."
+        },
         "angelscript.features.typeConversionChecks": {
           "type": "boolean",
           "default": true,
