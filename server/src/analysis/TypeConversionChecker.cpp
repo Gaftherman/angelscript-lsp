@@ -1176,6 +1176,71 @@ namespace angel_lsp::analysis
                     std::string cleanLeft = CleanBaseType(leftType);
                     std::string cleanRight = CleanBaseType(rightType);
 
+                    // Handle assignment const qualifier discard check
+                    bool isHandleAssignment = false;
+                    TSNode actualLeft = left;
+                    TSNode actualRight = right;
+                    if (std::string_view(NodeType(left)) == "unary_expression")
+                    {
+                        TSNode op = ts_node_child_by_field_name(left, "operator", 8);
+                        if (!ts_node_is_null(op) && NodeText(op, request.sourceCode) == "@")
+                        {
+                            isHandleAssignment = true;
+                            TSNode operand = ts_node_child_by_field_name(left, "operand", 7);
+                            if (!ts_node_is_null(operand))
+                            {
+                                actualLeft = operand;
+                            }
+                        }
+                    }
+                    if (std::string_view(NodeType(right)) == "unary_expression")
+                    {
+                        TSNode op = ts_node_child_by_field_name(right, "operator", 8);
+                        if (!ts_node_is_null(op) && NodeText(op, request.sourceCode) == "@")
+                        {
+                            TSNode operand = ts_node_child_by_field_name(right, "operand", 7);
+                            if (!ts_node_is_null(operand))
+                            {
+                                actualRight = operand;
+                            }
+                        }
+                    }
+
+                    if (isHandleAssignment)
+                    {
+                        auto getFullType = [&](TSNode n) -> std::string
+                        {
+                            std::string name = NodeText(n, request.sourceCode);
+                            if (scopeAt())
+                            {
+                                if (const auto *def = ResolveInScope(scopeAt(), LastScopeSegment(name)))
+                                {
+                                    return def->typeName;
+                                }
+                            }
+                            if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(name))
+                            {
+                                for (const auto &s : *syms)
+                                {
+                                    if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+                                    {
+                                        return s.GetVariable().typeName;
+                                    }
+                                }
+                            }
+                            return "";
+                        };
+
+                        std::string leftFull = getFullType(actualLeft);
+                        std::string rightFull = getFullType(actualRight);
+                        bool rightConstTarget = rightFull.starts_with("const ");
+                        bool leftConstTarget = leftFull.starts_with("const ");
+                        if (rightConstTarget && !leftConstTarget && !cleanRight.empty() && !cleanLeft.empty())
+                        {
+                            EmitAtNode(right, ctx, "as-err-no-implicit-conversion", "const " + cleanRight + "@", cleanLeft + "@");
+                        }
+                    }
+
                     // Check if opAssign is explicitly deleted on LHS class
                     if (!cleanLeft.empty())
                     {

@@ -331,12 +331,91 @@ namespace angel_lsp::analysis
             ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg1, arg2);
         }
 
+        bool TypeTextIsHandleConst(std::string_view typeText)
+        {
+            while (!typeText.empty() && (typeText.front() == ' ' || typeText.front() == '\t'))
+            {
+                typeText.remove_prefix(1);
+            }
+            while (!typeText.empty() && (typeText.back() == ' ' || typeText.back() == '\t'))
+            {
+                typeText.remove_suffix(1);
+            }
+            return typeText.ends_with(" const");
+        }
+
+        Constness ResolveHandleConstness(TSNode node,
+                                         const Scope *scope,
+                                         const SymbolTable &table,
+                                         std::string_view sourceCode)
+        {
+            if (ts_node_is_null(node))
+            {
+                return Constness::Unknown;
+            }
+
+            const std::string_view nodeType = ts_node_type(node);
+            if (nodeType == "identifier" || nodeType == "scoped_identifier")
+            {
+                const std::string name = NodeText(node, sourceCode);
+                if (scope)
+                {
+                    if (const LocalDefinition *def = ResolveInScope(scope, LastScopeSegment(name)))
+                    {
+                        if (!def->typeName.empty())
+                        {
+                            return TypeTextIsHandleConst(def->typeName) ? Constness::Const : Constness::Mutable;
+                        }
+                    }
+                }
+                if (const auto symbols = table.FindSymbolsPtr(name))
+                {
+                    for (const auto &sym : *symbols)
+                    {
+                        if (sym.type == SymbolType::Variable || sym.type == SymbolType::Property)
+                        {
+                            return TypeTextIsHandleConst(sym.GetVariable().typeName) ? Constness::Const : Constness::Mutable;
+                        }
+                    }
+                }
+            }
+            return Constness::Unknown;
+        }
+
         void CheckAssignment(TSNode node, const ConstCheckRequest &request,
                              const Scope *scope, DiagnosticContext &ctx)
         {
             TSNode target = ts_node_child_by_field_name(node, "left", k_leftFieldLength);
             if (ts_node_is_null(target))
             {
+                return;
+            }
+
+            bool isHandleAssignment = false;
+            TSNode actualTarget = target;
+            if (std::string_view(ts_node_type(target)) == "unary_expression")
+            {
+                TSNode opNode = ts_node_child_by_field_name(target, "operator", 8);
+                if (!ts_node_is_null(opNode) && NodeText(opNode, request.sourceCode) == "@")
+                {
+                    isHandleAssignment = true;
+                    TSNode operand = ts_node_child_by_field_name(target, "operand", 7);
+                    if (!ts_node_is_null(operand))
+                    {
+                        actualTarget = operand;
+                    }
+                }
+            }
+
+            if (isHandleAssignment)
+            {
+                if (ResolveHandleConstness(actualTarget, scope, ctx.request.symbolTable, request.sourceCode) == Constness::Const)
+                {
+                    const std::string written = NodeText(target, request.sourceCode);
+                    ctx.EmitAtRange(ts_node_start_point(target).row, ts_node_start_point(target).column,
+                                    ts_node_end_point(target).row, ts_node_end_point(target).column,
+                                    "as-err-const-assignment", written);
+                }
                 return;
             }
 

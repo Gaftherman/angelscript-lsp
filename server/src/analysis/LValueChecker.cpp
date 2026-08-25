@@ -206,8 +206,29 @@ namespace angel_lsp::analysis
                 return;
             }
 
-            // 2. Binary, unary, ternary, and cast expressions are r-values
-            if (targetType == "binary_expression" || targetType == "unary_expression" ||
+            // 2. Binary, ternary, and cast expressions are r-values; unary @handle is an l-value
+            if (targetType == "unary_expression")
+            {
+                TSNode opNode = ts_node_child_by_field_name(target, "operator", 8);
+                if (!ts_node_is_null(opNode) && NodeText(opNode, request.sourceCode) == "@")
+                {
+                    TSNode operand = ts_node_child_by_field_name(target, "operand", 7);
+                    if (!ts_node_is_null(operand))
+                    {
+                        std::string_view opType = ts_node_type(operand);
+                        if (opType == "identifier" || opType == "scoped_identifier" ||
+                            opType == "member_expression" || opType == "subscript_expression" ||
+                            opType == "index_expression")
+                        {
+                            return; // Valid handle l-value!
+                        }
+                    }
+                }
+                EmitAtNode(target, ctx, "as-err-not-lvalue");
+                return;
+            }
+
+            if (targetType == "binary_expression" ||
                 targetType == "ternary_expression" || targetType == "cast_expression")
             {
                 EmitAtNode(target, ctx, "as-err-not-lvalue");
