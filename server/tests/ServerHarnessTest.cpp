@@ -290,6 +290,71 @@ TEST_CASE("Server - Answers a selection range request over the wire")
     CHECK(stream.OutputContains("\"parent\""));
 }
 
+TEST_CASE("Server - Announces the hierarchy capabilities")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.OutputContains("\"callHierarchyProvider\""));
+    CHECK(stream.OutputContains("\"typeHierarchyProvider\""));
+}
+
+TEST_CASE("Server - Answers a call hierarchy over the wire")
+{
+    const std::string source =
+        "void Helper() { }\n"
+        "void Spawn() { Helper(); }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/prepareCallHierarchy","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"position":{"line":0,"character":6}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    // The qualified name travels in `detail` and in `data`, which is what the follow-up requests
+    // need to tell one `Think` from another.
+    CHECK(stream.OutputContains("\"Helper\""));
+    CHECK(stream.OutputContains("\"data\""));
+}
+
+TEST_CASE("Server - Answers a type hierarchy over the wire")
+{
+    const std::string source =
+        "class Base { }\n"
+        "class Derived : Base { }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/prepareTypeHierarchy","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"position":{"line":1,"character":8}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.OutputContains("\"Derived\""));
+}
+
 TEST_CASE("Server - Publishes diagnostics for an opened document")
 {
     WorkspaceFixture fixture;

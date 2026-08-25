@@ -95,6 +95,8 @@ const FEATURE_FLAGS: ReadonlyArray<readonly [string, string]> = [
     ['documentLink', '--disable-document-link'],
     ['implementation', '--disable-implementation'],
     ['selectionRange', '--disable-selection-range'],
+    ['callHierarchy', '--disable-call-hierarchy'],
+    ['typeHierarchy', '--disable-type-hierarchy'],
     ['typeConversionChecks', '--disable-type-conversion-checks']
 ];
 

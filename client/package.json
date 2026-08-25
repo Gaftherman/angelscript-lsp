@@ -205,6 +205,16 @@
           "default": true,
           "markdownDescription": "Expand selection: grow the selection one syntactic step at a time."
         },
+        "angelscript.features.callHierarchy": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Call hierarchy: who calls this function, and what it calls in turn."
+        },
+        "angelscript.features.typeHierarchy": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Type hierarchy: the bases a class or interface declares, and the types that declare it as theirs."
+        },
         "angelscript.features.typeConversionChecks": {
           "type": "boolean",
           "default": true,

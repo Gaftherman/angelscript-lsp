@@ -125,7 +125,11 @@ namespace angel_lsp::config
                   << "  --enable-implementation[=true|false]    Enable/disable Go to Implementation (default: true)\n"
                   << "  --disable-implementation                Disable Go to Implementation\n"
                   << "  --enable-selection-range[=true|false]   Enable/disable expand selection (default: true)\n"
-                  << "  --disable-selection-range               Disable expand selection\n\n"
+                  << "  --disable-selection-range               Disable expand selection\n"
+                  << "  --enable-call-hierarchy[=true|false]    Enable/disable call hierarchy (default: true)\n"
+                  << "  --disable-call-hierarchy                Disable call hierarchy\n"
+                  << "  --enable-type-hierarchy[=true|false]    Enable/disable type hierarchy (default: true)\n"
+                  << "  --disable-type-hierarchy                Disable type hierarchy\n\n"
                   << "Options:\n"
                   << "  --locale=<string>                       Set diagnostic language/locale (default: en)\n"
                   << "  --file-ext=<string>                     Set script file extension (default: .as)\n"
@@ -365,6 +369,22 @@ namespace angel_lsp::config
             else if (key == "--disable-selection-range" || key == "--disable-selectionrange")
             {
                 config.features.enableSelectionRange = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-call-hierarchy" || key == "--enable-callhierarchy")
+            {
+                config.features.enableCallHierarchy = getBoolValue(true);
+            }
+            else if (key == "--disable-call-hierarchy" || key == "--disable-callhierarchy")
+            {
+                config.features.enableCallHierarchy = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-type-hierarchy" || key == "--enable-typehierarchy")
+            {
+                config.features.enableTypeHierarchy = getBoolValue(true);
+            }
+            else if (key == "--disable-type-hierarchy" || key == "--disable-typehierarchy")
+            {
+                config.features.enableTypeHierarchy = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
             else if (key == "--enable-formatting")
             {

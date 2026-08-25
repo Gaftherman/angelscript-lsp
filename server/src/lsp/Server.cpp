@@ -4,6 +4,8 @@
 #include "features/hover/HoverHandler.h"
 #include "features/definition/DefinitionHandler.h"
 #include "features/implementation/ImplementationHandler.h"
+#include "features/call_hierarchy/CallHierarchyHandler.h"
+#include "features/type_hierarchy/TypeHierarchyHandler.h"
 #include "features/selection_range/SelectionRangeHandler.h"
 #include "features/completion/CompletionHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
@@ -211,6 +213,16 @@ namespace angel_lsp
         if (m_config.features.enableSelectionRange)
         {
             result.capabilities.selectionRangeProvider = true;
+        }
+
+        if (m_config.features.enableCallHierarchy)
+        {
+            result.capabilities.callHierarchyProvider = true;
+        }
+
+        if (m_config.features.enableTypeHierarchy)
+        {
+            result.capabilities.typeHierarchyProvider = true;
         }
 
         if (m_config.features.enableCompletion)
@@ -455,6 +467,7 @@ namespace angel_lsp
             // collected, or every declaration in the stub would exist twice in the symbol table.
             m_symbolTable.ClearDocumentSymbols(owner->second);
             m_scopeIndex.ClearDocument(owner->second);
+            m_callGraph.ClearDocument(owner->second);
             m_predefinedUris.erase(owner->second);
 
             m_logger->LogInfo(fmt::format("Predefined file re-indexed under {} (was {})", uriStr, owner->second));
@@ -492,6 +505,7 @@ namespace angel_lsp
         m_symbolCollector->CollectSymbols(uri, content, parser, m_symbolTable);
 
         m_scopeIndex.ClearDocument(uri);
+        m_callGraph.ClearDocument(uri);
         m_scopeIndex.SetScopeTree(uri, m_localScopeCollector->CollectScopes(content, parser));
 
         m_logger->LogInfo(fmt::format("Loaded predefined file: {}", filePath));
@@ -628,6 +642,7 @@ namespace angel_lsp
                     {
                         m_symbolTable.ClearDocumentSymbols(owner->second);
                         m_scopeIndex.ClearDocument(owner->second);
+                        m_callGraph.ClearDocument(owner->second);
                         m_predefinedUris.erase(owner->second);
                         m_predefinedUriByPath.erase(owner);
                     }
@@ -665,6 +680,7 @@ namespace angel_lsp
                 const std::string indexedUri = indexed->second;
                 m_symbolTable.ClearDocumentSymbols(indexedUri);
                 m_scopeIndex.ClearDocument(indexedUri);
+                m_callGraph.ClearDocument(indexedUri);
                 m_closureDocuments.erase(indexedUri);
                 IndexClosureFile(path, watchedParser);
             }
@@ -767,6 +783,7 @@ namespace angel_lsp
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
         m_scopeIndex.ClearDocument(uriStr);
+        m_callGraph.ClearDocument(uriStr);
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
@@ -790,7 +807,10 @@ namespace angel_lsp
 
         auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, savedTree, m_symbolTable, m_i18n.get(), &m_config.types);
         if (savedTree)
+        {
             m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(savedTree), text));
+            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(savedTree), text));
+        }
 
         // A save is the only point at which an edited #include line can change which module this
         // file belongs to, so the graph is patched here rather than on every keystroke.
@@ -836,8 +856,12 @@ namespace angel_lsp
                     m_symbolTable.ClearDocumentSymbols(uriStr);
                     m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, m_symbolTable, m_i18n.get());
                     m_scopeIndex.ClearDocument(uriStr);
+                    m_callGraph.ClearDocument(uriStr);
                     if (tree)
+                    {
                         m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
+                        m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), text));
+                    }
                 }
             }
             PublishDiagnostics(uriStr, {});
@@ -848,8 +872,12 @@ namespace angel_lsp
         auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, m_symbolTable, m_i18n.get(), &m_config.types);
 
         m_scopeIndex.ClearDocument(uriStr);
+        m_callGraph.ClearDocument(uriStr);
         if (tree)
+        {
             m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
+            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), text));
+        }
 
         // Before analysis, not after: the module the file belongs to supplies declarations this
         // file legitimately uses, and without them every one of them would be reported undeclared.
@@ -965,9 +993,13 @@ namespace angel_lsp
         {
             m_symbolTable.ClearDocumentSymbols(uriStr);
             m_scopeIndex.ClearDocument(uriStr);
+            m_callGraph.ClearDocument(uriStr);
             m_symbolCollector->CollectSymbolsWithTree(uriStr, buffer, newTree, m_symbolTable, m_i18n.get());
             if (newTree)
+            {
                 m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(newTree), buffer));
+                m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(newTree), buffer));
+            }
             PublishDiagnostics(uriStr, {});
             return;
         }
@@ -1011,6 +1043,7 @@ namespace angel_lsp
 
         m_symbolTable.ClearDocumentSymbols(uriStr);
         m_scopeIndex.ClearDocument(uriStr);
+        m_callGraph.ClearDocument(uriStr);
 
         if (const std::string path = CanonicalPathFromUri(uriStr); !path.empty())
         {
@@ -1067,8 +1100,12 @@ namespace angel_lsp
         m_symbolCollector->CollectSymbolsWithTree(uriStr, content, tree, m_symbolTable, m_i18n.get());
 
         m_scopeIndex.ClearDocument(uriStr);
+        m_callGraph.ClearDocument(uriStr);
         if (tree)
+        {
             m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), content));
+            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), content));
+        }
 
         // The tree is only needed to collect symbols; keeping one per closure file would multiply
         // memory across a large module for no benefit, since no request is ever served from a file
@@ -1160,9 +1197,13 @@ namespace angel_lsp
         m_symbolTable.ReplaceDocumentSymbols(uriStr, staging);
 
         if (tree)
+        {
             m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
+            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), text));
+        }
         else
             m_scopeIndex.ClearDocument(uriStr);
+            m_callGraph.ClearDocument(uriStr);
 
         // Deleted after analysis, not before: the conversion rules read expressions straight out of
         // this tree, and it is the only one this thread is allowed to touch.
@@ -1193,6 +1234,7 @@ namespace angel_lsp
     {
         m_symbolTable.ClearDocumentSymbols(uriStr);
         m_scopeIndex.ClearDocument(uriStr);
+        m_callGraph.ClearDocument(uriStr);
         m_closureDocuments.erase(uriStr);
 
         const std::string path = CanonicalPathFromUri(uriStr);
@@ -1439,6 +1481,18 @@ namespace angel_lsp
         }
     }
 
+    void Server::EncodeRangesIn(const std::string &uri, std::vector<lsp::Range> &ranges) const
+    {
+        if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+            return;
+
+        if (const std::string *text = FindDocumentText(uri))
+        {
+            for (auto &range : ranges)
+                codec::Encode(*text, m_positionEncoding, range);
+        }
+    }
+
     void Server::EncodeAcrossDocuments(std::vector<lsp::CodeAction> &actions) const
     {
         if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
@@ -1654,6 +1708,153 @@ namespace angel_lsp
                     return impls.value();
                 }
                 return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_PrepareCallHierarchy>(
+            [this](lsp::requests::TextDocument_PrepareCallHierarchy::Params &&req) -> lsp::requests::TextDocument_PrepareCallHierarchy::Result
+            {
+                if (!m_config.features.enableCallHierarchy)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::CallHierarchyPrepareRequest pr{ uriStr, docIt->second, tree, m_symbolTable, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                auto items = features::PrepareCallHierarchy(pr);
+                if (!items.has_value() || items->empty())
+                {
+                    return lsp::Null{};
+                }
+                for (auto &item : items.value())
+                {
+                    EncodeItemRanges(item);
+                }
+                return items.value();
+            });
+
+        m_messageHandler->add<lsp::requests::CallHierarchy_IncomingCalls>(
+            [this](lsp::requests::CallHierarchy_IncomingCalls::Params &&req) -> lsp::requests::CallHierarchy_IncomingCalls::Result
+            {
+                if (!m_config.features.enableCallHierarchy)
+                {
+                    return lsp::Null{};
+                }
+
+                features::CallHierarchyItemRequest ir{ m_symbolTable, m_callGraph, req.item };
+                auto calls = features::GetIncomingCalls(ir);
+                if (!calls.has_value() || calls->empty())
+                {
+                    return lsp::Null{};
+                }
+                for (auto &call : calls.value())
+                {
+                    EncodeItemRanges(call.from);
+                    EncodeRangesIn(call.from.uri.toString(), call.fromRanges);
+                }
+                return calls.value();
+            });
+
+        m_messageHandler->add<lsp::requests::CallHierarchy_OutgoingCalls>(
+            [this](lsp::requests::CallHierarchy_OutgoingCalls::Params &&req) -> lsp::requests::CallHierarchy_OutgoingCalls::Result
+            {
+                if (!m_config.features.enableCallHierarchy)
+                {
+                    return lsp::Null{};
+                }
+
+                // fromRanges are ranges in the *caller*, which is the item the client asked about -
+                // not in the callee the entry points at. Encoding them against the callee's
+                // document would shift every one of them on a file with non-ASCII text.
+                const std::string callerUri = req.item.uri.toString();
+
+                features::CallHierarchyItemRequest ir{ m_symbolTable, m_callGraph, req.item };
+                auto calls = features::GetOutgoingCalls(ir);
+                if (!calls.has_value() || calls->empty())
+                {
+                    return lsp::Null{};
+                }
+                for (auto &call : calls.value())
+                {
+                    EncodeItemRanges(call.to);
+                    EncodeRangesIn(callerUri, call.fromRanges);
+                }
+                return calls.value();
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_PrepareTypeHierarchy>(
+            [this](lsp::requests::TextDocument_PrepareTypeHierarchy::Params &&req) -> lsp::requests::TextDocument_PrepareTypeHierarchy::Result
+            {
+                if (!m_config.features.enableTypeHierarchy)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::TypeHierarchyPrepareRequest pr{ uriStr, docIt->second, tree, m_symbolTable, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                auto items = features::PrepareTypeHierarchy(pr);
+                if (!items.has_value() || items->empty())
+                {
+                    return lsp::Null{};
+                }
+                for (auto &item : items.value())
+                {
+                    EncodeItemRanges(item);
+                }
+                return items.value();
+            });
+
+        m_messageHandler->add<lsp::requests::TypeHierarchy_Supertypes>(
+            [this](lsp::requests::TypeHierarchy_Supertypes::Params &&req) -> lsp::requests::TypeHierarchy_Supertypes::Result
+            {
+                if (!m_config.features.enableTypeHierarchy)
+                {
+                    return lsp::Null{};
+                }
+
+                features::TypeHierarchyItemRequest ir{ m_symbolTable, req.item };
+                auto items = features::GetSupertypes(ir);
+                if (!items.has_value() || items->empty())
+                {
+                    return lsp::Null{};
+                }
+                for (auto &item : items.value())
+                {
+                    EncodeItemRanges(item);
+                }
+                return items.value();
+            });
+
+        m_messageHandler->add<lsp::requests::TypeHierarchy_Subtypes>(
+            [this](lsp::requests::TypeHierarchy_Subtypes::Params &&req) -> lsp::requests::TypeHierarchy_Subtypes::Result
+            {
+                if (!m_config.features.enableTypeHierarchy)
+                {
+                    return lsp::Null{};
+                }
+
+                features::TypeHierarchyItemRequest ir{ m_symbolTable, req.item };
+                auto items = features::GetSubtypes(ir);
+                if (!items.has_value() || items->empty())
+                {
+                    return lsp::Null{};
+                }
+                for (auto &item : items.value())
+                {
+                    EncodeItemRanges(item);
+                }
+                return items.value();
             });
 
         m_messageHandler->add<lsp::requests::TextDocument_SelectionRange>(

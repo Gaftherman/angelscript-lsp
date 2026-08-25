@@ -15,6 +15,8 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
 - **Go to Declaration (`textDocument/declaration`)**: The same answer as Go to Definition, deliberately. AngelScript has no declaration/definition split - no headers, no prototypes - so the two questions are one, and the editor's second navigation key should not be inert.
 - **Go to Implementation (`textDocument/implementation`)**: The opposite direction. From an interface or a base class, the types that derive from it transitively; from a method declared in one, that method as each subtype declares it.
 - **Expand Selection (`textDocument/selectionRange`)**: Grows the selection one syntactic step at a time, straight off the parse tree.
+- **Call Hierarchy (`textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls`)**: Who calls this function, and what it calls in turn, from a workspace-wide call index held beside the symbol table rather than inside it.
+- **Type Hierarchy (`textDocument/prepareTypeHierarchy`, `typeHierarchy/supertypes`, `typeHierarchy/subtypes`)**: The bases a class or interface declares, and the types that declare it as theirs, one level at a time.
 - **Auto-Completion (`textDocument/completion`)**: Context-aware completion suggestions for global symbols, class member functions/properties, and namespace scopes.
 - **Semantic Tokens (`textDocument/semanticTokens/full`)**: Full semantic syntax highlighting for keywords, types, functions, variables, parameters, and enum members.
 - **Signature Help (`textDocument/signatureHelp`)**: Active parameter highlight and signature preview for function calls.
@@ -148,6 +150,8 @@ server/build/angel_lsp_tests
 | `WorkspaceSymbolTest.cpp` | Layer 3 Multi-tiered fuzzy search, scoring, and ranking across all indexed files. |
 | `ReferencesTest.cpp` | Layer 3 Project-wide references lookup with lexical shadowing and class inheritance awareness. |
 | `RenameTest.cpp` | Layer 3 Prepare rename validation and safe `WorkspaceEdit` generation across multiple documents. |
+| `CallHierarchyTest.cpp` | Layer 2/3 The call index itself - caller qualification, method calls, nested arguments - and the hierarchy built on it in both directions. |
+| `TypeHierarchyTest.cpp` | Layer 3 Type hierarchy in both directions, direct relations only, with the protocol's range-containment requirement pinned. |
 | `ImplementationTest.cpp` | Layer 3 Go to Implementation: interfaces to implementing classes, base classes to derived ones transitively, methods to their overrides, and the cases that answer with nothing. |
 | `SelectionRangeTest.cpp` | Layer 3 Expand selection chains: containment, no repeated links, and one answer per requested position. |
 | `ConstCheckerTest.cpp` | Layer 2 Const correctness at the use site: assigning to a const, and calling a non-const method through a const object. |
@@ -196,6 +200,10 @@ The `angel_lsp` executable accepts command-line arguments to enable or disable i
 | `--disable-implementation` | Explicitly disable Go to Implementation. | - |
 | `--enable-selection-range[=true\|false]` | Enable or disable expand selection. | `true` |
 | `--disable-selection-range` | Explicitly disable expand selection. | - |
+| `--enable-call-hierarchy[=true\|false]` | Enable or disable call hierarchy. | `true` |
+| `--disable-call-hierarchy` | Explicitly disable call hierarchy. | - |
+| `--enable-type-hierarchy[=true\|false]` | Enable or disable type hierarchy. | `true` |
+| `--disable-type-hierarchy` | Explicitly disable type hierarchy. | - |
 | `--enable-type-conversion-checks[=true\|false]` | Enable or disable the type conversion diagnostics. | `true` |
 | `--disable-type-conversion-checks` | Explicitly disable type conversion diagnostics. | - |
 | `--enable-predefined-loader[=true\|false]` | Enable or disable background predefined symbols loader. | `true` |

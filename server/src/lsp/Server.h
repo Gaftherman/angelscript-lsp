@@ -9,6 +9,7 @@
 #include "analysis/SymbolTable.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/CallGraph.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalyzer.h"
 
@@ -45,6 +46,15 @@ namespace angel_lsp
         angel_lsp::analysis::SymbolTable m_symbolTable;
         std::unique_ptr<angel_lsp::analysis::SymbolCollector> m_symbolCollector;
         angel_lsp::analysis::ScopeIndex m_scopeIndex;
+
+        /**
+         * @brief Workspace-wide call index, maintained beside the scope trees.
+         *
+         * Kept out of the SymbolTable on purpose: a call is not a declaration, and folding
+         * hundreds per file into the table would grow it by an order of magnitude and slow every
+         * rule that walks it to serve one feature. See analysis/CallGraph.h.
+         */
+        angel_lsp::analysis::CallGraphIndex m_callGraph;
         std::unique_ptr<angel_lsp::analysis::LocalScopeCollector> m_localScopeCollector;
         std::unique_ptr<angel_lsp::analysis::SemanticAnalyzer> m_semanticAnalyzer;
         ankerl::unordered_dense::map<std::string, std::string> m_openDocuments;
@@ -362,6 +372,36 @@ namespace angel_lsp
         void EncodeAcrossDocuments(std::vector<lsp::SymbolInformation> &symbols) const;
         void EncodeAcrossDocuments(lsp::WorkspaceEdit &edit) const;
         void EncodeAcrossDocuments(std::vector<lsp::CodeAction> &actions) const;
+
+        /**
+         * @brief Converts the two ranges a hierarchy item carries, against its own document.
+         *
+         * A hierarchy walks across files the user never opened, so the item's text is looked up by
+         * URI like every other AcrossDocuments conversion. Templated because CallHierarchyItem and
+         * TypeHierarchyItem share the shape and nothing else - the protocol declares them as two
+         * unrelated structs.
+         */
+        template <typename ItemT>
+        void EncodeItemRanges(ItemT &item) const
+        {
+            if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+                return;
+
+            if (const std::string *text = FindDocumentText(item.uri.toString()))
+            {
+                EncodeIn(*text, item.range);
+                EncodeIn(*text, item.selectionRange);
+            }
+        }
+
+        /**
+         * @brief Converts a list of ranges that all belong to one named document.
+         *
+         * The call hierarchy's fromRanges are ranges in the caller, which is not always the
+         * document the entry points at - so the document is named explicitly rather than taken
+         * from the item.
+         */
+        void EncodeRangesIn(const std::string &uri, std::vector<lsp::Range> &ranges) const;
 
     };
 }

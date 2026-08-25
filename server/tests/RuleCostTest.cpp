@@ -2,6 +2,7 @@
 
 #include "analysis/AccessChecker.h"
 #include "analysis/ConstChecker.h"
+#include "analysis/CallGraph.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
@@ -269,6 +270,20 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
         constMs = Milliseconds(start);
     }
 
+    // Not part of Analyze(): the call index is built beside the scope tree on the same edit, and
+    // it is the one structure a hierarchy feature added to the per-keystroke path - so what it
+    // costs belongs on this list whether or not the analyzer runs it.
+    double callGraphMs = 0.0;
+    {
+        const auto start = std::chrono::steady_clock::now();
+        for (size_t i = 0; i < samples.size(); ++i)
+        {
+            volatile size_t sink = CollectCalls(ts_tree_root_node(trees[i]), samples[i].sourceCode).size();
+            (void)sink;
+        }
+        callGraphMs = Milliseconds(start);
+    }
+
     double wholeAnalysisMs = 0.0;
     {
         const auto start = std::chrono::steady_clock::now();
@@ -288,6 +303,7 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
     MESSAGE("  type conversions         : " << conversionMs << " ms  (" << conversionMs / files << " ms/file)");
     MESSAGE("  member access            : " << accessMs << " ms  (" << accessMs / files << " ms/file)");
     MESSAGE("  const correctness        : " << constMs << " ms  (" << constMs / files << " ms/file)");
+    MESSAGE("  call index (not in Analyze): " << callGraphMs << " ms  (" << callGraphMs / files << " ms/file)");
     MESSAGE("  Analyze() as a whole     : " << wholeAnalysisMs << " ms  (" << wholeAnalysisMs / files << " ms/file)");
     MESSAGE("  by declaration module (each includes the per-file bucket walk it shares):");
     MESSAGE("    duplicates : " << duplicateMs << " ms");

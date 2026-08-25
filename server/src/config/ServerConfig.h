@@ -32,6 +32,8 @@ namespace angel_lsp::config
         bool enableTypeConversionChecks = true;
         bool enableImplementation = true;
         bool enableSelectionRange = true;
+        bool enableCallHierarchy = true;
+        bool enableTypeHierarchy = true;
     };
 
     /**

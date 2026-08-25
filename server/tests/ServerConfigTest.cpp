@@ -1034,6 +1034,31 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
+    TEST_CASE("Hierarchy flags")
+    {
+        SUBCASE("Both enabled by default")
+        {
+            ServerConfig config = FromArgs(0, nullptr);
+            CHECK(config.features.enableCallHierarchy == true);
+            CHECK(config.features.enableTypeHierarchy == true);
+        }
+
+        SUBCASE("Each disables independently")
+        {
+            ArgvHelper args{"angel_lsp", "--disable-call-hierarchy"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.features.enableCallHierarchy == false);
+            CHECK(config.features.enableTypeHierarchy == true);
+        }
+
+        SUBCASE("Disabled via --enable-type-hierarchy=false")
+        {
+            ArgvHelper args{"angel_lsp", "--enable-type-hierarchy=false"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.features.enableTypeHierarchy == false);
+        }
+    }
+
     TEST_CASE("Predefined file paths")
     {
         SUBCASE("Empty by default")
