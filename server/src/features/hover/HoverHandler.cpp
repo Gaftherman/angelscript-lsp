@@ -54,6 +54,34 @@ namespace angel_lsp::features
             return current;
         }
 
+        const analysis::Scope *FindScopeDeclaringDefinition(const analysis::Scope *current, const analysis::LocalDefinition &def)
+        {
+            if (!current)
+            {
+                return nullptr;
+            }
+
+            for (const auto &d : current->definitions)
+            {
+                if (d.name == def.name &&
+                    d.startLine == def.startLine &&
+                    d.startCharacter == def.startCharacter)
+                {
+                    return current;
+                }
+            }
+
+            for (const auto &child : current->children)
+            {
+                if (const auto *found = FindScopeDeclaringDefinition(child.get(), def))
+                {
+                    return found;
+                }
+            }
+
+            return nullptr;
+        }
+
         std::vector<std::string> SplitLines(const std::string &str)
         {
             std::vector<std::string> lines;
@@ -537,13 +565,60 @@ namespace angel_lsp::features
                         break;
                     }
                     case analysis::LocalDefinitionKind::Variable:
-                        oss << "(local variable) ";
-                        if (!typeName.empty())
+                    {
+                        const analysis::Scope *declaringScope = FindScopeDeclaringDefinition(rootScope.get(), *def);
+                        bool isFileScope = (declaringScope == rootScope.get() || (declaringScope && declaringScope->parent == nullptr));
+
+                        if (isFileScope)
                         {
-                            oss << typeName << " ";
+                            const analysis::Symbol *globalSym = nullptr;
+                            auto candidates = request.symbolTable.FindSymbols(def->name);
+                            for (const auto &cand : candidates)
+                            {
+                                if (cand.type == analysis::SymbolType::Variable && cand.containerName.empty() && cand.fileUri == request.uri)
+                                {
+                                    globalSym = &cand;
+                                    break;
+                                }
+                            }
+                            if (!globalSym)
+                            {
+                                for (const auto &cand : candidates)
+                                {
+                                    if (cand.type == analysis::SymbolType::Variable && cand.containerName.empty())
+                                    {
+                                        globalSym = &cand;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (globalSym)
+                            {
+                                std::string sig = FormatVariableSignature(*globalSym, "(global variable) ");
+                                oss << sig;
+                            }
+                            else
+                            {
+                                oss << "(global variable) ";
+                                if (!typeName.empty())
+                                {
+                                    oss << typeName << " ";
+                                }
+                                oss << def->name;
+                            }
                         }
-                        oss << def->name;
+                        else
+                        {
+                            oss << "(local variable) ";
+                            if (!typeName.empty())
+                            {
+                                oss << typeName << " ";
+                            }
+                            oss << def->name;
+                        }
                         break;
+                    }
                     default:
                         oss << def->name;
                         break;

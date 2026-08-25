@@ -331,3 +331,39 @@ TEST_CASE("HoverHandler - Distinct overloads are all shown")
     CHECK(rendered.find("void Emit(int id)") != std::string::npos);
     CHECK(rendered.find("void Emit(const string &in name)") != std::string::npos);
 }
+
+TEST_CASE("HoverHandler - Global Variable vs Local Variable Hover")
+{
+    std::string code =
+        "const int g_var = 100;\n"
+        "void main()\n"
+        "{\n"
+        "    int local_var = 42;\n"
+        "    g_var;\n"
+        "    local_var;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Hover at g_var declaration
+    auto hoverGlobalDecl = env.HoverAt(0, 12);
+    REQUIRE(hoverGlobalDecl.has_value());
+    std::string textGlobalDecl = std::get<lsp::MarkupContent>(hoverGlobalDecl->contents).value;
+    CHECK(textGlobalDecl.find("(global variable)") != std::string::npos);
+    CHECK(textGlobalDecl.find("const int g_var") != std::string::npos);
+
+    // Hover at g_var use inside main
+    auto hoverGlobalUse = env.HoverAt(4, 5);
+    REQUIRE(hoverGlobalUse.has_value());
+    std::string textGlobalUse = std::get<lsp::MarkupContent>(hoverGlobalUse->contents).value;
+    CHECK(textGlobalUse.find("(global variable)") != std::string::npos);
+    CHECK(textGlobalUse.find("const int g_var") != std::string::npos);
+
+    // Hover at local_var
+    auto hoverLocal = env.HoverAt(5, 5);
+    REQUIRE(hoverLocal.has_value());
+    std::string textLocal = std::get<lsp::MarkupContent>(hoverLocal->contents).value;
+    CHECK(textLocal.find("(local variable)") != std::string::npos);
+    CHECK(textLocal.find("int local_var") != std::string::npos);
+}
+
