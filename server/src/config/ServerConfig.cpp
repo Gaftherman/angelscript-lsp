@@ -139,6 +139,7 @@ namespace angel_lsp::config
                   << "  --predefined-file=<path>                Load a predefined stub by path, even outside the workspace (repeatable)\n"
                   << "  --search-dir=<string>                   Add directory to search path for #include resolution\n"
                   << "  --diagnostic-severity=<code>=<severity> Override one diagnostic's severity: error|warning|information|hint (repeatable)\n"
+                  << "  --engine-profile=<string>               Set built-in engine profile: standard|svencoop|urho3d|openxray|ootp|none|auto (default: standard)\n"
                   << "  --engine-property=<name>=<bool>         Describe the host engine's SetEngineProperty settings (repeatable).\n"
                   << "                                          Known names, with the engine's own defaults:\n"
                   << "                                            allowUnsafeReferences  (false) permit & on primitives and standalone references\n"
@@ -458,6 +459,14 @@ namespace angel_lsp::config
                 if (getStringValue(val) && !val.empty())
                 {
                     config.predefinedFiles.push_back(std::string(val));
+                }
+            }
+            else if (key == "--engine-profile" || key == "--profile")
+            {
+                std::string_view val;
+                if (getStringValue(val) && !val.empty())
+                {
+                    config.engineProfile = std::string(val);
                 }
             }
             else if (key == "--engine-property" || key == "--engine-prop")

@@ -1,0 +1,132 @@
+{
+  "Class declaration": {
+    "prefix": "class",
+    "body": [
+      "class ${1:ClassName}",
+      "{",
+      "\t${1:ClassName}()",
+      "\t{",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Declare a new AngelScript class"
+  },
+  "Class with Base": {
+    "prefix": "classbase",
+    "body": [
+      "class ${1:ClassName} : ${2:BaseClass}",
+      "{",
+      "\t${1:ClassName}()",
+      "\t{",
+      "\t\tsuper();",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Declare an AngelScript class inheriting from a base class"
+  },
+  "Interface declaration": {
+    "prefix": "interface",
+    "body": [
+      "interface ${1:IInterfaceName}",
+      "{",
+      "\tvoid ${2:MethodName}();$0",
+      "}"
+    ],
+    "description": "Declare a new AngelScript interface"
+  },
+  "Function definition": {
+    "prefix": "func",
+    "body": [
+      "${1:void} ${2:FunctionName}(${3:params})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Define a new function or method"
+  },
+  "Enum declaration": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:EnumName}",
+      "{",
+      "\t${2:Member1} = ${3:0},$0",
+      "}"
+    ],
+    "description": "Declare a new AngelScript enum"
+  },
+  "Funcdef callback": {
+    "prefix": "funcdef",
+    "body": [
+      "funcdef ${1:void} ${2:CallbackName}(${3:params});$0"
+    ],
+    "description": "Declare an AngelScript function pointer definition"
+  },
+  "Mixin class": {
+    "prefix": "mixin",
+    "body": [
+      "mixin class ${1:MixinName}",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Declare an AngelScript mixin class"
+  },
+  "For loop": {
+    "prefix": "for",
+    "body": [
+      "for (uint ${1:i} = 0; ${1:i} < ${2:count}; ++${1:i})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Standard indexed for loop"
+  },
+  "While loop": {
+    "prefix": "while",
+    "body": [
+      "while (${1:condition})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "While loop statement"
+  },
+  "Switch statement": {
+    "prefix": "switch",
+    "body": [
+      "switch (${1:expression})",
+      "{",
+      "case ${2:value}:",
+      "\t$0",
+      "\tbreak;",
+      "default:",
+      "\tbreak;",
+      "}"
+    ],
+    "description": "Switch statement block"
+  },
+  "Property accessor": {
+    "prefix": "prop",
+    "body": [
+      "${1:int} get_${2:property}() const",
+      "{",
+      "\treturn m_${2:property};",
+      "}",
+      "",
+      "void set_${2:property}(${1:int} value)",
+      "{",
+      "\tm_${2:property} = value;",
+      "}$0"
+    ],
+    "description": "Getter and setter virtual property pair"
+  },
+  "Include statement": {
+    "prefix": "inc",
+    "body": [
+      "#include \"${1:file.as}\"$0"
+    ],
+    "description": "AngelScript include directive"
+  }
+}

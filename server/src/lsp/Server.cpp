@@ -22,6 +22,7 @@
 #include "features/formatting/FormattingHandler.h"
 #include "features/document_link/DocumentLinkHandler.h"
 #include "features/code_lens/CodeLensHandler.h"
+#include "analysis/EngineProfiles.h"
 
 #include <filesystem>
 #include <fstream>
@@ -315,6 +316,12 @@ namespace angel_lsp
         {
             lsp::CodeActionOptions codeActionOpts;
             codeActionOpts.resolveProvider = true;
+            codeActionOpts.codeActionKinds = lsp::Array<lsp::CodeActionKindEnum>{
+                lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix),
+                lsp::CodeActionKindEnum(lsp::CodeActionKind::Refactor),
+                lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorExtract),
+                lsp::CodeActionKindEnum(lsp::CodeActionKind::SourceOrganizeImports)
+            };
             result.capabilities.codeActionProvider = codeActionOpts;
         }
 
@@ -390,6 +397,12 @@ namespace angel_lsp
 
         angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
 
+        // Built-in predefined engine profiles (e.g. Standard, SvenCoop, Urho3D, OpenXRay, OOTP)
+        LoadBuiltinEngineProfiles(backgroundParser, stopToken);
+
+        if (stopToken.stop_requested())
+            return;
+
         // Explicitly configured stubs first. A host application's declarations usually ship with
         // the application, not with the scripts, so the scan below - which only ever walks
         // workspace folders - would never find them. ParserPredefined de-duplicates by canonical
@@ -422,6 +435,78 @@ namespace angel_lsp
         catch (const std::exception &e)
         {
             m_logger->LogError(fmt::format("Error reading workspace files: {}", e.what()));
+        }
+    }
+
+    void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser &parser, std::stop_token stopToken)
+    {
+        if (!m_config.features.enablePredefinedLoader)
+        {
+            return;
+        }
+
+        const std::string &profileName = m_config.engineProfile;
+        auto kind = angel_lsp::analysis::ParseEngineProfileKind(profileName);
+        if (kind == angel_lsp::analysis::EngineProfileKind::None)
+        {
+            return;
+        }
+
+        if (kind == angel_lsp::analysis::EngineProfileKind::Auto)
+        {
+            std::vector<std::string> fileNames;
+            for (const auto &workspaceRoot : m_workspacesRoot)
+            {
+                const std::string rootPath = angel_lsp::utils::UriToPath(workspaceRoot);
+                std::error_code ec;
+                for (const auto &entry : std::filesystem::recursive_directory_iterator(rootPath, ec))
+                {
+                    if (entry.is_regular_file())
+                    {
+                        fileNames.push_back(entry.path().filename().string());
+                    }
+                }
+            }
+            kind = angel_lsp::analysis::DetectEngineProfileFromWorkspace(fileNames);
+        }
+
+        std::vector<angel_lsp::analysis::EngineProfileKind> profilesToLoad;
+        if (kind != angel_lsp::analysis::EngineProfileKind::Standard &&
+            kind != angel_lsp::analysis::EngineProfileKind::None)
+        {
+            profilesToLoad.push_back(angel_lsp::analysis::EngineProfileKind::Standard);
+        }
+        profilesToLoad.push_back(kind);
+
+        for (auto pKind : profilesToLoad)
+        {
+            if (stopToken.stop_requested())
+            {
+                return;
+            }
+
+            const std::string_view stubSource = angel_lsp::analysis::GetProfileStubSource(pKind);
+            if (stubSource.empty())
+            {
+                continue;
+            }
+
+            const std::string syntheticUri = angel_lsp::analysis::GetProfileSyntheticUri(pKind);
+
+            std::lock_guard<std::mutex> lock(m_predefinedMutex);
+            if (!ClaimPredefinedFile(syntheticUri, /*forceReload=*/false))
+            {
+                continue;
+            }
+
+            m_symbolTable.ClearDocumentSymbols(syntheticUri);
+            m_symbolCollector->CollectSymbols(syntheticUri, std::string(stubSource), parser, m_symbolTable);
+
+            m_scopeIndex.ClearDocument(syntheticUri);
+            m_callGraph.ClearDocument(syntheticUri);
+            m_scopeIndex.SetScopeTree(syntheticUri, m_localScopeCollector->CollectScopes(std::string(stubSource), parser));
+
+            m_logger->LogInfo(fmt::format("Loaded built-in engine profile: {}", angel_lsp::analysis::EngineProfileKindToString(pKind)));
         }
     }
 
@@ -562,30 +647,42 @@ namespace angel_lsp
             section = &nested->object();
         }
 
+        bool shouldRescan = false;
+
+        if (const auto *profileVal = section->find("engineProfile"); profileVal && profileVal->isString())
+        {
+            if (!profileVal->string().empty() && profileVal->string() != m_config.engineProfile)
+            {
+                m_config.engineProfile = profileVal->string();
+                m_logger->LogInfo(fmt::format("Engine profile changed to '{}'; reloading predefineds", m_config.engineProfile));
+                shouldRescan = true;
+            }
+        }
+
         const auto *directories = section->find("searchDirectories");
-        if (!directories || !directories->isArray())
+        if (directories && directories->isArray())
         {
-            return;
+            std::vector<std::string> updated;
+            for (const auto &entry : directories->array())
+            {
+                if (entry.isString() && !entry.string().empty())
+                    updated.push_back(entry.string());
+            }
+
+            if (updated != m_config.searchDirectories)
+            {
+                m_config.searchDirectories = std::move(updated);
+                m_logger->LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", m_config.searchDirectories.size()));
+                shouldRescan = true;
+            }
         }
 
-        std::vector<std::string> updated;
-        for (const auto &entry : directories->array())
+        if (shouldRescan)
         {
-            if (entry.isString() && !entry.string().empty())
-                updated.push_back(entry.string());
+            // Which files a directive resolves to depends entirely on these paths/profiles, so every edge in the
+            // graph is now suspect.
+            RestartWorkspaceScan();
         }
-
-        if (updated == m_config.searchDirectories)
-        {
-            return;
-        }
-
-        m_config.searchDirectories = std::move(updated);
-        m_logger->LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", m_config.searchDirectories.size()));
-
-        // Which files a directive resolves to depends entirely on these paths, so every edge in the
-        // graph is now suspect.
-        RestartWorkspaceScan();
     }
 
     lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string &uriStr, const std::string &text)

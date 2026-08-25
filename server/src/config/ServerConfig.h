@@ -132,6 +132,11 @@ namespace angel_lsp::config
         std::vector<std::string> predefinedFiles;
 
         /**
+         * @brief Built-in predefined engine profile identifier (e.g. standard, svencoop, urho3d, openxray, ootp, none, auto).
+         */
+        std::string engineProfile = "standard";
+
+        /**
          * @brief Per-rule diagnostic severity overrides, keyed by diagnostic code.
          *
          * Values are the LSP severity names ("error", "warning", "information", "hint"). Kept as

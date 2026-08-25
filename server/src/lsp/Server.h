@@ -209,6 +209,13 @@ namespace angel_lsp
         void LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser &parser, std::stop_token stopToken);
 
         /**
+         * @brief Loads built-in predefined stub profiles (e.g. Standard, SvenCoop, Urho3D, OpenXRay, OOTP).
+         * @param parser Parser to reuse.
+         * @param stopToken Checked between profiles for early exit on cancellation.
+         */
+        void LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser &parser, std::stop_token stopToken);
+
+        /**
          * @brief Converts the configured severity names into the analyzer's enum, once at startup.
          *
          * ServerConfig is Layer 1 and cannot name a Layer 2 type, so the override map is carried

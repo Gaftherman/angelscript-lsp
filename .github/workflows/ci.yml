@@ -35,6 +35,16 @@ jobs:
             runner: ubuntu-latest
             arch: x86
             cmake_arch: ""
+          # macOS x64 (Intel)
+          - os: macos
+            runner: macos-13
+            arch: x64
+            cmake_arch: ""
+          # macOS arm64 (Apple Silicon)
+          - os: macos
+            runner: macos-14
+            arch: arm64
+            cmake_arch: ""
 
     steps:
       - name: Checkout Repository
@@ -118,12 +128,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for platform in windows-x64:win32-x64 windows-x86:win32-ia32 linux-x64:linux-x64 linux-x86:linux-ia32; do
+          for platform in windows-x64:win32-x64 windows-x86:win32-ia32 linux-x64:linux-x64 linux-x86:linux-ia32 macos-x64:darwin-x64 macos-arm64:darwin-arm64; do
             source_name="angel_lsp-${platform%%:*}"
             dest_dir="client/bin/${platform##*:}"
             [ -d "artifacts/$source_name" ] || continue
             mkdir -p "$dest_dir"
-            find "artifacts/$source_name" -type f -name 'angel_lsp*' -exec cp {} "$dest_dir/" \;
+            find "artifacts/$source_name" -type f \( -name 'angel_lsp*' -o -name 'angel_lsp' \) -exec cp {} "$dest_dir/" \;
             chmod +x "$dest_dir"/angel_lsp 2>/dev/null || true
           done
           ls -R client/bin

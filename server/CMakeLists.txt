@@ -85,8 +85,8 @@ set(LSP_DEPLOY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../client/bin")
 add_custom_command(TARGET angel_lsp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_DEST}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_ROOT}"
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_DEST}/angel_lsp.exe"
-    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_ROOT}/angel_lsp.exe"
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_DEST}/$<TARGET_FILE_NAME:angel_lsp>"
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_ROOT}/$<TARGET_FILE_NAME:angel_lsp>"
     COMMENT "Deploying compiled LSP server binary to client/bin"
 )
 

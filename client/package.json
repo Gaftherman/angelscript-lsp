@@ -54,6 +54,12 @@
         "path": "./syntaxes/angelscript.tmLanguage.json"
       }
     ],
+    "snippets": [
+      {
+        "language": "angelscript",
+        "path": "./snippets/angelscript.json"
+      }
+    ],
     "configurationDefaults": {
       "[angelscript]": {
         "editor.quickSuggestions": {
@@ -249,6 +255,20 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "Set this if the host calls `SetEngineProperty(asEP_DISALLOW_GLOBAL_VARS, true)`.\n\nEvery global variable declaration is then a compile error — the engine answers \"Global variables have been disabled by the application\" — and is reported as one."
+        },
+        "angelscript.engine.profile": {
+          "type": "string",
+          "enum": [
+            "standard",
+            "svencoop",
+            "urho3d",
+            "openxray",
+            "ootp",
+            "none",
+            "auto"
+          ],
+          "default": "standard",
+          "markdownDescription": "Built-in AngelScript engine profile to automatically load predefined API stubs and rules (e.g. `svencoop`, `urho3d`, `standard`, `auto`)."
         }
       }
     }
