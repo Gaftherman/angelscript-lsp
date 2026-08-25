@@ -849,6 +849,17 @@ namespace angel_lsp::analysis
             return "";
         }
 
+        // Assignment expression (e.g. g_var = 0, x += 1)
+        if (nodeType == "assignment_expression")
+        {
+            TSNode left = ts_node_child_by_field_name(exprNode, "left", 4);
+            if (!ts_node_is_null(left))
+            {
+                return ResolveExpressionType(left, scope, symbolTable, sourceCode, uri);
+            }
+            return "";
+        }
+
         // Binary expression (e.g. a + b, x == y, etc.)
         if (nodeType == "binary_expression")
         {

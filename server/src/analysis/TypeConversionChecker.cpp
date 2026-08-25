@@ -101,26 +101,41 @@ namespace angel_lsp::analysis
                 return info;
             }
 
-            const std::string bare = LastScopeSegment(typeName);
-            for (const auto &candidate : { std::cref(typeName), std::cref(bare) })
+            ForEachSymbolNamed(typeName, table, [&info](const Symbol &sym)
             {
-                ForEachSymbolNamed(candidate.get(), table, [&info](const Symbol &sym)
+                if (sym.type != SymbolType::Class && sym.type != SymbolType::Interface)
                 {
-                    if (sym.type != SymbolType::Class && sym.type != SymbolType::Interface)
-                    {
-                        return false;
-                    }
-                    info.found = true;
-                    info.isClass = sym.type == SymbolType::Class;
-                    info.isTemplate = info.isClass && sym.GetClass().isTemplate;
-                    return true;
-                });
-
-                if (info.found || bare == typeName)
-                {
-                    break;
+                    return false;
                 }
+                info.found = true;
+                info.isClass = sym.type == SymbolType::Class;
+                info.isTemplate = info.isClass && sym.GetClass().isTemplate;
+                return true;
+            });
+
+            if (info.found)
+            {
+                return info;
             }
+
+            const std::string bare = LastScopeSegment(typeName);
+            table.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &symbols)
+            {
+                if (!info.found && (qName == bare || LastScopeSegment(qName) == bare))
+                {
+                    for (const auto &sym : symbols)
+                    {
+                        if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+                        {
+                            info.found = true;
+                            info.isClass = sym.type == SymbolType::Class;
+                            info.isTemplate = info.isClass && sym.GetClass().isTemplate;
+                            return;
+                        }
+                    }
+                }
+            });
+
             return info;
         }
 
@@ -348,7 +363,31 @@ namespace angel_lsp::analysis
             const bool toBuiltIn = IsBuiltInValueType(to, ctx);
             if (fromBuiltIn && toBuiltIn)
             {
-                return true;
+                if (from == to)
+                {
+                    return true;
+                }
+                const auto isNumeric = [](const std::string &t)
+                {
+                    return t == "int" || t == "int8" || t == "int16" || t == "int32" || t == "int64" ||
+                           t == "uint" || t == "uint8" || t == "uint16" || t == "uint32" || t == "uint64" ||
+                           t == "float" || t == "double";
+                };
+                const bool fromNum = isNumeric(from);
+                const bool toNum = isNumeric(to);
+                if (fromNum && toNum)
+                {
+                    return true;
+                }
+                if (from == "bool" && toNum)
+                {
+                    return true;
+                }
+                if (fromNum && to == "bool")
+                {
+                    return true;
+                }
+                return false;
             }
 
             const TypeDeclarationInfo fromDecl = FindTypeDeclaration(from, table);
@@ -510,7 +549,7 @@ namespace angel_lsp::analysis
             // Type(args) constructs a value of that type; anything else is an ordinary call.
             if (FindTypeDeclaration(calleeName, ctx.request.symbolTable).found)
             {
-                return ExpressionType{ LastScopeSegment(calleeName), true, false };
+                return ExpressionType{ calleeName, true, false };
             }
             if (IsBuiltInValueType(calleeName, ctx))
             {
@@ -647,12 +686,18 @@ namespace angel_lsp::analysis
 
             result.isHandle = raw.find('@') != std::string::npos;
             result.baseName = CleanBaseType(raw);
-            if (result.baseName.empty() || IsBuiltInValueType(result.baseName, ctx))
+            if (result.baseName.empty())
             {
                 return result;
             }
             if (ctx.request.IsRegisteredSymbol(result.baseName))
             {
+                return result;
+            }
+
+            if (IsBuiltInValueType(result.baseName, ctx))
+            {
+                result.usable = true;
                 return result;
             }
 
@@ -702,9 +747,6 @@ namespace angel_lsp::analysis
                 return;
             }
 
-            // as-err-implicit-conversion was the older code for this same condition, naming only
-            // the source type where this one names both and says which declaration would fix it.
-            // Deleted, so the table holds one message per condition.
             EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName, declared.baseName);
         }
 
@@ -877,8 +919,13 @@ namespace angel_lsp::analysis
 
             if (nodeType == "variable_declaration")
             {
-                const DeclaredType declared = ReadDeclaredType(
-                    ts_node_child_by_field_name(node, "var_type", k_varTypeFieldLength), ctx, request.sourceCode);
+                TSNode typeNode = ts_node_child_by_field_name(node, "var_type", k_varTypeFieldLength);
+                if (ts_node_is_null(typeNode))
+                {
+                    typeNode = ts_node_child_by_field_name(node, "type", k_typeFieldLength);
+                }
+
+                const DeclaredType declared = ReadDeclaredType(typeNode, ctx, request.sourceCode);
 
                 if (declared.usable)
                 {
@@ -896,6 +943,26 @@ namespace angel_lsp::analysis
                         {
                             CheckConstruction(ts_node_child_by_field_name(child, "arguments", k_argsFieldLength),
                                               declared.baseName, scopeAt(), ctx, request.sourceCode);
+                        }
+                    }
+                }
+            }
+            else if (nodeType == "assignment_expression")
+            {
+                TSNode left = ts_node_child_by_field_name(node, "left", 4);
+                TSNode right = ts_node_child_by_field_name(node, "right", 5);
+                if (!ts_node_is_null(left) && !ts_node_is_null(right))
+                {
+                    std::string leftType = ResolveExpressionType(left, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+                    std::string rightType = ResolveExpressionType(right, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+                    std::string cleanLeft = CleanBaseType(leftType);
+                    std::string cleanRight = CleanBaseType(rightType);
+
+                    if (!cleanLeft.empty() && !cleanRight.empty() && cleanLeft != cleanRight)
+                    {
+                        if (!IsConvertible(cleanRight, cleanLeft, ctx))
+                        {
+                            EmitAtNode(right, ctx, "as-err-no-implicit-conversion", cleanRight, cleanLeft);
                         }
                     }
                 }

@@ -411,12 +411,77 @@ TEST_CASE("TypeConversion - Without a tree the pass stays silent instead of gues
     }));
 }
 
+TEST_CASE("TypeConversion - Initializer and Assignment Across Unrelated Classes Fails")
+{
+    const std::string code =
+        "class AnotherClass\n"
+        "{\n"
+        "    void AnotherMethod(float f)\n"
+        "    {\n"
+        "    }\n"
+        "}\n"
+        "class MyClass : AnotherClass\n"
+        "{\n"
+        "    private float f;\n"
+        "    void MyMethod()\n"
+        "    {\n"
+        "        f = 1.0f;\n"
+        "    }\n"
+        "}\n"
+        "namespace MyNamespace\n"
+        "{\n"
+        "    class MyNamespaceClass\n"
+        "    {\n"
+        "        int i;\n"
+        "    }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    MyClass myClass = MyNamespace::MyNamespaceClass();\n"
+        "}\n";
+
+    ConversionEnvironment env(code);
+    auto diags = env.Analyze();
+    bool hasNoImplicitConv = std::any_of(diags.begin(), diags.end(),
+        [](const Diagnostic &d) { return d.code == "as-err-no-implicit-conversion"; });
+    CHECK(hasNoImplicitConv);
+}
+
+TEST_CASE("TypeConversion - Assignment Expression Passed As Method Argument Is Evaluated Correctly")
+{
+    const std::string code =
+        "class AnotherClass\n"
+        "{\n"
+        "    void AnotherMethod(float f)\n"
+        "    {\n"
+        "    }\n"
+        "}\n"
+        "class MyClass : AnotherClass\n"
+        "{\n"
+        "}\n"
+        "int g_var;\n"
+        "void main()\n"
+        "{\n"
+        "    MyClass myClass;\n"
+        "    myClass.AnotherMethod(g_var = 0);\n"
+        "}\n";
+
+    ConversionEnvironment env(code);
+    auto diags = env.Analyze();
+    bool hasTypeError = std::any_of(diags.begin(), diags.end(),
+        [](const Diagnostic &d) {
+            return d.code == "as-err-no-implicit-conversion" ||
+                   d.code == "as-err-call-no-matching-signature";
+        });
+    CHECK_FALSE(hasTypeError);
+}
+
 // =====================================================================================
-// Full-corpus false-positive audit (opt-in - skipped by default, run via
+// Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Type Conversion Corpus Audit*"`)
 //
-// Grouped by project prefix rather than run per file: a class declared in a sibling file is only
-// visible with a shared SymbolTable, and visibility is precisely what decides whether this pass
+// The corpus holds 1,061 real AngelScript files across several games. This test walks
+// every one of them through the same pipeline as the tests above and verifies that none
 // says anything at all. Per-file runs would therefore audit the silent path and prove nothing.
 // =====================================================================================
 
