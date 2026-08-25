@@ -12,6 +12,9 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
   - **Semantic Pass**: Workspace and document-level symbol resolution diagnostics.
 - **Hover Information (`textDocument/hover`)**: Rich Markdown tooltips displaying function signatures, variable types, class properties, and parsed Doxygen documentation.
 - **Go to Definition & Type Definition (`textDocument/definition`, `textDocument/typeDefinition`)**: Precise symbol lookup across documents, namespaces, classes, and global scopes with inheritance traversal.
+- **Go to Declaration (`textDocument/declaration`)**: The same answer as Go to Definition, deliberately. AngelScript has no declaration/definition split - no headers, no prototypes - so the two questions are one, and the editor's second navigation key should not be inert.
+- **Go to Implementation (`textDocument/implementation`)**: The opposite direction. From an interface or a base class, the types that derive from it transitively; from a method declared in one, that method as each subtype declares it.
+- **Expand Selection (`textDocument/selectionRange`)**: Grows the selection one syntactic step at a time, straight off the parse tree.
 - **Auto-Completion (`textDocument/completion`)**: Context-aware completion suggestions for global symbols, class member functions/properties, and namespace scopes.
 - **Semantic Tokens (`textDocument/semanticTokens/full`)**: Full semantic syntax highlighting for keywords, types, functions, variables, parameters, and enum members.
 - **Signature Help (`textDocument/signatureHelp`)**: Active parameter highlight and signature preview for function calls.
@@ -145,6 +148,10 @@ server/build/angel_lsp_tests
 | `WorkspaceSymbolTest.cpp` | Layer 3 Multi-tiered fuzzy search, scoring, and ranking across all indexed files. |
 | `ReferencesTest.cpp` | Layer 3 Project-wide references lookup with lexical shadowing and class inheritance awareness. |
 | `RenameTest.cpp` | Layer 3 Prepare rename validation and safe `WorkspaceEdit` generation across multiple documents. |
+| `ImplementationTest.cpp` | Layer 3 Go to Implementation: interfaces to implementing classes, base classes to derived ones transitively, methods to their overrides, and the cases that answer with nothing. |
+| `SelectionRangeTest.cpp` | Layer 3 Expand selection chains: containment, no repeated links, and one answer per requested position. |
+| `ConstCheckerTest.cpp` | Layer 2 Const correctness at the use site: assigning to a const, and calling a non-const method through a const object. |
+| `AccessCheckerTest.cpp` | Layer 2 Access control on member use: `private` per class, `protected` through a derived object, and the engine options that move the boundary. |
 | `ServerConfigTest.cpp` | Layer 1/4 CLI argument parsing, boolean feature flag toggles, option syntax (`--flag=value` / `--flag value`), and robustness. |
 
 ---

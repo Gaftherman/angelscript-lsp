@@ -382,10 +382,9 @@ namespace angel_lsp::analysis
             // A template class is instantiated per element type; its declared parameter types are
             // written in terms of the template parameter, which says nothing about this call site.
             //
-            // Currently unreachable, and kept anyway: ClassSignature::isTemplate is never set
-            // because the grammar has no production for a template class declaration, so one can
-            // never reach this checker to be judged. The guard is the right answer for the day the
-            // grammar gains it, and it is one comparison.
+            // Reachable since the grammar gained a template class declaration and SymbolCollector
+            // began setting ClassSignature::isTemplate from it. This comment used to say the
+            // opposite and had simply gone stale.
             if (toDecl.isTemplate)
             {
                 return true;

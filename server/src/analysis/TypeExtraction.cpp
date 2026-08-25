@@ -15,7 +15,6 @@ namespace angel_lsp::analysis
         TSSymbol symDatatype = 0;
         TSSymbol symTemplateTypeList = 0;
         TSSymbol symIdentifier = 0;
-        TSSymbol symScopedType = 0;
         TSSymbol symType = 0;
         TSSymbol symNullLiteral = 0;
         TSSymbol symParenthesizedExpression = 0;
@@ -30,7 +29,6 @@ namespace angel_lsp::analysis
             symDatatype = ts_language_symbol_for_name(lang, SYM_NAME("datatype"), true);
             symTemplateTypeList = ts_language_symbol_for_name(lang, SYM_NAME("template_type_list"), true);
             symIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("identifier"), true);
-            symScopedType = ts_language_symbol_for_name(lang, SYM_NAME("scoped_type"), true);
             symType = ts_language_symbol_for_name(lang, SYM_NAME("type"), true);
             symNullLiteral = ts_language_symbol_for_name(lang, SYM_NAME("null_literal"), true);
             symParenthesizedExpression = ts_language_symbol_for_name(lang, SYM_NAME("parenthesized_expression"), true);
@@ -135,7 +133,7 @@ namespace angel_lsp::analysis
             return result;
         }
 
-        if (nodeSymbol == symbols.symIdentifier || nodeSymbol == symbols.symScopedType)
+        if (nodeSymbol == symbols.symIdentifier)
         {
             result.baseTypeName = GetNodeText(typeNode, sourceCode);
             result.kind = TypeKind::Unknown;
@@ -151,14 +149,7 @@ namespace angel_lsp::analysis
             TSNode child = ts_node_child(typeNode, i);
             TSSymbol childSym = ts_node_symbol(child);
 
-            if (childSym == symbols.symScopedType)
-            {
-                result.baseTypeName = GetNodeText(child, sourceCode);
-                result.kind = TypeKind::Unknown;
-                datatypeText = result.baseTypeName;
-                prevChild = child;
-            }
-            else if (childSym == symbols.symDatatype)
+            if (childSym == symbols.symDatatype)
             {
                 TSNode inner = ts_node_named_child(child, 0);
                 if (!ts_node_is_null(inner))
