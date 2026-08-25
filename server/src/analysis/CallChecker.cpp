@@ -1,4 +1,5 @@
 #include "analysis/CallChecker.h"
+#include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
 
@@ -73,6 +74,27 @@ namespace angel_lsp::analysis
             }
 
             return sawArgument ? commas + 1 : 0;
+        }
+
+        std::vector<TSNode> GetArgumentNodes(TSNode argumentList)
+        {
+            std::vector<TSNode> argNodes;
+            if (ts_node_is_null(argumentList))
+            {
+                return argNodes;
+            }
+
+            const uint32_t count = ts_node_child_count(argumentList);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(argumentList, i);
+                const std::string_view childType = ts_node_type(child);
+                if (childType != "(" && childType != ")" && childType != "," && childType != "comment")
+                {
+                    argNodes.push_back(child);
+                }
+            }
+            return argNodes;
         }
 
         /** @brief What one declaration will accept, in argument counts. */
@@ -419,15 +441,81 @@ namespace angel_lsp::analysis
             }
 
             const CandidateSet judged = JudgeAgainst(candidates, argumentCount);
-            if (!judged.decided || judged.accepts)
+            if (!judged.decided || !judged.accepts)
             {
+                if (judged.decided && !judged.accepts)
+                {
+                    const TSPoint start = ts_node_start_point(callee);
+                    const TSPoint end = ts_node_end_point(arguments);
+                    ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                    "as-err-call-argument-count", reportedName, std::to_string(argumentCount));
+                }
                 return;
             }
 
-            const TSPoint start = ts_node_start_point(callee);
-            const TSPoint end = ts_node_end_point(arguments);
-            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
-                            "as-err-call-argument-count", reportedName, std::to_string(argumentCount));
+            // Argument count is valid. Now check argument types against overload candidates.
+            std::vector<TSNode> argNodes = GetArgumentNodes(arguments);
+            std::vector<std::string> argTypes;
+            bool allArgsResolved = true;
+
+            for (const auto &argNode : argNodes)
+            {
+                std::string argType = ResolveExpressionType(argNode, scope, table, request.sourceCode, ctx.request.fileUri);
+                if (argType.empty())
+                {
+                    allArgsResolved = false;
+                }
+                argTypes.push_back(argType);
+            }
+
+            if (allArgsResolved && !argTypes.empty())
+            {
+                std::vector<Symbol> matchingArityCandidates;
+                for (const auto &sym : candidates)
+                {
+                    const Arity arity = ArityOf(sym.GetFunction());
+                    if (arity.variadic || (argumentCount >= arity.required && argumentCount <= arity.maximum))
+                    {
+                        matchingArityCandidates.push_back(sym);
+                    }
+                }
+
+                if (!matchingArityCandidates.empty())
+                {
+                    OverloadMatchResult match = ResolveBestOverload(matchingArityCandidates, argTypes, table);
+                    if (match.isAmbiguous)
+                    {
+                        const TSPoint start = ts_node_start_point(callee);
+                        const TSPoint end = ts_node_end_point(arguments);
+                        ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                        "as-err-call-ambiguous", reportedName);
+                    }
+                    else if (match.viableCandidates.empty() || match.bestScore >= 999)
+                    {
+                        if (matchingArityCandidates.size() == 1)
+                        {
+                            const auto &fn = matchingArityCandidates[0].GetFunction();
+                            for (size_t i = 0; i < argTypes.size() && i < fn.parameters.size(); ++i)
+                            {
+                                int score = ScoreArgumentMatch(argTypes[i], fn.parameters[i], table);
+                                if (score >= 999)
+                                {
+                                    const TSPoint aStart = ts_node_start_point(argNodes[i]);
+                                    const TSPoint aEnd = ts_node_end_point(argNodes[i]);
+                                    ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                                    "as-err-no-implicit-conversion", argTypes[i], fn.parameters[i].typeName);
+                                    break;
+                                }
+                            }
+                        }
+
+                        const TSPoint start = ts_node_start_point(callee);
+                        const TSPoint end = ts_node_end_point(arguments);
+                        ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                        "as-err-call-no-matching-signature", reportedName);
+                    }
+                }
+            }
         }
 
         void VisitNode(TSNode node, const CallCheckRequest &request, DiagnosticContext &ctx)

@@ -271,6 +271,49 @@ TEST_CASE("CallChecker - A predefined stub is exempt")
                         "as-err-call-argument-count"));
 }
 
+TEST_CASE("CallChecker - Reports incompatible argument type for method call")
+{
+    const std::string code =
+        "class AnotherClass\n"
+        "{\n"
+        "    void AnotherMethod(float f)\n"
+        "    {\n"
+        "    }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    AnotherClass myClass;\n"
+        "    myClass.AnotherMethod(\"2.0f\");\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    bool hasTypeError = HasCode(diags, "as-err-no-implicit-conversion") ||
+                        HasCode(diags, "as-err-call-no-matching-signature");
+    CHECK(hasTypeError);
+}
+
+TEST_CASE("CallChecker - Accepts compatible argument types")
+{
+    const std::string code =
+        "class AnotherClass\n"
+        "{\n"
+        "    void AnotherMethod(float f)\n"
+        "    {\n"
+        "    }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    AnotherClass myClass;\n"
+        "    myClass.AnotherMethod(2.0f);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-argument-count"));
+}
+
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Call Argument Corpus Audit*"`)
