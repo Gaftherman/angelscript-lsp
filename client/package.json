@@ -195,6 +195,16 @@
           "default": true,
           "markdownDescription": "Turn `#include` directives into clickable links."
         },
+        "angelscript.features.implementation": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Go to Implementation: from an interface or a base class to the types that answer to it, and from a method to the ones that implement or override it."
+        },
+        "angelscript.features.selectionRange": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Expand selection: grow the selection one syntactic step at a time."
+        },
         "angelscript.features.typeConversionChecks": {
           "type": "boolean",
           "default": true,

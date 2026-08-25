@@ -3,6 +3,8 @@
 #include "lsp/PositionCodec.h"
 #include "features/hover/HoverHandler.h"
 #include "features/definition/DefinitionHandler.h"
+#include "features/implementation/ImplementationHandler.h"
+#include "features/selection_range/SelectionRangeHandler.h"
 #include "features/completion/CompletionHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "features/signature_help/SignatureHelpHandler.h"
@@ -193,6 +195,22 @@ namespace angel_lsp
         {
             result.capabilities.definitionProvider = true;
             result.capabilities.typeDefinitionProvider = true;
+
+            // AngelScript has no declaration/definition split - no headers, no prototypes, which
+            // is the whole reason as-err-missing-body exists - so "Go to Declaration" is the same
+            // question as "Go to Definition" and is answered by the same handler. Announcing it
+            // costs nothing and stops the editor's second navigation key doing nothing at all.
+            result.capabilities.declarationProvider = true;
+        }
+
+        if (m_config.features.enableImplementation)
+        {
+            result.capabilities.implementationProvider = true;
+        }
+
+        if (m_config.features.enableSelectionRange)
+        {
+            result.capabilities.selectionRangeProvider = true;
         }
 
         if (m_config.features.enableCompletion)
@@ -1585,6 +1603,98 @@ namespace angel_lsp
                     return defs.value();
                 }
                 return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_Declaration>(
+            [this](lsp::requests::TextDocument_Declaration::Params &&req) -> lsp::requests::TextDocument_Declaration::Result
+            {
+                // Deliberately the same handler as textDocument/definition: see the capability.
+                if (!m_config.features.enableDefinition)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::DefinitionRequest dr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                auto defs = features::GetDefinition(dr);
+                if (defs.has_value() && !defs->empty())
+                {
+                    EncodeAcrossDocuments(defs.value());
+                    return defs.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_Implementation>(
+            [this](lsp::requests::TextDocument_Implementation::Params &&req) -> lsp::requests::TextDocument_Implementation::Result
+            {
+                if (!m_config.features.enableImplementation)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::ImplementationRequest ir{ uriStr, docIt->second, tree, m_symbolTable, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                auto impls = features::GetImplementations(ir);
+                if (impls.has_value() && !impls->empty())
+                {
+                    EncodeAcrossDocuments(impls.value());
+                    return impls.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_SelectionRange>(
+            [this](lsp::requests::TextDocument_SelectionRange::Params &&req) -> lsp::requests::TextDocument_SelectionRange::Result
+            {
+                if (!m_config.features.enableSelectionRange)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                std::vector<lsp::Position> positions;
+                positions.reserve(req.positions.size());
+                for (const auto &position : req.positions)
+                {
+                    positions.push_back(codec::Decode(docIt->second, m_positionEncoding, position));
+                }
+
+                features::SelectionRangeRequest sr{ docIt->second, tree, positions };
+                auto ranges = features::GetSelectionRanges(sr);
+                if (ranges.empty())
+                {
+                    return lsp::Null{};
+                }
+
+                // Every range in every chain is encoded, not just the outermost: each link is a
+                // selection the editor will apply on its own.
+                for (auto &chain : ranges)
+                {
+                    for (lsp::SelectionRange *link = &chain; link != nullptr; link = link->parent.get())
+                    {
+                        codec::Encode(docIt->second, m_positionEncoding, link->range);
+                    }
+                }
+                return ranges;
             });
 
         m_messageHandler->add<lsp::requests::TextDocument_TypeDefinition>(

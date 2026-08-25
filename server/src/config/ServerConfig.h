@@ -30,6 +30,8 @@ namespace angel_lsp::config
         bool enableFormatting = true;
         bool enableDocumentLink = true;
         bool enableTypeConversionChecks = true;
+        bool enableImplementation = true;
+        bool enableSelectionRange = true;
     };
 
     /**

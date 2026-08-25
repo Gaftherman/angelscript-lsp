@@ -200,6 +200,96 @@ TEST_CASE("Server - A disabled feature flag withholds its capability")
     CHECK(stream.OutputContains("\"definitionProvider\""));
 }
 
+TEST_CASE("Server - Announces the navigation capabilities added in this round")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.OutputContains("\"declarationProvider\""));
+    CHECK(stream.OutputContains("\"implementationProvider\""));
+    CHECK(stream.OutputContains("\"selectionRangeProvider\""));
+}
+
+TEST_CASE("Server - Withholds the new capabilities when their flags are off")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.features.enableImplementation = false;
+    serverConfig.features.enableSelectionRange = false;
+    RunScript(serverConfig, stream);
+
+    CHECK_FALSE(stream.OutputContains("\"implementationProvider\""));
+    CHECK_FALSE(stream.OutputContains("\"selectionRangeProvider\""));
+
+    // Declaration rides on the definition flag, because it is the same handler.
+    CHECK(stream.OutputContains("\"declarationProvider\""));
+}
+
+TEST_CASE("Server - Answers an implementation request over the wire")
+{
+    const std::string source =
+        "interface IThinker\n"
+        "{\n"
+        "    void Think();\n"
+        "}\n"
+        "class Robot : IThinker\n"
+        "{\n"
+        "    void Think() { }\n"
+        "}\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/implementation","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"position":{"line":0,"character":12}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    // The implementing class starts on line 4; an answer that is null or empty would not carry it.
+    CHECK(stream.OutputContains("\"line\":4"));
+}
+
+TEST_CASE("Server - Answers a selection range request over the wire")
+{
+    const std::string source = "void Think() { int ticks = 0; }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/selectionRange","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"positions":[{"line":0,"character":20}]}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    // A chain, not a single range: the nesting is the whole answer.
+    CHECK(stream.OutputContains("\"parent\""));
+}
+
 TEST_CASE("Server - Publishes diagnostics for an opened document")
 {
     WorkspaceFixture fixture;

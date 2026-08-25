@@ -1009,6 +1009,31 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
+    TEST_CASE("Implementation and selection range flags")
+    {
+        SUBCASE("Both enabled by default")
+        {
+            ServerConfig config = FromArgs(0, nullptr);
+            CHECK(config.features.enableImplementation == true);
+            CHECK(config.features.enableSelectionRange == true);
+        }
+
+        SUBCASE("Each disables independently")
+        {
+            ArgvHelper args{"angel_lsp", "--disable-implementation"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.features.enableImplementation == false);
+            CHECK(config.features.enableSelectionRange == true);
+        }
+
+        SUBCASE("Disabled via --enable-selection-range=false")
+        {
+            ArgvHelper args{"angel_lsp", "--enable-selection-range=false"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.features.enableSelectionRange == false);
+        }
+    }
+
     TEST_CASE("Predefined file paths")
     {
         SUBCASE("Empty by default")

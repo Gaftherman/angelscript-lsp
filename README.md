@@ -185,6 +185,10 @@ The `angel_lsp` executable accepts command-line arguments to enable or disable i
 | `--disable-formatting` | Explicitly disable formatting. | - |
 | `--enable-document-link[=true\|false]` | Enable or disable `#include` links. | `true` |
 | `--disable-document-link` | Explicitly disable `#include` links. | - |
+| `--enable-implementation[=true\|false]` | Enable or disable Go to Implementation. | `true` |
+| `--disable-implementation` | Explicitly disable Go to Implementation. | - |
+| `--enable-selection-range[=true\|false]` | Enable or disable expand selection. | `true` |
+| `--disable-selection-range` | Explicitly disable expand selection. | - |
 | `--enable-type-conversion-checks[=true\|false]` | Enable or disable the type conversion diagnostics. | `true` |
 | `--disable-type-conversion-checks` | Explicitly disable type conversion diagnostics. | - |
 | `--enable-predefined-loader[=true\|false]` | Enable or disable background predefined symbols loader. | `true` |

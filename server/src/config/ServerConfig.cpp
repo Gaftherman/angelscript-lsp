@@ -121,7 +121,11 @@ namespace angel_lsp::config
                   << "  --enable-document-link[=true|false]     Enable/disable #include links (default: true)\n"
                   << "  --disable-document-link                 Disable #include links\n"
                   << "  --enable-type-conversion-checks[=true|false] Enable/disable type conversion diagnostics (default: true)\n"
-                  << "  --disable-type-conversion-checks        Disable type conversion diagnostics\n\n"
+                  << "  --disable-type-conversion-checks        Disable type conversion diagnostics\n"
+                  << "  --enable-implementation[=true|false]    Enable/disable Go to Implementation (default: true)\n"
+                  << "  --disable-implementation                Disable Go to Implementation\n"
+                  << "  --enable-selection-range[=true|false]   Enable/disable expand selection (default: true)\n"
+                  << "  --disable-selection-range               Disable expand selection\n\n"
                   << "Options:\n"
                   << "  --locale=<string>                       Set diagnostic language/locale (default: en)\n"
                   << "  --file-ext=<string>                     Set script file extension (default: .as)\n"
@@ -345,6 +349,22 @@ namespace angel_lsp::config
             else if (key == "--disable-type-conversion-checks" || key == "--disable-typeconversionchecks")
             {
                 config.features.enableTypeConversionChecks = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-implementation")
+            {
+                config.features.enableImplementation = getBoolValue(true);
+            }
+            else if (key == "--disable-implementation")
+            {
+                config.features.enableImplementation = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-selection-range" || key == "--enable-selectionrange")
+            {
+                config.features.enableSelectionRange = getBoolValue(true);
+            }
+            else if (key == "--disable-selection-range" || key == "--disable-selectionrange")
+            {
+                config.features.enableSelectionRange = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
             else if (key == "--enable-formatting")
             {
