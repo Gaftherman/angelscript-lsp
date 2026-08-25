@@ -225,6 +225,9 @@ namespace angel_lsp::analysis
             if (ref.isMemberAccess)
                 continue;
 
+            if (ref.name == "this" || ref.name == "value")
+                continue;
+
             if (ResolveInScope(scope, ref.name) != nullptr)
                 continue;
 

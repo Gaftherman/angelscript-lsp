@@ -297,6 +297,108 @@ TEST_CASE("Auto - Diagnostic Parity: Cyclic dependency, void, and missing initia
     CHECK(HasCode(diags, "as-err-auto-requires-initializer"));
 }
 
+TEST_CASE("Virtual Properties: Inline declaration, method pairs, and auto inference")
+{
+    const std::string script =
+        "class Character {\n"
+        "    private int m_hp;\n"
+        "    int hp {\n"
+        "        get const { return m_hp; }\n"
+        "        set { m_hp = value; }\n"
+        "    }\n"
+        "}\n"
+        "class Stats {\n"
+        "    private float m_speed;\n"
+        "    float get_speed() const property { return m_speed; }\n"
+        "    void set_speed(float val) property { m_speed = val; }\n"
+        "}\n"
+        "void Main() {\n"
+        "    Character hero;\n"
+        "    hero.hp = 100;\n"
+        "    auto currentHp = hero.hp;\n"
+        "    int valHp = currentHp;\n"
+        "    Stats stats;\n"
+        "    stats.speed = 5.5f;\n"
+        "    auto s = stats.speed;\n"
+        "    float valSpeed = s;\n"
+        "    valHp += 1;\n"
+        "    valSpeed += 1.0f;\n"
+        "}\n";
+
+    auto diags = AnalyzeOperatorSnippet(script);
+    CHECK(diags.empty());
+}
+
+TEST_CASE("Diagnostics: Read-only and write-only property violations")
+{
+    const std::string script =
+        "class Device {\n"
+        "    int readOnlyProp { get const { return 42; } }\n"
+        "    int writeOnlyProp { set { } }\n"
+        "}\n"
+        "void Main() {\n"
+        "    Device dev;\n"
+        "    dev.readOnlyProp = 10;\n"
+        "    auto val = dev.writeOnlyProp;\n"
+        "}\n";
+
+    auto diags = AnalyzeOperatorSnippet(script);
+    CHECK(HasCode(diags, "as-err-read-only-property"));
+    CHECK(HasCode(diags, "as-err-write-only-property"));
+}
+
+TEST_CASE("Diagnostics: Property get/set type mismatch")
+{
+    const std::string script =
+        "class BadObj {\n"
+        "    int get_value() const property { return 0; }\n"
+        "    void set_value(string val) property {}\n"
+        "}\n";
+
+    auto diags = AnalyzeOperatorSnippet(script);
+    CHECK(HasCode(diags, "as-err-property-type-mismatch"));
+}
+
+TEST_CASE("Lifetime Constraints: Compound assignment on Value Type vs Reference Type")
+{
+    const std::string script =
+        "class ValueObject {\n"
+        "    int score { get const { return 0; } set {} }\n"
+        "}\n"
+        "class RefObject {\n"
+        "    int score { get const { return 0; } set {} }\n"
+        "}\n"
+        "void Main() {\n"
+        "    ValueObject valObj;\n"
+        "    valObj.score += 5;\n"
+        "    RefObject@ refObj = RefObject();\n"
+        "    refObj.score += 5;\n"
+        "}\n";
+
+    auto diags = AnalyzeOperatorSnippet(script);
+    CHECK(HasCode(diags, "as-err-compound-assign-on-value-prop"));
+}
+
+TEST_CASE("Restrictions: Increment/Decrement and Indexed Compound Assignment")
+{
+    const std::string script =
+        "class Inventory {\n"
+        "    int count { get const { return 0; } set {} }\n"
+        "    string get_items(int idx) property { return \"\"; }\n"
+        "    void set_items(int idx, const string &in val) property {}\n"
+        "}\n"
+        "void Main() {\n"
+        "    Inventory inv;\n"
+        "    inv.count++;\n"
+        "    --inv.count;\n"
+        "    inv.items[0] += \"ex\";\n"
+        "}\n";
+
+    auto diags = AnalyzeOperatorSnippet(script);
+    CHECK(HasCode(diags, "as-err-inc-dec-on-virtual-prop"));
+    CHECK(HasCode(diags, "as-err-compound-assign-on-indexed-prop"));
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Operator Rules Corpus Audit*"`)

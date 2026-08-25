@@ -228,6 +228,63 @@ namespace angel_lsp::analysis::rules
                 ctx.Emit(sym, "as-err-circular-inherit", sym.name);
             }
         }
+
+        /** @brief Reports property accessor get/set type mismatches within a class/interface. */
+        void CheckPropertyAccessors(const Symbol &sym, const ClassSignature &sig, const DiagnosticContext &ctx)
+        {
+            const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            if (container.empty())
+            {
+                return;
+            }
+
+            const SymbolTable &table = ctx.request.symbolTable;
+
+            ankerl::unordered_dense::map<std::string, const Symbol *> getters;
+            ankerl::unordered_dense::map<std::string, const Symbol *> setters;
+
+            table.ForEachSymbolInFile(ctx.request.fileUri, [&](const std::string &qName, const std::vector<Symbol> &syms) {
+                for (const auto &s : syms)
+                {
+                    if (s.containerName == container && s.type == SymbolType::Function &&
+                        std::holds_alternative<FunctionSignature>(s.signature))
+                    {
+                        const auto &fn = s.GetFunction();
+                        if (fn.modifiers.isProperty)
+                        {
+                            if (s.name.starts_with("get_") && s.name.size() > 4)
+                            {
+                                std::string propName = s.name.substr(4);
+                                getters[propName] = &s;
+                            }
+                            else if (s.name.starts_with("set_") && s.name.size() > 4)
+                            {
+                                std::string propName = s.name.substr(4);
+                                setters[propName] = &s;
+                            }
+                        }
+                    }
+                }
+            });
+
+            for (const auto &[propName, getSym] : getters)
+            {
+                auto it = setters.find(propName);
+                if (it != setters.end())
+                {
+                    const Symbol *setSym = it->second;
+                    std::string getRet = CleanBaseType(getSym->GetFunction().returnType);
+                    std::string setParam = !setSym->GetFunction().parameters.empty()
+                                               ? CleanBaseType(setSym->GetFunction().parameters.back().typeName)
+                                               : "";
+                    if (!getRet.empty() && !setParam.empty() && getRet != setParam)
+                    {
+                        ctx.LogRule("CheckPropertyAccessors", "as-err-property-type-mismatch", *setSym);
+                        ctx.Emit(*setSym, "as-err-property-type-mismatch", propName, getRet, setParam);
+                    }
+                }
+            }
+        }
     }
 
     bool HasInheritanceCycle(const std::string &typeName, const SymbolTable &table)
@@ -368,5 +425,6 @@ namespace angel_lsp::analysis::rules
         CheckBases(sym, sig, ctx);
         CheckFinalOverrides(sym, sig, ctx);
         CheckInterfaceImplementation(sym, sig, ctx);
+        CheckPropertyAccessors(sym, sig, ctx);
     }
 }

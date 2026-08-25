@@ -191,6 +191,12 @@ namespace angel_lsp::i18n
         m_messages["as-err-cannot-infer-void"] = "Cannot deduce 'auto' type from expression of type 'void'.";
         m_messages["as-err-cannot-infer-null"] = "Cannot deduce 'auto' type from 'null'.";
         m_messages["as-err-cyclic-auto-dependency"] = "Variable '{}' is used in its own 'auto' initialization.";
+        m_messages["as-err-property-type-mismatch"] = "Getter and setter for property '{}' have mismatched types ('{}' vs '{}').";
+        m_messages["as-err-read-only-property"] = "Cannot assign to read-only property '{}'.";
+        m_messages["as-err-write-only-property"] = "Cannot read from write-only property '{}'.";
+        m_messages["as-err-inc-dec-on-virtual-prop"] = "Cannot use increment/decrement operators on virtual property '{}'.";
+        m_messages["as-err-compound-assign-on-value-prop"] = "Compound assignment is not allowed on virtual property '{}' of value type.";
+        m_messages["as-err-compound-assign-on-indexed-prop"] = "Compound assignment is not allowed on indexed property '{}'.";
 
         if (locale == "es")
         {
@@ -299,6 +305,12 @@ namespace angel_lsp::i18n
             m_messages["as-err-cannot-infer-void"] = "No se puede deducir el tipo 'auto' de una expresión de tipo 'void'.";
             m_messages["as-err-cannot-infer-null"] = "No se puede deducir el tipo 'auto' de 'null'.";
             m_messages["as-err-cyclic-auto-dependency"] = "La variable '{}' se usa en su propia inicialización 'auto'.";
+            m_messages["as-err-property-type-mismatch"] = "El getter y setter para la propiedad '{}' tienen tipos incompatibles ('{}' vs '{}').";
+            m_messages["as-err-read-only-property"] = "No se puede asignar a la propiedad de solo lectura '{}'.";
+            m_messages["as-err-write-only-property"] = "No se puede leer de la propiedad de solo escritura '{}'.";
+            m_messages["as-err-inc-dec-on-virtual-prop"] = "No se pueden usar operadores de incremento/decremento en la propiedad virtual '{}'.";
+            m_messages["as-err-compound-assign-on-value-prop"] = "La asignación compuesta no está permitida en la propiedad virtual '{}' de un tipo de valor.";
+            m_messages["as-err-compound-assign-on-indexed-prop"] = "La asignación compuesta no está permitida en la propiedad indexada '{}'.";
         }
     }
 

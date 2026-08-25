@@ -647,6 +647,97 @@ namespace angel_lsp::analysis
             return ExpressionType{};
         }
 
+        struct PropertyAccessInfo
+        {
+            bool isProperty = false;
+            bool hasGet = false;
+            bool hasSet = false;
+            bool isIndexed = false;
+            std::string propName;
+            std::string receiverType;
+        };
+
+        PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope *scope, const SymbolTable &table, std::string_view sourceCode, const std::string &uri)
+        {
+            PropertyAccessInfo info;
+            std::string_view nt = NodeType(exprNode);
+            if (nt == "member_expression")
+            {
+                TSNode objNode = ts_node_child_by_field_name(exprNode, "object", 6);
+                TSNode memNode = ts_node_child_by_field_name(exprNode, "member", 6);
+                if (ts_node_is_null(objNode) && ts_node_named_child_count(exprNode) > 0)
+                {
+                    objNode = ts_node_named_child(exprNode, 0);
+                    if (ts_node_named_child_count(exprNode) > 1)
+                    {
+                        memNode = ts_node_named_child(exprNode, 1);
+                    }
+                }
+                if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
+                {
+                    info.propName = NodeText(memNode, sourceCode);
+                    info.receiverType = ResolveExpressionType(objNode, scope, table, sourceCode, uri);
+                    std::string cleanObj = CleanBaseType(info.receiverType);
+                    if (!cleanObj.empty())
+                    {
+                        auto hierarchy = GetInheritedTypeHierarchy(cleanObj, table);
+                        for (const auto &typeName : hierarchy)
+                        {
+                            auto propSyms = table.FindSymbolsPtr(typeName + "::" + info.propName);
+                            if (propSyms)
+                            {
+                                for (const auto &s : *propSyms)
+                                {
+                                    if (s.type == SymbolType::Property && std::holds_alternative<VariableSignature>(s.signature))
+                                    {
+                                        const auto &vs = s.GetVariable();
+                                        if (vs.isVirtualProperty)
+                                        {
+                                            info.isProperty = true;
+                                            info.hasGet = vs.hasGet;
+                                            info.hasSet = vs.hasSet;
+                                            return info;
+                                        }
+                                    }
+                                }
+                            }
+                            auto getSyms = table.FindSymbolsPtr(typeName + "::get_" + info.propName);
+                            if (getSyms && !getSyms->empty())
+                            {
+                                info.isProperty = true;
+                                info.hasGet = true;
+                                for (const auto &gs : *getSyms)
+                                {
+                                    if (gs.type == SymbolType::Function && !gs.GetFunction().parameters.empty())
+                                    {
+                                        info.isIndexed = true;
+                                    }
+                                }
+                            }
+                            auto setSyms = table.FindSymbolsPtr(typeName + "::set_" + info.propName);
+                            if (setSyms && !setSyms->empty())
+                            {
+                                info.isProperty = true;
+                                info.hasSet = true;
+                                for (const auto &ss : *setSyms)
+                                {
+                                    if (ss.type == SymbolType::Function && ss.GetFunction().parameters.size() > 1)
+                                    {
+                                        info.isIndexed = true;
+                                    }
+                                }
+                            }
+                            if (info.isProperty)
+                            {
+                                return info;
+                            }
+                        }
+                    }
+                }
+            }
+            return info;
+        }
+
         /** @brief Emits at the exact source range of a node. */
         void EmitAtNode(TSNode node,
                         DiagnosticContext &ctx,
@@ -1042,8 +1133,44 @@ namespace angel_lsp::analysis
             {
                 TSNode left = ts_node_child_by_field_name(node, "left", 4);
                 TSNode right = ts_node_child_by_field_name(node, "right", 5);
+                TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
+                std::string opText = NodeText(opNode, request.sourceCode);
                 if (!ts_node_is_null(left) && !ts_node_is_null(right))
                 {
+                    // Property access checks
+                    std::string_view leftNodeType = NodeType(left);
+                    if (leftNodeType == "subscript_expression" || leftNodeType == "index_expression")
+                    {
+                        TSNode arrayNode = ts_node_child_by_field_name(left, "array", 5);
+                        if (ts_node_is_null(arrayNode) && ts_node_named_child_count(left) > 0)
+                        {
+                            arrayNode = ts_node_named_child(left, 0);
+                        }
+                        PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+                        if (pInfo.isProperty && pInfo.isIndexed && opText != "=")
+                        {
+                            EmitAtNode(node, ctx, "as-err-compound-assign-on-indexed-prop", pInfo.propName);
+                        }
+                    }
+                    else
+                    {
+                        PropertyAccessInfo pInfo = InspectPropertyAccess(left, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+                        if (pInfo.isProperty)
+                        {
+                            if (!pInfo.hasSet && pInfo.hasGet)
+                            {
+                                EmitAtNode(left, ctx, "as-err-read-only-property", pInfo.propName);
+                            }
+                            else if (opText != "=")
+                            {
+                                if (pInfo.receiverType.find('@') == std::string::npos)
+                                {
+                                    EmitAtNode(node, ctx, "as-err-compound-assign-on-value-prop", pInfo.propName);
+                                }
+                            }
+                        }
+                    }
+
                     std::string leftType = ResolveExpressionType(left, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
                     std::string rightType = ResolveExpressionType(right, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
                     std::string cleanLeft = CleanBaseType(leftType);
@@ -1074,6 +1201,72 @@ namespace angel_lsp::analysis
                         {
                             EmitAtNode(right, ctx, "as-err-no-implicit-conversion", cleanRight, cleanLeft);
                         }
+                    }
+                }
+            }
+            else if (nodeType == "update_expression" || nodeType == "unary_expression" || nodeType == "postfix_expression")
+            {
+                TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
+                std::string opText = NodeText(opNode, request.sourceCode);
+                std::string nodeText = NodeText(node, request.sourceCode);
+                if (opText == "++" || opText == "--" || nodeText.find("++") != std::string::npos || nodeText.find("--") != std::string::npos)
+                {
+                    TSNode argNode = ts_node_child_by_field_name(node, "argument", 8);
+                    if (ts_node_is_null(argNode))
+                    {
+                        argNode = ts_node_child_by_field_name(node, "operand", 7);
+                    }
+                    if (ts_node_is_null(argNode))
+                    {
+                        uint32_t count = ts_node_named_child_count(node);
+                        for (uint32_t i = 0; i < count; ++i)
+                        {
+                            TSNode ch = ts_node_named_child(node, i);
+                            std::string_view ct = ts_node_type(ch);
+                            if (ct != "operator" && ct != "++" && ct != "--")
+                            {
+                                argNode = ch;
+                                break;
+                            }
+                        }
+                    }
+                    if (!ts_node_is_null(argNode))
+                    {
+                        PropertyAccessInfo pInfo = InspectPropertyAccess(argNode, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+                        if (pInfo.isProperty)
+                        {
+                            EmitAtNode(node, ctx, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+                        }
+                    }
+                }
+            }
+            else if (nodeType == "member_expression")
+            {
+                TSNode parent = ts_node_parent(node);
+                bool isLhsAssignment = false;
+                bool isUnaryArg = false;
+                if (!ts_node_is_null(parent))
+                {
+                    std::string_view pType = ts_node_type(parent);
+                    if (pType == "assignment_expression")
+                    {
+                        TSNode leftChild = ts_node_child_by_field_name(parent, "left", 4);
+                        if (ts_node_eq(leftChild, node))
+                        {
+                            isLhsAssignment = true;
+                        }
+                    }
+                    else if (pType == "update_expression" || pType == "unary_expression" || pType == "postfix_expression")
+                    {
+                        isUnaryArg = true;
+                    }
+                }
+                if (!isLhsAssignment && !isUnaryArg)
+                {
+                    PropertyAccessInfo pInfo = InspectPropertyAccess(node, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+                    if (pInfo.isProperty && !pInfo.hasGet && pInfo.hasSet)
+                    {
+                        EmitAtNode(node, ctx, "as-err-write-only-property", pInfo.propName);
                     }
                 }
             }

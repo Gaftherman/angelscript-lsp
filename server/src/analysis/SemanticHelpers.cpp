@@ -1071,6 +1071,14 @@ namespace angel_lsp::analysis
                 auto found = symbolTable.FindSymbols(qName);
                 if (found.empty())
                 {
+                    found = symbolTable.FindSymbols(typeName + "::get_" + memName);
+                }
+                if (found.empty())
+                {
+                    found = symbolTable.FindSymbols(typeName + "::set_" + memName);
+                }
+                if (found.empty())
+                {
                     auto allSymbols = symbolTable.FindSymbols(memName);
                     for (const auto &sSym : allSymbols)
                     {
@@ -1086,9 +1094,16 @@ namespace angel_lsp::analysis
                     {
                         return CleanExpressionType(sym.GetVariable().typeName);
                     }
-                    else if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
+                    else if (sym.type == SymbolType::Function)
                     {
-                        return CleanExpressionType(sym.GetFunction().returnType);
+                        if (!sym.GetFunction().returnType.empty() && sym.GetFunction().returnType != "void")
+                        {
+                            return CleanExpressionType(sym.GetFunction().returnType);
+                        }
+                        else if (!sym.GetFunction().parameters.empty())
+                        {
+                            return CleanExpressionType(sym.GetFunction().parameters.back().typeName);
+                        }
                     }
                 }
             }
