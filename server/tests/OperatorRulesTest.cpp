@@ -258,6 +258,45 @@ TEST_CASE("OperatorRules - Deleted opAssign: Explicit Deletion Diagnostic Verifi
     CHECK(HasCode(diags, "as-err-deleted-method-called"));
 }
 
+TEST_CASE("Auto - Deducing return types from binary dual-dispatch overloads")
+{
+    const std::string script =
+        "class Matrix {\n"
+        "    Matrix opMul(float scalar) const { return Matrix(); }\n"
+        "}\n"
+        "class Vector {\n"
+        "    Vector opMul_r(const Matrix &in m) const { return Vector(); }\n"
+        "}\n"
+        "void Main() {\n"
+        "    Matrix m;\n"
+        "    Vector v;\n"
+        "    auto res1 = m * 2.0f;\n"
+        "    auto res2 = m * v;\n"
+        "    Matrix m_res = res1;\n"
+        "    Vector v_res = res2;\n"
+        "}\n";
+
+    auto diags = AnalyzeOperatorSnippet(script);
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasCode(diags, "as-err-cannot-infer-void"));
+}
+
+TEST_CASE("Auto - Diagnostic Parity: Cyclic dependency, void, and missing initializer")
+{
+    const std::string script =
+        "void DoNothing() { }\n"
+        "void Main() {\n"
+        "    auto invalid1 = DoNothing();\n"
+        "    auto invalid2 = invalid2 + 1;\n"
+        "    auto invalid3;\n"
+        "}\n";
+
+    auto diags = AnalyzeOperatorSnippet(script);
+    CHECK(HasCode(diags, "as-err-cannot-infer-void"));
+    CHECK(HasCode(diags, "as-err-cyclic-auto-dependency"));
+    CHECK(HasCode(diags, "as-err-auto-requires-initializer"));
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Operator Rules Corpus Audit*"`)

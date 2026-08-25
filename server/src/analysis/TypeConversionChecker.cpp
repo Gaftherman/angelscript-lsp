@@ -17,6 +17,7 @@ namespace angel_lsp::analysis
         constexpr uint32_t k_operandFieldLength = 7;   ///< "operand"
         constexpr uint32_t k_operatorFieldLength = 8;  ///< "operator"
         constexpr uint32_t k_varTypeFieldLength = 8;   ///< "var_type"
+        constexpr uint32_t k_nameFieldLength = 4;      ///< "name"
 
         /** @brief What a resolved expression is worth to this pass. */
         struct ExpressionType
@@ -650,8 +651,8 @@ namespace angel_lsp::analysis
         void EmitAtNode(TSNode node,
                         DiagnosticContext &ctx,
                         std::string_view code,
-                        const std::string &from,
-                        const std::string &to)
+                        const std::string &from = "",
+                        const std::string &to = "")
         {
             const TSPoint start = ts_node_start_point(node);
             const TSPoint end = ts_node_end_point(node);
@@ -925,9 +926,8 @@ namespace angel_lsp::analysis
                     typeNode = ts_node_child_by_field_name(node, "type", k_typeFieldLength);
                 }
 
-                const DeclaredType declared = ReadDeclaredType(typeNode, ctx, request.sourceCode);
-
-                if (declared.usable)
+                std::string rawType = CleanBaseType(NodeText(typeNode, request.sourceCode));
+                if (rawType == "auto")
                 {
                     for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
                     {
@@ -937,12 +937,103 @@ namespace angel_lsp::analysis
                             continue;
                         }
 
-                        CheckInitializer(child, declared, scopeAt(), ctx, request.sourceCode);
+                        TSNode nameNode = ts_node_child_by_field_name(child, "name", k_nameFieldLength);
+                        std::string varName = NodeText(nameNode, request.sourceCode);
 
-                        if (!declared.isHandle)
+                        TSNode valueNode = ts_node_child_by_field_name(child, "value", k_valueFieldLength);
+                        if (ts_node_is_null(valueNode))
                         {
-                            CheckConstruction(ts_node_child_by_field_name(child, "arguments", k_argsFieldLength),
-                                              declared.baseName, scopeAt(), ctx, request.sourceCode);
+                            valueNode = ts_node_child_by_field_name(child, "initializer", 11);
+                        }
+                        if (ts_node_is_null(valueNode))
+                        {
+                            uint32_t childCount = ts_node_child_count(child);
+                            bool foundEq = false;
+                            for (uint32_t c = 0; c < childCount; ++c)
+                            {
+                                TSNode ch = ts_node_child(child, c);
+                                if (foundEq)
+                                {
+                                    valueNode = ch;
+                                    break;
+                                }
+                                if (NodeText(ch, request.sourceCode) == "=")
+                                {
+                                    foundEq = true;
+                                }
+                            }
+                        }
+
+                        if (ts_node_is_null(valueNode))
+                        {
+                            EmitAtNode(child, ctx, "as-err-auto-requires-initializer");
+                            continue;
+                        }
+
+                        // Check cyclic auto dependency (e.g. auto invalid2 = invalid2 + 1)
+                        std::string valueText = NodeText(valueNode, request.sourceCode);
+                        bool isCyclic = false;
+                        if (!varName.empty())
+                        {
+                            size_t pos = 0;
+                            while ((pos = valueText.find(varName, pos)) != std::string::npos)
+                            {
+                                bool leftBoundary = (pos == 0 || (!isalnum(static_cast<unsigned char>(valueText[pos - 1])) && valueText[pos - 1] != '_'));
+                                bool rightBoundary = (pos + varName.size() >= valueText.size() || (!isalnum(static_cast<unsigned char>(valueText[pos + varName.size()])) && valueText[pos + varName.size()] != '_'));
+                                if (leftBoundary && rightBoundary)
+                                {
+                                    isCyclic = true;
+                                    break;
+                                }
+                                pos += varName.size();
+                            }
+                        }
+
+                        if (isCyclic)
+                        {
+                            EmitAtNode(valueNode, ctx, "as-err-cyclic-auto-dependency", varName);
+                            continue;
+                        }
+
+                        std::string rhsType = ResolveExpressionType(valueNode, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+                        if (rhsType == "void")
+                        {
+                            EmitAtNode(valueNode, ctx, "as-err-cannot-infer-void");
+                        }
+                        else if (rhsType == "null")
+                        {
+                            EmitAtNode(valueNode, ctx, "as-err-cannot-infer-null");
+                        }
+                        else if (!rhsType.empty() && scopeAt())
+                        {
+                            const LocalDefinition *def = ResolveInScope(scopeAt(), varName);
+                            if (def && (def->typeName == "auto" || def->typeName == "auto@"))
+                            {
+                                const_cast<LocalDefinition *>(def)->typeName = rhsType;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    const DeclaredType declared = ReadDeclaredType(typeNode, ctx, request.sourceCode);
+                    if (declared.usable)
+                    {
+                        for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+                        {
+                            TSNode child = ts_node_named_child(node, i);
+                            if (NodeType(child) != "variable_declarator")
+                            {
+                                continue;
+                            }
+
+                            CheckInitializer(child, declared, scopeAt(), ctx, request.sourceCode);
+
+                            if (!declared.isHandle)
+                            {
+                                CheckConstruction(ts_node_child_by_field_name(child, "arguments", k_argsFieldLength),
+                                                  declared.baseName, scopeAt(), ctx, request.sourceCode);
+                            }
                         }
                     }
                 }

@@ -187,6 +187,10 @@ namespace angel_lsp::i18n
         m_messages["as-err-deleted-method-called"] = "Cannot call deleted method '{}::{}'.";
         m_messages["as-err-invalid-foreach-container"] = "Type '{}' is not a valid foreach container. Must implement opForBegin, opForEnd, opForNext and opForValue.";
         m_messages["as-err-no-matching-operator"] = "No matching operator '{}' found for types '{}' and '{}'.";
+        m_messages["as-err-auto-requires-initializer"] = "'auto' variable requires an initializer.";
+        m_messages["as-err-cannot-infer-void"] = "Cannot deduce 'auto' type from expression of type 'void'.";
+        m_messages["as-err-cannot-infer-null"] = "Cannot deduce 'auto' type from 'null'.";
+        m_messages["as-err-cyclic-auto-dependency"] = "Variable '{}' is used in its own 'auto' initialization.";
 
         if (locale == "es")
         {
@@ -291,6 +295,10 @@ namespace angel_lsp::i18n
             m_messages["as-err-deleted-method-called"] = "No se puede invocar el método eliminado '{}::{}'.";
             m_messages["as-err-invalid-foreach-container"] = "El tipo '{}' no es un contenedor foreach válido. Debe implementar opForBegin, opForEnd, opForNext y opForValue.";
             m_messages["as-err-no-matching-operator"] = "No se encontró un operador '{}' compatible para los tipos '{}' y '{}'.";
+            m_messages["as-err-auto-requires-initializer"] = "La variable 'auto' requiere un inicializador.";
+            m_messages["as-err-cannot-infer-void"] = "No se puede deducir el tipo 'auto' de una expresión de tipo 'void'.";
+            m_messages["as-err-cannot-infer-null"] = "No se puede deducir el tipo 'auto' de 'null'.";
+            m_messages["as-err-cyclic-auto-dependency"] = "La variable '{}' se usa en su propia inicialización 'auto'.";
         }
     }
 
