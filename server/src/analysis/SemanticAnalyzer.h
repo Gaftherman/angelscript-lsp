@@ -94,5 +94,10 @@ namespace angel_lsp::analysis
          *        a separate pass rather than an extension of CheckNullAssignedToNonHandle.
          */
         void CheckNullAssignedToNonHandleInScope(const Scope *scope, DiagnosticContext &ctx) const;
+
+        /**
+         * @brief Checks local variable declarations (e.g. disallowing 'void' type local variables).
+         */
+        void CheckLocalVariableDeclarations(const Scope *scope, DiagnosticContext &ctx) const;
     };
 }

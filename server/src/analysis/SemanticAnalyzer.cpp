@@ -4,6 +4,8 @@
 #include "analysis/ConstChecker.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/DefiniteAssignmentChecker.h"
+#include "analysis/LValueChecker.h"
+#include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/rules/FunctionRules.h"
@@ -72,6 +74,7 @@ namespace angel_lsp::analysis
             CheckUnusedVariables(request.scopeRoot.get(), used, ctx);
 
             CheckNullAssignedToNonHandleInScope(request.scopeRoot.get(), ctx);
+            CheckLocalVariableDeclarations(request.scopeRoot.get(), ctx);
         }
 
         // Statements, not declarations: whether a break sits inside a loop or a path falls off the
@@ -105,6 +108,17 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckConstCorrectness(constRequest, ctx);
+        }
+
+        if (request.tree && !request.sourceCode.empty())
+        {
+            DiagnosticContext ctx{request, diagnostics, m_logger};
+            const LValueCheckRequest lvalueRequest{
+                ts_tree_root_node(request.tree),
+                request.sourceCode,
+                request.scopeRoot.get()
+            };
+            CheckLValues(lvalueRequest, ctx);
         }
 
         if (request.tree && !request.sourceCode.empty())
@@ -375,5 +389,44 @@ namespace angel_lsp::analysis
 
         for (const auto &child : scope->children)
             CheckNullAssignedToNonHandleInScope(child.get(), ctx);
+    }
+
+    void SemanticAnalyzer::CheckLocalVariableDeclarations(const Scope *scope, DiagnosticContext &ctx) const
+    {
+        if (!scope)
+        {
+            return;
+        }
+
+        bool isFunctionNested = false;
+        for (const Scope *ancestor = scope; ancestor != nullptr; ancestor = ancestor->parent)
+        {
+            if (ancestor->isFunctionScope)
+            {
+                isFunctionNested = true;
+                break;
+            }
+        }
+
+        if (isFunctionNested)
+        {
+            for (const auto &def : scope->definitions)
+            {
+                if (def.kind == LocalDefinitionKind::Variable)
+                {
+                    std::string base = CleanBaseType(def.typeName);
+                    if (def.typeName == "void" || base == "void")
+                    {
+                        ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                                        "as-err-void-variable", def.name, DiagnosticSeverity::Error);
+                    }
+                }
+            }
+        }
+
+        for (const auto &child : scope->children)
+        {
+            CheckLocalVariableDeclarations(child.get(), ctx);
+        }
     }
 }
