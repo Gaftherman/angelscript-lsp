@@ -457,14 +457,12 @@ TEST_CASE("AccessChecker - A public member reached the same ways stays quiet")
 
 TEST_CASE("AccessChecker - An expression this analyzer cannot type is still never judged")
 {
-    // Binary and ternary expressions need the engine's promotion and operator-overload rules, so
-    // they resolve to nothing and the access is left alone - the same contract every unresolved
-    // object has always had.
+    // When an expression has no overload or resolvable type, it resolves to nothing
+    // and the access is left alone - the same contract every unresolved object has always had.
     const std::string code =
         "class Entity\n"
         "{\n"
         "    private int hidden;\n"
-        "    Entity@ opAdd(Entity@ other) { return this; }\n"
         "}\n"
         "void main()\n"
         "{\n"

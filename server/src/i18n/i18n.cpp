@@ -177,6 +177,9 @@ namespace angel_lsp::i18n
         m_messages["as-err-no-implicit-conversion"] = "Cannot implicitly convert '{}' to '{}'. Declare a matching constructor, an 'opImplConv' or an 'opAssign' overload.";
         m_messages["as-err-no-explicit-conversion"] = "No conversion from '{}' to '{}' exists. Declare a matching constructor on the target, or an 'opConv'/'opImplConv' overload on the source.";
         m_messages["as-err-invalid-cast"] = "Cannot cast '{}' to '{}'. The types are unrelated and no 'opCast'/'opImplCast' overload is declared.";
+        m_messages["as-err-uninitialized-variable-read"] = "Local variable '{}' is used before it is initialized.";
+        m_messages["as-err-call-no-matching-signature"] = "No matching signatures to call '{}'.";
+        m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous.";
 
         if (locale == "es")
         {
@@ -271,6 +274,9 @@ namespace angel_lsp::i18n
             m_messages["as-err-no-implicit-conversion"] = "No se puede convertir implícitamente '{}' a '{}'. Declara un constructor compatible, un 'opImplConv' o una sobrecarga 'opAssign'.";
             m_messages["as-err-no-explicit-conversion"] = "No existe conversión de '{}' a '{}'. Declara un constructor compatible en el destino, o una sobrecarga 'opConv'/'opImplConv' en el origen.";
             m_messages["as-err-invalid-cast"] = "No se puede convertir '{}' a '{}' con cast. Los tipos no están relacionados y no hay sobrecarga 'opCast'/'opImplCast'.";
+            m_messages["as-err-uninitialized-variable-read"] = "La variable local '{}' se usa antes de ser inicializada.";
+            m_messages["as-err-call-no-matching-signature"] = "No hay firmas coincidentes para la llamada a '{}'.";
+            m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";
         }
     }
 

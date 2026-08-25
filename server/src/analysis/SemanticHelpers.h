@@ -44,6 +44,22 @@ namespace angel_lsp::analysis
     };
 
     /**
+     * @brief Information about a parsed generic template type (e.g. array<dictionary<string, int>>).
+     */
+    struct TemplateTypeInfo
+    {
+        std::string containerName;              ///< Base container name (e.g. "array", "dictionary")
+        std::vector<std::string> templateArgs;  ///< Extracted template arguments
+    };
+
+    /**
+     * @brief Parses a potentially nested template type string into its container name and arguments.
+     * @param typeName Raw or specialized type string.
+     * @return TemplateTypeInfo with container and nested argument strings.
+     */
+    TemplateTypeInfo ParseTemplateType(std::string_view typeName);
+
+    /**
      * @brief Information about an enclosing container in the AST hierarchy.
      */
     struct ContainerInfo

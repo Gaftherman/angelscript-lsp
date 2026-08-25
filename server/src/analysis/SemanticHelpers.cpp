@@ -1,4 +1,5 @@
 #include "analysis/SemanticHelpers.h"
+#include "analysis/OverloadResolver.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/DiagnosticContext.h"
 #include "utils/Utils.h"
@@ -7,6 +8,31 @@ namespace angel_lsp::analysis
 {
     namespace
     {
+        std::string CleanExpressionType(std::string_view typeName)
+        {
+            while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
+            {
+                typeName.remove_prefix(1);
+            }
+            while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == '\t'))
+            {
+                typeName.remove_suffix(1);
+            }
+            if (typeName.starts_with("const "))
+            {
+                typeName.remove_prefix(6);
+            }
+            while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
+            {
+                typeName.remove_prefix(1);
+            }
+            while (!typeName.empty() && (typeName.back() == '@' || typeName.back() == '&' || typeName.back() == ' ' || typeName.back() == '\t'))
+            {
+                typeName.remove_suffix(1);
+            }
+            return std::string(typeName);
+        }
+
         std::string GetNodeText(TSNode node, std::string_view sourceCode)
         {
             if (ts_node_is_null(node) || sourceCode.empty())
@@ -244,6 +270,75 @@ namespace angel_lsp::analysis
         }
 
         return result;
+    }
+
+    TemplateTypeInfo ParseTemplateType(std::string_view typeName)
+    {
+        TemplateTypeInfo info;
+        while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
+        {
+            typeName.remove_prefix(1);
+        }
+        while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == '\t' || typeName.back() == '@' || typeName.back() == '&'))
+        {
+            typeName.remove_suffix(1);
+        }
+        if (typeName.starts_with("const "))
+        {
+            typeName.remove_prefix(6);
+        }
+        while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
+        {
+            typeName.remove_prefix(1);
+        }
+
+        size_t openBracket = typeName.find('<');
+        if (openBracket == std::string_view::npos || !typeName.ends_with('>'))
+        {
+            info.containerName = std::string(typeName);
+            return info;
+        }
+
+        info.containerName = std::string(typeName.substr(0, openBracket));
+        std::string_view inner = typeName.substr(openBracket + 1, typeName.size() - openBracket - 2);
+
+        int depth = 0;
+        size_t start = 0;
+        for (size_t i = 0; i < inner.size(); ++i)
+        {
+            if (inner[i] == '<')
+            {
+                ++depth;
+            }
+            else if (inner[i] == '>')
+            {
+                --depth;
+            }
+            else if (inner[i] == ',' && depth == 0)
+            {
+                std::string_view arg = inner.substr(start, i - start);
+                while (!arg.empty() && (arg.front() == ' ' || arg.front() == '\t')) arg.remove_prefix(1);
+                while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\t')) arg.remove_suffix(1);
+                if (!arg.empty())
+                {
+                    info.templateArgs.push_back(std::string(arg));
+                }
+                start = i + 1;
+            }
+        }
+
+        if (start < inner.size())
+        {
+            std::string_view arg = inner.substr(start);
+            while (!arg.empty() && (arg.front() == ' ' || arg.front() == '\t')) arg.remove_prefix(1);
+            while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\t')) arg.remove_suffix(1);
+            if (!arg.empty())
+            {
+                info.templateArgs.push_back(std::string(arg));
+            }
+        }
+
+        return info;
     }
 
     std::vector<std::string> GetInheritedTypeHierarchy(const std::string &className, const SymbolTable &symbolTable)
@@ -623,7 +718,7 @@ namespace angel_lsp::analysis
 
         std::string_view nodeType = ts_node_type(exprNode);
 
-        // `this` is its own production, not an identifier spelled "this".
+        // `this` expression
         if (nodeType == "this_expression")
         {
             for (const auto &container : GetEnclosingContainers(exprNode, sourceCode))
@@ -636,17 +731,61 @@ namespace angel_lsp::analysis
             return "";
         }
 
-        // Every name written in an expression arrives wrapped in scoped_identifier, qualified or
-        // not - the grammar admits no bare identifier in expression position. Without this branch
-        // the whole identifier case below was unreachable from real source, and everything built on
-        // it resolved nothing: the type of `myClass` in `myClass.f`, of a variable used as an
-        // initializer, of an argument in a constructor call.
+        // String literal
+        if (nodeType == "string_literal")
+        {
+            return "string";
+        }
+
+        // Boolean literal
+        if (nodeType == "boolean_literal")
+        {
+            return "bool";
+        }
+
+        // Null literal
+        if (nodeType == "null_literal")
+        {
+            return "null";
+        }
+
+        // Character literal
+        if (nodeType == "character_literal")
+        {
+            return "uint8";
+        }
+
+        // Number literal
+        if (nodeType == "number_literal")
+        {
+            std::string text = GetNodeText(exprNode, sourceCode);
+            if (text.find('f') != std::string::npos || text.find('F') != std::string::npos)
+            {
+                return "float";
+            }
+            if (text.find('.') != std::string::npos || text.find('e') != std::string::npos || text.find('E') != std::string::npos)
+            {
+                return "double";
+            }
+            if ((text.find('u') != std::string::npos || text.find('U') != std::string::npos) &&
+                (text.find('l') != std::string::npos || text.find('L') != std::string::npos))
+            {
+                return "uint64";
+            }
+            if (text.find('l') != std::string::npos || text.find('L') != std::string::npos || text.ends_with("i64"))
+            {
+                return "int64";
+            }
+            if (text.find('u') != std::string::npos || text.find('U') != std::string::npos)
+            {
+                return "uint";
+            }
+            return "int";
+        }
+
+        // Scoped identifier (e.g. Game::Player or bare identifier wrapped in scoped_identifier)
         if (nodeType == "scoped_identifier")
         {
-            // A qualification is asked for whole first, since `Game::config` is the key the
-            // collector stored it under. Only if that finds nothing does the last segment answer,
-            // which is both the unqualified case and the best reading of a namespace this analyzer
-            // cannot see.
             TSNode lastIdentifier = {};
             bool qualified = false;
             const uint32_t childCount = ts_node_named_child_count(exprNode);
@@ -668,11 +807,11 @@ namespace angel_lsp::analysis
                     if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
                         !sym.GetVariable().typeName.empty())
                     {
-                        return CleanBaseType(sym.GetVariable().typeName);
+                        return CleanExpressionType(sym.GetVariable().typeName);
                     }
                     if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
                     {
-                        return CleanBaseType(sym.GetFunction().returnType);
+                        return CleanExpressionType(sym.GetFunction().returnType);
                     }
                 }
             }
@@ -682,6 +821,7 @@ namespace angel_lsp::analysis
                        : ResolveExpressionType(lastIdentifier, scope, symbolTable, sourceCode, uri);
         }
 
+        // Bare identifier
         if (nodeType == "identifier")
         {
             std::string name = GetNodeText(exprNode, sourceCode);
@@ -690,7 +830,7 @@ namespace angel_lsp::analysis
                 const LocalDefinition *def = ResolveInScope(scope, name);
                 if (def && !def->typeName.empty())
                 {
-                    return CleanBaseType(def->typeName);
+                    return CleanExpressionType(def->typeName);
                 }
             }
 
@@ -699,22 +839,203 @@ namespace angel_lsp::analysis
             {
                 if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) && !sym.GetVariable().typeName.empty())
                 {
-                    return CleanBaseType(sym.GetVariable().typeName);
+                    return CleanExpressionType(sym.GetVariable().typeName);
                 }
                 else if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
                 {
-                    return CleanBaseType(sym.GetFunction().returnType);
+                    return CleanExpressionType(sym.GetFunction().returnType);
                 }
             }
             return "";
         }
 
+        // Binary expression (e.g. a + b, x == y, etc.)
+        if (nodeType == "binary_expression")
+        {
+            TSNode left = ts_node_child_by_field_name(exprNode, "left", 4);
+            TSNode opNode = ts_node_child_by_field_name(exprNode, "operator", 8);
+            TSNode right = ts_node_child_by_field_name(exprNode, "right", 5);
+            if (ts_node_is_null(left) || ts_node_is_null(right))
+            {
+                return "";
+            }
+
+            std::string op = GetNodeText(opNode, sourceCode);
+            std::string leftType = ResolveExpressionType(left, scope, symbolTable, sourceCode, uri);
+            std::string rightType = ResolveExpressionType(right, scope, symbolTable, sourceCode, uri);
+
+            // Relational and equality operators always evaluate to bool
+            if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" ||
+                op == "is" || op == "!is")
+            {
+                return "bool";
+            }
+
+            // Logical operators always evaluate to bool
+            if (op == "&&" || op == "||" || op == "and" || op == "or" || op == "^^" || op == "xor")
+            {
+                return "bool";
+            }
+
+            // String concatenation
+            if (op == "+" && (CleanBaseType(leftType) == "string" || CleanBaseType(rightType) == "string"))
+            {
+                return "string";
+            }
+
+            std::string cleanLeft = CleanBaseType(leftType);
+            std::string cleanRight = CleanBaseType(rightType);
+
+            // Map binary operator to operator overload method name
+            std::string opMethod;
+            std::string revOpMethod;
+            if (op == "+") { opMethod = "opAdd"; revOpMethod = "opAdd_r"; }
+            else if (op == "-") { opMethod = "opSub"; revOpMethod = "opSub_r"; }
+            else if (op == "*") { opMethod = "opMul"; revOpMethod = "opMul_r"; }
+            else if (op == "/") { opMethod = "opDiv"; revOpMethod = "opDiv_r"; }
+            else if (op == "%") { opMethod = "opMod"; revOpMethod = "opMod_r"; }
+            else if (op == "**") { opMethod = "opPow"; revOpMethod = "opPow_r"; }
+            else if (op == "&") { opMethod = "opAnd"; revOpMethod = "opAnd_r"; }
+            else if (op == "|") { opMethod = "opOr"; revOpMethod = "opOr_r"; }
+            else if (op == "^") { opMethod = "opXor"; revOpMethod = "opXor_r"; }
+            else if (op == "<<") { opMethod = "opShl"; revOpMethod = "opShl_r"; }
+            else if (op == ">>") { opMethod = "opShr"; revOpMethod = "opShr_r"; }
+            else if (op == ">>>") { opMethod = "opUShr"; revOpMethod = "opUShr_r"; }
+
+            // 1. Check member operator overloads on left operand
+            if (!opMethod.empty() && !cleanLeft.empty())
+            {
+                std::vector<Symbol> candidates;
+                auto hierarchy = GetInheritedTypeHierarchy(cleanLeft, symbolTable);
+                for (const auto &typeName : hierarchy)
+                {
+                    auto found = symbolTable.FindSymbols(typeName + "::" + opMethod);
+                    for (const auto &sym : found)
+                    {
+                        if (sym.type == SymbolType::Function)
+                        {
+                            candidates.push_back(sym);
+                        }
+                    }
+                }
+                if (!candidates.empty())
+                {
+                    auto match = ResolveBestOverload(candidates, { rightType }, symbolTable);
+                    if (match.bestCandidate && std::holds_alternative<FunctionSignature>(match.bestCandidate->signature))
+                    {
+                        return CleanExpressionType(match.bestCandidate->GetFunction().returnType);
+                    }
+                }
+            }
+
+            // 2. Check reversed operator overloads on right operand
+            if (!revOpMethod.empty() && !cleanRight.empty())
+            {
+                std::vector<Symbol> candidates;
+                auto hierarchy = GetInheritedTypeHierarchy(cleanRight, symbolTable);
+                for (const auto &typeName : hierarchy)
+                {
+                    auto found = symbolTable.FindSymbols(typeName + "::" + revOpMethod);
+                    for (const auto &sym : found)
+                    {
+                        if (sym.type == SymbolType::Function)
+                        {
+                            candidates.push_back(sym);
+                        }
+                    }
+                }
+                if (!candidates.empty())
+                {
+                    auto match = ResolveBestOverload(candidates, { leftType }, symbolTable);
+                    if (match.bestCandidate && std::holds_alternative<FunctionSignature>(match.bestCandidate->signature))
+                    {
+                        return CleanExpressionType(match.bestCandidate->GetFunction().returnType);
+                    }
+                }
+            }
+
+            // 3. Numeric promotions for primitives
+            if (!cleanLeft.empty() && !cleanRight.empty())
+            {
+                if (cleanLeft == "double" || cleanRight == "double")
+                {
+                    return "double";
+                }
+                if (cleanLeft == "float" || cleanRight == "float")
+                {
+                    return "float";
+                }
+                if (cleanLeft == "uint64" || cleanRight == "uint64")
+                {
+                    return "uint64";
+                }
+                if (cleanLeft == "int64" || cleanRight == "int64")
+                {
+                    return "int64";
+                }
+                if (op == "<<" || op == ">>" || op == ">>>")
+                {
+                    return cleanLeft == "uint" || cleanLeft == "uint32" || cleanLeft == "uint64" || cleanLeft == "uint16" || cleanLeft == "uint8" ? "uint" : "int";
+                }
+                if (cleanLeft == "uint" || cleanRight == "uint" || cleanLeft == "uint32" || cleanRight == "uint32")
+                {
+                    return "uint";
+                }
+                if (IsPrimitiveTypeName(cleanLeft) && IsPrimitiveTypeName(cleanRight))
+                {
+                    return "int";
+                }
+            }
+
+            return "";
+        }
+
+        // Ternary expression (e.g. cond ? expr1 : expr2)
+        if (nodeType == "ternary_expression")
+        {
+            TSNode consequence = ts_node_child_by_field_name(exprNode, "consequence", 11);
+            TSNode alternative = ts_node_child_by_field_name(exprNode, "alternative", 11);
+            if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
+            {
+                return "";
+            }
+            std::string t1 = ResolveExpressionType(consequence, scope, symbolTable, sourceCode, uri);
+            std::string t2 = ResolveExpressionType(alternative, scope, symbolTable, sourceCode, uri);
+            if (t1 == t2)
+            {
+                return t1;
+            }
+            if (t1.empty()) return t2;
+            if (t2.empty()) return t1;
+
+            std::string c1 = CleanBaseType(t1);
+            std::string c2 = CleanBaseType(t2);
+
+            if (c1 == "double" || c2 == "double") return "double";
+            if (c1 == "float" || c2 == "float") return "float";
+            if (c1 == "int64" || c2 == "int64") return "int64";
+            if (c1 == "uint64" || c2 == "uint64") return "uint64";
+            if (c1 == "uint" || c2 == "uint") return "uint";
+            if (IsPrimitiveTypeName(c1) && IsPrimitiveTypeName(c2)) return "int";
+
+            // Inheritance check (derived vs base)
+            auto h1 = GetInheritedTypeHierarchy(c1, symbolTable);
+            for (const auto &b : h1)
+            {
+                if (CleanBaseType(b) == c2) return t2;
+            }
+            auto h2 = GetInheritedTypeHierarchy(c2, symbolTable);
+            for (const auto &b : h2)
+            {
+                if (CleanBaseType(b) == c1) return t1;
+            }
+
+            return t1;
+        }
+
+        // Member expression (e.g. obj.member)
         if (nodeType == "member_expression")
         {
-            // member_expression names both children unconditionally in the grammar, so the fields
-            // are the answer. Falling back to positional children was strictly worse: named_child(1)
-            // is not the member once anything else lands between the two, and a null field here
-            // means a malformed tree worth surfacing rather than guessing around.
             TSNode objNode = ts_node_child_by_field_name(exprNode, "object", 6);
             TSNode memNode = ts_node_child_by_field_name(exprNode, "member", 6);
             if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
@@ -723,8 +1044,8 @@ namespace angel_lsp::analysis
             }
 
             std::string objType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri);
-            objType = CleanBaseType(objType);
-            if (objType.empty())
+            std::string cleanObj = CleanBaseType(objType);
+            if (cleanObj.empty())
             {
                 return "";
             }
@@ -732,7 +1053,7 @@ namespace angel_lsp::analysis
             std::string memName = GetNodeText(memNode, sourceCode);
             while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front()))) memName.erase(memName.begin());
             while (!memName.empty() && isspace(static_cast<unsigned char>(memName.back()))) memName.pop_back();
-            auto hierarchy = GetInheritedTypeHierarchy(objType, symbolTable);
+            auto hierarchy = GetInheritedTypeHierarchy(cleanObj, symbolTable);
             for (const auto &typeName : hierarchy)
             {
                 std::string qName = typeName + "::" + memName;
@@ -752,17 +1073,18 @@ namespace angel_lsp::analysis
                 {
                     if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) && !sym.GetVariable().typeName.empty())
                     {
-                        return CleanBaseType(sym.GetVariable().typeName);
+                        return CleanExpressionType(sym.GetVariable().typeName);
                     }
                     else if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
                     {
-                        return CleanBaseType(sym.GetFunction().returnType);
+                        return CleanExpressionType(sym.GetFunction().returnType);
                     }
                 }
             }
             return "";
         }
 
+        // Call expression (e.g. func(arg1, arg2) or obj.method(arg1, arg2))
         if (nodeType == "call_expression")
         {
             TSNode funcNode = ts_node_child_by_field_name(exprNode, "function", 8);
@@ -770,24 +1092,108 @@ namespace angel_lsp::analysis
             {
                 funcNode = ts_node_child(exprNode, 0);
             }
-            if (!ts_node_is_null(funcNode))
+            if (ts_node_is_null(funcNode))
             {
-                return ResolveExpressionType(funcNode, scope, symbolTable, sourceCode, uri);
+                return "";
             }
-            return "";
+
+            std::vector<std::string> argTypes;
+            TSNode argsNode = ts_node_child_by_field_name(exprNode, "arguments", 9);
+            if (!ts_node_is_null(argsNode))
+            {
+                uint32_t count = ts_node_named_child_count(argsNode);
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    TSNode argChild = ts_node_named_child(argsNode, i);
+                    argTypes.push_back(ResolveExpressionType(argChild, scope, symbolTable, sourceCode, uri));
+                }
+            }
+
+            std::string_view funcNodeType = ts_node_type(funcNode);
+            if (funcNodeType == "member_expression")
+            {
+                TSNode objNode = ts_node_child_by_field_name(funcNode, "object", 6);
+                TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
+                if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
+                {
+                    std::string objType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri);
+                    auto templateInfo = ParseTemplateType(objType);
+                    std::string memName = GetNodeText(memNode, sourceCode);
+                    while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front()))) memName.erase(memName.begin());
+                    while (!memName.empty() && isspace(static_cast<unsigned char>(memName.back()))) memName.pop_back();
+
+                    if (templateInfo.containerName == "array" && !templateInfo.templateArgs.empty())
+                    {
+                        if (memName == "length" || memName == "size") { return "uint"; }
+                        if (memName == "isEmpty") { return "bool"; }
+                    }
+
+                    std::string cleanObj = CleanBaseType(objType);
+                    std::vector<Symbol> candidates;
+                    auto hierarchy = GetInheritedTypeHierarchy(cleanObj, symbolTable);
+                    for (const auto &typeName : hierarchy)
+                    {
+                        auto found = symbolTable.FindSymbols(typeName + "::" + memName);
+                        for (const auto &sym : found)
+                        {
+                            if (sym.type == SymbolType::Function)
+                            {
+                                candidates.push_back(sym);
+                            }
+                        }
+                    }
+
+                    if (!candidates.empty())
+                    {
+                        auto match = ResolveBestOverload(candidates, argTypes, symbolTable);
+                        if (match.bestCandidate && std::holds_alternative<FunctionSignature>(match.bestCandidate->signature))
+                        {
+                            std::string ret = match.bestCandidate->GetFunction().returnType;
+                            if (ret == "T" && !templateInfo.templateArgs.empty())
+                            {
+                                return templateInfo.templateArgs[0];
+                            }
+                            return CleanExpressionType(ret);
+                        }
+                        return CleanExpressionType(candidates[0].GetFunction().returnType);
+                    }
+                }
+            }
+            else
+            {
+                std::string funcName = GetNodeText(funcNode, sourceCode);
+                std::vector<Symbol> inScope = FindSymbolsInScope(funcName, exprNode, sourceCode, symbolTable);
+                std::vector<Symbol> candidates;
+                for (const auto &sym : inScope)
+                {
+                    if (sym.type == SymbolType::Function)
+                    {
+                        candidates.push_back(sym);
+                    }
+                }
+                if (!candidates.empty())
+                {
+                    auto match = ResolveBestOverload(candidates, argTypes, symbolTable);
+                    if (match.bestCandidate && std::holds_alternative<FunctionSignature>(match.bestCandidate->signature))
+                    {
+                        return CleanExpressionType(match.bestCandidate->GetFunction().returnType);
+                    }
+                    return CleanExpressionType(candidates[0].GetFunction().returnType);
+                }
+            }
+
+            return ResolveExpressionType(funcNode, scope, symbolTable, sourceCode, uri);
         }
 
-        // A cast names its own result: `cast<CBasePlayer@>(ent)` is a CBasePlayer whatever `ent`
-        // was, which is the whole reason the construct exists and is how most of the corpus reaches
-        // a derived type at all. The same holds for a constructor call and a primitive functional
-        // cast - all three write the answer down, so none of them needs the operand resolved.
+        // Cast expression (e.g. cast<Player@>(ent))
         if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
         {
             TSNode typeNode = ts_node_child_by_field_name(exprNode, "type", 4);
             return ts_node_is_null(typeNode) ? std::string()
-                                             : CleanBaseType(GetNodeText(typeNode, sourceCode));
+                                             : CleanExpressionType(GetNodeText(typeNode, sourceCode));
         }
 
+        // Construct call expression (e.g. array<int>(5))
         if (nodeType == "construct_call_expression")
         {
             TSNode typeNode = ts_node_child_by_field_name(exprNode, "type", 4);
@@ -796,9 +1202,6 @@ namespace angel_lsp::analysis
                 return "";
             }
 
-            // The template argument list is a sibling rather than part of the type field, and
-            // CleanBaseType is what unwraps `array<Foo@>` down to Foo - so it has to see the whole
-            // spelling to do it.
             std::string written = GetNodeText(typeNode, sourceCode);
             const uint32_t childCount = ts_node_named_child_count(exprNode);
             for (uint32_t i = 0; i < childCount; ++i)
@@ -810,23 +1213,58 @@ namespace angel_lsp::analysis
                     break;
                 }
             }
-            return CleanBaseType(written);
+            return CleanExpressionType(written);
         }
 
-        // `arr[i]` is the element, and CleanBaseType already unwraps `array<T>` to T - so the
-        // object's own answer is the element's answer, and indexing needs nothing further. A
-        // container that is not an array resolves to the container, which finds no member and
-        // leaves the caller silent rather than wrong.
+        // Index expression (e.g. arr[i] or dict["key"])
         if (nodeType == "index_expression")
         {
             TSNode objNode = ts_node_child_by_field_name(exprNode, "object", 6);
-            return ts_node_is_null(objNode)
-                       ? std::string()
-                       : ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri);
+            if (ts_node_is_null(objNode))
+            {
+                return "";
+            }
+
+            std::string objType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri);
+            if (objType.empty())
+            {
+                return "";
+            }
+
+            auto templateInfo = ParseTemplateType(objType);
+            if (templateInfo.containerName == "array" && !templateInfo.templateArgs.empty())
+            {
+                return CleanExpressionType(templateInfo.templateArgs[0]);
+            }
+            if ((templateInfo.containerName == "dictionary" || templateInfo.containerName == "map") &&
+                templateInfo.templateArgs.size() >= 2)
+            {
+                return CleanExpressionType(templateInfo.templateArgs[1]);
+            }
+
+            std::string cleanObj = CleanBaseType(objType);
+            std::vector<Symbol> candidates;
+            auto hierarchy = GetInheritedTypeHierarchy(cleanObj, symbolTable);
+            for (const auto &typeName : hierarchy)
+            {
+                auto found = symbolTable.FindSymbols(typeName + "::opIndex");
+                for (const auto &sym : found)
+                {
+                    if (sym.type == SymbolType::Function)
+                    {
+                        candidates.push_back(sym);
+                    }
+                }
+            }
+            if (!candidates.empty())
+            {
+                return CleanExpressionType(candidates[0].GetFunction().returnType);
+            }
+
+            return "";
         }
 
-        // `@handle`, `-x` and `++i` all carry their operand's type through. `!x` and `not x` are
-        // the exception: they are bool whatever they were applied to.
+        // Unary expression (e.g. !x, -x, ++i)
         if (nodeType == "unary_expression")
         {
             TSNode operatorNode = ts_node_child_by_field_name(exprNode, "operator", 8);
@@ -845,6 +1283,7 @@ namespace angel_lsp::analysis
                        : ResolveExpressionType(operandNode, scope, symbolTable, sourceCode, uri);
         }
 
+        // Postfix expression (e.g. i++)
         if (nodeType == "postfix_expression")
         {
             TSNode operandNode = ts_node_child_by_field_name(exprNode, "operand", 7);
@@ -853,6 +1292,7 @@ namespace angel_lsp::analysis
                        : ResolveExpressionType(operandNode, scope, symbolTable, sourceCode, uri);
         }
 
+        // Parenthesized expression (e.g. (expr))
         if (nodeType == "parenthesized_expression")
         {
             uint32_t count = ts_node_child_count(exprNode);
@@ -868,11 +1308,6 @@ namespace angel_lsp::analysis
             return "";
         }
 
-        // Everything else - a literal, a binary or ternary expression, a lambda, an initializer
-        // list - yields nothing on purpose. A literal's members are engine-registered and so never
-        // judged by the passes that ask this question; the rest need the engine's promotion and
-        // operator-overload rules, and answering them by guess would turn every consumer's
-        // deliberate silence into a wrong sentence.
         return "";
     }
 }

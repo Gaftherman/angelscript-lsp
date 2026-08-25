@@ -3,6 +3,7 @@
 #include "analysis/CallChecker.h"
 #include "analysis/ConstChecker.h"
 #include "analysis/ControlFlowChecker.h"
+#include "analysis/DefiniteAssignmentChecker.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/rules/FunctionRules.h"
@@ -115,6 +116,17 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckCallArguments(callRequest, ctx);
+        }
+
+        if (request.tree && !request.sourceCode.empty())
+        {
+            DiagnosticContext ctx{request, diagnostics, m_logger};
+            const DefiniteAssignmentCheckRequest assignRequest{
+                ts_tree_root_node(request.tree),
+                request.sourceCode,
+                request.scopeRoot.get()
+            };
+            CheckDefiniteAssignment(assignRequest, ctx);
         }
 
         // Needs the tree, not just the symbol table: an initializer or a cast is an expression, and
