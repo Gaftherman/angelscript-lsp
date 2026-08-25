@@ -146,6 +146,20 @@ namespace angel_lsp::analysis
          */
         std::shared_ptr<const Scope> GetRoot(const std::string &fileUri) const;
 
+        /**
+         * @brief Invokes a callback for every recorded scope tree under a shared lock.
+         * @param callback Function accepting (const std::string &uri, const std::shared_ptr<const Scope> &root).
+         */
+        template <typename Fn>
+        void ForEachScopeTree(Fn &&callback) const
+        {
+            std::shared_lock<std::shared_mutex> lock(m_mutex);
+            for (const auto &[uri, root] : m_roots)
+            {
+                callback(uri, std::shared_ptr<const Scope>(root));
+            }
+        }
+
     private:
         mutable std::shared_mutex m_mutex;
         ankerl::unordered_dense::map<std::string, std::shared_ptr<Scope>> m_roots;

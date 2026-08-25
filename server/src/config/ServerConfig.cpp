@@ -396,6 +396,14 @@ namespace angel_lsp::config
             {
                 config.features.enableLinkedEditing = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
+            else if (key == "--enable-code-lens" || key == "--enable-codelens")
+            {
+                config.features.enableCodeLens = getBoolValue(true);
+            }
+            else if (key == "--disable-code-lens" || key == "--disable-codelens")
+            {
+                config.features.enableCodeLens = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
             else if (key == "--enable-formatting")
             {
                 config.features.enableFormatting = getBoolValue(true);

@@ -367,6 +367,7 @@ namespace angel_lsp
         void EncodeIn(std::string_view text, std::vector<lsp::DocumentLink> &links) const;
         void EncodeIn(std::string_view text, std::vector<lsp::InlayHint> &hints) const;
         void EncodeIn(std::string_view text, std::vector<lsp::DocumentSymbol> &symbols) const;
+        void EncodeIn(std::string_view text, std::vector<lsp::CodeLens> &lenses) const;
         void EncodeIn(std::string_view text, lsp::PrepareRenameResult &result) const;
         void EncodeAcrossDocuments(std::vector<lsp::Location> &locations) const;
         void EncodeAcrossDocuments(std::vector<lsp::SymbolInformation> &symbols) const;

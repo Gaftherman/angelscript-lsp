@@ -21,6 +21,7 @@
 #include "features/code_action/CodeActionHandler.h"
 #include "features/formatting/FormattingHandler.h"
 #include "features/document_link/DocumentLinkHandler.h"
+#include "features/code_lens/CodeLensHandler.h"
 
 #include <filesystem>
 #include <fstream>
@@ -229,6 +230,13 @@ namespace angel_lsp
         if (m_config.features.enableLinkedEditing)
         {
             result.capabilities.linkedEditingRangeProvider = true;
+        }
+
+        if (m_config.features.enableCodeLens)
+        {
+            lsp::CodeLensOptions codeLensOpts;
+            codeLensOpts.resolveProvider = true;
+            result.capabilities.codeLensProvider = codeLensOpts;
         }
 
         if (m_config.features.enableCompletion)
@@ -1437,6 +1445,15 @@ namespace angel_lsp
         }
     }
 
+    void Server::EncodeIn(std::string_view text, std::vector<lsp::CodeLens> &lenses) const
+    {
+        if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+            return;
+
+        for (auto &lens : lenses)
+            codec::Encode(text, m_positionEncoding, lens.range);
+    }
+
     void Server::EncodeIn(std::string_view text, lsp::PrepareRenameResult &result) const
     {
         if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
@@ -2438,6 +2455,44 @@ namespace angel_lsp
                     return edits.value();
                 }
                 return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_CodeLens>(
+            [this](lsp::requests::TextDocument_CodeLens::Params &&req) -> lsp::requests::TextDocument_CodeLens::Result
+            {
+                if (!m_config.features.enableCodeLens)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+                features::CodeLensRequest clr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex };
+                auto lenses = features::GetCodeLenses(clr);
+                if (lenses.has_value())
+                {
+                    EncodeIn(docIt->second, lenses.value());
+                    return lenses.value();
+                }
+                return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::CodeLens_Resolve>(
+            [this](lsp::requests::CodeLens_Resolve::Params &&req) -> lsp::requests::CodeLens_Resolve::Result
+            {
+                if (!m_config.features.enableCodeLens)
+                {
+                    return req;
+                }
+
+                features::CodeLensResolveRequest clrr{ req, m_symbolTable, m_scopeIndex };
+                auto resolved = features::ResolveCodeLens(clrr);
+                return resolved.value_or(std::move(req));
             });
     }
 }

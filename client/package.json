@@ -220,6 +220,11 @@
           "default": true,
           "markdownDescription": "Linked editing: retype a local variable or a parameter and its uses together, live. Offered only for names a lexical scope keeps inside one file - anything at file scope goes through Rename instead, which looks across documents."
         },
+        "angelscript.features.codeLens": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show actionable code lenses (references, implementations) inline above declarations."
+        },
         "angelscript.features.typeConversionChecks": {
           "type": "boolean",
           "default": true,
