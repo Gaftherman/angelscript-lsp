@@ -129,7 +129,9 @@ namespace angel_lsp::config
                   << "  --enable-call-hierarchy[=true|false]    Enable/disable call hierarchy (default: true)\n"
                   << "  --disable-call-hierarchy                Disable call hierarchy\n"
                   << "  --enable-type-hierarchy[=true|false]    Enable/disable type hierarchy (default: true)\n"
-                  << "  --disable-type-hierarchy                Disable type hierarchy\n\n"
+                  << "  --disable-type-hierarchy                Disable type hierarchy\n"
+                  << "  --enable-linked-editing[=true|false]    Enable/disable linked editing of locals (default: true)\n"
+                  << "  --disable-linked-editing                Disable linked editing\n\n"
                   << "Options:\n"
                   << "  --locale=<string>                       Set diagnostic language/locale (default: en)\n"
                   << "  --file-ext=<string>                     Set script file extension (default: .as)\n"
@@ -385,6 +387,14 @@ namespace angel_lsp::config
             else if (key == "--disable-type-hierarchy" || key == "--disable-typehierarchy")
             {
                 config.features.enableTypeHierarchy = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-linked-editing" || key == "--enable-linkedediting")
+            {
+                config.features.enableLinkedEditing = getBoolValue(true);
+            }
+            else if (key == "--disable-linked-editing" || key == "--disable-linkedediting")
+            {
+                config.features.enableLinkedEditing = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
             else if (key == "--enable-formatting")
             {

@@ -1059,6 +1059,22 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         }
     }
 
+    TEST_CASE("Linked editing flag")
+    {
+        SUBCASE("Enabled by default")
+        {
+            ServerConfig config = FromArgs(0, nullptr);
+            CHECK(config.features.enableLinkedEditing == true);
+        }
+
+        SUBCASE("Disabled via --disable-linked-editing")
+        {
+            ArgvHelper args{"angel_lsp", "--disable-linked-editing"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.features.enableLinkedEditing == false);
+        }
+    }
+
     TEST_CASE("Predefined file paths")
     {
         SUBCASE("Empty by default")

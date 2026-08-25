@@ -355,6 +355,33 @@ TEST_CASE("Server - Answers a type hierarchy over the wire")
     CHECK(stream.OutputContains("\"Derived\""));
 }
 
+TEST_CASE("Server - Announces and answers linked editing")
+{
+    const std::string source =
+        "void main()\n"
+        "{\n"
+        "    int ticks = 0;\n"
+        "    ticks = ticks + 1;\n"
+        "}\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/linkedEditingRange","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"position":{"line":2,"character":9}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.OutputContains("\"linkedEditingRangeProvider\""));
+    CHECK(stream.OutputContains("\"ranges\""));
+}
+
 TEST_CASE("Server - Publishes diagnostics for an opened document")
 {
     WorkspaceFixture fixture;

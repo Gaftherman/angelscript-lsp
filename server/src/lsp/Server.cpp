@@ -6,6 +6,7 @@
 #include "features/implementation/ImplementationHandler.h"
 #include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
+#include "features/linked_editing/LinkedEditingRangeHandler.h"
 #include "features/selection_range/SelectionRangeHandler.h"
 #include "features/completion/CompletionHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
@@ -223,6 +224,11 @@ namespace angel_lsp
         if (m_config.features.enableTypeHierarchy)
         {
             result.capabilities.typeHierarchyProvider = true;
+        }
+
+        if (m_config.features.enableLinkedEditing)
+        {
+            result.capabilities.linkedEditingRangeProvider = true;
         }
 
         if (m_config.features.enableCompletion)
@@ -1855,6 +1861,38 @@ namespace angel_lsp
                     EncodeItemRanges(item);
                 }
                 return items.value();
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_LinkedEditingRange>(
+            [this](lsp::requests::TextDocument_LinkedEditingRange::Params &&req) -> lsp::requests::TextDocument_LinkedEditingRange::Result
+            {
+                if (!m_config.features.enableLinkedEditing)
+                {
+                    return lsp::Null{};
+                }
+                std::string uriStr = req.textDocument.uri.toString();
+                auto docIt = m_openDocuments.find(uriStr);
+                if (docIt == m_openDocuments.end())
+                {
+                    return lsp::Null{};
+                }
+
+                auto scopeRoot = m_scopeIndex.GetRoot(uriStr);
+                features::LinkedEditingRangeRequest lr{
+                    docIt->second, scopeRoot.get(),
+                    codec::Decode(docIt->second, m_positionEncoding, req.position)
+                };
+
+                auto ranges = features::GetLinkedEditingRanges(lr);
+                if (!ranges.has_value())
+                {
+                    return lsp::Null{};
+                }
+                for (auto &range : ranges->ranges)
+                {
+                    codec::Encode(docIt->second, m_positionEncoding, range);
+                }
+                return ranges.value();
             });
 
         m_messageHandler->add<lsp::requests::TextDocument_SelectionRange>(

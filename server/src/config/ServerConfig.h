@@ -34,6 +34,7 @@ namespace angel_lsp::config
         bool enableSelectionRange = true;
         bool enableCallHierarchy = true;
         bool enableTypeHierarchy = true;
+        bool enableLinkedEditing = true;
     };
 
     /**

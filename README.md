@@ -17,6 +17,7 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
 - **Expand Selection (`textDocument/selectionRange`)**: Grows the selection one syntactic step at a time, straight off the parse tree.
 - **Call Hierarchy (`textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls`)**: Who calls this function, and what it calls in turn, from a workspace-wide call index held beside the symbol table rather than inside it.
 - **Type Hierarchy (`textDocument/prepareTypeHierarchy`, `typeHierarchy/supertypes`, `typeHierarchy/subtypes`)**: The bases a class or interface declares, and the types that declare it as theirs, one level at a time.
+- **Linked Editing (`textDocument/linkedEditingRange`)**: Retype a local variable or a parameter and its uses together, live. Offered only for names a lexical scope keeps inside one file; anything at file scope goes through Rename, which looks across documents.
 - **Auto-Completion (`textDocument/completion`)**: Context-aware completion suggestions for global symbols, class member functions/properties, and namespace scopes.
 - **Semantic Tokens (`textDocument/semanticTokens/full`)**: Full semantic syntax highlighting for keywords, types, functions, variables, parameters, and enum members.
 - **Signature Help (`textDocument/signatureHelp`)**: Active parameter highlight and signature preview for function calls.
@@ -151,6 +152,7 @@ server/build/angel_lsp_tests
 | `ReferencesTest.cpp` | Layer 3 Project-wide references lookup with lexical shadowing and class inheritance awareness. |
 | `RenameTest.cpp` | Layer 3 Prepare rename validation and safe `WorkspaceEdit` generation across multiple documents. |
 | `CallHierarchyTest.cpp` | Layer 2/3 The call index itself - caller qualification, method calls, nested arguments - and the hierarchy built on it in both directions. |
+| `LinkedEditingRangeTest.cpp` | Layer 3 Linked editing: shadowing, declaration-and-uses, and the file-scope names it refuses to offer. |
 | `TypeHierarchyTest.cpp` | Layer 3 Type hierarchy in both directions, direct relations only, with the protocol's range-containment requirement pinned. |
 | `ImplementationTest.cpp` | Layer 3 Go to Implementation: interfaces to implementing classes, base classes to derived ones transitively, methods to their overrides, and the cases that answer with nothing. |
 | `SelectionRangeTest.cpp` | Layer 3 Expand selection chains: containment, no repeated links, and one answer per requested position. |
@@ -201,6 +203,8 @@ The `angel_lsp` executable accepts command-line arguments to enable or disable i
 | `--disable-implementation` | Explicitly disable Go to Implementation. | - |
 | `--enable-selection-range[=true\|false]` | Enable or disable expand selection. | `true` |
 | `--disable-selection-range` | Explicitly disable expand selection. | - |
+| `--enable-linked-editing[=true\|false]` | Enable or disable linked editing of locals. | `true` |
+| `--disable-linked-editing` | Explicitly disable linked editing. | - |
 | `--enable-call-hierarchy[=true\|false]` | Enable or disable call hierarchy. | `true` |
 | `--disable-call-hierarchy` | Explicitly disable call hierarchy. | - |
 | `--enable-type-hierarchy[=true\|false]` | Enable or disable type hierarchy. | `true` |
