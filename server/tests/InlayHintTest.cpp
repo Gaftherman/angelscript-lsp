@@ -281,6 +281,62 @@ TEST_CASE("InlayHintHandler - Sub-range Filtering")
     CHECK(l == "x:");
 }
 
+TEST_CASE("InlayHintHandler - Operator Overload Auto Type Deduction")
+{
+    std::string code =
+        "class Matrix {\n"
+        "    Matrix opMul(float scalar) const { return Matrix(); }\n"
+        "}\n"
+        "class Vector {\n"
+        "    Vector opMul_r(const Matrix &in m) const { return Vector(); }\n"
+        "}\n"
+        "void Main() {\n"
+        "    Matrix m;\n"
+        "    Vector v;\n"
+        "    auto res1 = m * 2.0f;\n"
+        "    auto res2 = m * v;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+
+    REQUIRE(hints.has_value());
+    bool foundMatrix = false;
+    bool foundVector = false;
+
+    for (const auto &hint : *hints)
+    {
+        std::string l = std::holds_alternative<std::string>(hint.label)
+                            ? std::get<std::string>(hint.label)
+                            : "";
+        if (l == ": Matrix")
+        {
+            foundMatrix = true;
+            if (hint.tooltip.has_value())
+            {
+                std::string t = std::holds_alternative<std::string>(*hint.tooltip)
+                                    ? std::get<std::string>(*hint.tooltip)
+                                    : "";
+                CHECK(t == "Deduced type: Matrix");
+            }
+        }
+        if (l == ": Vector")
+        {
+            foundVector = true;
+            if (hint.tooltip.has_value())
+            {
+                std::string t = std::holds_alternative<std::string>(*hint.tooltip)
+                                    ? std::get<std::string>(*hint.tooltip)
+                                    : "";
+                CHECK(t == "Deduced type: Vector");
+            }
+        }
+    }
+
+    CHECK(foundMatrix);
+    CHECK(foundVector);
+}
+
 TEST_CASE("InlayHintHandler - Robustness with Empty / Null Tree")
 {
     InlayHintRequest req{ "file:///empty.as", "", nullptr, lsp::Range{}, SymbolTable{}, ScopeIndex{} };

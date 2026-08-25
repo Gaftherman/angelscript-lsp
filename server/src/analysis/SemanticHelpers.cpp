@@ -26,7 +26,7 @@ namespace angel_lsp::analysis
             {
                 typeName.remove_prefix(1);
             }
-            while (!typeName.empty() && (typeName.back() == '@' || typeName.back() == '&' || typeName.back() == ' ' || typeName.back() == '\t'))
+            while (!typeName.empty() && (typeName.back() == '&' || typeName.back() == ' ' || typeName.back() == '\t'))
             {
                 typeName.remove_suffix(1);
             }

@@ -379,6 +379,21 @@ namespace angel_lsp::features
                 return "";
             }
 
+            auto rootScope = request.scopeIndex.GetRoot(request.uri);
+            const analysis::Scope *scope = nullptr;
+            if (rootScope)
+            {
+                TSPoint point = ts_node_start_point(exprNode);
+                scope = FindInnermostScope(rootScope.get(), point.row, point.column);
+            }
+
+            std::string resolved = analysis::ResolveExpressionType(
+                exprNode, scope, request.symbolTable, request.sourceCode, request.uri);
+            if (!resolved.empty() && resolved != "auto")
+            {
+                return resolved;
+            }
+
             std::string_view type = ts_node_type(exprNode);
 
             if (type == "parenthesized_expression")
@@ -857,8 +872,7 @@ namespace angel_lsp::features
                                     // integer suffixes off the tail - suffixes AngelScript does not
                                     // have, on text that does not parse as one literal when present.
                                     std::string deduced = DeduceExpressionType(initExpr, request);
-
-                                    if (!deduced.empty() && deduced != "auto")
+                                    if (!deduced.empty() && deduced != "auto" && deduced != "null" && deduced != "void")
                                     {
                                         TSPoint endPoint = ts_node_end_point(nameNode);
                                         lsp::Position hintPos{ endPoint.row, endPoint.column };

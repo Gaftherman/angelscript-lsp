@@ -131,7 +131,7 @@ TEST_CASE("Refactoring - Extract Variable: Call Expression")
             auto changes = action.edit->changes.value();
             const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
-            CHECK(edits[0].newText.find("Target newVar = GetTarget(player);") != std::string::npos);
+            CHECK(edits[0].newText.find("Target@ newVar = GetTarget(player);") != std::string::npos);
             CHECK(edits[1].newText == "newVar");
         }
     }
