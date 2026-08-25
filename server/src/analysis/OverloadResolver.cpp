@@ -255,15 +255,20 @@ namespace angel_lsp::analysis
             return static_cast<int>(OverloadMatchPenalty::ConstRef);
         }
 
-        // 3. Inheritance / Subtype conversion (Derived -> Base)
-        if (argIsHandle == paramIsHandle)
+        // 3. Inheritance / Subtype conversion (Derived -> Base, Derived -> Base@, Derived@ -> Base@)
+        if (argIsHandle == paramIsHandle || (paramIsHandle && !argIsHandle))
         {
             auto hierarchy = GetInheritedTypeHierarchy(cleanArg, symbolTable);
-            for (const auto &ancestor : hierarchy)
+            for (size_t dist = 0; dist < hierarchy.size(); ++dist)
             {
-                if (NormalizeType(ancestor) == cleanParam)
+                if (NormalizeType(hierarchy[dist]) == cleanParam)
                 {
-                    return static_cast<int>(OverloadMatchPenalty::Inheritance);
+                    int basePenalty = static_cast<int>(OverloadMatchPenalty::Inheritance);
+                    if (!argIsHandle && paramIsHandle)
+                    {
+                        basePenalty += 1;
+                    }
+                    return basePenalty + static_cast<int>(dist);
                 }
             }
         }

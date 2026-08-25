@@ -313,6 +313,61 @@ TEST_CASE("CallChecker - Accepts compatible argument types")
     CHECK_FALSE(HasCode(diags, "as-err-call-argument-count"));
 }
 
+TEST_CASE("CallChecker - Reports ambiguous call error when two overloads tie")
+{
+    const std::string code =
+        "void Action(int a, double b) { }\n"
+        "void Action(double a, int b) { }\n"
+        "void main()\n"
+        "{\n"
+        "    Action(1, 2);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-call-ambiguous"));
+}
+
+TEST_CASE("CallChecker - Multi-level inheritance overload chooses most derived match")
+{
+    const std::string code =
+        "class Base { }\n"
+        "class Derived : Base { }\n"
+        "class Leaf : Derived { }\n"
+        "void Inspect(Base@ b) { }\n"
+        "void Inspect(Derived@ d) { }\n"
+        "void main()\n"
+        "{\n"
+        "    Leaf l;\n"
+        "    Inspect(l);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-ambiguous"));
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - User-defined constructor argument conversion resolves overload")
+{
+    const std::string code =
+        "class Vector2\n"
+        "{\n"
+        "    Vector2(float x, float y = 0.0f) { }\n"
+        "}\n"
+        "void Move(Vector2 v) { }\n"
+        "void Move(string s) { }\n"
+        "void main()\n"
+        "{\n"
+        "    Move(10.0f);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-ambiguous"));
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+}
+
+
 
 // =====================================================================================
 // Corpus audit (opt-in - run via
