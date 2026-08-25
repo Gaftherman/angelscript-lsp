@@ -316,3 +316,19 @@ TEST_CASE("codec::EncodeSemanticTokens - UTF-8 clients get the payload back unto
 
     CHECK(data == original);
 }
+
+TEST_CASE("codec::Encode - WorkspaceEdit text edits with UTF-16 non-ASCII characters")
+{
+    const std::string text = "// \xC3\xB3 x";
+    lsp::Range range;
+    range.start.line = 0;
+    range.start.character = 5; // byte column of 'x'
+    range.end.line = 0;
+    range.end.character = 6;
+
+    angel_lsp::codec::Encode(text, PositionEncoding::Utf16, range);
+
+    CHECK(range.start.character == 4);
+    CHECK(range.end.character == 5);
+}
+

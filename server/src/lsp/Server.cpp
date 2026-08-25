@@ -1474,16 +1474,48 @@ namespace angel_lsp
 
     void Server::EncodeAcrossDocuments(lsp::WorkspaceEdit &edit) const
     {
-        if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || !edit.changes.has_value())
+        if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
             return;
 
-        // Only the `changes` form is produced (see RenameHandler.cpp and CodeActionHandler.cpp);
-        // documentChanges is left alone so that a future switch to it fails loudly in review
-        // rather than silently shipping unconverted ranges.
-        for (auto &[uri, edits] : edit.changes.value())
+        if (edit.changes.has_value())
         {
-            if (const std::string *text = FindDocumentText(uri.toString()))
-                EncodeIn(*text, edits);
+            for (auto &[uri, edits] : edit.changes.value())
+            {
+                if (const std::string *text = FindDocumentText(uri.toString()))
+                    EncodeIn(*text, edits);
+            }
+        }
+
+        if (edit.documentChanges.has_value())
+        {
+            for (auto &docChange : edit.documentChanges.value())
+            {
+                if (std::holds_alternative<lsp::TextDocumentEdit>(docChange))
+                {
+                    auto &docEdit = std::get<lsp::TextDocumentEdit>(docChange);
+                    if (const std::string *text = FindDocumentText(docEdit.textDocument.uri.toString()))
+                    {
+                        for (auto &e : docEdit.edits)
+                        {
+                            if (std::holds_alternative<lsp::TextEdit>(e))
+                            {
+                                auto &te = std::get<lsp::TextEdit>(e);
+                                codec::Encode(*text, m_positionEncoding, te.range);
+                            }
+                            else if (std::holds_alternative<lsp::AnnotatedTextEdit>(e))
+                            {
+                                auto &ate = std::get<lsp::AnnotatedTextEdit>(e);
+                                codec::Encode(*text, m_positionEncoding, ate.range);
+                            }
+                            else if (std::holds_alternative<lsp::SnippetTextEdit>(e))
+                            {
+                                auto &ste = std::get<lsp::SnippetTextEdit>(e);
+                                codec::Encode(*text, m_positionEncoding, ste.range);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
