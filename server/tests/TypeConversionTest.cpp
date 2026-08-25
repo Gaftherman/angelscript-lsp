@@ -476,6 +476,37 @@ TEST_CASE("TypeConversion - Assignment Expression Passed As Method Argument Is E
     CHECK_FALSE(hasTypeError);
 }
 
+TEST_CASE("TypeConversion - Reports incompatible return type from function")
+{
+    const std::string code =
+        "float MyFunction()\n"
+        "{\n"
+        "    return \"hola\";\n"
+        "}\n";
+
+    ConversionEnvironment env(code);
+    auto diags = env.Analyze();
+    bool hasTypeError = std::any_of(diags.begin(), diags.end(),
+        [](const Diagnostic &d) { return d.code == "as-err-no-implicit-conversion"; });
+    CHECK(hasTypeError);
+}
+
+TEST_CASE("TypeConversion - Accepts convertible return type from function")
+{
+    const std::string code =
+        "float MyFunction()\n"
+        "{\n"
+        "    return 10;\n"
+        "}\n";
+
+    ConversionEnvironment env(code);
+    auto diags = env.Analyze();
+    bool hasTypeError = std::any_of(diags.begin(), diags.end(),
+        [](const Diagnostic &d) { return d.code == "as-err-no-implicit-conversion"; });
+    CHECK_FALSE(hasTypeError);
+}
+
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Type Conversion Corpus Audit*"`)

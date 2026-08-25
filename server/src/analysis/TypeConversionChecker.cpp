@@ -971,6 +971,45 @@ namespace angel_lsp::analysis
             {
                 CheckCast(node, scopeAt(), ctx, request.sourceCode);
             }
+            else if (nodeType == "return_statement")
+            {
+                if (ts_node_named_child_count(node) > 0)
+                {
+                    TSNode expr = ts_node_named_child(node, 0);
+                    TSNode parent = ts_node_parent(node);
+                    while (!ts_node_is_null(parent))
+                    {
+                        const std::string_view pType = ts_node_type(parent);
+                        if (pType == "func_declaration" || pType == "method_declaration" ||
+                            pType == "function_definition")
+                        {
+                            TSNode retTypeNode = ts_node_child_by_field_name(parent, "return_type", 11);
+                            if (ts_node_is_null(retTypeNode))
+                            {
+                                retTypeNode = ts_node_child_by_field_name(parent, "type", 4);
+                            }
+                            if (!ts_node_is_null(retTypeNode))
+                            {
+                                const std::string expected = CleanBaseType(NodeText(retTypeNode, request.sourceCode));
+                                if (!expected.empty() && expected != "void")
+                                {
+                                    const std::string actual = CleanBaseType(ResolveExpressionType(
+                                        expr, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
+                                    if (!actual.empty() && actual != expected)
+                                    {
+                                        if (!IsConvertible(actual, expected, ctx))
+                                        {
+                                            EmitAtNode(expr, ctx, "as-err-no-implicit-conversion", actual, expected);
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                        parent = ts_node_parent(parent);
+                    }
+                }
+            }
             else if (nodeType == node_types::CallExpression)
             {
                 TSNode callee = ts_node_child_by_field_name(node, "function", k_functionFieldLength);
