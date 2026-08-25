@@ -494,4 +494,9 @@ namespace angel_lsp::features
 
         return actions;
     }
+
+    std::optional<lsp::CodeAction> ResolveCodeAction(const CodeActionResolveRequest &request)
+    {
+        return request.action;
+    }
 }

@@ -313,7 +313,9 @@ namespace angel_lsp
 
         if (m_config.features.enableCodeAction)
         {
-            result.capabilities.codeActionProvider = true;
+            lsp::CodeActionOptions codeActionOpts;
+            codeActionOpts.resolveProvider = true;
+            result.capabilities.codeActionProvider = codeActionOpts;
         }
 
         if (m_config.features.enableFormatting)
@@ -2389,6 +2391,27 @@ namespace angel_lsp
                     return resultList;
                 }
                 return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::CodeAction_Resolve>(
+            [this](lsp::requests::CodeAction_Resolve::Params &&req) -> lsp::requests::CodeAction_Resolve::Result
+            {
+                if (!m_config.features.enableCodeAction)
+                {
+                    return req;
+                }
+
+                features::CodeActionResolveRequest carr{ req, m_symbolTable, m_scopeIndex };
+                auto resolved = features::ResolveCodeAction(carr);
+                if (resolved.has_value())
+                {
+                    if (resolved->edit.has_value())
+                    {
+                        EncodeAcrossDocuments(resolved->edit.value());
+                    }
+                    return resolved.value();
+                }
+                return req;
             });
 
         m_messageHandler->add<lsp::requests::TextDocument_Formatting>(

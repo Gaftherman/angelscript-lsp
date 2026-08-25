@@ -272,3 +272,16 @@ TEST_CASE("CodeActionHandler - Robustness on Null Tree / Empty Range")
     auto actions = GetCodeActions(req);
     CHECK(!actions.has_value());
 }
+
+TEST_CASE("CodeActionHandler - ResolveCodeAction returns resolved code action")
+{
+    lsp::CodeAction action;
+    action.title = "Test Action";
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+
+    CodeActionResolveRequest req{ action, SymbolTable{}, ScopeIndex{} };
+    auto resolved = ResolveCodeAction(req);
+    REQUIRE(resolved.has_value());
+    CHECK(resolved->title == "Test Action");
+}
+

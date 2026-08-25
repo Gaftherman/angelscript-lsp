@@ -26,9 +26,26 @@ namespace angel_lsp::features
     };
 
     /**
+     * @brief Context and input parameters for resolving a Code Action.
+     */
+    struct CodeActionResolveRequest
+    {
+        const lsp::CodeAction &action;
+        const analysis::SymbolTable &symbolTable;
+        const analysis::ScopeIndex &scopeIndex;
+    };
+
+    /**
      * @brief Computes available code actions (quick-fixes, refactorings) for a given range and context.
      * @param request Immutable context for code actions.
      * @return Optional list of CodeActions; nullopt if none available.
      */
     std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionRequest &request);
+
+    /**
+     * @brief Resolves additional edit details or commands for an unresolved Code Action.
+     * @param request Immutable context for code action resolution.
+     * @return Resolved CodeAction.
+     */
+    std::optional<lsp::CodeAction> ResolveCodeAction(const CodeActionResolveRequest &request);
 }
