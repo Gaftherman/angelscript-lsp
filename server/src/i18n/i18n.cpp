@@ -183,6 +183,10 @@ namespace angel_lsp::i18n
         m_messages["as-err-not-lvalue"] = "Expression is not an assignable l-value.";
         m_messages["as-err-assign-void"] = "Cannot assign to expression of type 'void'.";
         m_messages["as-err-assign-non-ref-call"] = "Cannot assign to a function call result unless it returns a reference.";
+        m_messages["as-err-ref-type-bool-conv-disallowed"] = "Implicit boolean conversion on handle/reference type is disallowed. Compare explicitly with 'null' or call 'opImplConv()' directly.";
+        m_messages["as-err-deleted-method-called"] = "Cannot call deleted method '{}::{}'.";
+        m_messages["as-err-invalid-foreach-container"] = "Type '{}' is not a valid foreach container. Must implement opForBegin, opForEnd, opForNext and opForValue.";
+        m_messages["as-err-no-matching-operator"] = "No matching operator '{}' found for types '{}' and '{}'.";
 
         if (locale == "es")
         {
@@ -283,6 +287,10 @@ namespace angel_lsp::i18n
             m_messages["as-err-not-lvalue"] = "La expresión no es un l-value asignable.";
             m_messages["as-err-assign-void"] = "No se puede asignar a una expresión de tipo 'void'.";
             m_messages["as-err-assign-non-ref-call"] = "No se puede asignar al resultado de una llamada a función a menos que devuelva una referencia.";
+            m_messages["as-err-ref-type-bool-conv-disallowed"] = "La conversión booleana implícita en un tipo handle/referencia no está permitida. Compara explícitamente con 'null' o llama a 'opImplConv()' directamente.";
+            m_messages["as-err-deleted-method-called"] = "No se puede invocar el método eliminado '{}::{}'.";
+            m_messages["as-err-invalid-foreach-container"] = "El tipo '{}' no es un contenedor foreach válido. Debe implementar opForBegin, opForEnd, opForNext y opForValue.";
+            m_messages["as-err-no-matching-operator"] = "No se encontró un operador '{}' compatible para los tipos '{}' y '{}'.";
         }
     }
 

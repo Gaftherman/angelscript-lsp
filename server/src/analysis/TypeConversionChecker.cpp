@@ -958,11 +958,90 @@ namespace angel_lsp::analysis
                     std::string cleanLeft = CleanBaseType(leftType);
                     std::string cleanRight = CleanBaseType(rightType);
 
+                    // Check if opAssign is explicitly deleted on LHS class
+                    if (!cleanLeft.empty())
+                    {
+                        auto opSyms = ctx.request.symbolTable.FindSymbolsPtr(cleanLeft + "::opAssign");
+                        if (opSyms)
+                        {
+                            for (const auto &sym : *opSyms)
+                            {
+                                if (sym.type == SymbolType::Function &&
+                                    std::holds_alternative<FunctionSignature>(sym.signature) &&
+                                    sym.GetFunction().modifiers.isDelete)
+                                {
+                                    EmitAtNode(node, ctx, "as-err-deleted-method-called", cleanLeft, "opAssign");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     if (!cleanLeft.empty() && !cleanRight.empty() && cleanLeft != cleanRight)
                     {
                         if (!IsConvertible(cleanRight, cleanLeft, ctx))
                         {
                             EmitAtNode(right, ctx, "as-err-no-implicit-conversion", cleanRight, cleanLeft);
+                        }
+                    }
+                }
+            }
+            else if (nodeType == "if_statement" || nodeType == "while_statement" ||
+                     nodeType == "for_statement" || nodeType == "do_while_statement")
+            {
+                TSNode condNode = ts_node_child_by_field_name(node, "condition", 9);
+                if (ts_node_is_null(condNode))
+                {
+                    uint32_t count = ts_node_named_child_count(node);
+                    for (uint32_t i = 0; i < count; ++i)
+                    {
+                        TSNode child = ts_node_named_child(node, i);
+                        std::string_view ct = ts_node_type(child);
+                        if (ct != "compound_statement" && ct != "statement_block" && !ct.ends_with("_statement"))
+                        {
+                            condNode = child;
+                            break;
+                        }
+                    }
+                }
+                if (!ts_node_is_null(condNode))
+                {
+                    while (!ts_node_is_null(condNode) &&
+                           std::string_view(ts_node_type(condNode)) == "parenthesized_expression" &&
+                           ts_node_named_child_count(condNode) > 0)
+                    {
+                        condNode = ts_node_named_child(condNode, 0);
+                    }
+
+                    bool isHandle = false;
+                    if (scopeAt())
+                    {
+                        const std::string name = NodeText(condNode, request.sourceCode);
+                        const LocalDefinition *def = ResolveInScope(scopeAt(), name);
+                        if (def)
+                        {
+                            isHandle = def->typeName.find('@') != std::string::npos;
+                        }
+                    }
+
+                    std::string condType = ResolveExpressionType(condNode, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+                    if (isHandle || condType.find('@') != std::string::npos)
+                    {
+                        std::string baseClass = CleanBaseType(condType);
+                        auto opSyms = ctx.request.symbolTable.FindSymbolsPtr(baseClass + "::opImplConv");
+                        if (opSyms)
+                        {
+                            for (const auto &sym : *opSyms)
+                            {
+                                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                                {
+                                    if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                                    {
+                                        EmitAtNode(condNode, ctx, "as-err-ref-type-bool-conv-disallowed", baseClass, "bool");
+                                        break;
+                                    }
+                                }
+                            }
                         }
                     }
                 }

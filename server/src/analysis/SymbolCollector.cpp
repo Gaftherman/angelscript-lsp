@@ -994,6 +994,10 @@ namespace angel_lsp::analysis
             {
                 ApplyModifierToken(ts_node_symbol(child), modifiers);
             }
+            if (GetNodeText(child, sourceCode) == "delete")
+            {
+                modifiers.isDelete = true;
+            }
         }
         return modifiers;
     }

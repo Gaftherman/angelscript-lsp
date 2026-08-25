@@ -33,9 +33,15 @@ namespace
         SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
         request.scopeRoot = scopes.CollectScopes(code, parser);
         request.sourceCode = code;
+        request.tree = parser.Parse(code);
 
         SemanticAnalyzer analyzer(nullptr);
-        return analyzer.Analyze(request);
+        auto diags = analyzer.Analyze(request);
+        if (request.tree)
+        {
+            ts_tree_delete(const_cast<TSTree *>(request.tree));
+        }
+        return diags;
     }
 
     bool HasCode(const std::vector<Diagnostic> &diagnostics, const std::string &code)
@@ -193,6 +199,63 @@ TEST_CASE("OperatorRules - An &out parameter defaulted to void is accepted")
     // the engine's own documentation.
     CHECK_FALSE(HasCode(AnalyzeOperatorSnippet("void Fetch(int &out value = void) { value = 42; }\n"),
                         "as-err-out-param-default"));
+}
+
+// =====================================================================================
+// AngelScript Operator Overloads Verification & Error Invariants
+// =====================================================================================
+
+TEST_CASE("OperatorRules - Binary Dual Dispatch: opAdd vs opAdd_r Resolution and Type Deduction")
+{
+    const std::string script =
+        "class Vector2 {\n"
+        "    float x, y;\n"
+        "    Vector2 opAdd(float scalar) const { return Vector2(); }\n"
+        "}\n"
+        "class Multiplier {\n"
+        "    Vector2 opAdd_r(const Vector2 &in vec) const { return Vector2(); }\n"
+        "}\n"
+        "void Main() {\n"
+        "    Vector2 v;\n"
+        "    Multiplier m;\n"
+        "    Vector2 r1 = v + 5.0f;\n"
+        "    Vector2 r2 = v + m;\n"
+        "}\n";
+
+    auto diags = AnalyzeOperatorSnippet(script);
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("OperatorRules - Conditionals: Disallow bool opImplConv on Reference Types")
+{
+    const std::string script =
+        "class RefHandleType {\n"
+        "    bool opImplConv() const { return true; }\n"
+        "}\n"
+        "void Main() {\n"
+        "    RefHandleType@ handle = RefHandleType();\n"
+        "    if (handle) {\n"
+        "    }\n"
+        "}\n";
+
+    auto diags = AnalyzeOperatorSnippet(script);
+    CHECK(HasCode(diags, "as-err-ref-type-bool-conv-disallowed"));
+}
+
+TEST_CASE("OperatorRules - Deleted opAssign: Explicit Deletion Diagnostic Verification")
+{
+    const std::string script =
+        "class NonCopyable {\n"
+        "    NonCopyable &opAssign(const NonCopyable &inout) delete;\n"
+        "}\n"
+        "void Main() {\n"
+        "    NonCopyable a, b;\n"
+        "    a = b;\n"
+        "}\n";
+
+    auto diags = AnalyzeOperatorSnippet(script);
+    CHECK(HasCode(diags, "as-err-deleted-method-called"));
 }
 
 // =====================================================================================

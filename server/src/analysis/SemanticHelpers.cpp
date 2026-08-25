@@ -1306,6 +1306,10 @@ namespace angel_lsp::analysis
         // Parenthesized expression (e.g. (expr))
         if (nodeType == "parenthesized_expression")
         {
+            if (ts_node_named_child_count(exprNode) > 0)
+            {
+                return ResolveExpressionType(ts_node_named_child(exprNode, 0), scope, symbolTable, sourceCode, uri);
+            }
             uint32_t count = ts_node_child_count(exprNode);
             for (uint32_t i = 0; i < count; ++i)
             {
