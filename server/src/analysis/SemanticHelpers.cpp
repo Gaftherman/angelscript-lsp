@@ -431,7 +431,8 @@ namespace angel_lsp::analysis
         if (!ts_node_is_null(parent))
         {
             std::string_view parentType = ts_node_type(parent);
-            if (parentType == "class_declaration" || parentType == "interface_declaration" || parentType == "namespace_declaration")
+            if (parentType == "class_declaration" || parentType == "interface_declaration" ||
+                parentType == "namespace_declaration" || parentType == "mixin_declaration")
             {
                 TSNode nameChild = ts_node_child_by_field_name(parent, "name", 4);
                 if (!ts_node_is_null(nameChild) &&
@@ -451,7 +452,12 @@ namespace angel_lsp::analysis
             ContainerKind kind = ContainerKind::Class;
             bool isContainer = false;
 
-            if (type == "class_declaration")
+            // A mixin body is a class body for every question these helpers answer - what type
+            // encloses this node, what `this` is, which methods an unqualified name can reach.
+            // Leaving it out meant a mixin's whole body was treated as though it sat at file scope,
+            // which the call-argument audit found: a method calling its own sibling matched an
+            // unrelated global of the same name instead.
+            if (type == "class_declaration" || type == "mixin_declaration")
             {
                 kind = ContainerKind::Class;
                 isContainer = true;

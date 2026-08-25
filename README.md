@@ -154,6 +154,7 @@ server/build/angel_lsp_tests
 | `TypeHierarchyTest.cpp` | Layer 3 Type hierarchy in both directions, direct relations only, with the protocol's range-containment requirement pinned. |
 | `ImplementationTest.cpp` | Layer 3 Go to Implementation: interfaces to implementing classes, base classes to derived ones transitively, methods to their overrides, and the cases that answer with nothing. |
 | `SelectionRangeTest.cpp` | Layer 3 Expand selection chains: containment, no repeated links, and one answer per requested position. |
+| `CallCheckerTest.cpp` | Layer 2 Argument counts at call sites, and the four shapes the corpus audit proved undecidable - mixin bodies, funcdef constructions, cross-plugin globals, unqualified names. |
 | `ConstCheckerTest.cpp` | Layer 2 Const correctness at the use site: assigning to a const, and calling a non-const method through a const object. |
 | `AccessCheckerTest.cpp` | Layer 2 Access control on member use: `private` per class, `protected` through a derived object, and the engine options that move the boundary. |
 | `ServerConfigTest.cpp` | Layer 1/4 CLI argument parsing, boolean feature flag toggles, option syntax (`--flag=value` / `--flag value`), and robustness. |

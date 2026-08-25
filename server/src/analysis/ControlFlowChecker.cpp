@@ -84,11 +84,12 @@ namespace angel_lsp::analysis
             return IsDefaultClause(clause) ? 0u : 1u;
         }
 
-        void EmitAtNode(TSNode node, DiagnosticContext &ctx, std::string_view code)
+        void EmitAtNode(TSNode node, DiagnosticContext &ctx, std::string_view code,
+                        DiagnosticSeverity severity = DiagnosticSeverity::Error)
         {
             const TSPoint start = ts_node_start_point(node);
             const TSPoint end = ts_node_end_point(node);
-            ctx.EmitAtRange(start.row, start.column, end.row, end.column, code);
+            ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, severity);
         }
 
         void EmitAtNode(TSNode node, DiagnosticContext &ctx, std::string_view code, const std::string &arg)
@@ -305,6 +306,66 @@ namespace angel_lsp::analysis
             uint32_t switchDepth = 0;
         };
 
+        /**
+         * @brief Reports the first statement a block can never reach.
+         *
+         * Purely structural, and that is the whole rule: anything written after a `return`, a
+         * `break` or a `continue` *in the same block* is dead. Compiled against a real engine,
+         * which warns - not errors - at exactly those three, and does not warn after an `if` whose
+         * body returns, because the false branch still falls through. So no path analysis is
+         * involved and none is wanted; DefinitelyReturns exists for the question that does need it.
+         *
+         * One report per block, at the first dead statement. The engine says it once too, and a
+         * warning per line of a dead tail would bury the one that matters.
+         */
+        void CheckUnreachable(TSNode block, DiagnosticContext &ctx)
+        {
+            // A block the parser could not make sense of has a shape that is error recovery's
+            // guess, not the author's, and reading a terminator out of it says nothing. Found by
+            // the corpus audit on a file whose `if(...); return true; else return false;` is not
+            // AngelScript at all.
+            if (ts_node_has_error(block))
+            {
+                return;
+            }
+
+            const uint32_t count = ts_node_named_child_count(block);
+            bool terminated = false;
+
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_named_child(block, i);
+                const std::string_view childType = NodeType(child);
+
+                // Comments are extras rather than statements, and a comment after a return is
+                // ordinary - it is usually what explains the return.
+                if (childType == "comment")
+                {
+                    continue;
+                }
+
+                // A conditional compilation directive is an opaque line to this grammar, so which
+                // statements around it are live is not something this pass can know. The corpus
+                // has `#if FALSE ... return value; #endif` followed by the real code, and every
+                // statement after it read as dead. One directive anywhere in the block retires the
+                // question for the whole block, because a `#endif` alone gives no clue what its
+                // `#if` decided.
+                if (childType == "preproc_directive")
+                {
+                    return;
+                }
+
+                if (terminated)
+                {
+                    EmitAtNode(child, ctx, "as-warn-unreachable-code", DiagnosticSeverity::Warning);
+                    return;
+                }
+
+                terminated = childType == "return_statement" || childType == "break_statement" ||
+                             childType == "continue_statement";
+            }
+        }
+
         void Visit(TSNode node, std::string_view sourceCode, FlowState state, DiagnosticContext &ctx)
         {
             const std::string_view type = NodeType(node);
@@ -325,6 +386,11 @@ namespace angel_lsp::analysis
                     EmitAtNode(node, ctx, "as-err-continue-outside-loop");
                 }
                 return;
+            }
+
+            if (type == "statement_block" || type == "case_clause")
+            {
+                CheckUnreachable(node, ctx);
             }
 
             if (type == "func_declaration" || type == "lambda_expression")

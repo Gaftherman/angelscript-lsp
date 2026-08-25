@@ -347,6 +347,117 @@ TEST_CASE("ControlFlow - An interface method has no body to judge")
 }
 
 // =====================================================================================
+// Unreachable code
+//
+// Compiled against a real engine first, which warns rather than errors, and warns only for a
+// terminator and a statement in the *same* block. Code after an `if` whose body returns is not
+// dead - the false branch still falls through - and the engine says nothing about it.
+// =====================================================================================
+
+TEST_CASE("ControlFlow - Reports a statement after a return in the same block")
+{
+    CHECK(HasCode(AnalyzeFlowSnippet("void A() { return; int dead = 1; }\n"),
+                  "as-warn-unreachable-code"));
+}
+
+TEST_CASE("ControlFlow - Reports a statement after a break or a continue")
+{
+    CHECK(HasCode(AnalyzeFlowSnippet("void C() { for (int i = 0; i < 3; i++) { continue; int dead = 1; } }\n"),
+                  "as-warn-unreachable-code"));
+    CHECK(HasCode(AnalyzeFlowSnippet("void D() { while (true) { break; int dead = 1; } }\n"),
+                  "as-warn-unreachable-code"));
+}
+
+TEST_CASE("ControlFlow - Code after an if that returns is reachable")
+{
+    // The case that separates a structural rule from a path analysis, and the engine agrees: the
+    // false branch falls through, so nothing here is dead.
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("void B(int v) { if (v > 0) { return; } int alive = 1; }\n"),
+                        "as-warn-unreachable-code"));
+}
+
+TEST_CASE("ControlFlow - Code after a switch whose cases return is reachable")
+{
+    const std::string code =
+        "void E(int v)\n"
+        "{\n"
+        "    switch (v)\n"
+        "    {\n"
+        "        case 1: return;\n"
+        "        case 2: break;\n"
+        "    }\n"
+        "    int alive = 2;\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
+}
+
+TEST_CASE("ControlFlow - A comment after a return is not unreachable code")
+{
+    // A comment is an extra rather than a statement, and one after a return is usually what
+    // explains the return.
+    const std::string code =
+        "void A()\n"
+        "{\n"
+        "    return;\n"
+        "    // nothing more to do\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
+}
+
+TEST_CASE("ControlFlow - A block holding a preprocessor directive is not judged")
+{
+    // Found by the corpus audit, four times over in two files. `#if` is an opaque line to this
+    // grammar, so a `return` guarded by one reads as live and everything after it as dead. A
+    // `#endif` on its own says nothing about what its `#if` decided, so one directive anywhere in
+    // the block retires the question for the whole block.
+    const std::string code =
+        "int Get(int value)\n"
+        "{\n"
+        "#if FALSE\n"
+        "    return value;\n"
+        "#endif\n"
+        "    int temp = value;\n"
+        "    return temp;\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
+}
+
+TEST_CASE("ControlFlow - A block the parser could not read is not judged")
+{
+    // Also from the corpus: a file whose `if(...); return true; else return false;` is not
+    // AngelScript at all. The shape of a recovered block is error recovery's guess rather than the
+    // author's, and reading a terminator out of it says nothing.
+    const std::string code =
+        "bool IsSilent(string s)\n"
+        "{\n"
+        "    if (s == \"/\");\n"
+        "    return true;\n"
+        "    else return false;\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
+}
+
+TEST_CASE("ControlFlow - An ordinary body carries no unreachable finding")
+{
+    const std::string code =
+        "int Count(int v)\n"
+        "{\n"
+        "    int total = 0;\n"
+        "    for (int i = 0; i < v; i++)\n"
+        "    {\n"
+        "        total += i;\n"
+        "    }\n"
+        "    return total;\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
+}
+
+// =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Control Flow Corpus Audit*"`)
 // =====================================================================================
@@ -355,7 +466,8 @@ TEST_CASE("ControlFlow - Control Flow Corpus Audit" * doctest::skip(true))
 {
     static const std::vector<std::string> k_codes = {
         "as-err-break-outside-loop", "as-err-continue-outside-loop", "as-err-invalid-case-type",
-        "as-err-duplicate-case-value", "as-err-default-must-be-last", "as-err-not-all-paths-return"
+        "as-err-duplicate-case-value", "as-err-default-must-be-last", "as-err-not-all-paths-return",
+        "as-warn-unreachable-code"
     };
 
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)

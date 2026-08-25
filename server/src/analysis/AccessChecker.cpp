@@ -245,13 +245,17 @@ namespace angel_lsp::analysis
 
             bool insideMixin = false;
             const std::string accessingClass = EnclosingClass(node, request.sourceCode, insideMixin, table);
+            (void)insideMixin;
 
-            // A mixin's methods are compiled into each class that includes it, not into the mixin,
-            // so what its body may reach is decided somewhere this node is not. Left alone.
-            if (insideMixin)
-            {
-                return;
-            }
+            // A mixin body is judged like any other. It used to be skipped wholesale, on the
+            // grounds that its methods are compiled into each including class - but that only
+            // clouds an access to the mixin's *own* members, which is handled where a member is
+            // attributed to the including class rather than to the mixin. An access to some other
+            // class's private member is an error from every includer, and a real engine says so:
+            // "Illegal access to private property", once per instantiation.
+            //
+            // The guard was also dead until now: GetEnclosingContainers did not recognise a mixin
+            // body as a class at all, so insideMixin was never true.
 
             // asEP_PRIVATE_PROP_AS_PROTECTED makes a private member follow the protected rule
             // instead, so a derived class may reach it. The declaration still says `private` and
