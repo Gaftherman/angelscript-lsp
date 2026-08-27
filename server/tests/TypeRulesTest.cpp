@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "helpers/RuleCorpusAudit.h"
+#include "helpers/TestUtils.h"
 #include "analysis/rules/TypeRules.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
@@ -329,6 +330,66 @@ TEST_SUITE("AngelScript_CleanPredefined_And_DuplicateDetection")
         REQUIRE(errors.size() == 1);
         CHECK(errors[0].code == "as-err-duplicate-symbol");
         CHECK(errors[0].range.start.line == 2);
+    }
+}
+
+TEST_SUITE("AngelScript_DuplicateDeclaration_Diagnostics")
+{
+    TEST_CASE("Global Scope: Detect exact duplicate global function declarations in as.predefined")
+    {
+        const char *predefinedScript = R"(
+            /**
+             * @brief Imprime un mensaje de texto en la consola de salida
+             * @param text Contenido a imprimir
+             */
+            void Print(const string &in text);
+            void Print(const string &in text); // Must emit E_DUPLICATE_DECLARATION
+        )";
+
+        auto doc = CreateTestDocument("file:///workspace/as.predefined", predefinedScript);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+
+        CHECK(diagnostics[0].code == "E_DUPLICATE_DECLARATION");
+        CHECK(diagnostics[0].range.start.line == 6);
+        CHECK(diagnostics[0].range.start.character == 17); // Exact span over 'Print'
+    }
+
+    TEST_CASE("Class Scope: Detect duplicate method in as.predefined")
+    {
+        const char *predefinedScript = R"(
+            class string {
+                bool isEmpty() const;
+                uint Length() const;
+                bool isEmpty() const; // Must emit E_DUPLICATE_DECLARATION
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///workspace/as.predefined", predefinedScript);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+
+        CHECK(diagnostics[0].code == "E_DUPLICATE_DECLARATION");
+        CHECK(diagnostics[0].range.start.line == 4);
+    }
+
+    TEST_CASE("Valid Overloads: Do not flag functions with distinct parameter types")
+    {
+        const char *predefinedScript = R"(
+            void Print(const string &in text);
+            void Print(int number);
+            void Print(float value);
+        )";
+
+        auto doc = CreateTestDocument("file:///workspace/as.predefined", predefinedScript);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        CHECK(diagnostics.empty());
     }
 }
 

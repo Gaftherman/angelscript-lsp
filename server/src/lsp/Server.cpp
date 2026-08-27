@@ -908,17 +908,30 @@ namespace angel_lsp
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
+            TSTree *savedTree = m_parser->Parse(text);
+            std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                // The return value is deliberately ignored: a save always re-collects, and the call
-                // is here for its other effect - dropping any copy the workspace scan indexed under
-                // a different URI spelling of this same file.
                 ClaimPredefinedFile(uriStr);
 
-                m_symbolCollector->CollectSymbols(uriStr, text, *m_parser, m_symbolTable);
-                m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopes(text, *m_parser));
+                m_symbolTable.ClearDocumentSymbols(uriStr);
+                diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, savedTree, m_symbolTable, m_i18n.get(), &m_config.types);
+                m_scopeIndex.ClearDocument(uriStr);
+                m_callGraph.ClearDocument(uriStr);
+                if (savedTree)
+                {
+                    m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(savedTree), text));
+                    m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(savedTree), text));
+                }
             }
-            PublishDiagnostics(uriStr, {});
+
+            auto semanticDiagnostics = m_semanticAnalyzer->Analyze(BuildAnalysisRequest(uriStr, text, savedTree));
+            diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
+
+            if (savedTree)
+                ts_tree_delete(savedTree);
+
+            PublishDiagnostics(uriStr, diagnostics);
             return;
         }
 
@@ -968,14 +981,13 @@ namespace angel_lsp
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
+            std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                // Claims by canonical path, so opening a stub the workspace scan already loaded
-                // under its own URI spelling hands ownership over instead of indexing it twice.
                 if (ClaimPredefinedFile(uriStr))
                 {
                     m_symbolTable.ClearDocumentSymbols(uriStr);
-                    m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, m_symbolTable, m_i18n.get());
+                    diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, m_symbolTable, m_i18n.get(), &m_config.types);
                     m_scopeIndex.ClearDocument(uriStr);
                     m_callGraph.ClearDocument(uriStr);
                     if (tree)
@@ -985,7 +997,11 @@ namespace angel_lsp
                     }
                 }
             }
-            PublishDiagnostics(uriStr, {});
+
+            auto semanticDiagnostics = m_semanticAnalyzer->Analyze(BuildAnalysisRequest(uriStr, text, tree));
+            diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
+
+            PublishDiagnostics(uriStr, diagnostics);
             return;
         }
 
@@ -1121,7 +1137,7 @@ namespace angel_lsp
                 m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(newTree), buffer));
                 m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(newTree), buffer));
             }
-            PublishDiagnostics(uriStr, {});
+            ScheduleAnalysis(uriStr, buffer);
             return;
         }
 

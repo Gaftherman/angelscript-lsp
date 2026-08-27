@@ -306,7 +306,9 @@ namespace angel_lsp::analysis::rules
                 if (first.type != other.type)
                 {
                     ctx.LogRule("ValidateDuplicates", "as-err-name-conflict", other);
-                    ctx.Emit(other, "as-err-name-conflict", other.name, KindWord(first.type));
+                    ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
+                                    other.selectionRange.endLine, other.selectionRange.endCharacter,
+                                    "as-err-name-conflict", other.name, KindWord(first.type));
                     break;
                 }
 
@@ -358,7 +360,9 @@ namespace angel_lsp::analysis::rules
                     }
 
                     ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
-                    ctx.Emit(other, "as-err-duplicate-symbol", other.name);
+                    ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
+                                    other.selectionRange.endLine, other.selectionRange.endCharacter,
+                                    "as-err-duplicate-symbol", other.name);
                     break;
                 }
 
@@ -370,7 +374,9 @@ namespace angel_lsp::analysis::rules
                 }
 
                 ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
-                ctx.Emit(other, "as-err-duplicate-symbol", other.name);
+                ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
+                                other.selectionRange.endLine, other.selectionRange.endCharacter,
+                                "as-err-duplicate-symbol", other.name);
                 break;
             }
         }
