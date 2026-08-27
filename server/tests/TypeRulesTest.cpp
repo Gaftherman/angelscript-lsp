@@ -904,6 +904,81 @@ TEST_SUITE("AngelScript_Namespaces_Verification") {
     }
 }
 
+TEST_SUITE("AngelScript_Imports_Verification") {
+
+    TEST_CASE("Imports: Declaration, call resolution, and hover module provenance") {
+        const char* script = R"(import void ExternalLog(int level, const string &in message) from "LogModule";
+import float CalculateBonus(float base) from "EconomyModule";
+
+void Main() {
+    ExternalLog(1, "System initialized"); // Valid call to imported function
+    auto bonus = CalculateBonus(100.0f);   // Deduces float
+})";
+
+        auto doc = CreateTestDocument("file:///test_imports_valid.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        // 1. Validate inferred return type for 'bonus'
+        CHECK(doc->GetSymbolTypeAt({5, 9}) == "float");
+
+        // 2. Validate resolved call target
+        auto logCall = doc->GetResolvedCallAt({4, 10});
+        REQUIRE(logCall.has_value());
+        CHECK(logCall->targetFunctionSymbol == "ExternalLog(int, const string &in)");
+
+        // 3. Validate hover displaying import syntax and module origin
+        auto hover = doc->GetHoverAt({4, 10});
+        REQUIRE(hover.has_value());
+        CHECK(hover->contents.value.find("import void ExternalLog(int level, const string &in message) from \"LogModule\"") != std::string::npos);
+    }
+
+    TEST_CASE("Diagnostics: Reject import declarations containing function bodies") {
+        const char* script = R"(
+            import void InvalidImport() from "Module" {
+                // Error: Imports cannot have implementations
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_import_with_body.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_IMPORT_CANNOT_HAVE_BODY");
+        CHECK(diagnostics[0].range.start.line == 1);
+    }
+
+    TEST_CASE("Diagnostics: Duplicate import declarations") {
+        const char* script = R"(
+            import void ServiceTick(float dt) from "Engine";
+            import void ServiceTick(float dt) from "Engine"; // Error: Duplicate import
+        )";
+
+        auto doc = CreateTestDocument("file:///test_duplicate_import.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_DUPLICATE_DECLARATION");
+        CHECK(diagnostics[0].range.start.line == 2);
+    }
+
+    TEST_CASE("Diagnostics: Unregistered types in import signature") {
+        const char* script = R"(
+            import UnregisteredReturn QueryData(UnregisteredParam p) from "DataModule";
+        )";
+
+        auto doc = CreateTestDocument("file:///test_import_unknown_types.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+        CHECK(diagnostics[0].code == "E_UNKNOWN_TYPE"); // UnregisteredReturn
+        CHECK(diagnostics[1].code == "E_UNKNOWN_TYPE"); // UnregisteredParam
+    }
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Type Rules Corpus Audit*"`)

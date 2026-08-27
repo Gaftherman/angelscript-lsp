@@ -33,6 +33,14 @@ namespace angel_lsp::test
     inline std::string FormatParamType(const analysis::ParameterInformation &p)
     {
         std::string s = p.typeName;
+        if (p.isConst && s.rfind("const ", 0) != 0)
+        {
+            s = "const " + s;
+        }
+        if (p.isHandle && s.find('@') == std::string::npos)
+        {
+            s += "@";
+        }
         std::string ref = analysis::FormatParameterReference(p);
         if (!ref.empty())
         {
@@ -192,6 +200,11 @@ namespace angel_lsp::test
                     else if (copy.code == "as-err-undefined-namespace")
                     {
                         copy.code = "E_UNDEFINED_NAMESPACE";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-import-has-body")
+                    {
+                        copy.code = "E_IMPORT_CANNOT_HAVE_BODY";
                         linesWithSpecificErrors.insert(copy.range.start.line);
                     }
                     rawErrors.push_back(copy);
@@ -568,6 +581,63 @@ namespace angel_lsp::test
                 std::string target = syms[0].qualifiedName;
                 if (target.empty()) target = "::" + syms[0].name;
                 return ResolvedSymbolDefinition{ target };
+            }
+
+            return std::nullopt;
+        }
+
+        struct HoverResult
+        {
+            struct MarkupContent
+            {
+                std::string value;
+            } contents;
+        };
+
+        std::optional<HoverResult> GetHoverAt(Position pos) const
+        {
+            if (!m_tree) return std::nullopt;
+            TSNode root = ts_tree_root_node(m_tree);
+            TSPoint pt{ pos.line, pos.character };
+            TSNode node = ts_node_descendant_for_point_range(root, pt, pt);
+            if (ts_node_is_null(node)) return std::nullopt;
+
+            TSNode p = node;
+            std::string name;
+            while (!ts_node_is_null(p))
+            {
+                std::string_view pType = ts_node_type(p);
+                if (pType == "call_expression")
+                {
+                    TSNode funcNode = ts_node_child_by_field_name(p, "function", 8);
+                    if (ts_node_is_null(funcNode) && ts_node_child_count(p) > 0)
+                    {
+                        funcNode = ts_node_child(p, 0);
+                    }
+                    if (!ts_node_is_null(funcNode))
+                    {
+                        name = GetNodeText(funcNode, m_sourceCode);
+                        break;
+                    }
+                }
+                p = ts_node_parent(p);
+            }
+
+            if (name.empty())
+            {
+                name = GetNodeText(node, m_sourceCode);
+            }
+
+            while (!name.empty() && isspace(static_cast<unsigned char>(name.front()))) name.erase(name.begin());
+            while (!name.empty() && isspace(static_cast<unsigned char>(name.back()))) name.pop_back();
+
+            if (name.empty()) return std::nullopt;
+
+            auto syms = analysis::FindSymbolsInScope(name, node, m_sourceCode, m_symbolTable);
+            if (!syms.empty())
+            {
+                std::string text = analysis::FormatFunctionDeclaration(syms[0], false);
+                return HoverResult{ { text } };
             }
 
             return std::nullopt;

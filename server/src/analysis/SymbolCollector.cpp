@@ -437,8 +437,27 @@ namespace angel_lsp::analysis
         funcSig.modifiers = modifiers;
         funcSig.parameters = ExtractParameters(paramsNode, sourceCode);
         funcSig.hasBody = !ts_node_is_null(bodyNode);
-        funcSig.defaultValue = funcSig.hasBody ? GetNodeText(bodyNode, sourceCode) : funcText;
         funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_symInterfaceMethod);
+        funcSig.isImported = (ts_node_symbol(funcNode) == m_symImportDeclaration ||
+                              std::string_view(ts_node_type(funcNode)) == "import_declaration");
+        if (funcSig.isImported)
+        {
+            uint32_t count = ts_node_child_count(funcNode);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode ch = ts_node_child(funcNode, i);
+                if (std::string_view(ts_node_type(ch)) == "string_literal")
+                {
+                    std::string modStr = GetNodeText(ch, sourceCode);
+                    if (modStr.size() >= 2 && modStr.front() == '"' && modStr.back() == '"')
+                    {
+                        modStr = modStr.substr(1, modStr.size() - 2);
+                    }
+                    funcSig.originModule = modStr;
+                    break;
+                }
+            }
+        }
 
         sym.signature = funcSig;
         symbolTable.AddSymbol(sym);

@@ -558,6 +558,23 @@ namespace angel_lsp::analysis
                 }
             }
 
+            if (type == "import_declaration" || type == "ERROR")
+            {
+                std::string nodeText = GetNodeText(node, sourceCode);
+                size_t importPos = nodeText.find("import ");
+                if (importPos != std::string::npos)
+                {
+                    size_t fromPos = nodeText.find("from", importPos);
+                    if (fromPos != std::string::npos && nodeText.find('{', fromPos) != std::string::npos)
+                    {
+                        TSPoint startPt = ts_node_start_point(node);
+                        TSPoint endPt = ts_node_end_point(node);
+                        ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
+                                        "as-err-import-has-body", "import", DiagnosticSeverity::Error);
+                    }
+                }
+            }
+
             uint32_t count = ts_node_child_count(node);
             for (uint32_t i = 0; i < count; ++i)
             {

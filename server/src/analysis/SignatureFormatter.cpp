@@ -187,6 +187,10 @@ namespace angel_lsp::analysis
         {
             oss << "funcdef ";
         }
+        else if (sym.type == SymbolType::Function && sym.GetFunction().isImported)
+        {
+            oss << "import ";
+        }
 
         oss << FormatReturnType(returnType, modifiers) << " ";
 
@@ -206,6 +210,13 @@ namespace angel_lsp::analysis
         }
 
         oss << ")" << FormatFunctionSuffix(modifiers);
+
+        if (!isFuncdef && sym.type == SymbolType::Function && sym.GetFunction().isImported &&
+            !sym.GetFunction().originModule.empty())
+        {
+            oss << " from \"" << sym.GetFunction().originModule << "\"";
+        }
+
         return oss.str();
     }
 

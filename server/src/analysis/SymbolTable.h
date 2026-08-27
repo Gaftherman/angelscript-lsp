@@ -154,6 +154,8 @@ namespace angel_lsp::analysis
         std::vector<ParameterInformation> parameters;
         bool hasBody = false;
         bool isInterfaceMethod = false;
+        bool isImported = false;
+        std::string originModule;
         std::string defaultValue;
     };
 

@@ -124,9 +124,16 @@ namespace angel_lsp::analysis::rules
         void CheckBody(const Symbol &sym, const FunctionSignature &sig, const FunctionContext &fctx,
                        const DiagnosticContext &ctx)
         {
+            if (sig.isImported && sig.hasBody)
+            {
+                ctx.LogRule("CheckBody", "as-err-import-has-body", sym);
+                ctx.Emit(sym, "as-err-import-has-body", sym.name);
+                return;
+            }
+
             const bool mayOmitBody = sig.isInterfaceMethod || fctx.isInterface ||
                                      sig.modifiers.isExternal || sig.modifiers.isDelete ||
-                                     fctx.isConstructor || fctx.isDestructor;
+                                     fctx.isConstructor || fctx.isDestructor || sig.isImported;
 
             if (!sig.hasBody && !mayOmitBody && IsUnmistakablyAPrototype(sig))
             {
@@ -199,6 +206,16 @@ namespace angel_lsp::analysis::rules
             {
                 ctx.LogRule("CheckReturnType", "as-err-return-not-instantiable", sym);
                 ctx.Emit(sym, "as-err-return-not-instantiable", sig.returnBaseTypeName);
+            }
+
+            if (sig.isImported && !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" &&
+                sig.returnBaseTypeName != "string" &&
+                !IsPrimitiveTypeName(sig.returnBaseTypeName) &&
+                !ctx.request.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName) &&
+                !ctx.request.IsRegisteredSymbol(sig.returnBaseTypeName))
+            {
+                ctx.LogRule("CheckReturnType", "as-err-unresolved-type", sym);
+                ctx.Emit(sym, "as-err-unresolved-type", sig.returnBaseTypeName);
             }
 
             // NOT IMPLEMENTED: as-err-invalid-reference-return.
@@ -595,6 +612,16 @@ namespace angel_lsp::analysis::rules
                     ctx.LogParam("ValidateParameters", "as-err-funcdef-not-handle", param, sym);
                     ctx.Emit(param, sym, "as-err-funcdef-not-handle", param.baseTypeName, param.baseTypeName);
                 }
+            }
+
+            if (sym.type == SymbolType::Function && sym.GetFunction().isImported &&
+                !param.baseTypeName.empty() && param.baseTypeName != "string" &&
+                !IsPrimitiveTypeName(param.baseTypeName) &&
+                !ctx.request.symbolTable.HasSymbolAnywhere(param.baseTypeName) &&
+                !ctx.request.IsRegisteredSymbol(param.baseTypeName))
+            {
+                ctx.LogParam("ValidateParameters", "as-err-unresolved-type", param, sym);
+                ctx.Emit(param, sym, "as-err-unresolved-type", param.baseTypeName);
             }
 
             if (param.name.empty())
