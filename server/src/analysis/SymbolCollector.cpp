@@ -498,6 +498,10 @@ namespace angel_lsp::analysis
     {
         TSNode nameNode = GetChildByFieldName(node, "name");
         TSNode baseTypeNode = GetChildByFieldName(node, "base_type");
+        if (ts_node_is_null(baseTypeNode))
+        {
+            baseTypeNode = GetChildByFieldName(node, "type");
+        }
 
         Symbol sym = CreateSymbol(SymbolType::Typedef, node, nameNode, sourceCode, fileUri, ctx.containerPath);
         TypedefSignature typedefSig;
@@ -507,6 +511,13 @@ namespace angel_lsp::analysis
             TypeExtractionResult info = ExtractTypeInfoFromAST(baseTypeNode, sourceCode);
             typedefSig.baseType = info.baseTypeName;
             typedefSig.typeKind = info.kind;
+
+            TSPoint startPoint = ts_node_start_point(baseTypeNode);
+            TSPoint endPoint = ts_node_end_point(baseTypeNode);
+            typedefSig.baseTypeStartLine = startPoint.row;
+            typedefSig.baseTypeStartCharacter = startPoint.column;
+            typedefSig.baseTypeEndLine = endPoint.row;
+            typedefSig.baseTypeEndCharacter = endPoint.column;
         }
 
         std::string_view rawNodeText = GetNodeView(node, sourceCode);

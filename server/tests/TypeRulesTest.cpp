@@ -263,9 +263,8 @@ TEST_CASE("TypeRules - The same name in two files of a module is not a redeclara
 
 TEST_CASE("TypeRules - A predefined stub is exempt")
 {
-    const auto diagnostics = AnalyzeTypeSnippet("typedef CBaseEntity Alias;\nenum E { V = 'x' }\n",
+    const auto diagnostics = AnalyzeTypeSnippet("enum E { V = 'x' }\n",
                                                 "file:///engine.as.predefined");
-    CHECK_FALSE(HasCode(diagnostics, "as-err-typedef-non-primitive"));
     CHECK_FALSE(HasCode(diagnostics, "as-err-enum-invalid-initializer"));
 }
 
@@ -390,6 +389,67 @@ TEST_SUITE("AngelScript_DuplicateDeclaration_Diagnostics")
 
         auto diagnostics = doc->GetDiagnostics();
         CHECK(diagnostics.empty());
+    }
+}
+
+TEST_SUITE("AngelScript_TypedefValidation_Parity")
+{
+    TEST_CASE("Valid Typedefs: Primitive types in as.predefined and script files")
+    {
+        const char *predefinedScript = R"(
+            typedef float real32;
+            typedef double real64;
+            typedef uint32 EntityID;
+        )";
+
+        auto doc = CreateTestDocument("file:///workspace/as.predefined", predefinedScript);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        // Validate that primitive aliases resolve correctly in symbol table
+        CHECK(doc->GetSymbolTypeAt({1, 26}) == "float");
+    }
+
+    TEST_CASE("Invalid Typedefs: Reject class types in as.predefined")
+    {
+        const char *predefinedScript = R"(
+            class string {}
+            class Vector3 {}
+
+            typedef string super_string; // Error: string is not a primitive
+            typedef Vector3 Vec3;        // Error: Vector3 is not a primitive
+        )";
+
+        auto doc = CreateTestDocument("file:///workspace/as.predefined", predefinedScript);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+
+        CHECK(diagnostics[0].code == "E_TYPEDEF_ONLY_PRIMITIVE");
+        CHECK(diagnostics[0].range.start.line == 4);
+        CHECK(diagnostics[0].range.start.character == 20); // Span over 'string'
+
+        CHECK(diagnostics[1].code == "E_TYPEDEF_ONLY_PRIMITIVE");
+        CHECK(diagnostics[1].range.start.line == 5);
+        CHECK(diagnostics[1].range.start.character == 20); // Span over 'Vector3'
+    }
+
+    TEST_CASE("Invalid Typedefs: Reject handles and templates in standard script files")
+    {
+        const char *script = R"(
+            class MyClass {}
+
+            typedef MyClass@ ClassHandle; // Error: Handle typedef disallowed
+        )";
+
+        auto doc = CreateTestDocument("file:///workspace/main.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_TYPEDEF_ONLY_PRIMITIVE");
+        CHECK(diagnostics[0].range.start.line == 3);
     }
 }
 

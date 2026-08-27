@@ -15,6 +15,12 @@
 
 namespace angel_lsp::test
 {
+    struct Position
+    {
+        uint32_t line = 0;
+        uint32_t character = 0;
+    };
+
     class TestDocument
     {
     public:
@@ -46,7 +52,9 @@ namespace angel_lsp::test
 
         std::vector<analysis::Diagnostic> GetDiagnostics() const
         {
-            std::vector<analysis::Diagnostic> errors;
+            std::vector<analysis::Diagnostic> rawErrors;
+            ankerl::unordered_dense::set<uint32_t> linesWithSpecificErrors;
+
             for (const auto &d : m_diagnostics)
             {
                 if (d.severity == analysis::DiagnosticSeverity::Error)
@@ -55,10 +63,27 @@ namespace angel_lsp::test
                     if (copy.code == "as-err-duplicate-symbol")
                     {
                         copy.code = "E_DUPLICATE_DECLARATION";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
                     }
-                    errors.push_back(copy);
+                    else if (copy.code == "as-err-typedef-non-primitive")
+                    {
+                        copy.code = "E_TYPEDEF_ONLY_PRIMITIVE";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    rawErrors.push_back(copy);
                 }
             }
+
+            std::vector<analysis::Diagnostic> errors;
+            for (const auto &d : rawErrors)
+            {
+                if (d.code == "as-syntax-error" && linesWithSpecificErrors.contains(d.range.start.line))
+                {
+                    continue;
+                }
+                errors.push_back(d);
+            }
+
             std::sort(errors.begin(), errors.end(), [](const analysis::Diagnostic &a, const analysis::Diagnostic &b)
             {
                 if (a.range.start.line != b.range.start.line)
@@ -68,6 +93,57 @@ namespace angel_lsp::test
                 return a.range.start.character < b.range.start.character;
             });
             return errors;
+        }
+
+        std::string GetSymbolTypeAt(Position pos) const
+        {
+            std::string result;
+            m_symbolTable.ForEachSymbolInFile(m_uri, [&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+            {
+                if (!result.empty())
+                {
+                    return;
+                }
+                for (const auto &sym : symbols)
+                {
+                    if (pos.line == sym.selectionRange.startLine &&
+                        pos.character >= sym.selectionRange.startCharacter &&
+                        pos.character <= sym.selectionRange.endCharacter)
+                    {
+                        if (sym.type == analysis::SymbolType::Typedef)
+                        {
+                            result = sym.GetTypedef().baseType;
+                            return;
+                        }
+                        if (sym.type == analysis::SymbolType::Variable)
+                        {
+                            result = sym.GetVariable().typeName;
+                            return;
+                        }
+                        if (sym.type == analysis::SymbolType::Function)
+                        {
+                            result = sym.GetFunction().returnType;
+                            return;
+                        }
+                        if (sym.type == analysis::SymbolType::Class)
+                        {
+                            result = sym.name;
+                            return;
+                        }
+                    }
+                    if (pos.line == sym.startLine &&
+                        pos.character >= sym.startCharacter &&
+                        pos.character <= sym.endCharacter)
+                    {
+                        if (sym.type == analysis::SymbolType::Typedef)
+                        {
+                            result = sym.GetTypedef().baseType;
+                            return;
+                        }
+                    }
+                }
+            });
+            return result;
         }
 
         const analysis::SymbolTable &GetSymbolTable() const

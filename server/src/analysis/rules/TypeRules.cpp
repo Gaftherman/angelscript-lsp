@@ -65,7 +65,7 @@ namespace angel_lsp::analysis::rules
 
     void ValidateTypedef(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        if (sym.type != SymbolType::Typedef || IsFromPredefinedStub(sym, ctx))
+        if (sym.type != SymbolType::Typedef)
         {
             return;
         }
@@ -97,7 +97,16 @@ namespace angel_lsp::analysis::rules
         if (!baseType.empty() && !IsPrimitiveTypeName(baseType))
         {
             ctx.LogRule("ValidateTypedef", "as-err-typedef-non-primitive", sym);
-            ctx.Emit(sym, "as-err-typedef-non-primitive", baseType);
+            if (sig.baseTypeEndCharacter > sig.baseTypeStartCharacter || sig.baseTypeEndLine > sig.baseTypeStartLine)
+            {
+                ctx.EmitAtRange(sig.baseTypeStartLine, sig.baseTypeStartCharacter,
+                                sig.baseTypeEndLine, sig.baseTypeEndCharacter,
+                                "as-err-typedef-non-primitive", baseType);
+            }
+            else
+            {
+                ctx.Emit(sym, "as-err-typedef-non-primitive", baseType);
+            }
         }
     }
 

@@ -221,6 +221,10 @@ namespace angel_lsp::analysis
         std::string baseType;
         TypeKind typeKind = TypeKind::Unknown;
         bool hasSemicolon = true;
+        uint32_t baseTypeStartLine = 0;
+        uint32_t baseTypeStartCharacter = 0;
+        uint32_t baseTypeEndLine = 0;
+        uint32_t baseTypeEndCharacter = 0;
     };
 
     struct FuncdefSignature
