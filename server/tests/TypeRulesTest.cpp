@@ -28,14 +28,43 @@ namespace
         SymbolTable table;
         static angel_lsp::i18n::I18n i18n;
 
-        collector.CollectSymbols(fileUri, code, parser, table);
+        auto diagnostics = collector.CollectSymbols(fileUri, code, parser, table, &i18n);
 
         SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
         request.scopeRoot = scopes.CollectScopes(code, parser);
         request.sourceCode = code;
+        request.tree = parser.Parse(code);
 
         SemanticAnalyzer analyzer(nullptr);
-        return analyzer.Analyze(request);
+        auto semDiags = analyzer.Analyze(request);
+        diagnostics.insert(diagnostics.end(), semDiags.begin(), semDiags.end());
+
+        if (request.tree)
+        {
+            ts_tree_delete(const_cast<TSTree *>(request.tree));
+        }
+        return diagnostics;
+    }
+
+    std::vector<Diagnostic> FilterErrors(const std::vector<Diagnostic> &diagnostics)
+    {
+        std::vector<Diagnostic> errors;
+        for (const auto &d : diagnostics)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                errors.push_back(d);
+            }
+        }
+        std::sort(errors.begin(), errors.end(), [](const Diagnostic &a, const Diagnostic &b)
+        {
+            if (a.range.start.line != b.range.start.line)
+            {
+                return a.range.start.line < b.range.start.line;
+            }
+            return a.range.start.character < b.range.start.character;
+        });
+        return errors;
     }
 
     bool HasCode(const std::vector<Diagnostic> &diagnostics, const std::string &code)
@@ -237,6 +266,70 @@ TEST_CASE("TypeRules - A predefined stub is exempt")
                                                 "file:///engine.as.predefined");
     CHECK_FALSE(HasCode(diagnostics, "as-err-typedef-non-primitive"));
     CHECK_FALSE(HasCode(diagnostics, "as-err-enum-invalid-initializer"));
+}
+
+TEST_SUITE("AngelScript_CleanPredefined_And_DuplicateDetection")
+{
+    TEST_CASE("Clean Slate: No ghost types exist without physical workspace files")
+    {
+        const std::string script =
+            "void Main() {\n"
+            "    string s; // Error: 'string' does not exist in an empty workspace\n"
+            "}\n";
+
+        auto rawDiagnostics = AnalyzeTypeSnippet(script, "file:///workspace/main.as");
+        auto errors = FilterErrors(rawDiagnostics);
+        REQUIRE_FALSE(errors.empty());
+        CHECK(errors[0].code == "as-err-unresolved-type");
+        CHECK(errors[0].range.start.line == 1);
+    }
+
+    TEST_CASE("Predefined Diagnostics: Detect duplicate method definitions in class")
+    {
+        const std::string predefinedScript =
+            "class string {\n"
+            "    bool isEmpty() const;\n"
+            "    uint Length() const;\n"
+            "    bool isEmpty() const; // Error: Duplicate method declaration\n"
+            "}\n";
+
+        auto rawDiagnostics = AnalyzeTypeSnippet(predefinedScript, "file:///workspace/as.predefined");
+        auto errors = FilterErrors(rawDiagnostics);
+        REQUIRE(errors.size() == 1);
+        CHECK(errors[0].code == "as-err-duplicate-symbol");
+        CHECK(errors[0].range.start.line == 3);
+    }
+
+    TEST_CASE("Predefined Diagnostics: Allow valid method overloading while catching duplicates")
+    {
+        const std::string predefinedScript =
+            "class Vector3 {\n"
+            "    float Length() const;\n"
+            "    Vector3 opAdd(const Vector3 &in other) const; // Overload 1 (OK)\n"
+            "    Vector3 opAdd(float scalar) const;            // Overload 2 (OK)\n"
+            "    Vector3 opAdd(float scalar) const;            // Error: Duplicate Overload 2\n"
+            "}\n";
+
+        auto rawDiagnostics = AnalyzeTypeSnippet(predefinedScript, "file:///workspace/as.predefined");
+        auto errors = FilterErrors(rawDiagnostics);
+        REQUIRE(errors.size() == 1);
+        CHECK(errors[0].code == "as-err-duplicate-symbol");
+        CHECK(errors[0].range.start.line == 4);
+    }
+
+    TEST_CASE("Global Scope: Detect duplicate global function declarations")
+    {
+        const std::string predefinedScript =
+            "void Print(const string &in text);\n"
+            "float GetTime();\n"
+            "void Print(const string &in text); // Error: Duplicate global function\n";
+
+        auto rawDiagnostics = AnalyzeTypeSnippet(predefinedScript, "file:///workspace/as.predefined");
+        auto errors = FilterErrors(rawDiagnostics);
+        REQUIRE(errors.size() == 1);
+        CHECK(errors[0].code == "as-err-duplicate-symbol");
+        CHECK(errors[0].range.start.line == 2);
+    }
 }
 
 // =====================================================================================

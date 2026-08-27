@@ -423,10 +423,17 @@ namespace angel_lsp::analysis
                         ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
                                         "as-err-void-variable", def.name, DiagnosticSeverity::Error);
                     }
-                    if (def.isHandleType && IsPrimitiveTypeName(base))
+                    else if (def.isHandleType && IsPrimitiveTypeName(base))
                     {
                         ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
                                         "as-err-handle-on-primitive", base, DiagnosticSeverity::Error);
+                    }
+                    else if (!base.empty() && base != "auto" && !IsPrimitiveTypeName(base) &&
+                             !ctx.request.symbolTable.HasSymbolAnywhere(base) &&
+                             !ctx.request.IsRegisteredSymbol(base))
+                    {
+                        ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                                        "as-err-unresolved-type", base, DiagnosticSeverity::Error);
                     }
                 }
             }

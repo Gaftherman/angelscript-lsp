@@ -272,7 +272,7 @@ namespace angel_lsp::analysis::rules
             {
                 continue;
             }
-            if (sym.fileUri != ctx.request.fileUri || IsFromPredefinedStub(sym, ctx))
+            if (sym.fileUri != ctx.request.fileUri)
             {
                 continue;
             }
@@ -288,81 +288,91 @@ namespace angel_lsp::analysis::rules
             return;
         }
 
-        // Reported against the first declaration only, so N redeclarations produce N-1 findings
-        // rather than one per pair.
-        const Symbol &first = *local[0];
-
         for (size_t i = 1; i < local.size(); ++i)
         {
             const Symbol &other = *local[i];
 
-            // The same declaration reached twice through different index paths is not a
-            // redeclaration; only distinct source positions are.
-            if (first.startLine == other.startLine && first.startCharacter == other.startCharacter)
+            for (size_t j = 0; j < i; ++j)
             {
-                continue;
-            }
+                const Symbol &first = *local[j];
 
-            if (first.type != other.type)
-            {
-                ctx.LogRule("ValidateDuplicates", "as-err-name-conflict", other);
-                ctx.Emit(other, "as-err-name-conflict", other.name, KindWord(first.type));
-                continue;
-            }
-
-            // Functions may repeat a name as long as the parameter lists differ - or, for a
-            // conversion operator, as long as the return types do. `float opConv()` beside
-            // `int opConv()` and `string opConv()` is the idiomatic way to write conversions in
-            // AngelScript, and comparing parameters alone reports every one of them.
-            if (first.type == SymbolType::Function)
-            {
-                const auto &firstParams = first.GetFunction().parameters;
-                const auto &otherParams = other.GetFunction().parameters;
-                if (firstParams.size() != otherParams.size())
-                {
-                    continue;
-                }
-                if (first.GetFunction().returnType != other.GetFunction().returnType)
+                // The same declaration reached twice through different index paths is not a
+                // redeclaration; only distinct source positions are.
+                if (first.startLine == other.startLine && first.startCharacter == other.startCharacter)
                 {
                     continue;
                 }
 
-                // A const overload is a distinct overload.
-                if (first.GetFunction().modifiers.isConst != other.GetFunction().modifiers.isConst)
+                if (first.type != other.type)
                 {
-                    continue;
+                    ctx.LogRule("ValidateDuplicates", "as-err-name-conflict", other);
+                    ctx.Emit(other, "as-err-name-conflict", other.name, KindWord(first.type));
+                    break;
                 }
 
-                // Compared raw, not through CleanBaseType: that helper strips handles and unwraps
-                // array<T> to T, so it reports `array<string>` and `string` as the same parameter -
-                // which turns two genuine overloads into a redeclaration.
-                bool sameSignature = true;
-                for (size_t p = 0; p < firstParams.size(); ++p)
+                // Functions may repeat a name as long as the parameter lists differ - or, for a
+                // conversion operator, as long as the return types do. `float opConv()` beside
+                // `int opConv()` and `string opConv()` is the idiomatic way to write conversions in
+                // AngelScript, and comparing parameters alone reports every one of them.
+                if (first.type == SymbolType::Function)
                 {
-                    if (firstParams[p].typeName != otherParams[p].typeName ||
-                        firstParams[p].modifier != otherParams[p].modifier ||
-                        firstParams[p].isReference != otherParams[p].isReference ||
-                        firstParams[p].isHandle != otherParams[p].isHandle)
+                    const auto &firstParams = first.GetFunction().parameters;
+                    const auto &otherParams = other.GetFunction().parameters;
+                    if (firstParams.size() != otherParams.size())
                     {
-                        sameSignature = false;
-                        break;
+                        continue;
                     }
+                    if (first.GetFunction().returnType != other.GetFunction().returnType)
+                    {
+                        if (first.name == "opConv" || first.name == "opImplConv" ||
+                            first.name == "opCast" || first.name == "opImplCast")
+                        {
+                            continue;
+                        }
+                    }
+
+                    // A const overload is a distinct overload.
+                    if (first.GetFunction().modifiers.isConst != other.GetFunction().modifiers.isConst)
+                    {
+                        continue;
+                    }
+
+                    // Compared raw, not through CleanBaseType: that helper strips handles and unwraps
+                    // array<T> to T, so it reports `array<string>` and `string` as the same parameter -
+                    // which turns two genuine overloads into a redeclaration.
+                    bool sameSignature = true;
+                    for (size_t p = 0; p < firstParams.size(); ++p)
+                    {
+                        if (firstParams[p].typeName != otherParams[p].typeName ||
+                            firstParams[p].modifier != otherParams[p].modifier ||
+                            firstParams[p].isReference != otherParams[p].isReference ||
+                            firstParams[p].isHandle != otherParams[p].isHandle)
+                        {
+                            sameSignature = false;
+                            break;
+                        }
+                    }
+                    if (!sameSignature)
+                    {
+                        continue;
+                    }
+
+                    ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
+                    ctx.Emit(other, "as-err-duplicate-symbol", other.name);
+                    break;
                 }
-                if (!sameSignature)
+
+                // A virtual property's accessors share one name by design.
+                if (first.type == SymbolType::Variable &&
+                    (first.GetVariable().isVirtualProperty || other.GetVariable().isVirtualProperty))
                 {
                     continue;
                 }
-            }
 
-            // A virtual property's accessors share one name by design.
-            if (first.type == SymbolType::Variable &&
-                (first.GetVariable().isVirtualProperty || other.GetVariable().isVirtualProperty))
-            {
-                continue;
+                ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
+                ctx.Emit(other, "as-err-duplicate-symbol", other.name);
+                break;
             }
-
-            ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
-            ctx.Emit(other, "as-err-duplicate-symbol", other.name);
         }
     }
 }

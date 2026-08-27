@@ -247,7 +247,12 @@ namespace angel_lsp::analysis
                 result.pop_back();
                 modified = true;
             }
-            if (result.ends_with("[]"))
+            if (result.ends_with(" const"))
+            {
+                result.resize(result.size() - 6);
+                modified = true;
+            }
+            else if (result.ends_with("[]"))
             {
                 result.resize(result.size() - 2);
                 modified = true;

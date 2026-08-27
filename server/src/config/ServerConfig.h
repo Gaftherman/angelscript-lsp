@@ -134,7 +134,7 @@ namespace angel_lsp::config
         /**
          * @brief Built-in predefined engine profile identifier (e.g. standard, svencoop, urho3d, openxray, ootp, none, auto).
          */
-        std::string engineProfile = "standard";
+        std::string engineProfile = "none";
 
         /**
          * @brief Per-rule diagnostic severity overrides, keyed by diagnostic code.
