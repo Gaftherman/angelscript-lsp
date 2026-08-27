@@ -1213,7 +1213,21 @@ namespace angel_lsp::analysis
                 }
             }
 
-            return ResolveExpressionType(funcNode, scope, symbolTable, sourceCode, uri);
+            std::string calleeType = ResolveExpressionType(funcNode, scope, symbolTable, sourceCode, uri);
+            std::string cleanCallee = CleanBaseType(calleeType);
+            if (!cleanCallee.empty())
+            {
+                auto funcdefSymbols = symbolTable.FindSymbols(cleanCallee);
+                for (const auto &s : funcdefSymbols)
+                {
+                    if (s.type == SymbolType::Funcdef)
+                    {
+                        return CleanExpressionType(s.GetFuncdef().returnType);
+                    }
+                }
+            }
+
+            return calleeType;
         }
 
         // Cast expression (e.g. cast<Player@>(ent))

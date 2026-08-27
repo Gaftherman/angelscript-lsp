@@ -239,6 +239,10 @@ namespace angel_lsp::analysis
         uint32_t returnArrayDepth = 0;
         SymbolModifiers modifiers;
         std::vector<ParameterInformation> parameters;
+        uint32_t returnTypeStartLine = 0;
+        uint32_t returnTypeStartCharacter = 0;
+        uint32_t returnTypeEndLine = 0;
+        uint32_t returnTypeEndCharacter = 0;
     };
 
     /** @brief Describes a function/method call that occurs outside of any function body

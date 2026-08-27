@@ -112,7 +112,7 @@ namespace angel_lsp::analysis::rules
 
     void ValidateFuncdef(const Symbol &sym, const DiagnosticContext &ctx)
     {
-        if (sym.type != SymbolType::Funcdef || IsFromPredefinedStub(sym, ctx))
+        if (sym.type != SymbolType::Funcdef)
         {
             return;
         }
@@ -143,12 +143,48 @@ namespace angel_lsp::analysis::rules
             ctx.Emit(sym, "as-err-handle-on-primitive", sig.returnBaseTypeName);
         }
 
+        const std::string retBase = CleanBaseType(sig.returnBaseTypeName.empty() ? sig.returnType : sig.returnBaseTypeName);
+        if (!retBase.empty() && retBase != "void" && retBase != "auto" &&
+            !IsPrimitiveTypeName(retBase) && !ctx.request.IsRegisteredSymbol(retBase) &&
+            !ctx.request.symbolTable.HasSymbolAnywhere(retBase))
+        {
+            ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
+            if (sig.returnTypeEndCharacter > sig.returnTypeStartCharacter || sig.returnTypeEndLine > sig.returnTypeStartLine)
+            {
+                ctx.EmitAtRange(sig.returnTypeStartLine, sig.returnTypeStartCharacter,
+                                sig.returnTypeEndLine, sig.returnTypeEndCharacter,
+                                "as-err-unresolved-type", retBase);
+            }
+            else
+            {
+                ctx.Emit(sym, "as-err-unresolved-type", retBase);
+            }
+        }
+
         for (const auto &param : sig.parameters)
         {
             if (param.hasPrimitiveHandle)
             {
                 ctx.LogRule("ValidateFuncdef", "as-err-handle-on-primitive", sym);
                 ctx.Emit(sym, "as-err-handle-on-primitive", param.baseTypeName);
+            }
+
+            const std::string paramBase = CleanBaseType(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
+            if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" &&
+                !IsPrimitiveTypeName(paramBase) && !ctx.request.IsRegisteredSymbol(paramBase) &&
+                !ctx.request.symbolTable.HasSymbolAnywhere(paramBase))
+            {
+                ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
+                if (param.endCharacter > param.startCharacter || param.endLine > param.startLine)
+                {
+                    ctx.EmitAtRange(param.startLine, param.startCharacter,
+                                    param.endLine, param.endCharacter,
+                                    "as-err-unresolved-type", paramBase);
+                }
+                else
+                {
+                    ctx.Emit(sym, "as-err-unresolved-type", paramBase);
+                }
             }
         }
     }

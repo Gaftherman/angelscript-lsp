@@ -554,6 +554,15 @@ namespace angel_lsp::analysis
         funcdefSig.returnHasPrimitiveHandle = retInfo.hasPrimitiveHandle;
         funcdefSig.modifiers = modifiers;
         funcdefSig.parameters = ExtractParameters(paramsNode, sourceCode);
+        if (!ts_node_is_null(typeNode))
+        {
+            TSPoint retStart = ts_node_start_point(typeNode);
+            TSPoint retEnd = ts_node_end_point(typeNode);
+            funcdefSig.returnTypeStartLine = retStart.row;
+            funcdefSig.returnTypeStartCharacter = retStart.column;
+            funcdefSig.returnTypeEndLine = retEnd.row;
+            funcdefSig.returnTypeEndCharacter = retEnd.column;
+        }
 
         sym.signature = funcdefSig;
         symbolTable.AddSymbol(sym);

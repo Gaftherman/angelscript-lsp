@@ -960,6 +960,150 @@ namespace angel_lsp::analysis
             }
         }
 
+        std::optional<Symbol> FindFuncdef(const std::string &name, const SymbolTable &table)
+        {
+            std::optional<Symbol> result;
+            ForEachSymbolNamed(name, table, [&](const Symbol &sym)
+            {
+                if (sym.type == SymbolType::Funcdef)
+                {
+                    result = sym;
+                    return true;
+                }
+                return false;
+            });
+            if (result)
+            {
+                return result;
+            }
+            const std::string bare = LastScopeSegment(name);
+            table.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &symbols)
+            {
+                if (!result && (qName == bare || LastScopeSegment(qName) == bare))
+                {
+                    for (const auto &sym : symbols)
+                    {
+                        if (sym.type == SymbolType::Funcdef)
+                        {
+                            result = sym;
+                            return;
+                        }
+                    }
+                }
+            });
+            return result;
+        }
+
+        bool MatchesFuncdefSignature(const FunctionSignature &fn, const FuncdefSignature &fd)
+        {
+            if (CleanBaseType(fn.returnType) != CleanBaseType(fd.returnType))
+            {
+                return false;
+            }
+            if (fn.parameters.size() != fd.parameters.size())
+            {
+                return false;
+            }
+            for (size_t i = 0; i < fn.parameters.size(); ++i)
+            {
+                if (CleanBaseType(fn.parameters[i].typeName) != CleanBaseType(fd.parameters[i].typeName))
+                {
+                    return false;
+                }
+                if (fn.parameters[i].modifier != fd.parameters[i].modifier)
+                {
+                    return false;
+                }
+                if (fn.parameters[i].isReference != fd.parameters[i].isReference)
+                {
+                    return false;
+                }
+                if (fn.parameters[i].isHandle != fd.parameters[i].isHandle)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void CheckFuncdefAssignment(TSNode targetNode,
+                                    const FuncdefSignature &funcdefSig,
+                                    TSNode valueNode,
+                                    const Scope *scope,
+                                    DiagnosticContext &ctx,
+                                    std::string_view sourceCode)
+        {
+            if (ts_node_is_null(valueNode))
+            {
+                return;
+            }
+
+            TSNode actualVal = valueNode;
+            if (std::string_view(NodeType(valueNode)) == "unary_expression")
+            {
+                TSNode op = ts_node_child_by_field_name(valueNode, "operator", 8);
+                if (!ts_node_is_null(op) && NodeText(op, sourceCode) == "@")
+                {
+                    TSNode operand = ts_node_child_by_field_name(valueNode, "operand", 7);
+                    if (!ts_node_is_null(operand))
+                    {
+                        actualVal = operand;
+                    }
+                }
+            }
+
+            std::string funcName = NodeText(actualVal, sourceCode);
+            while (!funcName.empty() && isspace(static_cast<unsigned char>(funcName.front()))) funcName.erase(funcName.begin());
+            while (!funcName.empty() && isspace(static_cast<unsigned char>(funcName.back()))) funcName.pop_back();
+
+            if (funcName.empty() || funcName == "null")
+            {
+                return;
+            }
+
+            std::vector<Symbol> candidates;
+            auto found = ctx.request.symbolTable.FindSymbols(funcName);
+            for (const auto &s : found)
+            {
+                if (s.type == SymbolType::Function)
+                {
+                    candidates.push_back(s);
+                }
+            }
+            if (candidates.empty())
+            {
+                std::string bare = LastScopeSegment(funcName);
+                auto all = ctx.request.symbolTable.FindSymbols(bare);
+                for (const auto &s : all)
+                {
+                    if (s.type == SymbolType::Function)
+                    {
+                        candidates.push_back(s);
+                    }
+                }
+            }
+
+            if (candidates.empty())
+            {
+                return;
+            }
+
+            bool matched = false;
+            for (const auto &cand : candidates)
+            {
+                if (MatchesFuncdefSignature(cand.GetFunction(), funcdefSig))
+                {
+                    matched = true;
+                    break;
+                }
+            }
+
+            if (!matched)
+            {
+                EmitAtNode(targetNode, ctx, "as-err-signature-mismatch-func-handle");
+            }
+        }
+
         void CheckConstructorDelegation(TSNode funcNode,
                                         DiagnosticContext &ctx,
                                         std::string_view sourceCode)
@@ -1242,6 +1386,23 @@ namespace angel_lsp::analysis
                 }
                 else
                 {
+                    const std::string rawType = NodeText(typeNode, request.sourceCode);
+                    const std::string baseType = CleanBaseType(rawType);
+                    auto funcdefSym = FindFuncdef(baseType, ctx.request.symbolTable);
+                    if (funcdefSym)
+                    {
+                        for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+                        {
+                            TSNode child = ts_node_named_child(node, i);
+                            if (NodeType(child) != "variable_declarator")
+                            {
+                                continue;
+                            }
+                            TSNode valNode = ts_node_child_by_field_name(child, "value", k_valueFieldLength);
+                            CheckFuncdefAssignment(child, funcdefSym->GetFuncdef(), valNode, scopeAt(), ctx, request.sourceCode);
+                        }
+                    }
+
                     const DeclaredType declared = ReadDeclaredType(typeNode, ctx, request.sourceCode);
                     if (declared.usable)
                     {
@@ -1318,6 +1479,12 @@ namespace angel_lsp::analysis
                     std::string rightType = ResolveExpressionType(right, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
                     std::string cleanLeft = CleanBaseType(leftType);
                     std::string cleanRight = CleanBaseType(rightType);
+
+                    auto leftFuncdef = FindFuncdef(cleanLeft, ctx.request.symbolTable);
+                    if (leftFuncdef)
+                    {
+                        CheckFuncdefAssignment(node, leftFuncdef->GetFuncdef(), right, scopeAt(), ctx, request.sourceCode);
+                    }
 
                     // Handle assignment const qualifier discard check
                     bool isHandleAssignment = false;

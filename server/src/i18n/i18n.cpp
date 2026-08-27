@@ -148,6 +148,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-virtual-property-signature"] = "Invalid signature for virtual property '{}'. A 'get_' accessor returns a value and takes at most an index; a 'set_' accessor returns void and takes the value, optionally preceded by an index.";
         m_messages["as-err-array-invalid-template"] = "Attempting to instantiate invalid template parameter '{}'.";
         m_messages["as-err-typedef-non-primitive"] = "Typedef base type '{}' must be a primitive data type.";
+        m_messages["as-err-signature-mismatch-func-handle"] = "Function signature does not match target funcdef signature.";
         m_messages["as-err-invalid-reference-return"] = "Not a valid reference type '{}'.";
         m_messages["as-err-external-not-found"] = "External shared entity '{}' not found.";
         m_messages["as-err-mixin-child-type"] = "Mixin class '{}' cannot have child type declarations.";
@@ -265,6 +266,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-virtual-property-signature"] = "Firma no válida para la propiedad virtual '{}'. Un accesor 'get_' devuelve un valor y toma como mucho un índice; un accesor 'set_' devuelve void y toma el valor, precedido opcionalmente por un índice.";
             m_messages["as-err-array-invalid-template"] = "Intento de instanciar un parámetro de plantilla no válido ('{}').";
             m_messages["as-err-typedef-non-primitive"] = "El tipo base del typedef ('{}') debe ser un tipo de dato primitivo.";
+            m_messages["as-err-signature-mismatch-func-handle"] = "La firma de la función no coincide con la firma del funcdef objetivo.";
             m_messages["as-err-invalid-reference-return"] = "No es un tipo de retorno por referencia válido ('{}').";
             m_messages["as-err-external-not-found"] = "Entidad compartida externa ('{}') no encontrada.";
             m_messages["as-err-mixin-child-type"] = "La clase mixin ('{}') no puede contener declaraciones de tipos hijos.";

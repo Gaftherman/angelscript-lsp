@@ -453,6 +453,104 @@ TEST_SUITE("AngelScript_TypedefValidation_Parity")
     }
 }
 
+TEST_SUITE("AngelScript_Funcdef_Verification")
+{
+    TEST_CASE("Predefined & Script: Register funcdef, bind matching function, and deduce return type")
+    {
+        const char *predefinedScript = R"(
+            funcdef bool Predicate(int value);
+            funcdef void Action();
+        )";
+
+        const char *userScript = R"(
+            bool IsEven(int val) { return (val % 2) == 0; }
+            void DoWork() {}
+
+            void Main() {
+                Predicate@ pred = @IsEven; // OK: Matching signature
+                Action@ act = @DoWork;      // OK: Matching signature
+
+                auto result = pred(42);     // Deduces bool
+                act();                      // Invokes void Action()
+            }
+        )";
+
+        auto predefinedDoc = CreateTestDocument("file:///workspace/as.predefined", predefinedScript);
+        auto userDoc = CreateTestDocument("file:///workspace/main.as", userScript);
+        REQUIRE(predefinedDoc != nullptr);
+        REQUIRE(userDoc != nullptr);
+
+        CHECK(predefinedDoc->GetDiagnostics().empty());
+        CHECK(userDoc->GetDiagnostics().empty());
+
+        // Validate inferred type for 'result' (bool)
+        CHECK(userDoc->GetSymbolTypeAt({8, 22}) == "bool");
+
+        // Validate resolved call on 'pred(42)'
+        auto predCall = userDoc->GetResolvedCallAt({8, 31});
+        REQUIRE(predCall.has_value());
+        CHECK(predCall->targetFunctionSymbol == "Predicate::Predicate(int)");
+    }
+
+    TEST_CASE("Diagnostics: Incompatible function signature bound to funcdef handle")
+    {
+        const char *script = R"(
+            funcdef int Operation(int a, int b);
+
+            void IncompatibleReturn(int a, int b) {}
+            int IncompatibleParams(string a, int b) { return 0; }
+
+            void Main() {
+                Operation@ op1 = @IncompatibleReturn; // Error: void vs int return
+                Operation@ op2 = @IncompatibleParams; // Error: string vs int param
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_funcdef_mismatch.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+
+        CHECK(diagnostics[0].code == "E_SIGNATURE_MISMATCH_FUNC_HANDLE");
+        CHECK(diagnostics[0].range.start.line == 7);
+
+        CHECK(diagnostics[1].code == "E_SIGNATURE_MISMATCH_FUNC_HANDLE");
+        CHECK(diagnostics[1].range.start.line == 8);
+    }
+
+    TEST_CASE("Diagnostics: Duplicate funcdef declarations in as.predefined")
+    {
+        const char *predefinedScript = R"(
+            funcdef void EventCallback(float deltaTime);
+            funcdef void EventCallback(float deltaTime); // Error: Duplicate funcdef
+        )";
+
+        auto doc = CreateTestDocument("file:///workspace/as.predefined", predefinedScript);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_DUPLICATE_DECLARATION");
+        CHECK(diagnostics[0].range.start.line == 2);
+    }
+
+    TEST_CASE("Diagnostics: Unknown types used in funcdef signature")
+    {
+        const char *predefinedScript = R"(
+            funcdef UnregisteredType BadFuncDef(UnknownParam p);
+        )";
+
+        auto doc = CreateTestDocument("file:///workspace/as.predefined", predefinedScript);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+        CHECK(diagnostics[0].code == "E_UNKNOWN_TYPE"); // UnregisteredType
+        CHECK(diagnostics[1].code == "E_UNKNOWN_TYPE"); // UnknownParam
+    }
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Type Rules Corpus Audit*"`)
