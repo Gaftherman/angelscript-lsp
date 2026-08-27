@@ -99,5 +99,10 @@ namespace angel_lsp::analysis
          * @brief Checks local variable declarations (e.g. disallowing 'void' type local variables).
          */
         void CheckLocalVariableDeclarations(const Scope *scope, DiagnosticContext &ctx) const;
+
+        /**
+         * @brief Checks namespace scope resolution and using namespace ambiguities.
+         */
+        void CheckNamespacesAndScopes(TSNode root, std::string_view sourceCode, DiagnosticContext &ctx) const;
     };
 }

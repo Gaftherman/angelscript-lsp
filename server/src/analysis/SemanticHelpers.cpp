@@ -32,21 +32,21 @@ namespace angel_lsp::analysis
             }
             return std::string(typeName);
         }
+    }
 
-        std::string GetNodeText(TSNode node, std::string_view sourceCode)
+    std::string GetNodeText(TSNode node, std::string_view sourceCode)
+    {
+        if (ts_node_is_null(node) || sourceCode.empty())
         {
-            if (ts_node_is_null(node) || sourceCode.empty())
-            {
-                return "";
-            }
-            uint32_t start = ts_node_start_byte(node);
-            uint32_t end = ts_node_end_byte(node);
-            if (start < sourceCode.size() && end <= sourceCode.size() && start < end)
-            {
-                return std::string(sourceCode.substr(start, end - start));
-            }
             return "";
         }
+        uint32_t start = ts_node_start_byte(node);
+        uint32_t end = ts_node_end_byte(node);
+        if (start < sourceCode.size() && end <= sourceCode.size() && start < end)
+        {
+            return std::string(sourceCode.substr(start, end - start));
+        }
+        return "";
     }
 
     bool IsReservedKeyword(const std::string &name)
@@ -628,14 +628,118 @@ namespace angel_lsp::analysis
         return rawContainers;
     }
 
+    std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode)
+    {
+        std::vector<std::string> usings;
+        std::vector<TSNode> stack = { root };
+        while (!stack.empty())
+        {
+            TSNode cur = stack.back();
+            stack.pop_back();
+
+            std::string_view type = ts_node_type(cur);
+            if (type == "using_declaration")
+            {
+                TSNode nameNode = ts_node_child_by_field_name(cur, "name", 4);
+                if (!ts_node_is_null(nameNode))
+                {
+                    std::string uName = GetNodeText(nameNode, sourceCode);
+                    while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front()))) uName.erase(uName.begin());
+                    while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back()))) uName.pop_back();
+                    if (!uName.empty())
+                    {
+                        usings.push_back(uName);
+                    }
+                }
+            }
+
+            uint32_t count = ts_node_child_count(cur);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                stack.push_back(ts_node_child(cur, i));
+            }
+        }
+        return usings;
+    }
+
+    bool IsKnownScope(const std::string &prefix, TSNode node, std::string_view sourceCode, const SymbolTable &table)
+    {
+        if (prefix.empty())
+        {
+            return true;
+        }
+
+        // 1. Check if prefix is directly in table as symbol or qualified name
+        if (table.HasSymbol(prefix) || table.HasSymbolAnywhere(prefix))
+        {
+            return true;
+        }
+
+        // 2. Check if any symbol in table has containerName equal to or prefixed with prefix
+        bool hasContainer = false;
+        table.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &syms) {
+            if (hasContainer) return;
+            for (const auto &s : syms)
+            {
+                if (s.containerName == prefix || s.containerName.rfind(prefix + "::", 0) == 0 ||
+                    s.name == prefix || qName == prefix || qName.rfind(prefix + "::", 0) == 0)
+                {
+                    hasContainer = true;
+                    return;
+                }
+            }
+        });
+        if (hasContainer)
+        {
+            return true;
+        }
+
+        // 3. Check relative to enclosing containers
+        auto containers = GetEnclosingContainers(node, sourceCode);
+        for (const auto &c : containers)
+        {
+            std::string q = c.qualifiedName + "::" + prefix;
+            if (table.HasSymbol(q) || table.HasSymbolAnywhere(q))
+            {
+                return true;
+            }
+        }
+
+        // 4. Check relative to using namespaces
+        TSNode root = node;
+        while (!ts_node_is_null(ts_node_parent(root)))
+        {
+            root = ts_node_parent(root);
+        }
+        auto usings = CollectUsingNamespaces(root, sourceCode);
+        for (const auto &ns : usings)
+        {
+            std::string q = ns + "::" + prefix;
+            if (table.HasSymbol(q) || table.HasSymbolAnywhere(q))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     std::vector<Symbol> FindSymbolsInScope(
         const SymbolTable &symbolTable,
         const std::vector<ContainerInfo> &containers,
-        const std::string &name)
+        const std::string &name,
+        const std::vector<std::string> &usingNamespaces)
     {
         if (name.empty())
         {
             return {};
+        }
+
+        // Handle explicit global scope operator "::name"
+        if (name.rfind("::", 0) == 0)
+        {
+            std::string globalName = name.substr(2);
+            return symbolTable.FindSymbols(globalName);
         }
 
         // 1. Container hierarchy lookup (from innermost to outermost)
@@ -686,7 +790,18 @@ namespace angel_lsp::analysis
             return globalFound;
         }
 
-        // 3. Enum member fallback
+        // 3. using namespace lookup
+        for (const auto &ns : usingNamespaces)
+        {
+            std::string qName = ns + "::" + name;
+            auto found = symbolTable.FindSymbols(qName);
+            if (!found.empty())
+            {
+                return found;
+            }
+        }
+
+        // 4. Enum member fallback
         std::vector<Symbol> enumMembers;
         symbolTable.ForEachSymbol(
             [&](const std::string &, const std::vector<Symbol> &symList)
@@ -721,8 +836,14 @@ namespace angel_lsp::analysis
         std::string_view sourceCode,
         const SymbolTable &symbolTable)
     {
+        TSNode root = node;
+        while (!ts_node_is_null(ts_node_parent(root)))
+        {
+            root = ts_node_parent(root);
+        }
+        auto usings = CollectUsingNamespaces(root, sourceCode);
         std::vector<ContainerInfo> containers = GetEnclosingContainers(node, sourceCode);
-        return FindSymbolsInScope(symbolTable, containers, name);
+        return FindSymbolsInScope(symbolTable, containers, name, usings);
     }
 
     std::string ResolveExpressionType(

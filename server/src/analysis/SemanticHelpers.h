@@ -34,6 +34,14 @@ namespace angel_lsp::analysis
     };
 
     /**
+     * @brief Extracts the raw source text corresponding to an AST node.
+     * @param node The AST node.
+     * @param sourceCode The document source code.
+     * @return Extracted string.
+     */
+    std::string GetNodeText(TSNode node, std::string_view sourceCode);
+
+    /**
      * @brief Classification categories for enclosing lexical containers.
      */
     enum class ContainerKind
@@ -206,19 +214,39 @@ namespace angel_lsp::analysis
     std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode);
 
     /**
-     * @brief Performs container-aware and inheritance-aware symbol lookup for a name within given containers.
+     * @brief Collects all using namespace directives in an AST tree.
+     * @param root The root AST node or enclosing container.
+     * @param sourceCode Document source text.
+     * @return Vector of imported namespace names.
+     */
+    std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode);
+
+    /**
+     * @brief Checks if a scope prefix is a known namespace, class, interface, enum, or typedef.
+     * @param prefix Scope prefix string (e.g. "Geometry", "Parent", "UnknownSpace").
+     * @param node AST node for lexical context.
+     * @param sourceCode Document source text.
+     * @param table Symbol table.
+     * @return True if prefix is a valid known scope.
+     */
+    bool IsKnownScope(const std::string &prefix, TSNode node, std::string_view sourceCode, const SymbolTable &table);
+
+    /**
+     * @brief Resolves an unqualified or qualified name within a container chain and active using namespaces.
      * @param symbolTable Symbol table.
      * @param containers Enclosing container hierarchy from GetEnclosingContainers.
      * @param name Symbol name to resolve.
+     * @param usingNamespaces List of active using namespace directives visible in this scope.
      * @return Vector of matching Symbol objects.
      */
     std::vector<Symbol> FindSymbolsInScope(
         const SymbolTable &symbolTable,
         const std::vector<ContainerInfo> &containers,
-        const std::string &name);
+        const std::string &name,
+        const std::vector<std::string> &usingNamespaces = {});
 
     /**
-     * @brief Performs container-aware and inheritance-aware symbol lookup for a name at an AST node.
+     * @brief Performs container-aware, using-aware and inheritance-aware symbol lookup for a name at an AST node.
      * @param name Symbol name to resolve.
      * @param node The AST node providing lexical context.
      * @param sourceCode Document source text.

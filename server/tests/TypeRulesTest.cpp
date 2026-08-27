@@ -790,6 +790,120 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
     }
 }
 
+TEST_SUITE("AngelScript_Namespaces_Verification") {
+
+    TEST_CASE("Nested Namespaces: Scope resolution, shadowing, and global root operator (::)") {
+        const char* script = R"(
+            int var = 100;
+
+            namespace Parent {
+                int var = 200;
+
+                namespace Child {
+                    int var = 300;
+
+                    void TestScopes() {
+                        int local = var;          // Resolves to Child::var (300)
+                        int pVal  = Parent::var;  // Resolves to Parent::var (200)
+                        int gVal  = ::var;        // Resolves to global ::var (100)
+                    }
+                }
+            }
+
+            void Main() {
+                int fromChild = Parent::Child::var; // Resolves to 300
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_namespace_scopes.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        // Validate resolved symbol targets
+        auto localCall = doc->GetSymbolDefinitionAt({10, 37}); // 'var' in local = var
+        REQUIRE(localCall.has_value());
+        CHECK(localCall->targetSymbol == "Parent::Child::var");
+
+        auto parentCall = doc->GetSymbolDefinitionAt({11, 44}); // 'var' in Parent::var
+        REQUIRE(parentCall.has_value());
+        CHECK(parentCall->targetSymbol == "Parent::var");
+
+        auto globalCall = doc->GetSymbolDefinitionAt({12, 39}); // 'var' in ::var
+        REQUIRE(globalCall.has_value());
+        CHECK(globalCall->targetSymbol == "::var");
+    }
+
+    TEST_CASE("Using Namespace: Unqualified symbol lookup across namespaces") {
+        const char* script = R"(
+            namespace Math {
+                float ComputeSin(float rad) { return 0.0f; }
+            }
+
+            using namespace Math;
+
+            void Main() {
+                auto val = ComputeSin(3.14159f); // Resolves to Math::ComputeSin
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_using_namespace.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        auto call = doc->GetResolvedCallAt({8, 30});
+        REQUIRE(call.has_value());
+        CHECK(call->targetFunctionSymbol == "Math::ComputeSin(float)");
+    }
+
+    TEST_CASE("Diagnostics: Ambiguous symbol call from multiple using namespace directives") {
+        const char* script = R"(
+            namespace PackageA {
+                void Initialize() {}
+            }
+
+            namespace PackageB {
+                void Initialize() {}
+            }
+
+            using namespace PackageA;
+            using namespace PackageB;
+
+            void Main() {
+                Initialize(); // Error: Ambiguous match between PackageA and PackageB
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_namespace_ambiguity.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_AMBIGUOUS_IDENTIFIER");
+        CHECK(diagnostics[0].range.start.line == 13);
+    }
+
+    TEST_CASE("Diagnostics: Undefined namespace in qualified path") {
+        const char* script = R"(
+            namespace Geometry {
+                int sides = 4;
+            }
+
+            void Main() {
+                int invalid = UnknownSpace::sides; // Error: Unknown namespace
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_undefined_namespace.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_UNDEFINED_NAMESPACE");
+        CHECK(diagnostics[0].range.start.line == 6);
+        CHECK(diagnostics[0].range.start.character == 30); // Span over 'UnknownSpace'
+    }
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Type Rules Corpus Audit*"`)
