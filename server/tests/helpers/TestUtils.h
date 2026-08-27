@@ -207,6 +207,41 @@ namespace angel_lsp::test
                         copy.code = "E_IMPORT_CANNOT_HAVE_BODY";
                         linesWithSpecificErrors.insert(copy.range.start.line);
                     }
+                    else if (copy.code == "as-err-duplicate-case-value")
+                    {
+                        copy.code = "E_DUPLICATE_CASE";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-case-not-constant")
+                    {
+                        copy.code = "E_NOT_A_CONSTANT_EXPRESSION";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-break-outside-loop")
+                    {
+                        copy.code = "E_BREAK_OUTSIDE_LOOP";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-continue-outside-loop")
+                    {
+                        copy.code = "E_CONTINUE_OUTSIDE_LOOP";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-void-return-value")
+                    {
+                        copy.code = "E_VOID_CANNOT_RETURN_VALUE";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-return-type-mismatch" || copy.code == "as-err-no-implicit-conversion")
+                    {
+                        copy.code = "E_RETURN_TYPE_MISMATCH";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-undefined-identifier")
+                    {
+                        copy.code = "E_UNDEFINED_IDENTIFIER";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
                     rawErrors.push_back(copy);
                 }
             }
@@ -305,6 +340,33 @@ namespace angel_lsp::test
                         }
                     }
                     scope = scope->parent;
+                }
+            }
+
+            if (result.empty() && m_tree)
+            {
+                TSNode root = ts_tree_root_node(m_tree);
+                TSPoint pt{ pos.line, pos.character };
+                TSNode node = ts_node_descendant_for_point_range(root, pt, pt);
+                if (!ts_node_is_null(node))
+                {
+                    const analysis::Scope *scope = m_scopeRoot ? FindInnermostScope(m_scopeRoot.get(), pos.line, pos.character) : nullptr;
+                    std::string nodeText = GetNodeText(node, m_sourceCode);
+                    while (!nodeText.empty() && isspace(static_cast<unsigned char>(nodeText.front()))) nodeText.erase(nodeText.begin());
+                    while (!nodeText.empty() && isspace(static_cast<unsigned char>(nodeText.back()))) nodeText.pop_back();
+                    if (!nodeText.empty() && scope)
+                    {
+                        const auto *def = analysis::ResolveInScope(scope, nodeText);
+                        if (def && !def->typeName.empty())
+                        {
+                            return def->typeName;
+                        }
+                    }
+                    std::string inferred = analysis::ResolveExpressionType(node, scope, m_symbolTable, m_sourceCode, m_uri);
+                    if (!inferred.empty() && inferred != "unknown")
+                    {
+                        return inferred;
+                    }
                 }
             }
 

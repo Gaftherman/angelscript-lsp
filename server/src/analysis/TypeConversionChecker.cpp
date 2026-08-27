@@ -1729,7 +1729,11 @@ namespace angel_lsp::analysis
                             if (!ts_node_is_null(retTypeNode))
                             {
                                 const std::string expected = CleanBaseType(NodeText(retTypeNode, request.sourceCode));
-                                if (!expected.empty() && expected != "void")
+                                if (expected == "void")
+                                {
+                                    EmitAtNode(expr, ctx, "as-err-void-return-value");
+                                }
+                                else if (!expected.empty())
                                 {
                                     const std::string actual = CleanBaseType(ResolveExpressionType(
                                         expr, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));

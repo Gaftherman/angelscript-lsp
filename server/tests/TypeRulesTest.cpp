@@ -979,6 +979,152 @@ void Main() {
     }
 }
 
+TEST_SUITE("AngelScript_Statements_Verification") {
+
+    TEST_CASE("Variable Declarations: Comma chaining, initialization, and sub-block shadowing") {
+        const char* script = R"(
+            void Main() {
+                int a = 1, b = 2;
+                float pi = 3.14159f;
+
+                {
+                    float a = 10.5f; // Valid sub-block shadowing
+                    float innerResult = a + pi; // 'a' is float here
+                }
+
+                int outerResult = a + b; // 'a' is int (1) here
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_var_declarations.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        // Validate symbol types across scopes
+        CHECK(doc->GetSymbolTypeAt({6, 27}) == "float"); // Inner 'a'
+        CHECK(doc->GetSymbolTypeAt({10, 35}) == "int");   // Outer 'a'
+    }
+
+    TEST_CASE("Switch-Case: Constant folding, non-constexpr detection, and duplicate cases") {
+        const char* script = R"(
+            const int VALID_CONST = 10;
+            int runtimeVar = 20;
+
+            void Process(int val) {
+                switch (val) {
+                    case 0:
+                        break;
+                    case VALID_CONST: // OK: Compile-time constant
+                        break;
+                    case 0:           // Error: Duplicate case value
+                        break;
+                    case runtimeVar:  // Error: Non-constant expression
+                        break;
+                    default:
+                        break;
+                }
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_switch_cases.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+
+        CHECK(diagnostics[0].code == "E_DUPLICATE_CASE");
+        CHECK(diagnostics[0].range.start.line == 10);
+
+        CHECK(diagnostics[1].code == "E_NOT_A_CONSTANT_EXPRESSION");
+        CHECK(diagnostics[1].range.start.line == 12);
+    }
+
+    TEST_CASE("Loop Control: Break and continue scope boundaries") {
+        const char* script = R"(
+            void Main() {
+                while (true) {
+                    break;    // OK
+                    continue; // OK
+                }
+
+                switch (1) {
+                    case 1:
+                        break;    // OK: Inside switch
+                        continue; // Error: Continue is not valid directly in switch
+                }
+
+                break;    // Error: Break outside loop/switch
+                continue; // Error: Continue outside loop
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_loop_control.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 3);
+
+        CHECK(diagnostics[0].code == "E_CONTINUE_OUTSIDE_LOOP");
+        CHECK(diagnostics[0].range.start.line == 10);
+
+        CHECK(diagnostics[1].code == "E_BREAK_OUTSIDE_LOOP");
+        CHECK(diagnostics[1].range.start.line == 13);
+
+        CHECK(diagnostics[2].code == "E_CONTINUE_OUTSIDE_LOOP");
+        CHECK(diagnostics[2].range.start.line == 14);
+    }
+
+    TEST_CASE("Return Semantics: Void returning expression vs Non-void missing/invalid return") {
+        const char* script = R"(
+            void VoidFunc() {
+                return 42; // Error: Void function cannot return a value
+            }
+
+            int IntFunc() {
+                return "text"; // Error: Type mismatch (string to int)
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_return_semantics.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+
+        CHECK(diagnostics[0].code == "E_VOID_CANNOT_RETURN_VALUE");
+        CHECK(diagnostics[0].range.start.line == 2);
+
+        CHECK(diagnostics[1].code == "E_RETURN_TYPE_MISMATCH");
+        CHECK(diagnostics[1].range.start.line == 6);
+    }
+
+    TEST_CASE("Scoped Using Namespace: Block lifetime and isolation") {
+        const char* script = R"(
+            namespace HiddenMath {
+                void FastSqrt() {}
+            }
+
+            void Main() {
+                {
+                    using namespace HiddenMath;
+                    FastSqrt(); // OK: Visible inside block
+                }
+
+                FastSqrt(); // Error: HiddenMath is no longer in scope
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_scoped_using.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+
+        CHECK(diagnostics[0].code == "E_UNDEFINED_IDENTIFIER");
+        CHECK(diagnostics[0].range.start.line == 11);
+    }
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Type Rules Corpus Audit*"`)

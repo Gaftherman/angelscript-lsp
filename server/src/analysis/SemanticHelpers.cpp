@@ -836,12 +836,32 @@ namespace angel_lsp::analysis
         std::string_view sourceCode,
         const SymbolTable &symbolTable)
     {
-        TSNode root = node;
-        while (!ts_node_is_null(ts_node_parent(root)))
+        std::vector<std::string> usings;
+        TSNode p = node;
+        while (!ts_node_is_null(p))
         {
-            root = ts_node_parent(root);
+            uint32_t count = ts_node_child_count(p);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode ch = ts_node_child(p, i);
+                if (std::string_view(ts_node_type(ch)) == "using_declaration")
+                {
+                    TSNode nameNode = ts_node_child_by_field_name(ch, "name", 4);
+                    if (!ts_node_is_null(nameNode))
+                    {
+                        std::string uName = GetNodeText(nameNode, sourceCode);
+                        while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front()))) uName.erase(uName.begin());
+                        while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back()))) uName.pop_back();
+                        if (!uName.empty())
+                        {
+                            usings.push_back(uName);
+                        }
+                    }
+                }
+            }
+            p = ts_node_parent(p);
         }
-        auto usings = CollectUsingNamespaces(root, sourceCode);
+
         std::vector<ContainerInfo> containers = GetEnclosingContainers(node, sourceCode);
         return FindSymbolsInScope(symbolTable, containers, name, usings);
     }

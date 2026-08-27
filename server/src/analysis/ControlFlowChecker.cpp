@@ -276,6 +276,24 @@ namespace angel_lsp::analysis
                     EmitAtNode(value, ctx, "as-err-invalid-case-type");
                 }
 
+                if (NodeType(value) == "identifier" || NodeType(value) == "scoped_identifier")
+                {
+                    std::string idText(Trim(NodeText(value, sourceCode)));
+                    auto syms = FindSymbolsInScope(idText, value, sourceCode, ctx.request.symbolTable);
+                    for (const auto &s : syms)
+                    {
+                        if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
+                        {
+                            EmitAtNode(value, ctx, "as-err-case-not-constant");
+                            break;
+                        }
+                    }
+                }
+                else if (NodeType(value) == "call_expression")
+                {
+                    EmitAtNode(value, ctx, "as-err-case-not-constant");
+                }
+
                 std::string text(Trim(NodeText(value, sourceCode)));
                 if (!text.empty())
                 {

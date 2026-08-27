@@ -205,6 +205,10 @@ namespace angel_lsp::i18n
         m_messages["as-err-inc-dec-on-virtual-prop"] = "Cannot use increment/decrement operators on virtual property '{}'.";
         m_messages["as-err-compound-assign-on-value-prop"] = "Compound assignment is not allowed on virtual property '{}' of value type.";
         m_messages["as-err-compound-assign-on-indexed-prop"] = "Compound assignment is not allowed on indexed property '{}'.";
+        m_messages["as-err-case-not-constant"] = "Case value must be a constant expression.";
+        m_messages["as-err-void-return-value"] = "Void function cannot return a value.";
+        m_messages["as-err-return-type-mismatch"] = "Cannot implicitly convert returned expression of type '{}' to return type '{}'.";
+        m_messages["as-err-undefined-identifier"] = "Undefined identifier '{}'.";
 
         if (locale == "es")
         {
@@ -327,6 +331,10 @@ namespace angel_lsp::i18n
             m_messages["as-err-inc-dec-on-virtual-prop"] = "No se pueden usar operadores de incremento/decremento en la propiedad virtual '{}'.";
             m_messages["as-err-compound-assign-on-value-prop"] = "La asignación compuesta no está permitida en la propiedad virtual '{}' de un tipo de valor.";
             m_messages["as-err-compound-assign-on-indexed-prop"] = "La asignación compuesta no está permitida en la propiedad indexada '{}'.";
+            m_messages["as-err-case-not-constant"] = "El valor del case debe ser una expresión constante.";
+            m_messages["as-err-void-return-value"] = "Una función void no puede devolver un valor.";
+            m_messages["as-err-return-type-mismatch"] = "No se puede convertir implícitamente la expresión devuelta de tipo '{}' al tipo de retorno '{}'.";
+            m_messages["as-err-undefined-identifier"] = "Identificador no definido '{}'.";
         }
     }
 

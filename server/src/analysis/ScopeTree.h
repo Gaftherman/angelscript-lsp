@@ -123,6 +123,11 @@ namespace angel_lsp::analysis
     const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name);
 
     /**
+     * @brief Finds the innermost Scope containing the given source line and character.
+     */
+    const Scope *FindEnclosingScope(const Scope *root, uint32_t line, uint32_t character);
+
+    /**
      * @brief Owns one Scope tree per open document, keyed by file URI. Mirrors SymbolTable's
      *        per-document lifecycle (clear-then-recollect on every didOpen/didChange/didSave) but,
      *        unlike SymbolTable's flat qualifiedName map, keys directly by file URI since a scope

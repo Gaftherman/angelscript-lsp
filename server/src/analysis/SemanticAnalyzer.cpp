@@ -532,26 +532,39 @@ namespace angel_lsp::analysis
 
                     if (!calleeName.empty() && calleeName.find("::") == std::string::npos && calleeName.find('.') == std::string::npos)
                     {
-                        auto containers = GetEnclosingContainers(node, sourceCode);
-                        auto directSyms = FindSymbolsInScope(table, containers, calleeName, {});
-                        if (directSyms.empty())
+                        const Scope *scope = ctx.request.scopeRoot ? FindEnclosingScope(ctx.request.scopeRoot.get(), ts_node_start_point(node).row, ts_node_start_point(node).column) : nullptr;
+                        const LocalDefinition *localDef = scope ? ResolveInScope(scope, calleeName) : nullptr;
+                        auto inScopeSyms = FindSymbolsInScope(calleeName, node, sourceCode, table);
+                        if (!localDef && inScopeSyms.empty() && !ctx.request.IsRegisteredSymbol(calleeName) && !table.HasSymbol(calleeName))
                         {
-                            ankerl::unordered_dense::set<std::string> matchingNamespaces;
-                            for (const auto &ns : usings)
+                            TSPoint startPt = ts_node_start_point(funcNode);
+                            TSPoint endPt = ts_node_end_point(funcNode);
+                            ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
+                                            "as-err-undefined-identifier", calleeName, DiagnosticSeverity::Error);
+                        }
+                        else
+                        {
+                            auto containers = GetEnclosingContainers(node, sourceCode);
+                            auto directSyms = FindSymbolsInScope(table, containers, calleeName, {});
+                            if (directSyms.empty())
                             {
-                                std::string q = ns + "::" + calleeName;
-                                if (!table.FindSymbols(q).empty())
+                                ankerl::unordered_dense::set<std::string> matchingNamespaces;
+                                for (const auto &ns : usings)
                                 {
-                                    matchingNamespaces.insert(ns);
+                                    std::string q = ns + "::" + calleeName;
+                                    if (!table.FindSymbols(q).empty())
+                                    {
+                                        matchingNamespaces.insert(ns);
+                                    }
                                 }
-                            }
 
-                            if (matchingNamespaces.size() > 1)
-                            {
-                                TSPoint startPt = ts_node_start_point(funcNode);
-                                TSPoint endPt = ts_node_end_point(funcNode);
-                                ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
-                                                "as-err-ambiguous-identifier", calleeName, DiagnosticSeverity::Error);
+                                if (matchingNamespaces.size() > 1)
+                                {
+                                    TSPoint startPt = ts_node_start_point(funcNode);
+                                    TSPoint endPt = ts_node_end_point(funcNode);
+                                    ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
+                                                    "as-err-ambiguous-identifier", calleeName, DiagnosticSeverity::Error);
+                                }
                             }
                         }
                     }
