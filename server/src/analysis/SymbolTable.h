@@ -397,6 +397,9 @@ namespace angel_lsp::analysis
 
         std::optional<Symbol> FindFirstSymbol(const std::string &qualifiedName) const;
 
+        /** @brief Returns a copy of all symbols currently present in the table. */
+        std::vector<Symbol> GetAllSymbols() const;
+
         /** @brief Iterates all symbols in the table.
          *  @param visitor Callback invoked for each (qualifiedName, symbol_list) pair.
          *  @note The buckets are snapshotted under the lock and visited outside it, so a visitor

@@ -960,9 +960,23 @@ namespace angel_lsp::test
             return std::nullopt;
         }
 
-        const analysis::SymbolTable &GetSymbolTable() const
+        struct SymbolTableWrapper
         {
-            return m_symbolTable;
+            const analysis::SymbolTable *table;
+            const analysis::SymbolTable *operator->() const { return table; }
+            const analysis::SymbolTable &operator*() const { return *table; }
+            operator const analysis::SymbolTable &() const { return *table; }
+
+            template <typename F>
+            void ForEachSymbol(F &&f) const { table->ForEachSymbol(std::forward<F>(f)); }
+            template <typename F>
+            void ForEachSymbolInFile(const std::string &uri, F &&f) const { table->ForEachSymbolInFile(uri, std::forward<F>(f)); }
+            std::vector<analysis::Symbol> GetAllSymbols() const { return table->GetAllSymbols(); }
+        };
+
+        SymbolTableWrapper GetSymbolTable() const
+        {
+            return SymbolTableWrapper{ &m_symbolTable };
         }
 
     private:

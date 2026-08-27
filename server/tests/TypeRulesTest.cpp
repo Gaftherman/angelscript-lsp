@@ -1956,6 +1956,45 @@ TEST_SUITE("AngelScript_Configurable_Engine_And_Types")
     }
 }
 
+TEST_SUITE("AngelScript_HardcodedString_DecouplingAudit")
+{
+    TEST_CASE("Zero Hardcoded Add-ons: Standard 'string' is rejected when TypeConfig renames it")
+    {
+        config::ServerConfig config;
+        config.types.stringTypeName = "MyCustomStr"; // String type is explicitly renamed
+
+        const char* script = R"(
+            void Main() {
+                MyCustomStr valid; // OK: Configured string type
+                string invalid;    // Error: Must NOT resolve via hardcoded fallback
+            }
+        )";
+
+        auto doc = CreateTestDocumentWithConfig("file:///workspace/audit_test.as", script, config);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+
+        // Guarantees that no hardcoded fallback for 'string' exists in the type system
+        CHECK(diagnostics[0].code == "E_UNKNOWN_TYPE");
+        CHECK(diagnostics[0].range.start.line == 3);
+    }
+
+    TEST_CASE("Clean SymbolTable: Ensure no ghost symbols with 'builtin:/' scheme exist")
+    {
+        auto doc = CreateTestDocument("file:///workspace/clean_audit.as", "void Main() {}");
+        REQUIRE(doc != nullptr);
+
+        auto symbols = doc->GetSymbolTable()->GetAllSymbols();
+        for (const auto& sym : symbols)
+        {
+            CHECK_MESSAGE(!sym.fileUri.starts_with("builtin:"), 
+                          (std::string("Found leaked synthetic builtin URI in symbol table: ") + sym.fileUri));
+        }
+    }
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Type Rules Corpus Audit*"`)

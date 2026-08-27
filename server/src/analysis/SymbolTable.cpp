@@ -277,6 +277,16 @@ namespace angel_lsp::analysis
             visitor(key, *symbols);
     }
 
+    std::vector<Symbol> SymbolTable::GetAllSymbols() const
+    {
+        std::vector<Symbol> result;
+        ForEachSymbol([&result](const std::string &, const std::vector<Symbol> &syms)
+        {
+            result.insert(result.end(), syms.begin(), syms.end());
+        });
+        return result;
+    }
+
     void SymbolTable::ForEachSymbolInFile(const std::string &fileUri,
                                           const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const
     {
