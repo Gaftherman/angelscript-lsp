@@ -333,7 +333,9 @@ namespace angel_lsp::analysis
          *        rules below let every primitive-to-primitive pair through. */
         bool IsBuiltInValueType(const std::string &typeName, const DiagnosticContext &ctx)
         {
-            return IsPrimitiveTypeName(typeName) || typeName == ctx.request.GetStringTypeName();
+            const auto strType = ctx.request.GetStringTypeName();
+            const std::string_view effectiveStrType = strType.empty() ? std::string_view("string") : strType;
+            return IsPrimitiveTypeName(typeName) || typeName == effectiveStrType;
         }
 
         /**
@@ -592,7 +594,8 @@ namespace angel_lsp::analysis
             }
             if (nodeType == node_types::StringLiteral)
             {
-                return ExpressionType{ std::string(ctx.request.GetStringTypeName()), true, true };
+                const auto strType = ctx.request.GetStringTypeName();
+                return ExpressionType{ strType.empty() ? "string" : std::string(strType), true, true };
             }
             if (nodeType == node_types::BooleanLiteral)
             {
@@ -830,11 +833,34 @@ namespace angel_lsp::analysis
                 return;
             }
 
-            // A handle binds to objects, and which objects is a question of the whole interface
-            // graph - much of which can be engine-side. A literal on the right-hand side needs
-            // none of that graph to be wrong, so handles are judged on literals only.
-            if (declared.isHandle && !source.isLiteral)
+            // A handle binds to objects.
+            if (declared.isHandle)
             {
+                if (source.baseName == "null")
+                {
+                    return;
+                }
+                if (source.isLiteral)
+                {
+                    EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName, declared.baseName);
+                    return;
+                }
+
+                if (IsSameType(source.baseName, declared.baseName))
+                {
+                    return;
+                }
+
+                // If declared is a derived class of source, that's an invalid downcast without cast<T>
+                if (ctx.request.symbolTable.HasSymbolAnywhere(source.baseName) && ctx.request.symbolTable.HasSymbolAnywhere(declared.baseName))
+                {
+                    const auto hierarchy = GetInheritedTypeHierarchy(declared.baseName, ctx.request.symbolTable);
+                    if (std::find(hierarchy.begin(), hierarchy.end(), source.baseName) != hierarchy.end())
+                    {
+                        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName + "@", declared.baseName + "@");
+                        return;
+                    }
+                }
                 return;
             }
 
@@ -1418,15 +1444,22 @@ namespace angel_lsp::analysis
 
                             if (!declared.isHandle)
                             {
-                                TSNode argsNode = ts_node_child_by_field_name(child, "arguments", k_argsFieldLength);
-                                TSNode valNode = ts_node_child_by_field_name(child, "value", k_valueFieldLength);
-                                if (ts_node_is_null(argsNode) && ts_node_is_null(valNode))
+                                if (ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable) == NonInstantiableKind::Abstract)
                                 {
-                                    CheckDefaultConstructor(child, declared.baseName, ctx);
+                                    EmitAtNode(child, ctx, "as-err-abstract-instantiated", declared.baseName, declared.baseName);
                                 }
-                                else if (!ts_node_is_null(argsNode))
+                                else
                                 {
-                                    CheckConstruction(argsNode, declared.baseName, scopeAt(), ctx, request.sourceCode);
+                                    TSNode argsNode = ts_node_child_by_field_name(child, "arguments", k_argsFieldLength);
+                                    TSNode valNode = ts_node_child_by_field_name(child, "value", k_valueFieldLength);
+                                    if (ts_node_is_null(argsNode) && ts_node_is_null(valNode))
+                                    {
+                                        CheckDefaultConstructor(child, declared.baseName, ctx);
+                                    }
+                                    else if (!ts_node_is_null(argsNode))
+                                    {
+                                        CheckConstruction(argsNode, declared.baseName, scopeAt(), ctx, request.sourceCode);
+                                    }
                                 }
                             }
                         }
@@ -1614,6 +1647,24 @@ namespace angel_lsp::analysis
                         }
                     }
                 }
+                else if (nodeType == "unary_expression" && (opText == "-" || (!opNode.id && nodeText.rfind("-", 0) == 0)))
+                {
+                    TSNode operand = ts_node_child_by_field_name(node, "operand", 7);
+                    if (ts_node_is_null(operand) && ts_node_named_child_count(node) > 0)
+                    {
+                        operand = ts_node_named_child(node, 0);
+                    }
+                    if (!ts_node_is_null(operand))
+                    {
+                        std::string opType = CleanBaseType(ResolveExpressionType(
+                            operand, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
+                        if (opType == "uint" || opType == "uint8" || opType == "uint16" ||
+                            opType == "uint32" || opType == "uint64")
+                        {
+                            EmitAtNode(node, ctx, "as-err-unary-neg-on-unsigned", opType);
+                        }
+                    }
+                }
             }
             else if (nodeType == "member_expression")
             {
@@ -1718,6 +1769,10 @@ namespace angel_lsp::analysis
                     while (!ts_node_is_null(parent))
                     {
                         const std::string_view pType = ts_node_type(parent);
+                        if (pType == "lambda_expression" || pType == "anonymous_function")
+                        {
+                            break;
+                        }
                         if (pType == "func_declaration" || pType == "method_declaration" ||
                             pType == "function_definition")
                         {
@@ -1728,7 +1783,46 @@ namespace angel_lsp::analysis
                             }
                             if (!ts_node_is_null(retTypeNode))
                             {
-                                const std::string expected = CleanBaseType(NodeText(retTypeNode, request.sourceCode));
+                                TSNode nameNode = ts_node_child_by_field_name(parent, "name", 4);
+                                uint32_t headEnd = ts_node_is_null(nameNode) ? ts_node_end_byte(retTypeNode) : ts_node_start_byte(nameNode);
+                                uint32_t headStart = ts_node_start_byte(parent);
+                                std::string headText = (headEnd > headStart && headEnd <= request.sourceCode.size())
+                                    ? std::string(request.sourceCode.substr(headStart, headEnd - headStart))
+                                    : "";
+                                std::string rawRetText = NodeText(retTypeNode, request.sourceCode);
+                                bool isReturnRef = headText.find('&') != std::string::npos || rawRetText.find('&') != std::string::npos;
+                                if (isReturnRef)
+                                {
+                                    std::string exprText = NodeText(expr, request.sourceCode);
+                                    while (!exprText.empty() && isspace(static_cast<unsigned char>(exprText.front()))) exprText.erase(exprText.begin());
+                                    while (!exprText.empty() && isspace(static_cast<unsigned char>(exprText.back()))) exprText.pop_back();
+
+                                    const Scope *s = scopeAt();
+                                    if (s)
+                                    {
+                                        const LocalDefinition *def = ResolveInScope(s, exprText);
+                                        if (def)
+                                        {
+                                            TSPoint funcStart = ts_node_start_point(parent);
+                                            TSPoint funcEnd = ts_node_end_point(parent);
+                                            bool isInsideFunction = (def->startLine > funcStart.row && def->startLine < funcEnd.row) ||
+                                                                    (def->startLine == funcStart.row && def->startCharacter >= funcStart.column);
+                                            if (isInsideFunction)
+                                            {
+                                                if (def->kind == LocalDefinitionKind::Parameter)
+                                                {
+                                                    EmitAtNode(expr, ctx, "as-err-cannot-return-param-ref", exprText);
+                                                }
+                                                else if (def->kind == LocalDefinitionKind::Variable)
+                                                {
+                                                    EmitAtNode(expr, ctx, "as-err-cannot-return-local-ref", exprText);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                const std::string expected = CleanBaseType(rawRetText);
                                 if (expected == "void")
                                 {
                                     EmitAtNode(expr, ctx, "as-err-void-return-value");
@@ -1752,20 +1846,31 @@ namespace angel_lsp::analysis
                     }
                 }
             }
-            else if (nodeType == node_types::CallExpression)
+            else if (nodeType == node_types::CallExpression || nodeType == "construct_call_expression")
             {
-                TSNode callee = ts_node_child_by_field_name(node, "function", k_functionFieldLength);
+                TSNode callee = ts_node_child_by_field_name(node, "type", 4);
+                if (ts_node_is_null(callee))
+                {
+                    callee = ts_node_child_by_field_name(node, "function", k_functionFieldLength);
+                }
                 if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
                 {
                     callee = ts_node_child(node, 0);
                 }
 
                 const std::string calleeName = CleanBaseType(NodeText(callee, request.sourceCode));
-                const DeclaredType target = ReadDeclaredType(callee, ctx, request.sourceCode);
-                if (target.usable && !target.isHandle && IsSameType(calleeName, target.baseName))
+                if (ClassifyNonInstantiable(calleeName, ctx.request.symbolTable) == NonInstantiableKind::Abstract)
                 {
-                    CheckConstruction(ts_node_child_by_field_name(node, "arguments", k_argsFieldLength),
-                                      target.baseName, scopeAt(), ctx, request.sourceCode);
+                    EmitAtNode(node, ctx, "as-err-abstract-instantiated", calleeName, calleeName);
+                }
+                else
+                {
+                    const DeclaredType target = ReadDeclaredType(callee, ctx, request.sourceCode);
+                    if (target.usable && !target.isHandle && IsSameType(calleeName, target.baseName))
+                    {
+                        CheckConstruction(ts_node_child_by_field_name(node, "arguments", k_argsFieldLength),
+                                          target.baseName, scopeAt(), ctx, request.sourceCode);
+                    }
                 }
             }
             else if (nodeType == "func_declaration" || nodeType == "function_definition")

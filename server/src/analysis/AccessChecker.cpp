@@ -390,6 +390,54 @@ namespace angel_lsp::analysis
                 return;
             }
 
+            // Check if identifier is inside a lambda_expression and accessing outer local variables/parameters (no closures)
+            TSNode p = parent;
+            TSNode lambdaNode{};
+            bool hasLambda = false;
+            while (!ts_node_is_null(p))
+            {
+                std::string_view pt = ts_node_type(p);
+                if (pt == "lambda_expression" || pt == "anonymous_function")
+                {
+                    lambdaNode = p;
+                    hasLambda = true;
+                    break;
+                }
+                if (pt == "func_declaration" || pt == "function_definition")
+                {
+                    break;
+                }
+                p = ts_node_parent(p);
+            }
+
+            if (hasLambda)
+            {
+                const LocalDefinition *localDef = ResolveInScope(scope, idText);
+                if (localDef && (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
+                {
+                    TSPoint lStart = ts_node_start_point(lambdaNode);
+                    TSPoint lEnd = ts_node_end_point(lambdaNode);
+                    bool isInsideLambda = false;
+                    if (localDef->startLine > lStart.row && localDef->startLine < lEnd.row)
+                    {
+                        isInsideLambda = true;
+                    }
+                    else if (localDef->startLine == lStart.row && localDef->startCharacter >= lStart.column)
+                    {
+                        isInsideLambda = true;
+                    }
+
+                    if (!isInsideLambda)
+                    {
+                        const TSPoint start = ts_node_start_point(node);
+                        const TSPoint end = ts_node_end_point(node);
+                        ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                        "as-err-lambda-closure-disallowed");
+                        return;
+                    }
+                }
+            }
+
             const SymbolTable &table = ctx.request.symbolTable;
 
             bool insideMixin = false;

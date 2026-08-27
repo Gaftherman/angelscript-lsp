@@ -442,6 +442,73 @@ namespace angel_lsp::analysis
                 return;
             }
 
+            // Check for positional arguments following named arguments
+            bool sawNamedArg = false;
+            const uint32_t totalChildren = ts_node_child_count(arguments);
+            std::vector<std::vector<TSNode>> argGroups;
+            std::vector<TSNode> currentGroup;
+            for (uint32_t i = 0; i < totalChildren; ++i)
+            {
+                TSNode child = ts_node_child(arguments, i);
+                std::string_view ct = ts_node_type(child);
+                if (ct == "(" || ct == ")" || ct == "comment")
+                {
+                    continue;
+                }
+                if (ct == ",")
+                {
+                    if (!currentGroup.empty())
+                    {
+                        argGroups.push_back(std::move(currentGroup));
+                        currentGroup.clear();
+                    }
+                }
+                else
+                {
+                    currentGroup.push_back(child);
+                }
+            }
+            if (!currentGroup.empty())
+            {
+                argGroups.push_back(std::move(currentGroup));
+            }
+
+            for (const auto &group : argGroups)
+            {
+                bool isNamed = false;
+                for (const auto &token : group)
+                {
+                    std::string_view tType = ts_node_type(token);
+                    if (tType == ":" || tType == "named_argument")
+                    {
+                        isNamed = true;
+                        break;
+                    }
+                    std::string text = NodeText(token, request.sourceCode);
+                    if (text.find(':') != std::string::npos && text.find('"') == std::string::npos && text.find('\'') == std::string::npos)
+                    {
+                        isNamed = true;
+                        break;
+                    }
+                }
+
+                if (isNamed)
+                {
+                    sawNamedArg = true;
+                }
+                else if (sawNamedArg)
+                {
+                    if (!group.empty())
+                    {
+                        const TSPoint aStart = ts_node_start_point(group.front());
+                        const TSPoint aEnd = ts_node_end_point(group.back());
+                        ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                        "as-err-positional-after-named-arg");
+                    }
+                    return;
+                }
+            }
+
             const CandidateSet judged = JudgeAgainst(candidates, argumentCount);
             if (!judged.decided || !judged.accepts)
             {
@@ -519,6 +586,62 @@ namespace angel_lsp::analysis
                             const TSPoint end = ts_node_end_point(arguments);
                             ctx.EmitAtRange(start.row, start.column, end.row, end.column,
                                             "as-err-call-no-matching-signature", reportedName);
+                        }
+                    }
+                    else
+                    {
+                        const auto &targetCandidate = match.bestCandidate ? *match.bestCandidate : matchingArityCandidates[0];
+                        const auto &fn = targetCandidate.GetFunction();
+                        for (size_t i = 0; i < argNodes.size() && i < fn.parameters.size(); ++i)
+                        {
+                            const auto &param = fn.parameters[i];
+                            if (param.rawText.find("&out") != std::string::npos ||
+                                param.typeName.find("&out") != std::string::npos ||
+                                param.typeName.find("& out") != std::string::npos)
+                            {
+                                std::string aText = NodeText(argNodes[i], request.sourceCode);
+                                while (!aText.empty() && isspace(static_cast<unsigned char>(aText.front()))) aText.erase(aText.begin());
+                                while (!aText.empty() && isspace(static_cast<unsigned char>(aText.back()))) aText.pop_back();
+                                if (aText != "void")
+                                {
+                                    std::string_view aType = ts_node_type(argNodes[i]);
+                                    bool isLVal = false;
+                                    if (aType == "identifier" || aType == "scoped_identifier")
+                                    {
+                                        if (scope)
+                                        {
+                                            const auto *def = ResolveInScope(scope, aText);
+                                            if (def && (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter))
+                                            {
+                                                isLVal = true;
+                                            }
+                                        }
+                                        if (!isLVal)
+                                        {
+                                            auto syms = table.FindSymbols(aText);
+                                            for (const auto &s : syms)
+                                            {
+                                                if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
+                                                {
+                                                    isLVal = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else if (aType == "member_expression" || aType == "index_expression" || aType == "subscript_expression")
+                                    {
+                                        isLVal = true;
+                                    }
+                                    if (!isLVal)
+                                    {
+                                        const TSPoint aStart = ts_node_start_point(argNodes[i]);
+                                        const TSPoint aEnd = ts_node_end_point(argNodes[i]);
+                                        ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                                        "as-err-lvalue-required-for-out-param");
+                                    }
+                                }
+                            }
                         }
                     }
                 }

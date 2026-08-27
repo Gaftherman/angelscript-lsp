@@ -268,6 +268,15 @@ namespace angel_lsp::analysis::rules
                 ctx.Emit(sym, "as-err-property-accessor-missing-body", sym.name);
             }
         }
+
+        void CheckModifiers(const Symbol &sym, const VariableSignature &sig, const DiagnosticContext &ctx)
+        {
+            if (sig.modifiers.isShared)
+            {
+                ctx.LogRule("CheckModifiers", "as-err-shared-not-allowed-on-entity", sym);
+                ctx.Emit(sym, "as-err-shared-not-allowed-on-entity", sym.name);
+            }
+        }
     }
 
     void ValidateVariable(const Symbol &sym, const DiagnosticContext &ctx)
@@ -302,6 +311,7 @@ namespace angel_lsp::analysis::rules
         // is even an error depends on asEP_ALLOW_UNSAFE_REFERENCES, a host build option no reader
         // of script text can observe.
 
+        CheckModifiers(sym, sig, ctx);
         CheckTemplateArguments(sym, sig, ctx);
         CheckDeclaredType(sym, sig, ctx);
         CheckPlacement(sym, sig, ctx);

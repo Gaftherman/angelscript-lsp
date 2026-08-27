@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+using namespace angel_lsp;
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
 
@@ -1122,6 +1123,836 @@ TEST_SUITE("AngelScript_Statements_Verification") {
 
         CHECK(diagnostics[0].code == "E_UNDEFINED_IDENTIFIER");
         CHECK(diagnostics[0].range.start.line == 11);
+    }
+}
+
+TEST_SUITE("AngelScript_Expressions_Verification") {
+
+    TEST_CASE("Out Parameters: Mutable lvalue vs explicit void argument vs temporary rejection") {
+        const char* script = R"(
+            void FetchData(int &out val, float &out rate) {
+                val = 100;
+                rate = 1.5f;
+            }
+
+            void Main() {
+                int a;
+                FetchData(a, void);      // OK: 'a' is lvalue, second param explicitly ignored via 'void'
+                FetchData(void, void);   // OK: Both output params ignored
+                FetchData(10 + 5, void); // Error: (10 + 5) is not a mutable lvalue
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_out_params.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_LVALUE_REQUIRED_FOR_OUT_PARAM");
+        CHECK(diagnostics[0].range.start.line == 10);
+    }
+
+    TEST_CASE("Named Arguments: Parameter reordering and rejection of positional after named") {
+        const char* script = R"(
+            void Configure(int width = 800, int height = 600, bool fullscreen = false) {}
+
+            void Main() {
+                // 1. Valid reordering of named arguments
+                Configure(fullscreen: true, width: 1920); // OK
+
+                // 2. Error: Positional argument following named argument
+                Configure(width: 1024, 768); // Error: Positional after named
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_named_args.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_POSITIONAL_AFTER_NAMED_ARG");
+        CHECK(diagnostics[0].range.start.line == 8);
+    }
+
+    TEST_CASE("Unary Operators: Reject unary minus on unsigned integer types") {
+        const char* script = R"(
+            void Main() {
+                int signedVal = 10;
+                auto s = -signedVal; // OK: Negation of signed int
+
+                uint unsignedVal = 20;
+                auto u = -unsignedVal; // Error: Unary negation on uint is disallowed
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_unary_neg_uint.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_UNARY_NEG_ON_UNSIGNED");
+        CHECK(diagnostics[0].range.start.line == 6);
+    }
+
+    TEST_CASE("Ternary Operator: Assignable lvalue conditional expression") {
+        const char* script = R"(
+            void Main() {
+                int leftVal = 0;
+                int rightVal = 0;
+                bool chooseLeft = true;
+
+                // Parenthesized ternary expression acts as a mutable lvalue
+                (chooseLeft ? leftVal : rightVal) = 42;
+
+                int nonLvalueA = 10;
+                (chooseLeft ? nonLvalueA : 20) = 50; // Error: RHS branch '20' is not an lvalue
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_ternary_lvalue.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_EXPRESSION_NOT_AN_LVALUE");
+        CHECK(diagnostics[0].range.start.line == 10);
+    }
+
+    TEST_CASE("Logical & Bitwise: Keyword operator aliases and short-circuit evaluation") {
+        const char* script = R"(
+            void Main() {
+                bool a = true, b = false, c = true;
+                bool r1 = a and not b or (c xor a); // Valid keyword logic operators
+                bool r2 = a && !b || (c ^^ a);       // Valid symbolic equivalents
+
+                uint8 mask1 = 0x0F;
+                uint8 mask2 = 0xF0;
+                auto bitResult = ~(mask1 | mask2);  // Bitwise complement and OR
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_logic_bitwise.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        // Validate inferred type for bitResult is uint8
+        CHECK(doc->GetSymbolTypeAt({8, 25}) == "uint8");
+    }
+
+    TEST_CASE("Anonymous Objects & Initialization Lists: Deduction in function calls") {
+        const char* predefinedScript = R"(
+            class array<T> {
+                array();
+            }
+        )";
+
+        const char* script = R"(
+            void ProcessList(const array<int> &in list) {}
+
+            void Main() {
+                ProcessList({1, 2, 3, 4}); // Inferred as array<int>
+            }
+        )";
+
+        auto predefinedDoc = CreateTestDocument("file:///workspace/as.predefined", predefinedScript);
+        auto doc = CreateTestDocument("file:///test_anon_init_list.as", script);
+        REQUIRE(predefinedDoc != nullptr);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        auto call = doc->GetResolvedCallAt({4, 24});
+        REQUIRE(call.has_value());
+        CHECK(call->targetFunctionSymbol == "ProcessList(const array<int> &in)");
+    }
+}
+
+TEST_SUITE("AngelScript_Functions_And_Overloading_Verification") {
+
+    TEST_CASE("Parameter References: Disallow inout references on primitive types") {
+        const char* script = R"(
+            class Entity {}
+
+            void ValidRef(Entity &inout e) {} // OK: Reference type
+            void InvalidRef(int &inout val) {} // Error: Primitive types cannot be inout reference
+            void InvalidShortRef(float &f) {}  // Error: Primitive types cannot be inout reference
+        )";
+
+        auto doc = CreateTestDocument("file:///test_param_refs.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+
+        CHECK(diagnostics[0].code == "E_PRIMITIVE_INOUT_REF_DISALLOWED");
+        CHECK(diagnostics[0].range.start.line == 4);
+
+        CHECK(diagnostics[1].code == "E_PRIMITIVE_INOUT_REF_DISALLOWED");
+        CHECK(diagnostics[1].range.start.line == 5);
+    }
+
+    TEST_CASE("Return References: Global and member access vs local escape prevention") {
+        const char* script = R"(
+            int g_val = 0;
+
+            class Store {
+                int prop = 10;
+                int& GetProp() { return prop; } // OK: Member reference
+            }
+
+            int& GetGlobal() {
+                return g_val; // OK: Global reference
+            }
+
+            int& GetLocal() {
+                int localVal = 5;
+                return localVal; // Error: Cannot return reference to local variable
+            }
+
+            int& GetParam(int x) {
+                return x; // Error: Cannot return reference to parameter
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_return_refs.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+
+        CHECK(diagnostics[0].code == "E_CANNOT_RETURN_LOCAL_REF");
+        CHECK(diagnostics[0].range.start.line == 14);
+
+        CHECK(diagnostics[1].code == "E_CANNOT_RETURN_PARAM_REF");
+        CHECK(diagnostics[1].range.start.line == 18);
+    }
+
+    TEST_CASE("Overload Resolution: 14-tier ranking and type promotion") {
+        const char* script = R"(
+            void Process(int a, float b) {}     // Overload 1
+            void Process(float a, int b) {}     // Overload 2
+            void Process(double a, double b) {} // Overload 3
+
+            void Main() {
+                Process(1, 2.0f);   // Exact match -> Overload 1
+                Process(2.0f, 1);   // Exact match -> Overload 2
+                Process(1.0, 2.0);  // Exact match -> Overload 3
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_overload_ranking.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        auto call1 = doc->GetResolvedCallAt({6, 24});
+        REQUIRE(call1.has_value());
+        CHECK(call1->targetFunctionSymbol == "Process(int, float)");
+
+        auto call2 = doc->GetResolvedCallAt({7, 24});
+        REQUIRE(call2.has_value());
+        CHECK(call2->targetFunctionSymbol == "Process(float, int)");
+
+        auto call3 = doc->GetResolvedCallAt({8, 24});
+        REQUIRE(call3.has_value());
+        CHECK(call3->targetFunctionSymbol == "Process(double, double)");
+    }
+
+    TEST_CASE("Default Arguments: Non-trailing default parameter rejection") {
+        const char* script = R"(
+            void InvalidDefaults(int a = 1, int b) {} // Error: Parameter after default must have default
+            void ValidDefaults(int a, int b = 2, int c = 3) {} // OK
+        )";
+
+        auto doc = CreateTestDocument("file:///test_default_args.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_NON_DEFAULT_PARAM_AFTER_DEFAULT");
+        CHECK(diagnostics[0].range.start.line == 1);
+    }
+
+    TEST_CASE("Anonymous Functions: Lambda type matching and closure restriction") {
+        const char* script = R"(
+            funcdef bool Predicate(int a, int b);
+
+            void Execute(Predicate@ p) {}
+
+            void Main() {
+                int outerVar = 10;
+
+                // OK: Lambda matches Predicate signature
+                Execute(function(a, b) { return a > b; });
+
+                // Error: AngelScript lambdas cannot access outer local variables (no closures)
+                Execute(function(a, b) { return a > outerVar; });
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_lambdas.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_LAMBDA_CLOSURE_DISALLOWED");
+        CHECK(diagnostics[0].range.start.line == 12);
+    }
+}
+
+TEST_SUITE("AngelScript_Class_OOP_And_Operators_Verification") {
+
+    TEST_CASE("OOP Modifiers: final class, final method, and override diagnostics") {
+        const char* script = R"(
+            final class FinalBase {}
+            class IllegalDerived : FinalBase {} // Error: Cannot inherit final class
+
+            class BaseClass {
+                void NormalMethod() {}
+                void SealedMethod() final {}
+            }
+
+            class DerivedClass : BaseClass {
+                void SealedMethod() override {} // Error: Overriding final method
+                void NonExistent() override {}  // Error: Method does not override base
+                void NormalMethod() override {} // OK: Valid override
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_oop_modifiers.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 3);
+
+        CHECK(diagnostics[0].code == "E_CANNOT_INHERIT_FINAL_CLASS");
+        CHECK(diagnostics[0].range.start.line == 2);
+
+        CHECK(diagnostics[1].code == "E_CANNOT_OVERRIDE_FINAL_METHOD");
+        CHECK(diagnostics[1].range.start.line == 10);
+
+        CHECK(diagnostics[2].code == "E_METHOD_DOES_NOT_OVERRIDE");
+        CHECK(diagnostics[2].range.start.line == 11);
+    }
+
+    TEST_CASE("Access Control: Protected and private member visibility enforcement") {
+        const char* script = R"(
+            class Base {
+                private int m_priv;
+                protected int m_prot;
+                public int m_pub;
+            }
+
+            class Derived : Base {
+                void TestDerived() {
+                    m_pub = 1;  // OK
+                    m_prot = 2; // OK: Protected accessible in derived
+                    m_priv = 3; // Error: Private inaccessible in derived
+                }
+            }
+
+            void Main() {
+                Base b;
+                b.m_pub = 1;  // OK
+                b.m_prot = 2; // Error: Protected inaccessible from global
+                b.m_priv = 3; // Error: Private inaccessible from global
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_access_control.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 3);
+
+        CHECK(diagnostics[0].code == "E_PRIVATE_MEMBER_ACCESS");
+        CHECK(diagnostics[0].range.start.line == 11);
+
+        CHECK(diagnostics[1].code == "E_PROTECTED_MEMBER_ACCESS");
+        CHECK(diagnostics[1].range.start.line == 18);
+
+        CHECK(diagnostics[2].code == "E_PRIVATE_MEMBER_ACCESS");
+        CHECK(diagnostics[2].range.start.line == 19);
+    }
+
+    TEST_CASE("Operator Overloading: Dual-dispatch binary opMul and opMul_r resolution") {
+        const char* script = R"(
+            class Vector3;
+            class Matrix4 {
+                Vector3 opMul(float scalar) const { return Vector3(); }
+            }
+
+            class Vector3 {
+                Vector3 opMul_r(const Matrix4 &in mat) const { return Vector3(); }
+            }
+
+            void Main() {
+                Matrix4 m;
+                Vector3 v;
+                Vector3 res = m * v; // Resolves via Vector3::opMul_r
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_dual_dispatch.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        auto call = doc->GetResolvedCallAt({13, 33});
+        REQUIRE(call.has_value());
+        CHECK(call->targetFunctionSymbol == "Vector3::opMul_r(const Matrix4 &in) const");
+    }
+
+    TEST_CASE("Property Accessors: Virtual property get/set expansion and ++ restriction") {
+        const char* script = R"(
+            class Account {
+                private int m_balance;
+
+                int balance {
+                    get const { return m_balance; }
+                    set { m_balance = value; }
+                }
+            }
+
+            void Main() {
+                Account acc;
+                acc.balance = 500;  // OK: Expands to set_balance(500)
+                int b = acc.balance; // OK: Expands to get_balance()
+
+                acc.balance++; // Error: Increment operator not supported on virtual properties
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_virtual_properties.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_INVALID_VIRTUAL_PROPERTY_MUTATION");
+        CHECK(diagnostics[0].range.start.line == 15);
+    }
+
+    TEST_CASE("Abstract Class: Direct instantiation rejection") {
+        const char* script = R"(
+            abstract class AbstractBase {
+                void Run() {}
+            }
+
+            class Concrete : AbstractBase {}
+
+            void Main() {
+                Concrete c;                 // OK: Derived concrete class
+                AbstractBase b;             // Error: Cannot instantiate abstract class
+                AbstractBase@ h = AbstractBase(); // Error: Cannot instantiate abstract class
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_abstract_class.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+
+        CHECK(diagnostics[0].code == "E_CANNOT_INSTANTIATE_ABSTRACT_CLASS");
+        CHECK(diagnostics[0].range.start.line == 9);
+
+        CHECK(diagnostics[1].code == "E_CANNOT_INSTANTIATE_ABSTRACT_CLASS");
+        CHECK(diagnostics[1].range.start.line == 10);
+    }
+}
+
+TEST_SUITE("AngelScript_ObjectHandles_Verification")
+{
+    TEST_CASE("Primitive Handles: Disallow handles on primitive types")
+    {
+        const char* script = R"(
+            void Main() {
+                int@ invalidInt;     // Must emit E_PRIMITIVE_HANDLE_DISALLOWED
+                float@ invalidFloat; // Must emit E_PRIMITIVE_HANDLE_DISALLOWED
+                bool@ invalidBool;   // Must emit E_PRIMITIVE_HANDLE_DISALLOWED
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_primitive_handles.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 3);
+        CHECK(diagnostics[0].code == "E_PRIMITIVE_HANDLE_DISALLOWED");
+        CHECK(diagnostics[1].code == "E_PRIMITIVE_HANDLE_DISALLOWED");
+        CHECK(diagnostics[2].code == "E_PRIMITIVE_HANDLE_DISALLOWED");
+    }
+
+    TEST_CASE("Handle Semantics: Value assignment vs handle reassignment and identity checks")
+    {
+        const char* script =
+            "class Node {\n"
+            "    int value;\n"
+            "    Node& opAssign(const Node &in other) {\n"
+            "        this.value = other.value;\n"
+            "        return this;\n"
+            "    }\n"
+            "}\n"
+            "\n"
+            "void Main() {\n"
+            "    Node a, b;\n"
+            "    Node@ h1 = @a;\n"
+            "    Node@ h2 = @b;\n"
+            "\n"
+            "    // Handle Identity\n"
+            "    bool same1 = (h1 is h2);\n"
+            "    bool same2 = (@h1 == @h2);\n"
+            "    bool notNull = (h1 !is null);\n"
+            "\n"
+            "    h1 = h2;   // Invokes Node::opAssign\n"
+            "    @h1 = @h2; // Retargets h1 pointer to b\n"
+            "}\n";
+
+        auto doc = CreateTestDocument("file:///test_handle_semantics.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        // 'h1 = h2' resolves to opAssign
+        auto valAssignCall = doc->GetResolvedCallAt({18, 20});
+        REQUIRE(valAssignCall.has_value());
+        CHECK(valAssignCall->targetFunctionSymbol == "Node::opAssign(const Node &in)");
+
+        // '@h1 = @h2' does NOT resolve to opAssign
+        auto handleAssignCall = doc->GetResolvedCallAt({19, 21});
+        CHECK_FALSE(handleAssignCall.has_value());
+    }
+
+    TEST_CASE("Const Handle Matrix: const Type@ vs Type@ const violations")
+    {
+        const char* script = R"(
+            class Entity {
+                int data;
+                void Mutate() { data = 10; }
+                void Inspect() const {}
+            }
+
+            void Main() {
+                Entity e1, e2;
+
+                // 1. Handle to non-modifiable object (const Entity@)
+                const Entity@ ch = @e1;
+                ch.Inspect(); // OK: Const method
+                ch.Mutate();  // Error: Calling non-const method on const handle target
+
+                Entity@ mutableHandle;
+                @mutableHandle = @ch; // Error: Discarding const qualifier
+
+                // 2. Read-only handle to modifiable object (Entity@ const)
+                Entity@ const roHandle = @e1;
+                roHandle.Mutate(); // OK: Object itself is mutable
+                @roHandle = @e2;   // Error: Reassigning read-only handle
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_const_handles.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 3);
+
+        CHECK(diagnostics[0].code == "E_CONST_VIOLATION");
+        CHECK(diagnostics[0].range.start.line == 13); // ch.Mutate()
+
+        CHECK(diagnostics[1].code == "E_CONST_VIOLATION");
+        CHECK(diagnostics[1].range.start.line == 16); // @mutableHandle = @ch
+
+        CHECK(diagnostics[2].code == "E_CANNOT_REASSIGN_READONLY_HANDLE");
+        CHECK(diagnostics[2].range.start.line == 21); // @roHandle = @e2
+    }
+
+    TEST_CASE("Polymorphism: Interface binding and dynamic downcasting with cast<T>")
+    {
+        const char* script =
+            "interface IComponent {\n"
+            "    void Update();\n"
+            "}\n"
+            "class Transform : IComponent {\n"
+            "    void Update() {}\n"
+            "    void SetPosition(float x, float y) {}\n"
+            "}\n"
+            "\n"
+            "void Process(IComponent@ comp) {\n"
+            "    comp.Update(); // OK: Interface call\n"
+            "\n"
+            "    Transform@ t = cast<Transform>(comp); // OK: Dynamic cast\n"
+            "    if (t !is null) {\n"
+            "        t.SetPosition(0.0f, 0.0f);\n"
+            "    }\n"
+            "\n"
+            "    Transform@ invalid = comp; // Error: Direct downcast without cast<T>\n"
+            "}\n"
+            "\n"
+            "void Main() {\n"
+            "    IComponent@ comp = Transform(); // OK: Implicit upcast\n"
+            "    Process(comp);\n"
+            "}\n";
+
+        auto doc = CreateTestDocument("file:///test_handle_polymorphism.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_INVALID_CONVERSION");
+    }
+}
+
+TEST_SUITE("AngelScript_SharedEntities_Verification")
+{
+    TEST_CASE("Isolation: Shared entity attempting to access non-shared symbols")
+    {
+        const char* script = R"(
+            int g_nonSharedVar = 10;
+            void NonSharedFunction() {}
+            class NonSharedClass {}
+
+            shared class SharedClass {
+                void ValidMethod() {
+                    // OK: Calling another shared method
+                    SharedHelper();
+                }
+
+                void InvalidMethod() {
+                    g_nonSharedVar = 20;    // Error: Accessing non-shared global variable
+                    NonSharedFunction();    // Error: Calling non-shared global function
+                    NonSharedClass obj;     // Error: Instantiating non-shared class
+                }
+
+                void SharedHelper() {}
+            }
+
+            shared void SharedGlobal() {
+                NonSharedFunction(); // Error: Calling non-shared function from shared function
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_shared_isolation.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 4);
+
+        CHECK(diagnostics[0].code == "E_SHARED_CANNOT_ACCESS_NON_SHARED");
+        CHECK(diagnostics[0].range.start.line == 12); // g_nonSharedVar
+
+        CHECK(diagnostics[1].code == "E_SHARED_CANNOT_ACCESS_NON_SHARED");
+        CHECK(diagnostics[1].range.start.line == 13); // NonSharedFunction()
+
+        CHECK(diagnostics[2].code == "E_SHARED_CANNOT_ACCESS_NON_SHARED");
+        CHECK(diagnostics[2].range.start.line == 14); // NonSharedClass
+
+        CHECK(diagnostics[3].code == "E_SHARED_CANNOT_ACCESS_NON_SHARED");
+        CHECK(diagnostics[3].range.start.line == 21); // NonSharedFunction() in SharedGlobal
+    }
+
+    TEST_CASE("Entity Support: Prohibit sharing global variables")
+    {
+        const char* script = R"(
+            shared int g_invalidSharedVar = 42; // Error: Global variables cannot be shared
+            shared float g_invalidFloat = 1.0f; // Error: Global variables cannot be shared
+
+            shared class ValidClass {}          // OK
+            shared enum ValidEnum { V1 }        // OK
+        )";
+
+        auto doc = CreateTestDocument("file:///test_shared_entities_allowed.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+
+        CHECK(diagnostics[0].code == "E_SHARED_NOT_ALLOWED_ON_ENTITY");
+        CHECK(diagnostics[0].range.start.line == 1);
+
+        CHECK(diagnostics[1].code == "E_SHARED_NOT_ALLOWED_ON_ENTITY");
+        CHECK(diagnostics[1].range.start.line == 2);
+    }
+
+    TEST_CASE("External Shared: Resolving external forward declarations against full shared definitions")
+    {
+        const char* moduleAScript = R"(
+            shared class NetworkPacket {
+                int packetId;
+                void Serialize() {}
+            }
+            shared void DispatchPacket(NetworkPacket@ p) {}
+        )";
+
+        const char* moduleBScript = R"(
+            // External shared stubs referencing entities from Module A
+            external shared class NetworkPacket;
+            external shared void DispatchPacket(NetworkPacket@ p);
+
+            void Main() {
+                NetworkPacket pkt;
+                pkt.packetId = 100;
+                pkt.Serialize();
+                DispatchPacket(pkt);
+            }
+        )";
+
+        auto docA = CreateTestDocument("file:///workspace/ModuleA.as", moduleAScript);
+        auto docB = CreateTestDocument("file:///workspace/ModuleB.as", moduleBScript);
+        REQUIRE(docA != nullptr);
+        REQUIRE(docB != nullptr);
+
+        CHECK(docA->GetDiagnostics().empty());
+        CHECK(docB->GetDiagnostics().empty());
+
+        // Validate resolved call on 'pkt.Serialize()' in Module B
+        auto call = docB->GetResolvedCallAt({8, 20});
+        REQUIRE(call.has_value());
+        CHECK(call->targetFunctionSymbol == "NetworkPacket::Serialize()");
+    }
+
+    TEST_CASE("External Shared: Error when no full shared definition exists")
+    {
+        const char* script = R"(
+            external shared class UnresolvedPacket; // Error: No matching full shared definition found
+            external shared void UnresolvedFunc();  // Error: No matching full shared definition found
+        )";
+
+        auto doc = CreateTestDocument("file:///test_unresolved_external.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+
+        CHECK(diagnostics[0].code == "E_EXTERNAL_SHARED_NOT_FOUND");
+        CHECK(diagnostics[0].range.start.line == 1);
+
+        CHECK(diagnostics[1].code == "E_EXTERNAL_SHARED_NOT_FOUND");
+        CHECK(diagnostics[1].range.start.line == 2);
+    }
+}
+
+TEST_SUITE("AngelScript_Configurable_Engine_And_Types")
+{
+    TEST_CASE("TypeConfig: Default configuration recognizes custom string and array type names")
+    {
+        config::ServerConfig customConfig;
+        customConfig.types.stringTypeName = "CustomString";
+        customConfig.types.arrayTypeName = "CustomArray";
+        customConfig.types.registeredSymbols.insert("CustomDictionary");
+
+        const char* script = R"(
+            void Main() {
+                CustomString str;
+                CustomArray<int> arr;
+                CustomDictionary dict;
+                string oldString; // Error: 'string' is not configured in this host
+            }
+        )";
+
+        auto doc = CreateTestDocumentWithConfig("file:///workspace/custom_types.as", script, customConfig);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_UNKNOWN_TYPE");
+        CHECK(diagnostics[0].range.start.line == 5); // Points to 'string oldString'
+    }
+
+    TEST_CASE("EngineProperties: allowUnsafeReferences toggle gates primitive reference errors")
+    {
+        const char* script = R"(
+            void Func(int &inout val) {}
+        )";
+
+        // 1. Strict Engine (allowUnsafeReferences = false)
+        {
+            config::ServerConfig strictConfig;
+            strictConfig.engine.allowUnsafeReferences = false;
+
+            auto doc = CreateTestDocumentWithConfig("file:///test_strict_ref.as", script, strictConfig);
+            REQUIRE(doc != nullptr);
+
+            auto diagnostics = doc->GetDiagnostics();
+            REQUIRE(diagnostics.size() == 1);
+            CHECK(diagnostics[0].code == "E_PRIMITIVE_INOUT_REF_DISALLOWED");
+        }
+
+        // 2. Unsafe Engine (allowUnsafeReferences = true)
+        {
+            config::ServerConfig unsafeConfig;
+            unsafeConfig.engine.allowUnsafeReferences = true;
+
+            auto doc = CreateTestDocumentWithConfig("file:///test_unsafe_ref.as", script, unsafeConfig);
+            REQUIRE(doc != nullptr);
+
+            CHECK(doc->GetDiagnostics().empty()); // Allowed under unsafe references
+        }
+    }
+
+    TEST_CASE("EngineProperties: disallowGlobalVars toggle gates global variable declarations")
+    {
+        const char* script = R"(
+            int g_counter = 0;
+            void Main() {}
+        )";
+
+        // 1. Standard Engine (disallowGlobalVars = false)
+        {
+            config::ServerConfig standardConfig;
+            standardConfig.engine.disallowGlobalVars = false;
+
+            auto doc = CreateTestDocumentWithConfig("file:///test_allow_global.as", script, standardConfig);
+            REQUIRE(doc != nullptr);
+            CHECK(doc->GetDiagnostics().empty());
+        }
+
+        // 2. Sandboxed Engine (disallowGlobalVars = true)
+        {
+            config::ServerConfig sandboxedConfig;
+            sandboxedConfig.engine.disallowGlobalVars = true;
+
+            auto doc = CreateTestDocumentWithConfig("file:///test_disallow_global.as", script, sandboxedConfig);
+            REQUIRE(doc != nullptr);
+
+            auto diagnostics = doc->GetDiagnostics();
+            REQUIRE(diagnostics.size() == 1);
+            CHECK(diagnostics[0].code == "as-err-global-vars-disallowed");
+            CHECK(diagnostics[0].range.start.line == 1);
+        }
+    }
+
+    TEST_CASE("EngineProperties: privatePropAsProtected allows derived class access")
+    {
+        const char* script = R"(
+            class Base {
+                private int secret;
+            }
+            class Derived : Base {
+                void Test() {
+                    secret = 42;
+                }
+            }
+        )";
+
+        // 1. Strict Visibility (privatePropAsProtected = false)
+        {
+            config::ServerConfig strictConfig;
+            strictConfig.engine.privatePropAsProtected = false;
+
+            auto doc = CreateTestDocumentWithConfig("file:///test_strict_private.as", script, strictConfig);
+            REQUIRE(doc != nullptr);
+
+            auto diagnostics = doc->GetDiagnostics();
+            REQUIRE(diagnostics.size() == 1);
+            CHECK(diagnostics[0].code == "E_PRIVATE_MEMBER_ACCESS");
+        }
+
+        // 2. Relaxed Visibility (privatePropAsProtected = true)
+        {
+            config::ServerConfig relaxedConfig;
+            relaxedConfig.engine.privatePropAsProtected = true;
+
+            auto doc = CreateTestDocumentWithConfig("file:///test_relaxed_private.as", script, relaxedConfig);
+            REQUIRE(doc != nullptr);
+
+            CHECK(doc->GetDiagnostics().empty());
+        }
     }
 }
 

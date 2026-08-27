@@ -84,15 +84,15 @@ namespace angel_lsp::analysis
          */
         std::string_view GetStringTypeName() const
         {
-            return (typeConfig && !typeConfig->stringTypeName.empty()) ? std::string_view(typeConfig->stringTypeName) : std::string_view("string");
+            return (typeConfig && !typeConfig->stringTypeName.empty()) ? std::string_view(typeConfig->stringTypeName) : std::string_view("");
         }
 
         /**
-         * @brief Gets configured name for the array type or 'array' default.
+         * @brief Gets configured name for the array type or empty if not configured.
          */
         std::string_view GetArrayTypeName() const
         {
-            return (typeConfig && !typeConfig->arrayTypeName.empty()) ? std::string_view(typeConfig->arrayTypeName) : std::string_view("array");
+            return (typeConfig && !typeConfig->arrayTypeName.empty()) ? std::string_view(typeConfig->arrayTypeName) : std::string_view("");
         }
 
         /**

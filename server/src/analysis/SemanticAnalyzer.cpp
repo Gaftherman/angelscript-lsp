@@ -4,6 +4,7 @@
 #include "analysis/ConstChecker.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/DefiniteAssignmentChecker.h"
+#include "analysis/IsolationChecker.h"
 #include "analysis/LValueChecker.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
@@ -154,6 +155,17 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckTypeConversions(conversionRequest, ctx);
+        }
+
+        if (request.tree && !request.sourceCode.empty())
+        {
+            DiagnosticContext ctx{request, diagnostics, m_logger};
+            const IsolationCheckRequest isolationRequest{
+                ts_tree_root_node(request.tree),
+                request.sourceCode,
+                request.scopeRoot.get()
+            };
+            CheckSharedIsolation(isolationRequest, ctx);
         }
 
         if (request.tree && !request.sourceCode.empty())
@@ -462,12 +474,31 @@ namespace angel_lsp::analysis
                         ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
                                         "as-err-handle-on-primitive", base, DiagnosticSeverity::Error);
                     }
-                    else if (!base.empty() && base != "auto" && !IsPrimitiveTypeName(base) &&
-                             !ctx.request.symbolTable.HasSymbolAnywhere(base) &&
-                             !ctx.request.IsRegisteredSymbol(base))
+                    else
                     {
-                        ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
-                                        "as-err-unresolved-type", base, DiagnosticSeverity::Error);
+                        TemplateTypeInfo tmplInfo = ParseTemplateType(def.typeName);
+                        if (!tmplInfo.templateArgs.empty())
+                        {
+                            if (!IsKnownType(tmplInfo.containerName, ctx))
+                            {
+                                ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                                                "as-err-unresolved-type", tmplInfo.containerName, DiagnosticSeverity::Error);
+                            }
+                            for (const auto &arg : tmplInfo.templateArgs)
+                            {
+                                std::string cleanArg = CleanBaseType(arg);
+                                if (!IsKnownType(cleanArg, ctx))
+                                {
+                                    ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                                                    "as-err-unresolved-type", cleanArg, DiagnosticSeverity::Error);
+                                }
+                            }
+                        }
+                        else if (!base.empty() && base != "auto" && !IsKnownType(base, ctx))
+                        {
+                            ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                                            "as-err-unresolved-type", base, DiagnosticSeverity::Error);
+                        }
                     }
                 }
             }

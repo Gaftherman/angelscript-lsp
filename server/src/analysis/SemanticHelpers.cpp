@@ -66,12 +66,7 @@ namespace angel_lsp::analysis
 
     bool IsPrimitiveTypeName(const std::string &name)
     {
-        static const ankerl::unordered_dense::set<std::string> kPrimitives = {
-            "int", "int8", "int16", "int32", "int64",
-            "uint", "uint8", "uint16", "uint32", "uint64",
-            "float", "double", "bool", "void"
-        };
-        return kPrimitives.contains(name);
+        return IsCorePrimitive(name);
     }
 
     InitializerItemKind ClassifyInitializerItem(std::string_view item)
@@ -107,6 +102,15 @@ namespace angel_lsp::analysis
     bool IsFromPredefinedStub(const Symbol &sym, const DiagnosticContext &ctx)
     {
         return utils::IsPredefinedFile(sym.fileUri, ctx.request.predefinedFileExtension);
+    }
+
+    bool IsDestructorSymbol(const Symbol &sym)
+    {
+        if (sym.type != SymbolType::Function)
+        {
+            return false;
+        }
+        return sym.name.starts_with("~");
     }
 
     bool IsDestructorDeclaration(const Symbol &sym, const DiagnosticContext &ctx)
@@ -208,9 +212,10 @@ namespace angel_lsp::analysis
     bool IsKnownType(const std::string &baseName, const DiagnosticContext &ctx)
     {
         if (baseName.empty()) return true;
-        if (IsPrimitiveTypeName(baseName)) return true;
-        if (baseName == ctx.request.GetStringTypeName()) return true;
-        if (baseName == ctx.request.GetArrayTypeName()) return true;
+        if (IsCorePrimitive(baseName)) return true;
+        if (!ctx.request.GetStringTypeName().empty() && baseName == ctx.request.GetStringTypeName()) return true;
+        if (!ctx.request.GetArrayTypeName().empty() && baseName == ctx.request.GetArrayTypeName()) return true;
+        if (ctx.request.IsRegisteredSymbol(baseName)) return true;
         if (ctx.request.symbolTable.HasSymbolAnywhere(baseName)) return true;
         return false;
     }
@@ -878,6 +883,20 @@ namespace angel_lsp::analysis
             return "";
         }
 
+        std::string rawText = GetNodeText(exprNode, sourceCode);
+        while (!rawText.empty() && isspace(static_cast<unsigned char>(rawText.front()))) rawText.erase(rawText.begin());
+        while (!rawText.empty() && isspace(static_cast<unsigned char>(rawText.back()))) rawText.pop_back();
+
+        if (rawText == "void")
+        {
+            return "void";
+        }
+
+        if (!rawText.empty() && rawText.front() == '{' && rawText.back() == '}')
+        {
+            return "init_list";
+        }
+
         std::string_view nodeType = ts_node_type(exprNode);
 
         // `this` expression
@@ -1149,6 +1168,10 @@ namespace angel_lsp::analysis
                 if (op == "<<" || op == ">>" || op == ">>>")
                 {
                     return cleanLeft == "uint" || cleanLeft == "uint32" || cleanLeft == "uint64" || cleanLeft == "uint16" || cleanLeft == "uint8" ? "uint" : "int";
+                }
+                if ((op == "|" || op == "&" || op == "^") && cleanLeft == cleanRight)
+                {
+                    return cleanLeft;
                 }
                 if (cleanLeft == "uint" || cleanRight == "uint" || cleanLeft == "uint32" || cleanRight == "uint32")
                 {

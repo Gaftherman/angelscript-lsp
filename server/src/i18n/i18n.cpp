@@ -151,6 +151,8 @@ namespace angel_lsp::i18n
         m_messages["as-err-signature-mismatch-func-handle"] = "Function signature does not match target funcdef signature.";
         m_messages["as-err-invalid-reference-return"] = "Not a valid reference type '{}'.";
         m_messages["as-err-external-not-found"] = "External shared entity '{}' not found.";
+        m_messages["as-err-shared-not-allowed-on-entity"] = "Variables cannot be declared as 'shared' ('{}').";
+        m_messages["as-err-shared-cannot-access-non-shared"] = "Shared entity cannot access non-shared symbol '{}'.";
         m_messages["as-err-mixin-child-type"] = "Mixin class '{}' cannot have child type declarations.";
         m_messages["as-err-mixin-virtual-property"] = "The virtual property syntax is currently not supported for mixin classes";
         m_messages["as-err-double-reference"] = "Invalid parameter reference qualifier format for type '{}'.";
@@ -209,6 +211,14 @@ namespace angel_lsp::i18n
         m_messages["as-err-void-return-value"] = "Void function cannot return a value.";
         m_messages["as-err-return-type-mismatch"] = "Cannot implicitly convert returned expression of type '{}' to return type '{}'.";
         m_messages["as-err-undefined-identifier"] = "Undefined identifier '{}'.";
+        m_messages["as-err-lvalue-required-for-out-param"] = "Output parameter requires a mutable l-value or 'void'.";
+        m_messages["as-err-positional-after-named-arg"] = "Positional argument cannot follow a named argument.";
+        m_messages["as-err-unary-neg-on-unsigned"] = "Unary minus cannot be applied to unsigned integer type '{}'.";
+        m_messages["as-err-cannot-return-local-ref"] = "Cannot return reference to local variable '{}'.";
+        m_messages["as-err-cannot-return-param-ref"] = "Cannot return reference to parameter '{}'.";
+        m_messages["as-err-lambda-closure-disallowed"] = "Lambdas cannot access outer local variables (no closures).";
+        m_messages["as-err-discard-const-handle"] = "Cannot convert 'const {}@' to '{}@' because it discards the const qualifier.";
+        m_messages["as-err-readonly-handle"] = "Cannot reassign read-only handle '{}'.";
 
         if (locale == "es")
         {
@@ -277,6 +287,8 @@ namespace angel_lsp::i18n
             m_messages["as-err-signature-mismatch-func-handle"] = "La firma de la función no coincide con la firma del funcdef objetivo.";
             m_messages["as-err-invalid-reference-return"] = "No es un tipo de retorno por referencia válido ('{}').";
             m_messages["as-err-external-not-found"] = "Entidad compartida externa ('{}') no encontrada.";
+            m_messages["as-err-shared-not-allowed-on-entity"] = "Las variables no pueden declararse como 'shared' ('{}').";
+            m_messages["as-err-shared-cannot-access-non-shared"] = "La entidad compartida no puede acceder al símbolo no compartido '{}'.";
             m_messages["as-err-mixin-child-type"] = "La clase mixin ('{}') no puede contener declaraciones de tipos hijos.";
             m_messages["as-err-mixin-virtual-property"] = "La sintaxis de propiedad virtual actualmente no está soportada para clases mixin.";
             m_messages["as-err-double-reference"] = "Formato inválido de cualificador de referencia de parámetro para el tipo '{}'.";
@@ -335,6 +347,14 @@ namespace angel_lsp::i18n
             m_messages["as-err-void-return-value"] = "Una función void no puede devolver un valor.";
             m_messages["as-err-return-type-mismatch"] = "No se puede convertir implícitamente la expresión devuelta de tipo '{}' al tipo de retorno '{}'.";
             m_messages["as-err-undefined-identifier"] = "Identificador no definido '{}'.";
+            m_messages["as-err-lvalue-required-for-out-param"] = "El parámetro de salida requiere un l-value mutable o 'void'.";
+            m_messages["as-err-positional-after-named-arg"] = "Un argumento posicional no puede seguir a un argumento con nombre.";
+            m_messages["as-err-unary-neg-on-unsigned"] = "El operador unario menos no se puede aplicar al tipo entero sin signo '{}'.";
+            m_messages["as-err-cannot-return-local-ref"] = "No se puede devolver una referencia a la variable local '{}'.";
+            m_messages["as-err-cannot-return-param-ref"] = "No se puede devolver una referencia al parámetro '{}'.";
+            m_messages["as-err-lambda-closure-disallowed"] = "Las lambdas no pueden acceder a variables locales externas (sin clausuras).";
+            m_messages["as-err-discard-const-handle"] = "No se puede convertir 'const {}@' a '{}@' porque descarta el calificador const.";
+            m_messages["as-err-readonly-handle"] = "No se puede reasignar el handle de solo lectura '{}'.";
         }
     }
 

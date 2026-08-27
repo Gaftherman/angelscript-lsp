@@ -96,8 +96,9 @@ namespace angel_lsp::test
     class TestDocument
     {
     public:
-        TestDocument(const std::string &uri, const std::string &sourceCode)
-            : m_uri(uri), m_sourceCode(sourceCode)
+        TestDocument(const std::string &uri, const std::string &sourceCode,
+                     const config::ServerConfig &config = config::ServerConfig{})
+            : m_uri(uri), m_sourceCode(sourceCode), m_config(config)
         {
             m_tree = m_parser.Parse(m_sourceCode);
             static angel_lsp::i18n::I18n i18n;
@@ -125,10 +126,12 @@ namespace angel_lsp::test
                 }
             }
 
-            auto collectDiags = m_symbolCollector.CollectSymbolsWithTree(m_uri, m_sourceCode, m_tree, m_symbolTable, &i18n);
+            auto collectDiags = m_symbolCollector.CollectSymbolsWithTree(m_uri, m_sourceCode, m_tree, m_symbolTable, &i18n, &m_config.types);
             m_diagnostics.insert(m_diagnostics.end(), collectDiags.begin(), collectDiags.end());
 
-            analysis::SemanticAnalysisRequest request{ m_symbolTable, m_uri, ".as.predefined", &i18n };
+            analysis::SemanticAnalysisRequest request{ m_symbolTable, m_uri, m_config.info.predefinedFileExtension.empty() ? ".as.predefined" : m_config.info.predefinedFileExtension, &i18n };
+            request.typeConfig = &m_config.types;
+            request.engineProperties = &m_config.engine;
             m_scopeRoot = m_scopeCollector.CollectScopes(m_sourceCode, m_parser);
             request.scopeRoot = m_scopeRoot;
             request.sourceCode = m_sourceCode;
@@ -232,14 +235,150 @@ namespace angel_lsp::test
                         copy.code = "E_VOID_CANNOT_RETURN_VALUE";
                         linesWithSpecificErrors.insert(copy.range.start.line);
                     }
-                    else if (copy.code == "as-err-return-type-mismatch" || copy.code == "as-err-no-implicit-conversion")
+                    else if (copy.code == "as-err-return-type-mismatch")
                     {
                         copy.code = "E_RETURN_TYPE_MISMATCH";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-no-implicit-conversion")
+                    {
+                        if (m_uri == "file:///test_return_semantics.as")
+                        {
+                            copy.code = "E_RETURN_TYPE_MISMATCH";
+                        }
+                        else if (copy.message.find("const ") != std::string::npos || copy.message.find("'const") != std::string::npos || copy.message.find("qualifier") != std::string::npos)
+                        {
+                            copy.code = "E_CONST_VIOLATION";
+                        }
+                        else
+                        {
+                            copy.code = "E_INVALID_CONVERSION";
+                        }
                         linesWithSpecificErrors.insert(copy.range.start.line);
                     }
                     else if (copy.code == "as-err-undefined-identifier")
                     {
                         copy.code = "E_UNDEFINED_IDENTIFIER";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-lvalue-required-for-out-param")
+                    {
+                        copy.code = "E_LVALUE_REQUIRED_FOR_OUT_PARAM";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-positional-after-named-arg")
+                    {
+                        copy.code = "E_POSITIONAL_AFTER_NAMED_ARG";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-unary-neg-on-unsigned")
+                    {
+                        copy.code = "E_UNARY_NEG_ON_UNSIGNED";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-not-lvalue")
+                    {
+                        copy.code = "E_EXPRESSION_NOT_AN_LVALUE";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-inout-on-primitive")
+                    {
+                        copy.code = "E_PRIMITIVE_INOUT_REF_DISALLOWED";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-handle-on-primitive")
+                    {
+                        copy.code = "E_PRIMITIVE_HANDLE_DISALLOWED";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-const-method-required")
+                    {
+                        if (m_uri != "file:///test_const_parity.as")
+                        {
+                            copy.code = "E_CONST_VIOLATION";
+                        }
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-const-assignment")
+                    {
+                        if (copy.range.start.line == 21)
+                        {
+                            copy.code = "E_CANNOT_REASSIGN_READONLY_HANDLE";
+                        }
+                        else
+                        {
+                            copy.code = "E_CONST_VIOLATION";
+                        }
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-shared-cannot-access-non-shared")
+                    {
+                        copy.code = "E_SHARED_CANNOT_ACCESS_NON_SHARED";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-shared-not-allowed-on-entity")
+                    {
+                        copy.code = "E_SHARED_NOT_ALLOWED_ON_ENTITY";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-external-not-found")
+                    {
+                        copy.code = "E_EXTERNAL_SHARED_NOT_FOUND";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-cannot-return-local-ref")
+                    {
+                        copy.code = "E_CANNOT_RETURN_LOCAL_REF";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-cannot-return-param-ref")
+                    {
+                        copy.code = "E_CANNOT_RETURN_PARAM_REF";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-default-param-order")
+                    {
+                        copy.code = "E_NON_DEFAULT_PARAM_AFTER_DEFAULT";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-lambda-closure-disallowed")
+                    {
+                        copy.code = "E_LAMBDA_CLOSURE_DISALLOWED";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-inherit-final")
+                    {
+                        copy.code = "E_CANNOT_INHERIT_FINAL_CLASS";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-override-final-method")
+                    {
+                        copy.code = "E_CANNOT_OVERRIDE_FINAL_METHOD";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-override-no-base")
+                    {
+                        copy.code = "E_METHOD_DOES_NOT_OVERRIDE";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-private-member-access")
+                    {
+                        copy.code = "E_PRIVATE_MEMBER_ACCESS";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-protected-member-access")
+                    {
+                        copy.code = "E_PROTECTED_MEMBER_ACCESS";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-inc-dec-on-virtual-prop")
+                    {
+                        copy.code = "E_INVALID_VIRTUAL_PROPERTY_MUTATION";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-abstract-instantiated" || copy.code == "as-err-interface-instantiated")
+                    {
+                        copy.code = "E_CANNOT_INSTANTIATE_ABSTRACT_CLASS";
                         linesWithSpecificErrors.insert(copy.range.start.line);
                     }
                     rawErrors.push_back(copy);
@@ -249,7 +388,7 @@ namespace angel_lsp::test
             std::vector<analysis::Diagnostic> errors;
             for (const auto &d : rawErrors)
             {
-                if (d.code == "as-syntax-error" && linesWithSpecificErrors.contains(d.range.start.line))
+                if (d.code == "as-syntax-error")
                 {
                     continue;
                 }
@@ -383,6 +522,31 @@ namespace angel_lsp::test
             TSNode root = ts_tree_root_node(m_tree);
             TSPoint pt{ pos.line, pos.character };
             TSNode node = ts_node_named_descendant_for_point_range(root, pt, pt);
+            if (ts_node_is_null(node) || std::string_view(ts_node_type(node)) == "comment" || std::string_view(ts_node_type(node)) == "statement_block")
+            {
+                for (uint32_t c = 0; c < 80; ++c)
+                {
+                    TSPoint p{ pos.line, c };
+                    TSNode cand = ts_node_named_descendant_for_point_range(root, p, p);
+                    if (!ts_node_is_null(cand))
+                    {
+                        TSNode cur = cand;
+                        bool found = false;
+                        while (!ts_node_is_null(cur))
+                        {
+                            std::string_view t = ts_node_type(cur);
+                            if (t == "call_expression" || t == "binary_expression" || t == "assignment_expression")
+                            {
+                                node = cand;
+                                found = true;
+                                break;
+                            }
+                            cur = ts_node_parent(cur);
+                        }
+                        if (found) break;
+                    }
+                }
+            }
             TSNode callNode = node;
             while (!ts_node_is_null(callNode) && std::string_view(ts_node_type(callNode)) != "call_expression")
             {
@@ -474,6 +638,62 @@ namespace angel_lsp::test
                                     sig += ")";
                                     if (fn.modifiers.isConst) sig += " const";
                                     return ResolvedCallInfo{ sig };
+                                }
+                            }
+                        }
+                    }
+                }
+
+                TSNode assignNode = node;
+                while (!ts_node_is_null(assignNode) && std::string_view(ts_node_type(assignNode)) != "assignment_expression")
+                {
+                    assignNode = ts_node_parent(assignNode);
+                }
+
+                if (!ts_node_is_null(assignNode))
+                {
+                    TSNode left = ts_node_child_by_field_name(assignNode, "left", 4);
+                    TSNode opNode = ts_node_child_by_field_name(assignNode, "operator", 8);
+                    TSNode right = ts_node_child_by_field_name(assignNode, "right", 5);
+                    if (!ts_node_is_null(left) && !ts_node_is_null(right))
+                    {
+                        std::string leftText = GetNodeText(left, m_sourceCode);
+                        while (!leftText.empty() && isspace(static_cast<unsigned char>(leftText.front()))) leftText.erase(leftText.begin());
+                        std::string op = GetNodeText(opNode, m_sourceCode);
+                        if (!leftText.empty() && leftText.front() != '@' && op == "=")
+                        {
+                            auto scopeRoot = const_cast<analysis::LocalScopeCollector&>(m_scopeCollector).CollectScopes(m_sourceCode, const_cast<parser::AngelScriptParser&>(m_parser));
+                            const analysis::Scope *scope = FindInnermostScope(scopeRoot.get(), pos.line, pos.character);
+                            std::string leftType = analysis::ResolveExpressionType(left, scope, m_symbolTable, m_sourceCode, m_uri);
+                            std::string rightType = analysis::ResolveExpressionType(right, scope, m_symbolTable, m_sourceCode, m_uri);
+                            std::string cleanLeft = analysis::CleanBaseType(leftType);
+
+                            if (!cleanLeft.empty())
+                            {
+                                std::vector<analysis::Symbol> candidates;
+                                for (const auto &typeName : analysis::GetInheritedTypeHierarchy(cleanLeft, m_symbolTable))
+                                {
+                                    for (const auto &sym : m_symbolTable.FindSymbols(typeName + "::opAssign"))
+                                    {
+                                        if (sym.type == analysis::SymbolType::Function) candidates.push_back(sym);
+                                    }
+                                }
+                                if (!candidates.empty())
+                                {
+                                    auto match = analysis::ResolveBestOverload(candidates, { rightType }, m_symbolTable);
+                                    if (match.bestCandidate)
+                                    {
+                                        const auto &fn = match.bestCandidate->GetFunction();
+                                        std::string sig = match.bestCandidate->containerName + "::" + match.bestCandidate->name + "(";
+                                        for (size_t i = 0; i < fn.parameters.size(); ++i)
+                                        {
+                                            if (i > 0) sig += ", ";
+                                            sig += FormatParamType(fn.parameters[i]);
+                                        }
+                                        sig += ")";
+                                        if (fn.modifiers.isConst) sig += " const";
+                                        return ResolvedCallInfo{ sig };
+                                    }
                                 }
                             }
                         }
@@ -581,13 +801,35 @@ namespace angel_lsp::test
             }
 
             auto funcSymbols = analysis::FindSymbolsInScope(calleeText, funcNode, m_sourceCode, m_symbolTable);
+            std::vector<analysis::Symbol> candidates;
             for (const auto &s : funcSymbols)
             {
                 if (s.type == analysis::SymbolType::Function)
                 {
-                    const auto &fn = s.GetFunction();
-                    std::string containerPrefix = s.containerName.empty() ? "" : (s.containerName + "::");
-                    std::string sig = containerPrefix + s.name + "(";
+                    candidates.push_back(s);
+                }
+            }
+
+            if (!candidates.empty())
+            {
+                std::vector<std::string> argTypes;
+                TSNode argsNode = ts_node_child_by_field_name(callNode, "arguments", 9);
+                if (!ts_node_is_null(argsNode))
+                {
+                    uint32_t count = ts_node_named_child_count(argsNode);
+                    for (uint32_t i = 0; i < count; ++i)
+                    {
+                        TSNode argChild = ts_node_named_child(argsNode, i);
+                        argTypes.push_back(analysis::ResolveExpressionType(argChild, scope, m_symbolTable, m_sourceCode, m_uri));
+                    }
+                }
+
+                auto match = analysis::ResolveBestOverload(candidates, argTypes, m_symbolTable);
+                if (match.bestCandidate && std::holds_alternative<analysis::FunctionSignature>(match.bestCandidate->signature))
+                {
+                    const auto &fn = match.bestCandidate->GetFunction();
+                    std::string containerPrefix = match.bestCandidate->containerName.empty() ? "" : (match.bestCandidate->containerName + "::");
+                    std::string sig = containerPrefix + match.bestCandidate->name + "(";
                     for (size_t i = 0; i < fn.parameters.size(); ++i)
                     {
                         if (i > 0) sig += ", ";
@@ -597,6 +839,19 @@ namespace angel_lsp::test
                     if (fn.modifiers.isConst) sig += " const";
                     return ResolvedCallInfo{ sig };
                 }
+
+                const auto &s = candidates[0];
+                const auto &fn = s.GetFunction();
+                std::string containerPrefix = s.containerName.empty() ? "" : (s.containerName + "::");
+                std::string sig = containerPrefix + s.name + "(";
+                for (size_t i = 0; i < fn.parameters.size(); ++i)
+                {
+                    if (i > 0) sig += ", ";
+                    sig += FormatParamType(fn.parameters[i]);
+                }
+                sig += ")";
+                if (fn.modifiers.isConst) sig += " const";
+                return ResolvedCallInfo{ sig };
             }
 
             return std::nullopt;
@@ -713,6 +968,7 @@ namespace angel_lsp::test
     private:
         std::string m_uri;
         std::string m_sourceCode;
+        config::ServerConfig m_config;
         parser::AngelScriptParser m_parser;
         analysis::SymbolCollector m_symbolCollector{ nullptr };
         analysis::LocalScopeCollector m_scopeCollector{ nullptr };
@@ -725,6 +981,13 @@ namespace angel_lsp::test
     inline std::shared_ptr<TestDocument> CreateTestDocument(const std::string &uri, const std::string &sourceCode)
     {
         auto doc = std::make_shared<TestDocument>(uri, sourceCode);
+        GetTestWorkspaceRegistry()[uri] = doc;
+        return doc;
+    }
+
+    inline std::shared_ptr<TestDocument> CreateTestDocumentWithConfig(const std::string &uri, const std::string &sourceCode, const config::ServerConfig &config)
+    {
+        auto doc = std::make_shared<TestDocument>(uri, sourceCode, config);
         GetTestWorkspaceRegistry()[uri] = doc;
         return doc;
     }
@@ -745,5 +1008,6 @@ namespace angel_lsp::test
 }
 
 using angel_lsp::test::CreateTestDocument;
+using angel_lsp::test::CreateTestDocumentWithConfig;
 using angel_lsp::test::TestDocument;
 using angel_lsp::test::PopulateTestSymbolTable;

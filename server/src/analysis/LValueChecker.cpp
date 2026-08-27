@@ -186,66 +186,88 @@ namespace angel_lsp::analysis
             }
         }
 
-        void CheckAssignmentTarget(TSNode node, const LValueCheckRequest &request,
-                                   const Scope *scope, DiagnosticContext &ctx)
+        bool IsAssignableLValueNode(TSNode node, const Scope *scope, const LValueCheckRequest &request, const SymbolTable &table)
         {
-            TSNode target = ts_node_child_by_field_name(node, "left", 4);
-            if (ts_node_is_null(target))
+            if (ts_node_is_null(node))
             {
-                return;
+                return false;
             }
 
-            std::string_view targetType = ts_node_type(target);
+            std::string_view nodeType = ts_node_type(node);
 
-            // 1. Literal values can never be assigned to
-            if (targetType == "number_literal" || targetType == "string_literal" ||
-                targetType == "boolean_literal" || targetType == "null_literal" ||
-                targetType == "character_literal")
+            // Parenthesized expression
+            if (nodeType == "parenthesized_expression")
             {
-                EmitAtNode(target, ctx, "as-err-not-lvalue");
-                return;
-            }
-
-            // 2. Binary, ternary, and cast expressions are r-values; unary @handle is an l-value
-            if (targetType == "unary_expression")
-            {
-                TSNode opNode = ts_node_child_by_field_name(target, "operator", 8);
-                if (!ts_node_is_null(opNode) && NodeText(opNode, request.sourceCode) == "@")
+                uint32_t count = ts_node_named_child_count(node);
+                if (count > 0)
                 {
-                    TSNode operand = ts_node_child_by_field_name(target, "operand", 7);
-                    if (!ts_node_is_null(operand))
+                    return IsAssignableLValueNode(ts_node_named_child(node, 0), scope, request, table);
+                }
+                for (uint32_t i = 0; i < ts_node_child_count(node); ++i)
+                {
+                    TSNode ch = ts_node_child(node, i);
+                    std::string_view ct = ts_node_type(ch);
+                    if (ct != "(" && ct != ")")
                     {
-                        std::string_view opType = ts_node_type(operand);
-                        if (opType == "identifier" || opType == "scoped_identifier" ||
-                            opType == "member_expression" || opType == "subscript_expression" ||
-                            opType == "index_expression")
-                        {
-                            return; // Valid handle l-value!
-                        }
+                        return IsAssignableLValueNode(ch, scope, request, table);
                     }
                 }
-                EmitAtNode(target, ctx, "as-err-not-lvalue");
-                return;
+                return false;
             }
 
-            if (targetType == "binary_expression" ||
-                targetType == "ternary_expression" || targetType == "cast_expression")
+            // Ternary expression (e.g. cond ? a : b)
+            if (nodeType == "ternary_expression")
             {
-                EmitAtNode(target, ctx, "as-err-not-lvalue");
-                return;
+                TSNode consequence = ts_node_child_by_field_name(node, "consequence", 11);
+                TSNode alternative = ts_node_child_by_field_name(node, "alternative", 11);
+                if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
+                {
+                    if (ts_node_named_child_count(node) >= 3)
+                    {
+                        consequence = ts_node_named_child(node, 1);
+                        alternative = ts_node_named_child(node, 2);
+                    }
+                }
+                return IsAssignableLValueNode(consequence, scope, request, table) &&
+                       IsAssignableLValueNode(alternative, scope, request, table);
             }
 
-            // 3. Call expressions must return a reference to be an l-value
-            if (targetType == "call_expression")
+            // Literals are not lvalues
+            if (nodeType == "number_literal" || nodeType == "string_literal" ||
+                nodeType == "boolean_literal" || nodeType == "null_literal" ||
+                nodeType == "character_literal")
             {
-                CheckCallLValue(target, request, scope, ctx);
-                return;
+                return false;
             }
 
-            // 4. Identifier / Scoped Identifier referring exclusively to a function
-            if (targetType == "identifier" || targetType == "scoped_identifier")
+            // Unary expression: only @handle is lvalue
+            if (nodeType == "unary_expression")
             {
-                std::string name = NodeText(target, request.sourceCode);
+                TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
+                if (!ts_node_is_null(opNode) && NodeText(opNode, request.sourceCode) == "@")
+                {
+                    TSNode operand = ts_node_child_by_field_name(node, "operand", 7);
+                    return IsAssignableLValueNode(operand, scope, request, table);
+                }
+                return false;
+            }
+
+            // Binary and cast expressions are not lvalues
+            if (nodeType == "binary_expression" || nodeType == "cast_expression")
+            {
+                return false;
+            }
+
+            // Member access, indexing, subscripts
+            if (nodeType == "member_expression" || nodeType == "index_expression" || nodeType == "subscript_expression")
+            {
+                return true;
+            }
+
+            // Identifiers
+            if (nodeType == "identifier" || nodeType == "scoped_identifier")
+            {
+                std::string name = NodeText(node, request.sourceCode);
                 if (scope)
                 {
                     const LocalDefinition *localDef = ResolveInScope(scope, name);
@@ -254,13 +276,13 @@ namespace angel_lsp::analysis
                         if (localDef->kind == LocalDefinitionKind::Function ||
                             localDef->kind == LocalDefinitionKind::Method)
                         {
-                            EmitAtNode(target, ctx, "as-err-not-lvalue");
+                            return false;
                         }
-                        return;
+                        return true;
                     }
                 }
 
-                auto symbols = ctx.request.symbolTable.FindSymbols(name);
+                auto symbols = table.FindSymbols(name);
                 if (!symbols.empty())
                 {
                     bool onlyFunctions = true;
@@ -274,9 +296,34 @@ namespace angel_lsp::analysis
                     }
                     if (onlyFunctions)
                     {
-                        EmitAtNode(target, ctx, "as-err-not-lvalue");
+                        return false;
                     }
                 }
+                return true;
+            }
+
+            return false;
+        }
+
+        void CheckAssignmentTarget(TSNode node, const LValueCheckRequest &request,
+                                   const Scope *scope, DiagnosticContext &ctx)
+        {
+            TSNode target = ts_node_child_by_field_name(node, "left", 4);
+            if (ts_node_is_null(target))
+            {
+                return;
+            }
+
+            std::string_view targetType = ts_node_type(target);
+            if (targetType == "call_expression")
+            {
+                CheckCallLValue(target, request, scope, ctx);
+                return;
+            }
+
+            if (!IsAssignableLValueNode(target, scope, request, ctx.request.symbolTable))
+            {
+                EmitAtNode(target, ctx, "as-err-not-lvalue");
             }
         }
 

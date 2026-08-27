@@ -13,8 +13,12 @@ namespace angel_lsp::analysis::rules
         /** @brief True when the name collides with a keyword or a built-in type name. */
         bool IsUnusableName(const std::string &name, const DiagnosticContext &ctx)
         {
+            const auto strType = ctx.request.GetStringTypeName();
+            const auto arrType = ctx.request.GetArrayTypeName();
+            const std::string_view effectiveStrType = strType.empty() ? std::string_view("string") : strType;
+            const std::string_view effectiveArrType = arrType.empty() ? std::string_view("array") : arrType;
             return IsReservedKeyword(name) || IsPrimitiveTypeName(name) ||
-                   name == ctx.request.GetStringTypeName() || name == ctx.request.GetArrayTypeName();
+                   name == effectiveStrType || name == effectiveArrType;
         }
 
         /** @brief True when the text is an integer literal, decimal or hexadecimal, sign included. */
@@ -145,8 +149,7 @@ namespace angel_lsp::analysis::rules
 
         const std::string retBase = CleanBaseType(sig.returnBaseTypeName.empty() ? sig.returnType : sig.returnBaseTypeName);
         if (!retBase.empty() && retBase != "void" && retBase != "auto" &&
-            !IsPrimitiveTypeName(retBase) && !ctx.request.IsRegisteredSymbol(retBase) &&
-            !ctx.request.symbolTable.HasSymbolAnywhere(retBase))
+            !IsKnownType(retBase, ctx))
         {
             ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
             if (sig.returnTypeEndCharacter > sig.returnTypeStartCharacter || sig.returnTypeEndLine > sig.returnTypeStartLine)
@@ -171,8 +174,7 @@ namespace angel_lsp::analysis::rules
 
             const std::string paramBase = CleanBaseType(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
             if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" &&
-                !IsPrimitiveTypeName(paramBase) && !ctx.request.IsRegisteredSymbol(paramBase) &&
-                !ctx.request.symbolTable.HasSymbolAnywhere(paramBase))
+                !IsKnownType(paramBase, ctx))
             {
                 ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
                 if (param.endCharacter > param.startCharacter || param.endLine > param.startLine)
@@ -218,6 +220,28 @@ namespace angel_lsp::analysis::rules
         {
             ctx.LogRule("ValidateEnum", "as-err-external-not-shared", sym);
             ctx.Emit(sym, "as-err-external-not-shared", sym.name);
+        }
+
+        if (sig.modifiers.isExternal && sig.modifiers.isShared)
+        {
+            bool hasFullSharedDefinition = false;
+            if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(sym.name))
+            {
+                for (const auto &s : *symsPtr)
+                {
+                    if (s.type == SymbolType::Enum && s.GetEnum().hasBraces &&
+                        s.GetEnum().modifiers.isShared && !s.GetEnum().modifiers.isExternal)
+                    {
+                        hasFullSharedDefinition = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasFullSharedDefinition)
+            {
+                ctx.LogRule("ValidateEnum", "as-err-external-not-found", sym);
+                ctx.Emit(sym, "as-err-external-not-found", sym.name);
+            }
         }
 
         for (const auto &member : sig.members)
@@ -416,6 +440,15 @@ namespace angel_lsp::analysis::rules
                     (first.GetVariable().isVirtualProperty || other.GetVariable().isVirtualProperty))
                 {
                     continue;
+                }
+
+                // A forward class declaration completed by a full definition is not a duplicate.
+                if (first.type == SymbolType::Class && other.type == SymbolType::Class)
+                {
+                    if (!first.GetClass().hasBraces || !other.GetClass().hasBraces)
+                    {
+                        continue;
+                    }
                 }
 
                 ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);

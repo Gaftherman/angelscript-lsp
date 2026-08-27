@@ -209,10 +209,7 @@ namespace angel_lsp::analysis::rules
             }
 
             if (sig.isImported && !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" &&
-                sig.returnBaseTypeName != "string" &&
-                !IsPrimitiveTypeName(sig.returnBaseTypeName) &&
-                !ctx.request.symbolTable.HasSymbolAnywhere(sig.returnBaseTypeName) &&
-                !ctx.request.IsRegisteredSymbol(sig.returnBaseTypeName))
+                !IsKnownType(sig.returnBaseTypeName, ctx))
             {
                 ctx.LogRule("CheckReturnType", "as-err-unresolved-type", sym);
                 ctx.Emit(sym, "as-err-unresolved-type", sig.returnBaseTypeName);
@@ -481,10 +478,18 @@ namespace angel_lsp::analysis::rules
             const RuleIndex &index = ctx.request.GetRuleIndex();
             for (const auto &ancestor : hierarchy)
             {
-                if (ancestor != sym.containerName && index.Members(ancestor).methodNames.contains(sym.name))
+                if (ancestor != sym.containerName)
                 {
-                    found = true;
-                    break;
+                    if (index.Members(ancestor).finalMethodNames.contains(sym.name))
+                    {
+                        // Handled by CheckFinalOverrides in ClassRules
+                        return;
+                    }
+                    if (index.Members(ancestor).methodNames.contains(sym.name))
+                    {
+                        found = true;
+                        break;
+                    }
                 }
             }
 
@@ -492,6 +497,44 @@ namespace angel_lsp::analysis::rules
             {
                 ctx.LogRule("CheckOverride", "as-err-override-no-base", sym);
                 ctx.Emit(sym, "as-err-override-no-base", sym.name, sym.containerName);
+            }
+        }
+
+        void CheckExternal(const Symbol &sym, const FunctionSignature &sig, const DiagnosticContext &ctx)
+        {
+            if (sig.isImported)
+            {
+                return;
+            }
+
+            if (sig.modifiers.isExternal)
+            {
+                if (!sig.modifiers.isShared)
+                {
+                    ctx.LogRule("CheckExternal", "as-err-external-not-shared", sym);
+                    ctx.Emit(sym, "as-err-external-not-shared", sym.name);
+                }
+                else
+                {
+                    bool hasFullSharedDefinition = false;
+                    if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(sym.name))
+                    {
+                        for (const auto &s : *symsPtr)
+                        {
+                            if (s.type == SymbolType::Function && s.GetFunction().hasBody &&
+                                s.GetFunction().modifiers.isShared && !s.GetFunction().modifiers.isExternal)
+                            {
+                                hasFullSharedDefinition = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!hasFullSharedDefinition)
+                    {
+                        ctx.LogRule("CheckExternal", "as-err-external-not-found", sym);
+                        ctx.Emit(sym, "as-err-external-not-found", sym.name);
+                    }
+                }
             }
         }
     }
@@ -615,10 +658,7 @@ namespace angel_lsp::analysis::rules
             }
 
             if (sym.type == SymbolType::Function && sym.GetFunction().isImported &&
-                !param.baseTypeName.empty() && param.baseTypeName != "string" &&
-                !IsPrimitiveTypeName(param.baseTypeName) &&
-                !ctx.request.symbolTable.HasSymbolAnywhere(param.baseTypeName) &&
-                !ctx.request.IsRegisteredSymbol(param.baseTypeName))
+                !param.baseTypeName.empty() && !IsKnownType(param.baseTypeName, ctx))
             {
                 ctx.LogParam("ValidateParameters", "as-err-unresolved-type", param, sym);
                 ctx.Emit(param, sym, "as-err-unresolved-type", param.baseTypeName);
@@ -663,6 +703,7 @@ namespace angel_lsp::analysis::rules
         const FunctionContext fctx = BuildFunctionContext(sym, ctx);
 
         CheckBody(sym, sig, fctx, ctx);
+        CheckExternal(sym, sig, ctx);
         CheckReturnType(sym, sig, fctx, ctx);
         CheckModifiers(sym, sig, fctx, ctx);
         CheckAttributes(sym, sig, fctx, ctx);

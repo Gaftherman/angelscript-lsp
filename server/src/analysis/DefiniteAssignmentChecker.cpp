@@ -242,18 +242,22 @@ namespace angel_lsp::analysis
 
                     std::vector<std::string> argTypes;
                     std::vector<TSNode> argNodes;
-                    uint32_t argCount = ts_node_named_child_count(argsNode);
-                    for (uint32_t i = 0; i < argCount; ++i)
+                    uint32_t rawChildCount = ts_node_child_count(argsNode);
+                    for (uint32_t i = 0; i < rawChildCount; ++i)
                     {
-                        TSNode argChild = ts_node_named_child(argsNode, i);
-                        argNodes.push_back(argChild);
-                        argTypes.push_back(ResolveExpressionType(argChild, m_request.scopeRoot, m_ctx.request.symbolTable, m_request.sourceCode, m_ctx.request.fileUri));
+                        TSNode child = ts_node_child(argsNode, i);
+                        std::string_view ct = ts_node_type(child);
+                        if (ct != "(" && ct != ")" && ct != "," && ct != "comment")
+                        {
+                            argNodes.push_back(child);
+                            argTypes.push_back(ResolveExpressionType(child, m_request.scopeRoot, m_ctx.request.symbolTable, m_request.sourceCode, m_ctx.request.fileUri));
+                        }
                     }
 
                     auto best = ResolveBestOverload(candidates, argTypes, m_ctx.request.symbolTable);
                     const FunctionSignature *sig = (best.bestCandidate && std::holds_alternative<FunctionSignature>(best.bestCandidate->signature))
                                                        ? &best.bestCandidate->GetFunction()
-                                                       : nullptr;
+                                                       : (!candidates.empty() && std::holds_alternative<FunctionSignature>(candidates[0].signature) ? &candidates[0].GetFunction() : nullptr);
 
                     for (size_t i = 0; i < argNodes.size(); ++i)
                     {

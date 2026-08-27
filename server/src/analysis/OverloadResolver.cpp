@@ -234,6 +234,31 @@ namespace angel_lsp::analysis
             return static_cast<int>(OverloadMatchPenalty::Incompatible);
         }
 
+        // Void specifier for &out parameter
+        if (argType == "void")
+        {
+            if (param.modifier == ParameterModifier::Out ||
+                param.rawText.find("&out") != std::string::npos ||
+                param.typeName.find("&out") != std::string::npos ||
+                param.typeName.find("& out") != std::string::npos)
+            {
+                return static_cast<int>(OverloadMatchPenalty::Exact);
+            }
+            return static_cast<int>(OverloadMatchPenalty::Incompatible);
+        }
+
+        // Init list for array / container parameter
+        if (argType == "init_list")
+        {
+            if (param.typeName.find("array<") != std::string::npos ||
+                param.rawText.find("array<") != std::string::npos ||
+                param.typeName.find("vector<") != std::string::npos)
+            {
+                return static_cast<int>(OverloadMatchPenalty::Exact);
+            }
+            return static_cast<int>(OverloadMatchPenalty::Incompatible);
+        }
+
         const std::string cleanArg = UnwrapTypedef(NormalizeType(argType), symbolTable);
         const std::string cleanParam = UnwrapTypedef(NormalizeType(param.typeName), symbolTable);
         const bool argIsHandle = HasHandleModifier(argType);

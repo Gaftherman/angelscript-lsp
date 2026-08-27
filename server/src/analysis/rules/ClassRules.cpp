@@ -15,17 +15,55 @@ namespace angel_lsp::analysis::rules
             // None of them is one: the parser accepted the declaration and handed it over intact.
             // What the user needs told is which rule the declaration broke.
 
-            // 'external shared class X;' is the one form allowed to have no body.
+            // 'external shared class X;' is allowed to have no body.
+            // A forward declaration 'class X;' is allowed if a full definition with a body exists.
             if (!sig.hasBraces && !sig.modifiers.isExternal)
             {
-                ctx.LogRule("CheckClassModifiers", "as-err-declaration-missing-body", sym);
-                ctx.Emit(sym, "as-err-declaration-missing-body", sym.name);
+                bool hasFullDefinition = false;
+                if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(sym.name))
+                {
+                    for (const auto &s : *symsPtr)
+                    {
+                        if (s.type == SymbolType::Class && s.GetClass().hasBraces)
+                        {
+                            hasFullDefinition = true;
+                            break;
+                        }
+                    }
+                }
+                if (!hasFullDefinition)
+                {
+                    ctx.LogRule("CheckClassModifiers", "as-err-declaration-missing-body", sym);
+                    ctx.Emit(sym, "as-err-declaration-missing-body", sym.name);
+                }
             }
 
             if (sig.modifiers.isExternal && !sig.modifiers.isShared)
             {
                 ctx.LogRule("CheckClassModifiers", "as-err-external-not-shared", sym);
                 ctx.Emit(sym, "as-err-external-not-shared", sym.name);
+            }
+
+            if (sig.modifiers.isExternal && sig.modifiers.isShared)
+            {
+                bool hasFullSharedDefinition = false;
+                if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(sym.name))
+                {
+                    for (const auto &s : *symsPtr)
+                    {
+                        if (s.type == SymbolType::Class && s.GetClass().hasBraces &&
+                            s.GetClass().modifiers.isShared && !s.GetClass().modifiers.isExternal)
+                        {
+                            hasFullSharedDefinition = true;
+                            break;
+                        }
+                    }
+                }
+                if (!hasFullSharedDefinition)
+                {
+                    ctx.LogRule("CheckClassModifiers", "as-err-external-not-found", sym);
+                    ctx.Emit(sym, "as-err-external-not-found", sym.name);
+                }
             }
 
             // REMOVED: a check for 'override'/'explicit' on a class. It could never fire. The
@@ -175,10 +213,16 @@ namespace angel_lsp::analysis::rules
                 {
                     const std::string derivedName = container.empty() ? methodName
                                                                       : container + "::" + methodName;
-                    if (table.HasSymbol(derivedName))
+                    if (auto methodsPtr = table.FindSymbolsPtr(derivedName))
                     {
-                        ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", sym);
-                        ctx.Emit(sym, "as-err-override-final-method", methodName, cleanBase);
+                        for (const auto &mSym : *methodsPtr)
+                        {
+                            if (mSym.type == SymbolType::Function)
+                            {
+                                ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", mSym);
+                                ctx.Emit(mSym, "as-err-override-final-method", methodName, cleanBase);
+                            }
+                        }
                     }
                 }
             }
@@ -403,8 +447,12 @@ namespace angel_lsp::analysis::rules
 
         // A type named after a keyword or a built-in is reported and nothing else is: every later
         // rule would be describing a declaration the parser never really understood.
+        const auto strType = ctx.request.GetStringTypeName();
+        const auto arrType = ctx.request.GetArrayTypeName();
+        const std::string_view effectiveStrType = strType.empty() ? std::string_view("string") : strType;
+        const std::string_view effectiveArrType = arrType.empty() ? std::string_view("array") : arrType;
         if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) ||
-            sym.name == ctx.request.GetStringTypeName() || sym.name == ctx.request.GetArrayTypeName())
+            sym.name == effectiveStrType || sym.name == effectiveArrType)
         {
             ctx.LogRule("ValidateClass", "as-err-reserved-keyword-name", sym);
             ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);

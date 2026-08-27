@@ -926,7 +926,12 @@ namespace angel_lsp::analysis
                     }
                 }
 
-                if (firstToken.empty())
+                if (firstToken == "shared")
+                {
+                    diag.code = "as-err-shared-not-allowed-on-entity";
+                    diag.message = i18n ? i18n->GetMessage("as-err-shared-not-allowed-on-entity") : "The 'shared' modifier is not allowed on this entity";
+                }
+                else if (firstToken.empty())
                 {
                     diag.message = i18n ? i18n->GetMessage("as-syntax-error-generic") : "Syntax error";
                 }
@@ -1001,41 +1006,62 @@ namespace angel_lsp::analysis
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode child = ts_node_child(node, i);
+            std::string_view childText = GetNodeView(child, sourceCode);
+            while (!childText.empty() && isspace(static_cast<unsigned char>(childText.front()))) childText.remove_prefix(1);
+            while (!childText.empty() && isspace(static_cast<unsigned char>(childText.back()))) childText.remove_suffix(1);
 
-            if (ts_node_symbol(child) == m_symDeclarationModifier)
+            bool isDeclMod = (ts_node_symbol(child) == m_symDeclarationModifier || ts_node_symbol(child) == m_symSharedExternalModifier);
+            bool isFuncAttr = (ts_node_symbol(child) == m_symFuncAttributes);
+
+            if (childText == "shared") modifiers.isShared = true;
+            else if (childText == "external") modifiers.isExternal = true;
+            else if (childText == "final") { modifiers.isFinal = true; if (!isFuncAttr) modifiers.isDeclarationFinal = true; }
+            else if (childText == "abstract") { modifiers.isAbstract = true; if (!isFuncAttr) modifiers.isDeclarationAbstract = true; }
+            else if (childText == "override") modifiers.isOverride = true;
+            else if (childText == "explicit") modifiers.isExplicit = true;
+            else if (childText == "property") modifiers.isProperty = true;
+            else if (childText == "mixin") modifiers.isMixin = true;
+            else if (childText == "delete") modifiers.isDelete = true;
+            else if (childText == "private") modifiers.access = AccessModifier::Private;
+            else if (childText == "protected") modifiers.access = AccessModifier::Protected;
+            else if (childText == "public") modifiers.access = AccessModifier::Public;
+            else if (childText == "const") modifiers.isConst = true;
+
+            if (isDeclMod || isFuncAttr)
             {
                 uint32_t modCount = ts_node_child_count(child);
                 for (uint32_t m = 0; m < modCount; ++m)
                 {
-                    TSSymbol tokSym = ts_node_symbol(ts_node_child(child, m));
+                    TSNode grandChild = ts_node_child(child, m);
+                    std::string_view gcText = GetNodeView(grandChild, sourceCode);
+                    while (!gcText.empty() && isspace(static_cast<unsigned char>(gcText.front()))) gcText.remove_prefix(1);
+                    while (!gcText.empty() && isspace(static_cast<unsigned char>(gcText.back()))) gcText.remove_suffix(1);
+
+                    if (gcText == "shared") modifiers.isShared = true;
+                    else if (gcText == "external") modifiers.isExternal = true;
+                    else if (gcText == "final") { modifiers.isFinal = true; if (!isFuncAttr) modifiers.isDeclarationFinal = true; }
+                    else if (gcText == "abstract") { modifiers.isAbstract = true; if (!isFuncAttr) modifiers.isDeclarationAbstract = true; }
+                    else if (gcText == "override") modifiers.isOverride = true;
+                    else if (gcText == "explicit") modifiers.isExplicit = true;
+                    else if (gcText == "property") modifiers.isProperty = true;
+                    else if (gcText == "mixin") modifiers.isMixin = true;
+                    else if (gcText == "delete") modifiers.isDelete = true;
+                    else if (gcText == "private") modifiers.access = AccessModifier::Private;
+                    else if (gcText == "protected") modifiers.access = AccessModifier::Protected;
+                    else if (gcText == "public") modifiers.access = AccessModifier::Public;
+                    else if (gcText == "const") modifiers.isConst = true;
+
+                    TSSymbol tokSym = ts_node_symbol(grandChild);
                     ApplyModifierToken(tokSym, modifiers);
-                    // Track declaration-level modifiers separately from func_attributes
-                    if (tokSym == m_tokFinal)
+                    if (tokSym == m_tokFinal && !isFuncAttr)
                         modifiers.isDeclarationFinal = true;
-                    else if (tokSym == m_tokAbstract)
+                    else if (tokSym == m_tokAbstract && !isFuncAttr)
                         modifiers.isDeclarationAbstract = true;
-                }
-            }
-            else if (ts_node_symbol(child) == m_symFuncAttributes ||
-                     ts_node_symbol(child) == m_symSharedExternalModifier)
-            {
-                // shared_external_modifier is the strict subset the grammar gives to declarations
-                // that admit neither 'abstract' nor 'final' - functions, funcdefs, enums and
-                // interfaces. Without it here, `external void Think();` and `shared enum E` reached
-                // the symbol table with no modifiers set at all.
-                uint32_t modCount = ts_node_child_count(child);
-                for (uint32_t m = 0; m < modCount; ++m)
-                {
-                    ApplyModifierToken(ts_node_symbol(ts_node_child(child, m)), modifiers);
                 }
             }
             else if (!ts_node_is_named(child))
             {
                 ApplyModifierToken(ts_node_symbol(child), modifiers);
-            }
-            if (GetNodeText(child, sourceCode) == "delete")
-            {
-                modifiers.isDelete = true;
             }
         }
         return modifiers;

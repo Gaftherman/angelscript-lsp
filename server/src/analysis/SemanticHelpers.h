@@ -85,6 +85,36 @@ namespace angel_lsp::analysis
     bool IsReservedKeyword(const std::string &name);
 
     /**
+     * @brief Immutable core AngelScript primitive types.
+     */
+    [[nodiscard]] constexpr bool IsCorePrimitive(std::string_view typeName) noexcept
+    {
+        return typeName == "void"   || typeName == "bool"   ||
+               typeName == "int"    || typeName == "int8"   || typeName == "int16"  || typeName == "int32"  || typeName == "int64" ||
+               typeName == "uint"   || typeName == "uint8"  || typeName == "uint16" || typeName == "uint32" || typeName == "uint64" ||
+               typeName == "float"  || typeName == "double" ||
+               typeName == "auto";
+    }
+
+    /**
+     * @brief Configurable type resolution against host TypeConfig.
+     */
+    [[nodiscard]] inline bool IsPredefinedOrRegisteredType(
+        std::string_view typeName,
+        const config::TypeConfig &typeConfig) noexcept
+    {
+        if (IsCorePrimitive(typeName))
+        {
+            return true;
+        }
+        if (typeName == typeConfig.stringTypeName || typeName == typeConfig.arrayTypeName)
+        {
+            return true;
+        }
+        return typeConfig.registeredSymbols.contains(std::string(typeName));
+    }
+
+    /**
      * @brief Checks whether the given name is a primitive AngelScript type name.
      * @param name Symbol or type name to check.
      * @return True if name is a primitive type name.
