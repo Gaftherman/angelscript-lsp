@@ -2,10 +2,12 @@
 
 #include "analysis/Diagnostics.h"
 #include "analysis/LocalScopeCollector.h"
+#include "analysis/OverloadResolver.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/SignatureFormatter.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "i18n/i18n.h"
@@ -27,6 +29,18 @@ namespace angel_lsp::test
     {
         std::string targetFunctionSymbol;
     };
+
+    inline std::string FormatParamType(const analysis::ParameterInformation &p)
+    {
+        std::string s = p.typeName;
+        std::string ref = analysis::FormatParameterReference(p);
+        if (!ref.empty())
+        {
+            if (!s.empty()) s += " ";
+            s += ref;
+        }
+        return s;
+    }
 
     inline std::string GetNodeText(TSNode node, std::string_view sourceCode)
     {
@@ -155,6 +169,21 @@ namespace angel_lsp::test
                         copy.code = "E_SIGNATURE_MISMATCH_FUNC_HANDLE";
                         linesWithSpecificErrors.insert(copy.range.start.line);
                     }
+                    else if (copy.code == "as-err-mixin-not-a-type")
+                    {
+                        copy.code = "E_CANNOT_INSTANTIATE_MIXIN";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-mixin-inherit-class")
+                    {
+                        copy.code = "E_MIXIN_CANNOT_INHERIT_CLASS";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-interface-impl-missing")
+                    {
+                        copy.code = "E_UNIMPLEMENTED_INTERFACE_METHOD";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
                     rawErrors.push_back(copy);
                 }
             }
@@ -269,20 +298,109 @@ namespace angel_lsp::test
             TSNode root = ts_tree_root_node(m_tree);
             TSPoint pt{ pos.line, pos.character };
             TSNode node = ts_node_named_descendant_for_point_range(root, pt, pt);
-            while (!ts_node_is_null(node) && std::string_view(ts_node_type(node)) != "call_expression")
+            TSNode callNode = node;
+            while (!ts_node_is_null(callNode) && std::string_view(ts_node_type(callNode)) != "call_expression")
             {
-                node = ts_node_parent(node);
+                callNode = ts_node_parent(callNode);
             }
 
-            if (ts_node_is_null(node))
+            if (ts_node_is_null(callNode))
             {
+                TSNode binaryNode = node;
+                while (!ts_node_is_null(binaryNode) && std::string_view(ts_node_type(binaryNode)) != "binary_expression")
+                {
+                    binaryNode = ts_node_parent(binaryNode);
+                }
+
+                if (!ts_node_is_null(binaryNode))
+                {
+                    TSNode left = ts_node_child_by_field_name(binaryNode, "left", 4);
+                    TSNode opNode = ts_node_child_by_field_name(binaryNode, "operator", 8);
+                    TSNode right = ts_node_child_by_field_name(binaryNode, "right", 5);
+                    if (!ts_node_is_null(left) && !ts_node_is_null(right))
+                    {
+                        std::string op = GetNodeText(opNode, m_sourceCode);
+                        auto scopeRoot = const_cast<analysis::LocalScopeCollector&>(m_scopeCollector).CollectScopes(m_sourceCode, const_cast<parser::AngelScriptParser&>(m_parser));
+                        const analysis::Scope *scope = FindInnermostScope(scopeRoot.get(), pos.line, pos.character);
+                        std::string leftType = analysis::ResolveExpressionType(left, scope, m_symbolTable, m_sourceCode, m_uri);
+                        std::string rightType = analysis::ResolveExpressionType(right, scope, m_symbolTable, m_sourceCode, m_uri);
+                        std::string cleanLeft = analysis::CleanBaseType(leftType);
+                        std::string cleanRight = analysis::CleanBaseType(rightType);
+
+                        std::string opMethod, revOpMethod;
+                        if (op == "+") { opMethod = "opAdd"; revOpMethod = "opAdd_r"; }
+                        else if (op == "-") { opMethod = "opSub"; revOpMethod = "opSub_r"; }
+                        else if (op == "*") { opMethod = "opMul"; revOpMethod = "opMul_r"; }
+                        else if (op == "/") { opMethod = "opDiv"; revOpMethod = "opDiv_r"; }
+
+                        // 1. Check left opMethod
+                        if (!opMethod.empty() && !cleanLeft.empty())
+                        {
+                            std::vector<analysis::Symbol> candidates;
+                            for (const auto &typeName : analysis::GetInheritedTypeHierarchy(cleanLeft, m_symbolTable))
+                            {
+                                for (const auto &sym : m_symbolTable.FindSymbols(typeName + "::" + opMethod))
+                                {
+                                    if (sym.type == analysis::SymbolType::Function) candidates.push_back(sym);
+                                }
+                            }
+                            if (!candidates.empty())
+                            {
+                                auto match = analysis::ResolveBestOverload(candidates, { rightType }, m_symbolTable);
+                                if (match.bestCandidate)
+                                {
+                                    const auto &fn = match.bestCandidate->GetFunction();
+                                    std::string sig = match.bestCandidate->containerName + "::" + match.bestCandidate->name + "(";
+                                    for (size_t i = 0; i < fn.parameters.size(); ++i)
+                                    {
+                                        if (i > 0) sig += ", ";
+                                        sig += FormatParamType(fn.parameters[i]);
+                                    }
+                                    sig += ")";
+                                    if (fn.modifiers.isConst) sig += " const";
+                                    return ResolvedCallInfo{ sig };
+                                }
+                            }
+                        }
+
+                        // 2. Check right revOpMethod
+                        if (!revOpMethod.empty() && !cleanRight.empty())
+                        {
+                            std::vector<analysis::Symbol> candidates;
+                            for (const auto &typeName : analysis::GetInheritedTypeHierarchy(cleanRight, m_symbolTable))
+                            {
+                                for (const auto &sym : m_symbolTable.FindSymbols(typeName + "::" + revOpMethod))
+                                {
+                                    if (sym.type == analysis::SymbolType::Function) candidates.push_back(sym);
+                                }
+                            }
+                            if (!candidates.empty())
+                            {
+                                auto match = analysis::ResolveBestOverload(candidates, { leftType }, m_symbolTable);
+                                if (match.bestCandidate)
+                                {
+                                    const auto &fn = match.bestCandidate->GetFunction();
+                                    std::string sig = match.bestCandidate->containerName + "::" + match.bestCandidate->name + "(";
+                                    for (size_t i = 0; i < fn.parameters.size(); ++i)
+                                    {
+                                        if (i > 0) sig += ", ";
+                                        sig += FormatParamType(fn.parameters[i]);
+                                    }
+                                    sig += ")";
+                                    if (fn.modifiers.isConst) sig += " const";
+                                    return ResolvedCallInfo{ sig };
+                                }
+                            }
+                        }
+                    }
+                }
                 return std::nullopt;
             }
 
-            TSNode funcNode = ts_node_child_by_field_name(node, "function", 8);
-            if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
+            TSNode funcNode = ts_node_child_by_field_name(callNode, "function", 8);
+            if (ts_node_is_null(funcNode) && ts_node_child_count(callNode) > 0)
             {
-                funcNode = ts_node_child(node, 0);
+                funcNode = ts_node_child(callNode, 0);
             }
             if (ts_node_is_null(funcNode))
             {
@@ -315,6 +433,68 @@ namespace angel_lsp::test
                 }
             }
 
+            if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+            {
+                TSNode objNode = ts_node_child_by_field_name(funcNode, "object", 6);
+                TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
+                if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
+                {
+                    std::string objType = analysis::ResolveExpressionType(objNode, scope, m_symbolTable, m_sourceCode, m_uri);
+                    std::string cleanObj = analysis::CleanBaseType(objType);
+                    std::string memName = GetNodeText(memNode, m_sourceCode);
+                    while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front()))) memName.erase(memName.begin());
+                    while (!memName.empty() && isspace(static_cast<unsigned char>(memName.back()))) memName.pop_back();
+
+                    std::vector<std::string> argTypes;
+                    TSNode argsNode = ts_node_child_by_field_name(callNode, "arguments", 9);
+                    if (!ts_node_is_null(argsNode))
+                    {
+                        uint32_t count = ts_node_named_child_count(argsNode);
+                        for (uint32_t i = 0; i < count; ++i)
+                        {
+                            TSNode argChild = ts_node_named_child(argsNode, i);
+                            argTypes.push_back(analysis::ResolveExpressionType(argChild, scope, m_symbolTable, m_sourceCode, m_uri));
+                        }
+                    }
+
+                    std::vector<analysis::Symbol> candidates;
+                    auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanObj, m_symbolTable);
+                    for (const auto &typeName : hierarchy)
+                    {
+                        auto found = m_symbolTable.FindSymbols(typeName + "::" + memName);
+                        for (const auto &sym : found)
+                        {
+                            if (sym.type == analysis::SymbolType::Function)
+                            {
+                                candidates.push_back(sym);
+                            }
+                        }
+                        if (!candidates.empty())
+                        {
+                            break;
+                        }
+                    }
+
+                    if (!candidates.empty())
+                    {
+                        auto match = analysis::ResolveBestOverload(candidates, argTypes, m_symbolTable);
+                        if (match.bestCandidate)
+                        {
+                            const auto &fn = match.bestCandidate->GetFunction();
+                            std::string sig = match.bestCandidate->containerName + "::" + match.bestCandidate->name + "(";
+                            for (size_t i = 0; i < fn.parameters.size(); ++i)
+                            {
+                                if (i > 0) sig += ", ";
+                                sig += FormatParamType(fn.parameters[i]);
+                            }
+                            sig += ")";
+                            if (fn.modifiers.isConst) sig += " const";
+                            return ResolvedCallInfo{ sig };
+                        }
+                    }
+                }
+            }
+
             auto funcSymbols = m_symbolTable.FindSymbols(calleeText);
             for (const auto &s : funcSymbols)
             {
@@ -325,9 +505,10 @@ namespace angel_lsp::test
                     for (size_t i = 0; i < fn.parameters.size(); ++i)
                     {
                         if (i > 0) sig += ", ";
-                        sig += fn.parameters[i].typeName;
+                        sig += FormatParamType(fn.parameters[i]);
                     }
                     sig += ")";
+                    if (fn.modifiers.isConst) sig += " const";
                     return ResolvedCallInfo{ sig };
                 }
             }

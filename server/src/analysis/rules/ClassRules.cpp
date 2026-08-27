@@ -102,7 +102,7 @@ namespace angel_lsp::analysis::rules
          */
         void CheckInterfaceImplementation(const Symbol &sym, const ClassSignature &sig, const DiagnosticContext &ctx)
         {
-            // An abstract class is allowed to leave the interface to its own subclasses.
+            // An abstract class or mixin is allowed to leave the interface to its own subclasses.
             if (sig.modifiers.isAbstract || sig.modifiers.isMixin)
             {
                 return;
@@ -111,6 +111,8 @@ namespace angel_lsp::analysis::rules
             const SymbolTable &table = ctx.request.symbolTable;
             const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
             const auto implemented = CollectImplementedMethodNames(container, table, ctx.request.GetRuleIndex());
+
+            ankerl::unordered_dense::set<std::string> interfacesToCheck;
 
             for (const auto &baseName : sig.bases)
             {
@@ -121,13 +123,29 @@ namespace angel_lsp::analysis::rules
                     continue;
                 }
 
-                const bool isInterface = std::any_of(baseSymbols->begin(), baseSymbols->end(),
-                    [](const Symbol &base) { return base.type == SymbolType::Interface; });
-                if (!isInterface)
+                for (const auto &base : *baseSymbols)
                 {
-                    continue;
+                    if (base.type == SymbolType::Interface)
+                    {
+                        interfacesToCheck.insert(cleanBase);
+                    }
+                    else if (base.type == SymbolType::Class && base.GetClass().modifiers.isMixin)
+                    {
+                        for (const auto &mixinAncestor : GetInheritedTypeHierarchy(cleanBase, table))
+                        {
+                            const auto mixinAncestorSyms = table.FindSymbolsPtr(mixinAncestor);
+                            if (mixinAncestorSyms && std::any_of(mixinAncestorSyms->begin(), mixinAncestorSyms->end(),
+                                [](const Symbol &s) { return s.type == SymbolType::Interface; }))
+                            {
+                                interfacesToCheck.insert(mixinAncestor);
+                            }
+                        }
+                    }
                 }
+            }
 
+            for (const auto &cleanBase : interfacesToCheck)
+            {
                 for (const auto &methodName : ctx.request.GetRuleIndex().Members(cleanBase).methodNames)
                 {
                     if (!implemented.contains(methodName))
@@ -182,11 +200,6 @@ namespace angel_lsp::analysis::rules
                 const auto baseSymbols = ctx.request.symbolTable.FindSymbolsPtr(cleanBase);
                 if (!baseSymbols || baseSymbols->empty())
                 {
-                    // NOT IMPLEMENTED: as-err-base-not-found, and as-err-external-not-found for the
-                    // same reason. A base this analyzer cannot resolve is almost always a host
-                    // application type whose stub is not loaded, not a typo - and reporting those
-                    // would bury the real findings. Deciding it would need the workspace's stubs
-                    // known to be complete, which a single document's analysis cannot establish.
                     continue;
                 }
 
@@ -198,13 +211,16 @@ namespace angel_lsp::analysis::rules
                         if (!base.GetClass().modifiers.isMixin)
                         {
                             sawClassBase = true;
+                            if (sig.modifiers.isMixin)
+                            {
+                                ctx.LogRule("CheckBases", "as-err-mixin-inherit-class", sym);
+                                ctx.Emit(sym, "as-err-mixin-inherit-class", sym.name, cleanBase);
+                            }
                         }
                         // A mixin among the bases is not an error and never was: that is how a
                         // mixin is included. `class weapon_p90 : ScriptBasePlayerWeaponEntity,
                         // CS16BASE::WeaponBase` is the idiom, hundreds of corpus files use it, and
-                        // a real engine compiles it. as-err-mixin-as-base described the opposite
-                        // and has been deleted rather than left in the table for someone to
-                        // implement.
+                        // a real engine compiles it.
                         if (base.GetClass().modifiers.isFinal)
                         {
                             ctx.LogRule("CheckBases", "as-err-inherit-final", sym);
@@ -214,7 +230,7 @@ namespace angel_lsp::analysis::rules
                     }
                 }
 
-                if (sawClassBase && ++classBaseCount > 1)
+                if (sawClassBase && !sig.modifiers.isMixin && ++classBaseCount > 1)
                 {
                     ctx.LogRule("CheckBases", "as-err-multi-class-inherit", sym);
                     ctx.Emit(sym, "as-err-multi-class-inherit", sym.name);

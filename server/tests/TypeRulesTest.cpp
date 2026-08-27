@@ -551,6 +551,245 @@ TEST_SUITE("AngelScript_Funcdef_Verification")
     }
 }
 
+TEST_SUITE("AngelScript_EngineParity_Verification")
+{
+    TEST_CASE("Const Invariant: Non-const method called through const handle/reference")
+    {
+        // --- GROUND TRUTH ORACLE (asharness.exe) ---
+        // Snippet:
+        //   class Entity { int v; void Mutate() { v = 1; } }
+        //   void Take(const Entity &in e) { e.Mutate(); }
+        // Engine Verdict:
+        //   [ERROR] (2, 35) : No matching signatures to 'Entity::Mutate() const'
+        // -------------------------------------------
+
+        const char *script = R"(
+            class Entity {
+                int v;
+                void Mutate() { v = 1; }
+            }
+
+            void Take(const Entity &in e) {
+                e.Mutate(); // Must fail parity check
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_const_parity.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+
+        // Assert exact diagnostic parity
+        CHECK(diagnostics[0].code == "as-err-const-method-required");
+        CHECK(diagnostics[0].range.start.line == 7);
+        CHECK(diagnostics[0].range.start.character == 18); // Exact span over 'Mutate'
+    }
+
+    TEST_CASE("Operator Parity: Dual-dispatch precedence vs explicit conversion")
+    {
+        // --- GROUND TRUTH ORACLE (asharness.exe) ---
+        // Snippet: Matrix * Vector with opMul and opMul_r
+        // Engine Verdict: Successfully resolves to Vector::opMul_r with 0 errors
+        // -------------------------------------------
+
+        const char *script = R"(
+            class Matrix {
+                Matrix opMul(float s) const { return Matrix(); }
+            }
+            class Vector {
+                Vector opMul_r(const Matrix &in m) const { return Vector(); }
+            }
+
+            void Main() {
+                Matrix m;
+                Vector v;
+                Vector res = m * v; // Engine accepts via opMul_r
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_op_mul_parity.as", script);
+        REQUIRE(doc != nullptr);
+
+        // Ground truth: 0 diagnostics emitted by official compiler
+        CHECK(doc->GetDiagnostics().empty());
+
+        auto resolvedCall = doc->GetResolvedCallAt({11, 31});
+        REQUIRE(resolvedCall.has_value());
+        CHECK(resolvedCall->targetFunctionSymbol == "Vector::opMul_r(const Matrix &in) const");
+    }
+}
+
+TEST_SUITE("AngelScript_MixinClasses_Verification")
+{
+    TEST_CASE("Instantiation: Reject direct instantiation or handles of mixin classes")
+    {
+        const char *script = R"(
+            mixin class HelperMixin {
+                void Help() {}
+            }
+
+            void Main() {
+                HelperMixin m;                // Error: Cannot instantiate mixin
+                HelperMixin@ h = HelperMixin(); // Error: Cannot create handle to mixin
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_mixin_instantiate.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 2);
+
+        CHECK(diagnostics[0].code == "E_CANNOT_INSTANTIATE_MIXIN");
+        CHECK(diagnostics[0].range.start.line == 6);
+
+        CHECK(diagnostics[1].code == "E_CANNOT_INSTANTIATE_MIXIN");
+        CHECK(diagnostics[1].range.start.line == 7);
+    }
+
+    TEST_CASE("Method Precedence: Mixin overrides base class method, class overrides mixin")
+    {
+        const char *script = R"(
+            class Base {
+                string GetName() const { return "Base"; }
+            }
+
+            mixin class MixinA {
+                string GetName() const { return "MixinA"; }
+                string GetTag() const { return "TagA"; }
+            }
+
+            // Case 1: Mixin overrides Base::GetName
+            class DerivedA : Base, MixinA {}
+
+            // Case 2: DerivedB overrides MixinA::GetTag
+            class DerivedB : MixinA {
+                string GetTag() const { return "DerivedB"; }
+            }
+
+            void Main() {
+                DerivedA da;
+                auto name = da.GetName(); // Resolves to MixinA::GetName
+
+                DerivedB db;
+                auto tag = db.GetTag();   // Resolves to DerivedB::GetTag
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_mixin_precedence.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        auto callName = doc->GetResolvedCallAt({20, 29});
+        REQUIRE(callName.has_value());
+        CHECK(callName->targetFunctionSymbol == "MixinA::GetName() const");
+
+        auto callTag = doc->GetResolvedCallAt({23, 28});
+        REQUIRE(callTag.has_value());
+        CHECK(callTag->targetFunctionSymbol == "DerivedB::GetTag() const");
+    }
+
+    TEST_CASE("Property Precedence: Base class property shadows mixin property")
+    {
+        const char *script = R"(
+            class Base {
+                int score;
+            }
+
+            mixin class MixinScore {
+                float score; // Should not overwrite Base::score (int)
+            }
+
+            class Player : Base, MixinScore {}
+
+            void Main() {
+                Player p;
+                auto s = p.score; // Must deduce 'int' from Base, not 'float'
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_mixin_property.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        // Validate that p.score resolves to int
+        CHECK(doc->GetSymbolTypeAt({13, 22}) == "int");
+    }
+
+    TEST_CASE("Deferred Context: Mixin method referencing target class members")
+    {
+        const char *script = R"(
+            mixin class StateMixin {
+                void Increment() {
+                    count++; // 'count' is declared in the target class
+                }
+            }
+
+            class Counter : StateMixin {
+                int count = 0;
+            }
+
+            void Main() {
+                Counter c;
+                c.Increment(); // Valid: resolved in Counter scope
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_mixin_context.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+    }
+
+    TEST_CASE("Interfaces: Mixin implements partial interface, class implements remainder")
+    {
+        const char *script = R"(
+            interface IService {
+                void Start();
+                void Stop();
+            }
+
+            mixin class ServiceMixin : IService {
+                void Start() {} // Implements Start()
+            }
+
+            // Error: Missing Stop() implementation
+            class IncompleteService : ServiceMixin {}
+
+            // OK: Completes Stop() implementation
+            class CompleteService : ServiceMixin {
+                void Stop() {}
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_mixin_interface.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+
+        CHECK(diagnostics[0].code == "E_UNIMPLEMENTED_INTERFACE_METHOD");
+        CHECK(diagnostics[0].range.start.line == 11); // IncompleteService
+    }
+
+    TEST_CASE("Inheritance Restriction: Reject mixin inheriting from class")
+    {
+        const char *script = R"(
+            class PlainClass {}
+
+            mixin class BadMixin : PlainClass {} // Error: Mixin cannot inherit from class
+        )";
+
+        auto doc = CreateTestDocument("file:///test_bad_mixin_inheritance.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == "E_MIXIN_CANNOT_INHERIT_CLASS");
+        CHECK(diagnostics[0].range.start.line == 3);
+    }
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Type Rules Corpus Audit*"`)

@@ -157,6 +157,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-interface-constructor"] = "Interface '{}' cannot declare constructors or destructors.";
         m_messages["as-err-mixin-constructor"] = "Mixin class '{}' cannot declare a constructor.";
         m_messages["as-err-mixin-destructor"] = "Mixin class '{}' cannot declare a destructor.";
+        m_messages["as-err-mixin-inherit-class"] = "Mixin class '{}' cannot inherit from class '{}'.";
         m_messages["as-err-no-default-constructor"] = "Class '{}' does not have a default constructor.";
         m_messages["as-err-constructor-delegation-disallowed"] = "Constructor delegation is not supported in AngelScript.";
         m_messages["as-err-op-overload-global"] = "Operator overload '{}' must be a class member method.";
@@ -275,6 +276,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-interface-constructor"] = "La interfaz '{}' no puede declarar constructores ni destructores.";
             m_messages["as-err-mixin-constructor"] = "La clase mixin '{}' no puede declarar un constructor.";
             m_messages["as-err-mixin-destructor"] = "La clase mixin '{}' no puede declarar un destructor.";
+            m_messages["as-err-mixin-inherit-class"] = "La clase mixin '{}' no puede heredar de la clase '{}'.";
             m_messages["as-err-no-default-constructor"] = "La clase '{}' no tiene un constructor por defecto.";
             m_messages["as-err-constructor-delegation-disallowed"] = "La delegación de constructores no está soportada en AngelScript.";
             m_messages["as-err-op-overload-global"] = "La sobrecarga del operador '{}' debe ser un método miembro de clase.";

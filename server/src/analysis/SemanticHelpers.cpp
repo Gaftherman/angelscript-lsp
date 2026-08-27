@@ -373,12 +373,28 @@ namespace angel_lsp::analysis
                 if (sym.type == SymbolType::Class)
                 {
                     const auto &cls = sym.GetClass();
+                    // 1. Enqueue mixins first (so mixin methods take precedence over base class methods)
                     for (const auto &base : cls.bases)
                     {
                         std::string cleanBase = CleanBaseType(base);
-                        if (!cleanBase.empty() && visited.insert(cleanBase).second)
+                        if (!cleanBase.empty() && IsMixinClass(cleanBase, symbolTable))
                         {
-                            queue.push_back(cleanBase);
+                            if (visited.insert(cleanBase).second)
+                            {
+                                queue.push_back(cleanBase);
+                            }
+                        }
+                    }
+                    // 2. Enqueue non-mixin base classes
+                    for (const auto &base : cls.bases)
+                    {
+                        std::string cleanBase = CleanBaseType(base);
+                        if (!cleanBase.empty() && !IsMixinClass(cleanBase, symbolTable))
+                        {
+                            if (visited.insert(cleanBase).second)
+                            {
+                                queue.push_back(cleanBase);
+                            }
                         }
                     }
                 }
@@ -1070,7 +1086,27 @@ namespace angel_lsp::analysis
             while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front()))) memName.erase(memName.begin());
             while (!memName.empty() && isspace(static_cast<unsigned char>(memName.back()))) memName.pop_back();
             auto hierarchy = GetInheritedTypeHierarchy(cleanObj, symbolTable);
-            for (const auto &typeName : hierarchy)
+            std::vector<std::string> propSearchOrder;
+            if (!hierarchy.empty())
+            {
+                propSearchOrder.push_back(hierarchy[0]);
+                for (size_t i = 1; i < hierarchy.size(); ++i)
+                {
+                    if (!IsMixinClass(hierarchy[i], symbolTable))
+                    {
+                        propSearchOrder.push_back(hierarchy[i]);
+                    }
+                }
+                for (size_t i = 1; i < hierarchy.size(); ++i)
+                {
+                    if (IsMixinClass(hierarchy[i], symbolTable))
+                    {
+                        propSearchOrder.push_back(hierarchy[i]);
+                    }
+                }
+            }
+
+            for (const auto &typeName : propSearchOrder)
             {
                 std::string qName = typeName + "::" + memName;
                 auto found = symbolTable.FindSymbols(qName);

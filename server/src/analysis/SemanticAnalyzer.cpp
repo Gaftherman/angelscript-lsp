@@ -220,12 +220,35 @@ namespace angel_lsp::analysis
 
     void SemanticAnalyzer::CheckUndefinedIdentifiers(const Scope *scope, const ankerl::unordered_dense::set<std::string> &knownGlobalNames, DiagnosticContext &ctx) const
     {
+        std::vector<std::pair<uint32_t, uint32_t>> mixinRanges;
+        ctx.request.symbolTable.ForEachSymbolInFile(ctx.request.fileUri, [&](const std::string &, const std::vector<Symbol> &symbols) {
+            for (const auto &sym : symbols)
+            {
+                if (sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin)
+                {
+                    mixinRanges.push_back({ sym.startLine, sym.endLine });
+                }
+            }
+        });
+
         for (const auto &ref : scope->references)
         {
             if (ref.isMemberAccess)
                 continue;
 
             if (ref.name == "this" || ref.name == "value")
+                continue;
+
+            bool isInsideMixin = false;
+            for (const auto &r : mixinRanges)
+            {
+                if (ref.startLine >= r.first && ref.endLine <= r.second)
+                {
+                    isInsideMixin = true;
+                    break;
+                }
+            }
+            if (isInsideMixin)
                 continue;
 
             if (ResolveInScope(scope, ref.name) != nullptr)
@@ -422,6 +445,11 @@ namespace angel_lsp::analysis
                     {
                         ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
                                         "as-err-void-variable", def.name, DiagnosticSeverity::Error);
+                    }
+                    else if (IsMixinClass(base, ctx.request.symbolTable))
+                    {
+                        ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                                        "as-err-mixin-not-a-type", base, DiagnosticSeverity::Error);
                     }
                     else if (def.isHandleType && IsPrimitiveTypeName(base))
                     {

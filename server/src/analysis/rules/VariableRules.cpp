@@ -147,6 +147,13 @@ namespace angel_lsp::analysis::rules
             // by value compiles, while `array<IThing>` fails with a message about a missing
             // default factory rather than about instantiating an interface. Found by the corpus
             // audit, which flagged `array<IContext@>` - ordinary, correct code.
+            if (IsMixinClass(baseType, ctx.request.symbolTable))
+            {
+                ctx.LogRule("CheckDeclaredType", "as-err-mixin-not-a-type", sym);
+                ctx.Emit(sym, "as-err-mixin-not-a-type", baseType);
+                return;
+            }
+
             if (!sig.modifiers.isHandle && sig.templateName.empty())
             {
                 switch (ClassifyNonInstantiable(baseType, ctx.request.symbolTable))
