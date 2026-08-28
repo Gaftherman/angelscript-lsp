@@ -204,14 +204,14 @@ namespace angel_lsp::analysis
     bool SymbolTable::HasSymbol(const std::string &qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        std::string search = std::string(CleanScope(qualifiedName));
+        std::string_view search = CleanScope(qualifiedName);
         return m_symbols.contains(search);
     }
 
     std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindSymbolsPtr(const std::string &qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        std::string search = std::string(CleanScope(qualifiedName));
+        std::string_view search = CleanScope(qualifiedName);
         auto it = m_symbols.find(search);
         return it != m_symbols.end() ? it->second : nullptr;
     }
@@ -219,7 +219,7 @@ namespace angel_lsp::analysis
     std::vector<Symbol> SymbolTable::FindSymbols(const std::string &qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        std::string search = std::string(CleanScope(qualifiedName));
+        std::string_view search = CleanScope(qualifiedName);
         auto it = m_symbols.find(search);
         return it != m_symbols.end() ? *it->second : std::vector<Symbol>{};
     }
@@ -227,11 +227,28 @@ namespace angel_lsp::analysis
     std::optional<Symbol> SymbolTable::FindFirstSymbol(const std::string &qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        std::string search = std::string(CleanScope(qualifiedName));
+        std::string_view search = CleanScope(qualifiedName);
         auto it = m_symbols.find(search);
         if (it != m_symbols.end() && !it->second->empty())
             return it->second->front();
         return std::nullopt;
+    }
+
+    std::optional<Symbol> SymbolTable::LookupSymbol(const std::string &name) const
+    {
+        return FindFirstSymbol(name);
+    }
+
+    void SymbolTable::InsertSymbol(const std::string &name, SymbolKind kind, const std::string &type)
+    {
+        Symbol sym;
+        sym.name = name;
+        sym.type = kind;
+        VariableSignature varSig;
+        varSig.typeName = type;
+        varSig.baseTypeName = type;
+        sym.signature = varSig;
+        AddSymbol(sym);
     }
 
     bool SymbolTable::HasSymbolAnywhere(const std::string &name) const

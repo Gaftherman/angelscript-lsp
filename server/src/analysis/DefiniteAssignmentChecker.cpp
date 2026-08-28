@@ -1,5 +1,6 @@
 #include "analysis/DefiniteAssignmentChecker.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/TypeExtraction.h"
 #include "analysis/OverloadResolver.h"
 #include "utils/Utils.h"
 #include <ankerl/unordered_dense.h>
@@ -338,13 +339,12 @@ namespace angel_lsp::analysis
                         typeNode = ts_node_child_by_field_name(node, "type", 4);
                     }
 
-                    std::string typeName;
+                    bool isPrimitive = false;
                     if (!ts_node_is_null(typeNode))
                     {
-                        typeName = CleanBaseType(NodeText(typeNode, m_request.sourceCode));
+                        TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, std::string(m_request.sourceCode));
+                        isPrimitive = (IsPrimitiveTypeName(typeInfo.baseTypeName) && !typeInfo.isArray && !typeInfo.isHandle && typeInfo.templateName.empty());
                     }
-
-                    bool isPrimitive = IsPrimitiveTypeName(typeName);
 
                     uint32_t count = ts_node_named_child_count(node);
                     for (uint32_t i = 0; i < count; ++i)

@@ -251,7 +251,7 @@ namespace angel_lsp::analysis
 
         for (const auto &ref : scope->references)
         {
-            if (ref.isMemberAccess)
+            if (ref.isMemberAccess || ref.isTypeSpecifier)
                 continue;
 
             if (ref.name == "this" || ref.name == "value")
@@ -458,20 +458,25 @@ namespace angel_lsp::analysis
             {
                 if (def.kind == LocalDefinitionKind::Variable)
                 {
+                    uint32_t tStartLine = (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine) ? def.typeStartLine : def.startLine;
+                    uint32_t tStartChar = (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine) ? def.typeStartCharacter : def.startCharacter;
+                    uint32_t tEndLine = (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine) ? def.typeEndLine : def.endLine;
+                    uint32_t tEndChar = (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine) ? def.typeEndCharacter : def.endCharacter;
+
                     std::string base = CleanBaseType(def.typeName);
                     if (def.typeName == "void" || base == "void")
                     {
-                        ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                        ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar,
                                         "as-err-void-variable", def.name, DiagnosticSeverity::Error);
                     }
                     else if (IsMixinClass(base, ctx.request.symbolTable))
                     {
-                        ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                        ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar,
                                         "as-err-mixin-not-a-type", base, DiagnosticSeverity::Error);
                     }
-                    else if (def.isHandleType && IsPrimitiveTypeName(base))
+                    else if (def.isHandleType && def.typeKind != TypeKind::Array && IsPrimitiveTypeName(base))
                     {
-                        ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                        ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar,
                                         "as-err-handle-on-primitive", base, DiagnosticSeverity::Error);
                     }
                     else
@@ -481,22 +486,35 @@ namespace angel_lsp::analysis
                         {
                             if (!IsKnownType(tmplInfo.containerName, ctx))
                             {
-                                ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                                ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar,
                                                 "as-err-unresolved-type", tmplInfo.containerName, DiagnosticSeverity::Error);
                             }
-                            for (const auto &arg : tmplInfo.templateArgs)
+                            for (size_t i = 0; i < tmplInfo.templateArgs.size(); ++i)
                             {
-                                std::string cleanArg = CleanBaseType(arg);
+                                std::string cleanArg = CleanBaseType(tmplInfo.templateArgs[i]);
                                 if (!IsKnownType(cleanArg, ctx))
                                 {
-                                    ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                                    uint32_t sLine = tStartLine;
+                                    uint32_t sChar = tStartChar;
+                                    uint32_t eLine = tEndLine;
+                                    uint32_t eChar = tEndChar;
+
+                                    if (i < def.templateArgPositions.size())
+                                    {
+                                        sLine = def.templateArgPositions[i].startLine;
+                                        sChar = def.templateArgPositions[i].startCharacter;
+                                        eLine = def.templateArgPositions[i].endLine;
+                                        eChar = def.templateArgPositions[i].endCharacter;
+                                    }
+
+                                    ctx.EmitAtRange(sLine, sChar, eLine, eChar,
                                                     "as-err-unresolved-type", cleanArg, DiagnosticSeverity::Error);
                                 }
                             }
                         }
                         else if (!base.empty() && base != "auto" && !IsKnownType(base, ctx))
                         {
-                            ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                            ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar,
                                             "as-err-unresolved-type", base, DiagnosticSeverity::Error);
                         }
                     }

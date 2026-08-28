@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/SymbolTable.h"
+#include "utils/Constants.h"
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
@@ -16,7 +17,7 @@ namespace angel_lsp::features
     {
         std::string_view query;
         const analysis::SymbolTable &symbolTable;
-        size_t maxResults = 100;
+        size_t maxResults = constants::limits::DefaultWorkspaceSymbolResults;
     };
 
     /**

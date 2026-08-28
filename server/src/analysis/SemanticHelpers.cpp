@@ -6,32 +6,29 @@
 
 namespace angel_lsp::analysis
 {
-    namespace
+    std::string CleanExpressionType(std::string_view typeName)
     {
-        std::string CleanExpressionType(std::string_view typeName)
+        while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
         {
-            while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
-            {
-                typeName.remove_prefix(1);
-            }
-            while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == '\t'))
-            {
-                typeName.remove_suffix(1);
-            }
-            if (typeName.starts_with("const "))
-            {
-                typeName.remove_prefix(6);
-            }
-            while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
-            {
-                typeName.remove_prefix(1);
-            }
-            while (!typeName.empty() && (typeName.back() == '&' || typeName.back() == ' ' || typeName.back() == '\t'))
-            {
-                typeName.remove_suffix(1);
-            }
-            return std::string(typeName);
+            typeName.remove_prefix(1);
         }
+        while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == '\t'))
+        {
+            typeName.remove_suffix(1);
+        }
+        if (typeName.starts_with("const "))
+        {
+            typeName.remove_prefix(6);
+        }
+        while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
+        {
+            typeName.remove_prefix(1);
+        }
+        while (!typeName.empty() && (typeName.back() == '&' || typeName.back() == ' ' || typeName.back() == '\t'))
+        {
+            typeName.remove_suffix(1);
+        }
+        return std::string(typeName);
     }
 
     std::string GetNodeText(TSNode node, std::string_view sourceCode)
@@ -279,6 +276,34 @@ namespace angel_lsp::analysis
             return CleanBaseType(inner);
         }
 
+        return result;
+    }
+
+    std::string SubstituteTypeParam(std::string_view typeStr, std::string_view paramName, std::string_view concreteType)
+    {
+        if (typeStr.empty() || paramName.empty())
+        {
+            return std::string(typeStr);
+        }
+        std::string result;
+        size_t i = 0;
+        while (i < typeStr.size())
+        {
+            if (typeStr.substr(i).starts_with(paramName))
+            {
+                bool leftBoundary = (i == 0) || (!isalnum(static_cast<unsigned char>(typeStr[i - 1])) && typeStr[i - 1] != '_');
+                size_t nextIdx = i + paramName.size();
+                bool rightBoundary = (nextIdx >= typeStr.size()) || (!isalnum(static_cast<unsigned char>(typeStr[nextIdx])) && typeStr[nextIdx] != '_');
+                if (leftBoundary && rightBoundary)
+                {
+                    result.append(concreteType);
+                    i = nextIdx;
+                    continue;
+                }
+            }
+            result.push_back(typeStr[i]);
+            ++i;
+        }
         return result;
     }
 
@@ -1555,6 +1580,18 @@ namespace angel_lsp::analysis
                 }
             }
             return "";
+        }
+
+        // Initializer list (e.g. {123}, {"s"})
+        if (nodeType == "initializer_list")
+        {
+            uint32_t count = ts_node_named_child_count(exprNode);
+            if (count > 0)
+            {
+                std::string elemType = ResolveExpressionType(ts_node_named_child(exprNode, 0), scope, symbolTable, sourceCode, uri);
+                return "{" + elemType + "}";
+            }
+            return "{}";
         }
 
         return "";

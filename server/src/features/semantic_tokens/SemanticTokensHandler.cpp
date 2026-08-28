@@ -129,6 +129,47 @@ namespace angel_lsp::features
             }
             return lines;
         }
+
+        [[nodiscard]] inline bool IsTemplatePunctuationNode(TSNode node) noexcept
+        {
+            TSNode parent = ts_node_parent(node);
+            if (ts_node_is_null(parent))
+            {
+                return false;
+            }
+
+            std::string_view parentType = ts_node_type(parent);
+            if (parentType == "type_arguments" ||
+                parentType == "template_type" ||
+                parentType == "template_type_list" ||
+                parentType == "cast_expression" ||
+                parentType == "template_parameter_list")
+            {
+                return true;
+            }
+
+            TSNode grandParent = ts_node_parent(parent);
+            if (!ts_node_is_null(grandParent))
+            {
+                std::string_view grandParentType = ts_node_type(grandParent);
+                if (grandParentType == "type_arguments" ||
+                    grandParentType == "template_type" ||
+                    grandParentType == "template_type_list" ||
+                    grandParentType == "cast_expression" ||
+                    grandParentType == "template_parameter_list")
+                {
+                    if (parentType != "binary_expression" &&
+                        parentType != "assignment_expression" &&
+                        parentType != "unary_expression" &&
+                        parentType != "postfix_expression")
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
     }
 
     const lsp::SemanticTokensLegend &GetSemanticTokensLegend()
@@ -182,12 +223,17 @@ namespace angel_lsp::features
             return lsp::SemanticTokens{};
         }
 
-        const TSLanguage *lang = tree_sitter_angelscript();
-        uint32_t errorOffset = 0;
-        TSQueryError errorType = TSQueryErrorNone;
-        TSQuery *query = ts_query_new(lang, parser::queries::HIGHLIGHTS_QUERY,
-                                     static_cast<uint32_t>(strlen(parser::queries::HIGHLIGHTS_QUERY)),
-                                     &errorOffset, &errorType);
+        static TSQuery *s_highlightsQuery = []() -> TSQuery *
+        {
+            const TSLanguage *lang = tree_sitter_angelscript();
+            uint32_t errorOffset = 0;
+            TSQueryError errorType = TSQueryErrorNone;
+            return ts_query_new(lang, parser::queries::HIGHLIGHTS_QUERY,
+                                static_cast<uint32_t>(strlen(parser::queries::HIGHLIGHTS_QUERY)),
+                                &errorOffset, &errorType);
+        }();
+
+        TSQuery *query = s_highlightsQuery;
         if (!query)
         {
             return lsp::SemanticTokens{};
@@ -317,7 +363,7 @@ namespace angel_lsp::features
                 tokenType = Type_Keyword;
                 priority = 8;
             }
-            else if (captureName == "operator" || captureName == "punctuation.special")
+            else if (captureName == "operator" || captureName == "punctuation.special" || captureName == "punctuation.bracket")
             {
                 tokenType = Type_Operator;
                 priority = 4;
@@ -359,6 +405,11 @@ namespace angel_lsp::features
             {
                 if (endPoint.column > startPoint.column)
                 {
+                    if (tokenType == Type_Operator && IsTemplatePunctuationNode(node))
+                    {
+                        continue;
+                    }
+
                     rawTokens.push_back(RawToken{
                         startPoint.row,
                         startPoint.column,
@@ -398,7 +449,6 @@ namespace angel_lsp::features
         }
 
         ts_query_cursor_delete(cursor);
-        ts_query_delete(query);
 
         if (rawTokens.empty())
         {

@@ -73,6 +73,16 @@ namespace angel_lsp::analysis
         UInt = UInt32
     };
 
+    /**
+     * @brief Syntactic placement of declaration modifiers and attributes.
+     */
+    enum class ModifierPlacement : uint8_t
+    {
+        None = 0,
+        Prefix,   ///< Placed before type (e.g., 'final class Foo', 'abstract void Bar()')
+        Trailing  ///< Placed after parameter list (e.g., 'void Bar() final', 'void Bar() override')
+    };
+
     struct SymbolModifiers
     {
         AccessModifier access = AccessModifier::Public;
@@ -91,6 +101,32 @@ namespace angel_lsp::analysis
         bool isExternal = false;
         bool isReturnReference = false;
         ParameterModifier paramModifier = ParameterModifier::None;
+
+        [[nodiscard]] ModifierPlacement GetFinalPlacement() const noexcept
+        {
+            if (isDeclarationFinal) return ModifierPlacement::Prefix;
+            if (isFinal) return ModifierPlacement::Trailing;
+            return ModifierPlacement::None;
+        }
+
+        [[nodiscard]] ModifierPlacement GetAbstractPlacement() const noexcept
+        {
+            if (isDeclarationAbstract) return ModifierPlacement::Prefix;
+            if (isAbstract) return ModifierPlacement::Trailing;
+            return ModifierPlacement::None;
+        }
+
+        void SetFinalPlacement(ModifierPlacement placement) noexcept
+        {
+            isFinal = (placement != ModifierPlacement::None);
+            isDeclarationFinal = (placement == ModifierPlacement::Prefix);
+        }
+
+        void SetAbstractPlacement(ModifierPlacement placement) noexcept
+        {
+            isAbstract = (placement != ModifierPlacement::None);
+            isDeclarationAbstract = (placement == ModifierPlacement::Prefix);
+        }
     };
 
     struct ParameterInformation
@@ -365,6 +401,8 @@ namespace angel_lsp::analysis
         }
     };
 
+    using SymbolKind = SymbolType;
+
     class SymbolTable
     {
     public:
@@ -372,6 +410,7 @@ namespace angel_lsp::analysis
         ~SymbolTable() = default;
 
         void AddSymbol(const Symbol &symbol);
+        void InsertSymbol(const std::string &name, SymbolKind kind, const std::string &type = "");
         void ClearDocumentSymbols(const std::string &fileUri);
 
         /** @brief Atomically swaps every symbol belonging to fileUri for the ones collected in staging.
@@ -396,6 +435,7 @@ namespace angel_lsp::analysis
         std::vector<Symbol> FindSymbols(const std::string &qualifiedName) const;
 
         std::optional<Symbol> FindFirstSymbol(const std::string &qualifiedName) const;
+        std::optional<Symbol> LookupSymbol(const std::string &name) const;
 
         /** @brief Returns a copy of all symbols currently present in the table. */
         std::vector<Symbol> GetAllSymbols() const;
@@ -442,8 +482,21 @@ namespace angel_lsp::analysis
         /** @brief Erases every symbol belonging to fileUri, touching only that file's buckets. Caller holds the write lock. */
         void EraseDocumentLocked(const std::string &fileUri);
 
+        struct TransparentStringHash
+        {
+            using is_transparent = void;
+            [[nodiscard]] size_t operator()(std::string_view sv) const noexcept
+            {
+                return ankerl::unordered_dense::hash<std::string_view>{}(sv);
+            }
+            [[nodiscard]] size_t operator()(const std::string &s) const noexcept
+            {
+                return ankerl::unordered_dense::hash<std::string_view>{}(s);
+            }
+        };
+
         mutable std::shared_mutex m_mutex;
-        ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>> m_symbols;
+        ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>, TransparentStringHash, std::equal_to<>> m_symbols;
 
         /** @brief Bucket keys touched by each document, so a per-file walk need not scan the rest. */
         ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_keysByFile;

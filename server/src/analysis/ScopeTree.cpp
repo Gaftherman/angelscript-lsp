@@ -47,6 +47,12 @@ namespace angel_lsp::analysis
         m_roots[fileUri] = std::shared_ptr<Scope>(std::move(root));
     }
 
+    void ScopeIndex::SetScopeTree(const std::string &fileUri, std::shared_ptr<const Scope> root)
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        m_roots[fileUri] = std::const_pointer_cast<Scope>(root);
+    }
+
     void ScopeIndex::ClearDocument(const std::string &fileUri)
     {
         std::unique_lock<std::shared_mutex> lock(m_mutex);

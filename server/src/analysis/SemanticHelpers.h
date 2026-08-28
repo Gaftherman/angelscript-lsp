@@ -68,6 +68,13 @@ namespace angel_lsp::analysis
     TemplateTypeInfo ParseTemplateType(std::string_view typeName);
 
     /**
+     * @brief Normalizes a type name by stripping const, references, and whitespace.
+     * @param typeName The raw type name string.
+     * @return Cleaned type name.
+     */
+    std::string CleanExpressionType(std::string_view typeName);
+
+    /**
      * @brief Information about an enclosing container in the AST hierarchy.
      */
     struct ContainerInfo
@@ -274,6 +281,15 @@ namespace angel_lsp::analysis
         const std::vector<ContainerInfo> &containers,
         const std::string &name,
         const std::vector<std::string> &usingNamespaces = {});
+
+    /**
+     * @brief Substitutes a generic type parameter (e.g. "T") with a concrete type argument (e.g. "int" or "array<int>").
+     * @param typeStr The type string to process.
+     * @param paramName The template parameter name to replace (e.g. "T").
+     * @param concreteType The replacement type argument.
+     * @return Transformed type string with exact identifier boundaries.
+     */
+    std::string SubstituteTypeParam(std::string_view typeStr, std::string_view paramName, std::string_view concreteType);
 
     /**
      * @brief Performs container-aware, using-aware and inheritance-aware symbol lookup for a name at an AST node.

@@ -186,6 +186,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-invalid-cast"] = "Cannot cast '{}' to '{}'. The types are unrelated and no 'opCast'/'opImplCast' overload is declared.";
         m_messages["as-err-uninitialized-variable-read"] = "Local variable '{}' is used before it is initialized.";
         m_messages["as-err-call-no-matching-signature"] = "No matching signatures to call '{}'.";
+        m_messages["as-err-no-matching-constructor"] = "No matching signatures to '{}'.";
         m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous.";
         m_messages["as-err-ambiguous-identifier"] = "Ambiguous symbol '{}'.";
         m_messages["as-err-undefined-namespace"] = "Undefined namespace '{}'.";
@@ -322,6 +323,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-invalid-cast"] = "No se puede convertir '{}' a '{}' con cast. Los tipos no están relacionados y no hay sobrecarga 'opCast'/'opImplCast'.";
             m_messages["as-err-uninitialized-variable-read"] = "La variable local '{}' se usa antes de ser inicializada.";
             m_messages["as-err-call-no-matching-signature"] = "No hay firmas coincidentes para la llamada a '{}'.";
+            m_messages["as-err-no-matching-constructor"] = "No coinciden las firmas con '{}'.";
             m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";
             m_messages["as-err-ambiguous-identifier"] = "Símbolo ambiguo '{}'.";
             m_messages["as-err-undefined-namespace"] = "Namespace no definido '{}'.";

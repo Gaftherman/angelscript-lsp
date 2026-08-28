@@ -372,8 +372,24 @@ namespace angel_lsp::analysis
                     return;
                 }
 
-                const std::string objectType = CleanBaseType(ResolveExpressionType(
-                    objectNode, scope, table, request.sourceCode, ctx.request.fileUri));
+                const std::string rawObjType = ResolveExpressionType(
+                    objectNode, scope, table, request.sourceCode, ctx.request.fileUri);
+                std::string objectType = CleanBaseType(rawObjType);
+                std::vector<std::string> templateArgs;
+                if (rawObjType.find('<') != std::string::npos && rawObjType.ends_with('>'))
+                {
+                    size_t openBracket = rawObjType.find('<');
+                    std::string tmplName = rawObjType.substr(0, openBracket);
+                    while (!tmplName.empty() && isspace(static_cast<unsigned char>(tmplName.front()))) tmplName.erase(tmplName.begin());
+                    while (!tmplName.empty() && isspace(static_cast<unsigned char>(tmplName.back()))) tmplName.pop_back();
+                    if (table.FindSymbolsPtr(tmplName))
+                    {
+                        objectType = tmplName;
+                        std::string argStr = rawObjType.substr(openBracket + 1, rawObjType.size() - openBracket - 2);
+                        templateArgs.push_back(argStr);
+                    }
+                }
+
                 if (objectType.empty() || !HierarchyIsFullyVisible(objectType, table))
                 {
                     return;
@@ -381,6 +397,22 @@ namespace angel_lsp::analysis
 
                 reportedName = NodeText(memberNode, request.sourceCode);
                 candidates = FindMethodCandidates(objectType, reportedName, table);
+                if (!templateArgs.empty())
+                {
+                    for (auto &sym : candidates)
+                    {
+                        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                        {
+                            auto fn = sym.GetFunction();
+                            for (auto &p : fn.parameters)
+                            {
+                                p.typeName = SubstituteTypeParam(p.typeName, "T", templateArgs[0]);
+                                p.baseTypeName = SubstituteTypeParam(p.baseTypeName, "T", templateArgs[0]);
+                            }
+                            sym.signature = fn;
+                        }
+                    }
+                }
             }
             else if (calleeType == "scoped_identifier" || calleeType == "identifier")
             {
@@ -648,13 +680,267 @@ namespace angel_lsp::analysis
             }
         }
 
+        void CheckVariableDirectInitialization(
+            TSNode varDeclNode,
+            const CallCheckRequest &request,
+            DiagnosticContext &ctx)
+        {
+            TSNode varTypeNode = ts_node_child_by_field_name(varDeclNode, "var_type", 8);
+            if (ts_node_is_null(varTypeNode))
+            {
+                varTypeNode = ts_node_child_by_field_name(varDeclNode, "type", 4);
+            }
+            if (ts_node_is_null(varTypeNode))
+            {
+                uint32_t count = ts_node_named_child_count(varDeclNode);
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    TSNode child = ts_node_named_child(varDeclNode, i);
+                    if (std::string_view(ts_node_type(child)) == "type")
+                    {
+                        varTypeNode = child;
+                        break;
+                    }
+                }
+            }
+            if (ts_node_is_null(varTypeNode))
+            {
+                return;
+            }
+
+            std::string rawTypeStr = NodeText(varTypeNode, request.sourceCode);
+            std::string declaredType = CleanExpressionType(rawTypeStr);
+            if (declaredType.empty() || declaredType == "auto")
+            {
+                return;
+            }
+
+            TemplateTypeInfo tmplInfo = ParseTemplateType(declaredType);
+            std::string baseName = tmplInfo.containerName.empty() ? declaredType : tmplInfo.containerName;
+            baseName = CleanBaseType(baseName);
+
+            uint32_t declaratorCount = ts_node_named_child_count(varDeclNode);
+            for (uint32_t d = 0; d < declaratorCount; ++d)
+            {
+                TSNode declarator = ts_node_named_child(varDeclNode, d);
+                if (std::string_view(ts_node_type(declarator)) != "variable_declarator")
+                {
+                    continue;
+                }
+
+                TSNode argListNode = ts_node_child_by_field_name(declarator, "arguments", 9);
+                if (ts_node_is_null(argListNode))
+                {
+                    continue;
+                }
+
+                const TSPoint start = ts_node_start_point(declarator);
+                const Scope *scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
+
+                std::vector<TSNode> argNodes = GetArgumentNodes(argListNode);
+                uint32_t argCount = static_cast<uint32_t>(argNodes.size());
+
+                std::vector<std::string> argTypes;
+                for (TSNode argNode : argNodes)
+                {
+                    argTypes.push_back(ResolveExpressionType(argNode, scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
+                }
+
+                if (IsCorePrimitive(baseName))
+                {
+                    if (argCount != 1)
+                    {
+                        const TSPoint aStart = ts_node_start_point(argListNode);
+                        const TSPoint aEnd = ts_node_end_point(argListNode);
+                        std::string sigAttempt = declaredType + "(";
+                        for (size_t a = 0; a < argTypes.size(); ++a)
+                        {
+                            if (a > 0) sigAttempt += ", ";
+                            sigAttempt += argTypes[a];
+                        }
+                        sigAttempt += ")";
+                        ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                        "as-err-no-matching-constructor", sigAttempt);
+                    }
+                    else
+                    {
+                        ParameterInformation dummyParam{baseName, baseName, "", ""};
+                        int score = ScoreArgumentMatch(argTypes[0], dummyParam, ctx.request.symbolTable);
+                        if (score >= 999)
+                        {
+                            const TSPoint aStart = ts_node_start_point(argListNode);
+                            const TSPoint aEnd = ts_node_end_point(argListNode);
+                            ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                            "as-err-no-implicit-conversion", argTypes[0], baseName);
+                        }
+                    }
+                    continue;
+                }
+
+                // Look up constructors
+                std::vector<Symbol> rawConstructors;
+                auto found = ctx.request.symbolTable.FindSymbols(baseName + "::" + baseName);
+                for (const auto &s : found)
+                {
+                    if (s.type == SymbolType::Function)
+                    {
+                        rawConstructors.push_back(s);
+                    }
+                }
+                if (rawConstructors.empty())
+                {
+                    auto found2 = ctx.request.symbolTable.FindSymbols(baseName);
+                    for (const auto &s : found2)
+                    {
+                        if (s.type == SymbolType::Function)
+                        {
+                            rawConstructors.push_back(s);
+                        }
+                    }
+                }
+
+                if (rawConstructors.empty())
+                {
+                    if (ctx.request.symbolTable.HasSymbolAnywhere(baseName) || IsKnownType(baseName, ctx))
+                    {
+                        const TSPoint aStart = ts_node_start_point(argListNode);
+                        const TSPoint aEnd = ts_node_end_point(argListNode);
+                        std::string sigAttempt = declaredType + "(";
+                        for (size_t a = 0; a < argTypes.size(); ++a)
+                        {
+                            if (a > 0) sigAttempt += ", ";
+                            sigAttempt += argTypes[a];
+                        }
+                        sigAttempt += ")";
+                        ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                        "as-err-no-matching-constructor", sigAttempt);
+                    }
+                    continue;
+                }
+
+                // Template specialization
+                std::vector<Symbol> candidates;
+                if (!tmplInfo.templateArgs.empty())
+                {
+                    std::vector<std::string> templateParams;
+                    auto classSymbols = ctx.request.symbolTable.FindSymbols(baseName);
+                    for (const auto &cs : classSymbols)
+                    {
+                        if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
+                        {
+                            templateParams = cs.GetClass().templateParams;
+                            break;
+                        }
+                    }
+                    if (templateParams.empty())
+                    {
+                        templateParams.push_back("T");
+                    }
+
+                    for (const auto &sym : rawConstructors)
+                    {
+                        Symbol specSym = sym;
+                        if (std::holds_alternative<FunctionSignature>(specSym.signature))
+                        {
+                            auto &fn = specSym.GetFunction();
+                            for (auto &param : fn.parameters)
+                            {
+                                for (size_t t = 0; t < templateParams.size() && t < tmplInfo.templateArgs.size(); ++t)
+                                {
+                                    const std::string &paramName = templateParams[t];
+                                    const std::string &concreteArg = tmplInfo.templateArgs[t];
+                                    if (param.baseTypeName == paramName)
+                                    {
+                                        param.baseTypeName = concreteArg;
+                                    }
+                                    size_t pos = 0;
+                                    while ((pos = param.typeName.find(paramName, pos)) != std::string::npos)
+                                    {
+                                        bool beforeOk = (pos == 0 || !isalnum(static_cast<unsigned char>(param.typeName[pos - 1])));
+                                        bool afterOk = (pos + paramName.size() >= param.typeName.size() || !isalnum(static_cast<unsigned char>(param.typeName[pos + paramName.size()])));
+                                        if (beforeOk && afterOk)
+                                        {
+                                            param.typeName.replace(pos, paramName.size(), concreteArg);
+                                            pos += concreteArg.size();
+                                        }
+                                        else
+                                        {
+                                            pos += paramName.size();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        candidates.push_back(std::move(specSym));
+                    }
+                }
+                else
+                {
+                    candidates = rawConstructors;
+                }
+
+                // Check arity
+                std::vector<Symbol> matchingArityCandidates;
+                for (const auto &sym : candidates)
+                {
+                    if (std::holds_alternative<FunctionSignature>(sym.signature))
+                    {
+                        const Arity arity = ArityOf(sym.GetFunction());
+                        if (arity.variadic || (argCount >= arity.required && argCount <= arity.maximum))
+                        {
+                            matchingArityCandidates.push_back(sym);
+                        }
+                    }
+                }
+
+                if (matchingArityCandidates.empty())
+                {
+                    const TSPoint aStart = ts_node_start_point(argListNode);
+                    const TSPoint aEnd = ts_node_end_point(argListNode);
+                    std::string sigAttempt = declaredType + "(";
+                    for (size_t a = 0; a < argTypes.size(); ++a)
+                    {
+                        if (a > 0) sigAttempt += ", ";
+                        sigAttempt += argTypes[a];
+                    }
+                    sigAttempt += ")";
+                    ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                    "as-err-no-matching-constructor", sigAttempt);
+                    continue;
+                }
+
+                // Score matching arity overloads
+                auto match = ResolveBestOverload(matchingArityCandidates, argTypes, ctx.request.symbolTable);
+                if (match.bestScore >= 999 || match.bestCandidate == nullptr)
+                {
+                    const TSPoint aStart = ts_node_start_point(argListNode);
+                    const TSPoint aEnd = ts_node_end_point(argListNode);
+                    std::string sigAttempt = declaredType + "(";
+                    for (size_t a = 0; a < argTypes.size(); ++a)
+                    {
+                        if (a > 0) sigAttempt += ", ";
+                        sigAttempt += argTypes[a];
+                    }
+                    sigAttempt += ")";
+                    ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                    "as-err-no-matching-constructor", sigAttempt);
+                    continue;
+                }
+            }
+        }
+
         void VisitNode(TSNode node, const CallCheckRequest &request, DiagnosticContext &ctx)
         {
-            if (std::string_view(ts_node_type(node)) == "call_expression")
+            std::string_view nodeType = ts_node_type(node);
+            if (nodeType == "call_expression")
             {
                 const TSPoint start = ts_node_start_point(node);
                 CheckCall(node, request,
                           FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
+            }
+            else if (nodeType == "variable_declaration")
+            {
+                CheckVariableDirectInitialization(node, request, ctx);
             }
 
             const uint32_t childCount = ts_node_named_child_count(node);

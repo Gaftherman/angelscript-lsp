@@ -1,4 +1,5 @@
 #include "utils/PositionEncoding.h"
+#include "utils/Constants.h"
 
 #include <algorithm>
 
@@ -24,13 +25,14 @@ namespace angel_lsp::utils
          */
         Utf8Step StepAt(unsigned char lead)
         {
-            if (lead < 0x80)
+            using namespace angel_lsp::constants::utf8;
+            if (lead < AsciiMask)
                 return {1, 1};
-            if ((lead & 0xE0) == 0xC0)
+            if ((lead & TwoByteMask) == TwoByteExpected)
                 return {2, 1};
-            if ((lead & 0xF0) == 0xE0)
+            if ((lead & ThreeByteMask) == ThreeByteExpected)
                 return {3, 1};
-            if ((lead & 0xF8) == 0xF0)
+            if ((lead & FourByteMask) == FourByteExpected)
                 return {4, 2}; // Astral plane: one codepoint, two UTF-16 surrogates.
             return {1, 1};
         }

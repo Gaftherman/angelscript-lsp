@@ -1,6 +1,7 @@
 #include "features/completion/CompletionHandler.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/DocComment.h"
+#include "analysis/SignatureFormatter.h"
 #include <unordered_set>
 #include <sstream>
 #include <regex>
@@ -51,41 +52,45 @@ namespace angel_lsp::features
             return current;
         }
 
-        std::string CleanBaseType(std::string typeName)
+        std::string CanonicalizeArrayType(std::string_view typeStr, const std::string &arrayTypeName = "array")
         {
-            while (!typeName.empty() && (typeName.back() == '@' || typeName.back() == '&' || typeName.back() == ' '))
+            std::string s(typeStr);
+            while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
+            while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '@' || s.back() == '&')) s.pop_back();
+
+            if (s.starts_with("const "))
             {
-                typeName.pop_back();
+                s = s.substr(6);
             }
-            if (typeName.starts_with("const "))
+
+            while (s.ends_with("[]"))
             {
-                typeName = typeName.substr(6);
+                std::string inner = s.substr(0, s.size() - 2);
+                inner = CanonicalizeArrayType(inner, arrayTypeName);
+                s = arrayTypeName + "<" + inner + ">";
             }
-            while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == ']'))
+            return s;
+        }
+
+        std::string FormatMethodDetail(const analysis::Symbol &sym, const std::vector<std::string> &templateArgs)
+        {
+            if (sym.type != analysis::SymbolType::Function)
             {
-                if (typeName.back() == ']')
+                return "";
+            }
+            analysis::Symbol substitutedSym = sym;
+            auto fn = sym.GetFunction();
+            if (!templateArgs.empty())
+            {
+                fn.returnType = analysis::SubstituteTypeParam(fn.returnType, "T", templateArgs[0]);
+                for (auto &param : fn.parameters)
                 {
-                    size_t bracket = typeName.rfind('[');
-                    if (bracket != std::string::npos)
-                    {
-                        typeName = typeName.substr(0, bracket);
-                    }
-                    else
-                    {
-                        typeName.pop_back();
-                    }
-                }
-                else
-                {
-                    typeName.pop_back();
+                    param.typeName = analysis::SubstituteTypeParam(param.typeName, "T", templateArgs[0]);
+                    param.baseTypeName = analysis::SubstituteTypeParam(param.baseTypeName, "T", templateArgs[0]);
                 }
             }
-            if (typeName.starts_with("array<") && typeName.ends_with(">"))
-            {
-                std::string inner = typeName.substr(6, typeName.size() - 7);
-                return CleanBaseType(inner);
-            }
-            return typeName;
+            substitutedSym.signature = fn;
+            return analysis::FormatFunctionDeclaration(substitutedSym, false);
         }
 
         /**
@@ -98,53 +103,39 @@ namespace angel_lsp::features
         {
             std::vector<std::string> hierarchy;
             std::unordered_set<std::string> visited;
-            std::vector<std::string> queue;
 
-            std::string rootType = CleanBaseType(initialTypeName);
-            if (rootType.empty())
+            auto visitType = [&](auto &self, const std::string &currentTypeName) -> void
             {
-                return hierarchy;
-            }
+                if (currentTypeName.empty() || visited.find(currentTypeName) != visited.end())
+                {
+                    return;
+                }
+                visited.insert(currentTypeName);
+                hierarchy.push_back(currentTypeName);
 
-            visited.insert(rootType);
-            queue.push_back(rootType);
-
-            size_t head = 0;
-            while (head < queue.size())
-            {
-                std::string curType = queue[head++];
-                hierarchy.push_back(curType);
-
-                auto symbols = symbolTable.FindSymbols(curType);
-                for (const auto &sym : symbols)
+                auto syms = symbolTable.FindSymbols(currentTypeName);
+                for (const auto &sym : syms)
                 {
                     if (sym.type == analysis::SymbolType::Class)
                     {
-                        const auto &cls = sym.GetClass();
-                        for (const auto &base : cls.bases)
+                        const auto &classSig = sym.GetClass();
+                        for (const auto &baseName : classSig.bases)
                         {
-                            std::string cleanBase = CleanBaseType(base);
-                            if (!cleanBase.empty() && visited.insert(cleanBase).second)
-                            {
-                                queue.push_back(cleanBase);
-                            }
+                            self(self, baseName);
                         }
                     }
                     else if (sym.type == analysis::SymbolType::Interface)
                     {
-                        const auto &iface = sym.GetInterface();
-                        for (const auto &base : iface.inheritedInterfaces)
+                        const auto &ifaceSig = sym.GetInterface();
+                        for (const auto &baseName : ifaceSig.inheritedInterfaces)
                         {
-                            std::string cleanBase = CleanBaseType(base);
-                            if (!cleanBase.empty() && visited.insert(cleanBase).second)
-                            {
-                                queue.push_back(cleanBase);
-                            }
+                            self(self, baseName);
                         }
                     }
                 }
-            }
+            };
 
+            visitType(visitType, initialTypeName);
             return hierarchy;
         }
 
@@ -305,12 +296,20 @@ namespace angel_lsp::features
         }
 
         // 2. Check for Member Access Context: "receiver." or "receiver->" (with optional partial identifier)
-        static const std::regex memberAccessRegex(R"(([a-zA-Z_][a-zA-Z0-9_]*)(?:\.|\->)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
+        static const std::regex memberAccessRegex(R"(([a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])*)(?:\.|\->)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
         std::smatch memberMatch;
         if (std::regex_search(prefix, memberMatch, memberAccessRegex))
         {
-            std::string receiverName = memberMatch[1].str();
-            std::string receiverTypeName;
+            std::string receiverFull = memberMatch[1].str();
+            size_t bracketPos = receiverFull.find('[');
+            std::string receiverName = (bracketPos != std::string::npos) ? receiverFull.substr(0, bracketPos) : receiverFull;
+            size_t indexCount = 0;
+            for (char ch : receiverFull)
+            {
+                if (ch == '[') ++indexCount;
+            }
+
+            std::string rawTypeName;
 
             if (receiverName == "this")
             {
@@ -322,7 +321,7 @@ namespace angel_lsp::features
                         {
                             if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
                             {
-                                receiverTypeName = sym.name;
+                                rawTypeName = sym.name;
                             }
                         }
                     }
@@ -333,11 +332,11 @@ namespace angel_lsp::features
                 const analysis::LocalDefinition *def = analysis::ResolveInScope(innermostScope, receiverName);
                 if (def && !def->typeName.empty())
                 {
-                    receiverTypeName = CleanBaseType(def->typeName);
+                    rawTypeName = def->typeName;
                 }
             }
 
-            if (receiverTypeName.empty())
+            if (rawTypeName.empty())
             {
                 // Check if receiverName is a global variable
                 auto globSyms = request.symbolTable.FindSymbols(receiverName);
@@ -348,15 +347,35 @@ namespace angel_lsp::features
                         const auto &var = sym.GetVariable();
                         if (!var.typeName.empty())
                         {
-                            receiverTypeName = CleanBaseType(var.typeName);
+                            rawTypeName = var.typeName;
                             break;
                         }
                     }
                 }
             }
 
-            if (!receiverTypeName.empty())
+            if (!rawTypeName.empty())
             {
+                std::string arrayContainer = (request.config && !request.config->types.arrayTypeName.empty()) ? request.config->types.arrayTypeName : "array";
+                std::string canonicalType = CanonicalizeArrayType(rawTypeName, arrayContainer);
+
+                for (size_t idx = 0; idx < indexCount; ++idx)
+                {
+                    auto tmpl = analysis::ParseTemplateType(canonicalType);
+                    if (!tmpl.templateArgs.empty())
+                    {
+                        canonicalType = tmpl.templateArgs[0];
+                    }
+                    else if (canonicalType.ends_with("[]"))
+                    {
+                        canonicalType = canonicalType.substr(0, canonicalType.size() - 2);
+                    }
+                }
+
+                auto targetTemplate = analysis::ParseTemplateType(canonicalType);
+                std::string baseContainer = targetTemplate.containerName;
+                std::vector<std::string> templateArgs = targetTemplate.templateArgs;
+
                 auto addMembersForType = [&](const std::string &typeName)
                 {
                     request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symList)
@@ -370,14 +389,17 @@ namespace angel_lsp::features
                                 if (sym.type == analysis::SymbolType::Function)
                                 {
                                     kind = lsp::CompletionItemKind::Method;
-                                    const auto &fn = sym.GetFunction();
-                                    detail = fn.returnType + " " + sym.name + "(...)";
+                                    detail = FormatMethodDetail(sym, templateArgs);
                                 }
                                 else if (sym.type == analysis::SymbolType::Variable)
                                 {
                                     kind = lsp::CompletionItemKind::Field;
                                     const auto &var = sym.GetVariable();
                                     detail = var.typeName;
+                                    if (!templateArgs.empty())
+                                    {
+                                        detail = analysis::SubstituteTypeParam(detail, "T", templateArgs[0]);
+                                    }
                                 }
                                 else if (sym.type == analysis::SymbolType::Property)
                                 {
@@ -390,7 +412,7 @@ namespace angel_lsp::features
                     });
                 };
 
-                auto hierarchy = GetInheritedTypeHierarchy(request.symbolTable, receiverTypeName);
+                auto hierarchy = GetInheritedTypeHierarchy(request.symbolTable, baseContainer);
                 for (const auto &typeName : hierarchy)
                 {
                     addMembersForType(typeName);

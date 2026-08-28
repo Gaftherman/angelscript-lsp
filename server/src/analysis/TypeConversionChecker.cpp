@@ -778,7 +778,7 @@ namespace angel_lsp::analysis
             }
 
             const std::string raw = NodeText(typeNode, sourceCode);
-            if (raw.empty() || raw.find('<') != std::string::npos || raw.find('[') != std::string::npos)
+            if (raw.empty())
             {
                 return result;
             }
@@ -795,6 +795,12 @@ namespace angel_lsp::analysis
             }
 
             if (IsBuiltInValueType(result.baseName, ctx))
+            {
+                result.usable = true;
+                return result;
+            }
+
+            if (raw.find('<') != std::string::npos || raw.find('[') != std::string::npos)
             {
                 result.usable = true;
                 return result;
@@ -830,6 +836,27 @@ namespace angel_lsp::analysis
             const ExpressionType source = ResolveValueType(valueNode, scope, ctx, sourceCode);
             if (!source.known || source.baseName.empty())
             {
+                std::string identName = NodeText(valueNode, sourceCode);
+                while (!identName.empty() && isspace(static_cast<unsigned char>(identName.front()))) identName.erase(identName.begin());
+                while (!identName.empty() && isspace(static_cast<unsigned char>(identName.back()))) identName.pop_back();
+
+                if (!identName.empty())
+                {
+                    bool isTypeOrTemplate = false;
+                    ForEachSymbolNamed(identName, ctx.request.symbolTable, [&](const Symbol &s) -> bool
+                    {
+                        if (s.type == SymbolType::Class || s.type == SymbolType::Interface || s.type == SymbolType::Typedef || s.type == SymbolType::Enum)
+                        {
+                            isTypeOrTemplate = true;
+                            return false;
+                        }
+                        return true;
+                    });
+                    if (isTypeOrTemplate)
+                    {
+                        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", identName, declared.baseName);
+                    }
+                }
                 return;
             }
 

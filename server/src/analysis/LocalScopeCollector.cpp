@@ -1,6 +1,8 @@
 #include "analysis/LocalScopeCollector.h"
+#include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
 #include "parser/queries/BuiltQueries.h"
+#include "utils/Constants.h"
 #include "spdlog/fmt/fmt.h"
 
 #include <algorithm>
@@ -215,9 +217,9 @@ namespace angel_lsp::analysis
             // Only set for a func_declaration-opened scope: the byte range of its own "name"
             // field. func_declaration is the only scope-opening node whose range also contains
             // its own name (see BuildScopeTree's handling below for why that needs special
-            // treatment). Sentinel 0xFFFFFFFF/0 (an inverted, unmatchable range) means "no
+            // treatment). Sentinel InvalidByteOffset/0 (an inverted, unmatchable range) means "no
             // exclusion needed" for every other scope kind.
-            uint32_t ownNameStartByte = 0xFFFFFFFFu;
+            uint32_t ownNameStartByte = constants::InvalidByteOffset;
             uint32_t ownNameEndByte = 0;
         };
 
@@ -318,13 +320,33 @@ namespace angel_lsp::analysis
                     startPt.row, startPt.column, endPt.row, endPt.column};
 
                 TSNode parent = ts_node_parent(capture.node);
-                if (!ts_node_is_null(parent) && ts_node_symbol(parent) == m_symMemberExpression)
+                if (!ts_node_is_null(parent))
                 {
-                    // The grammar always names this field; positional fallbacks used to stand in for
-                    // it here and would mis-identify the member in anything but the simplest access.
-                    TSNode memberField = ts_node_child_by_field_name(parent, "member", static_cast<uint32_t>(strlen("member")));
-                    ref.isMemberAccess = ts_node_eq(memberField, capture.node) ||
-                        (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(capture.node));
+                    std::string_view parentType = ts_node_type(parent);
+                    if (parentType == "datatype" || parentType == "template_type_list" || parentType == "base_class_list" || parentType == "type")
+                    {
+                        ref.isTypeSpecifier = true;
+                    }
+                    else if (parentType == "scoped_identifier")
+                    {
+                        TSNode grandParent = ts_node_parent(parent);
+                        if (!ts_node_is_null(grandParent))
+                        {
+                            std::string_view grandParentType = ts_node_type(grandParent);
+                            if (grandParentType == "datatype" || grandParentType == "template_type_list" || grandParentType == "base_class_list" || grandParentType == "type")
+                            {
+                                ref.isTypeSpecifier = true;
+                            }
+                        }
+                    }
+                    else if (ts_node_symbol(parent) == m_symMemberExpression)
+                    {
+                        // The grammar always names this field; positional fallbacks used to stand in for
+                        // it here and would mis-identify the member in anything but the simplest access.
+                        TSNode memberField = ts_node_child_by_field_name(parent, "member", static_cast<uint32_t>(strlen("member")));
+                        ref.isMemberAccess = ts_node_eq(memberField, capture.node) ||
+                            (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(capture.node));
+                    }
                 }
 
                 current->references.push_back(std::move(ref));
@@ -354,6 +376,50 @@ namespace angel_lsp::analysis
         if (ts_node_is_null(declaratorNode))
             return;
 
+        auto populateTypeRanges = [&](TSNode tNode)
+        {
+            TSPoint typeStart = ts_node_start_point(tNode);
+            TSPoint typeEnd = ts_node_end_point(tNode);
+            def.typeStartLine = typeStart.row;
+            def.typeStartCharacter = typeStart.column;
+            def.typeEndLine = typeEnd.row;
+            def.typeEndCharacter = typeEnd.column;
+
+            uint32_t count = ts_node_child_count(tNode);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(tNode, i);
+                std::string_view childType(ts_node_type(child));
+                if (childType == "datatype")
+                {
+                    TSPoint dtStart = ts_node_start_point(child);
+                    TSPoint dtEnd = ts_node_end_point(child);
+                    def.typeStartLine = dtStart.row;
+                    def.typeStartCharacter = dtStart.column;
+                    def.typeEndLine = dtEnd.row;
+                    def.typeEndCharacter = dtEnd.column;
+                }
+                else if (childType == "template_type_list")
+                {
+                    uint32_t tCount = ts_node_named_child_count(child);
+                    for (uint32_t t = 0; t < tCount; ++t)
+                    {
+                        TSNode innerType = ts_node_named_child(child, t);
+                        TSPoint argStart = ts_node_start_point(innerType);
+                        TSPoint argEnd = ts_node_end_point(innerType);
+                        std::string argText = GetNodeText(innerType, sourceCode);
+                        def.templateArgPositions.push_back({
+                            CleanBaseType(argText),
+                            argStart.row,
+                            argStart.column,
+                            argEnd.row,
+                            argEnd.column
+                        });
+                    }
+                }
+            }
+        };
+
         // A parameter carries its type on the same node as its name rather than on a parent
         // declarator, so it is read here and not below. Without it a parameter reached the scope
         // tree with no type at all, and every consumer that asks a scope what a name is - the
@@ -368,6 +434,7 @@ namespace angel_lsp::analysis
                 def.isHandleType = typeInfo.isHandle;
                 def.typeKind = typeInfo.kind;
                 def.typeName = GetNodeText(paramTypeNode, sourceCode);
+                populateTypeRanges(paramTypeNode);
             }
             return;
         }
@@ -398,6 +465,7 @@ namespace angel_lsp::analysis
             def.isHandleType = typeInfo.isHandle;
             def.typeKind = typeInfo.kind;
             def.typeName = GetNodeText(typeNode, sourceCode);
+            populateTypeRanges(typeNode);
         }
 
         // variable_declarator's '=' RHS isn't exposed as a named field in this grammar (confirmed

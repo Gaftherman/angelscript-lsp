@@ -25,6 +25,16 @@ namespace angel_lsp::analysis
         Import
     };
 
+    /** @brief Range of a template argument within a declared type. */
+    struct LocalTypeArgPosition
+    {
+        std::string name;
+        uint32_t startLine = 0;
+        uint32_t startCharacter = 0;
+        uint32_t endLine = 0;
+        uint32_t endCharacter = 0;
+    };
+
     /** @brief A single named declaration site inside a Scope (function parameter, local variable, class field, ...). */
     struct LocalDefinition
     {
@@ -35,6 +45,13 @@ namespace angel_lsp::analysis
         uint32_t startCharacter = 0;
         uint32_t endLine = 0;
         uint32_t endCharacter = 0;
+
+        uint32_t typeStartLine = 0;
+        uint32_t typeStartCharacter = 0;
+        uint32_t typeEndLine = 0;
+        uint32_t typeEndCharacter = 0;
+
+        std::vector<LocalTypeArgPosition> templateArgPositions;
 
         /**
          * @brief Only meaningful when kind == Variable and the definition came from a
@@ -82,6 +99,14 @@ namespace angel_lsp::analysis
          *        skip these to avoid flagging ordinary member access as undefined.
          */
         bool isMemberAccess = false;
+
+        /**
+         * @brief True when this identifier is part of a type annotation (datatype, template_type_list,
+         *        base_class_list, etc.). Type resolution diagnostics are handled by type checking
+         *        passes (as-err-unresolved-type) rather than value identifier resolution
+         *        (as-err-undeclared-identifier).
+         */
+        bool isTypeSpecifier = false;
     };
 
     /**
@@ -140,6 +165,7 @@ namespace angel_lsp::analysis
 
         /** @brief Replaces (or sets for the first time) the scope tree for fileUri. */
         void SetScopeTree(const std::string &fileUri, std::unique_ptr<Scope> root);
+        void SetScopeTree(const std::string &fileUri, std::shared_ptr<const Scope> root);
 
         /** @brief Discards the scope tree for fileUri, if any. */
         void ClearDocument(const std::string &fileUri);

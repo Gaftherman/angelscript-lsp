@@ -8,10 +8,58 @@ namespace angel_lsp::analysis
     {
         std::string NormalizeType(std::string_view typeName)
         {
-            std::string cleaned = CleanBaseType(typeName);
-            if (cleaned == "int32") { return "int"; }
-            if (cleaned == "uint32") { return "uint"; }
-            return cleaned;
+            while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
+            {
+                typeName.remove_prefix(1);
+            }
+            while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == '\t'))
+            {
+                typeName.remove_suffix(1);
+            }
+            if (typeName.starts_with("const "))
+            {
+                typeName.remove_prefix(6);
+            }
+            while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
+            {
+                typeName.remove_prefix(1);
+            }
+
+            std::string result(typeName);
+            bool modified = true;
+            while (modified)
+            {
+                modified = false;
+                while (!result.empty() && (result.back() == '@' || result.back() == '&' || result.back() == ' ' || result.back() == '\t'))
+                {
+                    result.pop_back();
+                    modified = true;
+                }
+                if (result.ends_with(" const"))
+                {
+                    result.resize(result.size() - 6);
+                    modified = true;
+                }
+                if (result.ends_with("&in") || result.ends_with("&out") || result.ends_with("&inout") ||
+                    result.ends_with("& in") || result.ends_with("& out") || result.ends_with("& inout"))
+                {
+                    size_t amp = result.rfind('&');
+                    if (amp != std::string::npos)
+                    {
+                        result.resize(amp);
+                        modified = true;
+                    }
+                }
+            }
+
+            while (!result.empty() && (result.back() == ' ' || result.back() == '\t'))
+            {
+                result.pop_back();
+            }
+
+            if (result == "int32") { return "int"; }
+            if (result == "uint32") { return "uint"; }
+            return result;
         }
 
         bool HasHandleModifier(std::string_view typeName)

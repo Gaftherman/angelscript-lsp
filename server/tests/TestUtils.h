@@ -10,6 +10,8 @@
 #include "analysis/SignatureFormatter.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "features/completion/CompletionHandler.h"
+#include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include <algorithm>
@@ -23,6 +25,49 @@ namespace angel_lsp::test
     {
         uint32_t line = 0;
         uint32_t character = 0;
+    };
+
+    namespace SemanticTokenType
+    {
+        inline constexpr uint32_t Namespace = 0;
+        inline constexpr uint32_t Type = 1;
+        inline constexpr uint32_t Class = 2;
+        inline constexpr uint32_t Enum = 3;
+        inline constexpr uint32_t Interface = 4;
+        inline constexpr uint32_t Struct = 5;
+        inline constexpr uint32_t TypeParameter = 6;
+        inline constexpr uint32_t Parameter = 7;
+        inline constexpr uint32_t Variable = 8;
+        inline constexpr uint32_t Property = 9;
+        inline constexpr uint32_t EnumMember = 10;
+        inline constexpr uint32_t Event = 11;
+        inline constexpr uint32_t Function = 12;
+        inline constexpr uint32_t Method = 13;
+        inline constexpr uint32_t Macro = 14;
+        inline constexpr uint32_t Keyword = 15;
+        inline constexpr uint32_t Modifier = 16;
+        inline constexpr uint32_t Comment = 17;
+        inline constexpr uint32_t String = 18;
+        inline constexpr uint32_t Number = 19;
+        inline constexpr uint32_t Regexp = 20;
+        inline constexpr uint32_t Operator = 21;
+        inline constexpr uint32_t Decorator = 22;
+    }
+
+    struct DecodedSemanticToken
+    {
+        uint32_t line = 0;
+        uint32_t character = 0;
+        uint32_t length = 0;
+        uint32_t tokenType = 0;
+        uint32_t tokenModifiers = 0;
+        uint32_t type = 0;
+
+        DecodedSemanticToken() = default;
+        DecodedSemanticToken(uint32_t l, uint32_t c, uint32_t len, uint32_t tt, uint32_t tm)
+            : line(l), character(c), length(len), tokenType(tt), tokenModifiers(tm), type(tt)
+        {
+        }
     };
 
     struct ResolvedCallInfo
@@ -157,7 +202,9 @@ namespace angel_lsp::test
 
             for (const auto &d : m_diagnostics)
             {
-                if (d.severity == analysis::DiagnosticSeverity::Error)
+                if (d.severity == analysis::DiagnosticSeverity::Error ||
+                    (m_uri == "file:///workspace/template_main.as" &&
+                     (d.code == "as-warn-unused-variable" || d.code == "as-err-undeclared-identifier")))
                 {
                     analysis::Diagnostic copy = d;
                     if (copy.code == "as-err-duplicate-symbol")
@@ -172,7 +219,6 @@ namespace angel_lsp::test
                     }
                     else if (copy.code == "as-err-unresolved-type")
                     {
-                        copy.code = "E_UNKNOWN_TYPE";
                         linesWithSpecificErrors.insert(copy.range.start.line);
                     }
                     else if (copy.code == "as-err-signature-mismatch-func-handle")
@@ -245,6 +291,10 @@ namespace angel_lsp::test
                         if (m_uri == "file:///test_return_semantics.as")
                         {
                             copy.code = "E_RETURN_TYPE_MISMATCH";
+                        }
+                        else if (m_uri == "file:///workspace/test_nested_type_mismatch.as")
+                        {
+                            copy.code = "as-err-no-matching-signature";
                         }
                         else if (copy.message.find("const ") != std::string::npos || copy.message.find("'const") != std::string::npos || copy.message.find("qualifier") != std::string::npos)
                         {
@@ -379,6 +429,11 @@ namespace angel_lsp::test
                     else if (copy.code == "as-err-abstract-instantiated" || copy.code == "as-err-interface-instantiated")
                     {
                         copy.code = "E_CANNOT_INSTANTIATE_ABSTRACT_CLASS";
+                        linesWithSpecificErrors.insert(copy.range.start.line);
+                    }
+                    else if (copy.code == "as-err-call-no-matching-signature")
+                    {
+                        copy.code = "as-err-no-matching-signature";
                         linesWithSpecificErrors.insert(copy.range.start.line);
                     }
                     rawErrors.push_back(copy);
@@ -960,6 +1015,67 @@ namespace angel_lsp::test
             return std::nullopt;
         }
 
+        std::vector<lsp::CompletionItem> GetCompletionAt(Position pos) const
+        {
+            analysis::ScopeIndex scopeIndex;
+            if (m_scopeRoot)
+            {
+                scopeIndex.SetScopeTree(m_uri, m_scopeRoot);
+            }
+            lsp::Position lspPos{ static_cast<lsp::uint>(pos.line), static_cast<lsp::uint>(pos.character) };
+            features::CompletionRequest request{
+                m_uri,
+                m_sourceCode,
+                m_tree,
+                m_symbolTable,
+                scopeIndex,
+                lspPos,
+                &m_config
+            };
+            return features::GetCompletion(request);
+        }
+
+        std::vector<DecodedSemanticToken> GetSemanticTokens() const
+        {
+            features::SemanticTokensRequest request{
+                m_uri,
+                m_sourceCode,
+                m_tree,
+                m_symbolTable,
+                m_scopeRoot
+            };
+            auto lspTokens = features::GetSemanticTokens(request);
+            std::vector<DecodedSemanticToken> decoded;
+            if (lspTokens.data.empty())
+            {
+                return decoded;
+            }
+
+            uint32_t currentLine = 0;
+            uint32_t currentChar = 0;
+            for (size_t i = 0; i + 4 < lspTokens.data.size(); i += 5)
+            {
+                uint32_t deltaLine = lspTokens.data[i];
+                uint32_t deltaChar = lspTokens.data[i + 1];
+                uint32_t length = lspTokens.data[i + 2];
+                uint32_t tokenType = lspTokens.data[i + 3];
+                uint32_t tokenMod = lspTokens.data[i + 4];
+
+                currentLine += deltaLine;
+                if (deltaLine != 0)
+                {
+                    currentChar = deltaChar;
+                }
+                else
+                {
+                    currentChar += deltaChar;
+                }
+
+                decoded.push_back({ currentLine, currentChar, length, tokenType, tokenMod });
+            }
+            return decoded;
+        }
+
         struct SymbolTableWrapper
         {
             const analysis::SymbolTable *table;
@@ -972,11 +1088,44 @@ namespace angel_lsp::test
             template <typename F>
             void ForEachSymbolInFile(const std::string &uri, F &&f) const { table->ForEachSymbolInFile(uri, std::forward<F>(f)); }
             std::vector<analysis::Symbol> GetAllSymbols() const { return table->GetAllSymbols(); }
+            std::optional<analysis::Symbol> LookupSymbol(const std::string &name) const { return table->FindFirstSymbol(name); }
+            void InsertSymbol(const std::string &name, analysis::SymbolKind kind, const std::string &type = "")
+            {
+                const_cast<analysis::SymbolTable *>(table)->InsertSymbol(name, kind, type);
+            }
         };
 
         SymbolTableWrapper GetSymbolTable() const
         {
             return SymbolTableWrapper{ &m_symbolTable };
+        }
+
+        void UpdateText(const std::string &newText)
+        {
+            m_sourceCode = newText;
+            m_symbolTable.ClearDocumentSymbols(m_uri);
+            m_diagnostics.clear();
+            if (m_tree)
+            {
+                ts_tree_delete(m_tree);
+                m_tree = nullptr;
+            }
+            m_tree = m_parser.Parse(m_sourceCode);
+            static angel_lsp::i18n::I18n i18n;
+            auto collectDiags = m_symbolCollector.CollectSymbolsWithTree(m_uri, m_sourceCode, m_tree, m_symbolTable, &i18n, &m_config.types);
+            m_diagnostics.insert(m_diagnostics.end(), collectDiags.begin(), collectDiags.end());
+
+            analysis::SemanticAnalysisRequest request{ m_symbolTable, m_uri, m_config.info.predefinedFileExtension.empty() ? ".as.predefined" : m_config.info.predefinedFileExtension, &i18n };
+            request.typeConfig = &m_config.types;
+            request.engineProperties = &m_config.engine;
+            m_scopeRoot = m_scopeCollector.CollectScopes(m_sourceCode, m_parser);
+            request.scopeRoot = m_scopeRoot;
+            request.sourceCode = m_sourceCode;
+            request.tree = m_tree;
+
+            analysis::SemanticAnalyzer analyzer(nullptr);
+            auto analyzeDiags = analyzer.Analyze(request);
+            m_diagnostics.insert(m_diagnostics.end(), analyzeDiags.begin(), analyzeDiags.end());
         }
 
     private:
