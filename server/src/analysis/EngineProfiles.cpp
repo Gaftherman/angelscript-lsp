@@ -102,6 +102,11 @@ class array<T>
     bool opEquals(const array<T> &in other) const;
     T& opIndex(uint index);
     const T& opIndex(uint index) const;
+    uint opForBegin() const;
+    bool opForEnd(uint index) const;
+    uint opForNext(uint index) const;
+    const T& opForValue0(uint index) const;
+    uint opForValue1(uint index) const;
 }
 
 /// The list factory the dictionary add-on registers:
@@ -124,6 +129,15 @@ class dictionary
     array<string>@ getKeys() const;
     dictionaryValue& opIndex(const string &in key);
     const dictionaryValue& opIndex(const string &in key) const;
+    dictionaryIter@ opForBegin() const;
+    bool opForEnd(dictionaryIter@ it) const;
+    dictionaryIter@ opForNext(dictionaryIter@ it) const;
+    const dictionaryValue& opForValue0(dictionaryIter@ it) const;
+    const string& opForValue1(dictionaryIter@ it) const;
+}
+
+class dictionaryIter
+{
 }
 
 class dictionaryValue

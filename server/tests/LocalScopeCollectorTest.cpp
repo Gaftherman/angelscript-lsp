@@ -449,11 +449,14 @@ void Foo()
     CHECK(def->hasNullInitializer == false);
 }
 
-TEST_CASE("LocalScopeCollector - a foreach loop variable has no type info populated")
+TEST_CASE("LocalScopeCollector - a foreach loop variable carries its declared type")
 {
-    // foreach_variable shares LocalDefinitionKind::Variable with variable_declarator but has no
-    // declared-type/initializer node at all - ReadVariableTypeInfo must leave it at defaults
-    // rather than misreading an unrelated sibling node.
+    // This test used to assert the opposite, on the premise that a foreach_variable "has no
+    // declared-type node at all". That premise was wrong: the grammar gives foreach_variable a
+    // `type` field, exactly as it gives one to a parameter - the type is simply written `auto`
+    // most of the time. ReadVariableTypeInfo only knew about parameters and variable_declarators,
+    // so it returned early and every loop variable reached the scope tree with no type, which cost
+    // hover, completion after `v.`, and everything the expression resolver drives behind them.
     std::string source = R"AS(
 void Foo()
 {
@@ -475,7 +478,35 @@ void Foo()
     REQUIRE(v != nullptr);
     CHECK(v->hasNullInitializer == false);
     CHECK(v->isHandleType == false);
-    CHECK(v->typeKind == TypeKind::Unknown);
+    CHECK(v->typeName == "int");
+    CHECK(v->typeKind != TypeKind::Unknown);
+}
+
+TEST_CASE("LocalScopeCollector - an auto foreach variable is left as auto for the analyzer")
+{
+    // The collector has no symbol table, so it cannot know what `auto` deduces to. It records what
+    // was written and leaves the deduction to TypeConversionChecker, which resolves the container
+    // and writes the element type back - see ForeachValueType there.
+    std::string source = R"AS(
+void Foo()
+{
+    array<int> items;
+    foreach (auto v : items)
+    {
+    }
+}
+)AS";
+
+    auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    SourcePos loopPos = FindPosition(source, "auto v : items");
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), loopPos.line, loopPos.character);
+    REQUIRE(innermost != nullptr);
+
+    const LocalDefinition *v = ResolveInScope(innermost, "v");
+    REQUIRE(v != nullptr);
+    CHECK(v->typeName == "auto");
 }
 
 // =====================================================================================

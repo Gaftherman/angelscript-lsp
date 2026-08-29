@@ -98,7 +98,9 @@ const FEATURE_FLAGS: ReadonlyArray<readonly [string, string]> = [
     ['callHierarchy', '--disable-call-hierarchy'],
     ['typeHierarchy', '--disable-type-hierarchy'],
     ['linkedEditing', '--disable-linked-editing'],
-    ['typeConversionChecks', '--disable-type-conversion-checks']
+    ['typeConversionChecks', '--disable-type-conversion-checks'],
+    ['codeLens', '--disable-code-lens'],
+    ['onTypeFormatting', '--disable-on-type-formatting']
 ];
 
 /**
@@ -197,6 +199,13 @@ function buildServerArgs(): string[] {
         if (config.get<boolean>(`engine.${property}`, false) === true) {
             args.push(`--engine-property=${property}=true`);
         }
+    }
+
+    // The host dialect. An enum rather than a boolean, so it is not one of ENGINE_PROPERTIES above
+    // and needs its own line; without it the setting was declared, documented and inert.
+    const engineProfile = config.get<string>('engine.profile', '').trim();
+    if (engineProfile.length > 0) {
+        args.push(`--engine-profile=${engineProfile}`);
     }
 
     const severities = config.get<Record<string, string>>('diagnosticSeverity', {});

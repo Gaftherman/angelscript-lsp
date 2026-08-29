@@ -303,9 +303,10 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
+    "pretest": "npm run compile && npm run lint && npm run check-settings",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "check-settings": "node scripts/check-settings-wired.mjs"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

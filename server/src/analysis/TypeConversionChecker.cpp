@@ -1012,6 +1012,73 @@ namespace angel_lsp::analysis
             EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName, declared.baseName);
         }
 
+        /**
+         * @brief The type `foreach`'s Nth loop variable takes, from the container's own declaration.
+         *
+         * AngelScript drives `foreach` through `opForBegin` / `opForEnd` / `opForNext` and one
+         * `opForValue<N>` per loop variable, so the Nth variable's type is that method's return
+         * type. Reading it back out of the stub is the general rule and needs no per-type knowledge:
+         * `array<T>` declares `const T& opForValue0(uint)` and `uint opForValue1(uint)`, and
+         * `dictionary` declares `const dictionaryValue& opForValue0(...)` and
+         * `const string& opForValue1(...)`, which is exactly what the compiler hands the loop.
+         *
+         * Returns empty when the container declares no such method, which leaves the variable's
+         * written `auto` in place rather than guessing at it.
+         */
+        std::string ForeachValueType(const std::string &containerType,
+                                     uint32_t variableIndex,
+                                     const DiagnosticContext &ctx)
+        {
+            const std::string cleaned = CleanExpressionType(containerType);
+            if (cleaned.empty())
+            {
+                return {};
+            }
+
+            const size_t open = cleaned.find('<');
+            const std::string bare =
+                LastScopeSegment((open == std::string::npos) ? cleaned : cleaned.substr(0, open));
+
+            const TemplateBinding binding = BindTemplateArguments(cleaned, ctx.request.symbolTable);
+            const std::string method = "opForValue" + std::to_string(variableIndex);
+
+            for (const std::string &candidate : GetInheritedTypeHierarchy(bare, ctx.request.symbolTable))
+            {
+                const auto overloads = ctx.request.symbolTable.FindSymbolsPtr(candidate + "::" + method);
+                if (!overloads)
+                {
+                    continue;
+                }
+                for (const Symbol &overload : *overloads)
+                {
+                    if (overload.type != SymbolType::Function ||
+                        !std::holds_alternative<FunctionSignature>(overload.signature))
+                    {
+                        continue;
+                    }
+
+                    std::string returnType = std::get<FunctionSignature>(overload.signature).returnType;
+                    if (returnType.empty() || returnType == "void")
+                    {
+                        continue;
+                    }
+                    if (binding.usable)
+                    {
+                        for (size_t i = 0; i < binding.parameters.size(); ++i)
+                        {
+                            returnType = SubstituteTypeParam(returnType, binding.parameters[i],
+                                                             binding.arguments[i]);
+                        }
+                    }
+                    // `const T&` names the same type as `T` for anything the scope tree does with
+                    // it, and the reference is not part of the variable's identity.
+                    return CleanExpressionType(returnType);
+                }
+            }
+
+            return {};
+        }
+
         /** @brief Rule for a one-argument construction: `T(expr)` or `T v(expr);`. */
         void CheckConstruction(TSNode argumentListNode,
                                const std::string &targetType,
@@ -1433,6 +1500,57 @@ namespace angel_lsp::analysis
                 }
                 return scope;
             };
+
+            // `foreach (auto value : container)` writes `auto` and nothing else, so without this
+            // the loop variable reached every consumer typeless: no hover, no completion after
+            // `value.`, nothing for the expression resolver behind the access and const passes.
+            // Same guard and same write-back as the `auto` inference below - see the comment there
+            // for why mutableScopeRoot is what makes touching the scope tree sound.
+            if (nodeType == "foreach_statement")
+            {
+                TSNode collection = ts_node_child_by_field_name(node, "collection", 10);
+                if (!ts_node_is_null(collection) && request.mutableScopeRoot)
+                {
+                    const std::string containerType = ResolveExpressionType(
+                        collection, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+
+                    if (!containerType.empty())
+                    {
+                        uint32_t variableIndex = 0;
+                        const uint32_t childCount = ts_node_named_child_count(node);
+                        for (uint32_t i = 0; i < childCount; ++i)
+                        {
+                            TSNode child = ts_node_named_child(node, i);
+                            if (NodeType(child) != "foreach_variable")
+                            {
+                                continue;
+                            }
+
+                            TSNode nameNode = ts_node_child_by_field_name(child, "name", k_nameFieldLength);
+                            const std::string valueType = ForeachValueType(containerType, variableIndex, ctx);
+                            ++variableIndex;
+
+                            if (ts_node_is_null(nameNode) || valueType.empty())
+                            {
+                                continue;
+                            }
+
+                            // The body's scope is where the variable lives, so it is resolved from
+                            // the name's own position rather than the statement's.
+                            const TSPoint namePoint = ts_node_start_point(nameNode);
+                            const Scope *bodyScope = FindEnclosingScope(request.scopeRoot, namePoint.row, namePoint.column);
+                            const LocalDefinition *def =
+                                ResolveInScope(bodyScope ? bodyScope : scopeAt(),
+                                               NodeText(nameNode, request.sourceCode));
+
+                            if (def && (def->typeName == "auto" || def->typeName == "auto@"))
+                            {
+                                const_cast<LocalDefinition *>(def)->typeName = valueType;
+                            }
+                        }
+                    }
+                }
+            }
 
             if (nodeType == "variable_declaration")
             {

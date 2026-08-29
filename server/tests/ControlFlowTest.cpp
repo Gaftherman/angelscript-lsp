@@ -462,6 +462,57 @@ TEST_CASE("ControlFlow - An ordinary body carries no unreachable finding")
 // `angel_lsp_tests.exe --no-skip --test-case="*Control Flow Corpus Audit*"`)
 // =====================================================================================
 
+// =====================================================================================
+// try / catch
+//
+// Either block can be the path taken - the try block runs to its end, or an exception hands control
+// to the catch - so a non-void function needs a return in both. Verified against asharness:
+//
+//   try { return 1; } catch { return 2; }   accepted
+//   try { return 1; } catch { }             "Not all paths return a value"
+//   try { } catch { } return 3;             accepted
+//
+// `try_statement` had no arm in DefinitelyReturns at all, so the first of those - correct code -
+// was reported as not returning.
+// =====================================================================================
+
+TEST_CASE("ControlFlow - A try and its catch both returning is a returning path")
+{
+    const std::string code =
+        "int Count()\n"
+        "{\n"
+        "    try { return 1; }\n"
+        "    catch { return 2; }\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+}
+
+TEST_CASE("ControlFlow - A catch that falls through does not return")
+{
+    const std::string code =
+        "int Count()\n"
+        "{\n"
+        "    try { return 1; }\n"
+        "    catch { }\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+}
+
+TEST_CASE("ControlFlow - A return after a try that does not return is enough")
+{
+    const std::string code =
+        "int Count()\n"
+        "{\n"
+        "    try { }\n"
+        "    catch { }\n"
+        "    return 3;\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+}
+
 TEST_CASE("ControlFlow - Control Flow Corpus Audit" * doctest::skip(true))
 {
     static const std::vector<std::string> k_codes = {

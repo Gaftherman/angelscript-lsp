@@ -22,6 +22,7 @@ namespace angel_lsp::analysis
         m_symLambdaExpression = ts_language_symbol_for_name(lang, "lambda_expression", static_cast<uint32_t>(strlen("lambda_expression")), true);
         m_symVariableDeclarator = ts_language_symbol_for_name(lang, "variable_declarator", static_cast<uint32_t>(strlen("variable_declarator")), true);
         m_symParameter = ts_language_symbol_for_name(lang, "parameter", static_cast<uint32_t>(strlen("parameter")), true);
+        m_symForeachVariable = ts_language_symbol_for_name(lang, "foreach_variable", static_cast<uint32_t>(strlen("foreach_variable")), true);
 
         uint32_t errorOffset = 0;
         TSQueryError errorType = TSQueryErrorNone;
@@ -435,6 +436,27 @@ namespace angel_lsp::analysis
                 def.typeKind = typeInfo.kind;
                 def.typeName = GetNodeText(paramTypeNode, sourceCode);
                 populateTypeRanges(paramTypeNode);
+            }
+            return;
+        }
+
+        // A foreach variable carries its type on the same node as its name, the way a parameter
+        // does - `foreach (auto value : container)` puts `auto` in the foreach_variable's own `type`
+        // field. Without this branch the function fell through the variable_declarator check below
+        // and returned with no type at all, so the loop variable reached the scope tree unnamed by
+        // any type: no hover, no completion after `value.`, and nothing for the expression resolver
+        // to work from. The type read here is nearly always `auto`; ResolveForeachVariableTypes in
+        // the analyzer replaces it with the container's element type.
+        if (ts_node_symbol(declaratorNode) == m_symForeachVariable)
+        {
+            TSNode foreachTypeNode = ts_node_child_by_field_name(declaratorNode, "type", static_cast<uint32_t>(strlen("type")));
+            if (!ts_node_is_null(foreachTypeNode))
+            {
+                TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(foreachTypeNode, sourceCode);
+                def.isHandleType = typeInfo.isHandle;
+                def.typeKind = typeInfo.kind;
+                def.typeName = GetNodeText(foreachTypeNode, sourceCode);
+                populateTypeRanges(foreachTypeNode);
             }
             return;
         }

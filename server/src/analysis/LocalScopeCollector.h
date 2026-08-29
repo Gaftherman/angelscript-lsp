@@ -62,6 +62,7 @@ namespace angel_lsp::analysis
          *         before reading LocalDefinition::isHandleType/hasNullInitializer from it. */
         TSSymbol m_symVariableDeclarator = 0;
         TSSymbol m_symParameter = 0;
+        TSSymbol m_symForeachVariable = 0;
 
         /** @brief What a LOCALS_QUERY capture index means, resolved once in the constructor by capture name. */
         enum class CaptureKind
@@ -97,7 +98,7 @@ namespace angel_lsp::analysis
         std::string GetNodeText(TSNode node, const std::string &sourceCode) const;
 
         /**
-         * @brief If nameNode is a variable_declarator's "name" (not a foreach_variable, which has
+         * @brief If nameNode names a variable_declarator, a parameter or a foreach_variable (which
          *        no declared-type node), fills def.isHandleType/hasNullInitializer from the
          *        enclosing variable_declaration's "var_type" field and the declarator's
          *        initializer. Leaves both fields at their default (false) otherwise.

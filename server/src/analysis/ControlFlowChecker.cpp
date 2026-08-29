@@ -186,6 +186,30 @@ namespace angel_lsp::analysis
                        Trim(NodeText(condition, sourceCode)) == "true";
             }
 
+            if (type == "try_statement")
+            {
+                // Every block has to return, because either one of them can be the path taken: the
+                // try block runs to its end, or an exception hands control to the catch block. The
+                // real compiler answers `try { return 1; } catch { }` with "Not all paths return a
+                // value" and accepts it once the catch returns too.
+                //
+                // The grammar gives `try` and `catch` a `statement_block` each and no fields, so the
+                // named children are exactly the blocks to check.
+                const uint32_t blockCount = ts_node_named_child_count(node);
+                if (blockCount == 0)
+                {
+                    return false;
+                }
+                for (uint32_t i = 0; i < blockCount; ++i)
+                {
+                    if (!DefinitelyReturns(ts_node_named_child(node, i), sourceCode))
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
             if (type == "do_while_statement")
             {
                 return DefinitelyReturns(ts_node_child_by_field_name(node, "body", k_bodyFieldLength), sourceCode);

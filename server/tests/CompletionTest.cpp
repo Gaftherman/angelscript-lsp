@@ -5,6 +5,10 @@
 #include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "config/ServerConfig.h"
+#include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
@@ -24,19 +28,45 @@ namespace
         LocalScopeCollector scopeCollector{ nullptr };
         SymbolTable symbolTable;
         ScopeIndex scopeIndex;
+        angel_lsp::i18n::I18n i18n;
         std::string uri = "file:///test.as";
         std::string sourceCode;
         TSTree *tree = nullptr;
 
-        TestEnvironment(const std::string &code)
+        /**
+         * @param runAnalyzer Mirror the server's own order - collect scopes, analyse the *unpublished*
+         *                    tree, then publish it. Some completions depend on a type the analyzer
+         *                    deduces and writes back: `auto`, and a foreach variable's element type.
+         *                    Skipping this step is why a test can see an empty member list for a
+         *                    name the running server completes perfectly well
+         *                    (Server::CollectScopesAndAnalyze).
+         */
+        TestEnvironment(const std::string &code, bool runAnalyzer = false)
             : sourceCode(code)
         {
             tree = parser.Parse(sourceCode);
             symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+            std::shared_ptr<Scope> rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+
+            if (rootScope && runAnalyzer)
+            {
+                angel_lsp::config::TypeConfig types;
+                SemanticAnalysisRequest request{ symbolTable, uri, ".as.predefined", &i18n };
+                request.typeConfig = &types;
+                request.sourceCode = sourceCode;
+                request.tree = tree;
+                request.scopeRoot = rootScope;
+                // The caller still owns this tree exclusively, which is what makes the write-back
+                // sound - see TypeConversionChecker.h on mutableScopeRoot.
+                request.mutableScopeRoot = rootScope.get();
+
+                SemanticAnalyzer analyzer(nullptr);
+                analyzer.Analyze(request);
+            }
+
             if (rootScope)
             {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
+                scopeIndex.SetScopeTree(uri, std::shared_ptr<const Scope>(std::move(rootScope)));
             }
         }
 
@@ -399,4 +429,64 @@ TEST_CASE("Completion - A closed argument list is not still open")
     TestEnvironment env(code);
     const auto items = env.CompleteAt(3, 6);
     CHECK(HasItem(items, "grid"));
+}
+
+// =====================================================================================
+// foreach loop variables.
+//
+// `foreach (auto v : items)` writes `auto` and nothing else, so the element type has to come from
+// the container. AngelScript drives the loop through `opForValue<N>`, and the Nth loop variable
+// takes that method's return type - which the stub already declares, so no per-type knowledge is
+// needed. Verified against asharness: `foreach (auto v : array<string>)` lets `v.length()` compile,
+// and `foreach (auto n : anInt)` is rejected with "Type 'int' is not valid type for foreach loops".
+// =====================================================================================
+
+TEST_CASE("Completion - A foreach variable completes as the container's element type")
+{
+    const std::string code =
+        "void main()\n"                          // 0
+        "{\n"                                    // 1
+        "    array<Item> items;\n"               // 2
+        "    foreach (auto entry : items)\n"     // 3
+        "    {\n"                                // 4
+        "        entry.\n"                       // 5
+        "    }\n"                                // 6
+        "}\n"                                    // 7
+        "class Item { int health; void Spawn() {} }\n"  // 8
+        "class array<T>\n"                       // 9
+        "{\n"                                    // 10
+        "    const T& opForValue0(uint index) const;\n"  // 11
+        "    uint opForValue1(uint index) const;\n"      // 12
+        "}\n";                                   // 13
+
+    TestEnvironment env(code, /*runAnalyzer=*/true);
+    const auto items = env.CompleteAt(5, 14);
+
+    CHECK(HasItem(items, "health"));
+    CHECK(HasItem(items, "Spawn"));
+}
+
+TEST_CASE("Completion - The second foreach variable is the index, not the element")
+{
+    const std::string code =
+        "void main()\n"                                  // 0
+        "{\n"                                            // 1
+        "    array<Item> items;\n"                       // 2
+        "    foreach (auto entry, auto index : items)\n" // 3
+        "    {\n"                                        // 4
+        "        index.\n"                               // 5
+        "    }\n"                                        // 6
+        "}\n"                                            // 7
+        "class Item { int health; }\n"                   // 8
+        "class array<T>\n"                               // 9
+        "{\n"                                            // 10
+        "    const T& opForValue0(uint index) const;\n"  // 11
+        "    uint opForValue1(uint index) const;\n"      // 12
+        "}\n";                                           // 13
+
+    TestEnvironment env(code, /*runAnalyzer=*/true);
+    const auto items = env.CompleteAt(5, 14);
+
+    // `opForValue1` returns uint, so the index must not carry the element's members.
+    CHECK_FALSE(HasItem(items, "health"));
 }

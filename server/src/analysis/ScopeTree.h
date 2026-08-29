@@ -55,7 +55,7 @@ namespace angel_lsp::analysis
 
         /**
          * @brief Only meaningful when kind == Variable and the definition came from a
-         *        variable_declarator (not a foreach_variable, which has no declared type node):
+         *        variable_declarator, a parameter, or a foreach_variable:
          *        true if the declared type has a trailing '@' handle marker. See
          *        SemanticAnalyzer::CheckNullAssignedToNonHandleInScope.
          */
