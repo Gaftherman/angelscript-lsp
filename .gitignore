@@ -45,3 +45,7 @@ angelscript/
 
 # CTest scratch output, written into whatever directory ctest was invoked from.
 Testing/
+
+# Written into the working directory by opt-in corpus tests that copy a stub next to themselves.
+/server/as.predefined
+/server/tests/as.predefined
