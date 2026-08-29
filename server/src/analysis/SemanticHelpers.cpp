@@ -565,6 +565,82 @@ namespace angel_lsp::analysis
         return related;
     }
 
+    bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
+    {
+        if (ts_node_is_null(node))
+        {
+            return false;
+        }
+
+        // Walk out to the function this sits in. The cap is the same one the rest of the analyzer
+        // uses for ancestor walks; a tree deeper than that is malformed, not merely nested.
+        TSNode function = ts_node_parent(node);
+        int depth = 0;
+        while (!ts_node_is_null(function) && ts_node_type(function) != std::string_view("func_declaration"))
+        {
+            if (++depth > k_maxAstDepth)
+            {
+                return false;
+            }
+            function = ts_node_parent(function);
+        }
+
+        if (ts_node_is_null(function))
+        {
+            return false;
+        }
+
+        // A constructor is a func_declaration with no return type whose name is the class's. The
+        // absence of the field is what distinguishes it - `void Derived()` is a method that happens
+        // to share the name and cannot call super.
+        if (!ts_node_is_null(ts_node_child_by_field_name(function, "return_type", 11)))
+        {
+            return false;
+        }
+
+        TSNode functionName = ts_node_child_by_field_name(function, "name", 4);
+        if (ts_node_is_null(functionName))
+        {
+            return false;
+        }
+
+        TSNode owner = ts_node_parent(function);
+        depth = 0;
+        while (!ts_node_is_null(owner) && ts_node_type(owner) != std::string_view("class_declaration"))
+        {
+            if (++depth > k_maxAstDepth)
+            {
+                return false;
+            }
+            owner = ts_node_parent(owner);
+        }
+
+        if (ts_node_is_null(owner))
+        {
+            return false;
+        }
+
+        TSNode className = ts_node_child_by_field_name(owner, "name", 4);
+        if (ts_node_is_null(className) ||
+            GetNodeText(className, sourceCode) != GetNodeText(functionName, sourceCode))
+        {
+            return false;
+        }
+
+        // And the class has to have a base to call up into. `super(...)` in a class that names none
+        // is an error the compiler does report, so this stops short of excusing it.
+        const uint32_t childCount = ts_node_named_child_count(owner);
+        for (uint32_t i = 0; i < childCount; ++i)
+        {
+            if (ts_node_type(ts_node_named_child(owner, i)) == std::string_view("base_class_list"))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode)
     {
         std::vector<ContainerInfo> rawContainers;

@@ -287,6 +287,29 @@ namespace angel_lsp::analysis
             if (ref.name == "this" || ref.name == "value")
                 continue;
 
+            // `super` names no symbol, by design. In `class D : B { D() { super(1); } }` it is the
+            // base-constructor call and the code compiles; anywhere else - `super.F()`,
+            // `super::F()` - the compiler agrees with this rule and reports it. So the shape is
+            // tested, not the name. NamespaceChecker makes the same distinction for the error it
+            // raises on the same line.
+            if (ref.name == "super")
+            {
+                if (ctx.request.tree)
+                {
+                    const TSPoint at{ ref.startLine, ref.startCharacter };
+                    const TSNode node = ts_node_descendant_for_point_range(
+                        ts_tree_root_node(ctx.request.tree), at, at);
+                    if (IsBaseConstructorCall(node, ctx.request.sourceCode))
+                        continue;
+                }
+                else
+                {
+                    // No tree to ask. Staying silent is the policy when the analyzer cannot see
+                    // enough to be sure.
+                    continue;
+                }
+            }
+
             bool isInsideMixin = false;
             for (const auto &r : mixinRanges)
             {

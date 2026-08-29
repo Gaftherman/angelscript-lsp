@@ -39,6 +39,15 @@ rejects all of them.
 | `tpl_` | `optional<T>` and `dictionary` — that a template's list pattern cannot be guessed |
 | `fe_` | `foreach`: element typing, two-variable form, invalid containers |
 | `tc_` | `try` / `catch` and which paths count as returning |
+| `doc_p` | Claims from the external issue list that the compiler **accepts** and we do too |
+| `doc_r` | Claims the compiler **rejects** - several of them refute the list outright |
+| `doc_g` | Claims the compiler accepts and we do not yet; each has an entry in `KnownGaps()` |
+
+The `doc_` set came from a second AngelScript language server's issue tracker, distilled into ~60
+claims. Nine of them turned out to be wrong about the language, and four described behaviour this
+analyzer already had correct. `PARITY-BACKLOG.md` at the repository root carries the verdict for
+each, with the compiler output that settled it - read it before implementing anything from that
+list.
 
 ## Adding a case
 

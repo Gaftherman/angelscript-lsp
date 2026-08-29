@@ -38,8 +38,22 @@ namespace
         SemanticAnalysisRequest req{table, fileUri, "", &i18n};
         req.scopeRoot = scopeCollector.CollectScopes(sourceCode, scopeParser);
 
+        // The server always analyses with the source text and the parsed tree in hand
+        // (Server.cpp: AnalyzeDocument). Leaving them null here made this harness model something
+        // the server never is, and any rule that has to look at the syntax to decide - the
+        // base-constructor `super(...)` exemption, for one - silently took its no-tree branch, so
+        // the test passed without exercising the rule.
+        AngelScriptParser treeParser;
+        req.sourceCode = sourceCode;
+        req.tree = treeParser.Parse(sourceCode);
+
         SemanticAnalyzer analyzer(nullptr);
-        return analyzer.Analyze(req);
+        auto diagnostics = analyzer.Analyze(req);
+
+        if (req.tree)
+            ts_tree_delete(const_cast<TSTree *>(req.tree));
+
+        return diagnostics;
     }
 
     /** @brief True if diagnostics contains an as-err-undeclared-identifier flagging exactly name. */
@@ -1028,4 +1042,47 @@ TEST_CASE("Local vs global - a local shadowing a global is reported independentl
 
     // Exactly one warning: the local. The global with the same name must not be swept in.
     CHECK(CountUnusedVariableDiagnostics(diagnostics, "count") == 1);
+}
+
+TEST_CASE("super - the base-constructor call is not an undeclared identifier")
+{
+    // The real compiler accepts this file (tests/parity/doc_p01_super_ctor.as). `super` names no
+    // symbol and never will, so both the scope tree and the symbol table come up empty on it - the
+    // rule has to recognise the shape instead.
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "class Base { Base(int x) {} }\n"
+        "class Derived : Base { Derived() { super(1); } }\n",
+        table, i18n);
+
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagnostics, "super"));
+}
+
+TEST_CASE("super - outside a constructor it really is undeclared")
+{
+    // The compiler's own answer on tests/parity/doc_r01_super_method.as:
+    //     ERROR (2, 40): No matching symbol 'super'
+    // `super` is only the base-constructor call. It is not a handle to the base class, so
+    // `super.F()` is an error and the exemption above must not reach it.
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "class B { void F() {} }\n"
+        "class D : B { void F() { super.F(); } }\n",
+        table, i18n);
+
+    CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "super"));
+}
+
+TEST_CASE("super - a class with no base cannot call one")
+{
+    // `super(1)` in a class that names no base is an error the compiler does report, so the
+    // exemption tests for a base list rather than merely for being in a constructor.
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "class Lonely { Lonely() { super(1); } }\n", table, i18n);
+
+    CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "super"));
 }

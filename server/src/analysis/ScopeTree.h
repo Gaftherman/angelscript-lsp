@@ -186,6 +186,22 @@ namespace angel_lsp::analysis
     const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name);
 
     /**
+     * @brief ResolveInScope, additionally reporting which scope held the definition.
+     *
+     * LOCALS_QUERY captures a module-level global and a function-body local under the identical
+     * LocalDefinitionKind::Variable, so the definition alone cannot tell them apart - only the
+     * scope that owns it can, through Scope::isFunctionScope. A caller that has to make that
+     * distinction (the lambda-closure rule does: a lambda may not read an outer *local*, but a
+     * global is not a capture and is perfectly legal) needs the owner, not just the definition.
+     *
+     * @param scope Scope to start from; the chain is walked outward through parents.
+     * @param name Identifier to resolve.
+     * @param owner Set to the scope holding the definition, or left untouched when nothing matched.
+     * @return The definition, or nullptr.
+     */
+    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name, const Scope **owner);
+
+    /**
      * @brief Finds the innermost Scope containing the given source line and character.
      *
      * @note Returns `root` when no child contains the point, even if `root` does not contain it
