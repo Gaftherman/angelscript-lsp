@@ -3,19 +3,45 @@
   "name": "AngelScript",
   "scopeName": "source.angelscript",
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#preprocessor" },
-    { "include": "#strings" },
-    { "include": "#numbers" },
-    { "include": "#constants" },
-    { "include": "#keywords" },
-    { "include": "#storage" },
-    { "include": "#modifiers" },
-    { "include": "#namespaces" },
-    { "include": "#functions" },
-    { "include": "#types" },
-    { "include": "#operators" },
-    { "include": "#punctuation" }
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#preprocessor"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#storage"
+    },
+    {
+      "include": "#modifiers"
+    },
+    {
+      "include": "#namespaces"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#punctuation"
+    },
+    {
+      "include": "#operators"
+    }
   ],
   "repository": {
     "comments": {
@@ -28,22 +54,34 @@
             {
               "match": "([@\\\\](?:access|permission|visibility))\\s+(public|private|protected|package|internal)\\b",
               "captures": {
-                "1": { "name": "keyword.other.documentation.doxygen.angelscript" },
-                "2": { "name": "constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript" }
+                "1": {
+                  "name": "keyword.other.documentation.doxygen.angelscript"
+                },
+                "2": {
+                  "name": "constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript"
+                }
               }
             },
             {
               "match": "([@\\\\](?:param|tparam))\\s*(\\[(?:in|out|in,out|out,in)\\])?\\s*([A-Za-z_][A-Za-z0-9_]*)?",
               "captures": {
-                "1": { "name": "keyword.other.documentation.doxygen.angelscript" },
-                "2": { "name": "keyword.operator.direction.doxygen.angelscript" },
-                "3": { "name": "variable.parameter.doxygen.angelscript variable.parameter.angelscript" }
+                "1": {
+                  "name": "keyword.other.documentation.doxygen.angelscript"
+                },
+                "2": {
+                  "name": "keyword.operator.direction.doxygen.angelscript"
+                },
+                "3": {
+                  "name": "variable.parameter.doxygen.angelscript variable.parameter.angelscript"
+                }
               }
             },
             {
               "match": "\\[(in|out|in,out|out,in)\\]",
               "captures": {
-                "0": { "name": "keyword.operator.direction.doxygen.angelscript" }
+                "0": {
+                  "name": "keyword.operator.direction.doxygen.angelscript"
+                }
               }
             },
             {
@@ -73,22 +111,34 @@
             {
               "match": "([@\\\\](?:access|permission|visibility))\\s+(public|private|protected|package|internal)\\b",
               "captures": {
-                "1": { "name": "keyword.other.documentation.doxygen.angelscript" },
-                "2": { "name": "constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript" }
+                "1": {
+                  "name": "keyword.other.documentation.doxygen.angelscript"
+                },
+                "2": {
+                  "name": "constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript"
+                }
               }
             },
             {
               "match": "([@\\\\](?:param|tparam))\\s*(\\[(?:in|out|in,out|out,in)\\])?\\s*([A-Za-z_][A-Za-z0-9_]*)?",
               "captures": {
-                "1": { "name": "keyword.other.documentation.doxygen.angelscript" },
-                "2": { "name": "keyword.operator.direction.doxygen.angelscript" },
-                "3": { "name": "variable.parameter.doxygen.angelscript variable.parameter.angelscript" }
+                "1": {
+                  "name": "keyword.other.documentation.doxygen.angelscript"
+                },
+                "2": {
+                  "name": "keyword.operator.direction.doxygen.angelscript"
+                },
+                "3": {
+                  "name": "variable.parameter.doxygen.angelscript variable.parameter.angelscript"
+                }
               }
             },
             {
               "match": "\\[(in|out|in,out|out,in)\\]",
               "captures": {
-                "0": { "name": "keyword.operator.direction.doxygen.angelscript" }
+                "0": {
+                  "name": "keyword.operator.direction.doxygen.angelscript"
+                }
               }
             },
             {
@@ -118,8 +168,12 @@
           "name": "meta.preprocessor.include.angelscript",
           "begin": "^\\s*(#)\\s*(include)\\b",
           "beginCaptures": {
-            "1": { "name": "punctuation.definition.directive.angelscript keyword.control.directive.include.angelscript" },
-            "2": { "name": "keyword.control.directive.include.angelscript" }
+            "1": {
+              "name": "punctuation.definition.directive.angelscript keyword.control.directive.include.angelscript"
+            },
+            "2": {
+              "name": "keyword.control.directive.include.angelscript"
+            }
           },
           "end": "$\n?",
           "patterns": [
@@ -139,8 +193,12 @@
           "name": "meta.preprocessor.conditional.angelscript",
           "begin": "^\\s*(#)\\s*(ifdef|ifndef|if|elif|else|endif)\\b",
           "beginCaptures": {
-            "1": { "name": "punctuation.definition.directive.angelscript keyword.control.directive.conditional.angelscript" },
-            "2": { "name": "keyword.control.directive.conditional.angelscript" }
+            "1": {
+              "name": "punctuation.definition.directive.angelscript keyword.control.directive.conditional.angelscript"
+            },
+            "2": {
+              "name": "keyword.control.directive.conditional.angelscript"
+            }
           },
           "end": "$\n?",
           "patterns": [
@@ -154,8 +212,12 @@
           "name": "meta.preprocessor.angelscript",
           "begin": "^\\s*(#)\\s*([A-Za-z_][A-Za-z0-9_]*)\\b",
           "beginCaptures": {
-            "1": { "name": "punctuation.definition.directive.angelscript keyword.control.directive.angelscript" },
-            "2": { "name": "keyword.control.directive.angelscript" }
+            "1": {
+              "name": "punctuation.definition.directive.angelscript keyword.control.directive.angelscript"
+            },
+            "2": {
+              "name": "keyword.control.directive.angelscript"
+            }
           },
           "end": "$\n?"
         }
@@ -369,12 +431,28 @@
           "match": "::"
         },
         {
-          "name": "storage.type.template.angelscript punctuation.definition.typeparameters.begin.angelscript punctuation.definition.typeparameters.begin.ts",
-          "match": "(?<=\\b[a-zA-Z_][a-zA-Z0-9_]*)<(?!\\=)"
-        },
-        {
-          "name": "storage.type.template.angelscript punctuation.definition.typeparameters.end.angelscript punctuation.definition.typeparameters.end.ts",
-          "match": "(?<=\\b[a-zA-Z_][a-zA-Z0-9_]*<[^>]*)>"
+          "match": "(?<=\\b[A-Za-z_][A-Za-z0-9_]*)(<)([A-Za-z0-9_,@\\s\\[\\]:<>]*)(>)",
+          "captures": {
+            "1": {
+              "name": "storage.type.template.angelscript punctuation.definition.typeparameters.begin.angelscript punctuation.definition.typeparameters.begin.ts"
+            },
+            "2": {
+              "patterns": [
+                {
+                  "include": "#punctuation"
+                },
+                {
+                  "include": "#types"
+                },
+                {
+                  "include": "#storage"
+                }
+              ]
+            },
+            "3": {
+              "name": "storage.type.template.angelscript punctuation.definition.typeparameters.end.angelscript punctuation.definition.typeparameters.end.ts"
+            }
+          }
         },
         {
           "name": "punctuation.delimiter.angelscript",

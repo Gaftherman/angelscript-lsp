@@ -59,6 +59,18 @@ namespace angel_lsp::analysis
 
             if (result == "int32") { return "int"; }
             if (result == "uint32") { return "uint"; }
+
+            // `T[]` and `array<T>` are two spellings of one type - the language's bracket syntax is
+            // sugar for whatever the engine registered as its default array - so they have to
+            // compare equal. They did not, and the standard library is written in both: passing
+            // `string::split`'s `array<string>@` to `join(const string[]&in, ...)` was reported as
+            // "Cannot implicitly convert 'array<string>@' to 'const string[]'" on correct code.
+            //
+            // Applied innermost-first so `int[][]` folds all the way down to `array<array<int>>`.
+            while (result.ends_with("[]"))
+            {
+                result = "array<" + result.substr(0, result.size() - 2) + ">";
+            }
             return result;
         }
 
@@ -163,6 +175,42 @@ namespace angel_lsp::analysis
         }
     }
 
+    // Both of these normalise first and then defer to the shared classifiers in SemanticHelpers.h.
+    // They used to carry their own lists, and those lists had drifted from the conversion rules':
+    // neither knew about `int32` or `uint32`, the explicit spellings of `int` and `uint`, which a
+    // source file may legitimately write and which nothing canonicalises away.
+    //
+    // No user-visible symptom was found for that divergence, and the honest reason is that the
+    // silent-unless-fully-visible policy absorbed it: an argument written as `int32` simply scored
+    // as having no viable candidate, and a call whose overloads cannot be resolved is passed over
+    // rather than reported. So it cost a diagnostic rather than producing a wrong one. Sharing the
+    // vocabulary is still worth doing - three lists of the same primitives, each maintained
+    // separately, is how the next one gains a real symptom.
+
+    /** @brief True for AngelScript's integer primitives, signed or unsigned. */
+    bool IsIntegerType(const std::string &typeName)
+    {
+        return IsIntegerPrimitive(NormalizeType(typeName));
+    }
+
+    /** @brief True for AngelScript's floating point primitives. */
+    bool IsFloatingPointType(const std::string &typeName)
+    {
+        return IsFloatingPointPrimitive(NormalizeType(typeName));
+    }
+
+    /**
+     * @brief Safe implicit numeric conversions, as the AngelScript compiler actually performs them.
+     *
+     * Signed/unsigned pairings are included on purpose. They were missing, and the gap was real:
+     * `array<int> a(1)` passes a literal `int` to `array(uint initialSize)`, and with int -> uint
+     * absent from this table that scored Incompatible and produced "No matching signatures to
+     * 'array<int>(int)'" on entirely ordinary code. The real compiler accepts every case here -
+     * verified against it directly, not read off the spec.
+     *
+     * The explicit `int32`/`uint32` spellings are listed beside `int`/`uint` because a source file
+     * may write either and nothing canonicalises them away.
+     */
     bool IsPrimitiveWidening(const std::string &fromType, const std::string &toType)
     {
         const std::string from = NormalizeType(fromType);
@@ -181,7 +229,9 @@ namespace angel_lsp::analysis
         }
         if (from == "int8")
         {
-            return to == "int16" || to == "int" || to == "int64" || to == "float" || to == "double";
+            return to == "int16" || to == "int" || to == "int32" || to == "int64" ||
+                   to == "uint8" || to == "uint16" || to == "uint" || to == "uint32" || to == "uint64" ||
+                   to == "float" || to == "double";
         }
         if (from == "uint8")
         {
@@ -190,24 +240,30 @@ namespace angel_lsp::analysis
         }
         if (from == "int16")
         {
-            return to == "int" || to == "int64" || to == "float" || to == "double";
+            return to == "int" || to == "int32" || to == "int64" ||
+                   to == "uint16" || to == "uint" || to == "uint32" || to == "uint64" ||
+                   to == "float" || to == "double";
         }
         if (from == "uint16")
         {
             return to == "uint" || to == "int" || to == "uint64" || to == "int64" ||
                    to == "float" || to == "double";
         }
-        if (from == "int")
+        if (from == "int" || from == "int32")
         {
-            return to == "int64" || to == "float" || to == "double";
+            return to == "int32" || to == "int" || to == "int64" ||
+                   to == "uint" || to == "uint32" || to == "uint64" ||
+                   to == "float" || to == "double";
         }
-        if (from == "uint")
+        if (from == "uint" || from == "uint32")
         {
-            return to == "uint64" || to == "int64" || to == "float" || to == "double";
+            return to == "uint32" || to == "uint" || to == "uint64" ||
+                   to == "int" || to == "int32" || to == "int64" ||
+                   to == "float" || to == "double";
         }
         if (from == "int64" || from == "uint64")
         {
-            return to == "double";
+            return to == "int64" || to == "uint64" || to == "double";
         }
         if (from == "float")
         {
@@ -227,12 +283,7 @@ namespace angel_lsp::analysis
             return false;
         }
 
-        const auto isNumeric = [](const std::string &t)
-        {
-            return t == "int8" || t == "uint8" || t == "int16" || t == "uint16" ||
-                   t == "int" || t == "uint" || t == "int64" || t == "uint64" ||
-                   t == "float" || t == "double";
-        };
+        const auto isNumeric = [](const std::string &t) { return IsNumericPrimitive(t); };
 
         if (isNumeric(from) && isNumeric(to))
         {
@@ -249,6 +300,43 @@ namespace angel_lsp::analysis
         return false;
     }
 
+    /**
+     * @brief True when two candidates declare the same signature, parameter for parameter.
+     *
+     * Used to tell a genuine overload ambiguity apart from the same declaration arriving twice,
+     * which is what happens when two stubs describing the same standard library are both loaded.
+     */
+    bool HasSameSignature(const Symbol &left, const Symbol &right)
+    {
+        if (!std::holds_alternative<FunctionSignature>(left.signature) ||
+            !std::holds_alternative<FunctionSignature>(right.signature))
+        {
+            return false;
+        }
+
+        const auto &a = left.GetFunction();
+        const auto &b = right.GetFunction();
+
+        if (left.qualifiedName != right.qualifiedName)
+            return false;
+
+        if (a.parameters.size() != b.parameters.size())
+            return false;
+
+        if (NormalizeType(a.returnType) != NormalizeType(b.returnType))
+            return false;
+
+        for (size_t i = 0; i < a.parameters.size(); ++i)
+        {
+            if (NormalizeType(a.parameters[i].typeName) != NormalizeType(b.parameters[i].typeName))
+                return false;
+            if (a.parameters[i].modifier != b.parameters[i].modifier)
+                return false;
+        }
+
+        return true;
+    }
+
     int ScoreArgumentMatch(
         const std::string &argType,
         const ParameterInformation &param,
@@ -256,6 +344,15 @@ namespace angel_lsp::analysis
     {
         // Variadic parameter / ellipsis matches anything with a slight penalty
         if (param.rawText.find("...") != std::string::npos)
+        {
+            return 10;
+        }
+
+        // AngelScript's variable type: `const ?&in` / `?&out` accepts any type, so this parameter
+        // can never be the reason an overload does not match. Scored like the ellipsis above -
+        // viable, but a shade worse than a concrete parameter that matches exactly, so a typed
+        // overload still wins over the wildcard one when both are candidates.
+        if (IsVariableType(param.typeName) || IsVariableType(param.rawText))
         {
             return 10;
         }
@@ -360,10 +457,13 @@ namespace angel_lsp::analysis
             }
         }
 
-        // 4. Primitive widening conversion
+        // 4. Primitive widening conversion. Integer -> floating point is still safe but ranks
+        //    below integer -> wider integer, so an overload set offering both is resolvable.
         if (IsPrimitiveWidening(cleanArg, cleanParam))
         {
-            return static_cast<int>(OverloadMatchPenalty::Widening);
+            const bool crossesKind = IsIntegerType(cleanArg) && IsFloatingPointType(cleanParam);
+            return static_cast<int>(crossesKind ? OverloadMatchPenalty::WideningAcrossKind
+                                                : OverloadMatchPenalty::Widening);
         }
 
         // 5. Primitive narrowing / cross conversion
@@ -472,7 +572,15 @@ namespace angel_lsp::analysis
             }
             else if (currentScore == result.bestScore)
             {
-                result.isAmbiguous = true;
+                // A tie between two *identical* signatures is not an ambiguity - it is the same
+                // function declared twice. That happens routinely in a real configuration: a
+                // --predefined-file and a built-in engine profile that both describe the standard
+                // library will each declare `array<T>::insertLast(const T&in)`, and reporting every
+                // call to it as ambiguous made the server unusable against that setup.
+                if (result.bestCandidate && !HasSameSignature(*result.bestCandidate, sym))
+                {
+                    result.isAmbiguous = true;
+                }
             }
         }
 

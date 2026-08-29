@@ -1,4 +1,5 @@
 #include "analysis/rules/RuleIndex.h"
+#include "analysis/SemanticHelpers.h"
 
 namespace angel_lsp::analysis::rules
 {
@@ -47,12 +48,55 @@ namespace angel_lsp::analysis::rules
                         }
                     }
 
+                    // Reverse inheritance edges, for GetAllRelatedClasses. Recorded before the
+                    // containerName check below, because a class's bases matter whether or not the
+                    // class itself is nested inside something.
+                    if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+                    {
+                        const DerivedType derived{
+                            sym.qualifiedName.empty() ? sym.name : sym.qualifiedName,
+                            sym.name
+                        };
+
+                        const auto recordBase = [&](const std::string &base)
+                        {
+                            const std::string cleanBase = CleanBaseType(base);
+                            if (!cleanBase.empty())
+                            {
+                                index->derivedByBase[cleanBase].push_back(derived);
+                            }
+                            // Indexed under the raw spelling too when it differs, because the
+                            // caller matches against both and a handle or const-qualified base
+                            // would otherwise never be found.
+                            if (!base.empty() && base != cleanBase)
+                            {
+                                index->derivedByBase[base].push_back(derived);
+                            }
+                        };
+
+                        if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+                        {
+                            for (const auto &base : sym.GetClass().bases)
+                                recordBase(base);
+                        }
+                        else if (sym.type == SymbolType::Interface && std::holds_alternative<InterfaceSignature>(sym.signature))
+                        {
+                            for (const auto &base : sym.GetInterface().inheritedInterfaces)
+                                recordBase(base);
+                        }
+                    }
+
                     if (sym.containerName.empty())
                     {
                         continue;
                     }
 
                     ContainerMembers &members = index->byContainer[sym.containerName];
+
+                    // Keyed the same way the table keys its buckets, so a consumer can go straight
+                    // to FindSymbolsPtr instead of scanning every bucket for a matching container.
+                    members.memberKeys.push_back(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
+
                     switch (sym.type)
                     {
                     case SymbolType::Function:

@@ -8,10 +8,12 @@ opencode.json
 *.log
 doctest_failures*.txt
 temp_*.txt
-*.txt
-!**/CMakeLists.txt
-!**/corpus/**/*.txt
-!**/test/**/*.txt
+# Scoped rather than a blanket `*.txt`: that ignored every text file in the repository and was
+# held back only by a growing list of exceptions, so the next LICENSE.txt or requirements.txt
+# would have been dropped silently.
+/test_output.txt
+/test_tmp.txt
+**/doctest_output*.txt
 
 # Scratch Scripts & Temporary Tests
 audit_temp_*.as
@@ -21,6 +23,13 @@ test*.as
 test_disc*.as
 
 # Build & Compiled Binaries
+#
+# client/bin holds the compiled server the extension ships. It was tracked - two 8 MB executables
+# rewritten by every build, so every server change showed up as an unreviewable binary diff. CI
+# already rebuilds all six platform targets and stages them into exactly this layout before
+# packaging the .vsix, so nothing about the released extension depends on them being committed.
+# Running from a source checkout still works: getServerPath() falls back to server/build/.
+client/bin/
 build/
 server/build/
 server/.cache/
@@ -33,3 +42,6 @@ client/bin/
 angelscript/
 .agents/*
 !.agents/AGENTS.md
+
+# CTest scratch output, written into whatever directory ctest was invoked from.
+Testing/

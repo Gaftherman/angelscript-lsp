@@ -10,29 +10,6 @@ namespace angel_lsp::features
 {
     namespace
     {
-        /**
-         * @brief Checks if a given line and character position falls within a scope's range.
-         * @param scope Target scope.
-         * @param line 0-based line number.
-         * @param character 0-based character offset.
-         * @return True if position is inside scope boundaries.
-         */
-        bool IsInsideScope(const analysis::Scope &scope, uint32_t line, uint32_t character)
-        {
-            if (line < scope.startLine || line > scope.endLine)
-            {
-                return false;
-            }
-            if (line == scope.startLine && character < scope.startCharacter)
-            {
-                return false;
-            }
-            if (line == scope.endLine && character > scope.endCharacter)
-            {
-                return false;
-            }
-            return true;
-        }
 
         /**
          * @brief Finds the deepest/innermost scope enclosing a given source position.
@@ -41,30 +18,6 @@ namespace angel_lsp::features
          * @param character 0-based character offset.
          * @return Innermost Scope pointer or nullptr if position is outside root.
          */
-        const analysis::Scope *FindInnermostScope(const analysis::Scope *root, uint32_t line, uint32_t character)
-        {
-            if (!root || !IsInsideScope(*root, line, character))
-            {
-                return nullptr;
-            }
-
-            const analysis::Scope *current = root;
-            bool foundChild = true;
-            while (foundChild)
-            {
-                foundChild = false;
-                for (const auto &child : current->children)
-                {
-                    if (child && IsInsideScope(*child, line, character))
-                    {
-                        current = child.get();
-                        foundChild = true;
-                        break;
-                    }
-                }
-            }
-            return current;
-        }
 
         /**
          * @brief Recursively searches for the Scope that contains the given LocalDefinition.

@@ -4,6 +4,7 @@
 #include "config/ServerConfig.h"
 #include "utils/LspLogger.h"
 #include "utils/PositionEncoding.h"
+#include "utils/PreprocessorRegions.h"
 #include "utils/WorkspaceIncludeGraph.h"
 #include "parser/AngelScriptParser.h"
 #include "analysis/SymbolTable.h"
@@ -37,7 +38,22 @@ namespace angel_lsp
         std::unique_ptr<lsp::Connection> m_connection;
         std::unique_ptr<lsp::MessageHandler> m_messageHandler;
         bool m_running;
+
+        // ---- Runtime-mutable configuration ------------------------------------------------
+        // Everything else in m_config is written once in the constructor and can be read from any
+        // thread. These three are not: didChangeWorkspaceFolders and didChangeConfiguration both
+        // rewrite them on the message loop while the workspace scan and the analysis thread are
+        // reading them. Reassigning a std::vector<std::string> frees the buffer a worker may be
+        // iterating, so they live behind this mutex and are reached only through the accessors
+        // below - never off m_config directly.
+        mutable std::mutex m_runtimeConfigMutex;
         std::vector<std::string> m_workspacesRoot;
+
+        // Held by shared_ptr rather than by value so a reader can keep the buffer alive for the
+        // duration of its call without copying every string, and a writer can swap in a new list
+        // without waiting for readers to finish.
+        std::shared_ptr<const std::vector<std::string>> m_searchDirectories;
+        std::string m_engineProfile;
         std::unique_ptr<angel_lsp::i18n::I18n> m_i18n;
         std::jthread m_workspaceThread;
         std::mutex m_messageHandlerMutex;
@@ -127,6 +143,15 @@ namespace angel_lsp
         // utils/PositionEncoding.h an identity, because it is what Tree-sitter reports natively.
         angel_lsp::utils::PositionEncoding m_positionEncoding = angel_lsp::utils::PositionEncoding::Utf16;
 
+        /**
+         * @brief Whether the client renders completion snippets, from its initialize capabilities.
+         *
+         * Only read by completion, and only to decide whether a template class may be offered as
+         * `array<${1:T}>`. Defaults to false so a client that says nothing gets the plain name
+         * rather than the placeholder syntax printed literally into its buffer.
+         */
+        bool m_snippetSupport = false;
+
     public:
         /**
          * @brief Constructs the server over a JSON-RPC transport.
@@ -141,6 +166,47 @@ namespace angel_lsp
 
         void Run();
         void InitHandles();
+
+        /**
+         * @brief Snapshot of the workspace folder URIs. Safe to call from any thread.
+         *
+         * Returns a copy on purpose: the caller may iterate it while the message loop adds or
+         * removes a folder, and a reference into the live vector would dangle the moment it did.
+         */
+        std::vector<std::string> WorkspaceRoots() const;
+
+        /**
+         * @brief Current `#include` search directories. Safe to call from any thread.
+         *
+         * The handle keeps that revision of the list alive for as long as it is held, so a
+         * concurrent didChangeConfiguration cannot pull it out from under an in-flight resolve.
+         */
+        std::shared_ptr<const std::vector<std::string>> SearchDirectories() const;
+
+        /** @brief Current engine profile name. Safe to call from any thread. */
+        std::string EngineProfile() const;
+
+        /**
+         * @brief Line ranges of `#if` blocks the preprocessor drops, for the configured defines.
+         *
+         * See utils/PreprocessorRegions.h. m_config.definedWords is written once at startup, so
+         * this is safe to call from the analysis thread.
+         */
+        std::vector<angel_lsp::utils::ExcludedLineRange> ExcludedLineRanges(const std::string &text) const;
+
+        /**
+         * @brief Directories an `#include` in this workspace is permitted to resolve into.
+         *
+         * Workspace folders plus the configured search directories plus the parent directory of
+         * each explicitly configured predefined stub - the three places a script may legitimately
+         * include from. Everything that resolves a directive passes this to IncludeResolver, so an
+         * absolute path or a `../` walk that leaves the workspace resolves to nothing instead of
+         * reading, indexing and then serving back an arbitrary file off the user's disk.
+         *
+         * Safe to call from any thread; recomputed per call from the guarded accessors, which is
+         * cheap next to the filesystem work each resolve does anyway.
+         */
+        std::vector<std::string> IncludeAllowedRoots() const;
 
         auto HandleRequestsInitialized(lsp::requests::Initialize::Params &&params);
         void HandleNotificationsInitialized(lsp::notifications::Initialized::Params &&params);
@@ -249,6 +315,52 @@ namespace angel_lsp
                                                                           const TSTree *tree) const;
 
         /**
+         * @brief Rebuilds one document's symbols as a single atomic replacement.
+         *
+         * ClearDocumentSymbols() followed by N AddSymbol() calls is not equivalent: each takes the
+         * table's write lock on its own, so between them the document exists in the index with only
+         * some of its symbols - or none. A reader on another thread (the analysis thread running a
+         * rule that walks the whole table for a *different* document) can land in that window and
+         * emit cross-file diagnostics against a file that momentarily looks empty.
+         *
+         * Collecting into a staging table and swapping under one lock closes the window. This is
+         * the same discipline AnalyzeDocument already used; these overloads make it the default for
+         * the message-loop paths too.
+         *
+         * @return Diagnostics produced by symbol collection.
+         */
+        std::vector<angel_lsp::analysis::Diagnostic> ReplaceSymbolsFromTree(const std::string &uriStr,
+                                                                            const std::string &text,
+                                                                            TSTree *tree);
+
+        /** @brief ReplaceSymbolsFromTree for a caller that has source text but no parsed tree. */
+        std::vector<angel_lsp::analysis::Diagnostic> ReplaceSymbolsFromSource(const std::string &uriStr,
+                                                                              const std::string &text,
+                                                                              angel_lsp::parser::AngelScriptParser &parser);
+
+        /**
+         * @brief Collects the document's scopes and calls, analyses it, then publishes the scopes.
+         *
+         * The order is the point. `auto` inference in TypeConversionChecker writes the deduced type
+         * back into the scope tree so that hover, completion and the other checkers read a concrete
+         * type rather than "auto". Publishing before analysing made that write a data race - the
+         * analysis thread assigning a std::string that the message loop could be reading for a
+         * hover at the same moment. So the tree is built privately, handed to Analyze() as
+         * SemanticAnalysisRequest::mutableScopeRoot, and only swapped into the ScopeIndex once it
+         * is complete. Readers keep seeing the previous revision until then: an older consistent
+         * tree, never a half-written one. Same discipline as SymbolTable::ReplaceDocumentSymbols.
+         *
+         * @param uriStr Document URI.
+         * @param text Document text the tree was parsed from.
+         * @param tree Parsed tree, or nullptr - in which case the document's scopes and calls are
+         *        cleared and only the table-driven rules run.
+         * @return Diagnostics produced by semantic analysis.
+         */
+        std::vector<angel_lsp::analysis::Diagnostic> CollectScopesAndAnalyze(const std::string &uriStr,
+                                                                             const std::string &text,
+                                                                             const TSTree *tree);
+
+        /**
          * @brief Claims a predefined stub file for the given URI, releasing any earlier spelling.
          *
          * Two code paths index predefined files: the background workspace scan, which synthesises
@@ -350,7 +462,8 @@ namespace angel_lsp
          * TSTree in m_documentTrees and deletes it on the next edit, so touching it from here
          * would be a use-after-free.
          */
-        void AnalyzeDocument(const std::string &uriStr, const std::string &text);
+        void AnalyzeDocument(const std::string &uriStr, const std::string &text,
+                             angel_lsp::parser::AngelScriptParser &parser);
 
 
 

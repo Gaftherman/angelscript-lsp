@@ -130,7 +130,12 @@ namespace angel_lsp::test
                 TSTree *tree = parser.Parse(sourceCode);
 
                 SemanticAnalysisRequest request{ sharedTable, fileUri, "", &i18n };
-                request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
+
+                // Non-const handle so `auto` deduction is written back - this tree is local to the
+                // iteration and reachable by nothing else. See SemanticAnalysisRequest.h.
+                std::shared_ptr<Scope> scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
+                request.scopeRoot = scopeRoot;
+                request.mutableScopeRoot = scopeRoot.get();
                 request.sourceCode = sourceCode;
                 request.tree = tree;
 

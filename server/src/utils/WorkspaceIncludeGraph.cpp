@@ -26,13 +26,14 @@ namespace angel_lsp::utils
          */
         std::vector<std::string> ResolveDirectives(const std::string &normalizedPath,
                                                    std::string_view sourceCode,
-                                                   const std::vector<std::string> &searchDirectories)
+                                                   const std::vector<std::string> &searchDirectories,
+                                                   const std::vector<std::string> &allowedRoots)
         {
             std::vector<std::string> resolved;
 
             for (const auto &directive : IncludeResolver::ExtractIncludes(sourceCode))
             {
-                std::string target = IncludeResolver::ResolveIncludePath(directive.rawPath, normalizedPath, searchDirectories);
+                std::string target = IncludeResolver::ResolveIncludePath(directive.rawPath, normalizedPath, searchDirectories, allowedRoots);
                 if (target.empty())
                     continue; // Unresolvable include - reported as a diagnostic elsewhere, not an edge.
 
@@ -80,6 +81,13 @@ namespace angel_lsp::utils
                                       const std::function<bool()> &shouldStop,
                                       const FileReader &fileReader)
     {
+        // An edge may only point at a file inside the workspace or one of the configured search
+        // directories. Those are exactly the two places a script is legitimately allowed to include
+        // from, and confining the graph here is what stops a hostile `#include "/etc/passwd"` from
+        // pulling an arbitrary file into the index in the first place.
+        std::vector<std::string> allowedRoots = workspaceRoots;
+        allowedRoots.insert(allowedRoots.end(), searchDirectories.begin(), searchDirectories.end());
+
         const FileReader read = fileReader ? fileReader : FileReader(ReadFileFromDisk);
 
         // Collect first, then swap under the lock, so a long filesystem walk never blocks the
@@ -109,7 +117,7 @@ namespace angel_lsp::utils
                 if (!scriptExtension.empty() && !std::string_view(path).ends_with(scriptExtension))
                     continue;
 
-                std::vector<std::string> targets = ResolveDirectives(path, read(path), searchDirectories);
+                std::vector<std::string> targets = ResolveDirectives(path, read(path), searchDirectories, allowedRoots);
 
                 for (const auto &target : targets)
                     includedBy[target].push_back(path);
@@ -125,10 +133,11 @@ namespace angel_lsp::utils
 
     void WorkspaceIncludeGraph::UpdateFile(const std::string &filePath,
                                            std::string_view sourceCode,
-                                           const std::vector<std::string> &searchDirectories)
+                                           const std::vector<std::string> &searchDirectories,
+                                           const std::vector<std::string> &allowedRoots)
     {
         const std::string normalized = IncludeResolver::NormalizePath(filePath);
-        std::vector<std::string> targets = ResolveDirectives(normalized, sourceCode, searchDirectories);
+        std::vector<std::string> targets = ResolveDirectives(normalized, sourceCode, searchDirectories, allowedRoots);
 
         std::unique_lock<std::shared_mutex> lock(m_mutex);
         SetIncludesLocked(normalized, std::move(targets));

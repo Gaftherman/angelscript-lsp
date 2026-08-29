@@ -69,7 +69,16 @@ namespace angel_lsp::features
         /**
          * @brief Locates the innermost lexical scope containing the given point.
          */
-        const analysis::Scope *FindInnermostScope(const analysis::Scope *root, uint32_t line, uint32_t character)
+        /**
+         * @brief Innermost scope by *line only*, falling back to `root` when nothing contains it.
+         *
+         * Deliberately not analysis::FindInnermostScope, and named apart from it so the difference
+         * is visible rather than shadowed. Two things differ: the column is ignored, and a point
+         * outside every scope yields the root instead of nullptr. The code actions built here work
+         * on whole lines and want a scope to attach to even when the cursor sits between them, so
+         * both differences are load-bearing.
+         */
+        const analysis::Scope *FindScopeByLineOrRoot(const analysis::Scope *root, uint32_t line, uint32_t character)
         {
             if (!root)
             {
@@ -79,7 +88,7 @@ namespace angel_lsp::features
             {
                 if (child->startLine <= line && child->endLine >= line)
                 {
-                    if (const analysis::Scope *deeper = FindInnermostScope(child.get(), line, character))
+                    if (const analysis::Scope *deeper = FindScopeByLineOrRoot(child.get(), line, character))
                     {
                         return deeper;
                     }
@@ -377,7 +386,7 @@ namespace angel_lsp::features
                         {
                             std::string varName = GetNodeText(left, sourceCode);
                             TSPoint pt = ts_node_start_point(left);
-                            const analysis::Scope *inner = FindInnermostScope(scope, pt.row, pt.column);
+                            const analysis::Scope *inner = FindScopeByLineOrRoot(scope, pt.row, pt.column);
                             const analysis::LocalDefinition *localDef = analysis::ResolveInScope(inner, varName);
 
                             bool isField = classFields.contains(varName);
@@ -434,7 +443,7 @@ namespace angel_lsp::features
                             {
                                 std::string varName = GetNodeText(arg, sourceCode);
                                 TSPoint pt = ts_node_start_point(arg);
-                                const analysis::Scope *inner = FindInnermostScope(scope, pt.row, pt.column);
+                                const analysis::Scope *inner = FindScopeByLineOrRoot(scope, pt.row, pt.column);
                                 const analysis::LocalDefinition *localDef = analysis::ResolveInScope(inner, varName);
 
                                 bool isField = classFields.contains(varName);
@@ -592,7 +601,7 @@ namespace angel_lsp::features
             auto rootScope = request.scopeIndex.GetRoot(request.uri);
             TSPoint exprStart = ts_node_start_point(targetNode);
             TSPoint exprEnd = ts_node_end_point(targetNode);
-            const analysis::Scope *scope = FindInnermostScope(rootScope.get(), exprStart.row, exprStart.column);
+            const analysis::Scope *scope = FindScopeByLineOrRoot(rootScope.get(), exprStart.row, exprStart.column);
 
             std::string varType = analysis::ResolveExpressionType(targetNode, scope, request.symbolTable, request.sourceCode, request.uri);
             if (varType.empty() || varType == "null")
@@ -728,7 +737,7 @@ namespace angel_lsp::features
             }
 
             auto rootScope = request.scopeIndex.GetRoot(request.uri);
-            const analysis::Scope *fnScope = FindInnermostScope(rootScope.get(), ts_node_start_point(fnNode).row, ts_node_start_point(fnNode).column);
+            const analysis::Scope *fnScope = FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(fnNode).row, ts_node_start_point(fnNode).column);
 
             struct VarInfo
             {
@@ -935,7 +944,7 @@ namespace angel_lsp::features
                 }
 
                 // Check mutated pre-declared variables for usage after selection
-                const analysis::Scope *stmtScope = FindInnermostScope(rootScope.get(), firstStart.row, firstStart.column);
+                const analysis::Scope *stmtScope = FindScopeByLineOrRoot(rootScope.get(), firstStart.row, firstStart.column);
                 for (const auto &mName : mutatedVars)
                 {
                     const analysis::LocalDefinition *def = nullptr;
@@ -1465,7 +1474,7 @@ namespace angel_lsp::features
                     TSNode callee = ts_node_parent(memberNode);
                     TSNode objNode = ts_node_child_by_field_name(callee, "object", 6);
                     auto rootScope = request.scopeIndex.GetRoot(request.uri);
-                    const analysis::Scope *scope = FindInnermostScope(rootScope.get(), dPt.row, dPt.column);
+                    const analysis::Scope *scope = FindScopeByLineOrRoot(rootScope.get(), dPt.row, dPt.column);
                     std::string objType = analysis::CleanBaseType(analysis::ResolveExpressionType(objNode, scope, request.symbolTable, request.sourceCode, request.uri));
 
                     request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symList)
@@ -1603,7 +1612,7 @@ namespace angel_lsp::features
             std::string className = GetNodeText(classNameNode, request.sourceCode);
 
             auto rootScope = request.scopeIndex.GetRoot(request.uri);
-            const analysis::Scope *scope = FindInnermostScope(rootScope.get(), ts_node_start_point(fnNode).row, ts_node_start_point(fnNode).column);
+            const analysis::Scope *scope = FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(fnNode).row, ts_node_start_point(fnNode).column);
 
             if (!ts_node_is_null(bodyNode) && !MethodBodyMutatesClassState(bodyNode, classNode, request.sourceCode, request.symbolTable, className, scope))
             {

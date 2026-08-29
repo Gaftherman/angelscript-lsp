@@ -64,7 +64,8 @@ namespace angel_lsp::utils
          */
         void UpdateFile(const std::string &filePath,
                         std::string_view sourceCode,
-                        const std::vector<std::string> &searchDirectories);
+                        const std::vector<std::string> &searchDirectories,
+                        const std::vector<std::string> &allowedRoots = {});
 
         /**
          * @brief All files that make up the module the given file participates in.

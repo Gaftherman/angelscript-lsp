@@ -253,23 +253,29 @@ namespace angel_lsp::analysis
 
     bool SymbolTable::HasSymbolAnywhere(const std::string &name) const
     {
-        std::shared_lock<std::shared_mutex> lock(m_mutex);
         std::string searchName = name;
         if (searchName.rfind("::", 0) == 0)
             searchName = searchName.substr(2);
 
-        if (m_symbols.find(searchName) != m_symbols.end() || m_symbols.find(name) != m_symbols.end())
-            return true;
-
-        for (const auto &[key, symbols] : m_symbols)
         {
-            for (const auto &sym : *symbols)
-            {
-                if (sym.name == searchName || sym.name == name || sym.qualifiedName == searchName || sym.qualifiedName == name)
-                    return true;
-            }
+            std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+            // Buckets are keyed by qualified name, so these two probes already answer every
+            // qualifiedName match the linear scan below used to make.
+            if (m_symbols.find(searchName) != m_symbols.end() || m_symbols.find(name) != m_symbols.end())
+                return true;
         }
-        return false;
+
+        // What the probes above cannot answer is a match on a symbol's *short* name when it is
+        // filed under a qualified one. That used to be a scan of every bucket and every symbol in
+        // the workspace - and CallChecker asks this once per declarator. RuleIndex::allNames holds
+        // exactly that set and is rebuilt only when the table's version moves.
+        //
+        // Deliberately outside the shared lock: GetRuleIndex() re-enters ForEachSymbol, which takes
+        // the same non-recursive shared_mutex, and a writer arriving between the two acquisitions
+        // would deadlock. See the note on ForEachSymbol.
+        const auto index = GetRuleIndex();
+        return index && (index->allNames.contains(searchName) || index->allNames.contains(name));
     }
 
     void SymbolTable::ForEachSymbol(const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const

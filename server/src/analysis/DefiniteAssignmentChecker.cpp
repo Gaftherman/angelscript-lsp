@@ -1,4 +1,5 @@
 #include "analysis/DefiniteAssignmentChecker.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
 #include "analysis/OverloadResolver.h"
@@ -14,20 +15,31 @@ namespace angel_lsp::analysis
 {
     namespace
     {
+        /**
+         * @brief Node text as an owning string.
+         *
+         * Kept per translation unit rather than shared with ASTUtils::NodeText, which returns a
+         * string_view. The two are not interchangeable: callers here store the result, concatenate
+         * it, and use it after the node has gone out of scope, so handing them a view would trade a
+         * duplicated three-line function for a lifetime question at several dozen call sites.
+         * Deduplicating it was attempted and reverted for exactly that reason.
+         */
         std::string NodeText(TSNode node, std::string_view sourceCode)
         {
-            if (ts_node_is_null(node) || sourceCode.empty())
+            if (ts_node_is_null(node))
             {
                 return "";
             }
-            uint32_t start = ts_node_start_byte(node);
-            uint32_t end = ts_node_end_byte(node);
+
+            const uint32_t start = ts_node_start_byte(node);
+            const uint32_t end = ts_node_end_byte(node);
             if (start >= end || end > sourceCode.size())
             {
                 return "";
             }
             return std::string(sourceCode.substr(start, end - start));
         }
+
 
         std::string_view Trim(std::string_view text)
         {
@@ -135,8 +147,13 @@ namespace angel_lsp::analysis
             ankerl::unordered_dense::set<std::string> m_trackedLocals;
             ankerl::unordered_dense::set<std::string> m_reportedReads;
 
-            void CheckExpressionReads(TSNode node, FlowState &state)
+            void CheckExpressionReads(TSNode node, FlowState &state, int depth = 0)
             {
+                    // See k_maxAstDepth in ASTUtils.h.
+                    if (depth > k_maxAstDepth)
+                        return;
+
+
                 if (ts_node_is_null(node))
                 {
                     return;
@@ -299,12 +316,17 @@ namespace angel_lsp::analysis
                 uint32_t count = ts_node_named_child_count(node);
                 for (uint32_t i = 0; i < count; ++i)
                 {
-                    CheckExpressionReads(ts_node_named_child(node, i), state);
+                    CheckExpressionReads(ts_node_named_child(node, i), state, depth + 1);
                 }
             }
 
-            void AnalyzeStatement(TSNode node, FlowState &state)
+            void AnalyzeStatement(TSNode node, FlowState &state, int depth = 0)
             {
+                    // See k_maxAstDepth in ASTUtils.h.
+                    if (depth > k_maxAstDepth)
+                        return;
+
+
                 if (ts_node_is_null(node) || state.isTerminated || state.hasReturned)
                 {
                     return;
@@ -317,7 +339,7 @@ namespace angel_lsp::analysis
                     uint32_t count = ts_node_named_child_count(node);
                     for (uint32_t i = 0; i < count && !state.isTerminated && !state.hasReturned; ++i)
                     {
-                        AnalyzeStatement(ts_node_named_child(node, i), state);
+                        AnalyzeStatement(ts_node_named_child(node, i), state, depth + 1);
                     }
                     return;
                 }
@@ -588,8 +610,13 @@ namespace angel_lsp::analysis
             }
         };
 
-        void TraverseFunctions(TSNode node, DefiniteAssignmentVisitor &visitor)
+        void TraverseFunctions(TSNode node, DefiniteAssignmentVisitor &visitor, int depth = 0)
         {
+            // See k_maxAstDepth in ASTUtils.h.
+            if (depth > k_maxAstDepth)
+                return;
+
+
             std::string_view type = ts_node_type(node);
             if (type == "func_declaration" || type == "lambda_expression")
             {
@@ -599,7 +626,7 @@ namespace angel_lsp::analysis
             uint32_t count = ts_node_named_child_count(node);
             for (uint32_t i = 0; i < count; ++i)
             {
-                TraverseFunctions(ts_node_named_child(node, i), visitor);
+                TraverseFunctions(ts_node_named_child(node, i), visitor, depth + 1);
             }
         }
     }

@@ -1,4 +1,5 @@
 #include "analysis/TypeConversionChecker.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 
 #include <algorithm>
@@ -10,6 +11,31 @@ namespace angel_lsp::analysis
 {
     namespace
     {
+        /**
+         * @brief Node text as an owning string.
+         *
+         * Kept per translation unit rather than shared with ASTUtils::NodeText, which returns a
+         * string_view. The two are not interchangeable: callers here store the result, concatenate
+         * it, and use it after the node has gone out of scope, so handing them a view would trade a
+         * duplicated three-line function for a lifetime question at several dozen call sites.
+         * Deduplicating it was attempted and reverted for exactly that reason.
+         */
+        std::string NodeText(TSNode node, std::string_view sourceCode)
+        {
+            if (ts_node_is_null(node))
+            {
+                return "";
+            }
+
+            const uint32_t start = ts_node_start_byte(node);
+            const uint32_t end = ts_node_end_byte(node);
+            if (start >= end || end > sourceCode.size())
+            {
+                return "";
+            }
+            return std::string(sourceCode.substr(start, end - start));
+        }
+
         constexpr uint32_t k_typeFieldLength = 4;      ///< "type"
         constexpr uint32_t k_valueFieldLength = 5;     ///< "value"
         constexpr uint32_t k_argsFieldLength = 9;      ///< "arguments"
@@ -37,22 +63,6 @@ namespace angel_lsp::analysis
             bool isClass = false;
             bool isTemplate = false;
         };
-
-        std::string NodeText(TSNode node, std::string_view sourceCode)
-        {
-            if (ts_node_is_null(node))
-            {
-                return "";
-            }
-
-            const uint32_t start = ts_node_start_byte(node);
-            const uint32_t end = ts_node_end_byte(node);
-            if (start >= end || end > sourceCode.size())
-            {
-                return "";
-            }
-            return std::string(sourceCode.substr(start, end - start));
-        }
 
         std::string_view NodeType(TSNode node)
         {
@@ -198,11 +208,101 @@ namespace angel_lsp::analysis
 
         /** @brief Visits the constructors declared directly on a type.
          *  @note Deliberately not hierarchy-wide: AngelScript does not inherit constructors. */
+        /** @brief A template type's parameters paired with the arguments written at the use site. */
+        struct TemplateBinding
+        {
+            bool isTemplate = false;
+            bool usable = false;      ///< False when the arity does not line up, so nothing may be concluded.
+            std::vector<std::string> parameters;
+            std::vector<std::string> arguments;
+        };
+
+        /**
+         * @brief Reads `weakref<Node>` into the substitution `T -> Node`, from the declaration.
+         *
+         * The parameter names come from the class's own declaration rather than being assumed to be
+         * `T`: a host is free to write `class map<K, V>`, and its constructors then mention `K` and
+         * `V`.
+         */
+        TemplateBinding BindTemplateArguments(const std::string &writtenType, const SymbolTable &table)
+        {
+            TemplateBinding binding;
+
+            const size_t open = writtenType.find('<');
+            const std::string name = (open == std::string::npos) ? writtenType : writtenType.substr(0, open);
+
+            const auto declarations = table.FindSymbolsPtr(LastScopeSegment(name));
+            if (!declarations)
+            {
+                return binding;
+            }
+
+            for (const auto &declaration : *declarations)
+            {
+                if (declaration.type != SymbolType::Class ||
+                    !std::holds_alternative<ClassSignature>(declaration.signature))
+                {
+                    continue;
+                }
+                const auto &cls = std::get<ClassSignature>(declaration.signature);
+                if (!cls.isTemplate || cls.templateParams.empty())
+                {
+                    continue;
+                }
+
+                binding.isTemplate = true;
+                binding.parameters = cls.templateParams;
+                break;
+            }
+
+            if (!binding.isTemplate || open == std::string::npos || !writtenType.ends_with('>'))
+            {
+                return binding;
+            }
+
+            const std::string inner = writtenType.substr(open + 1, writtenType.size() - open - 2);
+            int depth = 0;
+            std::string current;
+            for (char c : inner)
+            {
+                if (c == '<') { ++depth; }
+                else if (c == '>') { --depth; }
+                else if (c == ',' && depth == 0)
+                {
+                    binding.arguments.push_back(current);
+                    current.clear();
+                    continue;
+                }
+                current += c;
+            }
+            if (!current.empty())
+            {
+                binding.arguments.push_back(current);
+            }
+
+            for (auto &argument : binding.arguments)
+            {
+                while (!argument.empty() && isspace(static_cast<unsigned char>(argument.front()))) argument.erase(argument.begin());
+                while (!argument.empty() && isspace(static_cast<unsigned char>(argument.back()))) argument.pop_back();
+            }
+
+            binding.usable = binding.arguments.size() == binding.parameters.size();
+            return binding;
+        }
+
         void ForEachConstructor(const std::string &typeName,
                                 const SymbolTable &table,
                                 const std::function<bool(const Symbol &)> &visitor)
         {
-            const std::string bare = LastScopeSegment(typeName);
+            // The arguments come off before the key is built. A constructor is stored under the
+            // class's own name - `weakref::weakref` - so looking up `weakref<Node>` produced the key
+            // `weakref<Node>::weakref<Node>`, which matches nothing: a template's constructors were
+            // invisible here, and every `weakref<Node> w(node);` read as having none.
+            const size_t open = typeName.find('<');
+            const std::string unparameterized =
+                (open == std::string::npos) ? typeName : typeName.substr(0, open);
+
+            const std::string bare = LastScopeSegment(unparameterized);
             bool sawAny = false;
             bool stopped = false;
 
@@ -217,8 +317,8 @@ namespace angel_lsp::analysis
                 return stopped;
             };
 
-            ForEachSymbolNamed(typeName + "::" + bare, table, visit);
-            if (!stopped && !sawAny && bare != typeName)
+            ForEachSymbolNamed(unparameterized + "::" + bare, table, visit);
+            if (!stopped && !sawAny && bare != unparameterized)
             {
                 ForEachSymbolNamed(bare + "::" + bare, table, visit);
             }
@@ -355,6 +455,15 @@ namespace angel_lsp::analysis
                 return true;
             }
 
+            // `?` is AngelScript's variable type, not a type name: a parameter declared `const ?&in`
+            // or `?&out` takes a value of any type at all. dictionary::set/get, ref, Dispose and the
+            // format/scan helpers are all declared that way, so without this the analyzer reported
+            // "Cannot implicitly convert 'int' to '?'" on code the real compiler accepts.
+            if (IsVariableType(to) || IsVariableType(from))
+            {
+                return true;
+            }
+
             const SymbolTable &table = ctx.request.symbolTable;
 
             if (ctx.request.IsRegisteredSymbol(from) || ctx.request.IsRegisteredSymbol(to))
@@ -370,12 +479,7 @@ namespace angel_lsp::analysis
                 {
                     return true;
                 }
-                const auto isNumeric = [](const std::string &t)
-                {
-                    return t == "int" || t == "int8" || t == "int16" || t == "int32" || t == "int64" ||
-                           t == "uint" || t == "uint8" || t == "uint16" || t == "uint32" || t == "uint64" ||
-                           t == "float" || t == "double";
-                };
+                const auto isNumeric = [](const std::string &t) { return IsNumericPrimitive(t); };
                 const bool fromNum = isNumeric(from);
                 const bool toNum = isNumeric(to);
                 if (fromNum && toNum)
@@ -490,7 +594,8 @@ namespace angel_lsp::analysis
         ExpressionType ResolveValueType(TSNode node,
                                         const Scope *scope,
                                         const DiagnosticContext &ctx,
-                                        std::string_view sourceCode);
+                                        std::string_view sourceCode,
+                                        int depth = 0);
 
         /** @brief Resolves the type a bare (possibly scope-qualified) name denotes as a value. */
         ExpressionType ResolveIdentifierValueType(TSNode node,
@@ -579,8 +684,16 @@ namespace angel_lsp::analysis
         ExpressionType ResolveValueType(TSNode node,
                                         const Scope *scope,
                                         const DiagnosticContext &ctx,
-                                        std::string_view sourceCode)
+                                        std::string_view sourceCode,
+                                        int depth)
         {
+            // See k_maxAstDepth in ASTUtils.h. Returning the empty type is this file's established
+            // "cannot see enough to judge" answer, which every caller already treats as silence.
+            if (depth > k_maxAstDepth)
+            {
+                return ExpressionType{};
+            }
+
             if (ts_node_is_null(node))
             {
                 return ExpressionType{};
@@ -610,7 +723,7 @@ namespace angel_lsp::analysis
             if (nodeType == "parenthesized_expression")
             {
                 return ts_node_named_child_count(node) > 0
-                           ? ResolveValueType(ts_node_named_child(node, 0), scope, ctx, sourceCode)
+                           ? ResolveValueType(ts_node_named_child(node, 0), scope, ctx, sourceCode, depth + 1)
                            : ExpressionType{};
             }
 
@@ -623,7 +736,7 @@ namespace angel_lsp::analysis
                     return ExpressionType{ "bool", true, false };
                 }
                 return ResolveValueType(
-                    ts_node_child_by_field_name(node, "operand", k_operandFieldLength), scope, ctx, sourceCode);
+                    ts_node_child_by_field_name(node, "operand", k_operandFieldLength), scope, ctx, sourceCode, depth + 1);
             }
 
             if (nodeType == "identifier" || nodeType == "scoped_identifier")
@@ -931,12 +1044,34 @@ namespace angel_lsp::analysis
                 return;
             }
 
+            // A template's constructors are written in terms of its parameters - `weakref<T>` takes
+            // a `T@` - so the argument has to be substituted in before the types can be compared.
+            // Without it every `weakref<Node> w(node);` was reported as "No conversion from 'Node'
+            // to 'weakref<Node>'", because `T` resolves to nothing and nothing is convertible to
+            // it. Anything that cannot be substituted cleanly leaves the check inconclusive.
+            const TemplateBinding binding = BindTemplateArguments(targetType, table);
+            if (binding.isTemplate && !binding.usable)
+            {
+                return;
+            }
+
             bool constructible = false;
             ForEachConstructor(targetType, table, [&](const Symbol &sym)
             {
                 const auto &parameters = sym.GetFunction().parameters;
-                if (AcceptsSingleArgument(parameters) &&
-                    IsConvertible(source.baseName, SingleArgumentType(parameters), ctx, 1))
+                if (!AcceptsSingleArgument(parameters))
+                {
+                    return false;
+                }
+
+                std::string parameterType = SingleArgumentType(parameters);
+                for (size_t i = 0; i < binding.parameters.size(); ++i)
+                {
+                    parameterType = SubstituteTypeParam(parameterType, binding.parameters[i],
+                                                        binding.arguments[i]);
+                }
+
+                if (IsConvertible(source.baseName, parameterType, ctx, 1))
                 {
                     constructible = true;
                     return true;
@@ -1275,55 +1410,13 @@ namespace angel_lsp::analysis
             EmitAtNode(castNode, ctx, "as-err-invalid-cast", source.baseName, targetName);
         }
 
-        /** @brief Locates the innermost scope containing a point, for local-variable resolution. */
-        const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character)
-        {
-            if (!root)
-            {
-                return nullptr;
-            }
-
-            const auto contains = [line, character](const Scope &scope)
-            {
-                if (line < scope.startLine || line > scope.endLine)
+        void VisitNode(TSNode node, const TypeConversionCheckRequest &request, DiagnosticContext &ctx, int depth = 0)
                 {
-                    return false;
-                }
-                if (line == scope.startLine && character < scope.startCharacter)
-                {
-                    return false;
-                }
-                if (line == scope.endLine && character > scope.endCharacter)
-                {
-                    return false;
-                }
-                return true;
-            };
+            // Pathologically nested source would otherwise recurse until the stack gives out; see
+            // k_maxAstDepth in ASTUtils.h.
+            if (depth > k_maxAstDepth)
+                return;
 
-            if (!contains(*root))
-            {
-                return nullptr;
-            }
-
-            const Scope *current = root;
-            for (bool descended = true; descended;)
-            {
-                descended = false;
-                for (const auto &child : current->children)
-                {
-                    if (child && contains(*child))
-                    {
-                        current = child.get();
-                        descended = true;
-                        break;
-                    }
-                }
-            }
-            return current;
-        }
-
-        void VisitNode(TSNode node, const TypeConversionCheckRequest &request, DiagnosticContext &ctx)
-        {
             const std::string_view nodeType = NodeType(node);
 
             // Resolved lazily: only the three rules below need the scope walk, and paying for it on
@@ -1427,11 +1520,19 @@ namespace angel_lsp::analysis
                         {
                             EmitAtNode(valueNode, ctx, "as-err-cannot-infer-null");
                         }
-                        else if (!rhsType.empty() && scopeAt())
+                        // Writing the deduced type back is what lets hover, completion and the
+                        // other checkers see `auto` as its concrete type. It is guarded on
+                        // mutableScopeRoot because it is only sound on a tree the caller has not
+                        // published yet: doing it unconditionally meant the analysis thread wrote
+                        // this std::string while the message loop read it for a hover.
+                        else if (!rhsType.empty() && request.mutableScopeRoot && scopeAt())
                         {
                             const LocalDefinition *def = ResolveInScope(scopeAt(), varName);
                             if (def && (def->typeName == "auto" || def->typeName == "auto@"))
                             {
+                                // Sound only under the guard above: mutableScopeRoot is the caller
+                                // asserting it owns this exact tree exclusively, so the constness
+                                // here is incidental rather than a shared-state guarantee.
                                 const_cast<LocalDefinition *>(def)->typeName = rhsType;
                             }
                         }
@@ -1674,24 +1775,13 @@ namespace angel_lsp::analysis
                         }
                     }
                 }
-                else if (nodeType == "unary_expression" && (opText == "-" || (!opNode.id && nodeText.rfind("-", 0) == 0)))
-                {
-                    TSNode operand = ts_node_child_by_field_name(node, "operand", 7);
-                    if (ts_node_is_null(operand) && ts_node_named_child_count(node) > 0)
-                    {
-                        operand = ts_node_named_child(node, 0);
-                    }
-                    if (!ts_node_is_null(operand))
-                    {
-                        std::string opType = CleanBaseType(ResolveExpressionType(
-                            operand, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
-                        if (opType == "uint" || opType == "uint8" || opType == "uint16" ||
-                            opType == "uint32" || opType == "uint64")
-                        {
-                            EmitAtNode(node, ctx, "as-err-unary-neg-on-unsigned", opType);
-                        }
-                    }
-                }
+                // Unary minus on an unsigned operand used to be reported here as
+                // as-err-unary-neg-on-unsigned. It is not an error: AngelScript permits it and the
+                // result wraps, exactly as it does in C and C++. Verified against the real compiler
+                // for uint8, uint16, uint, uint64 and unsigned sub-expressions - every one compiles
+                // clean (see ParityAuditTest). The rule fired on ordinary correct code such as
+                // `-someUint`, so it was removed rather than narrowed; there is no operand type for
+                // which the diagnostic would have been right.
             }
             else if (nodeType == "member_expression")
             {
@@ -1910,7 +2000,7 @@ namespace angel_lsp::analysis
             const uint32_t childCount = ts_node_named_child_count(node);
             for (uint32_t i = 0; i < childCount; ++i)
             {
-                VisitNode(ts_node_named_child(node, i), request, ctx);
+                VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
             }
         }
     }

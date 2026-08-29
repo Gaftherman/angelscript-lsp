@@ -1177,14 +1177,27 @@ TEST_SUITE("AngelScript_Expressions_Verification") {
         CHECK(diagnostics[0].range.start.line == 8);
     }
 
-    TEST_CASE("Unary Operators: Reject unary minus on unsigned integer types") {
+    TEST_CASE("Unary Operators: Unary minus on unsigned integers is legal") {
+        // This test used to assert the opposite, and both it and the rule behind it were wrong.
+        // AngelScript permits unary minus on unsigned operands - the result wraps, exactly as in
+        // C and C++ - and the real compiler accepts every form below without a word. The parity
+        // audit against asharness is what caught it; the rule fired on ordinary correct code like
+        // `-someUint`, so as-err-unary-neg-on-unsigned was removed rather than narrowed.
         const char* script = R"(
             void Main() {
                 int signedVal = 10;
-                auto s = -signedVal; // OK: Negation of signed int
+                auto s = -signedVal;
 
                 uint unsignedVal = 20;
-                auto u = -unsignedVal; // Error: Unary negation on uint is disallowed
+                auto u = -unsignedVal;
+
+                uint8 small = 1;
+                auto t = -small;
+
+                uint64 big = 4;
+                auto w = -big;
+
+                auto x = -(unsignedVal + 1);
             }
         )";
 
@@ -1192,9 +1205,7 @@ TEST_SUITE("AngelScript_Expressions_Verification") {
         REQUIRE(doc != nullptr);
 
         auto diagnostics = doc->GetDiagnostics();
-        REQUIRE(diagnostics.size() == 1);
-        CHECK(diagnostics[0].code == "E_UNARY_NEG_ON_UNSIGNED");
-        CHECK(diagnostics[0].range.start.line == 6);
+        CHECK(diagnostics.empty());
     }
 
     TEST_CASE("Ternary Operator: Assignable lvalue conditional expression") {

@@ -1,4 +1,5 @@
 #include "analysis/SemanticHelpers.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/DiagnosticContext.h"
@@ -397,33 +398,51 @@ namespace angel_lsp::analysis
             std::string curType = queue[head++];
             hierarchy.push_back(curType);
 
-            auto symbols = symbolTable.FindSymbols(curType);
-            for (const auto &sym : symbols)
+            // FindSymbolsPtr, not FindSymbols: the latter deep-copies the whole overload bucket,
+            // and Symbol is a heavy value type. Nothing here mutates it.
+            const auto symbols = symbolTable.FindSymbolsPtr(curType);
+            for (const auto &sym : (symbols ? *symbols : std::vector<Symbol>{}))
             {
                 if (sym.type == SymbolType::Class)
                 {
                     const auto &cls = sym.GetClass();
-                    // 1. Enqueue mixins first (so mixin methods take precedence over base class methods)
+
+                    // Classified once, then partitioned. Mixins must still be enqueued ahead of
+                    // ordinary bases - that ordering is what makes a mixin's method take precedence
+                    // - but the two passes this used to take each re-cleaned every base name and
+                    // re-probed the symbol table through IsMixinClass, so every base was resolved
+                    // twice to answer the same question.
+                    struct ClassifiedBase
+                    {
+                        std::string name;
+                        bool isMixin = false;
+                    };
+
+                    std::vector<ClassifiedBase> bases;
+                    bases.reserve(cls.bases.size());
+
                     for (const auto &base : cls.bases)
                     {
                         std::string cleanBase = CleanBaseType(base);
-                        if (!cleanBase.empty() && IsMixinClass(cleanBase, symbolTable))
+                        if (cleanBase.empty())
                         {
-                            if (visited.insert(cleanBase).second)
-                            {
-                                queue.push_back(cleanBase);
-                            }
+                            continue;
                         }
+                        const bool isMixin = IsMixinClass(cleanBase, symbolTable);
+                        bases.push_back(ClassifiedBase{ std::move(cleanBase), isMixin });
                     }
-                    // 2. Enqueue non-mixin base classes
-                    for (const auto &base : cls.bases)
+
+                    for (const bool wantMixins : { true, false })
                     {
-                        std::string cleanBase = CleanBaseType(base);
-                        if (!cleanBase.empty() && !IsMixinClass(cleanBase, symbolTable))
+                        for (const auto &base : bases)
                         {
-                            if (visited.insert(cleanBase).second)
+                            if (base.isMixin != wantMixins)
                             {
-                                queue.push_back(cleanBase);
+                                continue;
+                            }
+                            if (visited.insert(base.name).second)
+                            {
+                                queue.push_back(base.name);
                             }
                         }
                     }
@@ -498,64 +517,49 @@ namespace angel_lsp::analysis
             }
         }
 
-        // 2. Discover derived classes in SymbolTable that inherit from any known related class
-        bool expanded = true;
-        while (expanded)
+        // 2. Discover derived classes, breadth-first over the reverse inheritance edges.
+        //
+        // This used to be a fixpoint loop whose every iteration walked the entire symbol table,
+        // repeating until no new derived class turned up - O(inheritance depth x whole workspace)
+        // per call. Inheritance is written the wrong way round for this question (a class names its
+        // bases, not its children), so the index reverses the edges once per table version and the
+        // search becomes an ordinary traversal. See RuleIndex::derivedByBase.
+        const auto ruleIndex = symbolTable.GetRuleIndex();
+
+        std::vector<std::string> frontier(related.begin(), related.end());
+        while (!frontier.empty())
         {
-            expanded = false;
-            symbolTable.ForEachSymbol(
-                [&](const std::string &, const std::vector<Symbol> &symbols)
+            std::vector<std::string> next;
+
+            for (const auto &baseName : frontier)
+            {
+                const auto it = ruleIndex->derivedByBase.find(baseName);
+                if (it == ruleIndex->derivedByBase.end())
                 {
-                    for (const auto &sym : symbols)
+                    continue;
+                }
+
+                for (const auto &derived : it->second)
+                {
+                    if (!visited.insert(derived.qualifiedName).second)
                     {
-                        if (sym.type == SymbolType::Class)
-                        {
-                            const auto &cls = sym.GetClass();
-                            for (const auto &base : cls.bases)
-                            {
-                                std::string cleanBase = CleanBaseType(base);
-                                std::string symIdentifier = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                                if (visited.contains(cleanBase) || visited.contains(base))
-                                {
-                                    if (visited.insert(symIdentifier).second)
-                                    {
-                                        related.push_back(symIdentifier);
-                                        if (sym.name != symIdentifier)
-                                        {
-                                            visited.insert(sym.name);
-                                            related.push_back(sym.name);
-                                        }
-                                        expanded = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        else if (sym.type == SymbolType::Interface)
-                        {
-                            const auto &iface = sym.GetInterface();
-                            for (const auto &base : iface.inheritedInterfaces)
-                            {
-                                std::string cleanBase = CleanBaseType(base);
-                                std::string symIdentifier = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                                if (visited.contains(cleanBase) || visited.contains(base))
-                                {
-                                    if (visited.insert(symIdentifier).second)
-                                    {
-                                        related.push_back(symIdentifier);
-                                        if (sym.name != symIdentifier)
-                                        {
-                                            visited.insert(sym.name);
-                                            related.push_back(sym.name);
-                                        }
-                                        expanded = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
+                        continue;
                     }
-                });
+
+                    related.push_back(derived.qualifiedName);
+                    next.push_back(derived.qualifiedName);
+
+                    // The unqualified spelling is recorded too - callers look types up by either.
+                    if (!derived.name.empty() && derived.name != derived.qualifiedName &&
+                        visited.insert(derived.name).second)
+                    {
+                        related.push_back(derived.name);
+                        next.push_back(derived.name);
+                    }
+                }
+            }
+
+            frontier = std::move(next);
         }
 
         return related;
@@ -901,8 +905,19 @@ namespace angel_lsp::analysis
         const Scope *scope,
         const SymbolTable &symbolTable,
         std::string_view sourceCode,
-        std::string_view uri)
+        std::string_view uri,
+        int depth)
     {
+        // This resolver recurses on operands and member chains with nothing else bounding it, so a
+        // deeply nested expression walked the stack down until it ran out. Returning empty is the
+        // established "cannot see enough to judge" answer everywhere in this file, and every caller
+        // already treats it as "stay silent" - so a truncated resolution costs a diagnostic, never
+        // a wrong one. See k_maxAstDepth in ASTUtils.h.
+        if (depth > k_maxAstDepth)
+        {
+            return "";
+        }
+
         if (ts_node_is_null(exprNode) || sourceCode.empty())
         {
             return "";
@@ -1024,7 +1039,7 @@ namespace angel_lsp::analysis
 
             return ts_node_is_null(lastIdentifier)
                        ? std::string()
-                       : ResolveExpressionType(lastIdentifier, scope, symbolTable, sourceCode, uri);
+                       : ResolveExpressionType(lastIdentifier, scope, symbolTable, sourceCode, uri, depth + 1);
         }
 
         // Bare identifier
@@ -1061,7 +1076,7 @@ namespace angel_lsp::analysis
             TSNode left = ts_node_child_by_field_name(exprNode, "left", 4);
             if (!ts_node_is_null(left))
             {
-                return ResolveExpressionType(left, scope, symbolTable, sourceCode, uri);
+                return ResolveExpressionType(left, scope, symbolTable, sourceCode, uri, depth + 1);
             }
             return "";
         }
@@ -1078,8 +1093,8 @@ namespace angel_lsp::analysis
             }
 
             std::string op = GetNodeText(opNode, sourceCode);
-            std::string leftType = ResolveExpressionType(left, scope, symbolTable, sourceCode, uri);
-            std::string rightType = ResolveExpressionType(right, scope, symbolTable, sourceCode, uri);
+            std::string leftType = ResolveExpressionType(left, scope, symbolTable, sourceCode, uri, depth + 1);
+            std::string rightType = ResolveExpressionType(right, scope, symbolTable, sourceCode, uri, depth + 1);
 
             // Relational and equality operators always evaluate to bool
             if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" ||
@@ -1220,8 +1235,8 @@ namespace angel_lsp::analysis
             {
                 return "";
             }
-            std::string t1 = ResolveExpressionType(consequence, scope, symbolTable, sourceCode, uri);
-            std::string t2 = ResolveExpressionType(alternative, scope, symbolTable, sourceCode, uri);
+            std::string t1 = ResolveExpressionType(consequence, scope, symbolTable, sourceCode, uri, depth + 1);
+            std::string t2 = ResolveExpressionType(alternative, scope, symbolTable, sourceCode, uri, depth + 1);
             if (t1 == t2)
             {
                 return t1;
@@ -1264,7 +1279,7 @@ namespace angel_lsp::analysis
                 return "";
             }
 
-            std::string objType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri);
+            std::string objType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri, depth + 1);
             std::string cleanObj = CleanBaseType(objType);
             if (cleanObj.empty())
             {
@@ -1361,7 +1376,7 @@ namespace angel_lsp::analysis
                 for (uint32_t i = 0; i < count; ++i)
                 {
                     TSNode argChild = ts_node_named_child(argsNode, i);
-                    argTypes.push_back(ResolveExpressionType(argChild, scope, symbolTable, sourceCode, uri));
+                    argTypes.push_back(ResolveExpressionType(argChild, scope, symbolTable, sourceCode, uri, depth + 1));
                 }
             }
 
@@ -1372,7 +1387,7 @@ namespace angel_lsp::analysis
                 TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
                 if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
                 {
-                    std::string objType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri);
+                    std::string objType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri, depth + 1);
                     auto templateInfo = ParseTemplateType(objType);
                     std::string memName = GetNodeText(memNode, sourceCode);
                     while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front()))) memName.erase(memName.begin());
@@ -1438,7 +1453,7 @@ namespace angel_lsp::analysis
                 }
             }
 
-            std::string calleeType = ResolveExpressionType(funcNode, scope, symbolTable, sourceCode, uri);
+            std::string calleeType = ResolveExpressionType(funcNode, scope, symbolTable, sourceCode, uri, depth + 1);
             std::string cleanCallee = CleanBaseType(calleeType);
             if (!cleanCallee.empty())
             {
@@ -1495,7 +1510,7 @@ namespace angel_lsp::analysis
                 return "";
             }
 
-            std::string objType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri);
+            std::string objType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri, depth + 1);
             if (objType.empty())
             {
                 return "";
@@ -1545,12 +1560,49 @@ namespace angel_lsp::analysis
                 {
                     return "bool";
                 }
+
+                // `@f` where `f` names a function is a *function handle*, and which funcdef it
+                // becomes is decided by what it is being passed to - AngelScript picks the one the
+                // parameter asks for. There is no single answer to give here, so the honest one is
+                // none: resolving through to the operand returned `f`'s return type instead, and
+                // `createCoRoutine(@worker, args)` was reported as "Cannot implicitly convert
+                // 'void' to 'coroutine@'" on correct code.
+                if (op == "@")
+                {
+                    TSNode target = ts_node_child_by_field_name(exprNode, "operand", 7);
+                    if (!ts_node_is_null(target))
+                    {
+                        std::string targetName = GetNodeText(target, sourceCode);
+                        while (!targetName.empty() && isspace(static_cast<unsigned char>(targetName.front()))) targetName.erase(targetName.begin());
+                        while (!targetName.empty() && isspace(static_cast<unsigned char>(targetName.back()))) targetName.pop_back();
+
+                        if (!targetName.empty() && targetName.find('(') == std::string::npos)
+                        {
+                            bool namesFunction = false;
+                            if (const auto bucket = symbolTable.FindSymbolsPtr(targetName))
+                            {
+                                for (const auto &candidate : *bucket)
+                                {
+                                    if (candidate.type == SymbolType::Function)
+                                    {
+                                        namesFunction = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (namesFunction)
+                            {
+                                return {};
+                            }
+                        }
+                    }
+                }
             }
 
             TSNode operandNode = ts_node_child_by_field_name(exprNode, "operand", 7);
             return ts_node_is_null(operandNode)
                        ? std::string()
-                       : ResolveExpressionType(operandNode, scope, symbolTable, sourceCode, uri);
+                       : ResolveExpressionType(operandNode, scope, symbolTable, sourceCode, uri, depth + 1);
         }
 
         // Postfix expression (e.g. i++)
@@ -1559,7 +1611,7 @@ namespace angel_lsp::analysis
             TSNode operandNode = ts_node_child_by_field_name(exprNode, "operand", 7);
             return ts_node_is_null(operandNode)
                        ? std::string()
-                       : ResolveExpressionType(operandNode, scope, symbolTable, sourceCode, uri);
+                       : ResolveExpressionType(operandNode, scope, symbolTable, sourceCode, uri, depth + 1);
         }
 
         // Parenthesized expression (e.g. (expr))
@@ -1567,7 +1619,7 @@ namespace angel_lsp::analysis
         {
             if (ts_node_named_child_count(exprNode) > 0)
             {
-                return ResolveExpressionType(ts_node_named_child(exprNode, 0), scope, symbolTable, sourceCode, uri);
+                return ResolveExpressionType(ts_node_named_child(exprNode, 0), scope, symbolTable, sourceCode, uri, depth + 1);
             }
             uint32_t count = ts_node_child_count(exprNode);
             for (uint32_t i = 0; i < count; ++i)
@@ -1576,7 +1628,7 @@ namespace angel_lsp::analysis
                 std::string_view cType = ts_node_type(child);
                 if (cType != "(" && cType != ")")
                 {
-                    return ResolveExpressionType(child, scope, symbolTable, sourceCode, uri);
+                    return ResolveExpressionType(child, scope, symbolTable, sourceCode, uri, depth + 1);
                 }
             }
             return "";
@@ -1588,13 +1640,41 @@ namespace angel_lsp::analysis
             uint32_t count = ts_node_named_child_count(exprNode);
             if (count > 0)
             {
-                std::string elemType = ResolveExpressionType(ts_node_named_child(exprNode, 0), scope, symbolTable, sourceCode, uri);
+                std::string elemType = ResolveExpressionType(ts_node_named_child(exprNode, 0), scope, symbolTable, sourceCode, uri, depth + 1);
                 return "{" + elemType + "}";
             }
             return "{}";
         }
 
         return "";
+    }
+
+    bool IsVariableType(std::string_view typeName)
+    {
+        // Strip whatever decoration the declaration carried: const, &, @, in/out/inout, spaces.
+        // What has to remain is a bare '?' and nothing else.
+        std::string cleaned;
+        cleaned.reserve(typeName.size());
+        for (const char c : typeName)
+        {
+            if (c == '?')
+                cleaned.push_back(c);
+            else if (c != ' ' && c != '\t' && c != '&' && c != '@')
+            {
+                // Any other identifier character means this is a real type, not the wildcard.
+                // "const" / "in" / "out" / "inout" are the only words legally adjacent to it.
+                cleaned.push_back(c);
+            }
+        }
+
+        static constexpr std::string_view k_decorations[] = { "const", "inout", "out", "in" };
+        for (const auto decoration : k_decorations)
+        {
+            for (size_t at = cleaned.find(decoration); at != std::string::npos; at = cleaned.find(decoration, at))
+                cleaned.erase(at, decoration.size());
+        }
+
+        return cleaned == "?";
     }
 }
 

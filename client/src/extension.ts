@@ -176,6 +176,17 @@ function buildServerArgs(): string[] {
         args.push(`--file-ext=${fileExtension}`);
     }
 
+    // Templates whose initializer list is a plain repeat of their element type, as `array<T>`'s is.
+    // This cannot be read from a predefined stub: a list factory is registered in C++ and the stub
+    // format has no notation for one, so `optional<T>` and `array<T>` are declared identically even
+    // though the compiler accepts a list for only one of them.
+    for (const entry of config.get<string[]>('arrayLikeTypes', [])) {
+        const name = entry.trim();
+        if (name.length > 0) {
+            args.push(`--array-like-type=${name}`);
+        }
+    }
+
     for (const [setting, flag] of FEATURE_FLAGS) {
         if (config.get<boolean>(`features.${setting}`, true) === false) {
             args.push(flag);

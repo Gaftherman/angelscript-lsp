@@ -1,4 +1,5 @@
 #include "analysis/CallChecker.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
@@ -12,11 +13,15 @@ namespace angel_lsp::analysis
 {
     namespace
     {
-        constexpr uint32_t k_functionFieldLength = 8;  ///< "function"
-        constexpr uint32_t k_argumentsFieldLength = 9; ///< "arguments"
-        constexpr uint32_t k_objectFieldLength = 6;    ///< "object"
-        constexpr uint32_t k_memberFieldLength = 6;    ///< "member"
-
+        /**
+         * @brief Node text as an owning string.
+         *
+         * Kept per translation unit rather than shared with ASTUtils::NodeText, which returns a
+         * string_view. The two are not interchangeable: callers here store the result, concatenate
+         * it, and use it after the node has gone out of scope, so handing them a view would trade a
+         * duplicated three-line function for a lifetime question at several dozen call sites.
+         * Deduplicating it was attempted and reverted for exactly that reason.
+         */
         std::string NodeText(TSNode node, std::string_view sourceCode)
         {
             if (ts_node_is_null(node))
@@ -32,6 +37,11 @@ namespace angel_lsp::analysis
             }
             return std::string(sourceCode.substr(start, end - start));
         }
+
+        constexpr uint32_t k_functionFieldLength = 8;  ///< "function"
+        constexpr uint32_t k_argumentsFieldLength = 9; ///< "arguments"
+        constexpr uint32_t k_objectFieldLength = 6;    ///< "object"
+        constexpr uint32_t k_memberFieldLength = 6;    ///< "member"
 
         /** @brief Strips a namespace or class qualification, leaving the last segment. */
         std::string LastScopeSegment(const std::string &name)
@@ -189,6 +199,34 @@ namespace angel_lsp::analysis
          * to be on the table before it may be made. One unresolved base is an engine-registered
          * type, and those carry overloads written down in no source here.
          */
+        /**
+         * @brief True when a member name is its own class's constructor or destructor.
+         *
+         * Matched by name because that is the convention the analyzer uses throughout - a
+         * constructor is an ordinary Function stored under `Class::Class` (see the constructor
+         * lookup further down, which relies on the same thing). The type may arrive qualified, so
+         * the comparison is against its last `::` segment.
+         */
+        bool IsConstructorOrDestructorName(const std::string &memberName, const std::string &typeName)
+        {
+            if (memberName.empty() || typeName.empty())
+            {
+                return false;
+            }
+
+            const size_t at = typeName.rfind("::");
+            const std::string_view shortName =
+                at == std::string::npos ? std::string_view(typeName)
+                                        : std::string_view(typeName).substr(at + 2);
+
+            if (memberName == shortName)
+            {
+                return true;
+            }
+
+            return memberName.front() == '~' && std::string_view(memberName).substr(1) == shortName;
+        }
+
         bool HierarchyIsFullyVisible(const std::string &typeName, const SymbolTable &table)
         {
             for (const auto &ancestor : GetInheritedTypeHierarchy(typeName, table))
@@ -300,53 +338,6 @@ namespace angel_lsp::analysis
             return candidates;
         }
 
-        /** @brief Locates the innermost scope containing a point, for local-variable resolution. */
-        const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character)
-        {
-            if (!root)
-            {
-                return nullptr;
-            }
-
-            const auto contains = [line, character](const Scope &scope)
-            {
-                if (line < scope.startLine || line > scope.endLine)
-                {
-                    return false;
-                }
-                if (line == scope.startLine && character < scope.startCharacter)
-                {
-                    return false;
-                }
-                if (line == scope.endLine && character > scope.endCharacter)
-                {
-                    return false;
-                }
-                return true;
-            };
-
-            if (!contains(*root))
-            {
-                return nullptr;
-            }
-
-            const Scope *current = root;
-            for (bool descended = true; descended;)
-            {
-                descended = false;
-                for (const auto &child : current->children)
-                {
-                    if (child && contains(*child))
-                    {
-                        current = child.get();
-                        descended = true;
-                        break;
-                    }
-                }
-            }
-            return current;
-        }
-
         void CheckCall(TSNode node, const CallCheckRequest &request, const Scope *scope, DiagnosticContext &ctx)
         {
             TSNode callee = ts_node_child_by_field_name(node, "function", k_functionFieldLength);
@@ -396,6 +387,25 @@ namespace angel_lsp::analysis
                 }
 
                 reportedName = NodeText(memberNode, request.sourceCode);
+
+                // A constructor is not a member you can call on an instance. AngelScript has no
+                // syntax for it - the real compiler answers `t.Thing()` with "No matching symbol
+                // 'Thing'" - but this analyzer resolved it happily, because a constructor is stored
+                // as `Thing::Thing` and that is exactly the key a method lookup builds. So the
+                // lookup succeeded and the call was accepted.
+                //
+                // Safe to report: the guard above has already established that the type and its
+                // whole hierarchy are visible, and a member whose name is its own class is a
+                // constructor in every case - there is no other declaration that can produce it.
+                if (IsConstructorOrDestructorName(reportedName, objectType))
+                {
+                    const TSPoint ctorStart = ts_node_start_point(memberNode);
+                    const TSPoint ctorEnd = ts_node_end_point(memberNode);
+                    ctx.EmitAtRange(ctorStart.row, ctorStart.column, ctorEnd.row, ctorEnd.column,
+                                    "as-err-constructor-not-callable", reportedName, objectType);
+                    return;
+                }
+
                 candidates = FindMethodCandidates(objectType, reportedName, table);
                 if (!templateArgs.empty())
                 {
@@ -636,7 +646,27 @@ namespace angel_lsp::analysis
                                 while (!aText.empty() && isspace(static_cast<unsigned char>(aText.back()))) aText.pop_back();
                                 if (aText != "void")
                                 {
-                                    std::string_view aType = ts_node_type(argNodes[i]);
+                                    TSNode argNode = argNodes[i];
+                                    std::string_view aType = ts_node_type(argNode);
+
+                                    // `@x` is how a handle is handed to a `?&out` parameter, and it
+                                    // is every bit as much an l-value as `x` - `ref::opCast(?&out)`
+                                    // is called as `r.opCast(@target);` and the real compiler
+                                    // accepts it. Looking only at the outer node saw a unary
+                                    // expression and reported the argument as unassignable.
+                                    if (aType == "unary_expression" && aText.starts_with("@"))
+                                    {
+                                        TSNode operand = ts_node_child_by_field_name(argNode, "operand", 7);
+                                        if (!ts_node_is_null(operand))
+                                        {
+                                            argNode = operand;
+                                            aType = ts_node_type(argNode);
+                                            aText = NodeText(argNode, request.sourceCode);
+                                            while (!aText.empty() && isspace(static_cast<unsigned char>(aText.front()))) aText.erase(aText.begin());
+                                            while (!aText.empty() && isspace(static_cast<unsigned char>(aText.back()))) aText.pop_back();
+                                        }
+                                    }
+
                                     bool isLVal = false;
                                     if (aType == "identifier" || aType == "scoped_identifier")
                                     {
@@ -801,7 +831,42 @@ namespace angel_lsp::analysis
 
                 if (rawConstructors.empty())
                 {
-                    if (ctx.request.symbolTable.HasSymbolAnywhere(baseName) || IsKnownType(baseName, ctx))
+                    // Knowing the type exists is not the same as being able to see its
+                    // constructors, and only the second justifies complaining about one.
+                    //
+                    // `array` is known because TypeConfig names it, and `string` because the engine
+                    // registers it - neither declares a constructor anywhere this analyzer can
+                    // read. Treating "known" as "fully visible" made `array<int> a(10)` report
+                    // "No matching signatures to 'array<int>(int)'" on correct code, which the real
+                    // compiler accepts without a word. That is the exact failure mode the
+                    // silent-unless-fully-visible policy exists to prevent.
+                    //
+                    // A class declared in *script* is different: if it declares no constructor at
+                    // all, only the implicit no-argument one exists, and a call passing arguments
+                    // really is wrong.
+                    //
+                    // A class declared in a predefined stub is not. Its factories are registered in
+                    // C++ and the stub is under no obligation to repeat them - AS-Harness's own
+                    // as.predefined declares `class array<T>` with no constructor whatsoever, while
+                    // the engine registers three. Seeing that declaration says the type exists; it
+                    // says nothing about how many ways there are to build one.
+                    bool declarationVisible = false;
+                    if (const auto declarations = ctx.request.symbolTable.FindSymbolsPtr(baseName))
+                    {
+                        for (const auto &declaration : *declarations)
+                        {
+                            if (declaration.type == SymbolType::Class &&
+                                std::holds_alternative<ClassSignature>(declaration.signature) &&
+                                !utils::IsPredefinedFile(declaration.fileUri,
+                                                         ctx.request.predefinedFileExtension))
+                            {
+                                declarationVisible = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (declarationVisible)
                     {
                         const TSPoint aStart = ts_node_start_point(argListNode);
                         const TSPoint aEnd = ts_node_end_point(argListNode);
@@ -929,8 +994,13 @@ namespace angel_lsp::analysis
             }
         }
 
-        void VisitNode(TSNode node, const CallCheckRequest &request, DiagnosticContext &ctx)
-        {
+        void VisitNode(TSNode node, const CallCheckRequest &request, DiagnosticContext &ctx, int depth = 0)
+                {
+            // Pathologically nested source would otherwise recurse until the stack gives out; see
+            // k_maxAstDepth in ASTUtils.h.
+            if (depth > k_maxAstDepth)
+                return;
+
             std::string_view nodeType = ts_node_type(node);
             if (nodeType == "call_expression")
             {
@@ -946,7 +1016,7 @@ namespace angel_lsp::analysis
             const uint32_t childCount = ts_node_named_child_count(node);
             for (uint32_t i = 0; i < childCount; ++i)
             {
-                VisitNode(ts_node_named_child(node, i), request, ctx);
+                VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
             }
         }
     }

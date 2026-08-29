@@ -220,8 +220,68 @@ The `angel_lsp` executable accepts command-line arguments to enable or disable i
 | `--locale=<string>` | Set diagnostic language/locale. Any BCP 47 spelling works — only the primary subtag selects the table, so `es`, `es-ES` and `es-419` are equivalent. Unknown languages fall back to English. | `en` |
 | `--file-ext=<string>` | Set AngelScript script file extension. | `.as` |
 | `--predefined-ext=<string>` | Set predefined host API symbols file extension. | `.as.predefined` |
+| `--array-like-type=<name>` | Name a template whose initializer list repeats its element type. Shorthand for a `@listpattern {repeat T}` tag — see below. Repeatable. | - |
 | `-h`, `--help` | Show command-line help message and exit. | - |
 | `-v`, `--version` | Show server version and exit. | - |
+
+### Building against a local grammar checkout
+
+The tree-sitter grammar is fetched by commit (`server/cmake/TreeSitter.cmake`). A grammar change and
+the analyzer change that depends on it land together, and a pin cannot name a commit that has not
+been pushed yet, so the build takes a local checkout instead when you point it at one:
+
+```bash
+cmake -B server/build -S server -DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=/path/to/tree-sitter-angelscript
+```
+
+Run `tree-sitter generate` in that checkout after editing `grammar.js` — the build compiles the
+generated `src/parser.c` and does not run the CLI itself.
+
+### Initializer List Patterns (`@listpattern`)
+
+`{ ... }` is not a general-purpose initializer in AngelScript. A type accepts one only if the host
+registered a **list factory** for it, and the shape it accepts is written into that registration:
+
+```cpp
+engine->RegisterObjectBehaviour("array<T>", asBEHAVE_LIST_FACTORY,
+    "array<T>@ f(int&in type, int&in list) {repeat T}", ...);
+
+engine->RegisterObjectBehaviour("dictionary", asBEHAVE_LIST_FACTORY,
+    "dictionary @f(int &in) {repeat {string, ?}}", ...);
+```
+
+That trailing `{...}` is the only thing separating a type that takes `{1, 2, 3}` from one that takes
+`{{"a", 1}}` from one that takes no list at all — and it is not derivable from anything else.
+`optional<T>` is declared with the same single type parameter as `array<T>` and registers no list
+factory, so the real compiler answers `optional<int> o = {1};` with
+*"Initialization lists cannot be used with 'optional<int>'"*.
+
+A predefined stub carries the pattern as a doc-comment tag, copied verbatim from the registration:
+
+```angelscript
+/// @listpattern {repeat T}
+class array<T> { /* ... */ }
+
+/// @listpattern {repeat {string, ?}}
+class dictionary { /* ... */ }
+```
+
+With the tag present, the server reports a mismatched list the way the compiler does — including
+inside nesting, so `array<int> a = {1, {2}};` and `dictionary d = {1, 2};` are both caught, while
+`array<array<int>> g = {{1,2},{3,4}}` and `array<dictionary> a = {{{"a",1}}}` are correctly left
+alone. Without it the server says nothing, because it cannot tell an absent list factory from a
+stub that simply did not mention one.
+
+A tag rather than a declaration because the pattern is not AngelScript source: written into a class
+body, `{repeat T}` parses as a statement block containing a syntax error, which would put red
+squiggles through your own stub. The built-in engine profiles already carry the tags for `array<T>`
+and `dictionary`. `--array-like-type=<name>` is shorthand for `{repeat T}` if you would rather not
+edit a stub you do not own.
+
+Supported pattern syntax is AngelScript's own: `{...}` groups, `repeat` / `repeat_same`,
+comma-separated sequences, type names, template parameters, and `?` for the variable type. A pattern
+this server cannot parse is ignored rather than reported — a stub it cannot read is not your error
+to see in your scripts.
 
 ### Engine Properties
 

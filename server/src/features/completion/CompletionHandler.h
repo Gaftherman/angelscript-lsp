@@ -24,6 +24,15 @@ namespace angel_lsp::features
         const analysis::ScopeIndex &scopeIndex;
         lsp::Position position;
         const config::ServerConfig *config = nullptr;
+
+        /**
+         * @brief Whether the client renders `${1:T}` placeholders rather than printing them.
+         *
+         * Read from `textDocument.completion.completionItem.snippetSupport` at initialize. It has
+         * to be asked rather than assumed: a template class completes to `array<${1:T}>`, and a
+         * client without snippet support would insert those six characters literally.
+         */
+        bool snippetSupport = false;
     };
 
     /**

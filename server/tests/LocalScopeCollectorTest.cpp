@@ -78,7 +78,15 @@ namespace
     }
 
     /** @brief Walks down from scope to the innermost child whose range contains (line, character). */
-    const Scope *FindInnermostScope(const Scope *scope, uint32_t line, uint32_t character)
+    /**
+     * @brief Innermost containing scope, falling back to the scope passed in.
+     *
+     * Not analysis::FindInnermostScope: that reports nullptr when the point lies outside the root,
+     * this returns the root. These tests hand it a scope they already know contains the point and
+     * want the deepest child, so the fallback is what they mean - but the two must not share a
+     * name, or a later reader will assume the null contract holds here.
+     */
+    const Scope *FindEnclosingScopeOrRoot(const Scope *scope, uint32_t line, uint32_t character)
     {
         for (const auto &child : scope->children)
         {
@@ -86,7 +94,7 @@ namespace
             bool beforeEnd = (line < child->endLine) || (line == child->endLine && character <= child->endCharacter);
 
             if (afterStart && beforeEnd)
-                return FindInnermostScope(child.get(), line, character);
+                return FindEnclosingScopeOrRoot(child.get(), line, character);
         }
 
         return scope;
@@ -159,7 +167,7 @@ void Foo(int x)
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, "x + 1");
-    const Scope *innermost = FindInnermostScope(root.get(), refPos.line, refPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
     const LocalDefinition *resolved = ResolveInScope(innermost, "x");
@@ -192,7 +200,7 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, "i + 1");
-    const Scope *innermost = FindInnermostScope(root.get(), refPos.line, refPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
     const LocalDefinition *resolved = ResolveInScope(innermost, "i");
@@ -219,7 +227,7 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, "a < b");
-    const Scope *innermost = FindInnermostScope(root.get(), refPos.line, refPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
     const LocalDefinition *resolvedA = ResolveInScope(innermost, "a");
@@ -244,7 +252,7 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, "value = 5");
-    const Scope *innermost = FindInnermostScope(root.get(), refPos.line, refPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
     const LocalReference *memberRef = FindReferenceByName(innermost, "value");
@@ -332,7 +340,7 @@ void Foo()
     // A reference to Helper() from inside Foo's body resolves to that same definition via
     // ResolveInScope alone - no SymbolTable fallback needed.
     SourcePos refPos = FindPosition(source, "Helper();", source.find("void Foo"));
-    const Scope *innermost = FindInnermostScope(root.get(), refPos.line, refPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
     const LocalDefinition *resolved = ResolveInScope(innermost, "Helper");
@@ -360,7 +368,7 @@ class Foo
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, "value = value");
-    const Scope *innermost = FindInnermostScope(root.get(), refPos.line, refPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
     const LocalDefinition *resolved = ResolveInScope(innermost, "value");
@@ -386,7 +394,7 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos declPos = FindPosition(source, "f = null");
-    const Scope *innermost = FindInnermostScope(root.get(), declPos.line, declPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), declPos.line, declPos.character);
     REQUIRE(innermost != nullptr);
 
     const LocalDefinition *def = ResolveInScope(innermost, "f");
@@ -411,7 +419,7 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos declPos = FindPosition(source, "h = null");
-    const Scope *innermost = FindInnermostScope(root.get(), declPos.line, declPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), declPos.line, declPos.character);
     REQUIRE(innermost != nullptr);
 
     const LocalDefinition *def = ResolveInScope(innermost, "h");
@@ -433,7 +441,7 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos declPos = FindPosition(source, "f = someFunc");
-    const Scope *innermost = FindInnermostScope(root.get(), declPos.line, declPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), declPos.line, declPos.character);
     REQUIRE(innermost != nullptr);
 
     const LocalDefinition *def = ResolveInScope(innermost, "f");
@@ -460,7 +468,7 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos loopPos = FindPosition(source, "int v : items");
-    const Scope *innermost = FindInnermostScope(root.get(), loopPos.line, loopPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), loopPos.line, loopPos.character);
     REQUIRE(innermost != nullptr);
 
     const LocalDefinition *v = ResolveInScope(innermost, "v");
@@ -487,7 +495,7 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, "Undefined");
-    const Scope *innermost = FindInnermostScope(root.get(), refPos.line, refPos.character);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
     CHECK(ResolveInScope(innermost, "Undefined") == nullptr);

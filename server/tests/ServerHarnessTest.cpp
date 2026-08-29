@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 
 using namespace angel_lsp;
 
@@ -867,4 +868,106 @@ TEST_CASE("Server - An opened predefined stub is not judged as a script")
 
     RunScript(serverConfig, scriptStream);
     CHECK(PublishedFrames(scriptStream.Output()).find("\"as-err-missing-body\"") != std::string::npos);
+}
+
+// =====================================================================================
+// Transport resilience.
+//
+// The framework writes a JSON-RPC error response for a malformed frame and then rethrows, and
+// neither json::ParseError nor jsonrpc::ProtocolError derives from ConnectionError. Server::Run
+// used to catch only the connection types, so those escaped main() and reached std::terminate:
+// one stray byte from the client killed the process, and because terminate skips destructors the
+// analysis and workspace threads were torn down while the state they read was still in use.
+//
+// These cases exist to keep that closed. Each pushes a bad frame *before* a valid initialize, so a
+// server that dies on the bad one never answers the good one and the assertion fails.
+// =====================================================================================
+
+TEST_CASE("Server - Recovers from a malformed JSON frame and keeps serving")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    // Well-framed (the Content-Length is honest) but the body is truncated JSON, so the parser
+    // fails after the frame has been fully consumed - the stream is still aligned on a boundary.
+    stream.Push(R"({"jsonrpc":"2.0","id":1,"method":)");
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.OutputContains("\"hoverProvider\""));
+}
+
+TEST_CASE("Server - Recovers from a structurally invalid JSON-RPC message")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    // Valid JSON, invalid JSON-RPC: an empty batch, which the framework rejects with a
+    // ProtocolError rather than a ParseError. Different exception, same former fatality.
+    stream.Push(R"([])");
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.OutputContains("\"hoverProvider\""));
+}
+
+// =====================================================================================
+// The call graph has to survive a re-analysis.
+//
+// AnalyzeDocument populated m_callGraph and then cleared it one line later: the ClearDocument call
+// sat outside the `else` it was meant to belong to, so it ran on every pass whether or not there
+// was a tree. Call hierarchy therefore went empty after the first edit to a file and stayed empty
+// until it was reopened - silently, since nothing publishes the call graph as a diagnostic.
+//
+// This drives the debounced path deliberately: didChange schedules analysis on the background
+// thread, and the pause below lets it finish before the query. Also the only didChange coverage in
+// this harness - the ts_tree_edit path had none at all.
+// =====================================================================================
+
+TEST_CASE("Server - Keeps the call graph after a document is re-analysed")
+{
+    const std::string before = "void helper() {}\nvoid main() { helper(); }\n";
+    const std::string after  = "void helper() {}\nvoid main() { helper(); helper(); }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", before);
+    const std::string uri = fixture.Uri("main.as");
+
+    // Hand-built rather than echoed back from prepareCallHierarchy: the outgoing-calls handler
+    // reads the item straight off the request, so nothing here depends on parsing a prior reply.
+    const std::string item =
+        R"({"name":"main","kind":12,"uri":")" + uri + R"(",)"
+        R"("range":{"start":{"line":1,"character":0},"end":{"line":1,"character":33}},)"
+        R"("selectionRange":{"start":{"line":1,"character":5},"end":{"line":1,"character":9}}})";
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(uri, before));
+
+    // Whole-document sync, which is the branch that drops the tree and reparses from scratch.
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{)"
+                R"("uri":")" + uri + R"(","version":2},"contentChanges":[{"text":")" +
+                JsonEscape(after) + R"("}]}})");
+
+    // Runs on the message loop before the next frame is read, so the debounced analysis (200 ms)
+    // has finished by the time the query below is handled. Not a race: the server is blocked here.
+    stream.PushAction([]() { std::this_thread::sleep_for(std::chrono::milliseconds(900)); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"callHierarchy/outgoingCalls","params":{"item":)" + item + R"(}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    // The call from main() to helper() must still be there after the re-analysis.
+    CHECK(stream.OutputContains("\"helper\""));
 }

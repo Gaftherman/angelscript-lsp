@@ -136,6 +136,44 @@ namespace angel_lsp::analysis
         std::vector<std::unique_ptr<Scope>> children;
         std::vector<LocalDefinition> definitions;
         std::vector<LocalReference> references;
+
+        /**
+         * @brief Destroys the subtree iteratively rather than by recursive unique_ptr teardown.
+         *
+         * The default destructor destroys `children`, each element of which destroys its own
+         * children, and so on - one stack frame per level. A document of deeply nested blocks
+         * builds a scope tree as deep as the nesting, so freeing it overflowed the stack in the
+         * destructor, where nothing can be guarded by a depth counter and where throwing is not an
+         * option either.
+         *
+         * Flattening first makes teardown iterative: every descendant is moved into one flat list
+         * whose elements are then destroyed in turn, each already childless.
+         */
+        ~Scope()
+        {
+            std::vector<std::unique_ptr<Scope>> pending;
+            pending.reserve(children.size());
+            for (auto &child : children)
+                pending.push_back(std::move(child));
+            children.clear();
+
+            while (!pending.empty())
+            {
+                std::unique_ptr<Scope> node = std::move(pending.back());
+                pending.pop_back();
+                if (!node)
+                    continue;
+
+                for (auto &grandChild : node->children)
+                    pending.push_back(std::move(grandChild));
+                node->children.clear();
+                // node is destroyed here with no children left, so no recursion.
+            }
+        }
+
+        Scope() = default;
+        Scope(const Scope &) = delete;
+        Scope &operator=(const Scope &) = delete;
     };
 
     /**
@@ -149,8 +187,24 @@ namespace angel_lsp::analysis
 
     /**
      * @brief Finds the innermost Scope containing the given source line and character.
+     *
+     * @note Returns `root` when no child contains the point, even if `root` does not contain it
+     *       either. FindInnermostScope below is the stricter variant; the two are not
+     *       interchangeable and the difference is why both exist.
      */
     const Scope *FindEnclosingScope(const Scope *root, uint32_t line, uint32_t character);
+
+    /**
+     * @brief Innermost Scope containing the point, or nullptr when `root` does not contain it.
+     *
+     * Differs from FindEnclosingScope in the out-of-range case: this reports "no scope" rather than
+     * falling back to the root, which is what a checker asking "which scope is this expression in?"
+     * needs - resolving a name against the wrong scope is worse than not resolving it.
+     *
+     * Five checkers had carried byte-identical private copies of this. They are now one function;
+     * the copies were verified identical before being removed, so this is a move, not a rewrite.
+     */
+    const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character);
 
     /**
      * @brief Owns one Scope tree per open document, keyed by file URI. Mirrors SymbolTable's

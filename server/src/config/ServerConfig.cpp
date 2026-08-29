@@ -134,10 +134,21 @@ namespace angel_lsp::config
                   << "  --disable-linked-editing                Disable linked editing\n\n"
                   << "Options:\n"
                   << "  --locale=<string>                       Set diagnostic language/locale (default: en)\n"
+                  << "  -D, --define=<word>                     Treat <word> as defined for #if (repeatable).\n"
+                  << "                                          Mirrors CScriptBuilder::DefineWord. With none set,\n"
+                  << "                                          every #if block is excluded, as the builder does.\n"
+                  << "  --log-level=<level>                     error|warning|info|debug (default: info).\n"
+                  << "                                          debug logs every symbol on every analysis and\n"
+                  << "                                          costs real throughput; it is not free.\n"
                   << "  --file-ext=<string>                     Set script file extension (default: .as)\n"
                   << "  --predefined-ext=<string>               Set predefined symbols file extension (default: .as.predefined)\n"
                   << "  --predefined-file=<path>                Load a predefined stub by path, even outside the workspace (repeatable)\n"
                   << "  --search-dir=<string>                   Add directory to search path for #include resolution\n"
+                  << "  --array-like-type=<name>                Name a template whose initializer list is a plain\n"
+                  << "                                          repeat of its element type, as array<T>'s is\n"
+                  << "                                          (repeatable). A list factory is registered in C++\n"
+                  << "                                          and no predefined stub can express it, so a host\n"
+                  << "                                          that registers its own has to say so here.\n"
                   << "  --diagnostic-severity=<code>=<severity> Override one diagnostic's severity: error|warning|information|hint (repeatable)\n"
                   << "  --engine-profile=<string>               Set built-in engine profile: standard|svencoop|urho3d|openxray|ootp|none|auto (default: standard)\n"
                   << "  --engine-property=<name>=<bool>         Describe the host engine's SetEngineProperty settings (repeatable).\n"
@@ -429,6 +440,22 @@ namespace angel_lsp::config
                     config.info.locale = std::string(val);
                 }
             }
+            else if (key == "--define" || key == "-D")
+            {
+                std::string_view val;
+                if (getStringValue(val) && !val.empty())
+                {
+                    config.definedWords.push_back(std::string(val));
+                }
+            }
+            else if (key == "--log-level")
+            {
+                std::string_view val;
+                if (getStringValue(val) && !val.empty())
+                {
+                    config.info.logLevel = ToLower(val);
+                }
+            }
             else if (key == "--file-ext" || key == "--file-extension")
             {
                 std::string_view val;
@@ -451,6 +478,14 @@ namespace angel_lsp::config
                 if (getStringValue(val))
                 {
                     config.searchDirectories.push_back(std::string(val));
+                }
+            }
+            else if (key == "--array-like-type" || key == "--array-like-template")
+            {
+                std::string_view val;
+                if (getStringValue(val) && !val.empty())
+                {
+                    config.types.arrayLikeTemplates.insert(std::string(val));
                 }
             }
             else if (key == "--predefined-file" || key == "--predefined-path")

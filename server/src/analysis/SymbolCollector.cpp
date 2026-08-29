@@ -1,4 +1,5 @@
 #include "analysis/SymbolCollector.h"
+#include "analysis/ListPattern.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
@@ -492,6 +493,10 @@ namespace angel_lsp::analysis
                 }
             }
         }
+
+        // The list-factory pattern, if the stub declared one. Read here rather than on demand
+        // because the rules that need it hold a Symbol and not the document it came from.
+        classSig.listPattern = FindListPatternTag(sourceCode, ts_node_start_point(classNode).row);
 
         size_t angleInName = sym.name.find('<');
         if (angleInName != std::string::npos)

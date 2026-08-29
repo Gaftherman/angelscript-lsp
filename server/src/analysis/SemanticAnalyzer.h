@@ -38,7 +38,7 @@ namespace angel_lsp::analysis
          *        member lookup this pass doesn't do, and would otherwise flood every "obj.member"
          *        access in the document with false positives.
          */
-        void CheckUndefinedIdentifiers(const Scope *scope, const ankerl::unordered_dense::set<std::string> &knownGlobalNames, DiagnosticContext &ctx) const;
+        void CheckUndefinedIdentifiers(const Scope *scope, const ankerl::unordered_dense::set<std::string> &knownGlobalNames, DiagnosticContext &ctx, int depth = 0) const;
 
         /**
          * @brief Pass 1 of the unused-variable check: recursively resolves every non-member-access
@@ -49,7 +49,7 @@ namespace angel_lsp::analysis
          *        name is itself also captured as a bare @local.reference, so without this exclusion
          *        every variable would trivially look used by its own declaration).
          */
-        void CollectUsedDefinitions(const Scope *scope, ankerl::unordered_dense::set<const LocalDefinition *> &used) const;
+        void CollectUsedDefinitions(const Scope *scope, ankerl::unordered_dense::set<const LocalDefinition *> &used, int depth = 0) const;
 
         /**
          * @brief Pass 2 of the unused-variable check: recursively emits as-warn-unused-variable for
@@ -59,7 +59,7 @@ namespace angel_lsp::analysis
          *        not "is this value ever read after being assigned" (LocalReference doesn't
          *        distinguish reads from writes).
          */
-        void CheckUnusedVariables(const Scope *scope, const ankerl::unordered_dense::set<const LocalDefinition *> &used, DiagnosticContext &ctx) const;
+        void CheckUnusedVariables(const Scope *scope, const ankerl::unordered_dense::set<const LocalDefinition *> &used, DiagnosticContext &ctx, int depth = 0) const;
 
         /**
          * @brief Emits as-err-null-non-handle for every module-scope global or class-body field in
@@ -93,16 +93,11 @@ namespace angel_lsp::analysis
          *        them. Locals never get a SymbolTable entry (see LocalScopeCollector.h), so this is
          *        a separate pass rather than an extension of CheckNullAssignedToNonHandle.
          */
-        void CheckNullAssignedToNonHandleInScope(const Scope *scope, DiagnosticContext &ctx) const;
+        void CheckNullAssignedToNonHandleInScope(const Scope *scope, DiagnosticContext &ctx, int depth = 0) const;
 
         /**
          * @brief Checks local variable declarations (e.g. disallowing 'void' type local variables).
          */
-        void CheckLocalVariableDeclarations(const Scope *scope, DiagnosticContext &ctx) const;
-
-        /**
-         * @brief Checks namespace scope resolution and using namespace ambiguities.
-         */
-        void CheckNamespacesAndScopes(TSNode root, std::string_view sourceCode, DiagnosticContext &ctx) const;
+        void CheckLocalVariableDeclarations(const Scope *scope, DiagnosticContext &ctx, int depth = 0) const;
     };
 }

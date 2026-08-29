@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include "helpers/TestUtils.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
@@ -115,5 +116,49 @@ TEST_SUITE("OverloadResolution")
         // Passing two ints -> both require one widening conversion -> equal score
         auto match = ResolveBestOverload(candidates, { "int", "int" }, table);
         CHECK(match.isAmbiguous);
+    }
+}
+
+// =====================================================================================
+// `int32` / `uint32` are the explicit spellings of `int` / `uint`, and a source file may write
+// either - nothing canonicalises them away. The overload resolver used to carry its own list of
+// integer primitives that omitted the explicit forms while the conversion rules used one that
+// included them, so the two classified the same type differently.
+//
+// This is a characterisation test, not a regression test: it passes against the old lists too. The
+// divergence never surfaced because the silent-unless-fully-visible policy absorbed it - a call
+// whose overloads will not resolve is passed over rather than reported - so it cost a diagnostic
+// rather than producing a wrong one. What this pins down is that the explicit spellings must not
+// start producing a *false* diagnostic now that both sides share one vocabulary.
+//
+// The real AngelScript compiler accepts the snippet below without a word.
+// =====================================================================================
+
+TEST_CASE("Overload resolution - Explicit int32/uint32 spellings rank like int/uint")
+{
+    const char *script = R"(
+        void Take(float v) {}
+        void Take(int64 v) {}
+
+        void main()
+        {
+            int32 explicitInt = 7;
+            Take(explicitInt);
+
+            uint32 explicitUint = 8;
+            Take(explicitUint);
+        }
+    )";
+
+    auto doc = angel_lsp::test::CreateTestDocument("file:///int32_overload.as", script);
+    REQUIRE(static_cast<bool>(doc));
+
+    const auto diagnostics = doc->GetDiagnostics();
+    for (const auto &d : diagnostics)
+    {
+        CAPTURE(d.code);
+        CAPTURE(d.message);
+        CHECK(d.code != "as-err-call-no-matching-signature");
+        CHECK(d.code != "as-err-call-ambiguous");
     }
 }

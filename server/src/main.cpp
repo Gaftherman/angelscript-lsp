@@ -25,8 +25,20 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    angel_lsp::Server server(config);
-    server.Run();
+    // Run() already recovers from malformed messages and closes cleanly on a dead transport. This
+    // guard is for what it cannot anticipate: anything escaping here would otherwise reach
+    // std::terminate, and terminate skips ~Server - which is what stops and joins the analysis and
+    // workspace threads while the state they read is still alive.
+    try
+    {
+        angel_lsp::Server server(config);
+        server.Run();
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "angel_lsp: fatal error: " << e.what() << '\n';
+        return 1;
+    }
 
     return 0;
 }

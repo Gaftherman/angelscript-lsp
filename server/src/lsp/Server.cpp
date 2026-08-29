@@ -1,5 +1,7 @@
 #include "Server.h"
 #include "utils/Utils.h"
+#include "utils/PreprocessorRegions.h"
+#include "utils/Constants.h"
 #include "lsp/PositionCodec.h"
 #include "features/hover/HoverHandler.h"
 #include "features/definition/DefinitionHandler.h"
@@ -36,6 +38,15 @@ namespace angel_lsp
     namespace
     {
         /**
+         * @brief How many message errors in a row are tolerated before the session is closed.
+         *
+         * A malformed frame is recoverable and must not end the session, but a stream that fails
+         * identically forever is not: without a ceiling, Run() would spin at full tilt on a frame
+         * it can neither consume nor skip. Reset to zero by any message that dispatches cleanly.
+         */
+        constexpr unsigned k_maxConsecutiveMessageErrors = 64;
+
+        /**
          * @brief Maps this analyzer's severity onto the protocol's.
          *
          * Not a cast, though it was one until an end-to-end test looked at what actually went over
@@ -69,6 +80,7 @@ namespace angel_lsp
         m_running = true;
 
         m_logger = std::make_unique<angel_lsp::utils::LspLogger>(m_messageHandler.get());
+        m_logger->SetLevel(angel_lsp::utils::ParseLogLevel(m_config.info.logLevel, angel_lsp::utils::LogLevel::Info));
 
         m_parser = std::make_unique<angel_lsp::parser::AngelScriptParser>(m_logger.get());
 
@@ -79,6 +91,11 @@ namespace angel_lsp
         m_semanticAnalyzer = std::make_unique<angel_lsp::analysis::SemanticAnalyzer>(m_logger.get());
 
         m_i18n = std::make_unique<angel_lsp::i18n::I18n>(m_config.info.locale.empty() ? "en" : m_config.info.locale);
+
+        // Seeded from the startup config and mutable from here on. Everything that reads these
+        // three goes through the accessors below; m_config's own copies are not read again.
+        m_searchDirectories = std::make_shared<const std::vector<std::string>>(m_config.searchDirectories);
+        m_engineProfile = m_config.engineProfile;
 
         BuildDiagnosticSeverityOverrides();
 
@@ -114,8 +131,78 @@ namespace angel_lsp
         m_documentTrees.clear();
     }
 
+    std::vector<std::string> Server::WorkspaceRoots() const
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+        return m_workspacesRoot;
+    }
+
+    std::shared_ptr<const std::vector<std::string>> Server::SearchDirectories() const
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+        return m_searchDirectories;
+    }
+
+    std::string Server::EngineProfile() const
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+        return m_engineProfile;
+    }
+
+    std::vector<std::string> Server::IncludeAllowedRoots() const
+    {
+        std::vector<std::string> roots;
+
+        for (const auto &workspaceRoot : WorkspaceRoots())
+        {
+            std::string path = angel_lsp::utils::UriToPath(workspaceRoot);
+            if (!path.empty())
+                roots.push_back(std::move(path));
+        }
+
+        const auto searchDirectories = SearchDirectories();
+        roots.insert(roots.end(), searchDirectories->begin(), searchDirectories->end());
+
+        // A configured stub normally ships with the host application, outside every workspace
+        // folder. Its own directory is therefore legitimately includable even though nothing else
+        // there is - so the parent is added, not the whole tree above it.
+        for (const auto &predefined : m_config.predefinedFiles)
+        {
+            std::error_code ec;
+            std::filesystem::path configured(predefined);
+            if (configured.has_parent_path())
+                roots.push_back(configured.parent_path().string());
+        }
+
+        return roots;
+    }
+
+    std::vector<angel_lsp::utils::ExcludedLineRange> Server::ExcludedLineRanges(const std::string &text) const
+    {
+        // Built per call rather than cached: it is one linear scan of the document, next to nothing
+        // beside the parse and analysis it accompanies, and caching it would mean invalidating it on
+        // every edit for no measurable gain.
+        ankerl::unordered_dense::set<std::string> defined;
+        defined.reserve(m_config.definedWords.size());
+        for (const auto &word : m_config.definedWords)
+            defined.insert(word);
+
+        return angel_lsp::utils::FindExcludedLineRanges(text, defined);
+    }
+
     void Server::Run()
     {
+        // A malformed message must not end the session. The framework rethrows json::ParseError
+        // and jsonrpc::ProtocolError out of readMessage after having already written the JSON-RPC
+        // error response - its own source calls that a FIXME - and neither derives from
+        // ConnectionError, so before this loop caught them they escaped main() and hit
+        // std::terminate. One stray byte from the client killed the server, and ~Server never ran,
+        // which meant the analysis and workspace threads were torn down mid-flight.
+        //
+        // Recovery is safe because the offending frame was fully consumed before the throw: the
+        // stream is still aligned on a message boundary and the next read starts on a fresh header.
+        unsigned consecutiveErrors = 0;
+
         while (m_running)
         {
             // A closed transport is how this process normally ends: the editor exits, stdin hits
@@ -125,15 +212,43 @@ namespace angel_lsp
             try
             {
                 m_messageHandler->processIncomingMessages();
+                consecutiveErrors = 0;
+                continue;
             }
             catch (const lsp::ConnectionError &e)
             {
                 m_logger->LogInfo(fmt::format("Connection closed: {}", e.what()));
                 m_running = false;
+                continue;
             }
             catch (const lsp::io::Error &e)
             {
                 m_logger->LogInfo(fmt::format("Transport closed: {}", e.what()));
+                m_running = false;
+                continue;
+            }
+            catch (const lsp::json::ParseError &e)
+            {
+                m_logger->LogError(fmt::format("Malformed JSON-RPC message discarded: {}", e.what()));
+            }
+            catch (const lsp::jsonrpc::ProtocolError &e)
+            {
+                m_logger->LogError(fmt::format("Protocol error, message discarded: {}", e.what()));
+            }
+            catch (const std::exception &e)
+            {
+                // A bug in one handler is not a reason to drop the session. The transport wraps
+                // everything it does not recognise into ConnectionError, so anything arriving here
+                // came from message dispatch, not from the stream.
+                m_logger->LogError(fmt::format("Unhandled exception handling message: {}", e.what()));
+            }
+
+            // Guard against a stream that fails the same way forever - recovering from a frame we
+            // cannot consume would spin this loop at full tilt with no way out.
+            if (++consecutiveErrors >= k_maxConsecutiveMessageErrors)
+            {
+                m_logger->LogError(fmt::format("Giving up after {} consecutive message errors; closing the session.",
+                                               consecutiveErrors));
                 m_running = false;
             }
         }
@@ -145,6 +260,7 @@ namespace angel_lsp
         {
             for (const auto &workspace : params.workspaceFolders.value().value())
             {
+                std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
                 m_workspacesRoot.push_back(std::string(workspace.uri.path()));
             }
         }
@@ -174,6 +290,14 @@ namespace angel_lsp
                     break;
                 }
             }
+        }
+
+        if (params.capabilities.textDocument.has_value() &&
+            params.capabilities.textDocument->completion.has_value() &&
+            params.capabilities.textDocument->completion->completionItem.has_value() &&
+            params.capabilities.textDocument->completion->completionItem->snippetSupport.has_value())
+        {
+            m_snippetSupport = params.capabilities.textDocument->completion->completionItem->snippetSupport.value();
         }
 
         const bool useUtf8 = m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8;
@@ -372,16 +496,23 @@ namespace angel_lsp
 
     void Server::ReadWorkspaceFiles(std::stop_token stopToken)
     {
+        // Snapshotted once, up front. This runs on the workspace thread while the message loop is
+        // free to add or remove a folder, and iterating the live vector while it reallocates is a
+        // use-after-free - the stop-and-restart in RestartWorkspaceScan happens after the mutation,
+        // not before, so it never protected this.
+        const std::vector<std::string> workspaceRoots = WorkspaceRoots();
+        const auto searchDirectories = SearchDirectories();
+
         // The #include graph is what decides which files get indexed alongside an opened document,
         // so it is built regardless of the predefined-stub loader below. Only directives are parsed
         // here, never the AST, which is what keeps a full-workspace scan affordable at startup.
         std::vector<std::string> roots;
-        roots.reserve(m_workspacesRoot.size());
-        for (const auto &workspaceRoot : m_workspacesRoot)
+        roots.reserve(workspaceRoots.size());
+        for (const auto &workspaceRoot : workspaceRoots)
             roots.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
 
         m_includeGraph.Build(roots,
-                             m_config.searchDirectories,
+                             *searchDirectories,
                              m_config.info.fileExtension,
                              [&stopToken]() { return stopToken.stop_requested(); });
 
@@ -414,12 +545,20 @@ namespace angel_lsp
 
         try
         {
-            for (const auto &workspaceRoot : m_workspacesRoot)
+            for (const auto &workspaceRoot : workspaceRoots)
             {
                 if (stopToken.stop_requested())
                     return;
 
-                for (const auto &entry : std::filesystem::recursive_directory_iterator(angel_lsp::utils::UriToPath(workspaceRoot)))
+                // skip_permission_denied, matching WorkspaceIncludeGraph::Build. Without it a
+                // single unreadable directory anywhere under a workspace root threw, and the catch
+                // below abandoned the whole predefined-stub scan - so one permission-protected
+                // folder silently cost the user every stub in the workspace.
+                std::error_code scanError;
+                for (const auto &entry : std::filesystem::recursive_directory_iterator(
+                         angel_lsp::utils::UriToPath(workspaceRoot),
+                         std::filesystem::directory_options::skip_permission_denied,
+                         scanError))
                 {
                     if (stopToken.stop_requested())
                         return;
@@ -445,7 +584,9 @@ namespace angel_lsp
             return;
         }
 
-        const std::string &profileName = m_config.engineProfile;
+        // By value, not by reference into m_config: this runs on the workspace thread and
+        // didChangeConfiguration can rewrite the profile from the message loop mid-call.
+        const std::string profileName = EngineProfile();
         auto kind = angel_lsp::analysis::ParseEngineProfileKind(profileName);
         if (kind == angel_lsp::analysis::EngineProfileKind::None)
         {
@@ -455,12 +596,25 @@ namespace angel_lsp
         if (kind == angel_lsp::analysis::EngineProfileKind::Auto)
         {
             std::vector<std::string> fileNames;
-            for (const auto &workspaceRoot : m_workspacesRoot)
+            for (const auto &workspaceRoot : WorkspaceRoots())
             {
+                if (stopToken.stop_requested())
+                    return;
+
                 const std::string rootPath = angel_lsp::utils::UriToPath(workspaceRoot);
                 std::error_code ec;
-                for (const auto &entry : std::filesystem::recursive_directory_iterator(rootPath, ec))
+
+                // skip_permission_denied and a stop check per entry, matching every other scan in
+                // this file. This was the one walk with neither: an unreadable directory ended it
+                // early with no profile detected, and because RestartWorkspaceScan joins this thread
+                // from the message loop, a large tree here was the one place that join could
+                // actually be felt as a pause.
+                for (const auto &entry : std::filesystem::recursive_directory_iterator(
+                         rootPath, std::filesystem::directory_options::skip_permission_denied, ec))
                 {
+                    if (stopToken.stop_requested())
+                        return;
+
                     if (entry.is_regular_file())
                     {
                         fileNames.push_back(entry.path().filename().string());
@@ -499,8 +653,7 @@ namespace angel_lsp
                 continue;
             }
 
-            m_symbolTable.ClearDocumentSymbols(syntheticUri);
-            m_symbolCollector->CollectSymbols(syntheticUri, std::string(stubSource), parser, m_symbolTable);
+            ReplaceSymbolsFromSource(syntheticUri, std::string(stubSource), parser);
 
             m_scopeIndex.ClearDocument(syntheticUri);
             m_callGraph.ClearDocument(syntheticUri);
@@ -530,7 +683,7 @@ namespace angel_lsp
             }
             else
             {
-                for (const auto &workspaceRoot : m_workspacesRoot)
+                for (const auto &workspaceRoot : WorkspaceRoots())
                     candidates.push_back(std::filesystem::path(angel_lsp::utils::UriToPath(workspaceRoot)) / configured);
             }
 
@@ -610,8 +763,7 @@ namespace angel_lsp
             return;
         }
 
-        m_symbolTable.ClearDocumentSymbols(uri);
-        m_symbolCollector->CollectSymbols(uri, content, parser, m_symbolTable);
+        ReplaceSymbolsFromSource(uri, content, parser);
 
         m_scopeIndex.ClearDocument(uri);
         m_callGraph.ClearDocument(uri);
@@ -651,10 +803,13 @@ namespace angel_lsp
 
         if (const auto *profileVal = section->find("engineProfile"); profileVal && profileVal->isString())
         {
-            if (!profileVal->string().empty() && profileVal->string() != m_config.engineProfile)
+            if (!profileVal->string().empty() && profileVal->string() != EngineProfile())
             {
-                m_config.engineProfile = profileVal->string();
-                m_logger->LogInfo(fmt::format("Engine profile changed to '{}'; reloading predefineds", m_config.engineProfile));
+                {
+                    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+                    m_engineProfile = profileVal->string();
+                }
+                m_logger->LogInfo(fmt::format("Engine profile changed to '{}'; reloading predefineds", profileVal->string()));
                 shouldRescan = true;
             }
         }
@@ -669,10 +824,19 @@ namespace angel_lsp
                     updated.push_back(entry.string());
             }
 
-            if (updated != m_config.searchDirectories)
+            if (updated != *SearchDirectories())
             {
-                m_config.searchDirectories = std::move(updated);
-                m_logger->LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", m_config.searchDirectories.size()));
+                const size_t count = updated.size();
+
+                // Swapped in as a whole new list rather than assigned into the old one: a worker
+                // holding the previous handle keeps reading that revision safely until it is done,
+                // and the old buffer is freed only when the last of them lets go.
+                {
+                    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+                    m_searchDirectories = std::make_shared<const std::vector<std::string>>(std::move(updated));
+                }
+
+                m_logger->LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", count));
                 shouldRescan = true;
             }
         }
@@ -712,21 +876,28 @@ namespace angel_lsp
 
     void Server::HandleNotificationsWorkspace_DidChangeWorkspaceFolders(lsp::notifications::Workspace_DidChangeWorkspaceFolders::Params &&params)
     {
-        for (const auto &removed : params.event.removed)
+        size_t rootCount = 0;
         {
-            const std::string root{ removed.uri.path() };
-            std::erase(m_workspacesRoot, root);
-        }
+            std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
 
-        for (const auto &added : params.event.added)
-        {
-            const std::string root{ added.uri.path() };
-            if (std::find(m_workspacesRoot.begin(), m_workspacesRoot.end(), root) == m_workspacesRoot.end())
-                m_workspacesRoot.push_back(root);
+            for (const auto &removed : params.event.removed)
+            {
+                const std::string root{ removed.uri.path() };
+                std::erase(m_workspacesRoot, root);
+            }
+
+            for (const auto &added : params.event.added)
+            {
+                const std::string root{ added.uri.path() };
+                if (std::find(m_workspacesRoot.begin(), m_workspacesRoot.end(), root) == m_workspacesRoot.end())
+                    m_workspacesRoot.push_back(root);
+            }
+
+            rootCount = m_workspacesRoot.size();
         }
 
         m_logger->LogInfo(fmt::format("Workspace folders changed (+{} -{}); now {} root(s), rescanning",
-                                      params.event.added.size(), params.event.removed.size(), m_workspacesRoot.size()));
+                                      params.event.added.size(), params.event.removed.size(), rootCount));
 
         // A rescan rather than an incremental patch: the include graph is rebuilt wholesale by
         // Build(), and a removed root's files have to leave the graph as much as an added root's
@@ -790,7 +961,7 @@ namespace angel_lsp
 
             const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
-            m_includeGraph.UpdateFile(path, content, m_config.searchDirectories);
+            m_includeGraph.UpdateFile(path, content, *SearchDirectories(), IncludeAllowedRoots());
             graphChanged = true;
 
             // Only files already pulled in as part of an open document's module are re-indexed
@@ -891,7 +1062,78 @@ namespace angel_lsp
         request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
         request.sourceCode = text;
         request.tree = tree;
+        request.excludedLineRanges = ExcludedLineRanges(text);
         return request;
+    }
+
+    std::vector<angel_lsp::analysis::Diagnostic> Server::ReplaceSymbolsFromTree(const std::string &uriStr,
+                                                                                 const std::string &text,
+                                                                                 TSTree *tree)
+    {
+        angel_lsp::analysis::SymbolTable staging;
+        auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, staging, m_i18n.get(), &m_config.types);
+        m_symbolTable.ReplaceDocumentSymbols(uriStr, staging);
+        return diagnostics;
+    }
+
+    std::vector<angel_lsp::analysis::Diagnostic> Server::ReplaceSymbolsFromSource(const std::string &uriStr,
+                                                                                   const std::string &text,
+                                                                                   angel_lsp::parser::AngelScriptParser &parser)
+    {
+        angel_lsp::analysis::SymbolTable staging;
+        auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, parser, staging, m_i18n.get(), &m_config.types);
+        m_symbolTable.ReplaceDocumentSymbols(uriStr, staging);
+        return diagnostics;
+    }
+
+    std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(const std::string &uriStr,
+                                                                                 const std::string &text,
+                                                                                 const TSTree *tree)
+    {
+        // A language server's input is whatever the user opens, and parts of the analysis are
+        // superlinear, so an enormous document is a way to hang the session rather than just slow
+        // it. Past the limit the document is still tracked, synced and navigable - it simply is not
+        // analysed. Degrading is better than freezing, and better than a size the user cannot see.
+        if (text.size() > angel_lsp::constants::limits::MaxAnalysedDocumentBytes)
+        {
+            m_logger->LogWarning(fmt::format(
+                "Skipping analysis of {}: {} bytes exceeds the {} byte limit. Navigation still works.",
+                uriStr, text.size(), angel_lsp::constants::limits::MaxAnalysedDocumentBytes));
+
+            m_scopeIndex.ClearDocument(uriStr);
+            m_callGraph.ClearDocument(uriStr);
+            return {};
+        }
+
+        // Held privately until analysis is done - see the header for why the order matters.
+        std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot;
+
+        if (tree)
+        {
+            const TSNode root = ts_tree_root_node(tree);
+            scopeRoot = m_localScopeCollector->CollectScopesFromTree(root, text);
+            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(root, text));
+        }
+        else
+        {
+            m_scopeIndex.ClearDocument(uriStr);
+            m_callGraph.ClearDocument(uriStr);
+        }
+
+        auto request = BuildAnalysisRequest(uriStr, text, tree);
+
+        // Overrides the published snapshot BuildAnalysisRequest looked up. mutableScopeRoot is this
+        // function asserting exclusive ownership of that exact tree, which is what makes the
+        // `auto` write-back inside the conversion rules safe.
+        request.scopeRoot = scopeRoot;
+        request.mutableScopeRoot = scopeRoot.get();
+
+        auto diagnostics = m_semanticAnalyzer->Analyze(request);
+
+        if (scopeRoot)
+            m_scopeIndex.SetScopeTree(uriStr, std::shared_ptr<const angel_lsp::analysis::Scope>(std::move(scopeRoot)));
+
+        return diagnostics;
     }
 
     void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params &&params)
@@ -914,18 +1156,12 @@ namespace angel_lsp
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
                 ClaimPredefinedFile(uriStr);
 
-                m_symbolTable.ClearDocumentSymbols(uriStr);
-                diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, savedTree, m_symbolTable, m_i18n.get(), &m_config.types);
+                diagnostics = ReplaceSymbolsFromTree(uriStr, text, savedTree);
                 m_scopeIndex.ClearDocument(uriStr);
                 m_callGraph.ClearDocument(uriStr);
-                if (savedTree)
-                {
-                    m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(savedTree), text));
-                    m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(savedTree), text));
-                }
             }
 
-            auto semanticDiagnostics = m_semanticAnalyzer->Analyze(BuildAnalysisRequest(uriStr, text, savedTree));
+            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, savedTree);
             diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
             if (savedTree)
@@ -939,21 +1175,16 @@ namespace angel_lsp
         // need the same tree, and letting each of them parse the text again is pure waste.
         TSTree *savedTree = m_parser->Parse(text);
 
-        auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, savedTree, m_symbolTable, m_i18n.get(), &m_config.types);
-        if (savedTree)
-        {
-            m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(savedTree), text));
-            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(savedTree), text));
-        }
+        auto diagnostics = ReplaceSymbolsFromTree(uriStr, text, savedTree);
 
         // A save is the only point at which an edited #include line can change which module this
         // file belongs to, so the graph is patched here rather than on every keystroke.
         if (const std::string savedPath = CanonicalPathFromUri(uriStr); !savedPath.empty())
-            m_includeGraph.UpdateFile(savedPath, text, m_config.searchDirectories);
+            m_includeGraph.UpdateFile(savedPath, text, *SearchDirectories(), IncludeAllowedRoots());
 
         IndexModuleClosure(uriStr);
 
-        auto semanticDiagnostics = m_semanticAnalyzer->Analyze(BuildAnalysisRequest(uriStr, text, savedTree));
+        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, savedTree);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
         if (savedTree)
@@ -986,41 +1217,29 @@ namespace angel_lsp
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
                 if (ClaimPredefinedFile(uriStr))
                 {
-                    m_symbolTable.ClearDocumentSymbols(uriStr);
-                    diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, m_symbolTable, m_i18n.get(), &m_config.types);
+                    diagnostics = ReplaceSymbolsFromTree(uriStr, text, tree);
                     m_scopeIndex.ClearDocument(uriStr);
                     m_callGraph.ClearDocument(uriStr);
-                    if (tree)
-                    {
-                        m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
-                        m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), text));
-                    }
                 }
             }
 
-            auto semanticDiagnostics = m_semanticAnalyzer->Analyze(BuildAnalysisRequest(uriStr, text, tree));
+            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, tree);
             diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
             PublishDiagnostics(uriStr, diagnostics);
             return;
         }
 
-        m_symbolTable.ClearDocumentSymbols(uriStr);
-        auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, m_symbolTable, m_i18n.get(), &m_config.types);
+        auto diagnostics = ReplaceSymbolsFromTree(uriStr, text, tree);
 
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
-        if (tree)
-        {
-            m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
-            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), text));
-        }
 
         // Before analysis, not after: the module the file belongs to supplies declarations this
         // file legitimately uses, and without them every one of them would be reported undeclared.
         IndexModuleClosure(uriStr);
 
-        auto semanticDiagnostics = m_semanticAnalyzer->Analyze(BuildAnalysisRequest(uriStr, text, tree));
+        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, tree);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
         AppendIncludeDiagnostics(uriStr, text, diagnostics);
@@ -1131,7 +1350,7 @@ namespace angel_lsp
             m_symbolTable.ClearDocumentSymbols(uriStr);
             m_scopeIndex.ClearDocument(uriStr);
             m_callGraph.ClearDocument(uriStr);
-            m_symbolCollector->CollectSymbolsWithTree(uriStr, buffer, newTree, m_symbolTable, m_i18n.get());
+            ReplaceSymbolsFromTree(uriStr, buffer, newTree);
             if (newTree)
             {
                 m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(newTree), buffer));
@@ -1233,8 +1452,7 @@ namespace angel_lsp
 
         TSTree *tree = parser.Parse(content);
 
-        m_symbolTable.ClearDocumentSymbols(uriStr);
-        m_symbolCollector->CollectSymbolsWithTree(uriStr, content, tree, m_symbolTable, m_i18n.get());
+        ReplaceSymbolsFromTree(uriStr, content, tree);
 
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
@@ -1278,6 +1496,10 @@ namespace angel_lsp
 
     void Server::RunAnalysisLoop(std::stop_token stopToken)
     {
+        // One parser for the life of the thread. Private to it, so no synchronisation is needed and
+        // none of the message loop's trees are ever touched from here.
+        angel_lsp::parser::AngelScriptParser parser(m_logger.get());
+
         std::stop_callback wake(stopToken, [this]()
                                 {
                                     {
@@ -1316,15 +1538,20 @@ namespace angel_lsp
             lock.unlock();
 
             for (const auto &[uriStr, text] : batch)
-                AnalyzeDocument(uriStr, text);
+                AnalyzeDocument(uriStr, text, parser);
         }
     }
 
-    void Server::AnalyzeDocument(const std::string &uriStr, const std::string &text)
+    void Server::AnalyzeDocument(const std::string &uriStr, const std::string &text,
+                                 angel_lsp::parser::AngelScriptParser &parser)
     {
-        // Own parser, own tree, own copy of the text. The message loop owns m_documentTrees and
-        // deletes the tree there on the next edit; reading it from here would be a use-after-free.
-        angel_lsp::parser::AngelScriptParser parser(m_logger.get());
+        // Own tree, own copy of the text. The message loop owns m_documentTrees and deletes the
+        // tree there on the next edit; reading it from here would be a use-after-free.
+        //
+        // The parser is handed in and reused across the batch rather than constructed per document:
+        // each construction is a ts_parser_new plus a language load, paid once per document per
+        // debounced analysis for nothing. It stays private to the analysis thread, which is what
+        // keeps that safe - a TSParser is not shareable.
         TSTree *tree = parser.Parse(text);
 
         // Collected into a staging table and swapped in one step, so a reader on the message loop
@@ -1333,18 +1560,9 @@ namespace angel_lsp
         auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, staging, m_i18n.get(), &m_config.types);
         m_symbolTable.ReplaceDocumentSymbols(uriStr, staging);
 
-        if (tree)
-        {
-            m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
-            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), text));
-        }
-        else
-            m_scopeIndex.ClearDocument(uriStr);
-            m_callGraph.ClearDocument(uriStr);
-
-        // Deleted after analysis, not before: the conversion rules read expressions straight out of
-        // this tree, and it is the only one this thread is allowed to touch.
-        auto semanticDiagnostics = m_semanticAnalyzer->Analyze(BuildAnalysisRequest(uriStr, text, tree));
+        // Analysed before the tree below is deleted, not after: the conversion rules read
+        // expressions straight out of it, and it is the only tree this thread is allowed to touch.
+        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, tree);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
         if (tree)
@@ -1362,7 +1580,11 @@ namespace angel_lsp
 
         // Takes the text rather than looking it up: this also runs on the analysis thread, where
         // reading m_openDocuments would race the message loop.
-        features::DocumentLinkRequest request{ uriStr, text, m_config.searchDirectories, m_i18n.get() };
+        // Named, not inlined into the initialiser: DocumentLinkRequest holds the vector by
+        // reference, so the handle has to outlive the request rather than die at the semicolon.
+        const auto searchDirectories = SearchDirectories();
+
+        features::DocumentLinkRequest request{ uriStr, text, *searchDirectories, m_i18n.get(), IncludeAllowedRoots() };
         auto includeDiagnostics = features::GetUnresolvedIncludeDiagnostics(request);
         diagnostics.insert(diagnostics.end(), includeDiagnostics.begin(), includeDiagnostics.end());
     }
@@ -1694,8 +1916,17 @@ namespace angel_lsp
         lsp::notifications::TextDocument_PublishDiagnostics::Params params;
         params.uri = lsp::DocumentUri(lsp::Uri::parse(uriStr));
 
+        // Applied here, at the one place every diagnostic passes through on its way to the client.
+        // SemanticAnalyzer already filters its own output, but symbol-collection and unresolved-
+        // include diagnostics do not go through it, and a `#if` block that the preprocessor removes
+        // is not code no matter which pass produced the complaint about it.
+        const auto excluded = ExcludedLineRanges(text);
+
         for (const auto &diag : diagnostics)
         {
+            if (!excluded.empty() && angel_lsp::utils::IsLineExcluded(excluded, diag.range.start.line))
+                continue;
+
             lsp::Diagnostic lspDiag;
             lspDiag.range.start.line = diag.range.start.line;
             lspDiag.range.start.character = diag.range.start.character;
@@ -2148,7 +2379,7 @@ namespace angel_lsp
                 }
                 TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::CompletionRequest cr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, codec::Decode(docIt->second, m_positionEncoding, req.position), &m_config };
+                features::CompletionRequest cr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, codec::Decode(docIt->second, m_positionEncoding, req.position), &m_config, m_snippetSupport };
                 return features::GetCompletion(cr);
             });
 
@@ -2566,7 +2797,10 @@ namespace angel_lsp
                     return lsp::Null{};
                 }
 
-                features::DocumentLinkRequest dlr{ uriStr, docIt->second, m_config.searchDirectories, m_i18n.get() };
+                // Named so the handle outlives dlr, which holds the vector by reference.
+                const auto searchDirectories = SearchDirectories();
+
+                features::DocumentLinkRequest dlr{ uriStr, docIt->second, *searchDirectories, m_i18n.get(), IncludeAllowedRoots() };
                 auto links = features::GetDocumentLinks(dlr);
                 if (links.has_value())
                 {

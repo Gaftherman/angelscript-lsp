@@ -49,6 +49,17 @@ namespace angel_lsp::config
         std::string fileExtension = ".as";
         std::string predefinedFileExtension = ".as.predefined";
         std::string locale = "en";
+
+        /**
+         * @brief Log threshold: error | warning | info | debug. Parsed by utils::ParseLogLevel.
+         *
+         * Defaults to info rather than debug because every record is a real window/logMessage
+         * notification over the same connection as the responses - the debug level dumps every
+         * symbol in a document on every analysis and is a genuine throughput cost, not free
+         * instrumentation.
+         */
+        std::string logLevel = "info";
+
         bool showHelp = false;
         bool showVersion = false;
     };
@@ -106,7 +117,36 @@ namespace angel_lsp::config
     {
         std::string stringTypeName = "string";
         std::string arrayTypeName = "array";
+
+        /**
+         * @brief Templates whose initializer list is a plain repeat of their element type.
+         *
+         * This is the shorthand. The general mechanism is a `@listpattern` tag in the stub itself,
+         * carrying the pattern from the type's own `asBEHAVE_LIST_FACTORY` registration - see
+         * analysis/ListPattern.h. That expresses shapes this set cannot, such as `dictionary`'s
+         * `{repeat {string, ?}}`; this exists for a host that would rather not edit a stub it does
+         * not own.
+         *
+         * Either way it has to be stated rather than inferred. Reading "one type parameter" as
+         * "array-like" would be wrong: AS-Harness declares `optional<T>` in exactly the same shape
+         * as `array<T>`, yet the real compiler answers `optional<int> o = {1};` with
+         * "Initialization lists cannot be used with 'optional<int>'". Left alone, this holds
+         * arrayTypeName, whose `T[]` spelling the language settles on its own.
+         */
+        std::unordered_set<std::string> arrayLikeTemplates;
+
         std::unordered_set<std::string> registeredSymbols;
+
+        /** @brief arrayLikeTemplates, with arrayTypeName included whether or not it was listed. */
+        std::unordered_set<std::string> ArrayLikeTemplateNames() const
+        {
+            std::unordered_set<std::string> names = arrayLikeTemplates;
+            if (!arrayTypeName.empty())
+            {
+                names.insert(arrayTypeName);
+            }
+            return names;
+        }
     };
 
     /**
@@ -119,6 +159,20 @@ namespace angel_lsp::config
         TypeConfig types;
         EngineProperties engine;
         std::vector<std::string> searchDirectories;
+
+        /**
+         * @brief Words treated as defined for `#if <word>`, mirroring CScriptBuilder::DefineWord.
+         *
+         * AngelScript's preprocessor lives in the CScriptBuilder add-on and has exactly one
+         * conditional: `#if <identifier>` ... `#endif`. The identifier is not evaluated - it is
+         * looked up in a set the *host application* populates, and a block whose word is absent is
+         * blanked out before compilation.
+         *
+         * Empty is the correct default: an unconfigured builder defines nothing, so every `#if`
+         * block is excluded. A host that calls DefineWord should list the same words here, or the
+         * server will stay silent about code that really is compiled.
+         */
+        std::vector<std::string> definedWords;
 
         /**
          * @brief Predefined stub files to load by path, on top of the workspace scan.

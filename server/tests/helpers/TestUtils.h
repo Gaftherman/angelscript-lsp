@@ -13,8 +13,10 @@
 #include "features/completion/CompletionHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "i18n/i18n.h"
+#include "utils/PreprocessorRegions.h"
 #include "parser/AngelScriptParser.h"
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -110,7 +112,14 @@ namespace angel_lsp::test
         return "";
     }
 
-    inline const analysis::Scope *FindInnermostScope(const analysis::Scope *root, uint32_t line, uint32_t character)
+    /**
+     * @brief Innermost scope by *line only*, falling back to `root`.
+     *
+     * Kept apart from analysis::FindInnermostScope, which ignores nothing and returns nullptr when
+     * the point lies outside the root. Tests position by line and expect a scope back regardless,
+     * so this variant stays - under a name that says which one it is.
+     */
+    inline const analysis::Scope *FindScopeByLineOrRoot(const analysis::Scope *root, uint32_t line, uint32_t character)
     {
         if (!root)
         {
@@ -120,7 +129,7 @@ namespace angel_lsp::test
         {
             if (child && line >= child->startLine && line <= child->endLine)
             {
-                if (const analysis::Scope *inner = FindInnermostScope(child.get(), line, character))
+                if (const analysis::Scope *inner = FindScopeByLineOrRoot(child.get(), line, character))
                 {
                     return inner;
                 }
@@ -177,9 +186,17 @@ namespace angel_lsp::test
             analysis::SemanticAnalysisRequest request{ m_symbolTable, m_uri, m_config.info.predefinedFileExtension.empty() ? ".as.predefined" : m_config.info.predefinedFileExtension, &i18n };
             request.typeConfig = &m_config.types;
             request.engineProperties = &m_config.engine;
-            m_scopeRoot = m_scopeCollector.CollectScopes(m_sourceCode, m_parser);
+            // Kept as a non-const handle only long enough to hand Analyze() a mutableScopeRoot:
+            // this document owns its scope tree outright and no other thread can reach it, which is
+            // the precondition that lets the conversion rules write deduced `auto` types back into
+            // it. Without that, GetSymbolTypeAt() below would report "auto" for every such local.
+            std::shared_ptr<analysis::Scope> mutableScopeRoot = m_scopeCollector.CollectScopes(m_sourceCode, m_parser);
+            m_scopeRoot = mutableScopeRoot;
             request.scopeRoot = m_scopeRoot;
+            request.mutableScopeRoot = mutableScopeRoot.get();
             request.sourceCode = m_sourceCode;
+            // Same `#if` exclusion the server applies - see utils/PreprocessorRegions.h.
+            request.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(m_sourceCode);
             request.tree = m_tree;
 
             analysis::SemanticAnalyzer analyzer(nullptr);
@@ -319,11 +336,6 @@ namespace angel_lsp::test
                     else if (copy.code == "as-err-positional-after-named-arg")
                     {
                         copy.code = "E_POSITIONAL_AFTER_NAMED_ARG";
-                        linesWithSpecificErrors.insert(copy.range.start.line);
-                    }
-                    else if (copy.code == "as-err-unary-neg-on-unsigned")
-                    {
-                        copy.code = "E_UNARY_NEG_ON_UNSIGNED";
                         linesWithSpecificErrors.insert(copy.range.start.line);
                     }
                     else if (copy.code == "as-err-not-lvalue")
@@ -485,7 +497,7 @@ namespace angel_lsp::test
                         {
                             if (sym.GetVariable().typeName == "auto" || sym.GetVariable().typeName == "auto@")
                             {
-                                const analysis::Scope *scope = m_scopeRoot ? FindInnermostScope(m_scopeRoot.get(), sym.startLine, sym.startCharacter) : nullptr;
+                                const analysis::Scope *scope = m_scopeRoot ? FindScopeByLineOrRoot(m_scopeRoot.get(), sym.startLine, sym.startCharacter) : nullptr;
                                 const analysis::LocalDefinition *def = scope ? analysis::ResolveInScope(scope, sym.name) : nullptr;
                                 if (def && !def->typeName.empty() && def->typeName != "auto" && def->typeName != "auto@")
                                 {
@@ -522,7 +534,7 @@ namespace angel_lsp::test
 
             if (result.empty() && m_scopeRoot)
             {
-                const analysis::Scope *scope = FindInnermostScope(m_scopeRoot.get(), pos.line, pos.character);
+                const analysis::Scope *scope = FindScopeByLineOrRoot(m_scopeRoot.get(), pos.line, pos.character);
                 while (scope && result.empty())
                 {
                     for (const auto &def : scope->definitions)
@@ -544,7 +556,7 @@ namespace angel_lsp::test
                 TSNode node = ts_node_descendant_for_point_range(root, pt, pt);
                 if (!ts_node_is_null(node))
                 {
-                    const analysis::Scope *scope = m_scopeRoot ? FindInnermostScope(m_scopeRoot.get(), pos.line, pos.character) : nullptr;
+                    const analysis::Scope *scope = m_scopeRoot ? FindScopeByLineOrRoot(m_scopeRoot.get(), pos.line, pos.character) : nullptr;
                     std::string nodeText = GetNodeText(node, m_sourceCode);
                     while (!nodeText.empty() && isspace(static_cast<unsigned char>(nodeText.front()))) nodeText.erase(nodeText.begin());
                     while (!nodeText.empty() && isspace(static_cast<unsigned char>(nodeText.back()))) nodeText.pop_back();
@@ -625,7 +637,7 @@ namespace angel_lsp::test
                     {
                         std::string op = GetNodeText(opNode, m_sourceCode);
                         auto scopeRoot = const_cast<analysis::LocalScopeCollector&>(m_scopeCollector).CollectScopes(m_sourceCode, const_cast<parser::AngelScriptParser&>(m_parser));
-                        const analysis::Scope *scope = FindInnermostScope(scopeRoot.get(), pos.line, pos.character);
+                        const analysis::Scope *scope = FindScopeByLineOrRoot(scopeRoot.get(), pos.line, pos.character);
                         std::string leftType = analysis::ResolveExpressionType(left, scope, m_symbolTable, m_sourceCode, m_uri);
                         std::string rightType = analysis::ResolveExpressionType(right, scope, m_symbolTable, m_sourceCode, m_uri);
                         std::string cleanLeft = analysis::CleanBaseType(leftType);
@@ -718,7 +730,7 @@ namespace angel_lsp::test
                         if (!leftText.empty() && leftText.front() != '@' && op == "=")
                         {
                             auto scopeRoot = const_cast<analysis::LocalScopeCollector&>(m_scopeCollector).CollectScopes(m_sourceCode, const_cast<parser::AngelScriptParser&>(m_parser));
-                            const analysis::Scope *scope = FindInnermostScope(scopeRoot.get(), pos.line, pos.character);
+                            const analysis::Scope *scope = FindScopeByLineOrRoot(scopeRoot.get(), pos.line, pos.character);
                             std::string leftType = analysis::ResolveExpressionType(left, scope, m_symbolTable, m_sourceCode, m_uri);
                             std::string rightType = analysis::ResolveExpressionType(right, scope, m_symbolTable, m_sourceCode, m_uri);
                             std::string cleanLeft = analysis::CleanBaseType(leftType);
@@ -772,7 +784,7 @@ namespace angel_lsp::test
             while (!calleeText.empty() && isspace(static_cast<unsigned char>(calleeText.back()))) calleeText.pop_back();
 
             auto scopeRoot = const_cast<analysis::LocalScopeCollector&>(m_scopeCollector).CollectScopes(m_sourceCode, const_cast<parser::AngelScriptParser&>(m_parser));
-            const analysis::Scope *scope = FindInnermostScope(scopeRoot.get(), pos.line, pos.character);
+            const analysis::Scope *scope = FindScopeByLineOrRoot(scopeRoot.get(), pos.line, pos.character);
             std::string calleeType = analysis::ResolveExpressionType(funcNode, scope, m_symbolTable, m_sourceCode, m_uri);
             std::string clean = analysis::CleanBaseType(calleeType);
 
@@ -1118,9 +1130,15 @@ namespace angel_lsp::test
             analysis::SemanticAnalysisRequest request{ m_symbolTable, m_uri, m_config.info.predefinedFileExtension.empty() ? ".as.predefined" : m_config.info.predefinedFileExtension, &i18n };
             request.typeConfig = &m_config.types;
             request.engineProperties = &m_config.engine;
-            m_scopeRoot = m_scopeCollector.CollectScopes(m_sourceCode, m_parser);
+            // Non-const handle so Analyze() gets a mutableScopeRoot - see the same construct in
+            // TestDocument above for why the `auto` write-back needs it.
+            std::shared_ptr<analysis::Scope> mutableScopeRoot = m_scopeCollector.CollectScopes(m_sourceCode, m_parser);
+            m_scopeRoot = mutableScopeRoot;
             request.scopeRoot = m_scopeRoot;
+            request.mutableScopeRoot = mutableScopeRoot.get();
             request.sourceCode = m_sourceCode;
+            // Same `#if` exclusion the server applies - see utils/PreprocessorRegions.h.
+            request.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(m_sourceCode);
             request.tree = m_tree;
 
             analysis::SemanticAnalyzer analyzer(nullptr);

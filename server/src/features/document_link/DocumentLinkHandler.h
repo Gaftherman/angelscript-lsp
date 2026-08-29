@@ -20,6 +20,16 @@ namespace angel_lsp::features
         const std::string &sourceCode;
         const std::vector<std::string> &searchDirectories;
         const angel_lsp::i18n::I18n *i18n = nullptr;
+
+        /**
+         * @brief Directories an `#include` is permitted to resolve into. Empty means unconfined.
+         *
+         * A link target is a path the client can be asked to open, and an unresolved-include
+         * diagnostic is a statement about a path - so both have to apply the same confinement the
+         * indexer does, or the feature layer becomes the way to probe for files outside the
+         * workspace. See IncludeResolver::IsWithinRoots.
+         */
+        std::vector<std::string> allowedRoots;
     };
 
     using DocumentLinkResult = std::vector<lsp::DocumentLink>;

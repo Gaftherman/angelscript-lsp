@@ -1,4 +1,5 @@
 #include "analysis/LValueChecker.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
 #include <string>
@@ -9,8 +10,22 @@ namespace angel_lsp::analysis
 {
     namespace
     {
+        /**
+         * @brief Node text as an owning string.
+         *
+         * Kept per translation unit rather than shared with ASTUtils::NodeText, which returns a
+         * string_view. The two are not interchangeable: callers here store the result, concatenate
+         * it, and use it after the node has gone out of scope, so handing them a view would trade a
+         * duplicated three-line function for a lifetime question at several dozen call sites.
+         * Deduplicating it was attempted and reverted for exactly that reason.
+         */
         std::string NodeText(TSNode node, std::string_view sourceCode)
         {
+            if (ts_node_is_null(node))
+            {
+                return "";
+            }
+
             const uint32_t start = ts_node_start_byte(node);
             const uint32_t end = ts_node_end_byte(node);
             if (start >= end || end > sourceCode.size())
@@ -20,58 +35,13 @@ namespace angel_lsp::analysis
             return std::string(sourceCode.substr(start, end - start));
         }
 
+
         void EmitAtNode(TSNode node, DiagnosticContext &ctx, std::string_view code,
                         const std::string &arg1 = "", const std::string &arg2 = "")
         {
             const TSPoint start = ts_node_start_point(node);
             const TSPoint end = ts_node_end_point(node);
             ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg1, arg2);
-        }
-
-        const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character)
-        {
-            if (!root)
-            {
-                return nullptr;
-            }
-
-            const auto contains = [line, character](const Scope &scope)
-            {
-                if (line < scope.startLine || line > scope.endLine)
-                {
-                    return false;
-                }
-                if (line == scope.startLine && character < scope.startCharacter)
-                {
-                    return false;
-                }
-                if (line == scope.endLine && character > scope.endCharacter)
-                {
-                    return false;
-                }
-                return true;
-            };
-
-            if (!contains(*root))
-            {
-                return nullptr;
-            }
-
-            const Scope *current = root;
-            for (bool descended = true; descended;)
-            {
-                descended = false;
-                for (const auto &child : current->children)
-                {
-                    if (child && contains(*child))
-                    {
-                        current = child.get();
-                        descended = true;
-                        break;
-                    }
-                }
-            }
-            return current;
         }
 
         void CheckCallLValue(TSNode callNode, const LValueCheckRequest &request,
@@ -186,8 +156,13 @@ namespace angel_lsp::analysis
             }
         }
 
-        bool IsAssignableLValueNode(TSNode node, const Scope *scope, const LValueCheckRequest &request, const SymbolTable &table)
+        bool IsAssignableLValueNode(TSNode node, const Scope *scope, const LValueCheckRequest &request, const SymbolTable &table, int depth = 0)
         {
+            // See k_maxAstDepth in ASTUtils.h.
+            if (depth > k_maxAstDepth)
+                return false;
+
+
             if (ts_node_is_null(node))
             {
                 return false;
@@ -201,7 +176,7 @@ namespace angel_lsp::analysis
                 uint32_t count = ts_node_named_child_count(node);
                 if (count > 0)
                 {
-                    return IsAssignableLValueNode(ts_node_named_child(node, 0), scope, request, table);
+                    return IsAssignableLValueNode(ts_node_named_child(node, 0), scope, request, table, depth + 1);
                 }
                 for (uint32_t i = 0; i < ts_node_child_count(node); ++i)
                 {
@@ -209,7 +184,7 @@ namespace angel_lsp::analysis
                     std::string_view ct = ts_node_type(ch);
                     if (ct != "(" && ct != ")")
                     {
-                        return IsAssignableLValueNode(ch, scope, request, table);
+                        return IsAssignableLValueNode(ch, scope, request, table, depth + 1);
                     }
                 }
                 return false;
@@ -228,8 +203,8 @@ namespace angel_lsp::analysis
                         alternative = ts_node_named_child(node, 2);
                     }
                 }
-                return IsAssignableLValueNode(consequence, scope, request, table) &&
-                       IsAssignableLValueNode(alternative, scope, request, table);
+                return IsAssignableLValueNode(consequence, scope, request, table, depth + 1) &&
+                       IsAssignableLValueNode(alternative, scope, request, table, depth + 1);
             }
 
             // Literals are not lvalues
@@ -247,7 +222,7 @@ namespace angel_lsp::analysis
                 if (!ts_node_is_null(opNode) && NodeText(opNode, request.sourceCode) == "@")
                 {
                     TSNode operand = ts_node_child_by_field_name(node, "operand", 7);
-                    return IsAssignableLValueNode(operand, scope, request, table);
+                    return IsAssignableLValueNode(operand, scope, request, table, depth + 1);
                 }
                 return false;
             }
@@ -327,8 +302,13 @@ namespace angel_lsp::analysis
             }
         }
 
-        void VisitNode(TSNode node, const LValueCheckRequest &request, DiagnosticContext &ctx)
-        {
+        void VisitNode(TSNode node, const LValueCheckRequest &request, DiagnosticContext &ctx, int depth = 0)
+                {
+            // Pathologically nested source would otherwise recurse until the stack gives out; see
+            // k_maxAstDepth in ASTUtils.h.
+            if (depth > k_maxAstDepth)
+                return;
+
             std::string_view nodeType = ts_node_type(node);
             if (nodeType == "assignment_expression")
             {
@@ -340,7 +320,7 @@ namespace angel_lsp::analysis
             uint32_t childCount = ts_node_named_child_count(node);
             for (uint32_t i = 0; i < childCount; ++i)
             {
-                VisitNode(ts_node_named_child(node, i), request, ctx);
+                VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
             }
         }
     }

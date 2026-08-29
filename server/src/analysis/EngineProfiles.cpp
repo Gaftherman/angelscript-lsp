@@ -18,6 +18,14 @@ namespace angel_lsp::analysis
         }
 
         constexpr std::string_view STANDARD_PROFILE_STUB = R"angelscript(
+// A partially declared type is worse than an undeclared one: this analyzer stays silent about a
+// name it cannot see at all, but a class it *can* see is one it will report missing members on. The
+// declarations below therefore track the add-ons' own registrations rather than being a convenient
+// subset - `datetime` previously declared `getYear()` where the add-on registers the property
+// accessor `get_year()`, and every correct script using it drew "Class 'datetime' has no member".
+//
+// See tests/fixtures/full-addons.as.predefined for the full surface and its provenance.
+
 class string
 {
     string();
@@ -25,17 +33,48 @@ class string
     uint length() const;
     void resize(uint size);
     bool isEmpty() const;
+    uint8& opIndex(uint index);
+    const uint8& opIndex(uint index) const;
     string substr(uint start = 0, int count = -1) const;
     int findFirst(const string &in sub, uint start = 0) const;
-    int findLast(const string &in sub) const;
-    string replace(const string &in target, const string &in with) const;
+    int findFirstOf(const string &in chars, uint start = 0) const;
+    int findFirstNotOf(const string &in chars, uint start = 0) const;
+    int findLast(const string &in sub, int start = -1) const;
+    int findLastOf(const string &in chars, int start = -1) const;
+    int findLastNotOf(const string &in chars, int start = -1) const;
+    void insert(uint pos, const string &in other);
+    void erase(uint pos, int count = -1);
+    array<string>@ split(const string &in delimiter) const;
     int opCmp(const string &in other) const;
     bool opEquals(const string &in other) const;
     string opAdd(const string &in other) const;
     string& opAssign(const string &in other);
     string& opAddAssign(const string &in other);
+    string& opAssign(double);
+    string& opAddAssign(double);
+    string opAdd(double) const;
+    string opAdd_r(double) const;
+    string& opAssign(float);
+    string& opAddAssign(float);
+    string opAdd(float) const;
+    string opAdd_r(float) const;
+    string& opAssign(int64);
+    string& opAddAssign(int64);
+    string opAdd(int64) const;
+    string opAdd_r(int64) const;
+    string& opAssign(uint64);
+    string& opAddAssign(uint64);
+    string opAdd(uint64) const;
+    string opAdd_r(uint64) const;
+    string& opAssign(bool);
+    string& opAddAssign(bool);
+    string opAdd(bool) const;
+    string opAdd_r(bool) const;
 }
 
+/// The list factory the array add-on registers:
+///   asBEHAVE_LIST_FACTORY, "array<T>@ f(int&in type, int&in list) {repeat T}"
+/// @listpattern {repeat T}
 class array<T>
 {
     array();
@@ -46,48 +85,105 @@ class array<T>
     void reserve(uint capacity);
     bool isEmpty() const;
     void insertAt(uint index, const T &in value);
+    void insertAt(uint index, const array<T> &inout arr);
     void removeAt(uint index);
+    void removeRange(uint start, uint count);
     void insertLast(const T &in value);
     void removeLast();
     void sortAsc();
+    void sortAsc(uint startAt, uint count);
     void sortDesc();
+    void sortDesc(uint startAt, uint count);
     void reverse();
     int find(const T &in value) const;
+    int find(uint startAt, const T &in value) const;
+    int findByRef(const T &in value) const;
+    int findByRef(uint startAt, const T &in value) const;
+    bool opEquals(const array<T> &in other) const;
     T& opIndex(uint index);
     const T& opIndex(uint index) const;
 }
 
+/// The list factory the dictionary add-on registers:
+///   asBEHAVE_LIST_FACTORY, "dictionary @f(int &in) {repeat {string, ?}}"
+/// @listpattern {repeat {string, ?}}
 class dictionary
 {
     dictionary();
     void set(const string &in key, const ? &in value);
     bool get(const string &in key, ? &out value) const;
+    void set(const string &in key, const int64 &in value);
+    bool get(const string &in key, int64 &out value) const;
+    void set(const string &in key, const double &in value);
+    bool get(const string &in key, double &out value) const;
     bool exists(const string &in key) const;
     bool delete(const string &in key);
     void deleteAll();
     bool isEmpty() const;
     uint getSize() const;
     array<string>@ getKeys() const;
+    dictionaryValue& opIndex(const string &in key);
+    const dictionaryValue& opIndex(const string &in key) const;
 }
 
+class dictionaryValue
+{
+    dictionaryValue();
+    dictionaryValue& opAssign(const dictionaryValue &in other);
+    dictionaryValue& opAssign(const ? &in value);
+    dictionaryValue& opHndlAssign(const ? &in value);
+    void opCast(? &out value);
+    void opConv(? &out value);
+}
+
+/// `ref` assigns through opHndlAssign - it declares no opAssign, so `ref r = @obj;` is rejected by
+/// the real compiler and `ref r(@obj);` is the way in.
 class ref
 {
     ref();
+    ref(const ref &in other);
     ref(const ? &in value);
-    void opAssign(const ? &in value);
+    void opCast(? &out value);
+    ref& opHndlAssign(const ref &in other);
+    ref& opHndlAssign(const ? &in value);
+    bool opEquals(const ref &in other) const;
     bool opEquals(const ? &in value) const;
 }
 
+/// The datetime add-on exposes its fields as property accessors, spelled `get_year` and so on.
 class datetime
 {
     datetime();
-    uint getYear() const;
-    uint getMonth() const;
-    uint getDay() const;
-    uint getHour() const;
-    uint getMinute() const;
-    uint getSecond() const;
+    datetime(const datetime &in other);
+    datetime(uint year, uint month, uint day, uint hour = 0, uint minute = 0, uint second = 0);
+    datetime& opAssign(const datetime &in other);
+    uint get_year() const;
+    uint get_month() const;
+    uint get_day() const;
+    uint get_hour() const;
+    uint get_minute() const;
+    uint get_second() const;
+    uint get_weekDay() const;
+    bool setDate(uint year, uint month, uint day);
+    bool setTime(uint hour, uint minute, uint second);
+    int64 opSub(const datetime &in other) const;
+    datetime opAdd(int64 seconds) const;
+    datetime opAdd_r(int64 seconds) const;
+    datetime& opAddAssign(int64 seconds);
+    datetime opSub(int64 seconds) const;
+    datetime& opSubAssign(int64 seconds);
+    bool opEquals(const datetime &in other) const;
+    int opCmp(const datetime &in other) const;
 }
+
+// String utilities - add_on/scriptstdstring/scriptstdstring_utils.cpp
+string formatInt(int64 val, const string &in options = "", uint width = 0);
+string formatUInt(uint64 val, const string &in options = "", uint width = 0);
+string formatFloat(double val, const string &in options = "", uint width = 0, uint precision = 0);
+int64 parseInt(const string &in str, uint base = 10, uint &out byteCount = 0);
+uint64 parseUInt(const string &in str, uint base = 10, uint &out byteCount = 0);
+double parseFloat(const string &in str, uint &out byteCount = 0);
+string join(const array<string> &in arr, const string &in delimiter);
 
 float sin(float rad);
 float cos(float rad);

@@ -36,7 +36,23 @@ namespace angel_lsp::features
             Type_Number = 19,
             Type_Regexp = 20,
             Type_Operator = 21,
-            Type_Decorator = 22
+            Type_Decorator = 22,
+
+            /**
+             * @brief The `<` and `>` that delimit a template argument list.
+             *
+             * Not a standard LSP token type; contributed by the client (see package.json's
+             * `semanticTokenTypes` / `semanticTokenScopes`). It exists because TextMate cannot tell
+             * these apart from the shift operators: `angelscript.tmLanguage.json`'s operator rule
+             * matches `>>` unconditionally, so the closing brackets of `array<array<int>>` were
+             * scoped `keyword.operator` - as one two-character shift, rather than two separate
+             * closers. The grammar has no way to know better; this pass does, because it is looking
+             * at a parse tree where those characters belong to a `template_type_list`.
+             *
+             * Emitting the token is the whole fix. It previously `continue`d here, which left
+             * nothing for the client to override the TextMate scope with.
+             */
+            Type_TemplatePunctuation = 23
         };
 
         enum TokenModifierBit : uint32_t
@@ -198,7 +214,8 @@ namespace angel_lsp::features
                 "number",
                 "regexp",
                 "operator",
-                "decorator"
+                "decorator",
+                "templatePunctuation"
             },
             /* tokenModifiers */ {
                 "declaration",
@@ -363,6 +380,11 @@ namespace angel_lsp::features
                 tokenType = Type_Keyword;
                 priority = 8;
             }
+            else if (captureName == "template.list")
+            {
+                tokenType = Type_TemplatePunctuation;
+                priority = 4;
+            }
             else if (captureName == "operator" || captureName == "punctuation.special" || captureName == "punctuation.bracket")
             {
                 tokenType = Type_Operator;
@@ -401,13 +423,29 @@ namespace angel_lsp::features
                 }
             }
 
+            // A template argument list is captured whole, but only its two brackets are tokens: the
+            // types inside already have their own, better ones. Emitting the span would paint
+            // `array<int>` a single colour and lose the `int`.
+            if (tokenType == Type_TemplatePunctuation)
+            {
+                rawTokens.push_back(RawToken{ startPoint.row, startPoint.column, 1, tokenType, tokenMod, priority });
+                if (endPoint.column > 0)
+                {
+                    rawTokens.push_back(RawToken{ endPoint.row, endPoint.column - 1, 1, tokenType, tokenMod, priority });
+                }
+                continue;
+            }
+
             if (startPoint.row == endPoint.row)
             {
                 if (endPoint.column > startPoint.column)
                 {
+                    // A `<` or `>` the query reached as an operator, in a position where it is not
+                    // one. Rare - the grammar usually resolves this through its external scanner -
+                    // but a mis-parse should not repaint a bracket as arithmetic.
                     if (tokenType == Type_Operator && IsTemplatePunctuationNode(node))
                     {
-                        continue;
+                        tokenType = Type_TemplatePunctuation;
                     }
 
                     rawTokens.push_back(RawToken{

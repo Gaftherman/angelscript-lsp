@@ -38,6 +38,49 @@ namespace angel_lsp::utils
         }
     }
 
+    LineIndex LineIndex::Build(std::string_view text)
+    {
+        LineIndex index;
+
+        // Rough guess at line density; wrong either way it only costs a reallocation or two.
+        index.starts.reserve(text.size() / 32 + 1);
+        index.starts.push_back(0);
+
+        for (size_t offset = 0; offset < text.size(); ++offset)
+        {
+            if (text[offset] == '\n')
+                index.starts.push_back(offset + 1);
+        }
+
+        return index;
+    }
+
+    size_t LineIndex::StartOffset(std::string_view text, uint32_t line) const noexcept
+    {
+        if (starts.empty() || line >= starts.size())
+            return text.size();
+
+        return starts[line];
+    }
+
+    std::string_view LineIndex::Line(std::string_view text, uint32_t line) const noexcept
+    {
+        const size_t start = StartOffset(text, line);
+        if (start >= text.size())
+            return {};
+
+        // The next line's start is one past this line's newline, so backing off by one lands on
+        // the terminator itself. Matches GetLine(), including the CR trim below.
+        size_t end = (line + 1 < starts.size()) ? starts[line + 1] - 1 : text.size();
+        if (end > text.size())
+            end = text.size();
+
+        if (end > start && text[end - 1] == '\r')
+            --end;
+
+        return text.substr(start, end - start);
+    }
+
     size_t LineStartOffset(std::string_view text, uint32_t line)
     {
         size_t offset = 0;

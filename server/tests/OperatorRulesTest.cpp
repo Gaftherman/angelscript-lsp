@@ -31,7 +31,13 @@ namespace
         collector.CollectSymbols(fileUri, code, parser, table);
 
         SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
-        request.scopeRoot = scopes.CollectScopes(code, parser);
+
+        // Non-const handle so the conversion rules may write deduced `auto` types back into the
+        // tree: this scope tree is local to this call and unreachable by anything else, which is
+        // exactly the precondition mutableScopeRoot documents.
+        std::shared_ptr<Scope> scopeRoot = scopes.CollectScopes(code, parser);
+        request.scopeRoot = scopeRoot;
+        request.mutableScopeRoot = scopeRoot.get();
         request.sourceCode = code;
         request.tree = parser.Parse(code);
 

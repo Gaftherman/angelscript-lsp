@@ -1,4 +1,5 @@
 #include "analysis/ConstChecker.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
 
@@ -11,11 +12,15 @@ namespace angel_lsp::analysis
 {
     namespace
     {
-        constexpr uint32_t k_objectFieldLength = 6;   ///< "object"
-        constexpr uint32_t k_memberFieldLength = 6;   ///< "member"
-        constexpr uint32_t k_leftFieldLength = 4;     ///< "left"
-        constexpr uint32_t k_functionFieldLength = 8; ///< "function"
-
+        /**
+         * @brief Node text as an owning string.
+         *
+         * Kept per translation unit rather than shared with ASTUtils::NodeText, which returns a
+         * string_view. The two are not interchangeable: callers here store the result, concatenate
+         * it, and use it after the node has gone out of scope, so handing them a view would trade a
+         * duplicated three-line function for a lifetime question at several dozen call sites.
+         * Deduplicating it was attempted and reverted for exactly that reason.
+         */
         std::string NodeText(TSNode node, std::string_view sourceCode)
         {
             if (ts_node_is_null(node))
@@ -31,6 +36,11 @@ namespace angel_lsp::analysis
             }
             return std::string(sourceCode.substr(start, end - start));
         }
+
+        constexpr uint32_t k_objectFieldLength = 6;   ///< "object"
+        constexpr uint32_t k_memberFieldLength = 6;   ///< "member"
+        constexpr uint32_t k_leftFieldLength = 4;     ///< "left"
+        constexpr uint32_t k_functionFieldLength = 8; ///< "function"
 
         /** @brief Strips a namespace qualification, leaving the last segment ("G::A" -> "A"). */
         std::string LastScopeSegment(const std::string &name)
@@ -128,7 +138,8 @@ namespace angel_lsp::analysis
         Constness ResolveConstness(TSNode node,
                                    const Scope *scope,
                                    const SymbolTable &table,
-                                   std::string_view sourceCode);
+                                   std::string_view sourceCode,
+                                   int depth = 0);
 
         /** @brief Constness of a plain name, whether it is a local, a parameter or a global. */
         Constness ResolveNameConstness(const std::string &name,
@@ -185,8 +196,15 @@ namespace angel_lsp::analysis
         Constness ResolveConstness(TSNode node,
                                    const Scope *scope,
                                    const SymbolTable &table,
-                                   std::string_view sourceCode)
+                                   std::string_view sourceCode,
+                                   int depth)
         {
+            // See k_maxAstDepth in ASTUtils.h.
+            if (depth > k_maxAstDepth)
+            {
+                return Constness::Unknown;
+            }
+
             if (ts_node_is_null(node))
             {
                 return Constness::Unknown;
@@ -219,14 +237,14 @@ namespace angel_lsp::analysis
             if (nodeType == "member_expression")
             {
                 const Constness object = ResolveConstness(
-                    ts_node_child_by_field_name(node, "object", k_objectFieldLength), scope, table, sourceCode);
+                    ts_node_child_by_field_name(node, "object", k_objectFieldLength), scope, table, sourceCode, depth + 1);
                 return object == Constness::Const ? Constness::Const : Constness::Unknown;
             }
 
             if (nodeType == "parenthesized_expression")
             {
                 return ts_node_named_child_count(node) > 0
-                           ? ResolveConstness(ts_node_named_child(node, 0), scope, table, sourceCode)
+                           ? ResolveConstness(ts_node_named_child(node, 0), scope, table, sourceCode, depth + 1)
                            : Constness::Unknown;
             }
 
@@ -470,55 +488,13 @@ namespace angel_lsp::analysis
                        LastScopeSegment(method.declaringClass), methodName);
         }
 
-        /** @brief Locates the innermost scope containing a point, for local-variable resolution. */
-        const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character)
-        {
-            if (!root)
-            {
-                return nullptr;
-            }
-
-            const auto contains = [line, character](const Scope &scope)
-            {
-                if (line < scope.startLine || line > scope.endLine)
+        void VisitNode(TSNode node, const ConstCheckRequest &request, DiagnosticContext &ctx, int depth = 0)
                 {
-                    return false;
-                }
-                if (line == scope.startLine && character < scope.startCharacter)
-                {
-                    return false;
-                }
-                if (line == scope.endLine && character > scope.endCharacter)
-                {
-                    return false;
-                }
-                return true;
-            };
+            // Pathologically nested source would otherwise recurse until the stack gives out; see
+            // k_maxAstDepth in ASTUtils.h.
+            if (depth > k_maxAstDepth)
+                return;
 
-            if (!contains(*root))
-            {
-                return nullptr;
-            }
-
-            const Scope *current = root;
-            for (bool descended = true; descended;)
-            {
-                descended = false;
-                for (const auto &child : current->children)
-                {
-                    if (child && contains(*child))
-                    {
-                        current = child.get();
-                        descended = true;
-                        break;
-                    }
-                }
-            }
-            return current;
-        }
-
-        void VisitNode(TSNode node, const ConstCheckRequest &request, DiagnosticContext &ctx)
-        {
             const std::string_view nodeType = ts_node_type(node);
             if (nodeType == "assignment_expression" || nodeType == "call_expression")
             {
@@ -537,7 +513,7 @@ namespace angel_lsp::analysis
             const uint32_t childCount = ts_node_named_child_count(node);
             for (uint32_t i = 0; i < childCount; ++i)
             {
-                VisitNode(ts_node_named_child(node, i), request, ctx);
+                VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
             }
         }
     }

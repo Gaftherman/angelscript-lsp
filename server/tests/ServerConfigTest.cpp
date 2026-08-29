@@ -976,6 +976,35 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config.searchDirectories[1] == "E:/Include/Path2");
             CHECK(config.searchDirectories[2] == "E:/Include/Path3");
         }
+
+        SUBCASE("Array-like template arguments")
+        {
+            // A host that registered its own element-wise list factory. This cannot be read from a
+            // predefined stub - the stub format has no notation for a list factory, so `array<T>`
+            // and `optional<T>` are declared identically - which is why it is asked for here.
+            ArgvHelper args{"angel_lsp",
+                            "--array-like-type=vector",
+                            "--array-like-template=ring"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.types.arrayLikeTemplates.contains("vector"));
+            CHECK(config.types.arrayLikeTemplates.contains("ring"));
+
+            // The engine's default array type is always one of them, listed or not.
+            const auto names = config.types.ArrayLikeTemplateNames();
+            CHECK(names.contains("array"));
+            CHECK(names.size() == 3);
+        }
+
+        SUBCASE("No array-like templates configured leaves only the default array type")
+        {
+            ArgvHelper args{"angel_lsp"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.types.arrayLikeTemplates.empty());
+
+            const auto names = config.types.ArrayLikeTemplateNames();
+            REQUIRE(names.size() == 1);
+            CHECK(names.contains("array"));
+        }
     }
 
     TEST_CASE("Type conversion checks flag")

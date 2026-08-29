@@ -1,4 +1,5 @@
 #include "analysis/ControlFlowChecker.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 
 #include <algorithm>
@@ -384,8 +385,12 @@ namespace angel_lsp::analysis
             }
         }
 
-        void Visit(TSNode node, std::string_view sourceCode, FlowState state, DiagnosticContext &ctx)
+        void Visit(TSNode node, std::string_view sourceCode, FlowState state, DiagnosticContext &ctx, int depth = 0)
         {
+            // See k_maxAstDepth in ASTUtils.h.
+            if (depth > k_maxAstDepth)
+                return;
+
             const std::string_view type = NodeType(node);
 
             if (type == "break_statement")
@@ -442,7 +447,7 @@ namespace angel_lsp::analysis
             const uint32_t count = ts_node_named_child_count(node);
             for (uint32_t i = 0; i < count; ++i)
             {
-                Visit(ts_node_named_child(node, i), sourceCode, state, ctx);
+                Visit(ts_node_named_child(node, i), sourceCode, state, ctx, depth + 1);
             }
         }
     }

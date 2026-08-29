@@ -1,4 +1,5 @@
 #include "analysis/AccessChecker.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
 
@@ -11,9 +12,15 @@ namespace angel_lsp::analysis
 {
     namespace
     {
-        constexpr uint32_t k_objectFieldLength = 6; ///< "object"
-        constexpr uint32_t k_memberFieldLength = 6; ///< "member"
-
+        /**
+         * @brief Node text as an owning string.
+         *
+         * Kept per translation unit rather than shared with ASTUtils::NodeText, which returns a
+         * string_view. The two are not interchangeable: callers here store the result, concatenate
+         * it, and use it after the node has gone out of scope, so handing them a view would trade a
+         * duplicated three-line function for a lifetime question at several dozen call sites.
+         * Deduplicating it was attempted and reverted for exactly that reason.
+         */
         std::string NodeText(TSNode node, std::string_view sourceCode)
         {
             if (ts_node_is_null(node))
@@ -29,6 +36,9 @@ namespace angel_lsp::analysis
             }
             return std::string(sourceCode.substr(start, end - start));
         }
+
+        constexpr uint32_t k_objectFieldLength = 6; ///< "object"
+        constexpr uint32_t k_memberFieldLength = 6; ///< "member"
 
         /** @brief Strips a namespace qualification, leaving the last segment ("G::A" -> "A"). */
         std::string LastScopeSegment(const std::string &name)
@@ -474,55 +484,13 @@ namespace angel_lsp::analysis
             }
         }
 
-        /** @brief Locates the innermost scope containing a point, for local-variable resolution. */
-        const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character)
-        {
-            if (!root)
-            {
-                return nullptr;
-            }
-
-            const auto contains = [line, character](const Scope &scope)
-            {
-                if (line < scope.startLine || line > scope.endLine)
+        void VisitNode(TSNode node, const AccessCheckRequest &request, DiagnosticContext &ctx, int depth = 0)
                 {
-                    return false;
-                }
-                if (line == scope.startLine && character < scope.startCharacter)
-                {
-                    return false;
-                }
-                if (line == scope.endLine && character > scope.endCharacter)
-                {
-                    return false;
-                }
-                return true;
-            };
+            // Pathologically nested source would otherwise recurse until the stack gives out; see
+            // k_maxAstDepth in ASTUtils.h.
+            if (depth > k_maxAstDepth)
+                return;
 
-            if (!contains(*root))
-            {
-                return nullptr;
-            }
-
-            const Scope *current = root;
-            for (bool descended = true; descended;)
-            {
-                descended = false;
-                for (const auto &child : current->children)
-                {
-                    if (child && contains(*child))
-                    {
-                        current = child.get();
-                        descended = true;
-                        break;
-                    }
-                }
-            }
-            return current;
-        }
-
-        void VisitNode(TSNode node, const AccessCheckRequest &request, DiagnosticContext &ctx)
-        {
             const std::string_view nodeType = ts_node_type(node);
             if (nodeType == "member_expression")
             {
@@ -540,7 +508,7 @@ namespace angel_lsp::analysis
             const uint32_t childCount = ts_node_named_child_count(node);
             for (uint32_t i = 0; i < childCount; ++i)
             {
-                VisitNode(ts_node_named_child(node, i), request, ctx);
+                VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
             }
         }
     }

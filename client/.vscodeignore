@@ -9,4 +9,8 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+# Load-bearing. bin/ holds the compiled server and is now ignored by git - CI builds it per
+# platform and stages it here before packaging. vsce reads this file rather than .gitignore, so
+# this negation is the only thing keeping the server inside the .vsix. Removing it ships an
+# extension that cannot start.
 !bin/**

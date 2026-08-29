@@ -41,6 +41,66 @@ namespace angel_lsp::utils
         return NormalizePathString(path);
     }
 
+    bool IncludeResolver::IsWithinRoots(const std::string &normalizedPath,
+                                        const std::vector<std::string> &allowedRoots)
+    {
+        // No roots configured means no confinement. Unit tests and any library caller with no
+        // workspace context rely on this; the server always supplies roots.
+        if (allowedRoots.empty())
+        {
+            return true;
+        }
+
+        if (normalizedPath.empty())
+        {
+            return false;
+        }
+
+#if defined(_WIN32)
+        // The same file has many spellings on Windows, differing only in case. Comparing them
+        // byte-for-byte would let "C:/Work/../Windows/win.ini" back in under a different case.
+        const auto equal = [](char a, char b)
+        {
+            return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+        };
+#else
+        const auto equal = [](char a, char b) { return a == b; };
+#endif
+
+        for (const auto &root : allowedRoots)
+        {
+            if (root.empty())
+            {
+                continue;
+            }
+
+            std::string normalizedRoot = NormalizePathString(std::filesystem::path(root));
+            while (normalizedRoot.size() > 1 && normalizedRoot.back() == '/')
+            {
+                normalizedRoot.pop_back();
+            }
+
+            if (normalizedRoot.empty() || normalizedPath.size() < normalizedRoot.size())
+            {
+                continue;
+            }
+
+            if (!std::equal(normalizedRoot.begin(), normalizedRoot.end(), normalizedPath.begin(), equal))
+            {
+                continue;
+            }
+
+            // Component boundary: "/w/lib" must not be treated as containing "/w/library". Equal
+            // length is the root itself, which counts as inside.
+            if (normalizedPath.size() == normalizedRoot.size() || normalizedPath[normalizedRoot.size()] == '/')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view sourceCode)
     {
         std::vector<IncludeDirective> directives;
@@ -324,8 +384,17 @@ namespace angel_lsp::utils
     std::string IncludeResolver::ResolveIncludePath(
         std::string_view includePath,
         std::string_view currentFilePath,
-        const std::vector<std::string> &searchDirectories)
+        const std::vector<std::string> &searchDirectories,
+        const std::vector<std::string> &allowedRoots)
     {
+        // Every successful return below goes through this. Checking at the single exit rather than
+        // per branch is deliberate: a new resolution strategy added later is confined by default
+        // instead of silently bypassing the check.
+        const auto permit = [&allowedRoots](std::string resolved) -> std::string
+        {
+            return IsWithinRoots(resolved, allowedRoots) ? resolved : std::string();
+        };
+
         if (includePath.empty())
         {
             return "";
@@ -339,7 +408,7 @@ namespace angel_lsp::utils
         {
             if (std::filesystem::exists(inc, ec) && !std::filesystem::is_directory(inc, ec))
             {
-                return NormalizePathString(inc);
+                return permit(NormalizePathString(inc));
             }
             return "";
         }
@@ -366,7 +435,7 @@ namespace angel_lsp::utils
             std::filesystem::path candidate = parentDir / inc;
             if (std::filesystem::exists(candidate, ec) && !std::filesystem::is_directory(candidate, ec))
             {
-                return NormalizePathString(candidate);
+                return permit(NormalizePathString(candidate));
             }
         }
 
@@ -382,7 +451,7 @@ namespace angel_lsp::utils
             std::filesystem::path candidate = searchDir / inc;
             if (std::filesystem::exists(candidate, ec) && !std::filesystem::is_directory(candidate, ec))
             {
-                return NormalizePathString(candidate);
+                return permit(NormalizePathString(candidate));
             }
         }
 
@@ -392,7 +461,8 @@ namespace angel_lsp::utils
     std::vector<std::string> IncludeResolver::ResolveAllIncludes(
         std::string_view rootFilePath,
         const std::vector<std::string> &searchDirectories,
-        std::function<std::string(const std::string &)> fileReader)
+        std::function<std::string(const std::string &)> fileReader,
+        const std::vector<std::string> &allowedRoots)
     {
         std::vector<std::string> resolvedFiles;
         if (rootFilePath.empty())
@@ -437,7 +507,7 @@ namespace angel_lsp::utils
             std::vector<IncludeDirective> includes = ExtractIncludes(content);
             for (const auto &inc : includes)
             {
-                std::string resolved = ResolveIncludePath(inc.rawPath, currentPath, searchDirectories);
+                std::string resolved = ResolveIncludePath(inc.rawPath, currentPath, searchDirectories, allowedRoots);
                 if (resolved.empty())
                 {
                     continue;

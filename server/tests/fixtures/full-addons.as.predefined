@@ -1,0 +1,560 @@
+// =====================================================================================
+// A predefined stub covering the AngelScript SDK's standard add-ons.
+//
+// Written to exercise this server against a realistic host API surface: every add-on a typical
+// embedding registers, with the signatures its `RegisterObjectMethod` / `RegisterGlobalFunction`
+// calls actually use. It is a test fixture, not a template to copy blindly - your host registers
+// some subset of this, under whatever names it chose.
+//
+// PROVENANCE. Two different levels of confidence, and it matters which is which:
+//
+//   * string, array, datetime, file, filesystem, dictionary, ref, Exception, optional and the
+//     global functions are taken VERBATIM from AS-Harness's own as.predefined, which describes an
+//     engine this repository can compile against. Anything written against them can be checked
+//     with the real compiler (see server/tests/ParityAuditTest.cpp).
+//
+//   * weakref, const_weakref, grid, any, complex, the co-routine functions and `socket` are NOT
+//     registered by AS-Harness. Their signatures come from the SDK add-on sources named above each
+//     section. They are structurally verified here - the stub parses, the symbols resolve, and the
+//     scripts using them draw no false diagnostics - but no oracle confirms them.
+//
+// LIST FACTORIES. `{ ... }` is only valid where the host registered an asBEHAVE_LIST_FACTORY, and
+// the shape it accepts is written into that registration. The `@listpattern` tags below carry those
+// patterns across; without one, this server stays silent about a type's initializer lists rather
+// than guessing. See the README section "Initializer List Patterns".
+// =====================================================================================
+
+
+// =====================================================================================
+// string - add_on/scriptstdstring/scriptstdstring.cpp (+ scriptstdstring_utils.cpp)
+// =====================================================================================
+
+class string{
+	~string();
+	string();
+	string(const string&in);
+	string& opAssign(const string&in);
+	string& opAddAssign(const string&in);
+	bool opEquals(const string&in) const;
+	int opCmp(const string&in) const;
+	string opAdd(const string&in) const;
+	uint length() const;
+	void resize(uint);
+	bool isEmpty() const;
+	uint8& opIndex(uint);
+	const uint8& opIndex(uint) const;
+	string& opAssign(double);
+	string& opAddAssign(double);
+	string opAdd(double) const;
+	string opAdd_r(double) const;
+	string& opAssign(float);
+	string& opAddAssign(float);
+	string opAdd(float) const;
+	string opAdd_r(float) const;
+	string& opAssign(int64);
+	string& opAddAssign(int64);
+	string opAdd(int64) const;
+	string opAdd_r(int64) const;
+	string& opAssign(uint64);
+	string& opAddAssign(uint64);
+	string opAdd(uint64) const;
+	string opAdd_r(uint64) const;
+	string& opAssign(bool);
+	string& opAddAssign(bool);
+	string opAdd(bool) const;
+	string opAdd_r(bool) const;
+	string substr(uint start = 0, int count = -1) const;
+	int findFirst(const string&in, uint start = 0) const;
+	int findFirstOf(const string&in, uint start = 0) const;
+	int findFirstNotOf(const string&in, uint start = 0) const;
+	int findLast(const string&in, int start = -1) const;
+	int findLastOf(const string&in, int start = -1) const;
+	int findLastNotOf(const string&in, int start = -1) const;
+	void insert(uint pos, const string&in other);
+	void erase(uint pos, int count = -1);
+	int regexFind(const string&in regex, uint start = 0, uint&out lengthOfMatch = void) const;
+	string[]@ split(const string&in) const;
+}
+
+
+// =====================================================================================
+// array<T> - add_on/scriptarray/scriptarray.cpp
+//
+// The list factory registration reads:
+//   asBEHAVE_LIST_FACTORY, "array<T>@ f(int&in type, int&in list) {repeat T}"
+// =====================================================================================
+
+/// @listpattern {repeat T}
+class array<T>{
+	T& opIndex(uint index);
+	const T& opIndex(uint index) const;
+	uint opForBegin() const;
+	bool opForEnd(uint) const;
+	uint opForNext(uint) const;
+	const T& opForValue0(uint index) const;
+	uint opForValue1(uint index) const;
+	T[]& opAssign(const T[]&in);
+	void insertAt(uint index, const T&in value);
+	void insertAt(uint index, const T[]&inout arr);
+	void insertLast(const T&in value);
+	void removeAt(uint index);
+	void removeLast();
+	void removeRange(uint start, uint count);
+	uint length() const;
+	void reserve(uint length);
+	void resize(uint length);
+	void sortAsc();
+	void sortAsc(uint startAt, uint count);
+	void sortDesc();
+	void sortDesc(uint startAt, uint count);
+	void reverse();
+	int find(const T&in value) const;
+	int find(uint startAt, const T&in value) const;
+	int findByRef(const T&in value) const;
+	int findByRef(uint startAt, const T&in value) const;
+	bool opEquals(const T[]&in) const;
+	bool isEmpty() const;
+	void sort(T[]::less&in, uint startAt = 0, uint count = uint(-1));
+	funcdef bool less(const T&in, const T&in);
+}
+
+
+// =====================================================================================
+// grid<T> - add_on/scriptgrid/scriptgrid.cpp    [not registered by AS-Harness]
+//
+// Its pattern is the interesting one:
+//   asBEHAVE_LIST_FACTORY, "grid<T>@ f(int&in type, int&in list) {repeat {repeat_same T}}"
+// A grid is a list of rows, and `repeat_same` requires every row to be the same length.
+// =====================================================================================
+
+/// @listpattern {repeat {repeat_same T}}
+class grid<T>{
+	T& opIndex(uint x, uint y);
+	const T& opIndex(uint x, uint y) const;
+	void resize(uint width, uint height);
+	uint width() const;
+	uint height() const;
+}
+
+
+// =====================================================================================
+// dictionary - add_on/scriptdictionary/scriptdictionary.cpp
+//
+//   asBEHAVE_LIST_FACTORY, "dictionary @f(int &in) {repeat {string, ?}}"
+// A dictionary is built from key/value pairs, which is why `dictionary d = {1, 2};` is rejected
+// while `dictionary d = {{'a', 1}};` is not.
+// =====================================================================================
+
+class dictionaryValue{
+	~dictionaryValue();
+	dictionaryValue();
+	dictionaryValue& opAssign(const dictionaryValue&in);
+	dictionaryValue& opHndlAssign(const ?&in);
+	dictionaryValue& opHndlAssign(const dictionaryValue&in);
+	dictionaryValue& opAssign(const ?&in);
+	dictionaryValue& opAssign(double);
+	dictionaryValue& opAssign(int64);
+	void opCast(?&out);
+	void opConv(?&out);
+	int64 opConv();
+	double opConv();
+}
+
+/// @listpattern {repeat {string, ?}}
+class dictionary{
+	dictionary& opAssign(const dictionary&in);
+	void set(const string&in, const ?&in);
+	bool get(const string&in, ?&out) const;
+	void set(const string&in, const int64&in);
+	bool get(const string&in, int64&out) const;
+	void set(const string&in, const double&in);
+	bool get(const string&in, double&out) const;
+	bool exists(const string&in) const;
+	bool isEmpty() const;
+	uint getSize() const;
+	bool delete(const string&in);
+	void deleteAll();
+	string[]@ getKeys() const;
+	dictionaryValue& opIndex(const string&in);
+	const dictionaryValue& opIndex(const string&in) const;
+	dictionaryIter@ opForBegin() const;
+	bool opForEnd(dictionaryIter@) const;
+	dictionaryIter@ opForNext(dictionaryIter@) const;
+	const dictionaryValue& opForValue0(dictionaryIter@) const;
+	const string& opForValue1(dictionaryIter@) const;
+}
+
+class dictionaryIter{
+}
+
+
+// =====================================================================================
+// ref - add_on/scripthandle/scripthandle.cpp
+//
+// A generic handle to any reference type, for storing heterogeneous objects.
+// =====================================================================================
+
+class ref{
+	~ref();
+	ref();
+	ref(const ref&in);
+	ref(const ?&in);
+	void opCast(?&out);
+	ref& opHndlAssign(const ref&in);
+	ref& opHndlAssign(const ?&in);
+	bool opEquals(const ref&in) const;
+	bool opEquals(const ?&in) const;
+}
+
+
+// =====================================================================================
+// weakref<T> / const_weakref<T> - add_on/weakref/weakref.cpp    [not in AS-Harness]
+//
+// A handle that does not keep its target alive. `get()` returns null once the object is gone,
+// which is the whole reason to reach for one.
+// =====================================================================================
+
+class weakref<T>{
+	weakref();
+	weakref(const weakref<T>&in);
+	weakref(T@);
+	/// Returns a strong handle to the target, or null if it has been destroyed.
+	T@ get() const;
+	T@ opImplCast();
+	const T@ opImplCast() const;
+	weakref<T>& opHndlAssign(const weakref<T>&in);
+	weakref<T>& opHndlAssign(T@);
+	bool opEquals(const weakref<T>&in) const;
+	bool opEquals(const T@) const;
+}
+
+class const_weakref<T>{
+	const_weakref();
+	const_weakref(const const_weakref<T>&in);
+	const_weakref(const T@);
+	/// Returns a strong const handle to the target, or null if it has been destroyed.
+	const T@ get() const;
+	const T@ opImplCast() const;
+	const_weakref<T>& opHndlAssign(const const_weakref<T>&in);
+	const_weakref<T>& opHndlAssign(const T@);
+	bool opEquals(const const_weakref<T>&in) const;
+	bool opEquals(const T@) const;
+}
+
+
+// =====================================================================================
+// any - add_on/scriptany/scriptany.cpp    [not registered by AS-Harness]
+//
+// A boxed value of any type. Unlike `ref` it holds value types too.
+// =====================================================================================
+
+class any{
+	any();
+	any(?&in);
+	any(const int64&in);
+	any(const double&in);
+	any& opAssign(any&in);
+	void store(?&in);
+	void store(const int64&in);
+	void store(const double&in);
+	bool retrieve(?&out);
+	bool retrieve(int64&out);
+	bool retrieve(double&out);
+}
+
+
+// =====================================================================================
+// datetime - add_on/datetime/datetime.cpp
+// =====================================================================================
+
+class datetime{
+	datetime();
+	datetime(const datetime&in);
+	datetime(uint, uint, uint, uint = 0, uint = 0, uint = 0);
+	datetime& opAssign(const datetime&in);
+	uint get_year() const;
+	uint get_month() const;
+	uint get_day() const;
+	uint get_hour() const;
+	uint get_minute() const;
+	uint get_second() const;
+	uint get_weekDay() const;
+	bool setDate(uint year, uint month, uint day);
+	bool setTime(uint hour, uint minute, uint second);
+	int64 opSub(const datetime&in) const;
+	datetime opAdd(int64 seconds) const;
+	datetime opAdd_r(int64 seconds) const;
+	datetime& opAddAssign(int64 seconds);
+	datetime opSub(int64 seconds) const;
+	datetime opSub_r(int64 seconds) const;
+	datetime& opSubAssign(int64 seconds);
+	bool opEquals(const datetime&in) const;
+	int opCmp(const datetime&in) const;
+}
+
+
+// =====================================================================================
+// file - add_on/scriptfile/scriptfile.cpp
+// =====================================================================================
+
+class file{
+	int open(const string&in, const string&in);
+	int close();
+	int getSize() const;
+	bool isEndOfFile() const;
+	string readString(uint);
+	string readLine();
+	int64 readInt(uint);
+	uint64 readUInt(uint);
+	float readFloat();
+	double readDouble();
+	int writeString(const string&in);
+	int writeInt(int64, uint);
+	int writeUInt(uint64, uint);
+	int writeFloat(float);
+	int writeDouble(double);
+	int getPos() const;
+	int setPos(int);
+	int movePos(int);
+	bool mostSignificantByteFirst;
+}
+
+
+// =====================================================================================
+// filesystem - add_on/scriptfile/scriptfilesystem.cpp
+// =====================================================================================
+
+class filesystem{
+	bool changeCurrentPath(const string&in);
+	string getCurrentPath() const;
+	string[]@ getDirs() const;
+	string[]@ getFiles() const;
+	bool isDir(const string&in) const;
+	bool isLink(const string&in) const;
+	int64 getSize(const string&in) const;
+	int makeDir(const string&in);
+	int removeDir(const string&in);
+	int deleteFile(const string&in);
+	int copyFile(const string&in, const string&in);
+	int move(const string&in, const string&in);
+	datetime getCreateDateTime(const string&in) const;
+	datetime getModifyDateTime(const string&in) const;
+}
+
+
+// =====================================================================================
+// complex - add_on/scriptmath/scriptmathcomplex.cpp    [not in AS-Harness]
+//
+//   asBEHAVE_LIST_FACTORY, "void f(const int &in) {float, float}"
+// A fixed pair rather than a repeat, so `complex c = {1, 2, 3};` has one element too many.
+// =====================================================================================
+
+/// @listpattern {float, float}
+class complex{
+	complex();
+	complex(const complex&in);
+	complex(float r, float i = 0);
+	float r;
+	float i;
+	complex& opAddAssign(const complex&in);
+	complex& opSubAssign(const complex&in);
+	complex& opMulAssign(const complex&in);
+	complex& opDivAssign(const complex&in);
+	bool opEquals(const complex&in) const;
+	complex opAdd(const complex&in) const;
+	complex opSub(const complex&in) const;
+	complex opMul(const complex&in) const;
+	complex opDiv(const complex&in) const;
+	float abs() const;
+	complex get_ri() const;
+	void set_ri(const complex&in);
+	complex get_ir() const;
+	void set_ir(const complex&in);
+}
+
+
+// =====================================================================================
+// Exception handling
+//
+// `try` / `catch` and `throw` are language features rather than registered API, but the message a
+// handler reads comes from a registered function. AS-Harness registers the Exception object below;
+// the SDK's scripthelper registers `throw` and `getExceptionInfo` instead. Both are declared so a
+// script written against either compiles here.
+// =====================================================================================
+
+/// Addon: ASException
+/// Exception object storing callstack, line number, message, and metadata.
+class Exception{
+	/// Exception error message string.
+	string message;
+	/// Function declaration where exception occurred.
+	string func;
+	/// Script section or file name where exception occurred.
+	string sect;
+	/// Call stack trace at the moment exception occurred.
+	string stack;
+	/// Script line number where exception occurred.
+	int line;
+	/// Additional contextual data dictionary attached to exception.
+	dictionary data;
+}
+
+/// Addon: ASException
+/// Raises a script exception with an optional metadata dictionary.
+void SetException(const string&in exception, dictionary@ data = null);
+
+/// Addon: ASException
+/// Returns the current active exception object.
+Exception@ GetException();
+
+/// add_on/scripthelper/scripthelper.cpp - raises a script exception.
+void throw(const string&in exception);
+
+/// add_on/scripthelper/scripthelper.cpp - the message of the exception being handled.
+string getExceptionInfo();
+
+
+// =====================================================================================
+// Co-routines - add_on/contextmgr/contextmgr.cpp    [not registered by AS-Harness]
+//
+// Co-operative multitasking driven by the host's context manager. A co-routine runs until it calls
+// yield(); nothing is pre-empted.
+// =====================================================================================
+
+/// The signature a co-routine entry point must have.
+funcdef void coroutine(dictionary@);
+
+/// Starts a co-routine, passing it the given argument dictionary.
+void createCoRoutine(coroutine@ func, dictionary@ args);
+
+/// Hands control back to the context manager; execution resumes on the next pass.
+void yield();
+
+/// Suspends this script for the given number of milliseconds.
+void sleep(uint milliseconds);
+
+
+// =====================================================================================
+// socket    [NOT an SDK add-on - a host-specific example]
+//
+// There is no socket add-on in the AngelScript SDK. This section exists because a stub is how a
+// host describes whatever it registered, and networking is a common thing to register. Treat the
+// names as illustrative: match them to your own engine before relying on them.
+// =====================================================================================
+
+enum socket_family{
+	AF_INET,
+	AF_INET6
+}
+
+enum socket_type{
+	SOCK_STREAM,
+	SOCK_DGRAM
+}
+
+class socket{
+	socket();
+	socket(socket_family family, socket_type type);
+	/// Binds the socket to a local address and port.
+	bool bind(const string&in address, uint16 port);
+	/// Marks the socket as accepting connections.
+	bool listen(int backlog = 5);
+	/// Accepts a pending connection, or null when none is waiting.
+	socket@ accept();
+	/// Connects to a remote endpoint.
+	bool connect(const string&in address, uint16 port);
+	/// Sends bytes; returns the number written, or a negative value on error.
+	int send(const string&in data);
+	/// Reads up to `length` bytes.
+	string recv(uint length);
+	/// Number of bytes readable without blocking.
+	uint available() const;
+	void close();
+	/// Puts the socket into non-blocking mode.
+	void setBlocking(bool blocking);
+	bool isConnected() const;
+	string getRemoteAddress() const;
+	uint16 getRemotePort() const;
+	string getLastError() const;
+}
+
+
+// =====================================================================================
+// String utilities - add_on/scriptstdstring/scriptstdstring_utils.cpp
+// =====================================================================================
+
+uint scan(const string&in str, ?&out...);
+string format(const string&in fmt, const ?&in...);
+string formatInt(int64 val, const string&in options = "", uint width = 0);
+string formatUInt(uint64 val, const string&in options = "", uint width = 0);
+string formatFloat(double val, const string&in options = "", uint width = 0, uint precision = 0);
+int64 parseInt(const string&in, uint base = 10, uint&out byteCount = 0);
+uint64 parseUInt(const string&in, uint base = 10, uint&out byteCount = 0);
+double parseFloat(const string&in, uint&out byteCount = 0);
+string join(const string[]&in, const string&in);
+
+
+// =====================================================================================
+// System functions - add_on/scriptstdstring, add_on/scripthelper
+// =====================================================================================
+
+/// Prints a string to the console output.
+void print(const string&in);
+
+/// Prints a string to the console output followed by a newline.
+void println(const string&in);
+
+
+// =====================================================================================
+// Math - add_on/scriptmath/scriptmath.cpp
+//
+// The add-on registers EITHER the float overloads or the double ones, depending on how the host
+// compiled it (AS_USE_FLOAT). Both are declared so a script written against either resolves; the
+// cost of the extra overloads is that this stub is more permissive than any one engine, which
+// makes a missed diagnostic possible and a false one no more likely.
+// =====================================================================================
+
+float fpFromIEEE(uint);
+uint fpToIEEE(float);
+double fpFromIEEE(uint64);
+uint64 fpToIEEE(double);
+bool closeTo(float, float, float = 0.00001f);
+bool closeTo(double, double, double = 0.0000000001);
+
+float cos(float);
+float sin(float);
+float tan(float);
+float acos(float);
+float asin(float);
+float atan(float);
+float atan2(float, float);
+float cosh(float);
+float sinh(float);
+float tanh(float);
+float log(float);
+float log10(float);
+float pow(float, float);
+float sqrt(float);
+float ceil(float);
+float abs(float);
+float floor(float);
+float fraction(float);
+
+double cos(double);
+double sin(double);
+double tan(double);
+double acos(double);
+double asin(double);
+double atan(double);
+double atan2(double, double);
+double cosh(double);
+double sinh(double);
+double tanh(double);
+double log(double);
+double log10(double);
+double pow(double, double);
+double sqrt(double);
+double ceil(double);
+double abs(double);
+double floor(double);
+double fraction(double);

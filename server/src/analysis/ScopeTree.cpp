@@ -41,6 +41,52 @@ namespace angel_lsp::analysis
         return root;
     }
 
+    const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character)
+    {
+        if (!root)
+        {
+            return nullptr;
+        }
+
+        const auto contains = [line, character](const Scope &scope)
+        {
+            if (line < scope.startLine || line > scope.endLine)
+            {
+                return false;
+            }
+            if (line == scope.startLine && character < scope.startCharacter)
+            {
+                return false;
+            }
+            if (line == scope.endLine && character > scope.endCharacter)
+            {
+                return false;
+            }
+            return true;
+        };
+
+        if (!contains(*root))
+        {
+            return nullptr;
+        }
+
+        const Scope *current = root;
+        for (bool descended = true; descended;)
+        {
+            descended = false;
+            for (const auto &child : current->children)
+            {
+                if (child && contains(*child))
+                {
+                    current = child.get();
+                    descended = true;
+                    break;
+                }
+            }
+        }
+        return current;
+    }
+
     void ScopeIndex::SetScopeTree(const std::string &fileUri, std::unique_ptr<Scope> root)
     {
         std::unique_lock<std::shared_mutex> lock(m_mutex);

@@ -392,3 +392,86 @@ TEST_CASE("IncludeResolver - Custom fileReader callback in ResolveAllIncludes")
     CHECK(allIncludes[0] == dep1Path);
     CHECK(allIncludes[1] == dep2Path);
 }
+
+// =====================================================================================
+// Confinement.
+//
+// `#include` takes whatever text sits between the quotes. Absolute paths were honoured verbatim
+// and `../` was unbounded, so a .as file in an untrusted repository could name any file the server
+// process could read - and because an included file is parsed, indexed and its text retained, the
+// contents came back to the client through hover, definition and references. Opening the repo was
+// the whole exploit.
+//
+// Empty roots still mean unconfined: that is what a library caller or a unit test with no
+// workspace context gets, and it is why the cases above still resolve `../common/types.as`.
+// =====================================================================================
+
+TEST_CASE("IncludeResolver - Confines resolution to the allowed roots")
+{
+    TempDirGuard ws("as_confinement");
+    ws.WriteFile("workspace/main.as", "#include \"lib/util.as\"\n");
+    ws.WriteFile("workspace/lib/util.as", "void util() {}\n");
+    ws.WriteFile("secrets/private.as", "void secret() {}\n");
+
+    const std::string workspaceRoot = ws.PathString("workspace");
+    const std::string currentFile = ws.PathString("workspace/main.as");
+    const std::vector<std::string> roots{ workspaceRoot };
+
+    SUBCASE("A file inside the root still resolves")
+    {
+        CHECK_FALSE(IncludeResolver::ResolveIncludePath("lib/util.as", currentFile, {}, roots).empty());
+    }
+
+    SUBCASE("A relative walk out of the workspace resolves to nothing")
+    {
+        // Resolves fine unconfined - proving the file is really there and the check is what stops it.
+        CHECK_FALSE(IncludeResolver::ResolveIncludePath("../secrets/private.as", currentFile, {}).empty());
+        CHECK(IncludeResolver::ResolveIncludePath("../secrets/private.as", currentFile, {}, roots).empty());
+    }
+
+    SUBCASE("An absolute path outside the workspace resolves to nothing")
+    {
+        const std::string absolute = ws.PathString("secrets/private.as");
+        CHECK_FALSE(IncludeResolver::ResolveIncludePath(absolute, currentFile, {}).empty());
+        CHECK(IncludeResolver::ResolveIncludePath(absolute, currentFile, {}, roots).empty());
+    }
+
+    SUBCASE("A search directory is a root in its own right")
+    {
+        const std::string searchDir = ws.PathString("secrets");
+        const std::vector<std::string> withSearchDir{ workspaceRoot, searchDir };
+
+        // Reachable once the operator has explicitly configured that directory, and only then.
+        CHECK_FALSE(IncludeResolver::ResolveIncludePath("private.as", currentFile, { searchDir }, withSearchDir).empty());
+        CHECK(IncludeResolver::ResolveIncludePath("private.as", currentFile, { searchDir }, roots).empty());
+    }
+
+    SUBCASE("A sibling whose name merely starts with the root is not inside it")
+    {
+        // "workspace" must not be treated as containing "workspace_other" - a prefix compare that
+        // ignores path components would let the whole sibling tree through.
+        ws.WriteFile("workspace_other/leak.as", "void leak() {}\n");
+        const std::string sibling = ws.PathString("workspace_other/leak.as");
+
+        CHECK_FALSE(IncludeResolver::ResolveIncludePath(sibling, currentFile, {}).empty());
+        CHECK(IncludeResolver::ResolveIncludePath(sibling, currentFile, {}, roots).empty());
+    }
+}
+
+TEST_CASE("IncludeResolver - Transitive resolution is confined too")
+{
+    TempDirGuard ws("as_confinement");
+    ws.WriteFile("workspace/root.as", "#include \"mid.as\"\n");
+    ws.WriteFile("workspace/mid.as", "#include \"../secrets/private.as\"\n");
+    ws.WriteFile("secrets/private.as", "void secret() {}\n");
+
+    const std::vector<std::string> roots{ ws.PathString("workspace") };
+
+    // Without roots the walk escapes at the second hop; with them it stops at mid.as.
+    const auto unconfined = IncludeResolver::ResolveAllIncludes(ws.PathString("workspace/root.as"), {}, nullptr);
+    CHECK(unconfined.size() == 2);
+
+    const auto confined = IncludeResolver::ResolveAllIncludes(ws.PathString("workspace/root.as"), {}, nullptr, roots);
+    REQUIRE(confined.size() == 1);
+    CHECK(confined[0].find("mid.as") != std::string::npos);
+}

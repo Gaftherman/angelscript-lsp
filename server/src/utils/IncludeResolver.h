@@ -46,16 +46,42 @@ namespace angel_lsp::utils
         static std::string NormalizePath(const std::filesystem::path &path);
 
         /**
+         * @brief True when a normalized path lies inside one of the allowed root directories.
+         *
+         * The confinement check behind every resolve. `#include` accepts whatever text sits between
+         * the quotes, so without this an absolute path or enough `../` steps reads any file the
+         * server process can - and because included files are indexed and their text retained, the
+         * contents come back to the client through hover, definition and references. Opening an
+         * untrusted repository was enough to trigger it.
+         *
+         * Compare only paths that have already been through NormalizePath: it applies
+         * weakly_canonical, so `..` is collapsed and symlinks are resolved *before* the prefix test
+         * and cannot be used to step outside a root that appears to contain them.
+         *
+         * Matching is per path component - "/w/lib" does not contain "/w/library" - and
+         * case-insensitive on Windows, where the same file has many spellings.
+         *
+         * @param allowedRoots Roots to test against. **Empty means unconfined**, which is what a
+         *        caller with no workspace context (a unit test, a bare library user) gets.
+         */
+        static bool IsWithinRoots(const std::string &normalizedPath,
+                                  const std::vector<std::string> &allowedRoots);
+
+        /**
          * @brief Resolves a single include path against the current file's directory and search directories.
          * @param includePath The raw include path from the directive.
          * @param currentFilePath The path of the file containing the include directive.
          * @param searchDirectories Ordered list of search paths configured for the workspace.
-         * @return Canonicalized/normalized absolute path if found, or empty string if not found.
+         * @param allowedRoots Confinement roots; see IsWithinRoots. Empty (the default) resolves
+         *        without confinement, which is what unit tests and library callers want. The server
+         *        always passes its workspace folders and search directories.
+         * @return Canonicalized/normalized absolute path if found and permitted, else empty string.
          */
         static std::string ResolveIncludePath(
             std::string_view includePath,
             std::string_view currentFilePath,
-            const std::vector<std::string> &searchDirectories);
+            const std::vector<std::string> &searchDirectories,
+            const std::vector<std::string> &allowedRoots = {});
 
         /**
          * @brief Recursively discovers all resolved include files starting from rootFilePath.
@@ -69,6 +95,7 @@ namespace angel_lsp::utils
         static std::vector<std::string> ResolveAllIncludes(
             std::string_view rootFilePath,
             const std::vector<std::string> &searchDirectories,
-            std::function<std::string(const std::string &)> fileReader = nullptr);
+            std::function<std::string(const std::string &)> fileReader = nullptr,
+            const std::vector<std::string> &allowedRoots = {});
     };
 }

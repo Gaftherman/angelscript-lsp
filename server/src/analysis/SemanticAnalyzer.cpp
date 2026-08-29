@@ -1,11 +1,14 @@
 #include "analysis/SemanticAnalyzer.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/AccessChecker.h"
 #include "analysis/CallChecker.h"
 #include "analysis/ConstChecker.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/DefiniteAssignmentChecker.h"
+#include "analysis/InitializerListChecker.h"
 #include "analysis/IsolationChecker.h"
 #include "analysis/LValueChecker.h"
+#include "analysis/NamespaceChecker.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
@@ -30,7 +33,13 @@ namespace angel_lsp::analysis
         // log is not the place to narrate every declaration on every keystroke. Read through
         // ForEachSymbolInFile for the same reason the rules are: walking the whole workspace to
         // print one file's symbols was the last full-table walk left in the analysis path.
-        if (m_logger)
+        // Gated on the level, not merely on the logger existing. m_logger is never null in the
+        // server, and LspLogger had no threshold at all, so this loop formatted and sent one
+        // window/logMessage notification per symbol in the file on every analysis - taking the log
+        // mutex and then the connection's write mutex each time, contending with the message loop's
+        // own responses. The check has to be here rather than inside LogDebug: passing an already
+        // built string still pays for fmt::format.
+        if (m_logger && m_logger->IsDebugEnabled())
         {
             m_logger->LogDebug(fmt::format("=== [SYMBOL COLLECTOR OUTPUT] Document: {} ===", request.fileUri));
             request.symbolTable.ForEachSymbolInFile(
@@ -152,7 +161,8 @@ namespace angel_lsp::analysis
             const TypeConversionCheckRequest conversionRequest{
                 ts_tree_root_node(request.tree),
                 request.sourceCode,
-                request.scopeRoot.get()
+                request.scopeRoot.get(),
+                request.mutableScopeRoot
             };
             CheckTypeConversions(conversionRequest, ctx);
         }
@@ -171,7 +181,22 @@ namespace angel_lsp::analysis
         if (request.tree && !request.sourceCode.empty())
         {
             DiagnosticContext ctx{request, diagnostics, m_logger};
-            CheckNamespacesAndScopes(ts_tree_root_node(request.tree), request.sourceCode, ctx);
+            CheckNamespacesAndScopes(NamespaceCheckRequest{ ts_tree_root_node(request.tree), request.sourceCode }, ctx);
+        }
+
+        if (request.tree && !request.sourceCode.empty())
+        {
+            DiagnosticContext ctx{request, diagnostics, m_logger};
+            CheckInitializerLists(InitializerListCheckRequest{ ts_tree_root_node(request.tree), request.sourceCode }, ctx);
+        }
+
+        // Nothing inside an excluded `#if` block is real code - CScriptBuilder blanks it out before
+        // the compiler ever sees it - so a diagnostic there describes text that does not exist.
+        // Filtered here, at the single exit, rather than in each rule.
+        if (!request.excludedLineRanges.empty())
+        {
+            std::erase_if(diagnostics, [&request](const Diagnostic &d)
+                          { return utils::IsLineExcluded(request.excludedLineRanges, d.range.start.line); });
         }
 
         return diagnostics;
@@ -236,8 +261,13 @@ namespace angel_lsp::analysis
             });
     }
 
-    void SemanticAnalyzer::CheckUndefinedIdentifiers(const Scope *scope, const ankerl::unordered_dense::set<std::string> &knownGlobalNames, DiagnosticContext &ctx) const
+    void SemanticAnalyzer::CheckUndefinedIdentifiers(const Scope *scope, const ankerl::unordered_dense::set<std::string> &knownGlobalNames, DiagnosticContext &ctx, int depth) const
     {
+        // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
+        if (depth > k_maxAstDepth)
+            return;
+
+
         std::vector<std::pair<uint32_t, uint32_t>> mixinRanges;
         ctx.request.symbolTable.ForEachSymbolInFile(ctx.request.fileUri, [&](const std::string &, const std::vector<Symbol> &symbols) {
             for (const auto &sym : symbols)
@@ -280,11 +310,16 @@ namespace angel_lsp::analysis
         }
 
         for (const auto &child : scope->children)
-            CheckUndefinedIdentifiers(child.get(), knownGlobalNames, ctx);
+            CheckUndefinedIdentifiers(child.get(), knownGlobalNames, ctx, depth + 1);
     }
 
-    void SemanticAnalyzer::CollectUsedDefinitions(const Scope *scope, ankerl::unordered_dense::set<const LocalDefinition *> &used) const
+    void SemanticAnalyzer::CollectUsedDefinitions(const Scope *scope, ankerl::unordered_dense::set<const LocalDefinition *> &used, int depth) const
     {
+        // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
+        if (depth > k_maxAstDepth)
+            return;
+
+
         for (const auto &ref : scope->references)
         {
             if (ref.isMemberAccess)
@@ -303,11 +338,16 @@ namespace angel_lsp::analysis
         }
 
         for (const auto &child : scope->children)
-            CollectUsedDefinitions(child.get(), used);
+            CollectUsedDefinitions(child.get(), used, depth + 1);
     }
 
-    void SemanticAnalyzer::CheckUnusedVariables(const Scope *scope, const ankerl::unordered_dense::set<const LocalDefinition *> &used, DiagnosticContext &ctx) const
+    void SemanticAnalyzer::CheckUnusedVariables(const Scope *scope, const ankerl::unordered_dense::set<const LocalDefinition *> &used, DiagnosticContext &ctx, int depth) const
     {
+        // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
+        if (depth > k_maxAstDepth)
+            return;
+
+
         // A Variable-kind definition only counts as a true local (as opposed to a module/
         // namespace-scope global, which LOCALS_QUERY's @local.definition.var captures under the
         // identical kind - its own comment says "Variables (locals and globals)") if it or some
@@ -342,7 +382,7 @@ namespace angel_lsp::analysis
         }
 
         for (const auto &child : scope->children)
-            CheckUnusedVariables(child.get(), used, ctx);
+            CheckUnusedVariables(child.get(), used, ctx, depth + 1);
     }
 
     namespace
@@ -396,8 +436,13 @@ namespace angel_lsp::analysis
             });
     }
 
-    void SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope *scope, DiagnosticContext &ctx) const
+    void SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope *scope, DiagnosticContext &ctx, int depth) const
     {
+        // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
+        if (depth > k_maxAstDepth)
+            return;
+
+
         // Same isFunctionScope ancestor-walk as CheckUnusedVariables: a Variable-kind definition
         // only counts as a true function-body local (not a module/namespace/class-scope global or
         // field, which LOCALS_QUERY's @local.definition.var captures under the identical kind) if
@@ -432,11 +477,16 @@ namespace angel_lsp::analysis
         }
 
         for (const auto &child : scope->children)
-            CheckNullAssignedToNonHandleInScope(child.get(), ctx);
+            CheckNullAssignedToNonHandleInScope(child.get(), ctx, depth + 1);
     }
 
-    void SemanticAnalyzer::CheckLocalVariableDeclarations(const Scope *scope, DiagnosticContext &ctx) const
+    void SemanticAnalyzer::CheckLocalVariableDeclarations(const Scope *scope, DiagnosticContext &ctx, int depth) const
     {
+        // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
+        if (depth > k_maxAstDepth)
+            return;
+
+
         if (!scope)
         {
             return;
@@ -524,124 +574,7 @@ namespace angel_lsp::analysis
 
         for (const auto &child : scope->children)
         {
-            CheckLocalVariableDeclarations(child.get(), ctx);
-        }
-    }
-
-    void SemanticAnalyzer::CheckNamespacesAndScopes(TSNode root, std::string_view sourceCode, DiagnosticContext &ctx) const
-    {
-        const auto &table = ctx.request.symbolTable;
-        auto usings = CollectUsingNamespaces(root, sourceCode);
-
-        std::vector<TSNode> stack = { root };
-        while (!stack.empty())
-        {
-            TSNode node = stack.back();
-            stack.pop_back();
-
-            std::string_view type = ts_node_type(node);
-
-            if (type == "scoped_identifier")
-            {
-                uint32_t childCount = ts_node_child_count(node);
-                if (childCount >= 3)
-                {
-                    TSNode firstChild = ts_node_child(node, 0);
-                    std::string_view firstType = ts_node_type(firstChild);
-                    if (firstType == "identifier")
-                    {
-                        std::string prefix = GetNodeText(firstChild, sourceCode);
-                        while (!prefix.empty() && isspace(static_cast<unsigned char>(prefix.front()))) prefix.erase(prefix.begin());
-                        while (!prefix.empty() && isspace(static_cast<unsigned char>(prefix.back()))) prefix.pop_back();
-
-                        if (!prefix.empty() && !IsKnownScope(prefix, node, sourceCode, table))
-                        {
-                            TSPoint startPt = ts_node_start_point(firstChild);
-                            TSPoint endPt = ts_node_end_point(firstChild);
-                            ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
-                                            "as-err-undefined-namespace", prefix, DiagnosticSeverity::Error);
-                        }
-                    }
-                }
-            }
-
-            if (type == "call_expression")
-            {
-                TSNode funcNode = ts_node_child_by_field_name(node, "function", 8);
-                if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
-                {
-                    funcNode = ts_node_child(node, 0);
-                }
-
-                if (!ts_node_is_null(funcNode))
-                {
-                    std::string calleeName = GetNodeText(funcNode, sourceCode);
-                    while (!calleeName.empty() && isspace(static_cast<unsigned char>(calleeName.front()))) calleeName.erase(calleeName.begin());
-                    while (!calleeName.empty() && isspace(static_cast<unsigned char>(calleeName.back()))) calleeName.pop_back();
-
-                    if (!calleeName.empty() && calleeName.find("::") == std::string::npos && calleeName.find('.') == std::string::npos)
-                    {
-                        const Scope *scope = ctx.request.scopeRoot ? FindEnclosingScope(ctx.request.scopeRoot.get(), ts_node_start_point(node).row, ts_node_start_point(node).column) : nullptr;
-                        const LocalDefinition *localDef = scope ? ResolveInScope(scope, calleeName) : nullptr;
-                        auto inScopeSyms = FindSymbolsInScope(calleeName, node, sourceCode, table);
-                        if (!localDef && inScopeSyms.empty() && !ctx.request.IsRegisteredSymbol(calleeName) && !table.HasSymbol(calleeName))
-                        {
-                            TSPoint startPt = ts_node_start_point(funcNode);
-                            TSPoint endPt = ts_node_end_point(funcNode);
-                            ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
-                                            "as-err-undefined-identifier", calleeName, DiagnosticSeverity::Error);
-                        }
-                        else
-                        {
-                            auto containers = GetEnclosingContainers(node, sourceCode);
-                            auto directSyms = FindSymbolsInScope(table, containers, calleeName, {});
-                            if (directSyms.empty())
-                            {
-                                ankerl::unordered_dense::set<std::string> matchingNamespaces;
-                                for (const auto &ns : usings)
-                                {
-                                    std::string q = ns + "::" + calleeName;
-                                    if (!table.FindSymbols(q).empty())
-                                    {
-                                        matchingNamespaces.insert(ns);
-                                    }
-                                }
-
-                                if (matchingNamespaces.size() > 1)
-                                {
-                                    TSPoint startPt = ts_node_start_point(funcNode);
-                                    TSPoint endPt = ts_node_end_point(funcNode);
-                                    ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
-                                                    "as-err-ambiguous-identifier", calleeName, DiagnosticSeverity::Error);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (type == "import_declaration" || type == "ERROR")
-            {
-                std::string nodeText = GetNodeText(node, sourceCode);
-                size_t importPos = nodeText.find("import ");
-                if (importPos != std::string::npos)
-                {
-                    size_t fromPos = nodeText.find("from", importPos);
-                    if (fromPos != std::string::npos && nodeText.find('{', fromPos) != std::string::npos)
-                    {
-                        TSPoint startPt = ts_node_start_point(node);
-                        TSPoint endPt = ts_node_end_point(node);
-                        ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
-                                        "as-err-import-has-body", "import", DiagnosticSeverity::Error);
-                    }
-                }
-            }
-
-            uint32_t count = ts_node_child_count(node);
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                stack.push_back(ts_node_child(node, i));
-            }
+            CheckLocalVariableDeclarations(child.get(), ctx, depth + 1);
         }
     }
 }

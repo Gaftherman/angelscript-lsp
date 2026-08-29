@@ -17,12 +17,55 @@ if(MSVC)
     add_compile_definitions(_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING)
     add_compile_definitions(_SILENCE_ALL_MS_EXT_DEPRECATION_WARNINGS)
     # Apply warning suppression ONLY to C and C++ (prevents sending /wd to MASM .asm assembler)
-    add_compile_options(
-        $<$<COMPILE_LANGUAGE:C,CXX>:/FS>
-        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4018>
-        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4244>
-        $<$<COMPILE_LANGUAGE:C,CXX>:/wd4267>
-    )
+    #
+    # Scope note: /wd4018 (signed/unsigned mismatch), /wd4244 and /wd4267 (narrowing conversions)
+    # used to be set here, globally. They are the vendored dependencies' noise - tree-sitter's C in
+    # particular - but applying them project-wide silenced them in our own code too, which is
+    # exactly where they matter: this server narrows size_t byte offsets to uint32_t on every
+    # incremental edit. They now live on the third-party targets only, and our targets are compiled
+    # at ANGELLSP_WARNING_FLAGS below.
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/FS>)
+endif()
+
+# ------------------------------------------------------------------------------
+# Warning level for this project's own targets (never for vendored dependencies).
+# ------------------------------------------------------------------------------
+if(MSVC)
+    set(ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:/W4>)
+else()
+    set(ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+                               $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
+                               $<$<COMPILE_LANGUAGE:CXX>:-Wmisleading-indentation>)
+endif()
+
+option(ANGELLSP_WERROR "Treat warnings in angel_lsp's own code as errors" OFF)
+if(ANGELLSP_WERROR)
+    if(MSVC)
+        list(APPEND ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:/WX>)
+    else()
+        list(APPEND ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:-Werror>)
+    endif()
+endif()
+
+# ------------------------------------------------------------------------------
+# Sanitizers. Off by default; the thread sanitizer is the only practical way to
+# catch the cross-thread state this server shares between the message loop, the
+# analysis thread and the workspace scan - none of which a unit test can observe.
+# ------------------------------------------------------------------------------
+set(ANGELLSP_SANITIZE "" CACHE STRING "Sanitizer to build with: address, undefined, thread, or empty")
+set_property(CACHE ANGELLSP_SANITIZE PROPERTY STRINGS "" address undefined thread)
+
+if(ANGELLSP_SANITIZE)
+    if(MSVC)
+        if(NOT ANGELLSP_SANITIZE STREQUAL "address")
+            message(FATAL_ERROR "MSVC supports only ANGELLSP_SANITIZE=address; use Clang for thread/undefined.")
+        endif()
+        add_compile_options(/fsanitize=address)
+    else()
+        add_compile_options(-fsanitize=${ANGELLSP_SANITIZE} -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=${ANGELLSP_SANITIZE})
+    endif()
+    message(STATUS "Building with sanitizer: ${ANGELLSP_SANITIZE}")
 endif()
 
 # ==============================================================================
@@ -55,6 +98,7 @@ target_link_libraries(angel_lsp_core PUBLIC
 if(MSVC)
     target_compile_options(angel_lsp_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
 endif()
+target_compile_options(angel_lsp_core PRIVATE ${ANGELLSP_WARNING_FLAGS})
 
 # ==============================================================================
 # 3. MAIN EXECUTABLE (LSP Server)
@@ -64,6 +108,7 @@ target_link_libraries(angel_lsp PRIVATE angel_lsp_core)
 if(MSVC)
     target_compile_options(angel_lsp PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
 endif()
+target_compile_options(angel_lsp PRIVATE ${ANGELLSP_WARNING_FLAGS})
 
 if(WIN32)
     set(TARGET_OS "win32")
@@ -105,6 +150,7 @@ if(TEST_SOURCES)
     if(MSVC)
         target_compile_options(angel_lsp_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8> $<$<COMPILE_LANGUAGE:CXX>:/FS>)
     endif()
+    target_compile_options(angel_lsp_tests PRIVATE ${ANGELLSP_WARNING_FLAGS})
     add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests)
 
     # The full angelscript/ corpus audit test case is skip()-decorated in-code, so it is

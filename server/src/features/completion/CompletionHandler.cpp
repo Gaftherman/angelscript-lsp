@@ -10,47 +10,6 @@ namespace angel_lsp::features
 {
     namespace
     {
-        bool IsInsideScope(const analysis::Scope &scope, uint32_t line, uint32_t character)
-        {
-            if (line < scope.startLine || line > scope.endLine)
-            {
-                return false;
-            }
-            if (line == scope.startLine && character < scope.startCharacter)
-            {
-                return false;
-            }
-            if (line == scope.endLine && character > scope.endCharacter)
-            {
-                return false;
-            }
-            return true;
-        }
-
-        const analysis::Scope *FindInnermostScope(const analysis::Scope *root, uint32_t line, uint32_t character)
-        {
-            if (!root || !IsInsideScope(*root, line, character))
-            {
-                return nullptr;
-            }
-
-            const analysis::Scope *current = root;
-            bool foundChild = true;
-            while (foundChild)
-            {
-                foundChild = false;
-                for (const auto &child : current->children)
-                {
-                    if (child && IsInsideScope(*child, line, character))
-                    {
-                        current = child.get();
-                        foundChild = true;
-                        break;
-                    }
-                }
-            }
-            return current;
-        }
 
         std::string CanonicalizeArrayType(std::string_view typeStr, const std::string &arrayTypeName = "array")
         {
@@ -70,6 +29,40 @@ namespace angel_lsp::features
                 s = arrayTypeName + "<" + inner + ">";
             }
             return s;
+        }
+
+        /**
+         * @brief True when a member is its class's constructor or destructor.
+         *
+         * Neither can be called on an instance. AngelScript has no syntax for it: the real compiler
+         * rejects `m.Matrix()` with "No matching symbol 'Matrix'", and `Matrix m.Matrix();` does not
+         * parse at all. Offering them after `m.` invites the user to write something that cannot
+         * compile.
+         *
+         * Detected by name rather than by a flag because that is the convention the rest of the
+         * analyzer uses - a constructor is stored as an ordinary Function whose name matches its
+         * container (CallChecker looks up `Class::Class` the same way). The container may arrive
+         * qualified, so the comparison is against its last `::` segment.
+         */
+        bool IsConstructorOrDestructor(const analysis::Symbol &sym, const std::string &typeName)
+        {
+            if (sym.type != analysis::SymbolType::Function)
+            {
+                return false;
+            }
+
+            const size_t at = typeName.rfind("::");
+            const std::string_view shortName =
+                at == std::string::npos ? std::string_view(typeName)
+                                        : std::string_view(typeName).substr(at + 2);
+
+            if (sym.name == shortName)
+            {
+                return true;
+            }
+
+            return !sym.name.empty() && sym.name.front() == '~' &&
+                   std::string_view(sym.name).substr(1) == shortName;
         }
 
         std::string FormatMethodDetail(const analysis::Symbol &sym, const std::vector<std::string> &templateArgs)
@@ -178,7 +171,8 @@ namespace angel_lsp::features
                           lsp::CompletionItemKind kind,
                           const std::string &detail = "",
                           const std::string &doc = "",
-                          const std::string &resolveKey = "")
+                          const std::string &resolveKey = "",
+                          const std::string &snippet = "")
         {
             if (label.empty() || seenLabels.contains(label))
             {
@@ -189,6 +183,11 @@ namespace angel_lsp::features
             lsp::CompletionItem item;
             item.label = label;
             item.kind = lsp::CompletionItemKindEnum(kind);
+            if (!snippet.empty())
+            {
+                item.insertText = snippet;
+                item.insertTextFormat = lsp::InsertTextFormatEnum(lsp::InsertTextFormat::Snippet);
+            }
             if (!detail.empty())
             {
                 item.detail = detail;
@@ -204,6 +203,132 @@ namespace angel_lsp::features
                 item.data = lsp::LSPAny(std::string(resolveKey));
             }
             items.push_back(std::move(item));
+        }
+
+        /** @brief The primitive type names, for the contexts where only a type may be written. */
+        const std::vector<std::string> &GetPrimitiveTypeNames()
+        {
+            static const std::vector<std::string> primitives = {
+                "void", "bool", "int", "int8", "int16", "int32", "int64",
+                "uint", "uint8", "uint16", "uint32", "uint64",
+                "float", "double", "string", "array", "dictionary"
+            };
+            return primitives;
+        }
+
+        /** @brief True for the symbol kinds that may legally appear as a template argument. */
+        bool IsTypeSymbol(const analysis::Symbol &sym)
+        {
+            switch (sym.type)
+            {
+            case analysis::SymbolType::Class:
+            case analysis::SymbolType::Interface:
+            case analysis::SymbolType::Enum:
+            case analysis::SymbolType::Typedef:
+            case analysis::SymbolType::Funcdef:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        /**
+         * @brief The snippet a template class completes to, or empty when it is not one.
+         *
+         * `array` on its own is not a type - AngelScript has no default argument for `T` - so the
+         * completion has to carry the brackets with it, and putting the cursor between them is the
+         * whole point of the placeholder. The parameter names come from the declaration, so
+         * `array<T>` and a host's `map<K,V>` each read back the names their author chose.
+         */
+        std::string TemplateInsertSnippet(const analysis::Symbol &sym)
+        {
+            if (sym.type != analysis::SymbolType::Class ||
+                !std::holds_alternative<analysis::ClassSignature>(sym.signature))
+            {
+                return {};
+            }
+
+            const auto &cls = std::get<analysis::ClassSignature>(sym.signature);
+            if (!cls.isTemplate || cls.templateParams.empty())
+            {
+                return {};
+            }
+
+            std::string snippet = sym.name + "<";
+            for (size_t i = 0; i < cls.templateParams.size(); ++i)
+            {
+                if (i > 0)
+                {
+                    snippet += ", ";
+                }
+                snippet += "${" + std::to_string(i + 1) + ":" + cls.templateParams[i] + "}";
+            }
+            snippet += ">$0";
+            return snippet;
+        }
+
+        /**
+         * @brief True when the cursor sits inside an unclosed `Name<...>` argument list.
+         *
+         * Scanned right to left rather than matched with a regex, because the answer depends on
+         * nesting: in `array<array<` the cursor is two levels deep, and a pattern that stopped at
+         * the first `<` would have said the same thing about `a < b`. The `<` only counts when an
+         * identifier character sits immediately before it, which is what separates the template
+         * bracket from the comparison operator.
+         */
+        bool IsInsideTemplateArguments(std::string_view prefix)
+        {
+            int depth = 0;
+            for (size_t i = prefix.size(); i-- > 0;)
+            {
+                const char c = prefix[i];
+                if (c == ';' || c == '{' || c == '}' || c == '(' || c == ')')
+                {
+                    return false;
+                }
+                if (c == '>')
+                {
+                    ++depth;
+                }
+                else if (c == '<')
+                {
+                    if (depth > 0)
+                    {
+                        --depth;
+                        continue;
+                    }
+                    if (i == 0)
+                    {
+                        return false;
+                    }
+                    const char before = prefix[i - 1];
+                    return std::isalnum(static_cast<unsigned char>(before)) || before == '_';
+                }
+            }
+            return false;
+        }
+
+        /**
+         * @brief The template snippet for a name, looked up through the symbol table.
+         *
+         * The scope-chain pass below names a type without holding its declaration, and it runs
+         * first - so it wins the de-duplication, and `array` reached the client as a bare name
+         * however carefully the symbol-table pass was written. This is the bridge between the two.
+         */
+        std::string TemplateSnippetForName(const std::string &name, const analysis::SymbolTable &table)
+        {
+            if (const auto symbols = table.FindSymbolsPtr(name))
+            {
+                for (const auto &sym : *symbols)
+                {
+                    std::string snippet = TemplateInsertSnippet(sym);
+                    if (!snippet.empty())
+                    {
+                        return snippet;
+                    }
+                }
+            }
+            return {};
         }
 
         const std::vector<std::string> &GetKeywords()
@@ -295,6 +420,44 @@ namespace angel_lsp::features
             return items;
         }
 
+        // 1b. Template argument context: "array<" or "array<array<". Only a type may be written
+        //     here, so offering the whole lexical scope - variables, functions, `while` - would be
+        //     offering nothing but wrong answers. This runs after the `::` case above so that
+        //     `array<Some::` still completes through the qualifier.
+        if (IsInsideTemplateArguments(prefix))
+        {
+            request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symList)
+            {
+                for (const auto &sym : symList)
+                {
+                    if (!sym.containerName.empty() || !IsTypeSymbol(sym))
+                    {
+                        continue;
+                    }
+
+                    lsp::CompletionItemKind kind = lsp::CompletionItemKind::Class;
+                    switch (sym.type)
+                    {
+                    case analysis::SymbolType::Interface: kind = lsp::CompletionItemKind::Interface; break;
+                    case analysis::SymbolType::Enum:      kind = lsp::CompletionItemKind::Enum; break;
+                    case analysis::SymbolType::Typedef:
+                    case analysis::SymbolType::Funcdef:   kind = lsp::CompletionItemKind::TypeParameter; break;
+                    default: break;
+                    }
+
+                    const std::string snippet = request.snippetSupport ? TemplateInsertSnippet(sym) : std::string{};
+                    AddItemIfNew(items, seenLabels, sym.name, kind, "", "", sym.qualifiedName, snippet);
+                }
+            });
+
+            for (const auto &primitive : GetPrimitiveTypeNames())
+            {
+                AddItemIfNew(items, seenLabels, primitive, lsp::CompletionItemKind::Keyword);
+            }
+
+            return items;
+        }
+
         // 2. Check for Member Access Context: "receiver." or "receiver->" (with optional partial identifier)
         static const std::regex memberAccessRegex(R"(([a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])*)(?:\.|\->)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
         std::smatch memberMatch;
@@ -376,13 +539,27 @@ namespace angel_lsp::features
                 std::string baseContainer = targetTemplate.containerName;
                 std::vector<std::string> templateArgs = targetTemplate.templateArgs;
 
+                // Probes the version-cached container index rather than walking the whole workspace
+                // table. This ran once per type in the inheritance chain, on every keystroke, over
+                // a table the codebase's own comments size at fifty thousand symbols - so a member
+                // completion on a class with three bases was four full-table scans per character.
+                const auto ruleIndex = request.symbolTable.GetRuleIndex();
+
                 auto addMembersForType = [&](const std::string &typeName)
                 {
-                    request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symList)
+                    const auto &members = ruleIndex->Members(typeName);
+
+                    for (const auto &key : members.memberKeys)
                     {
-                        for (const auto &sym : symList)
+                        const auto symbols = request.symbolTable.FindSymbolsPtr(key);
+                        if (!symbols)
                         {
-                            if (sym.containerName == typeName)
+                            continue;
+                        }
+
+                        for (const auto &sym : *symbols)
+                        {
+                            if (sym.containerName == typeName && !IsConstructorOrDestructor(sym, typeName))
                             {
                                 lsp::CompletionItemKind kind = lsp::CompletionItemKind::Field;
                                 std::string detail;
@@ -409,7 +586,7 @@ namespace angel_lsp::features
                                 AddItemIfNew(items, seenLabels, sym.name, kind, detail, "", sym.qualifiedName);
                             }
                         }
-                    });
+                    }
                 };
 
                 auto hierarchy = GetInheritedTypeHierarchy(request.symbolTable, baseContainer);
@@ -433,6 +610,7 @@ namespace angel_lsp::features
                 {
                     lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
                     bool isCallable = false;
+                    std::string snippet;
                     if (def.kind == analysis::LocalDefinitionKind::Parameter)
                     {
                         kind = lsp::CompletionItemKind::Variable;
@@ -443,6 +621,14 @@ namespace angel_lsp::features
                         kind = lsp::CompletionItemKind::Function;
                         isCallable = true;
                     }
+                    else if (def.kind == analysis::LocalDefinitionKind::Type)
+                    {
+                        kind = lsp::CompletionItemKind::Class;
+                        if (request.snippetSupport)
+                        {
+                            snippet = TemplateSnippetForName(def.name, request.symbolTable);
+                        }
+                    }
 
                     // A resolve key only for the function-like definitions, which are the ones the
                     // symbol table also holds and can therefore be resolved to a doc comment. A
@@ -450,7 +636,7 @@ namespace angel_lsp::features
                     // - so without the key here a module-level function would reach the client with
                     // no identity at all and never resolve.
                     AddItemIfNew(items, seenLabels, def.name, kind, def.typeName, "",
-                                 isCallable ? def.name : std::string{});
+                                 isCallable ? def.name : std::string{}, snippet);
                 }
             }
         }
@@ -496,6 +682,7 @@ namespace angel_lsp::features
                 {
                     lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
                     std::string detail;
+                    std::string snippet;
                     switch (sym.type)
                     {
                     case analysis::SymbolType::Function:
@@ -504,6 +691,16 @@ namespace angel_lsp::features
                         break;
                     case analysis::SymbolType::Class:
                         kind = lsp::CompletionItemKind::Class;
+                        // A template class completes to `array<T>`, not `array`: the bare name is
+                        // not a type anywhere it could be written.
+                        if (request.snippetSupport)
+                        {
+                            snippet = TemplateInsertSnippet(sym);
+                        }
+                        if (!snippet.empty())
+                        {
+                            detail = sym.name + "<" + std::get<analysis::ClassSignature>(sym.signature).templateParams.front() + ">";
+                        }
                         break;
                     case analysis::SymbolType::Interface:
                         kind = lsp::CompletionItemKind::Interface;
@@ -528,7 +725,7 @@ namespace angel_lsp::features
                     default:
                         break;
                     }
-                    AddItemIfNew(items, seenLabels, sym.name, kind, detail, "", sym.qualifiedName);
+                    AddItemIfNew(items, seenLabels, sym.name, kind, detail, "", sym.qualifiedName, snippet);
                 }
             }
         });

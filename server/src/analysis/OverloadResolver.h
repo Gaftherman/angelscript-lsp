@@ -15,9 +15,21 @@ namespace angel_lsp::analysis
         Exact = 0,               ///< Identical types (int -> int, Player@ -> Player@)
         ConstRef = 1,            ///< Const/ref conversion (T -> const T&in, T@ -> const T@)
         Inheritance = 2,         ///< Derived -> Base / Interface (Derived@ -> Base@)
-        Widening = 3,            ///< Safe numeric promotion (int8 -> int32, float -> double)
-        Narrowing = 4,           ///< Lossy conversion (double -> float, int -> bool, float -> int)
-        UserDefined = 5,         ///< opImplConv / single-arg converting constructor
+        Widening = 3,            ///< Safe promotion within one kind (int8 -> int32, float -> double)
+
+        /**
+         * @brief Safe promotion that also crosses from integer to floating point (int -> double).
+         *
+         * Ranked below same-kind widening because AngelScript prefers to stay within a kind, and
+         * because without the distinction genuine overload sets become unresolvable: the standard
+         * dictionary declares both `set(const string&in, const int64&in)` and
+         * `set(const string&in, const double&in)`, so scoring int -> int64 and int -> double
+         * identically made every `dict.set("k", 95)` report as an ambiguous call.
+         */
+        WideningAcrossKind = 4,
+
+        Narrowing = 5,           ///< Lossy conversion (double -> float, int -> bool, float -> int)
+        UserDefined = 6,         ///< opImplConv / single-arg converting constructor
         Incompatible = 999       ///< No viable conversion
     };
 

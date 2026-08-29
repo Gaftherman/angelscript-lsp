@@ -354,3 +354,71 @@ TEST_CASE("SemanticTokensHandler - Applying the edits reproduces the new stream"
 
     CHECK(applied == current);
 }
+
+// =====================================================================================
+// Template brackets are not shift operators.
+//
+// The TextMate grammar cannot tell them apart - its operator rule matches `>>` unconditionally, as
+// one two-character token - so `array<array<int>>` closed with something scoped
+// `keyword.operator.angelscript`. Only the parse tree knows better, and this pass has one.
+//
+// It used to `continue` here, emitting nothing at all, which left the client with no semantic token
+// to override the TextMate scope with. The fix is to emit one; `templatePunctuation` is a custom
+// type the extension contributes (client/package.json) precisely so it can be themed apart from
+// the arithmetic operators.
+// =====================================================================================
+
+TEST_CASE("SemanticTokensHandler - Template brackets get their own token type")
+{
+    const auto &legend = GetSemanticTokensLegend();
+    const auto it = std::find(legend.tokenTypes.begin(), legend.tokenTypes.end(), "templatePunctuation");
+    REQUIRE(it != legend.tokenTypes.end());
+    const uint32_t templatePunctuation = static_cast<uint32_t>(std::distance(legend.tokenTypes.begin(), it));
+
+    const auto operatorIt = std::find(legend.tokenTypes.begin(), legend.tokenTypes.end(), "operator");
+    REQUIRE(operatorIt != legend.tokenTypes.end());
+    const uint32_t operatorType = static_cast<uint32_t>(std::distance(legend.tokenTypes.begin(), operatorIt));
+
+    const std::string code =
+        "void main()\n"                          // 0
+        "{\n"                                    // 1
+        "    array<array<int>> grid;\n"          // 2
+        "    int shifted = 1 << 2;\n"            // 3
+        "}\n";                                   // 4
+
+    AngelScriptParser parser;
+    TSTree *tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolTable table;
+    SemanticTokensRequest req{ "file:///template.as", code, tree, table };
+    const auto tokens = GetSemanticTokens(req);
+    ts_tree_delete(tree);
+
+    REQUIRE(tokens.data.size() % 5 == 0);
+
+    // Rebuild absolute lines from the delta encoding, so each token can be attributed to a line.
+    uint32_t line = 0;
+    size_t templateTokensOnDeclaration = 0;
+    size_t operatorTokensOnShift = 0;
+    for (size_t i = 0; i + 4 < tokens.data.size(); i += 5)
+    {
+        line += tokens.data[i];
+        const uint32_t type = tokens.data[i + 3];
+        if (line == 2 && type == templatePunctuation)
+        {
+            ++templateTokensOnDeclaration;
+        }
+        if (line == 3 && type == operatorType)
+        {
+            ++operatorTokensOnShift;
+        }
+    }
+
+    // Four brackets in `array<array<int>>`, each its own token - the pair of closers included, which
+    // is the case TextMate reads as a single `>>`.
+    CHECK(templateTokensOnDeclaration == 4);
+
+    // And the genuine shift on the next line is still an operator.
+    CHECK(operatorTokensOnShift > 0);
+}

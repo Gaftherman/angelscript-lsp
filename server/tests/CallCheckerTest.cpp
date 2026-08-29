@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include "helpers/TestUtils.h"
 
 #include "helpers/RuleCorpusAudit.h"
 #include "analysis/SemanticAnalyzer.h"
@@ -499,4 +500,100 @@ TEST_CASE("CallChecker - Call Argument Corpus Audit" * doctest::skip(true))
     CHECK(result.Total() == 1);
     REQUIRE(result.hits.size() == 1);
     CHECK(result.hits[0].fileName == "AngelScripts_CTJALoader.as");
+}
+
+// =====================================================================================
+// Constructors are not callable on an instance, and the array/template forms that ARE valid.
+//
+// Every expectation below was taken from the real AngelScript compiler via asharness, not from
+// reading the spec:
+//
+//   myInt.array()                          -> error, "No matching symbol 'array'"
+//   t.Thing()                              -> error, "No matching symbol 'Thing'"
+//   s.string()                             -> error, "No matching symbol 'string'"
+//   array<int> a(1);  array<int> a(3, 7);  -> valid
+//   array<int> a = {1,2,3};                -> valid
+//   array<array<int>> g = {{1,2},{3,4}};   -> valid
+//   array<array<array<array<int>>>> x;     -> valid  (the >>>> really does close four templates)
+//   int[][][][][][] y;                     -> valid
+//
+// The constructor case resolved silently before this rule existed, and for a specific reason: a
+// constructor is stored as `Thing::Thing`, which is exactly the key a method lookup builds, so the
+// lookup succeeded.
+// =====================================================================================
+
+TEST_CASE("CallChecker - A constructor cannot be called as a method")
+{
+    const char *script = R"(
+        class Thing
+        {
+            Thing() {}
+            int Value() { return 1; }
+        }
+
+        void main()
+        {
+            Thing t;
+            t.Thing();
+        }
+    )";
+
+    auto doc = angel_lsp::test::CreateTestDocument("file:///ctor_as_method.as", script);
+    REQUIRE(static_cast<bool>(doc));
+
+    bool reported = false;
+    for (const auto &d : doc->GetDiagnostics())
+    {
+        if (d.code == "as-err-constructor-not-callable")
+            reported = true;
+    }
+    CHECK(reported);
+}
+
+TEST_CASE("CallChecker - Ordinary methods on the same class are still fine")
+{
+    // The guard against the rule above becoming over-eager: only the class's own name is a
+    // constructor, and every other member must keep resolving.
+    const char *script = R"(
+        class Thing
+        {
+            Thing() {}
+            int Value() { return 1; }
+        }
+
+        void main()
+        {
+            Thing t;
+            t.Value();
+        }
+    )";
+
+    auto doc = angel_lsp::test::CreateTestDocument("file:///method_ok.as", script);
+    REQUIRE(static_cast<bool>(doc));
+    CHECK(doc->GetDiagnostics().empty());
+}
+
+TEST_CASE("CallChecker - Valid array and nested-template declarations produce no diagnostics")
+{
+    const char *script = R"(
+        void main()
+        {
+            array<int> sized(1);
+            array<int> filled(3, 7);
+            array<int> listed = {1, 2, 3};
+            array<array<int>> grid = {{1, 2}, {3, 4}};
+            array<array<array<array<int>>>> deep;
+            int[][][][][][] brackets;
+        }
+    )";
+
+    auto doc = angel_lsp::test::CreateTestDocument("file:///array_forms.as", script);
+    REQUIRE(static_cast<bool>(doc));
+
+    for (const auto &d : doc->GetDiagnostics())
+    {
+        CAPTURE(d.code);
+        CAPTURE(d.message);
+        CHECK(d.severity != angel_lsp::analysis::DiagnosticSeverity::Error);
+    }
 }

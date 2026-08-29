@@ -54,6 +54,24 @@
         "path": "./syntaxes/angelscript.tmLanguage.json"
       }
     ],
+    "semanticTokenTypes": [
+      {
+        "id": "templatePunctuation",
+        "description": "The '<' and '>' delimiting a template argument list. Separate from 'operator' because the TextMate grammar cannot tell '>>' closing two templates from the right-shift operator; the server can, and this is the type it reports them as."
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "angelscript",
+        "scopes": {
+          "templatePunctuation": [
+            "punctuation.definition.typeparameters.angelscript",
+            "punctuation.definition.typeparameters.begin.ts",
+            "meta.type.parameters"
+          ]
+        }
+      }
+    ],
     "snippets": [
       {
         "language": "angelscript",
@@ -105,6 +123,14 @@
           "scope": "resource",
           "default": ".as",
           "markdownDescription": "Filename suffix of AngelScript source files, used when scanning the workspace to build the `#include` graph."
+        },
+        "angelscript.arrayLikeTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Names of template types whose initializer list is a plain repeat of their element type, the way `array<T>`'s is. The engine's default array type is always included.\n\nThis is shorthand. The general mechanism is a `/// @listpattern {repeat T}` tag on the class in your `.as.predefined` stub, copied from the type's own `asBEHAVE_LIST_FACTORY` registration — that also expresses patterns this setting cannot, such as `dictionary`'s `{repeat {string, ?}}`. Use this setting when you cannot edit the stub.\n\nEither way it has to be stated rather than detected: `array<T>` and `optional<T>` are declared identically in a stub, and the compiler accepts `array<int> a = {1};` while rejecting `optional<int> o = {1};`."
         },
         "angelscript.diagnosticSeverity": {
           "type": "object",

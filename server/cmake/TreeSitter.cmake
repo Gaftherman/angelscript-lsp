@@ -9,8 +9,33 @@ if(MSVC)
 endif()
 
 # ── Tree-Sitter AngelScript Grammar ───────────────────────────────────────
-FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG 0b482610855a5f7628b82c19b1cacca8d05e4f30)
-FetchContent_MakeAvailable(tree_sitter_angelscript)
+# 017b0d3 adds `array<T>::less` / `T[]::less` - a name nested in a template or array type, which is
+# how the array add-on registers its sort comparator and how every predefined stub declaring `sort`
+# spells it. Before it, that declaration produced an ERROR node and the server reported a syntax
+# error in a stub the user did not write.
+#
+# ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE builds against a local checkout instead of fetching one.
+# A grammar change and the analyzer change that depends on it land together, and the pin above
+# cannot name a commit that has not been pushed yet; this is how the two are developed side by side:
+#
+#   cmake -B build -S . -DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=E:/Github/src/tree-sitter-angelscript
+set(ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE "" CACHE PATH
+    "Local tree-sitter-angelscript checkout to build against instead of the pinned commit")
+
+if(ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE)
+    if(NOT EXISTS "${ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE}/src/parser.c")
+        message(FATAL_ERROR
+            "ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE is set to "
+            "'${ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE}', which has no src/parser.c. "
+            "Point it at a tree-sitter-angelscript checkout, and run `tree-sitter generate` in it "
+            "if the generated parser is missing.")
+    endif()
+    set(tree_sitter_angelscript_SOURCE_DIR "${ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE}")
+    message(STATUS "tree-sitter-angelscript: local checkout at ${tree_sitter_angelscript_SOURCE_DIR}")
+else()
+    FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG 017b0d3ea2fefb2fb5c90ce22cc36743b21244c8)
+    FetchContent_MakeAvailable(tree_sitter_angelscript)
+endif()
 
 add_library(tree_sitter_angelscript_lib STATIC 
     "${tree_sitter_angelscript_SOURCE_DIR}/src/parser.c"

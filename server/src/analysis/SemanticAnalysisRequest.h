@@ -6,6 +6,7 @@
 #include "analysis/Diagnostics.h"
 #include "i18n/i18n.h"
 #include "config/ServerConfig.h"
+#include "utils/PreprocessorRegions.h"
 
 #include <memory>
 #include <string>
@@ -43,6 +44,19 @@ namespace angel_lsp::analysis
         bool enableTypeConversionChecks = true;
 
         /**
+         * @brief Line ranges the preprocessor removes, so no diagnostic is reported inside them.
+         *
+         * CScriptBuilder blanks out every `#if <word>` block whose word the host has not defined
+         * before the compiler sees the file, so code in such a block is not code at all. Analysing
+         * it produced diagnostics about text that never compiles - AS-Harness's json.as keeps
+         * deliberately-broken code in `#if FALSE` for exactly that purpose, and every diagnostic
+         * this analyzer produced for that file came from there.
+         *
+         * Empty means nothing is excluded. Populate with utils::FindExcludedLineRanges.
+         */
+        std::vector<utils::ExcludedLineRange> excludedLineRanges;
+
+        /**
          * @brief Member and enum-member index for the declaration rules, built on first use.
          *
          * Mutable and lazy because most passes never ask for it. The build itself lives on the
@@ -61,6 +75,24 @@ namespace angel_lsp::analysis
 
         /** @brief Root of the document's lexical Scope tree (see ScopeTree.h), or nullptr if none was collected. */
         std::shared_ptr<const Scope> scopeRoot;
+
+        /**
+         * @brief The same tree as scopeRoot, non-null only while this caller exclusively owns it.
+         *
+         * One rule - `auto` inference in TypeConversionChecker - has to write the deduced type back
+         * into the LocalDefinition, because every consumer downstream (hover, completion, inlay
+         * hints, the other checkers) reads the concrete type from there rather than re-deducing it.
+         *
+         * That write used to go through a const_cast on scopeRoot, which was a data race: the
+         * analysis thread published the tree to ScopeIndex *before* running Analyze, so it was
+         * mutating a std::string that the message loop could be reading for a hover at the same
+         * instant. Setting this field is the caller stating that the tree has not been published
+         * yet and no other thread can reach it; leaving it null makes the rule skip the write.
+         *
+         * @warning Set this only for a tree you have not yet handed to ScopeIndex::SetScopeTree.
+         *          Publish after Analyze() returns, never before.
+         */
+        Scope *mutableScopeRoot = nullptr;
 
         /**
          * @brief Document source text, owned by the caller and required to outlive Analyze().
@@ -93,6 +125,15 @@ namespace angel_lsp::analysis
         std::string_view GetArrayTypeName() const
         {
             return (typeConfig && !typeConfig->arrayTypeName.empty()) ? std::string_view(typeConfig->arrayTypeName) : std::string_view("");
+        }
+
+        /**
+         * @brief Templates whose initializer list repeats their element type.
+         * @see config::TypeConfig::arrayLikeTemplates for why this is configured and not inferred.
+         */
+        std::unordered_set<std::string> GetArrayLikeTemplateNames() const
+        {
+            return typeConfig ? typeConfig->ArrayLikeTemplateNames() : std::unordered_set<std::string>{};
         }
 
         /**

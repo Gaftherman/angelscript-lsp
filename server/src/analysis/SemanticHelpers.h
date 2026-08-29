@@ -104,6 +104,43 @@ namespace angel_lsp::analysis
     }
 
     /**
+     * @brief True for AngelScript's integer primitives, signed or unsigned.
+     *
+     * `int32`/`uint32` are the explicit spellings of `int`/`uint` and are listed alongside them:
+     * the parser hands back whichever the source wrote, so a classifier that knew only one of each
+     * pair would answer differently for two spellings of the same type.
+     */
+    [[nodiscard]] constexpr bool IsIntegerPrimitive(std::string_view typeName) noexcept
+    {
+        return typeName == "int"  || typeName == "int8"  || typeName == "int16"  ||
+               typeName == "int32" || typeName == "int64" ||
+               typeName == "uint" || typeName == "uint8" || typeName == "uint16" ||
+               typeName == "uint32" || typeName == "uint64";
+    }
+
+    /** @brief True for AngelScript's floating point primitives. */
+    [[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
+    {
+        return typeName == "float" || typeName == "double";
+    }
+
+    /**
+     * @brief True for any primitive that carries a number - integer or floating point.
+     *
+     * Excludes `bool`, which converts to and from the numeric types but is not one of them; callers
+     * that want that conversion handle it explicitly, because whether it is allowed depends on the
+     * direction and on which rule is asking.
+     *
+     * These three predicates exist so the conversion rules, the overload resolver and the
+     * expression resolver classify a type the same way. Each had grown its own list, and the lists
+     * had already begun to disagree - one of them was missing `int32`.
+     */
+    [[nodiscard]] constexpr bool IsNumericPrimitive(std::string_view typeName) noexcept
+    {
+        return IsIntegerPrimitive(typeName) || IsFloatingPointPrimitive(typeName);
+    }
+
+    /**
      * @brief Configurable type resolution against host TypeConfig.
      */
     [[nodiscard]] inline bool IsPredefinedOrRegisteredType(
@@ -227,6 +264,21 @@ namespace angel_lsp::analysis
     std::string CleanBaseType(std::string_view typeName);
 
     /**
+     * @brief True when a type is AngelScript's variable type `?` (as in `const ?&in`, `?&out`).
+     *
+     * `?` is not a type name - it is the engine's wildcard parameter, and a parameter declared with
+     * it accepts a value of *any* type. dictionary::set(const string&in, const ?&in),
+     * dictionary::get(const string&in, ?&out), ref, Dispose and the format/scan helpers are all
+     * declared this way in the standard add-ons.
+     *
+     * Treating `?` as an ordinary named type is why the conversion rules used to report
+     * "Cannot implicitly convert 'int' to '?'" on code the real compiler accepts without complaint:
+     * the analyzer went looking for a declaration named `?`, found none, and blamed the argument.
+     * Anything that compares an argument against a parameter type has to ask this first.
+     */
+    bool IsVariableType(std::string_view typeName);
+
+    /**
      * @brief Recursively collects the class and interface inheritance hierarchy for a type.
      * @param className The starting type name.
      * @param symbolTable The symbol table to look up class and interface definitions.
@@ -331,7 +383,8 @@ namespace angel_lsp::analysis
         const Scope *scope,
         const SymbolTable &symbolTable,
         std::string_view sourceCode,
-        std::string_view uri = "");
+        std::string_view uri = "",
+        int depth = 0);
 }
 
 

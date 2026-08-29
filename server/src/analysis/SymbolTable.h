@@ -246,6 +246,16 @@ namespace angel_lsp::analysis
         SymbolModifiers modifiers;
         bool isTemplate = false;
         bool hasBraces = false;
+
+        /**
+         * @brief The shape of initializer list this type accepts, from its `@listpattern` tag.
+         *
+         * Held as written - `{repeat T}`, `{repeat {string, ?}}` - and parsed on use. Empty for the
+         * overwhelming majority of types, which is the answer "this stub does not say", not "no
+         * list is accepted": see analysis/ListPattern.h for why a stub is the only thing that can
+         * say and why the rules stay silent when it does not.
+         */
+        std::string listPattern;
     };
 
     struct InterfaceSignature
@@ -485,13 +495,19 @@ namespace angel_lsp::analysis
         struct TransparentStringHash
         {
             using is_transparent = void;
+
+            // The cast is deliberate and has to be written out. ankerl's hash is uint64_t on every
+            // platform while size_t is 32 bits in the win32-x86 build this project ships, so the
+            // implicit conversion truncated the hash there - harmless for bucket selection, but a
+            // narrowing conversion the compiler is right to flag. Spelling it out keeps C4244
+            // available for the narrowings that are not harmless.
             [[nodiscard]] size_t operator()(std::string_view sv) const noexcept
             {
-                return ankerl::unordered_dense::hash<std::string_view>{}(sv);
+                return static_cast<size_t>(ankerl::unordered_dense::hash<std::string_view>{}(sv));
             }
             [[nodiscard]] size_t operator()(const std::string &s) const noexcept
             {
-                return ankerl::unordered_dense::hash<std::string_view>{}(s);
+                return static_cast<size_t>(ankerl::unordered_dense::hash<std::string_view>{}(s));
             }
         };
 

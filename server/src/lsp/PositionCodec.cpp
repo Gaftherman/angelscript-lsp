@@ -53,6 +53,11 @@ namespace angel_lsp::codec
         // left alone and only the column baselines differ: prevByteStart drives the decode,
         // prevEncodedStart the re-encode, and past the first non-ASCII character on a line the two
         // no longer agree.
+        // Built once for the whole run instead of rescanning the document from byte 0 for every
+        // token, which is what utils::GetLine() does. With one GetLine() call per token this loop
+        // was O(tokens x document size) - and it runs on every semanticTokens/full and every delta.
+        const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
+
         uint32_t prevLine = 0;
         uint32_t prevByteStart = 0;
         uint32_t prevEncodedStart = 0;
@@ -66,7 +71,7 @@ namespace angel_lsp::codec
             const uint32_t line = prevLine + deltaLine;
             const uint32_t byteStart = (deltaLine == 0) ? prevByteStart + deltaStart : deltaStart;
 
-            const std::string_view lineText = utils::GetLine(text, line);
+            const std::string_view lineText = lineIndex.Line(text, line);
             const uint32_t encodedStart = utils::ByteToLspCharColumn(lineText, byteStart, enc);
             const uint32_t encodedEnd = utils::ByteToLspCharColumn(lineText, byteStart + length, enc);
 

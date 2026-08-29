@@ -134,6 +134,22 @@ namespace angel_lsp::parser::queries
 ; Type qualifiers
 "auto" @type.builtin
 
+; Template punctuation
+;
+; The whole argument list is captured, and the handler emits one token for the `<` that opens it
+; and one for the `>` that closes it. Matching the brackets directly is not possible: the grammar
+; produces them from hidden external-scanner tokens (`_template_open` / `_template_close` in
+; grammar.js), which never appear in the tree - a query for them fails to compile as an impossible
+; pattern. The node's own span is the next best thing, and it is exact: the first and last
+; character of a `template_type_list` are the two brackets by construction.
+;
+; They are captured apart from the operators so the client can theme them separately. TextMate
+; cannot make the distinction at all - its operator rule matches `>>` as one two-character shift,
+; so `array<array<int>>` closed with a `keyword.operator` scope, and there was no semantic token
+; to override it with.
+(template_type_list) @template.list
+(template_parameter_list) @template.list
+
 ; Punctuation
 ["(" ")" "{" "}" "[" "]"] @punctuation.bracket
 [";" "," "." ":" "::"] @punctuation.delimiter

@@ -332,3 +332,52 @@ TEST_CASE("codec::Encode - WorkspaceEdit text edits with UTF-16 non-ASCII charac
     CHECK(range.end.character == 5);
 }
 
+
+// =====================================================================================
+// LineIndex is a cache in front of GetLine(), so the only thing that matters is that it
+// agrees with GetLine() on every line of every shape of document. If it ever disagrees it
+// does not fail loudly - it silently shifts semantic token ranges, which is the hardest
+// class of bug to notice and the reason this is an exhaustive equivalence check rather
+// than a handful of spot cases.
+// =====================================================================================
+
+TEST_CASE("LineIndex - Agrees with GetLine on every line")
+{
+    const std::vector<std::string> documents = {
+        "",
+        "\n",
+        "\n\n\n",
+        "one line no terminator",
+        "first\nsecond\nthird",
+        "first\nsecond\nthird\n",
+        "crlf\r\nendings\r\nhere\r\n",
+        "mixed\r\nlf\ncrlf\r\n",
+        "trailing blank\n\n",
+        "café 你好 \U0001F600 astral\nsecond ééé\nthird\n",
+        "\r\n\r\n",
+        "a\n\nb\n\nc",
+    };
+
+    for (const auto &doc : documents)
+    {
+        CAPTURE(doc);
+        const auto index = angel_lsp::utils::LineIndex::Build(doc);
+
+        // Two lines past the end as well, so the past-the-end clamp is compared too.
+        for (uint32_t line = 0; line < index.LineCount() + 2; ++line)
+        {
+            CAPTURE(line);
+            CHECK(index.Line(doc, line) == angel_lsp::utils::GetLine(doc, line));
+            CHECK(index.StartOffset(doc, line) == angel_lsp::utils::LineStartOffset(doc, line));
+        }
+    }
+}
+
+TEST_CASE("LineIndex - Counts lines the way the document is written")
+{
+    CHECK(angel_lsp::utils::LineIndex::Build("").LineCount() == 1);
+    CHECK(angel_lsp::utils::LineIndex::Build("a").LineCount() == 1);
+    CHECK(angel_lsp::utils::LineIndex::Build("a\n").LineCount() == 2);   // trailing empty line
+    CHECK(angel_lsp::utils::LineIndex::Build("a\nb").LineCount() == 2);
+    CHECK(angel_lsp::utils::LineIndex::Build("a\nb\n").LineCount() == 3);
+}

@@ -186,6 +186,9 @@ namespace angel_lsp::i18n
         m_messages["as-err-invalid-cast"] = "Cannot cast '{}' to '{}'. The types are unrelated and no 'opCast'/'opImplCast' overload is declared.";
         m_messages["as-err-uninitialized-variable-read"] = "Local variable '{}' is used before it is initialized.";
         m_messages["as-err-call-no-matching-signature"] = "No matching signatures to call '{}'.";
+        m_messages["as-err-constructor-not-callable"] = "'{}' is a constructor of '{}' and cannot be called on an instance.";
+        m_messages["as-err-initializer-list-not-supported"] = "Initialization lists cannot be used with '{}'.";
+        m_messages["as-err-initializer-list-expected"] = "Expected a list enclosed by {{ }} to match pattern.";
         m_messages["as-err-no-matching-constructor"] = "No matching signatures to '{}'.";
         m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous.";
         m_messages["as-err-ambiguous-identifier"] = "Ambiguous symbol '{}'.";
@@ -214,7 +217,6 @@ namespace angel_lsp::i18n
         m_messages["as-err-undefined-identifier"] = "Undefined identifier '{}'.";
         m_messages["as-err-lvalue-required-for-out-param"] = "Output parameter requires a mutable l-value or 'void'.";
         m_messages["as-err-positional-after-named-arg"] = "Positional argument cannot follow a named argument.";
-        m_messages["as-err-unary-neg-on-unsigned"] = "Unary minus cannot be applied to unsigned integer type '{}'.";
         m_messages["as-err-cannot-return-local-ref"] = "Cannot return reference to local variable '{}'.";
         m_messages["as-err-cannot-return-param-ref"] = "Cannot return reference to parameter '{}'.";
         m_messages["as-err-lambda-closure-disallowed"] = "Lambdas cannot access outer local variables (no closures).";
@@ -323,6 +325,9 @@ namespace angel_lsp::i18n
             m_messages["as-err-invalid-cast"] = "No se puede convertir '{}' a '{}' con cast. Los tipos no están relacionados y no hay sobrecarga 'opCast'/'opImplCast'.";
             m_messages["as-err-uninitialized-variable-read"] = "La variable local '{}' se usa antes de ser inicializada.";
             m_messages["as-err-call-no-matching-signature"] = "No hay firmas coincidentes para la llamada a '{}'.";
+            m_messages["as-err-constructor-not-callable"] = "'{}' es un constructor de '{}' y no se puede llamar sobre una instancia.";
+            m_messages["as-err-initializer-list-not-supported"] = "No se pueden usar listas de inicialización con '{}'.";
+            m_messages["as-err-initializer-list-expected"] = "Se esperaba una lista entre {{ }} para coincidir con el patrón.";
             m_messages["as-err-no-matching-constructor"] = "No coinciden las firmas con '{}'.";
             m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";
             m_messages["as-err-ambiguous-identifier"] = "Símbolo ambiguo '{}'.";
@@ -351,7 +356,6 @@ namespace angel_lsp::i18n
             m_messages["as-err-undefined-identifier"] = "Identificador no definido '{}'.";
             m_messages["as-err-lvalue-required-for-out-param"] = "El parámetro de salida requiere un l-value mutable o 'void'.";
             m_messages["as-err-positional-after-named-arg"] = "Un argumento posicional no puede seguir a un argumento con nombre.";
-            m_messages["as-err-unary-neg-on-unsigned"] = "El operador unario menos no se puede aplicar al tipo entero sin signo '{}'.";
             m_messages["as-err-cannot-return-local-ref"] = "No se puede devolver una referencia a la variable local '{}'.";
             m_messages["as-err-cannot-return-param-ref"] = "No se puede devolver una referencia al parámetro '{}'.";
             m_messages["as-err-lambda-closure-disallowed"] = "Las lambdas no pueden acceder a variables locales externas (sin clausuras).";

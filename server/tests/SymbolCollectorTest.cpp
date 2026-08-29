@@ -531,3 +531,91 @@ TEST_CASE("SymbolCollector - A comment inside a parameter list is not collected 
     CHECK(trace->GetFunction().parameters[0].name == "level");
     CHECK(trace->GetFunction().parameters[1].name == "message");
 }
+
+// =====================================================================================
+// A declaration is not a call site.
+//
+// `Matrix m.Matrix();` reads like a constructor call and is not one - AngelScript has no such
+// syntax, and the real compiler answers with "Expected ';' | Instead found identifier 'm'".
+// asharness rejects it outright.
+//
+// This is a regression test for the *reporting path*, not the grammar: tree-sitter produced an
+// ERROR node for it all along and the collector reported it correctly, but the parity harness only
+// ever looked at SemanticAnalyzer::Analyze and so scored the file as one this analyzer had missed.
+// The harness now folds these in; this pins the collector's half of that down.
+// =====================================================================================
+
+TEST_CASE("SymbolCollector - A member declaration written as a call is a syntax error")
+{
+    const std::string code =
+        "class Matrix { Matrix() {} }\n"   // 0
+        "void main() {\n"                  // 1
+        "    Matrix m.Matrix();\n"         // 2
+        "}\n";                             // 3
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///decl.as", code, parser, table);
+
+    const bool reported = std::any_of(diagnostics.begin(), diagnostics.end(), [](const Diagnostic &d)
+                                      { return d.code == "as-syntax-error" && d.range.start.line == 2; });
+    CHECK(reported);
+}
+
+TEST_CASE("SymbolCollector - The valid spellings of the same declaration are silent")
+{
+    // The rule above must not have become "a declaration followed by anything is an error".
+    const std::string code =
+        "class Matrix { Matrix() {} Matrix(int rows) {} }\n"
+        "void main() {\n"
+        "    Matrix a;\n"
+        "    Matrix b(4);\n"
+        "    Matrix c = Matrix(4);\n"
+        "}\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///decl_ok.as", code, parser, table);
+
+    CHECK_FALSE(std::any_of(diagnostics.begin(), diagnostics.end(), [](const Diagnostic &d)
+                            { return d.code == "as-syntax-error"; }));
+}
+
+// =====================================================================================
+// A name nested in a template or array type.
+//
+// `array<T>::less` is how the array add-on registers its sort comparator, and predefined stubs -
+// AS-Harness's own included - spell the same funcdef `T[]::less`. Both used to land in a tree-sitter
+// ERROR node and be reported as a syntax error on a line the user did not write.
+//
+// Fixed in the grammar rather than filtered here: tree-sitter-angelscript 017b0d3 adds the nested
+// name to its `type` rule. See cmake/TreeSitter.cmake.
+// =====================================================================================
+
+TEST_CASE("SymbolCollector - A name nested in a template or array type is not a syntax error")
+{
+    const std::string code =
+        "class array<T>\n"
+        "{\n"
+        "    void sort(T[]::less &in cmp, uint startAt = 0);\n"
+        "    void sortBy(array<T>::less &in cmp);\n"
+        "    funcdef bool less(const T &in a, const T &in b);\n"
+        "}\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///nested.as.predefined", code, parser, table);
+
+    const bool anySyntaxError = std::any_of(diagnostics.begin(), diagnostics.end(), [](const Diagnostic &d)
+                                            { return d.code == "as-syntax-error"; });
+    CHECK_FALSE(anySyntaxError);
+
+    // The class is still collected, so the declaration is understood rather than merely tolerated.
+    CHECK(table.HasSymbolAnywhere("array"));
+}

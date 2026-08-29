@@ -18,29 +18,6 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character)
-    {
-        if (!root) return nullptr;
-        const auto contains = [line, character](const Scope &scope ) {
-            if (line < scope.startLine || line > scope.endLine) return false;
-            if (line == scope.startLine && character < scope.startCharacter) return false;
-            if (line == scope.endLine && character > scope.endCharacter) return false;
-            return true;
-        };
-        if (!contains(*root)) return nullptr;
-        const Scope *current = root;
-        for (bool descended = true; descended;) {
-            descended = false;
-            for (const auto &child : current->children) {
-                if (child && contains(*child)) {
-                    current = child.get();
-                    descended = true;
-                    break;
-                }
-            }
-        }
-        return current;
-    }
 
     std::string DeduceTypeAtLastExpression(const std::string &code)
     {

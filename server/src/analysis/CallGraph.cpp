@@ -1,4 +1,5 @@
 #include "analysis/CallGraph.h"
+#include "analysis/ASTUtils.h"
 
 #include <string>
 #include <utility>
@@ -7,10 +8,15 @@ namespace angel_lsp::analysis
 {
     namespace
     {
-        constexpr uint32_t k_functionFieldLength = 8; ///< "function"
-        constexpr uint32_t k_memberFieldLength = 6;   ///< "member"
-        constexpr uint32_t k_nameFieldLength = 4;     ///< "name"
-
+        /**
+         * @brief Node text as an owning string.
+         *
+         * Kept per translation unit rather than shared with ASTUtils::NodeText, which returns a
+         * string_view. The two are not interchangeable: callers here store the result, concatenate
+         * it, and use it after the node has gone out of scope, so handing them a view would trade a
+         * duplicated three-line function for a lifetime question at several dozen call sites.
+         * Deduplicating it was attempted and reverted for exactly that reason.
+         */
         std::string NodeText(TSNode node, std::string_view sourceCode)
         {
             if (ts_node_is_null(node))
@@ -26,6 +32,10 @@ namespace angel_lsp::analysis
             }
             return std::string(sourceCode.substr(start, end - start));
         }
+
+        constexpr uint32_t k_functionFieldLength = 8; ///< "function"
+        constexpr uint32_t k_memberFieldLength = 6;   ///< "member"
+        constexpr uint32_t k_nameFieldLength = 4;     ///< "name"
 
         SourceRange ToSourceRange(TSNode node)
         {
@@ -90,8 +100,13 @@ namespace angel_lsp::analysis
                   std::string_view sourceCode,
                   const std::string &containerPath,
                   const std::string &caller,
-                  std::vector<CallSite> &out)
+                  std::vector<CallSite> &out,
+                  int depth = 0)
         {
+            // See k_maxAstDepth in ASTUtils.h.
+            if (depth > k_maxAstDepth)
+                return;
+
             const std::string_view nodeType = ts_node_type(node);
 
             std::string rebuilt;
@@ -134,7 +149,7 @@ namespace angel_lsp::analysis
             const uint32_t childCount = ts_node_named_child_count(node);
             for (uint32_t i = 0; i < childCount; ++i)
             {
-                Walk(ts_node_named_child(node, i), sourceCode, *nextContainer, *nextCaller, out);
+                Walk(ts_node_named_child(node, i), sourceCode, *nextContainer, *nextCaller, out, depth + 1);
             }
         }
     }

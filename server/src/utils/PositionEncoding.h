@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string_view>
+#include <vector>
 
 namespace angel_lsp::utils
 {
@@ -18,6 +19,35 @@ namespace angel_lsp::utils
     {
         Utf8,   ///< `character` counts bytes - identical to Tree-sitter's columns, conversions are identity.
         Utf16,  ///< `character` counts UTF-16 code units - the LSP default.
+    };
+
+    /**
+     * @brief Precomputed byte offset of every line start in a document.
+     *
+     * LineStartOffset() and GetLine() scan from byte 0 on every call. That is fine once, and
+     * quadratic when it happens per token: PositionCodec::EncodeSemanticTokens asks for a line per
+     * token, so a 5000-line file with 20k tokens rescanned the whole document 20k times on every
+     * semanticTokens request - and every delta request too. It short-circuits only for UTF-8
+     * clients, and UTF-16 is the protocol default, so the slow path was the normal one.
+     *
+     * Build once per document revision and look up in O(1). Cheap to construct: one linear pass.
+     */
+    struct LineIndex
+    {
+        /** @brief Byte offset of the first character of each line. Always starts with 0. */
+        std::vector<size_t> starts;
+
+        /** @brief Indexes every line start in text. One O(n) pass. */
+        static LineIndex Build(std::string_view text);
+
+        /** @brief Number of lines, counting a trailing empty line after a final newline. */
+        size_t LineCount() const noexcept { return starts.size(); }
+
+        /** @brief Byte offset where a 0-indexed line starts, or text.size() when past the end. */
+        size_t StartOffset(std::string_view text, uint32_t line) const noexcept;
+
+        /** @brief The line's content without its terminator - GetLine() in O(1). */
+        std::string_view Line(std::string_view text, uint32_t line) const noexcept;
     };
 
     /**

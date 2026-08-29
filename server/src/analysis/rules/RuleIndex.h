@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 #include <ankerl/unordered_dense.h>
 
 namespace angel_lsp::analysis::rules
@@ -14,6 +15,17 @@ namespace angel_lsp::analysis::rules
         ankerl::unordered_dense::set<std::string> methodNames;
         ankerl::unordered_dense::set<std::string> finalMethodNames;
         bool hasNestedType = false;
+
+        /**
+         * @brief SymbolTable keys of this container's members, for callers that need the symbols.
+         *
+         * The name sets above answer the declaration rules' yes/no questions. Completion needs the
+         * declarations themselves - a method's signature, a field's type - and was getting them by
+         * walking the entire workspace table once per type in the inheritance chain, on every
+         * keystroke. Holding the keys instead lets it probe FindSymbolsPtr per member: the index
+         * costs one string per member and is rebuilt only when the table's version moves.
+         */
+        std::vector<std::string> memberKeys;
     };
 
     /**
@@ -38,6 +50,26 @@ namespace angel_lsp::analysis::rules
          * changes instead of costing one full walk and fifty thousand insertions per keystroke.
          */
         ankerl::unordered_dense::set<std::string> allNames;
+
+        /**
+         * @brief Reverse inheritance edges: base type name -> the types that derive from it.
+         *
+         * Inheritance is written the other way round - a class names its bases - so answering
+         * "who derives from this?" used to mean scanning every symbol in the workspace. Worse, the
+         * caller needed the *transitive* set, so it re-scanned in a fixpoint loop until no new
+         * derived class appeared: O(depth x whole table) per call, on a table this codebase's own
+         * comments size at fifty thousand symbols. With the edges reversed once per table version
+         * it is an ordinary breadth-first walk.
+         *
+         * Keys are cleaned base names as written in the declaration; values are qualified names.
+         */
+        struct DerivedType
+        {
+            std::string qualifiedName;
+            std::string name;   ///< Unqualified spelling; callers record both.
+        };
+
+        ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> derivedByBase;
 
         /** @brief Members of one container, or an empty set of them when it declares none. */
         const ContainerMembers &Members(const std::string &containerName) const;

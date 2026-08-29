@@ -1,4 +1,5 @@
 #include "analysis/IsolationChecker.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticContext.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
@@ -18,7 +19,14 @@ namespace angel_lsp::analysis
             ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg);
         }
 
-        const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character)
+        /**
+         * @brief Innermost containing scope, falling back to `root` rather than nullptr.
+         *
+         * Named apart from analysis::FindInnermostScope on purpose: that one reports "no scope"
+         * when the point lies outside the root, this one hands back the root. The shared-isolation
+         * walk needs a scope for every node it visits, so the fallback is the behaviour it wants.
+         */
+        const Scope *FindEnclosingScopeOrRoot(const Scope *root, uint32_t line, uint32_t character)
         {
             if (!root)
             {
@@ -187,8 +195,12 @@ namespace angel_lsp::analysis
             std::string currentClassName;
             bool isCurrentClassShared = false;
 
-            void Visit(TSNode node, bool inSharedContext)
+            void Visit(TSNode node, bool inSharedContext, int depth = 0)
             {
+                // See k_maxAstDepth in ASTUtils.h.
+                if (depth > k_maxAstDepth)
+                    return;
+
                 if (ts_node_is_null(node))
                 {
                     return;
@@ -224,7 +236,7 @@ namespace angel_lsp::analysis
                     uint32_t count = ts_node_child_count(node);
                     for (uint32_t i = 0; i < count; ++i)
                     {
-                        Visit(ts_node_child(node, i), classShared);
+                        Visit(ts_node_child(node, i), classShared, depth + 1);
                     }
 
                     currentClassName = oldClassName;
@@ -259,7 +271,7 @@ namespace angel_lsp::analysis
                     uint32_t count = ts_node_child_count(node);
                     for (uint32_t i = 0; i < count; ++i)
                     {
-                        Visit(ts_node_child(node, i), funcShared);
+                        Visit(ts_node_child(node, i), funcShared, depth + 1);
                     }
                     return;
                 }
@@ -421,7 +433,7 @@ namespace angel_lsp::analysis
                             while (!varName.empty() && (varName.back() == ' ' || varName.back() == '\t')) varName.pop_back();
 
                             TSPoint pt = ts_node_start_point(node);
-                            const Scope *scope = request.scopeRoot ? FindInnermostScope(request.scopeRoot, pt.row, pt.column) : nullptr;
+                            const Scope *scope = request.scopeRoot ? FindEnclosingScopeOrRoot(request.scopeRoot, pt.row, pt.column) : nullptr;
                             bool isLocal = scope ? IsLocalVariableOrParameter(scope, varName) : false;
 
                             if (!isLocal)
@@ -462,7 +474,7 @@ namespace angel_lsp::analysis
                 uint32_t count = ts_node_child_count(node);
                 for (uint32_t i = 0; i < count; ++i)
                 {
-                    Visit(ts_node_child(node, i), inSharedContext);
+                    Visit(ts_node_child(node, i), inSharedContext, depth + 1);
                 }
             }
         };

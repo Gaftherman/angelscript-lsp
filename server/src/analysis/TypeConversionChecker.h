@@ -36,6 +36,17 @@ namespace angel_lsp::analysis
 
         /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
         const Scope *scopeRoot = nullptr;
+
+        /**
+         * @brief The same tree as scopeRoot, non-null only while the caller exclusively owns it.
+         *
+         * `auto` inference writes the deduced type back into the LocalDefinition so that everything
+         * reading the scope tree afterwards sees the concrete type instead of "auto". That write is
+         * only safe on a tree no other thread can reach - see SemanticAnalysisRequest::
+         * mutableScopeRoot for the race it used to be. Null means "published or shared": the
+         * deduction still drives this pass's own diagnostics, it just is not written back.
+         */
+        Scope *mutableScopeRoot = nullptr;
     };
 
     /**
