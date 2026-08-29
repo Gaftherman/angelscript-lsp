@@ -1086,3 +1086,55 @@ TEST_CASE("super - a class with no base cannot call one")
 
     CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "super"));
 }
+
+TEST_CASE("virtual property - a bare accessor name inside a method is not undeclared")
+{
+    // tests/parity/doc_p03_implicit_this_property.as compiles: with the `property` keyword, a
+    // bare `Up` inside a method is this.get_Up(). The symbol is stored as get_Up, so nothing
+    // named Up is ever in the table.
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "class C" + std::string(1, char(10)) +
+        "{" + std::string(1, char(10)) +
+        "    int get_Up() const property { return 1; }" + std::string(1, char(10)) +
+        "    void T() { int v = Up; }" + std::string(1, char(10)) +
+        "}" + std::string(1, char(10)),
+        table, i18n);
+
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagnostics, "Up"));
+}
+
+TEST_CASE("virtual property - the name is only excused where an accessor declares it")
+{
+    // The exemption is a name set, not a blanket skip of unknown identifiers. `Down` has no
+    // accessor anywhere, so it stays reported.
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "class C" + std::string(1, char(10)) +
+        "{" + std::string(1, char(10)) +
+        "    int get_Up() const property { return 1; }" + std::string(1, char(10)) +
+        "    void T() { int v = Down; }" + std::string(1, char(10)) +
+        "}" + std::string(1, char(10)),
+        table, i18n);
+
+    CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "Down"));
+}
+
+TEST_CASE("virtual property - a get_ prefix with nothing after it is not a property")
+{
+    // Stripping "get_" from a member literally called `get_` leaves the empty string, and
+    // inserting that would have excused every unresolved name in the workspace.
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n("en");
+    auto diagnostics = AnalyzeSource(
+        "class C" + std::string(1, char(10)) +
+        "{" + std::string(1, char(10)) +
+        "    int get_() const property { return 1; }" + std::string(1, char(10)) +
+        "    void T() { int v = Whatever; }" + std::string(1, char(10)) +
+        "}" + std::string(1, char(10)),
+        table, i18n);
+
+    CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "Whatever"));
+}

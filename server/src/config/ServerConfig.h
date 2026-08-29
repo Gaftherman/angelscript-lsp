@@ -108,6 +108,26 @@ namespace angel_lsp::config
          * variable declaration is a compile error. Gates as-err-global-vars-disallowed.
          */
         bool disallowGlobalVars = false;
+
+        /**
+         * @brief asEP_PROPERTY_ACCESSOR_MODE (engine default: 3; this server's default: 2).
+         *
+         * Decides when `get_X()` / `set_X(v)` become the virtual property `X`:
+         *
+         *   2  always, whether or not the declaration carries the `property` keyword
+         *   3  only where it does - the engine's own default
+         *
+         * The engine values 0 (disabled) and 1 (app-registered accessors only) are not modelled:
+         * neither changes what a *script* declaration means, which is the only thing this analyzer
+         * reads.
+         *
+         * This server defaults to 2, not to the engine's 3, and the difference is deliberate. Under
+         * 3 a `c.V` whose accessor lacks the keyword is an error the compiler does report, so
+         * defaulting to 3 would be more faithful - and would hand a new diagnostic to every
+         * workspace whose host sets 2, which many do, for code that compiles for them today. Being
+         * lenient here misses an error; being strict invents one. See PARITY-BACKLOG.md.
+         */
+        int propertyAccessorMode = 2;
     };
 
     /**

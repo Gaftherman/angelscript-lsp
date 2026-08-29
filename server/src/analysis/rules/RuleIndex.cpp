@@ -106,6 +106,27 @@ namespace angel_lsp::analysis::rules
                         {
                             members.finalMethodNames.insert(sym.name);
                         }
+
+                        // `int get_Up() property` is reached as `Up`, a name nothing declares. Both
+                        // sets are filled here and the reader picks by accessor mode - see the
+                        // header. The empty-suffix case (a member literally called `get_`) is not a
+                        // property and inserting "" would excuse every unresolved name.
+                        {
+                            std::string_view accessor = sym.name;
+                            if (accessor.starts_with("get_") || accessor.starts_with("set_"))
+                            {
+                                accessor.remove_prefix(4);
+                                if (!accessor.empty())
+                                {
+                                    index->accessorPropertyNames.emplace(accessor);
+                                    if (std::holds_alternative<FunctionSignature>(sym.signature) &&
+                                        sym.GetFunction().modifiers.isProperty)
+                                    {
+                                        index->keywordAccessorPropertyNames.emplace(accessor);
+                                    }
+                                }
+                            }
+                        }
                         break;
                     case SymbolType::Class:
                     case SymbolType::Interface:

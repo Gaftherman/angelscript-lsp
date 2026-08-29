@@ -55,15 +55,39 @@ namespace angel_lsp::config
             return val == "error" || val == "warning" || val == "information" || val == "hint";
         }
 
-        /** @brief Applies one `--engine-property=<name>=<bool>` pair.
-         *  @return False when the name is not one this server reads, so the caller can drop it.
+        /** @brief Applies one `--engine-property=<name>=<value>` pair.
+         *  @return False when the name is not one this server reads, or the value does not suit it,
+         *          so the caller can drop the pair.
          *  @note Names are the asEEngineProp identifiers without the asEP_ prefix, in lowerCamel -
          *        allowUnsafeReferences for asEP_ALLOW_UNSAFE_REFERENCES. Matching the engine's own
          *        vocabulary means a host author can map its SetEngineProperty calls across without
          *        translating anything, and it leaves room for the other thirty-odd properties to
-         *        arrive here the day a rule needs one. */
-        bool ApplyEngineProperty(EngineProperties &engine, std::string_view name, bool value)
+         *        arrive here the day a rule needs one.
+         *  @note The value arrives as text rather than a bool because not every engine property is
+         *        one. Most are, and read true/false; asEP_PROPERTY_ACCESSOR_MODE is an integer, and
+         *        flattening it to a bool would have made this option lie about the engine's own
+         *        vocabulary in exactly the place that vocabulary is the point. */
+        bool ApplyEngineProperty(EngineProperties &engine, std::string_view name, std::string_view raw)
         {
+            if (name == "propertyAccessorMode")
+            {
+                // 0 disabled, 1 app-registered only, 2 app and script, 3 (the engine's default)
+                // app and script but only where the `property` keyword is present. Only 2 and 3
+                // differ for a script analyzer, so anything else is dropped rather than guessed at.
+                if (raw == "2" || raw == "3")
+                {
+                    engine.propertyAccessorMode = raw == "2" ? 2 : 3;
+                    return true;
+                }
+                return false;
+            }
+
+            if (!IsBoolLiteral(raw))
+            {
+                return false;
+            }
+            const bool value = ParseBoolValue(raw, true);
+
             if (name == "allowUnsafeReferences")
             {
                 engine.allowUnsafeReferences = value;
@@ -151,11 +175,13 @@ namespace angel_lsp::config
                   << "                                          that registers its own has to say so here.\n"
                   << "  --diagnostic-severity=<code>=<severity> Override one diagnostic's severity: error|warning|information|hint (repeatable)\n"
                   << "  --engine-profile=<string>               Set built-in engine profile: standard|svencoop|urho3d|openxray|ootp|none|auto (default: standard)\n"
-                  << "  --engine-property=<name>=<bool>         Describe the host engine's SetEngineProperty settings (repeatable).\n"
+                  << "  --engine-property=<name>=<value>        Describe the host engine's SetEngineProperty settings (repeatable).\n"
                   << "                                          Known names, with the engine's own defaults:\n"
                   << "                                            allowUnsafeReferences  (false) permit & on primitives and standalone references\n"
                   << "                                            privatePropAsProtected (false) let a derived class reach a private member\n"
                   << "                                            disallowGlobalVars     (false) reject global variable declarations\n"
+                  << "                                            propertyAccessorMode   (2)     how get_X/set_X become the property X:\n"
+                  << "                                                                           2 always, 3 only with the `property` keyword\n"
                   << "  -h, --help                              Show this help message and exit\n"
                   << "  -v, --version                           Show version information and exit\n";
     }
@@ -516,9 +542,9 @@ namespace angel_lsp::config
                     // A bare name means "on", the way --enable-x does.
                     const std::string_view raw = sep == std::string_view::npos
                                                  ? std::string_view("true") : val.substr(sep + 1);
-                    if (!name.empty() && IsBoolLiteral(raw))
+                    if (!name.empty())
                     {
-                        ApplyEngineProperty(config.engine, name, ParseBoolValue(raw, true));
+                        ApplyEngineProperty(config.engine, name, raw);
                     }
                 }
             }

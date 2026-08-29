@@ -282,6 +282,19 @@
           "default": false,
           "markdownDescription": "Set this if the host calls `SetEngineProperty(asEP_DISALLOW_GLOBAL_VARS, true)`.\n\nEvery global variable declaration is then a compile error — the engine answers \"Global variables have been disabled by the application\" — and is reported as one."
         },
+        "angelscript.engine.propertyAccessorMode": {
+          "type": "number",
+          "enum": [
+            2,
+            3
+          ],
+          "enumDescriptions": [
+            "Any get_X()/set_X(v) member is the property X.",
+            "Only an accessor declared with the `property` keyword is."
+          ],
+          "default": 2,
+          "markdownDescription": "How `get_X()` / `set_X(v)` become the virtual property `X`, matching the host's `SetEngineProperty(asEP_PROPERTY_ACCESSOR_MODE, ...)`.\n\n`2` — any accessor counts. `3` — only one carrying the `property` keyword does, and `c.X` without it is an error the engine reports as \"'X' is not a member of 'C'\".\n\nThe engine's own default is `3`; this server's is `2`, because being lenient here misses an error while being strict invents one for every host that sets `2`. Set it to `3` if yours does not."
+        },
         "angelscript.engine.profile": {
           "type": "string",
           "enum": [

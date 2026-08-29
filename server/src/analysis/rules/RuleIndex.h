@@ -43,6 +43,28 @@ namespace angel_lsp::analysis::rules
         ankerl::unordered_dense::set<std::string> enumMemberNames;
 
         /**
+         * @brief Property names behind `get_X` / `set_X` members, for the undeclared-identifier rule.
+         *
+         * A virtual property is reached by a name nothing declares. `class C { int get_Up() const
+         * property { … } void T() { int v = Up; } }` compiles, and no symbol is ever named `Up` -
+         * the member is `C::get_Up`. Without these two sets every such use was reported.
+         *
+         * Two sets because the engine has two answers. asEP_PROPERTY_ACCESSOR_MODE 2 makes any
+         * `get_`/`set_` member the property; mode 3, the engine's own default, requires the
+         * `property` keyword, and without it `c.V` really is an error. Which set a rule reads is a
+         * per-request question (EngineProperties::propertyAccessorMode); which names go in either
+         * is not, and this index is shared across requests, so both are built and the choice is
+         * left to the caller.
+         *
+         * Registered globally rather than per class, for the same reason the template parameters
+         * below are: correct scoping would mean threading a per-container name set through the
+         * identifier check, and a missed shadowing costs nothing here while a false "Undeclared
+         * identifier" costs trust in every other diagnostic.
+         */
+        ankerl::unordered_dense::set<std::string> accessorPropertyNames;
+        ankerl::unordered_dense::set<std::string> keywordAccessorPropertyNames;
+
+        /**
          * @brief Every declared name in the workspace, for the undeclared-identifier rule.
          *
          * That rule genuinely needs all of them - a name declared in any indexed file counts - but

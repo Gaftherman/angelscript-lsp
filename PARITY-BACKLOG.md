@@ -83,6 +83,11 @@ project treats as unacceptable.
   `SemanticHelpers::IsBaseConstructorCall` tests the *shape* — a constructor of a class with a base
   list — so `super.F()`, `super::F()` and `super(...)` in a class with no base are still reported.
   `doc_p01`, `doc_r01`.
+- **A bare accessor name inside a method.** `class C { int get_Up() const property { … } void T()
+  { int v = Up; } }` compiles, and no symbol is ever named `Up` - the member is `C::get_Up` - so
+  every use of a virtual property from inside its own class drew `as-err-undeclared-identifier`.
+  `RuleIndex` now records the property name behind each `get_`/`set_` member, in two sets so the
+  reader can pick by accessor mode. `doc_p03`, `doc_r07`.
 - **A lambda reading a global.** `AccessChecker` enforces AngelScript's no-closure rule by resolving
   the name in the scope tree, and `LOCALS_QUERY` records a module-level global under the same
   `LocalDefinitionKind::Variable` as a function-body local. Every legal global read inside
@@ -108,11 +113,13 @@ first. Each lands with its `doc_`-prefixed parity case.
    validates shape against the list pattern but never an element's type. It also only visits
    `variable_declaration` initializers — not call arguments, assignments or returns — and never
    checks element *count*. `doc_r10`
-4. **`asEP_PROPERTY_ACCESSOR_MODE`** — a fourth entry in `config::EngineProperties`, values `2`
-   (today's behaviour: `get_X`/`set_X` are the property `X` regardless) and `3` (the SDK default:
-   the `property` keyword is required). Default `2`, so no existing workspace gains a diagnostic.
-   `modifiers.isProperty` is already collected by `SymbolCollector`, so both modes are expressible.
-   `doc_r07`
+4. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
+   (`angelscript.engine.propertyAccessorMode`, `--engine-property=propertyAccessorMode=<2|3>`,
+   default `2`) and the undeclared-identifier rule already reads it. The rest of the accessor
+   handling does not: `SemanticHelpers`' member-access fallback to `Type::get_X` still runs
+   regardless of mode, so under `3` a `c.V` whose accessor lacks the `property` keyword is still
+   accepted where the compiler answers `'V' is not a member of 'C'`. Missed diagnostic, not a false
+   positive. `doc_r07`
 5. **`int` → `enum`** — `TypeConversionChecker` allows the implicit conversion; the compiler rejects
    it (`Can't implicitly convert from 'int' to 'Mode'`), and `OverloadResolver` already agrees with
    the compiler, so a call is caught and an assignment is not. `enum` → `int` widening stays legal,

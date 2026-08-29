@@ -201,6 +201,15 @@ function buildServerArgs(): string[] {
         }
     }
 
+    // asEP_PROPERTY_ACCESSOR_MODE takes a number, not a boolean, so it is not one of
+    // ENGINE_PROPERTIES above either. Passed on only when the user asked for something other than
+    // this server's default, keeping an untouched setting off the command line the way the
+    // booleans are.
+    const accessorMode = config.get<number>('engine.propertyAccessorMode', 2);
+    if (accessorMode === 2 || accessorMode === 3) {
+        args.push(`--engine-property=propertyAccessorMode=${accessorMode}`);
+    }
+
     // The host dialect. An enum rather than a boolean, so it is not one of ENGINE_PROPERTIES above
     // and needs its own line; without it the setting was declared, documented and inert.
     const engineProfile = config.get<string>('engine.profile', '').trim();
