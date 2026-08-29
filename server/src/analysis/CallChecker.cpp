@@ -300,41 +300,78 @@ namespace angel_lsp::analysis
                                                std::string_view sourceCode,
                                                const std::string &fileUri,
                                                const std::string &predefinedExtension,
-                                               const SymbolTable &table)
+                                               const SymbolTable &table,
+                                               const rules::RuleIndex &index)
         {
             std::vector<Symbol> candidates;
 
-            // The table lookup comes first because it is a hash probe and the container walk is a
-            // climb up the tree, and most unqualified calls in real code name an engine function
-            // with no visible declaration at all - so the cheap test answers nearly all of them.
-            const auto globals = table.FindSymbolsPtr(name);
-            if (!globals)
+            // One hash probe before the tree climb. allNames holds the unqualified spelling of
+            // every symbol in the workspace, so a name nothing declares - which is what most
+            // unqualified calls in real code are, naming an engine function with no visible
+            // declaration - is answered here and never walks anything.
+            if (!index.allNames.contains(name))
             {
                 return candidates;
             }
 
-            for (const auto &sym : *globals)
-            {
-                if (IsFunctionSymbol(sym) && sym.containerName.empty() &&
-                    (sym.fileUri == fileUri || utils::IsPredefinedFile(sym.fileUri, predefinedExtension)))
-                {
-                    candidates.push_back(sym);
-                }
-            }
-
-            if (candidates.empty())
-            {
-                return candidates;
-            }
-
+            // Which scopes an unqualified name may name from here, innermost first, ending at the
+            // global scope. This pass used to look only at the global one, and the collector keys a
+            // namespaced function under its qualified name alone - `TEST::my_test_func`, never
+            // `my_test_func` - so inside a namespace the probe found nothing and every call in the
+            // file went unchecked. The identical call at file scope was checked.
+            // tests/parity/doc_r12 against doc_r14 is exactly that pair.
+            std::vector<std::string> reachableScopes;
             for (const auto &container : GetEnclosingContainers(callNode, sourceCode))
             {
                 if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
                 {
-                    candidates.clear();
+                    // A call inside a class body is a method call on `this` as often as not, and
+                    // FindMethodCandidates owns that question.
                     return candidates;
                 }
+                if (container.kind == ContainerKind::Namespace)
+                {
+                    reachableScopes.push_back(container.qualifiedName);
+                }
             }
+            reachableScopes.emplace_back();
+
+            // AngelScript stops at the first scope that declares the name: an overload in an
+            // enclosing namespace does not join a set found in an inner one. Breaking rather than
+            // accumulating matters for the verdict, not just for speed - a wider set can only make
+            // a bad call look matchable.
+            //
+            // Deliberately not extended with `using namespace`. A name reachable only through one
+            // resolves to a scope not in this list, so it yields no candidate and the call goes
+            // unjudged: a missed diagnostic, never an invented one.
+            for (const auto &scopeName : reachableScopes)
+            {
+                const std::string key = scopeName.empty() ? name : scopeName + "::" + name;
+                const auto found = table.FindSymbolsPtr(key);
+                if (!found)
+                {
+                    continue;
+                }
+
+                for (const auto &sym : *found)
+                {
+                    // Same file, or a predefined stub. A global declared in another file is not a
+                    // candidate: two plugins that never include one another both declare `Stop`,
+                    // and matching a call in one against the other's signature reads a relationship
+                    // that does not exist.
+                    if (IsFunctionSymbol(sym) &&
+                        (sym.fileUri == fileUri || utils::IsPredefinedFile(sym.fileUri, predefinedExtension)))
+                    {
+                        candidates.push_back(sym);
+                    }
+                }
+
+                if (!candidates.empty())
+                {
+                    break;
+                }
+            }
+
             return candidates;
         }
 
@@ -474,7 +511,8 @@ namespace angel_lsp::analysis
                 else
                 {
                     candidates = FindFreeCandidates(node, written, request.sourceCode,
-                                                    ctx.request.fileUri, ctx.request.predefinedFileExtension, table);
+                                                    ctx.request.fileUri, ctx.request.predefinedFileExtension,
+                                                    table, ctx.request.GetRuleIndex());
                 }
             }
             else

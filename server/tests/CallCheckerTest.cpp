@@ -634,3 +634,81 @@ TEST_CASE("CallChecker - Stays generic when the overloads disagree about which a
     CHECK(HasCode(diagnostics, "as-err-call-no-matching-signature"));
     CHECK_FALSE(HasCode(diagnostics, "as-err-no-implicit-conversion"));
 }
+
+// =====================================================================================
+// Unqualified calls inside a namespace.
+//
+// The collector keys a namespaced function under its qualified name alone - `TEST::my_test_func`,
+// never `my_test_func` - and this pass used to probe only the unqualified spelling. Inside a
+// namespace it therefore found no candidate for any call and checked nothing, while the identical
+// call at file scope was checked. AngelScript's own answer to all four cases below:
+//
+//     ERROR (10, 9): No matching signatures to 'my_test_func(int)'
+//
+// See tests/parity/doc_r12 and doc_r14.
+// =====================================================================================
+
+TEST_CASE("CallChecker - an argument type is checked inside a namespace")
+{
+    const auto diagnostics = AnalyzeCallSnippet(
+        "namespace TEST {\n"
+        "    void main_func() { int id = 1; my_test_func(id); }\n"
+        "    void my_test_func(string test_id) { }\n"
+        "}\n");
+
+    CHECK(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - passing an int where an enum is expected, inside a namespace")
+{
+    // The case as reported: the parameter's type is the enum and the argument is a plain int.
+    const auto diagnostics = AnalyzeCallSnippet(
+        "enum MyEnum { MY_TEST_ID_1, MY_TEST_ID_2 };\n"
+        "namespace TEST {\n"
+        "    void main_func() { int id = 1; my_test_func(id); }\n"
+        "    void my_test_func(MyEnum test_id) { }\n"
+        "}\n");
+
+    CHECK(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - a correct call inside a namespace stays silent")
+{
+    const auto diagnostics = AnalyzeCallSnippet(
+        "enum MyEnum { MY_TEST_ID_1, MY_TEST_ID_2 };\n"
+        "namespace TEST {\n"
+        "    void main_func() { my_test_func(MyEnum::MY_TEST_ID_1); }\n"
+        "    void my_test_func(MyEnum test_id) { }\n"
+        "}\n");
+
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("CallChecker - a nested namespace reaches its parent's functions")
+{
+    // Innermost first, then each enclosing scope, then global - which is the order AngelScript
+    // looks in. `Outer::helper` has to be reachable from inside `Outer::Inner`.
+    const auto diagnostics = AnalyzeCallSnippet(
+        "namespace Outer {\n"
+        "    void helper(string s) { }\n"
+        "    namespace Inner {\n"
+        "        void use() { int id = 1; helper(id); }\n"
+        "    }\n"
+        "}\n");
+
+    CHECK(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - a function reached only through 'using namespace' is left unjudged")
+{
+    // Not extended to using-directives on purpose: a name reachable only that way resolves to a
+    // scope this list does not carry, so it yields no candidate and the call goes unchecked. That
+    // is a missed diagnostic, which this project accepts, rather than an invented one, which it
+    // does not.
+    const auto diagnostics = AnalyzeCallSnippet(
+        "namespace A { void f(string s) { } }\n"
+        "using namespace A;\n"
+        "void g() { int id = 1; f(id); }\n");
+
+    CHECK_FALSE(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}
