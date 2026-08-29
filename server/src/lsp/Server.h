@@ -152,6 +152,35 @@ namespace angel_lsp
          */
         bool m_snippetSupport = false;
 
+        /**
+         * @brief Whether the client asked for server-initiated progress, from its capabilities.
+         *
+         * `window.workDoneProgress`. A client that did not advertise it will not have a place to
+         * put the notifications, so none are sent - the spec is explicit that a server must create
+         * its own token through `window/workDoneProgress/create` first, and that request only
+         * exists where the client supports it.
+         */
+        bool m_workDoneProgressSupport = false;
+
+        /**
+         * @brief Reports the workspace scan's progress to the client, if it can show it.
+         *
+         * The scan reads and indexes every script and stub under every workspace folder before any
+         * cross-file symbol resolves, and until now it did all of that silently: on a large
+         * workspace the server simply appears to know nothing for a while, which reads as broken
+         * rather than busy.
+         *
+         * Each call is a no-op when the client did not advertise support, so the scan does not have
+         * to care.
+         */
+        void BeginWorkspaceProgress(const std::string &title);
+        void ReportWorkspaceProgress(const std::string &message, unsigned percentage);
+        void EndWorkspaceProgress(const std::string &message);
+
+        /** @brief Token for the scan's progress, unique per scan so a restart does not reuse one. */
+        std::string m_workspaceProgressToken;
+        unsigned m_workspaceProgressCounter = 0;
+
     public:
         /**
          * @brief Constructs the server over a JSON-RPC transport.
