@@ -174,6 +174,10 @@ namespace angel_lsp::config
                   << "                                          and no predefined stub can express it, so a host\n"
                   << "                                          that registers its own has to say so here.\n"
                   << "  --diagnostic-severity=<code>=<severity> Override one diagnostic's severity: error|warning|information|hint (repeatable)\n"
+                  << "  --report-unknown-types                  Report a parameter or return type that resolves to nothing\n"
+                  << "                                          (default: off). Right for a workspace whose API is fully\n"
+                  << "                                          declared; wrong for one whose host registers types in C++,\n"
+                  << "                                          where every handler names one and none of them resolve.\n"
                   << "  --engine-profile=<string>               Set built-in engine profile: standard|svencoop|urho3d|openxray|ootp|none|auto (default: standard)\n"
                   << "  --engine-property=<name>=<value>        Describe the host engine's SetEngineProperty settings (repeatable).\n"
                   << "                                          Known names, with the engine's own defaults:\n"
@@ -529,6 +533,10 @@ namespace angel_lsp::config
                 {
                     config.engineProfile = std::string(val);
                 }
+            }
+            else if (key == "--report-unknown-types")
+            {
+                config.diagnostics.reportUnknownTypes = getBoolValue(true);
             }
             else if (key == "--engine-property" || key == "--engine-prop")
             {

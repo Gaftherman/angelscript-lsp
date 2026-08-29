@@ -2222,6 +2222,12 @@ namespace angel_lsp::analysis
         }
     }
 
+    bool CanConvertImplicitly(const std::string &fromType, const std::string &toType,
+                              const DiagnosticContext &ctx)
+    {
+        return IsConvertible(CleanBaseType(fromType), CleanBaseType(toType), ctx);
+    }
+
     void CheckTypeConversions(const TypeConversionCheckRequest &request, DiagnosticContext &ctx)
     {
         if (ts_node_is_null(request.root) || request.sourceCode.empty())

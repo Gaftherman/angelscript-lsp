@@ -1251,6 +1251,18 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config.engine.allowUnsafeReferences == false);
         }
 
+        SUBCASE("reportUnknownTypes is off unless asked for")
+        {
+            // Measured on the 1061-file corpus: 7096 findings off, 13999 on, and the extra ones are
+            // Vector and CBaseEntity - types a host registers in C++ that no stub declares. That is
+            // the whole argument for the default. See DiagnosticsConfig::reportUnknownTypes.
+            ArgvHelper plain{"angel_lsp"};
+            CHECK(FromArgs(plain.argc(), plain.data()).diagnostics.reportUnknownTypes == false);
+
+            ArgvHelper asked{"angel_lsp", "--report-unknown-types"};
+            CHECK(FromArgs(asked.argc(), asked.data()).diagnostics.reportUnknownTypes == true);
+        }
+
         SUBCASE("propertyAccessorMode is an integer, not a bool")
         {
             // asEP_PROPERTY_ACCESSOR_MODE is the one property here whose value is not true/false,

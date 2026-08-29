@@ -131,6 +131,42 @@ namespace angel_lsp::config
     };
 
     /**
+     * @brief Diagnostics this server can emit but does not by default.
+     *
+     * Not feature switches and not engine options: each one is a rule that is right for a workspace
+     * whose declarations are complete and wrong for one whose host registers types in C++. The
+     * default is the safe reading in every case, so a workspace that sets nothing keeps the
+     * silent-unless-fully-visible policy intact.
+     */
+    struct DiagnosticsConfig
+    {
+        /**
+         * @brief Report a parameter or return type that resolves to no declaration (default: off).
+         *
+         * `void f(TypoTypeName x)` is a compile error - "Identifier 'TypoTypeName' is not a data
+         * type in namespace 'TEST' or parent" - and it is also exactly what a legitimate
+         * engine-registered type looks like from here: neither resolves to anything this analyzer
+         * can read. A Sven Co-op script naming `CBaseEntity` in every handler would light up on
+         * every function.
+         *
+         * Measured on the 1061-file corpus: 7096 findings with this off, 13999 with it on, and the
+         * sample is `Vector` and `CBaseEntity` all the way down - types a Sven Co-op host registers
+         * in C++ and no stub declares. That is the whole argument for the default.
+         *
+         * So it is opt-in, for a workspace whose API is fully declared in `as.predefined` or covered
+         * by an engine profile. Turn it on there and a typo in a signature is caught at the
+         * declaration instead of surfacing as silence at every call site.
+         *
+         * See tests/FunctionRulesTest.cpp, "Unknown Type Corpus Audit", to take that measurement
+         * again.
+         *
+         * Local variable declarations are reported regardless, and always were: a local's type is
+         * almost always a script type, where a parameter's is very often the engine's.
+         */
+        bool reportUnknownTypes = false;
+    };
+
+    /**
      * @brief Type configuration for AngelScript analysis.
      */
     struct TypeConfig
@@ -178,6 +214,7 @@ namespace angel_lsp::config
         Info info;
         TypeConfig types;
         EngineProperties engine;
+        DiagnosticsConfig diagnostics;
         std::vector<std::string> searchDirectories;
 
         /**

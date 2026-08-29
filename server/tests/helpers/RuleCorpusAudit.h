@@ -2,6 +2,7 @@
 
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
+#include "config/ServerConfig.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SymbolTable.h"
@@ -63,7 +64,8 @@ namespace angel_lsp::test
      * @param maxHits Cap on retained examples, so a flooding rule does not exhaust memory.
      */
     inline CorpusResult RunCorpusAudit(const std::function<bool(const std::string &)> &interesting,
-                                       size_t maxHits = 80)
+                                       size_t maxHits = 80,
+                                       const angel_lsp::config::DiagnosticsConfig *diagnostics = nullptr)
     {
         namespace fs = std::filesystem;
         using namespace angel_lsp::analysis;
@@ -130,6 +132,7 @@ namespace angel_lsp::test
                 TSTree *tree = parser.Parse(sourceCode);
 
                 SemanticAnalysisRequest request{ sharedTable, fileUri, "", &i18n };
+                request.diagnostics = diagnostics;
 
                 // Non-const handle so `auto` deduction is written back - this tree is local to the
                 // iteration and reachable by nothing else. See SemanticAnalysisRequest.h.

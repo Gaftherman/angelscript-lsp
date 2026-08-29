@@ -187,7 +187,8 @@ namespace angel_lsp::analysis
         if (request.tree && !request.sourceCode.empty())
         {
             DiagnosticContext ctx{request, diagnostics, m_logger};
-            CheckInitializerLists(InitializerListCheckRequest{ ts_tree_root_node(request.tree), request.sourceCode }, ctx);
+            CheckInitializerLists(InitializerListCheckRequest{ ts_tree_root_node(request.tree), request.sourceCode,
+                                                              request.scopeRoot.get() }, ctx);
         }
 
         // Nothing inside an excluded `#if` block is real code - CScriptBuilder blanks it out before

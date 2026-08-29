@@ -816,3 +816,26 @@ TEST_CASE("FunctionRules - Function Rules Corpus Audit" * doctest::skip(true))
                hit.fileName == "AngelScripts_CSquadMonster.as"));
     }
 }
+
+// The measurement behind the default for angelscript.diagnostics.reportUnknownTypes.
+// Skipped by design - it reads the 1000-file corpus:
+//   angel_lsp_tests.exe --no-skip --test-case="*Unknown Type Corpus Audit*"
+TEST_CASE("FunctionRules - Unknown Type Corpus Audit" * doctest::skip(true))
+{
+    angel_lsp::config::DiagnosticsConfig strict;
+    strict.reportUnknownTypes = true;
+
+    const auto on = angel_lsp::test::RunCorpusAudit(
+        [](const std::string &code) { return code == "as-err-unresolved-type"; }, 5, &strict);
+    const auto off = angel_lsp::test::RunCorpusAudit(
+        [](const std::string &code) { return code == "as-err-unresolved-type"; }, 5, nullptr);
+
+    MESSAGE("files=" << on.filesAnalysed
+            << "  as-err-unresolved-type with reportUnknownTypes on=" << on.Total()
+            << "  off=" << off.Total());
+    for (const auto &hit : on.hits)
+    {
+        MESSAGE("  " << hit.fileName << ":" << hit.line << " " << hit.message);
+    }
+    CHECK(on.filesAnalysed > 0);
+}

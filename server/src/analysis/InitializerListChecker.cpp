@@ -1,4 +1,5 @@
 #include "analysis/InitializerListChecker.h"
+#include "analysis/TypeConversionChecker.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/ListPattern.h"
 #include "analysis/SemanticHelpers.h"
@@ -222,9 +223,62 @@ namespace angel_lsp::analysis
             ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg);
         }
 
+        /**
+         * @brief What typing an element's expression needs: the document text and its scope tree.
+         *
+         * Carried as one struct rather than two more parameters because it threads through every
+         * function in this file and neither half is useful without the other. A null scopeRoot is
+         * legal - a literal still types, a name does not, and an untyped element is passed over.
+         */
+        struct ElementContext
+        {
+            std::string_view sourceCode;
+            const Scope *scopeRoot = nullptr;
+        };
+
+        /**
+         * @brief Reports an element whose value cannot reach the type the pattern wants there.
+         *
+         * The list's shape is this pass's question; an element's type is the conversion pass's, and
+         * that pass never sees one - it skips initializer lists outright. So the judgement is
+         * borrowed through CanConvertImplicitly rather than reimplemented, which also borrows its
+         * silence: an element or a target that does not resolve comes back convertible and nothing
+         * is said.
+         */
+        void CheckElementValue(TSNode element,
+                               const std::string &wanted,
+                               DiagnosticContext &ctx,
+                               const ElementContext &elements)
+        {
+            // `?` takes a value of any type at all, which is the whole point of it.
+            if (wanted.empty() || ListPattern::IsAnyType(wanted))
+            {
+                return;
+            }
+
+            const std::string actual = ResolveExpressionType(element, elements.scopeRoot,
+                                                             ctx.request.symbolTable,
+                                                             elements.sourceCode,
+                                                             ctx.request.fileUri);
+            if (actual.empty())
+            {
+                return;
+            }
+
+            if (!CanConvertImplicitly(actual, wanted, ctx))
+            {
+                const TSPoint start = ts_node_start_point(element);
+                const TSPoint end = ts_node_end_point(element);
+                ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                "as-err-no-implicit-conversion", StripDecorations(actual),
+                                StripDecorations(wanted));
+            }
+        }
+
         void ValidateList(TSNode listNode,
                           const std::string &targetType,
                           DiagnosticContext &ctx,
+                          const ElementContext &elements,
                           const std::unordered_set<std::string> &arrayLikeTemplates,
                           int depth);
 
@@ -234,6 +288,7 @@ namespace angel_lsp::analysis
                               const ListPatternNode &group,
                               const ResolvedPattern &resolved,
                               DiagnosticContext &ctx,
+                              const ElementContext &elements,
                               const std::unordered_set<std::string> &arrayLikeTemplates,
                               int depth);
 
@@ -249,6 +304,7 @@ namespace angel_lsp::analysis
                              const ListPatternNode &expected,
                              const ResolvedPattern &resolved,
                              DiagnosticContext &ctx,
+                             const ElementContext &elements,
                              const std::unordered_set<std::string> &arrayLikeTemplates,
                              int depth)
         {
@@ -262,7 +318,7 @@ namespace angel_lsp::analysis
                     return;
                 }
 
-                ValidateSequence(element, expected, resolved, ctx, arrayLikeTemplates, depth + 1);
+                ValidateSequence(element, expected, resolved, ctx, elements, arrayLikeTemplates, depth + 1);
                 return;
             }
 
@@ -271,12 +327,23 @@ namespace angel_lsp::analysis
                 return;
             }
 
+            const std::string wanted = SubstituteParameter(expected.typeName, resolved);
+
             if (!elementIsList)
             {
-                return;   // A plain expression where a value was wanted; the conversion rules own it.
+                // A plain expression where a value was wanted. The conversion pass does not reach
+                // here - it skips initializer lists outright - so this was silent, and
+                // `array<int> a = {"x"}` drew nothing where the compiler answers
+                //
+                //     ERROR (1, 32): Can't implicitly convert from 'const string' to 'int&'.
+                //
+                // The shape of the list is this pass's question and the type of an element is the
+                // conversion pass's, so the judgement is borrowed rather than reimplemented, which
+                // also borrows its silence: an element or a target that does not resolve comes back
+                // convertible, and nothing is said.
+                CheckElementValue(element, wanted, ctx, elements);
+                return;
             }
-
-            const std::string wanted = SubstituteParameter(expected.typeName, resolved);
 
             // `?` is AngelScript's variable type: it takes a *value* of any type, which is not the
             // same as taking anything at all. The compiler rejects `dictionary d = {{'a', {1}}};`
@@ -291,7 +358,7 @@ namespace angel_lsp::analysis
 
             // A nested list is legitimate when the element type accepts one in turn - that is what
             // makes `array<array<int>> g = {{1,2},{3,4}}` correct and `array<int> a = {1,{2}}` not.
-            ValidateList(element, wanted, ctx, arrayLikeTemplates, depth + 1);
+            ValidateList(element, wanted, ctx, elements, arrayLikeTemplates, depth + 1);
         }
 
         /**
@@ -304,6 +371,7 @@ namespace angel_lsp::analysis
         void ValidateList(TSNode listNode,
                           const std::string &targetType,
                           DiagnosticContext &ctx,
+                          const ElementContext &elements,
                           const std::unordered_set<std::string> &arrayLikeTemplates,
                           int depth)
         {
@@ -330,7 +398,7 @@ namespace angel_lsp::analysis
                 return;
             }
 
-            ValidateSequence(listNode, resolved.pattern.root, resolved, ctx, arrayLikeTemplates, depth);
+            ValidateSequence(listNode, resolved.pattern.root, resolved, ctx, elements, arrayLikeTemplates, depth);
         }
 
         /**
@@ -345,6 +413,7 @@ namespace angel_lsp::analysis
                               const ListPatternNode &group,
                               const ResolvedPattern &resolved,
                               DiagnosticContext &ctx,
+                              const ElementContext &elements,
                               const std::unordered_set<std::string> &arrayLikeTemplates,
                               int depth)
         {
@@ -369,13 +438,13 @@ namespace angel_lsp::analysis
                     if (!item.children.empty())
                     {
                         ValidateElement(ts_node_named_child(listNode, i), item.children.front(),
-                                        resolved, ctx, arrayLikeTemplates, depth);
+                                        resolved, ctx, elements, arrayLikeTemplates, depth);
                     }
                     continue;   // Stays on the repeat for every remaining element.
                 }
 
                 ValidateElement(ts_node_named_child(listNode, i), item,
-                                resolved, ctx, arrayLikeTemplates, depth);
+                                resolved, ctx, elements, arrayLikeTemplates, depth);
                 ++patternIndex;
             }
         }
@@ -384,6 +453,7 @@ namespace angel_lsp::analysis
     void CheckInitializerLists(const InitializerListCheckRequest &request, DiagnosticContext &ctx)
     {
         const std::unordered_set<std::string> arrayLikeTemplates = ctx.request.GetArrayLikeTemplateNames();
+        const ElementContext elements{ request.sourceCode, request.scopeRoot };
 
         std::vector<TSNode> stack = { request.root };
         while (!stack.empty())
@@ -419,7 +489,7 @@ namespace angel_lsp::analysis
                         TSNode valueNode = ts_node_child_by_field_name(declarator, "value", k_valueFieldLength);
                         if (!ts_node_is_null(valueNode) && NodeType(valueNode) == "initializer_list")
                         {
-                            ValidateList(valueNode, declaredType, ctx, arrayLikeTemplates, 0);
+                            ValidateList(valueNode, declaredType, ctx, elements, arrayLikeTemplates, 0);
                         }
                     }
                 }
