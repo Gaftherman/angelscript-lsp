@@ -303,6 +303,26 @@ namespace angel_lsp::analysis
     std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode);
 
     /**
+     * @brief Whether `node` is the callee of a legal `super(...)` base-constructor call.
+     *
+     * `super` is not a general reference to the base class. The compiler answers
+     * "No matching symbol 'super'" for both `super.F()` and `super::F()` - the idiom for a base
+     * method is `Base::F()`. The one place the word is legal is a constructor calling its base
+     * constructor:
+     *
+     *     class Derived : Base { Derived() { super(1); } }
+     *
+     * so this returns true only inside a constructor of a class that names a base. Everywhere else
+     * `super` really is an undefined identifier and the diagnostic on it is correct, which is why
+     * this is a positive test for one shape rather than a blanket skip of the name.
+     *
+     * @param node Any node whose text is the identifier `super` - the callee of a call expression.
+     * @param sourceCode Document source text.
+     * @return True when the enclosing function is a constructor of a class with a base list.
+     */
+    bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode);
+
+    /**
      * @brief Collects all using namespace directives in an AST tree.
      * @param root The root AST node or enclosing container.
      * @param sourceCode Document source text.

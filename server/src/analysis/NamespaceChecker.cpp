@@ -66,7 +66,16 @@ namespace angel_lsp::analysis
                         const Scope *scope = ctx.request.scopeRoot ? FindEnclosingScope(ctx.request.scopeRoot.get(), ts_node_start_point(node).row, ts_node_start_point(node).column) : nullptr;
                         const LocalDefinition *localDef = scope ? ResolveInScope(scope, calleeName) : nullptr;
                         auto inScopeSyms = FindSymbolsInScope(calleeName, node, sourceCode, table);
-                        if (!localDef && inScopeSyms.empty() && !ctx.request.IsRegisteredSymbol(calleeName) && !table.HasSymbol(calleeName))
+                        // `super(1)` is the base-constructor call, and it resolves to nothing by
+                        // design - there is no symbol named `super`. Every other use of the word
+                        // genuinely is undefined, so this excuses the one shape rather than the
+                        // name. See IsBaseConstructorCall.
+                        if (calleeName == "super" && IsBaseConstructorCall(funcNode, sourceCode))
+                        {
+                            // Nothing to report, and nothing below applies either: the ambiguity
+                            // check that follows would look `super` up in every using-namespace.
+                        }
+                        else if (!localDef && inScopeSyms.empty() && !ctx.request.IsRegisteredSymbol(calleeName) && !table.HasSymbol(calleeName))
                         {
                             TSPoint startPt = ts_node_start_point(funcNode);
                             TSPoint endPt = ts_node_end_point(funcNode);

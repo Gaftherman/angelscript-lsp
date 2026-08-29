@@ -782,6 +782,60 @@ TEST_SUITE("AngelScript_MemberAccess_And_Recovery_Diagnostics")
 }
 
 // =====================================================================================
+// Lambdas capture nothing - but a global is not a capture.
+//
+// The compiler's own answers, from tests/parity/doc_p02_lambda_reads_global.as and
+// doc_r11_lambda_reads_local.as:
+//
+//     int g = 5;
+//     void Init() { CB@ cb = function() { g = 100; }; }          accepted
+//     void Init() { int l = 1; CB@ cb = function() { l = 2; }; } ERROR: No matching symbol 'l'
+//     class C { int m; void Init() { CB@ cb = function() { m = 2; }; } }
+//                                                           ^ ERROR: No matching symbol 'm'
+//
+// LOCALS_QUERY records a module-level declaration under the same LocalDefinitionKind::Variable as
+// a function-body local, so what separates the first line from the second is not the definition
+// but the scope holding it.
+// =====================================================================================
+
+TEST_CASE("AccessChecker - a lambda may read a global")
+{
+    const auto diagnostics = AnalyzeAccessSnippet(
+        "funcdef void CB();\n"
+        "int g_counter = 5;\n"
+        "void Init() { CB@ cb = function() { g_counter = 100; }; }\n");
+
+    CHECK_FALSE(HasCode(diagnostics, "as-err-lambda-closure-disallowed"));
+}
+
+TEST_CASE("AccessChecker - a lambda may not read an outer local")
+{
+    const auto diagnostics = AnalyzeAccessSnippet(
+        "funcdef void CB();\n"
+        "void Init() { int local = 1; CB@ cb = function() { local = 2; }; }\n");
+
+    CHECK(HasCode(diagnostics, "as-err-lambda-closure-disallowed"));
+}
+
+TEST_CASE("AccessChecker - a lambda may not read an outer parameter")
+{
+    const auto diagnostics = AnalyzeAccessSnippet(
+        "funcdef void CB();\n"
+        "void Init(int arg) { CB@ cb = function() { arg = 2; }; }\n");
+
+    CHECK(HasCode(diagnostics, "as-err-lambda-closure-disallowed"));
+}
+
+TEST_CASE("AccessChecker - a lambda's own local is not an outer local")
+{
+    const auto diagnostics = AnalyzeAccessSnippet(
+        "funcdef void CB();\n"
+        "void Init() { CB@ cb = function() { int mine = 1; mine = 2; }; }\n");
+
+    CHECK_FALSE(HasCode(diagnostics, "as-err-lambda-closure-disallowed"));
+}
+
+// =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Access Corpus Audit*"`)
 // =====================================================================================

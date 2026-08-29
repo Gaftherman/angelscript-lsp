@@ -422,8 +422,34 @@ namespace angel_lsp::analysis
 
             if (hasLambda)
             {
-                const LocalDefinition *localDef = ResolveInScope(scope, idText);
-                if (localDef && (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
+                const Scope *owner = nullptr;
+                const LocalDefinition *localDef = ResolveInScope(scope, idText, &owner);
+
+                // A lambda captures nothing, but a *global* is not a capture - it is still in
+                // scope, and the compiler accepts it:
+                //
+                //     int g = 5;
+                //     void Init() { CB@ cb = function() { g = 100; }; }   // compiles
+                //     void Init() { int l = 1; CB@ cb = function() { l = 2; }; }
+                //                                                    ^ No matching symbol 'l'
+                //
+                // LOCALS_QUERY records a module-level declaration under the same
+                // LocalDefinitionKind::Variable as a function-body local (its own comment says
+                // "Variables (locals and globals)"), so the definition alone cannot tell the two
+                // apart. Only the scope that holds it can. Without this test every legal global
+                // read inside a lambda was reported.
+                bool ownerIsFunctionNested = false;
+                for (const Scope *ancestor = owner; ancestor != nullptr; ancestor = ancestor->parent)
+                {
+                    if (ancestor->isFunctionScope)
+                    {
+                        ownerIsFunctionNested = true;
+                        break;
+                    }
+                }
+
+                if (localDef && ownerIsFunctionNested &&
+                    (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
                 {
                     TSPoint lStart = ts_node_start_point(lambdaNode);
                     TSPoint lEnd = ts_node_end_point(lambdaNode);

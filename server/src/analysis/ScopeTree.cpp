@@ -2,18 +2,27 @@
 
 namespace angel_lsp::analysis
 {
-    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name)
+    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name, const Scope **owner)
     {
         for (const Scope *current = scope; current != nullptr; current = current->parent)
         {
             for (const LocalDefinition &def : current->definitions)
             {
                 if (def.name == name)
+                {
+                    if (owner)
+                        *owner = current;
                     return &def;
+                }
             }
         }
 
         return nullptr;
+    }
+
+    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name)
+    {
+        return ResolveInScope(scope, name, nullptr);
     }
 
     const Scope *FindEnclosingScope(const Scope *root, uint32_t line, uint32_t character)

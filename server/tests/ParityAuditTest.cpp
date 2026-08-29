@@ -136,6 +136,24 @@ namespace
               "as.predefined declares optional<T>::opAssign but no constructor, so the declaration "
               "behind optional<string> o(...) is not visible to any analyzer reading that stub. "
               "The engine registers one in C++. Stub gap, not an analyzer defect." },
+
+            // The two below are not stub gaps. They are grammar gaps this analyzer has and has
+            // not closed yet, each confirmed against the oracle and each written up in
+            // docs/PARITY-BACKLOG.md with the compiler output that proves it. They are listed here
+            // rather than deleted because the file failing is the point: when the grammar learns
+            // the construct, the entry comes out and the count moves. An entry left here after its
+            // gap is closed shows up as a file that no longer needs explaining, which is the only
+            // signal that would otherwise be silent.
+            { "doc_g02_metadata.as",
+              "PARSER-09. CScriptBuilder strips a [Property, Category=\"x\"] block before the "
+              "compiler sees the declaration, so metadata compiles. The grammar has no rule for it "
+              "and the block turns its whole declaration into an ERROR node, which costs the symbol "
+              "rather than just the annotation." },
+
+            { "doc_g03_omitted_initlist_element.as",
+              "PARSER-05. `{ 0, 1, , 4, 5 }` gives the third element the type's default. The "
+              "grammar's initializer_list uses commaSep, which has no empty alternative, so the "
+              "hole makes the declaration an ERROR node." },
         };
         return gaps;
     }
