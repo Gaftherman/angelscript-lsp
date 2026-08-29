@@ -306,18 +306,56 @@ TEST_CASE("TypeConversion - Primitive conversions are left to the engine")
     CHECK(ConversionDiagnostics(code).empty());
 }
 
-TEST_CASE("TypeConversion - Enums, typedefs and funcdefs are out of scope")
+TEST_CASE("TypeConversion - Nothing reaches an enum implicitly but that enum")
 {
+    // This test used to assert that `Color c = 1;` is silent, under the heading "enums are out of
+    // scope". The compiler disagrees, and always did:
+    //
+    //     ERROR (3, 25): Can't implicitly convert from 'int' to 'Color'.
+    //
+    // OverloadResolver had it right the whole time, which is why `SetMode(1)` was reported while
+    // the identical mistake in an assignment was not. See tests/parity/doc_r09_int_to_enum.as.
     const std::string code =
         "enum Color { Red, Green }\n"
+        "void main() { Color c = 1; }\n";
+
+    CHECK_FALSE(ConversionDiagnostics(code).empty());
+}
+
+TEST_CASE("TypeConversion - Typedefs and funcdefs are still out of scope")
+{
+    // The other two the old test bundled with the enum. Both are accepted by the compiler:
+    // `Score` is `int`, and a funcdef takes the address of a matching function.
+    const std::string code =
         "typedef int Score;\n"
         "funcdef void Callback();\n"
         "void Handler() {}\n"
         "void main()\n"
         "{\n"
-        "    Color c = 1;\n"
         "    Score s = 2;\n"
         "    Callback@ cb = Handler;\n"
+        "}\n";
+
+    CHECK(ConversionDiagnostics(code).empty());
+}
+
+TEST_CASE("TypeConversion - The routes an enum does have are left alone")
+{
+    // tests/parity/doc_p15_enum_assignments.as, which the compiler accepts in full: the enum
+    // itself, a member of it, the explicit Color(1) cast, and a class declaring an operator that
+    // produces one. Widening out of an enum is fine too - it is a sink, not a wall.
+    const std::string code =
+        "enum Color { Red = 1, Green = 2 }\n"
+        "class W { Color opImplConv() const { return Red; } }\n"
+        "void main()\n"
+        "{\n"
+        "    Color a = Red;\n"
+        "    Color b = Color::Green;\n"
+        "    Color c = a;\n"
+        "    Color d = Color(1);\n"
+        "    int widened = Color::Red;\n"
+        "    W w;\n"
+        "    Color e = w;\n"
         "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());

@@ -150,6 +150,32 @@ namespace angel_lsp::analysis
             return info;
         }
 
+        /** @brief True when a name resolves to an enum declared somewhere the analyzer can see. */
+        bool ResolvesToEnum(const std::string &typeName, const SymbolTable &table)
+        {
+            bool found = false;
+            const std::string bare = LastScopeSegment(typeName);
+
+            for (const auto &candidate : { std::cref(typeName), std::cref(bare) })
+            {
+                ForEachSymbolNamed(candidate.get(), table, [&found](const Symbol &sym)
+                {
+                    if (sym.type == SymbolType::Enum)
+                    {
+                        found = true;
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (found || bare == typeName)
+                {
+                    break;
+                }
+            }
+            return found;
+        }
+
         /** @brief True when a name resolves to an enum, typedef, funcdef or namespace.
          *  @note Keeps those out of the class-shaped rules below rather than letting them fall
          *        through to "not a class, therefore suspicious". */
@@ -499,6 +525,37 @@ namespace angel_lsp::analysis
 
             const TypeDeclarationInfo fromDecl = FindTypeDeclaration(from, table);
             const TypeDeclarationInfo toDecl = FindTypeDeclaration(to, table);
+
+            // Nothing reaches an enum implicitly but that same enum. The compiler's answers, from
+            // tests/parity/doc_r09_int_to_enum.as and its neighbours:
+            //
+            //     Color c = 1;        Can't implicitly convert from 'int' to 'Color'.
+            //     Color c = someUint; Can't implicitly convert from 'uint' to 'Color'.
+            //     A a = B1;           Can't implicitly convert from 'B' to 'A'.
+            //     int i = Color::Red; accepted - widening the other way is fine
+            //
+            // so an enum is a sink and only the `to` side is restricted. OverloadResolver has
+            // always agreed with the compiler here, which is why a *call* was reported and an
+            // assignment was not; this closes that. It has to run before the unresolved-name bail
+            // below, because an enum never appears in a TypeDeclarationInfo - that only records
+            // classes and interfaces - so `to` would look unresolved and the check would be skipped.
+            if (ResolvesToEnum(to, table))
+            {
+                // Decidable only when the source is something this analyzer can see. An unresolved
+                // name is an engine-registered type, and engine types carry conversions declared
+                // nowhere in the source.
+                if (!fromBuiltIn && !fromDecl.found && !ResolvesToEnum(from, table))
+                {
+                    return true;
+                }
+                // A class may declare an operator producing the enum, and the compiler accepts it:
+                // `class W { Color opImplConv() const { … } } … Color c = w;` compiles.
+                if (!fromBuiltIn && DeclaresConversionTo(from, to, table, /*implicitOnly=*/false))
+                {
+                    return true;
+                }
+                return false;
+            }
 
             // An unresolved name is an engine-registered type as far as this analyzer knows, and
             // engine types carry conversions that appear nowhere in the source.
@@ -919,6 +976,17 @@ namespace angel_lsp::analysis
                 return result;
             }
 
+            // An enum is not a class, but it is a type this pass can reason about completely: the
+            // members are all declared in the source, nothing converts to it implicitly but itself,
+            // and IsConvertible says so. Left out, `Color c = 1;` was silent while the identical
+            // mistake in a call - `SetMode(1)` - was reported, because OverloadResolver had always
+            // agreed with the compiler and this had not. See tests/parity/doc_r09 and doc_p15.
+            if (ResolvesToEnum(result.baseName, ctx.request.symbolTable))
+            {
+                result.usable = true;
+                return result;
+            }
+
             const TypeDeclarationInfo declaration = FindTypeDeclaration(result.baseName, ctx.request.symbolTable);
             if (!declaration.found || !declaration.isClass || declaration.isTemplate)
             {
@@ -1119,6 +1187,21 @@ namespace angel_lsp::analysis
             const TemplateBinding binding = BindTemplateArguments(targetType, table);
             if (binding.isTemplate && !binding.usable)
             {
+                return;
+            }
+
+            // `Color(1)` is the explicit conversion an enum offers, and it has no constructor
+            // declaring it - the compiler accepts every numeric source (`Color(1.0f)` too) and
+            // rejects the rest ("Can't implicitly convert from 'string' to 'const Color'"). Without
+            // this the ForEachConstructor walk below found nothing and reported the one form that
+            // exists for turning an int into an enum.
+            if (ResolvesToEnum(targetType, table))
+            {
+                if (IsNumericPrimitive(source.baseName) || ResolvesToEnum(source.baseName, table))
+                {
+                    return;
+                }
+                EmitAtNode(argument, ctx, "as-err-no-explicit-conversion", source.baseName, targetType);
                 return;
             }
 

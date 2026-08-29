@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1096 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1101 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -46,10 +46,10 @@ Every claim below has a script in `server/tests/parity/`:
 | `PROP-05` `property` on interfaces | valid on interface method declarations | `Expected ';' / Instead found identifier 'property'`, with and without `const` | `as-err-interface-method-attribute` (`rules/FunctionRules.cpp`) is correct as written. `doc_r02` |
 | `PARSER-02` multiline `"..."` | a plain string may span newlines | `Multiline strings are not allowed in this application` — an engine property, off by default | The hand-rolled scanners in `FormattingHandler`, `PreprocessorRegions` and `IncludeResolver` that end a `"` string at the newline match the default engine. `"""…"""` heredoc **is** accepted and already parses. `doc_r03`, `doc_p12` |
 | `PARSER-07` `class @Name {}` | declares a pure reference class | `Expected identifier / Instead found '@'` | Not a grammar gap. `doc_r04` |
-| `TYPE-05` `byte` == `uint8` | `byte` is a built-in alias | `Identifier 'byte' is not a data type` | `byte` is host-registered. The real defect it gestures at is narrower — see WIP 8. `doc_r05` |
+| `TYPE-05` `byte` == `uint8` | `byte` is a built-in alias | `Identifier 'byte' is not a data type` | `byte` is host-registered. The real defect it gestures at is narrower — see the typedef entry under WIP. `doc_r05` |
 | `TYPE-07` `opImplConv` → `bool` | makes `if (h && true)` work | `No conversion from 'H&' to 'bool' available.` | `as-err-ref-type-bool-conv-disallowed` is defensible. `doc_r06` |
-| `PROP-01` automatic accessors | `get_X`/`set_X` are always the property `X` | `'V' is not a member of 'C'` **without** the `property` keyword; accepted with it | Engine-configurable (`asEP_PROPERTY_ACCESSOR_MODE`, SDK default 3). Our unconditional leniency misses errors but never invents them, so it stays the default and mode 3 becomes a setting — WIP 4. `doc_r07`, `doc_p04` |
-| `PROP-07` abstract classes | need not implement their interface | `Missing implementation of 'void I::P()'` | Inverted: `rules/ClassRules.cpp` skips this check for abstract classes, which is a **missed** diagnostic. WIP 9. `doc_r08` |
+| `PROP-01` automatic accessors | `get_X`/`set_X` are always the property `X` | `'V' is not a member of 'C'` **without** the `property` keyword; accepted with it | Engine-configurable (`asEP_PROPERTY_ACCESSOR_MODE`, SDK default 3). Our unconditional leniency misses errors but never invents them, so it stays the default and mode 3 becomes a setting - see WIP. `doc_r07`, `doc_p04` |
+| `PROP-07` abstract classes | need not implement their interface | `Missing implementation of 'void I::P()'` | Inverted: `rules/ClassRules.cpp` skips this check for abstract classes, which is a **missed** diagnostic. See WIP. `doc_r08` |
 | `PREDEF-02` `#if`/`#else` | selects the live branch | With the word undefined, **both** branches were dropped and the symbol was unresolved — CScriptBuilder has no `#else` | `utils/PreprocessorRegions.cpp` models exactly this already. Adding `#else` would diverge from the host that actually compiles these scripts. |
 | `PARSER-04` UTF-8 BOM | breaks the lexer | accepted by the compiler — and by tree-sitter, because the grammar's `extras` is `/\s+/` and JavaScript's `\s` matches U+FEFF | Not a defect here. The only residue is that line 0 starts three bytes in. `doc_p14` |
 
@@ -83,11 +83,23 @@ project treats as unacceptable.
   `SemanticHelpers::IsBaseConstructorCall` tests the *shape* — a constructor of a class with a base
   list — so `super.F()`, `super::F()` and `super(...)` in a class with no base are still reported.
   `doc_p01`, `doc_r01`.
+- **`int` → `enum`.** `TypeConversionChecker` allowed the implicit conversion where the compiler
+  rejects it (`Can't implicitly convert from 'int' to 'Color'`), and `OverloadResolver` had always
+  agreed with the compiler - so `SetMode(1)` was reported and the identical mistake in an assignment
+  was not. An enum is now a sink in `IsConvertible`: nothing reaches it implicitly but itself, while
+  widening out of it, the explicit `Color(1)` cast and a class declaring an operator that produces
+  one all stay legal. A test asserted the old, wrong answer under the heading "enums are out of
+  scope"; it now asserts the compiler's. `doc_r09`, `doc_p15`
 - **A bare accessor name inside a method.** `class C { int get_Up() const property { … } void T()
   { int v = Up; } }` compiles, and no symbol is ever named `Up` - the member is `C::get_Up` - so
   every use of a virtual property from inside its own class drew `as-err-undeclared-identifier`.
   `RuleIndex` now records the property name behind each `get_`/`set_` member, in two sets so the
   reader can pick by accessor mode. `doc_p03`, `doc_r07`.
+- **`case Red:` on an enum member.** Enum members were collected as ordinary `Variable` symbols and
+  nothing set `isConst`, so the switch rule read them as mutable and drew
+  `as-err-case-not-constant`. The compiler's own answer to `Red = 5;` is "Expression is not an
+  l-value", so the constness is now recorded at collection where every rule can see it. Found by
+  `doc_p15`, which was written for the enum-conversion work below and turned this up on the way.
 - **A lambda reading a global.** `AccessChecker` enforces AngelScript's no-closure rule by resolving
   the name in the scope tree, and `LOCALS_QUERY` records a module-level global under the same
   `LocalDefinitionKind::Variable` as a function-body local. Every legal global read inside
@@ -120,50 +132,46 @@ first. Each lands with its `doc_`-prefixed parity case.
    regardless of mode, so under `3` a `c.V` whose accessor lacks the `property` keyword is still
    accepted where the compiler answers `'V' is not a member of 'C'`. Missed diagnostic, not a false
    positive. `doc_r07`
-5. **`int` → `enum`** — `TypeConversionChecker` allows the implicit conversion; the compiler rejects
-   it (`Can't implicitly convert from 'int' to 'Mode'`), and `OverloadResolver` already agrees with
-   the compiler, so a call is caught and an assignment is not. `enum` → `int` widening stays legal,
-   as does the explicit `Mode(id)` cast. A test currently asserts the wrong answer. `doc_r09`
-6. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
+5. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
    value`, `Float value truncated in implicit conversion to integer`, `Signed/Unsigned mismatch`.
    None exist here. Decidable from the source alone, so the visibility policy permits them; the
    narrowing tables at `OverloadResolver.cpp` already exist and feed only overload ranking today.
-7. **Completion hygiene** — suppress completion inside comments and string literals, and after the
+6. **Completion hygiene** — suppress completion inside comments and string literals, and after the
    `:` of a `case X:` label. `CompletionHandler::GetCompletion` is handed `request.tree` and never
    looks at it, so `case FOO:` currently offers every local, every global and all 60 keywords.
-8. **Typedef unwrapping inside template arguments** — `OverloadResolver` unwraps a typedef only at
+7. **Typedef unwrapping inside template arguments** — `OverloadResolver` unwraps a typedef only at
    the outer name, so a host declaring `typedef uint8 byte;` still fails on `array<byte>` against
    `array<uint8>`. This is the true, narrow form of `TYPE-05`.
-9. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
+8. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
    check when the class is abstract. Only emit where the whole hierarchy is visible. `doc_r08`
-10. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
+9. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
     so `arr.length()` on a bracket-declared variable gets no hover, no completion and no checking
     (`CallChecker` bails at the visibility guard). Normalization lives in exactly two places today
     and one of them hardcodes `"array"` rather than reading `config.types.arrayTypeName`.
-11. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
+10. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-12. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
+11. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
     no `showErrorMessage`, no `errorHandler` and no status bar. Highest value per line on the list.
-13. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
+12. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
     `contributes.commands` client-side.
-14. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
+13. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
     and every lambda argument are exploded Allman-style; `#if` is forced to column 0; a metadata
     block is joined onto the declaration line.
-15. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
+14. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
     line, so a cross-file hover can show an unrelated comment from the local file. The correct
     pattern is already in `ResolveCompletionItem`. Then inherit documentation from an overridden
     interface method (`SUGG-04`).
-16. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+15. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-17. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+16. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-18. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+17. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-19. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+18. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-20. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+19. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope

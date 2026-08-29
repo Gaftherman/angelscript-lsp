@@ -662,6 +662,12 @@ namespace angel_lsp::analysis
             {
                 VariableSignature varSig;
                 varSig.typeName = sym.name;
+                // An enum member is a constant by definition - the compiler answers "Expression is
+                // not an l-value" to `Red = 5;`. Recorded here rather than left to each rule to
+                // infer, because the default was false and every rule that asked got the wrong
+                // answer: `case Red:` drew as-err-case-not-constant, on a switch the compiler
+                // compiles.
+                varSig.modifiers.isConst = true;
 
                 TSNode memberDeclNode = node;
                 TSNode memberNameNode = nameNode;
