@@ -1250,5 +1250,36 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.engine.allowUnsafeReferences == false);
         }
+
+        SUBCASE("propertyAccessorMode is an integer, not a bool")
+        {
+            // asEP_PROPERTY_ACCESSOR_MODE is the one property here whose value is not true/false,
+            // which is why ApplyEngineProperty takes the raw text rather than a parsed bool.
+            ArgvHelper args{"angel_lsp", "--engine-property=propertyAccessorMode=3"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.propertyAccessorMode == 3);
+        }
+
+        SUBCASE("propertyAccessorMode defaults to 2, not to the engine's 3")
+        {
+            // Deliberate: mode 3 reports `c.V` when the accessor lacks the `property` keyword, and
+            // defaulting to it would hand that error to every workspace whose host sets 2 - for
+            // code that compiles for them. See EngineProperties::propertyAccessorMode.
+            ArgvHelper args{"angel_lsp"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.propertyAccessorMode == 2);
+        }
+
+        SUBCASE("An accessor mode the analyzer cannot act on is dropped")
+        {
+            // 0 (disabled) and 1 (app-registered accessors only) do not change what a script
+            // declaration means, which is all this analyzer reads. Landing on 2 or 3 by rounding
+            // would be a guess.
+            ArgvHelper args{"angel_lsp",
+                            "--engine-property=propertyAccessorMode=3",
+                            "--engine-property=propertyAccessorMode=1"};
+            ServerConfig config = FromArgs(args.argc(), args.data());
+            CHECK(config.engine.propertyAccessorMode == 3);
+        }
     }
 }

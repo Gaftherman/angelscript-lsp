@@ -328,6 +328,25 @@ namespace angel_lsp::analysis
             if (knownGlobalNames.contains(ref.name))
                 continue;
 
+            // A virtual property is reached by a name nothing declares: the member behind `Up` is
+            // `C::get_Up`, so the table has never heard of `Up`. Which accessors count is the
+            // engine's asEP_PROPERTY_ACCESSOR_MODE - 2 takes any get_/set_ member, 3 (the engine's
+            // own default) only one carrying the `property` keyword. This server defaults to 2; see
+            // EngineProperties::propertyAccessorMode for why it does not follow the engine here.
+            //
+            // Registered workspace-wide rather than per class, the same trade RuleIndex makes for
+            // template parameters: a bare `Up` in a class that has no such accessor goes unreported,
+            // which costs nothing, where the alternative was reporting every legal use of one.
+            {
+                const auto &index = ctx.request.GetRuleIndex();
+                const bool keywordRequired = ctx.request.engineProperties != nullptr &&
+                                             ctx.request.engineProperties->propertyAccessorMode == 3;
+                const auto &accessorNames = keywordRequired ? index.keywordAccessorPropertyNames
+                                                            : index.accessorPropertyNames;
+                if (accessorNames.contains(ref.name))
+                    continue;
+            }
+
             ctx.EmitAtRange(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter,
                              "as-err-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
         }
