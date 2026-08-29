@@ -14,7 +14,6 @@ namespace angel_lsp::diagnostics::codes
     inline constexpr std::string_view MixinFinal = "as-err-mixin-final";
     inline constexpr std::string_view UndefinedNamespace = "as-err-undefined-namespace";
     inline constexpr std::string_view UndefinedIdentifier = "as-err-undefined-identifier";
-    inline constexpr std::string_view AmbiguousIdentifier = "as-err-ambiguous-identifier";
     inline constexpr std::string_view TypedefNonPrimitive = "as-err-typedef-non-primitive";
 
     // Access and Visibility Errors

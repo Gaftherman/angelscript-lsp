@@ -699,16 +699,58 @@ TEST_CASE("CallChecker - a nested namespace reaches its parent's functions")
     CHECK(HasCode(diagnostics, "as-err-no-implicit-conversion"));
 }
 
-TEST_CASE("CallChecker - a function reached only through 'using namespace' is left unjudged")
+TEST_CASE("CallChecker - a call through a using-directive is judged")
 {
-    // Not extended to using-directives on purpose: a name reachable only that way resolves to a
-    // scope this list does not carry, so it yields no candidate and the call goes unchecked. That
-    // is a missed diagnostic, which this project accepts, rather than an invented one, which it
-    // does not.
+    // This test used to assert the opposite, under the heading "left unjudged". The compiler
+    // disagrees - tests/parity/doc_r16_using_ns_arg_type.as:
+    //
+    //     ERROR (3, 24): No matching signatures to 'f(int)'
+    //
+    // A using-directive puts the name in reach, so a call through one is an ordinary call.
     const auto diagnostics = AnalyzeCallSnippet(
         "namespace A { void f(string s) { } }\n"
         "using namespace A;\n"
         "void g() { int id = 1; f(id); }\n");
 
-    CHECK_FALSE(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+    CHECK(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - two using-directives contribute at once")
+{
+    // A directive does not shadow and does not stop the search, so both namespaces are in the
+    // candidate set and overload resolution picks B::f(int). doc_p16_using_ns_overloads_merge.as.
+    const auto diagnostics = AnalyzeCallSnippet(
+        "namespace A { void f(string s) { } }\n"
+        "namespace B { void f(int i) { } }\n"
+        "using namespace A;\n"
+        "using namespace B;\n"
+        "void g() { f(1); }\n");
+
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("CallChecker - a lexical scope shadows a using-directive")
+{
+    // The global scope declares `f`, so the search stops there and never reaches the directive.
+    // doc_p17_global_beats_using.as, which the compiler accepts.
+    const auto diagnostics = AnalyzeCallSnippet(
+        "namespace A { void f(string s) { } }\n"
+        "void f(int i) { }\n"
+        "using namespace A;\n"
+        "void g() { f(1); }\n");
+
+    CHECK(diagnostics.empty());
+}
+
+TEST_CASE("CallChecker - an inner namespace shadows the global scope")
+{
+    // doc_r17_inner_ns_shadows.as:
+    //     ERROR (2, 46): No matching signatures to 'f(const int)'
+    // `N::f(string)` hides the global `f(int)`, so the call does not fall through to it. This is
+    // why candidate collection stops at the first scope that declares the name.
+    const auto diagnostics = AnalyzeCallSnippet(
+        "void f(int i) { }\n"
+        "namespace N { void f(string s) { } void g() { f(1); } }\n");
+
+    CHECK(HasCode(diagnostics, "as-err-no-implicit-conversion"));
 }

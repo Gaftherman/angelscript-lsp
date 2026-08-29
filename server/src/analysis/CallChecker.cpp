@@ -336,39 +336,81 @@ namespace angel_lsp::analysis
             }
             reachableScopes.emplace_back();
 
-            // AngelScript stops at the first scope that declares the name: an overload in an
-            // enclosing namespace does not join a set found in an inner one. Breaking rather than
-            // accumulating matters for the verdict, not just for speed - a wider set can only make
-            // a bad call look matchable.
-            //
-            // Deliberately not extended with `using namespace`. A name reachable only through one
-            // resolves to a scope not in this list, so it yields no candidate and the call goes
-            // unjudged: a missed diagnostic, never an invented one.
-            for (const auto &scopeName : reachableScopes)
+            // Same file, or a predefined stub. A global declared in another file is not a
+            // candidate: two plugins that never include one another both declare `Stop`, and
+            // matching a call in one against the other's signature reads a relationship that does
+            // not exist.
+            const auto collectFrom = [&](const std::string &scopeName)
             {
                 const std::string key = scopeName.empty() ? name : scopeName + "::" + name;
                 const auto found = table.FindSymbolsPtr(key);
                 if (!found)
                 {
-                    continue;
+                    return;
                 }
 
                 for (const auto &sym : *found)
                 {
-                    // Same file, or a predefined stub. A global declared in another file is not a
-                    // candidate: two plugins that never include one another both declare `Stop`,
-                    // and matching a call in one against the other's signature reads a relationship
-                    // that does not exist.
                     if (IsFunctionSymbol(sym) &&
                         (sym.fileUri == fileUri || utils::IsPredefinedFile(sym.fileUri, predefinedExtension)))
                     {
                         candidates.push_back(sym);
                     }
                 }
+            };
 
+            // A lexical scope shadows: the first one that declares the name is the only one
+            // consulted, and an overload in an enclosing scope does not join it. The compiler is
+            // explicit about that -
+            //
+            //     void f(int i) {}
+            //     namespace N { void f(string s) {} void g() { f(1); } }
+            //                                                  ^ No matching signatures to 'f(const int)'
+            //
+            // - so breaking matters for the verdict and not only for speed. A wider set can only
+            // make a bad call look matchable.
+            for (const auto &scopeName : reachableScopes)
+            {
+                collectFrom(scopeName);
                 if (!candidates.empty())
                 {
                     break;
+                }
+            }
+
+            // A using-directive does not shadow, and does not stop the search either: when nothing
+            // lexical declares the name, every imported namespace contributes at once and ordinary
+            // overload resolution decides between them. Again from the compiler:
+            //
+            //     namespace A { void f(string s) {} }
+            //     namespace B { void f(int i) {} }
+            //     using namespace A;  using namespace B;
+            //     void g() { f(1); }              // compiles, picks B::f
+            //     void g() { f("x"); }            // Multiple matching signatures, when both take string
+            //
+            // which is why these are merged rather than broken on, and why an ambiguity among them
+            // is left to ResolveBestOverload to find instead of being special-cased here.
+            //
+            // Collected from the whole document rather than from each directive's own scope. A
+            // `using namespace` inside a namespace body is scoped to it, so this is wider than the
+            // language - but only in the direction of finding a declaration that really exists,
+            // which at worst judges a call the engine would reject as undefined anyway.
+            if (candidates.empty())
+            {
+                TSNode documentRoot = callNode;
+                while (!ts_node_is_null(ts_node_parent(documentRoot)))
+                {
+                    documentRoot = ts_node_parent(documentRoot);
+                }
+
+                for (const auto &imported : CollectUsingNamespaces(documentRoot, sourceCode))
+                {
+                    if (!imported.empty() &&
+                        std::find(reachableScopes.begin(), reachableScopes.end(), imported) ==
+                            reachableScopes.end())
+                    {
+                        collectFrom(imported);
+                    }
                 }
             }
 
@@ -389,6 +431,12 @@ namespace angel_lsp::analysis
             const uint32_t argumentCount = CountArguments(arguments);
 
             std::vector<Symbol> candidates;
+
+            // Whether the set came from free-function lookup rather than from a type's members.
+            // Only the free set is a complete picture: member lookup has precedence rules this pass
+            // does not model - a mixin's method beats the base class's, and the class's own beats
+            // the mixin's - so two same-named members are routinely not a choice at all.
+            bool candidatesAreFreeFunctions = false;
             std::string reportedName;
 
             if (calleeType == "member_expression")
@@ -510,6 +558,7 @@ namespace angel_lsp::analysis
                 }
                 else
                 {
+                    candidatesAreFreeFunctions = true;
                     candidates = FindFreeCandidates(node, written, request.sourceCode,
                                                     ctx.request.fileUri, ctx.request.predefinedFileExtension,
                                                     table, ctx.request.GetRuleIndex());
@@ -617,7 +666,25 @@ namespace angel_lsp::analysis
                 argTypes.push_back(argType);
             }
 
-            if (allArgsResolved && !argTypes.empty())
+            // A zero-argument *free* call is judged too. The empty-argument guard that used to sit
+            // here read as harmless - with no arguments there are no argument types to check - but
+            // ambiguity does not need one:
+            //
+            //     namespace PackageA { void Initialize() {} }
+            //     namespace PackageB { void Initialize() {} }
+            //     using namespace PackageA;  using namespace PackageB;
+            //     void Main() { Initialize(); }
+            //                   ^ Multiple matching signatures to 'Initialize()'
+            //
+            // Two identical signatures under different qualified names is what HasSameSignature
+            // already distinguishes from the same function declared twice, so nothing else had to
+            // change for that.
+            //
+            // Members are excluded, and the corpus is why: `class DerivedA : Base, MixinA {}` where
+            // both declare `GetName()` compiles, because the mixin's member beats the base's and
+            // the class's own beats the mixin's. Those precedence rules live in member lookup, not
+            // here, so a member set of two same-named candidates is not evidence of a choice.
+            if (allArgsResolved && (!argTypes.empty() || candidatesAreFreeFunctions))
             {
                 std::vector<Symbol> matchingArityCandidates;
                 for (const auto &sym : candidates)

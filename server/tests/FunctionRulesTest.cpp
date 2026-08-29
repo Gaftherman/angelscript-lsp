@@ -825,17 +825,25 @@ TEST_CASE("FunctionRules - Unknown Type Corpus Audit" * doctest::skip(true))
     angel_lsp::config::DiagnosticsConfig strict;
     strict.reportUnknownTypes = true;
 
-    const auto on = angel_lsp::test::RunCorpusAudit(
-        [](const std::string &code) { return code == "as-err-unresolved-type"; }, 5, &strict);
-    const auto off = angel_lsp::test::RunCorpusAudit(
-        [](const std::string &code) { return code == "as-err-unresolved-type"; }, 5, nullptr);
+    const auto interesting = [](const std::string &code) { return code == "as-err-unresolved-type"; };
 
-    MESSAGE("files=" << on.filesAnalysed
-            << "  as-err-unresolved-type with reportUnknownTypes on=" << on.Total()
-            << "  off=" << off.Total());
-    for (const auto &hit : on.hits)
+    // Three configurations, because only one of them is what a user actually runs. The corpus is
+    // Sven Co-op scripts, and a Sven Co-op workspace sets angelscript.engine.profile - so the
+    // number that decides the default is the third.
+    const auto bare = angel_lsp::test::RunCorpusAudit(interesting, 5, nullptr);
+    const auto strictBare = angel_lsp::test::RunCorpusAudit(interesting, 5, &strict);
+    const auto strictProfiled = angel_lsp::test::RunCorpusAudit(
+        interesting, 5, &strict, angel_lsp::analysis::EngineProfileKind::SvenCoop);
+    const auto profiled = angel_lsp::test::RunCorpusAudit(
+        interesting, 5, nullptr, angel_lsp::analysis::EngineProfileKind::SvenCoop);
+
+    MESSAGE("files=" << bare.filesAnalysed
+            << "  no profile: off=" << bare.Total() << " on=" << strictBare.Total()
+            << "  |  svencoop profile: off=" << profiled.Total()
+            << " on=" << strictProfiled.Total());
+    for (const auto &hit : strictProfiled.hits)
     {
         MESSAGE("  " << hit.fileName << ":" << hit.line << " " << hit.message);
     }
-    CHECK(on.filesAnalysed > 0);
+    CHECK(bare.filesAnalysed > 0);
 }

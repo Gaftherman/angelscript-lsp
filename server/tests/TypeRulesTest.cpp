@@ -859,7 +859,19 @@ TEST_SUITE("AngelScript_Namespaces_Verification") {
         CHECK(call->targetFunctionSymbol == "Math::ComputeSin(float)");
     }
 
-    TEST_CASE("Diagnostics: Ambiguous symbol call from multiple using namespace directives") {
+    // Two using-directives declaring one name is not, by itself, ambiguous - the compiler merges
+    // the imported namespaces and lets overload resolution choose, and only says so when resolution
+    // itself cannot. This test used to assert the scope-count rule that has since been deleted as
+    // fabricated; it now asserts the compiler's own answer to the same script:
+    //
+    //     ERROR (5, 15): Multiple matching signatures to 'Initialize()'
+    //     INFO  (5, 15): void PackageB::Initialize()
+    //     INFO  (5, 15): void PackageA::Initialize()
+    //
+    // which arrives from CallChecker's ResolveBestOverload as as-err-call-ambiguous. Change either
+    // Initialize to take an argument and the script compiles - see
+    // tests/parity/doc_p16_using_ns_overloads_merge.as.
+    TEST_CASE("Diagnostics: Two identical signatures reached through using-directives are ambiguous") {
         const char* script = R"(
             namespace PackageA {
                 void Initialize() {}
@@ -882,7 +894,7 @@ TEST_SUITE("AngelScript_Namespaces_Verification") {
 
         auto diagnostics = doc->GetDiagnostics();
         REQUIRE(diagnostics.size() == 1);
-        CHECK(diagnostics[0].code == "E_AMBIGUOUS_IDENTIFIER");
+        CHECK(diagnostics[0].code == "as-err-call-ambiguous");
         CHECK(diagnostics[0].range.start.line == 13);
     }
 

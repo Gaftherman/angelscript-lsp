@@ -86,7 +86,11 @@ namespace angel_lsp::i18n
     //                               plain parameter naming throughout the corpus rather than on
     //                               anything a user would change. See FunctionRules.cpp.
     //
-    // Deleted rather than left here: as-err-mixin-as-base (described the opposite of how a mixin is
+    // Deleted rather than left here: as-err-ambiguous-identifier (a fabricated rule - it called two
+    // using-directives declaring one name ambiguous, where the compiler merges them and lets
+    // overload resolution choose, and says "Multiple matching signatures" only when resolution
+    // itself cannot; CallChecker's as-err-call-ambiguous is that verdict, reached honestly),
+    // as-err-mixin-as-base (described the opposite of how a mixin is
     // included), as-err-opindex-arity (byte-identical to as-err-opindex-no-params),
     // as-err-implicit-conversion, as-err-return-type-mismatch and as-err-discard-const-handle (all
     // three superseded by as-err-no-implicit-conversion, which names both types and which already
@@ -206,7 +210,6 @@ namespace angel_lsp::i18n
         m_messages["as-err-initializer-list-expected"] = "Expected a list enclosed by {{ }} to match pattern.";
         m_messages["as-err-no-matching-constructor"] = "No matching signatures to '{}'.";
         m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous.";
-        m_messages["as-err-ambiguous-identifier"] = "Ambiguous symbol '{}'.";
         m_messages["as-err-undefined-namespace"] = "Undefined namespace '{}'.";
         m_messages["as-err-import-has-body"] = "Imported function '{}' cannot have a body.";
         m_messages["as-err-not-lvalue"] = "Expression is not an assignable l-value.";
@@ -343,7 +346,6 @@ namespace angel_lsp::i18n
             m_messages["as-err-initializer-list-expected"] = "Se esperaba una lista entre {{ }} para coincidir con el patrón.";
             m_messages["as-err-no-matching-constructor"] = "No coinciden las firmas con '{}'.";
             m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";
-            m_messages["as-err-ambiguous-identifier"] = "Símbolo ambiguo '{}'.";
             m_messages["as-err-undefined-namespace"] = "Namespace no definido '{}'.";
             m_messages["as-err-import-has-body"] = "La función importada '{}' no puede tener un cuerpo.";
             m_messages["as-err-not-lvalue"] = "La expresión no es un l-value asignable.";
