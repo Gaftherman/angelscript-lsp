@@ -73,6 +73,7 @@ endif()
 # ==============================================================================
 include(cmake/Dependencies.cmake)
 include(cmake/TreeSitter.cmake)
+include(cmake/Oracle.cmake)
 
 # ==============================================================================
 # 2. CORE LIBRARY (Backend Code)

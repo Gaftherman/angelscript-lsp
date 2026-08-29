@@ -93,6 +93,40 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # The only check that compares this analyzer against the actual language rather than against its
+  # own expectations. It used to need a binary from an unpublished repository, so it ran on one
+  # developer's machine and a regression could land here green; server/tools/oracle builds a real
+  # AngelScript compiler from source instead, which means this can gate.
+  #
+  # One platform is enough: the question is what the language accepts, and that does not vary by
+  # host. Linux is the cheapest place to ask it.
+  parity-audit:
+    name: Parity against a real AngelScript compiler
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CMake with the oracle
+        run: cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release -DANGELLSP_BUILD_ORACLE=ON
+
+      - name: Build the oracle and the test suite
+        run: cmake --build server/build --config Release --target angelscript_oracle angel_lsp_tests -j 4
+
+      - name: Run the parity audit
+        working-directory: server
+        env:
+          # The oracle and the stub are a pair - sdk-addons.as.predefined describes exactly what
+          # tools/oracle/main.cpp registers. Running against any other stub reports the mismatch
+          # rather than anything about the analyzer.
+          ASHARNESS_EXE: ${{ github.workspace }}/server/build/angelscript_oracle
+          PARITY_PREDEFINED: ${{ github.workspace }}/server/tests/fixtures/sdk-addons.as.predefined
+          PARITY_SCRIPT_DIR: ${{ github.workspace }}/server/tests/parity
+        run: ./build/angel_lsp_tests --no-skip --test-case="*Parity*"
+
   package-extension:
     name: Package VS Code extension
     runs-on: ubuntu-latest

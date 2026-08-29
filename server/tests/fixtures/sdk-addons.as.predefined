@@ -1,28 +1,16 @@
-// =====================================================================================
-// A predefined stub covering the AngelScript SDK's standard add-ons.
+// The exact script surface server/tools/oracle/main.cpp registers.
 //
-// Written to exercise this server against a realistic host API surface: every add-on a typical
-// embedding registers, with the signatures its `RegisterObjectMethod` / `RegisterGlobalFunction`
-// calls actually use. It is a test fixture, not a template to copy blindly - your host registers
-// some subset of this, under whatever names it chose.
+// GENERATED from full-addons.as.predefined - do not edit by hand. Re-run
+// scripts/make-sdk-stub.py after changing either this or the oracle's registrations.
 //
-// PROVENANCE. Two different levels of confidence, and it matters which is which:
+// The parity audit compares this analyzer against a real compiler, and that comparison is only
+// honest when both see the same API. This stub is therefore paired with the oracle: everything the
+// oracle registers is declared here, and nothing else is. Types AS-Harness adds on top of the SDK -
+// its Exception object, optional<T>, JSON - are deliberately absent, as are the add-ons the oracle
+// does not compile (contextmgr's co-routines, scriptsocket).
 //
-//   * string, array, datetime, file, filesystem, dictionary, ref, Exception, optional and the
-//     global functions are taken VERBATIM from AS-Harness's own as.predefined, which describes an
-//     engine this repository can compile against. Anything written against them can be checked
-//     with the real compiler (see server/tests/ParityAuditTest.cpp).
-//
-//   * weakref, const_weakref, grid, any, complex, the co-routine functions and `socket` are NOT
-//     registered by AS-Harness. Their signatures come from the SDK add-on sources named above each
-//     section. They are structurally verified here - the stub parses, the symbols resolve, and the
-//     scripts using them draw no false diagnostics - but no oracle confirms them.
-//
-// LIST FACTORIES. `{ ... }` is only valid where the host registered an asBEHAVE_LIST_FACTORY, and
-// the shape it accepts is written into that registration. The `@listpattern` tags below carry those
-// patterns across; without one, this server stays silent about a type's initializer lists rather
-// than guessing. See the README section "Initializer List Patterns".
-// =====================================================================================
+// See server/cmake/Oracle.cmake for the add-on list, and the README section "Initializer List
+// Patterns" for what the @listpattern tags do.
 
 
 // =====================================================================================
@@ -382,83 +370,11 @@ class complex{
 // script written against either compiles here.
 // =====================================================================================
 
-/// Addon: ASException
-/// Exception object storing callstack, line number, message, and metadata.
-class Exception{
-	/// Exception error message string.
-	string message;
-	/// Function declaration where exception occurred.
-	string func;
-	/// Script section or file name where exception occurred.
-	string sect;
-	/// Call stack trace at the moment exception occurred.
-	string stack;
-	/// Script line number where exception occurred.
-	int line;
-	/// Additional contextual data dictionary attached to exception.
-	dictionary data;
-}
-
-/// Addon: ASException
-/// Raises a script exception with an optional metadata dictionary.
-void SetException(const string&in exception, dictionary@ data = null);
-
-/// Addon: ASException
-/// Returns the current active exception object.
-Exception@ GetException();
-
 /// add_on/scripthelper/scripthelper.cpp - raises a script exception.
 void throw(const string&in exception);
 
 /// add_on/scripthelper/scripthelper.cpp - the message of the exception being handled.
 string getExceptionInfo();
-
-
-// =====================================================================================
-// Co-routines - add_on/contextmgr/contextmgr.cpp    [not registered by AS-Harness]
-//
-// Co-operative multitasking driven by the host's context manager. A co-routine runs until it calls
-// yield(); nothing is pre-empted.
-// =====================================================================================
-
-/// The signature a co-routine entry point must have.
-funcdef void coroutine(dictionary@);
-
-/// Starts a co-routine, passing it the given argument dictionary.
-void createCoRoutine(coroutine@ func, dictionary@ args);
-
-/// Hands control back to the context manager; execution resumes on the next pass.
-void yield();
-
-/// Suspends this script for the given number of milliseconds.
-void sleep(uint milliseconds);
-
-
-// =====================================================================================
-// socket - add_on/scriptsocket/scriptsocket.cpp
-//
-// Registered by the SDK, but not by AS-Harness and not by this repository's parity oracle: it needs
-// platform socket libraries, which is a poor trade for a CI job whose purpose is to compile scripts.
-// The declarations are taken from the add-on's own RegisterObjectMethod calls.
-//
-// Note `connect` takes a packed IPv4 address as a uint, not a host string.
-// =====================================================================================
-
-class socket
-{
-    socket();
-    /// Binds and starts listening on the given port. Returns a negative value on failure.
-    int listen(uint16 port);
-    int close();
-    /// Waits up to `timeout` milliseconds for a client, or null if none arrived.
-    socket@ accept(int64 timeout = 0);
-    int connect(uint ipv4address, uint16 port);
-    /// Sends bytes; returns the number written, or a negative value on error.
-    int send(const string &in data);
-    /// Reads whatever has arrived, waiting up to `timeout` milliseconds.
-    string receive(int64 timeout = 0);
-    bool isActive() const;
-}
 
 
 // =====================================================================================

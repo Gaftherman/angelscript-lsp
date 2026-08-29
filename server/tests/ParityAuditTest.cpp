@@ -220,7 +220,24 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     // profile, which is what the server ships. Loading both at once is wrong in a way that is easy
     // to miss: they declare the same standard library, so every `array<T>` method arrives twice and
     // resolution had two identical candidates to choose between.
-    const bool useBuiltinProfile = !overrideDir.empty();
+    // PARITY_PREDEFINED names the stub explicitly, and takes precedence over both defaults. It is
+    // what pairs a corpus with an oracle that is not AS-Harness: server/tools/oracle registers the
+    // SDK add-ons and nothing else, and tests/fixtures/sdk-addons.as.predefined is generated to
+    // describe exactly that set. Pointing one at the other is what makes the comparison honest -
+    // an oracle and a stub that disagree produce findings about the disagreement.
+    const std::string explicitStubPath = EnvVar("PARITY_PREDEFINED");
+    const std::string explicitStub =
+        explicitStubPath.empty() ? std::string()
+                                 : ReadFile(fs::path(explicitStubPath));
+
+    if (!explicitStubPath.empty())
+    {
+        REQUIRE_MESSAGE(!explicitStub.empty(),
+                        "PARITY_PREDEFINED is set but names a file that could not be read: "
+                            << explicitStubPath);
+    }
+
+    const bool useBuiltinProfile = !overrideDir.empty() && explicitStubPath.empty();
 
     const std::string_view standardStub =
         useBuiltinProfile
@@ -256,7 +273,11 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         if (!standardStub.empty())
             collector.CollectSymbols("file:///standard.as.predefined", std::string(standardStub), parser, table, &i18n);
 
-        if (!useBuiltinProfile && !predefinedStub.empty())
+        if (!explicitStub.empty())
+        {
+            collector.CollectSymbols("file:///parity.as.predefined", explicitStub, parser, table, &i18n);
+        }
+        else if (!useBuiltinProfile && !predefinedStub.empty())
         {
             // AS-Harness's stub predates the `@listpattern` convention, so the two add-on types it
             // declares are annotated here with the patterns their own registrations carry - see

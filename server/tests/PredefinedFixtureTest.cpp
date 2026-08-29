@@ -369,21 +369,36 @@ TEST_CASE("PredefinedFixture - complex and math")
 
 TEST_CASE("PredefinedFixture - socket")
 {
+    // The real add-on's API, from sdk/add_on/scriptsocket/scriptsocket.cpp. An earlier version of
+    // this fixture invented a larger one - bind/available/getLastError, address-family enums, a host
+    // string for connect - on the mistaken belief that the SDK ships no socket add-on. It does, and
+    // `connect` takes a packed IPv4 address rather than a name.
     RequireSilent(
         "void main()\n"
         "{\n"
-        "    socket client(socket_family::AF_INET, socket_type::SOCK_STREAM);\n"
-        "    if (client.connect(\"127.0.0.1\", 8080))\n"
+        "    socket client;\n"
+        "    if (client.connect(2130706433, 8080) >= 0)\n"
         "    {\n"
         "        client.send(\"ping\");\n"
-        "        while (client.available() == 0) { yield(); }\n"
-        "        println(client.recv(client.available()));\n"
+        "        println(client.receive(1000));\n"
         "        client.close();\n"
         "    }\n"
-        "    else\n"
+        "    println(\"\" + client.isActive());\n"
+        "}\n");
+}
+
+TEST_CASE("PredefinedFixture - socket accepts connections")
+{
+    RequireSilent(
+        "void main()\n"
+        "{\n"
+        "    socket server;\n"
+        "    if (server.listen(8080) >= 0)\n"
         "    {\n"
-        "        println(client.getLastError());\n"
+        "        socket\n client = server.accept(500);\n"
+        "        if (client !is null) { client.send(\"hello\"); client.close(); }\n"
         "    }\n"
+        "    server.close();\n"
         "}\n");
 }
 
