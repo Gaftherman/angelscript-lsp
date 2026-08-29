@@ -971,3 +971,86 @@ TEST_CASE("Server - Keeps the call graph after a document is re-analysed")
     // The call from main() to helper() must still be there after the re-analysis.
     CHECK(stream.OutputContains("\"helper\""));
 }
+
+// =====================================================================================
+// Progress on the workspace scan.
+//
+// The scan reads and indexes every script and stub under every workspace folder before a single
+// cross-file symbol resolves, and it used to do all of that silently - on a large workspace the
+// server just appears to know nothing for a while, which reads as broken rather than busy.
+//
+// A server may only report progress against a token it created, and `window/workDoneProgress/create`
+// exists only where the client advertised `window.workDoneProgress`. So both directions are pinned:
+// a client that asks for it gets it, and one that does not is not sent notifications it has nowhere
+// to put.
+// =====================================================================================
+
+namespace
+{
+    std::string InitializeWithProgress(const std::string &rootUri, bool workDoneProgress)
+    {
+        return R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+               R"("processId":null,"rootUri":")" + rootUri + R"(",)"
+               R"("capabilities":{"window":{"workDoneProgress":)" +
+               (workDoneProgress ? "true" : "false") + R"(}},)"
+               R"("workspaceFolders":[{"uri":")" + rootUri + R"(","name":"fixture"}]}})";
+    }
+}
+
+TEST_CASE("ServerHarness - Reports workspace scan progress when the client supports it")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    // The scan starts on `initialized`, not on `initialize` - without this notification there is no
+    // scan to report on.
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // The scan runs on its own thread, and the server tears that thread down as soon as the scripted
+    // input runs out - which, without this, happens before the thread is even scheduled. Waiting for
+    // the "end" notification is what makes the assertions below about a finished scan rather than a
+    // race. Bounded, so a scan that never finishes fails the test instead of hanging it.
+    // A request after the notification, so the loop has demonstrably come back round and dispatched
+    // `initialized` before the wait below begins. Without it the action fires while that
+    // notification is still in flight and the scan has not been started yet.
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.Output().find("\"kind\":\"end\"") != std::string::npos)
+            {
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    config::ServerConfig serverConfig;
+    const std::string output = RunScript(serverConfig, stream);
+
+    INFO(output);
+    CHECK(output.find("window/workDoneProgress/create") != std::string::npos);
+    CHECK(output.find("$/progress") != std::string::npos);
+    CHECK(output.find("angelscript-workspace-scan-") != std::string::npos);
+}
+
+TEST_CASE("ServerHarness - Sends no progress to a client that did not ask for it")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/false));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    config::ServerConfig serverConfig;
+    const std::string output = RunScript(serverConfig, stream);
+
+    INFO(output);
+    CHECK(output.find("$/progress") == std::string::npos);
+    CHECK(output.find("window/workDoneProgress/create") == std::string::npos);
+}

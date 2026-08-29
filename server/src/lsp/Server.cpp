@@ -292,6 +292,12 @@ namespace angel_lsp
             }
         }
 
+        if (params.capabilities.window.has_value() &&
+            params.capabilities.window->workDoneProgress.has_value())
+        {
+            m_workDoneProgressSupport = params.capabilities.window->workDoneProgress.value();
+        }
+
         if (params.capabilities.textDocument.has_value() &&
             params.capabilities.textDocument->completion.has_value() &&
             params.capabilities.textDocument->completion->completionItem.has_value() &&
@@ -494,6 +500,75 @@ namespace angel_lsp
         }
     }
 
+    void Server::BeginWorkspaceProgress(const std::string &title)
+    {
+        if (!m_workDoneProgressSupport)
+        {
+            return;
+        }
+
+        // A fresh token per scan. RestartWorkspaceScan can begin a second scan after a folder
+        // change, and reusing a token would have the client fold the two into one bar that never
+        // ends.
+        m_workspaceProgressToken =
+            "angelscript-workspace-scan-" + std::to_string(++m_workspaceProgressCounter);
+
+        lsp::WorkDoneProgressCreateParams createParams;
+        createParams.token = m_workspaceProgressToken;
+        // Fire and forget: the client either makes room for the token or it does not, and either
+        // way the scan carries on. Waiting on the response here would block the thread doing the
+        // work for no benefit.
+        m_messageHandler->sendRequest<lsp::requests::Window_WorkDoneProgress_Create>(
+            std::move(createParams), [](auto &&) {}, [](const auto &) {});
+
+        lsp::WorkDoneProgressBegin begin;
+        begin.title = title;
+        begin.cancellable = false;
+        begin.percentage = 0u;
+
+        lsp::notifications::Progress::Params params;
+        params.token = m_workspaceProgressToken;
+        params.value = lsp::toJson(std::move(begin));
+        m_messageHandler->sendNotification<lsp::notifications::Progress>(std::move(params));
+    }
+
+    void Server::ReportWorkspaceProgress(const std::string &message, unsigned percentage)
+    {
+        if (!m_workDoneProgressSupport || m_workspaceProgressToken.empty())
+        {
+            return;
+        }
+
+        lsp::WorkDoneProgressReport report;
+        report.message = message;
+        report.percentage = percentage;
+
+        lsp::notifications::Progress::Params params;
+        params.token = m_workspaceProgressToken;
+        params.value = lsp::toJson(std::move(report));
+        m_messageHandler->sendNotification<lsp::notifications::Progress>(std::move(params));
+    }
+
+    void Server::EndWorkspaceProgress(const std::string &message)
+    {
+        if (!m_workDoneProgressSupport || m_workspaceProgressToken.empty())
+        {
+            return;
+        }
+
+        lsp::WorkDoneProgressEnd end;
+        end.message = message;
+
+        lsp::notifications::Progress::Params params;
+        params.token = m_workspaceProgressToken;
+        params.value = lsp::toJson(std::move(end));
+        m_messageHandler->sendNotification<lsp::notifications::Progress>(std::move(params));
+
+        // Cleared so a Report arriving after the End - from a scan being torn down - is dropped
+        // rather than reopening a finished bar.
+        m_workspaceProgressToken.clear();
+    }
+
     void Server::ReadWorkspaceFiles(std::stop_token stopToken)
     {
         // Snapshotted once, up front. This runs on the workspace thread while the message loop is
@@ -511,37 +586,54 @@ namespace angel_lsp
         for (const auto &workspaceRoot : workspaceRoots)
             roots.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
 
+        BeginWorkspaceProgress("AngelScript: indexing workspace");
+        ReportWorkspaceProgress("Building the include graph", 0);
+
         m_includeGraph.Build(roots,
                              *searchDirectories,
                              m_config.info.fileExtension,
                              [&stopToken]() { return stopToken.stop_requested(); });
 
         if (stopToken.stop_requested())
+        {
+            EndWorkspaceProgress("Cancelled");
             return;
+        }
 
         m_logger->LogInfo(fmt::format("Include graph built: {} script file(s)", m_includeGraph.FileCount()));
+        ReportWorkspaceProgress(
+            fmt::format("Indexed {} script file(s)", m_includeGraph.FileCount()), 40);
 
         if (!m_config.features.enablePredefinedLoader)
         {
+            EndWorkspaceProgress(fmt::format("{} script file(s)", m_includeGraph.FileCount()));
             return;
         }
 
         angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
 
         // Built-in predefined engine profiles (e.g. Standard, SvenCoop, Urho3D, OpenXRay, OOTP)
+        ReportWorkspaceProgress("Loading engine profiles", 55);
         LoadBuiltinEngineProfiles(backgroundParser, stopToken);
 
         if (stopToken.stop_requested())
+        {
+            EndWorkspaceProgress("Cancelled");
             return;
+        }
 
         // Explicitly configured stubs first. A host application's declarations usually ship with
         // the application, not with the scripts, so the scan below - which only ever walks
         // workspace folders - would never find them. ParserPredefined de-duplicates by canonical
         // path, so a stub that also happens to live inside the workspace is not indexed twice.
+        ReportWorkspaceProgress("Loading predefined stubs", 70);
         LoadConfiguredPredefinedFiles(backgroundParser, stopToken);
 
         if (stopToken.stop_requested())
+        {
+            EndWorkspaceProgress("Cancelled");
             return;
+        }
 
         try
         {
@@ -561,7 +653,10 @@ namespace angel_lsp
                          scanError))
                 {
                     if (stopToken.stop_requested())
+                    {
+                        EndWorkspaceProgress("Cancelled");
                         return;
+                    }
 
                     if (entry.exists() && entry.is_regular_file())
                     {
@@ -575,6 +670,8 @@ namespace angel_lsp
         {
             m_logger->LogError(fmt::format("Error reading workspace files: {}", e.what()));
         }
+
+        EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
     }
 
     void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser &parser, std::stop_token stopToken)
