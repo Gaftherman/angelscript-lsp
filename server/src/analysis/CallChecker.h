@@ -15,7 +15,13 @@ namespace angel_lsp::analysis
      * not a refusal of one signature - so this asks the same question the engine does: is there
      * *any* visible declaration of this name that could take this many arguments?
      *
-     * Only the count. Matching argument types would need the engine's conversion and promotion
+     * Originally only the count, and this comment said so for a long time after it stopped being
+     * true: argument *types* are checked too, through OverloadResolver's ScoreArgumentMatch, which
+     * is what picks the best overload and what reports `as-err-no-implicit-conversion` when none of
+     * them can take the argument. The paragraph below survives because the reasoning in it still
+     * governs where the checking stops.
+     *
+     * Matching argument types would need the engine's conversion and promotion
      * rules applied across a whole overload set, which this analyzer does not do and which
      * TypeConversionChecker says as much about at its own boundary. The count is decidable from the
      * declarations alone, and it is what catches the mistake people actually make.

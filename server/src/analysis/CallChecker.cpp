@@ -603,22 +603,66 @@ namespace angel_lsp::analysis
                     }
                     else if (match.viableCandidates.empty() || match.bestScore >= 999)
                     {
+                        // Which argument is at fault, when every candidate agrees on it.
+                        //
+                        // With one overload the answer is simply the first parameter that cannot
+                        // take its argument. With several it is only meaningful when they all fail
+                        // at the same position: if one rejects argument 0 and another argument 1,
+                        // there is no single offending argument to point at and the generic message
+                        // is the honest one. Underlining a position only some overloads object to
+                        // would be worse than saying nothing specific.
                         bool emittedSpecificConversion = false;
-                        if (matchingArityCandidates.size() == 1)
                         {
-                            const auto &fn = matchingArityCandidates[0].GetFunction();
-                            for (size_t i = 0; i < argTypes.size() && i < fn.parameters.size(); ++i)
+                            size_t blamedArgument = argTypes.size();
+                            bool everyCandidateAgrees = !matchingArityCandidates.empty();
+
+                            for (const auto &candidate : matchingArityCandidates)
                             {
-                                int score = ScoreArgumentMatch(argTypes[i], fn.parameters[i], table);
-                                if (score >= 999)
+                                const auto &fn = candidate.GetFunction();
+                                size_t firstBad = argTypes.size();
+                                for (size_t i = 0; i < argTypes.size() && i < fn.parameters.size(); ++i)
                                 {
-                                    const TSPoint aStart = ts_node_start_point(argNodes[i]);
-                                    const TSPoint aEnd = ts_node_end_point(argNodes[i]);
-                                    ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
-                                                    "as-err-no-implicit-conversion", argTypes[i], fn.parameters[i].typeName);
-                                    emittedSpecificConversion = true;
+                                    if (ScoreArgumentMatch(argTypes[i], fn.parameters[i], table) >= 999)
+                                    {
+                                        firstBad = i;
+                                        break;
+                                    }
+                                }
+
+                                if (firstBad == argTypes.size())
+                                {
+                                    // This overload takes every argument, so the call failed for a
+                                    // reason no single argument explains.
+                                    everyCandidateAgrees = false;
                                     break;
                                 }
+                                if (blamedArgument == argTypes.size())
+                                {
+                                    blamedArgument = firstBad;
+                                }
+                                else if (blamedArgument != firstBad)
+                                {
+                                    everyCandidateAgrees = false;
+                                    break;
+                                }
+                            }
+
+                            if (everyCandidateAgrees && blamedArgument < argNodes.size())
+                            {
+                                // The expected type is named from the first candidate; with several
+                                // they differ, and one concrete example reads better than a list.
+                                const auto &fn = matchingArityCandidates[0].GetFunction();
+                                const std::string expected =
+                                    blamedArgument < fn.parameters.size()
+                                        ? fn.parameters[blamedArgument].typeName
+                                        : std::string();
+
+                                const TSPoint aStart = ts_node_start_point(argNodes[blamedArgument]);
+                                const TSPoint aEnd = ts_node_end_point(argNodes[blamedArgument]);
+                                ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                                "as-err-no-implicit-conversion",
+                                                argTypes[blamedArgument], expected);
+                                emittedSpecificConversion = true;
                             }
                         }
 

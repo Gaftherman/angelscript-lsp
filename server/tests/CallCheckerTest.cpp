@@ -597,3 +597,40 @@ TEST_CASE("CallChecker - Valid array and nested-template declarations produce no
         CHECK(d.severity != angel_lsp::analysis::DiagnosticSeverity::Error);
     }
 }
+
+// =====================================================================================
+// Which argument is at fault.
+//
+// When no overload can take the call, the useful message names the argument rather than the call.
+// That is only honest when every candidate fails at the same position: if one rejects argument 0
+// and another argument 1, there is no single offending argument and the generic message is right.
+// =====================================================================================
+
+TEST_CASE("CallChecker - Blames the argument every overload rejects")
+{
+    const std::string code =
+        "class Thing {}\n"
+        "void f(int a) {}\n"
+        "void f(float a) {}\n"
+        "void main() { Thing t; f(t); }\n";
+
+    const auto diagnostics = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - Stays generic when the overloads disagree about which argument is wrong")
+{
+    // `g(int, A)` gets past argument 0 and fails at 1; `g(A, A)` fails at 0. No single position
+    // explains the call, and the real compiler agrees - it answers this one with
+    // "No matching signatures to 'g(const int, B&)'" rather than blaming an argument.
+    const std::string code =
+        "class A {}\n"
+        "class B {}\n"
+        "void g(int a, A b) {}\n"
+        "void g(A a, A b) {}\n"
+        "void main() { B x; g(1, x); }\n";
+
+    const auto diagnostics = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diagnostics, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}

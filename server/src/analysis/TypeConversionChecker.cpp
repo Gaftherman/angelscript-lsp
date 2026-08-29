@@ -1509,12 +1509,28 @@ namespace angel_lsp::analysis
             if (nodeType == "foreach_statement")
             {
                 TSNode collection = ts_node_child_by_field_name(node, "collection", 10);
-                if (!ts_node_is_null(collection) && request.mutableScopeRoot)
+                if (!ts_node_is_null(collection))
                 {
                     const std::string containerType = ResolveExpressionType(
                         collection, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
 
-                    if (!containerType.empty())
+                    // A primitive can never be iterated: `foreach` needs opForBegin/opForEnd/
+                    // opForNext/opForValue, and nothing can register those on `int`. The real
+                    // compiler answers this with "Type 'int' is not valid type for foreach loops".
+                    //
+                    // Only primitives are reported, for the usual reason - a class that declares no
+                    // opFor* here may well have them registered in C++ where no stub records it, and
+                    // reporting that would be a false positive on working code.
+                    const std::string containerBase = CleanExpressionType(containerType);
+                    if (IsCorePrimitive(containerBase) && containerBase != "auto" && containerBase != "void")
+                    {
+                        EmitAtNode(collection, ctx, "as-err-invalid-foreach-container", containerBase);
+                    }
+
+                    // The write-back below is the only part that needs an unpublished tree; the
+                    // diagnostic above is a plain reading of the source and is owed to the user
+                    // whether or not this caller owns the scope tree exclusively.
+                    if (!containerType.empty() && request.mutableScopeRoot)
                     {
                         uint32_t variableIndex = 0;
                         const uint32_t childCount = ts_node_named_child_count(node);

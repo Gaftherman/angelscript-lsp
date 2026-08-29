@@ -45,13 +45,24 @@ namespace angel_lsp::i18n
     // full argument sits at each rule's site:
     //
     //   as-err-base-not-found       A base that resolves to nothing is what an engine-registered
-    //   as-err-unresolved-type      type looks like. The corpus is almost entirely those, so the
+    //                               type looks like. The corpus is almost entirely those, so the
     //                               rule would report the engine. Decidable only once a workspace's
     //                               stubs are known complete, which one document cannot establish.
-    //                               See ClassRules.cpp and FunctionRules.cpp.
+    //                               See ClassRules.cpp. (as-err-unresolved-type was on this line
+    //                               too and no longer belongs: it is emitted, for the one case that
+    //                               is decidable - an *imported* function, whose types must be
+    //                               declared. The general case is still out, for the reason above.)
     //
-    //   as-err-external-not-found   'external shared' resolves against another module. Modules are
-    //                               not a concept this analyzer has. See ClassRules.cpp.
+    //   as-err-no-matching-operator `a + b` with no opAdd is a use-site question, and operator
+    //                               checking here is declaration-shape only - OperatorRules says
+    //                               whether an opAdd is *declared* correctly, never whether one
+    //                               exists for a given pair of operands. Wants the expression
+    //                               resolver, the same as as-err-invalid-reference-return.
+    //
+    //   as-err-readonly-handle      `const T@ const h` is a handle that cannot be reassigned, and
+    //                               nothing records that second `const`: VariableSignature keeps
+    //                               the type's constness, not the handle's. The declaration would
+    //                               have to carry it before the rule could read it.
     //
     //   as-err-invalid-reference-return   Not an engine option after all, which is what this note
     //                                     used to say. At the engine's defaults `int& GetRef() {
@@ -77,9 +88,13 @@ namespace angel_lsp::i18n
     //
     // Deleted rather than left here: as-err-mixin-as-base (described the opposite of how a mixin is
     // included), as-err-opindex-arity (byte-identical to as-err-opindex-no-params),
-    // as-err-implicit-conversion (superseded by as-err-no-implicit-conversion, which names both
-    // types), and as-err-typedef-unresolved (a second typedef failure mode AngelScript does not
-    // have - the type never gets far enough to be looked up).
+    // as-err-implicit-conversion, as-err-return-type-mismatch and as-err-discard-const-handle (all
+    // three superseded by as-err-no-implicit-conversion, which names both types and which already
+    // spells the const-handle case as "const T@"), and as-err-typedef-unresolved (a second typedef
+    // failure mode AngelScript does not have - the type never gets far enough to be looked up).
+    //
+    // scripts/check-diagnostic-codes.py holds this list too and fails the build when the two drift
+    // apart, in either direction. It is what found the two entries corrected above.
     // ---------------------------------------------------------------------------------
     I18n::I18n(const std::string &localeTag)
         : m_locale(PrimaryLanguageSubtag(localeTag))
@@ -213,14 +228,12 @@ namespace angel_lsp::i18n
         m_messages["as-err-compound-assign-on-indexed-prop"] = "Compound assignment is not allowed on indexed property '{}'.";
         m_messages["as-err-case-not-constant"] = "Case value must be a constant expression.";
         m_messages["as-err-void-return-value"] = "Void function cannot return a value.";
-        m_messages["as-err-return-type-mismatch"] = "Cannot implicitly convert returned expression of type '{}' to return type '{}'.";
         m_messages["as-err-undefined-identifier"] = "Undefined identifier '{}'.";
         m_messages["as-err-lvalue-required-for-out-param"] = "Output parameter requires a mutable l-value or 'void'.";
         m_messages["as-err-positional-after-named-arg"] = "Positional argument cannot follow a named argument.";
         m_messages["as-err-cannot-return-local-ref"] = "Cannot return reference to local variable '{}'.";
         m_messages["as-err-cannot-return-param-ref"] = "Cannot return reference to parameter '{}'.";
         m_messages["as-err-lambda-closure-disallowed"] = "Lambdas cannot access outer local variables (no closures).";
-        m_messages["as-err-discard-const-handle"] = "Cannot convert 'const {}@' to '{}@' because it discards the const qualifier.";
         m_messages["as-err-readonly-handle"] = "Cannot reassign read-only handle '{}'.";
 
         if (locale == "es")
@@ -352,14 +365,12 @@ namespace angel_lsp::i18n
             m_messages["as-err-compound-assign-on-indexed-prop"] = "La asignación compuesta no está permitida en la propiedad indexada '{}'.";
             m_messages["as-err-case-not-constant"] = "El valor del case debe ser una expresión constante.";
             m_messages["as-err-void-return-value"] = "Una función void no puede devolver un valor.";
-            m_messages["as-err-return-type-mismatch"] = "No se puede convertir implícitamente la expresión devuelta de tipo '{}' al tipo de retorno '{}'.";
             m_messages["as-err-undefined-identifier"] = "Identificador no definido '{}'.";
             m_messages["as-err-lvalue-required-for-out-param"] = "El parámetro de salida requiere un l-value mutable o 'void'.";
             m_messages["as-err-positional-after-named-arg"] = "Un argumento posicional no puede seguir a un argumento con nombre.";
             m_messages["as-err-cannot-return-local-ref"] = "No se puede devolver una referencia a la variable local '{}'.";
             m_messages["as-err-cannot-return-param-ref"] = "No se puede devolver una referencia al parámetro '{}'.";
             m_messages["as-err-lambda-closure-disallowed"] = "Las lambdas no pueden acceder a variables locales externas (sin clausuras).";
-            m_messages["as-err-discard-const-handle"] = "No se puede convertir 'const {}@' a '{}@' porque descarta el calificador const.";
             m_messages["as-err-readonly-handle"] = "No se puede reasignar el handle de solo lectura '{}'.";
         }
     }

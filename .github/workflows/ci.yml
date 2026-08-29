@@ -110,6 +110,12 @@ jobs:
         with:
           submodules: recursive
 
+      # Cheap, and it catches a class of drift nothing else does: a diagnostic message left behind
+      # by a rule that no longer fires, or a rule emitting a code the message table has no entry for.
+      - name: Audit diagnostic codes
+        working-directory: server
+        run: python scripts/check-diagnostic-codes.py
+
       - name: Configure CMake with the oracle
         run: cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release -DANGELLSP_BUILD_ORACLE=ON
 

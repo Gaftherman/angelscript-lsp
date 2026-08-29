@@ -513,6 +513,36 @@ TEST_CASE("ControlFlow - A return after a try that does not return is enough")
     CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
 }
 
+TEST_CASE("ControlFlow - A primitive is not a foreach container")
+{
+    // Nothing can register opForBegin/opForEnd/opForNext/opForValue on `int`, so this one is
+    // decidable without seeing the host's C++. The real compiler answers it with
+    // "Type 'int' is not valid type for foreach loops".
+    const std::string code =
+        "void Loop()\n"
+        "{\n"
+        "    int total = 5;\n"
+        "    foreach (auto n : total) { }\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-foreach-container"));
+}
+
+TEST_CASE("ControlFlow - A container whose opFor methods are not declared stays silent")
+{
+    // A class may have them registered in C++ with no stub recording it, so an absent declaration
+    // proves nothing - unlike a primitive, which can never have them.
+    const std::string code =
+        "class Bag {}\n"
+        "void Loop()\n"
+        "{\n"
+        "    Bag b;\n"
+        "    foreach (auto n : b) { }\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-invalid-foreach-container"));
+}
+
 TEST_CASE("ControlFlow - Control Flow Corpus Audit" * doctest::skip(true))
 {
     static const std::vector<std::string> k_codes = {
