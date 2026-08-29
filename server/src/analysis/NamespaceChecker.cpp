@@ -82,31 +82,25 @@ namespace angel_lsp::analysis
                             ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
                                             "as-err-undefined-identifier", calleeName, DiagnosticSeverity::Error);
                         }
-                        else
-                        {
-                            auto containers = GetEnclosingContainers(node, sourceCode);
-                            auto directSyms = FindSymbolsInScope(table, containers, calleeName, {});
-                            if (directSyms.empty())
-                            {
-                                ankerl::unordered_dense::set<std::string> matchingNamespaces;
-                                for (const auto &ns : usings)
-                                {
-                                    std::string q = ns + "::" + calleeName;
-                                    if (!table.FindSymbols(q).empty())
-                                    {
-                                        matchingNamespaces.insert(ns);
-                                    }
-                                }
-
-                                if (matchingNamespaces.size() > 1)
-                                {
-                                    TSPoint startPt = ts_node_start_point(funcNode);
-                                    TSPoint endPt = ts_node_end_point(funcNode);
-                                    ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
-                                                    "as-err-ambiguous-identifier", calleeName, DiagnosticSeverity::Error);
-                                }
-                            }
-                        }
+                        // Two using-directives that both declare the name used to be reported
+                        // here as an ambiguous symbol. The compiler does not agree, and never did:
+                        //
+                        //     namespace A { void f(string s) {} }
+                        //     namespace B { void f(int i) {} }
+                        //     using namespace A;  using namespace B;
+                        //     void g() { f(1); }        // compiles - picks B::f
+                        //
+                        // A directive does not shadow and does not stop the search; every imported
+                        // namespace contributes at once and ordinary overload resolution decides.
+                        // Ambiguity is a property of the signatures, not of the scope count, and
+                        // the compiler says so only when resolution itself cannot choose -
+                        // "Multiple matching signatures to 'f(const string)'". CallChecker reaches
+                        // that verdict through ResolveBestOverload and reports it as
+                        // as-err-call-ambiguous, which is the only place it can honestly be
+                        // decided. Two namespaces declaring the same *variable* are not reported
+                        // by the compiler at all.
+                        //
+                        // See tests/parity/doc_p16_using_ns_overloads_merge.as, which found this.
                     }
                 }
             }

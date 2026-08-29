@@ -258,11 +258,6 @@ namespace angel_lsp::test
                         copy.code = "E_UNIMPLEMENTED_INTERFACE_METHOD";
                         linesWithSpecificErrors.insert(copy.range.start.line);
                     }
-                    else if (copy.code == "as-err-ambiguous-identifier")
-                    {
-                        copy.code = "E_AMBIGUOUS_IDENTIFIER";
-                        linesWithSpecificErrors.insert(copy.range.start.line);
-                    }
                     else if (copy.code == "as-err-undefined-namespace")
                     {
                         copy.code = "E_UNDEFINED_NAMESPACE";

@@ -3,6 +3,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "config/ServerConfig.h"
+#include "analysis/EngineProfiles.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SymbolTable.h"
@@ -65,7 +66,9 @@ namespace angel_lsp::test
      */
     inline CorpusResult RunCorpusAudit(const std::function<bool(const std::string &)> &interesting,
                                        size_t maxHits = 80,
-                                       const angel_lsp::config::DiagnosticsConfig *diagnostics = nullptr)
+                                       const angel_lsp::config::DiagnosticsConfig *diagnostics = nullptr,
+                                       angel_lsp::analysis::EngineProfileKind profile =
+                                           angel_lsp::analysis::EngineProfileKind::None)
     {
         namespace fs = std::filesystem;
         using namespace angel_lsp::analysis;
@@ -92,11 +95,27 @@ namespace angel_lsp::test
         }
 
         angel_lsp::i18n::I18n i18n;
+        const angel_lsp::config::TypeConfig types;
 
         for (auto &[groupName, groupFiles] : groups)
         {
             SymbolTable sharedTable;
             std::unordered_map<std::string, std::string> sources;
+
+            // A workspace of game scripts is analysed against the host's declarations, not in a
+            // vacuum - the server loads the profile stub before any document. Measuring without one
+            // measures a configuration nobody runs.
+            if (profile != angel_lsp::analysis::EngineProfileKind::None)
+            {
+                const std::string_view stub = angel_lsp::analysis::GetProfileStubSource(profile);
+                if (!stub.empty())
+                {
+                    AngelScriptParser stubParser;
+                    SymbolCollector stubCollector(nullptr);
+                    stubCollector.CollectSymbols(angel_lsp::analysis::GetProfileSyntheticUri(profile),
+                                                 std::string(stub), stubParser, sharedTable);
+                }
+            }
 
             for (const auto &path : groupFiles)
             {
@@ -133,6 +152,12 @@ namespace angel_lsp::test
 
                 SemanticAnalysisRequest request{ sharedTable, fileUri, "", &i18n };
                 request.diagnostics = diagnostics;
+
+                // The server always analyses with a TypeConfig, and several rules read it - which
+                // types are the engine's string and array among them. Without one, `string` itself
+                // came back as an unresolved type, and a measurement taken that way measures the
+                // harness.
+                request.typeConfig = &types;
 
                 // Non-const handle so `auto` deduction is written back - this tree is local to the
                 // iteration and reachable by nothing else. See SemanticAnalysisRequest.h.
