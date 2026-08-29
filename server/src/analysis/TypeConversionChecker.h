@@ -55,4 +55,23 @@ namespace angel_lsp::analysis
      * @param ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
      */
     void CheckTypeConversions(const TypeConversionCheckRequest &request, DiagnosticContext &ctx);
+
+    /**
+     * @brief Whether a value of `fromType` can reach `toType` implicitly.
+     *
+     * The same judgement CheckTypeConversions makes internally, exposed for the one caller that has
+     * to make it about an expression this pass does not reach: an element of an initializer list.
+     * InitializerListChecker owns the list's shape - which nestings the list factory accepts - and
+     * had no way to ask about an element's type, so `array<int> a = {"x"}` was silent where the
+     * compiler answers "Can't implicitly convert from 'const string' to 'int&'".
+     *
+     * Carries the same asymmetry as the rest of the pass, and callers depend on it: an empty or
+     * unresolved type on either side comes back true. Not knowing is never a reason to report.
+     *
+     * @param fromType Source type, as spelled - decorations are stripped internally.
+     * @param toType Target type, likewise.
+     * @param ctx Diagnostic sink; used only for the SymbolTable and config it carries.
+     */
+    bool CanConvertImplicitly(const std::string &fromType, const std::string &toType,
+                              const DiagnosticContext &ctx);
 }

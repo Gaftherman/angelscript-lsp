@@ -1154,6 +1154,7 @@ namespace angel_lsp
 
         request.typeConfig = &m_config.types;
         request.engineProperties = &m_config.engine;
+        request.diagnostics = &m_config.diagnostics;
         request.severityOverrides = m_diagnosticSeverities.empty() ? nullptr : &m_diagnosticSeverities;
         request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;
         request.scopeRoot = m_scopeIndex.GetRoot(uriStr);

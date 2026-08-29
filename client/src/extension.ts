@@ -201,6 +201,13 @@ function buildServerArgs(): string[] {
         }
     }
 
+    // Opt-in diagnostics. Not a feature switch and not an engine option: a rule that is right for
+    // a workspace whose declarations are complete and wrong for one whose host registers types in
+    // C++. Passed on only when asked for, so an untouched setting stays off the command line.
+    if (config.get<boolean>('diagnostics.reportUnknownTypes', false) === true) {
+        args.push('--report-unknown-types');
+    }
+
     // asEP_PROPERTY_ACCESSOR_MODE takes a number, not a boolean, so it is not one of
     // ENGINE_PROPERTIES above either. Passed on only when the user asked for something other than
     // this server's default, keeping an untouched setting off the command line the way the

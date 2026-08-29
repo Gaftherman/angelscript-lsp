@@ -110,6 +110,50 @@ namespace
         return result;
     }
 
+    /**
+     * @brief Diagnose without the two-code filter, for rules that emit something else.
+     *
+     * The element-type check reports as-err-no-implicit-conversion, which belongs to the conversion
+     * pass whose judgement it borrows - so it does not pass through the filter above.
+     */
+    std::vector<Diagnostic> DiagnoseAll(const std::string &body)
+    {
+        const std::string code = k_arrayStub + body;
+
+        AngelScriptParser parser;
+        SymbolCollector symbolCollector(nullptr);
+        LocalScopeCollector scopeCollector(nullptr);
+        SymbolTable symbolTable;
+        angel_lsp::i18n::I18n i18n;
+        const std::string uri = "file:///initializer.as";
+
+        angel_lsp::config::TypeConfig types;
+
+        TSTree *tree = parser.Parse(code);
+        symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
+
+        SemanticAnalysisRequest request{ symbolTable, uri, "", &i18n };
+        request.typeConfig = &types;
+        request.scopeRoot = scopeCollector.CollectScopes(code, parser);
+        request.sourceCode = code;
+        request.tree = tree;
+
+        SemanticAnalyzer analyzer(nullptr);
+        auto result = analyzer.Analyze(request);
+
+        if (tree)
+        {
+            ts_tree_delete(tree);
+        }
+        return result;
+    }
+
+    bool HasAnyCode(const std::vector<Diagnostic> &diagnostics, const std::string &code)
+    {
+        return std::any_of(diagnostics.begin(), diagnostics.end(),
+                           [&](const Diagnostic &d) { return d.code == code; });
+    }
+
     bool Names(const std::vector<Diagnostic> &diagnostics, const std::string &typeName)
     {
         const std::string quoted = "'" + typeName + "'";
@@ -330,4 +374,47 @@ TEST_CASE("ListPattern - A malformed tag is ignored rather than reported")
     const std::string code = WithPattern("class thing {}", "{repeat",
                                          "void main() { thing t = {1, {2}}; }\n");
     CHECK(Diagnose(code, {}, /*arrayTypeName=*/"").empty());
+}
+
+// =====================================================================================
+// An element's type, not just the list's shape.
+//
+// The conversion pass skips initializer lists outright, so nothing judged what was inside one and
+// `array<int> a = {"x"}` was silent. The compiler's own answer:
+//
+//     ERROR (1, 32): Can't implicitly convert from 'const string' to 'int&'.
+//
+// tests/parity/doc_r10_initlist_element_type.as. The judgement is borrowed from
+// CanConvertImplicitly rather than reimplemented here, which also borrows its silence.
+// =====================================================================================
+
+TEST_CASE("InitializerList - an element that cannot reach the element type is reported")
+{
+    const auto diagnostics = DiagnoseAll("void main() { array<int> a = {\"x\"}; }\n");
+
+    CHECK(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("InitializerList - an element that can reach it stays silent")
+{
+    const auto diagnostics = DiagnoseAll("void main() { array<int> a = {1, 2, 3}; }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("InitializerList - a widening element is not a mismatch")
+{
+    // int -> double is a conversion the compiler makes without comment, and so does this.
+    const auto diagnostics = DiagnoseAll("void main() { array<double> a = {1, 2}; }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("InitializerList - an element of unknown type is passed over")
+{
+    // `Whatever()` resolves to nothing this analyzer can read, and not knowing is never a reason to
+    // report. The borrowed judgement carries that asymmetry.
+    const auto diagnostics = DiagnoseAll("void main() { array<int> a = {Whatever()}; }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
 }

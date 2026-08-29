@@ -208,7 +208,12 @@ namespace angel_lsp::analysis::rules
                 ctx.Emit(sym, "as-err-return-not-instantiable", sig.returnBaseTypeName);
             }
 
-            if (sig.isImported && !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" &&
+            // An imported function's types must be declared - the engine resolves the import
+            // against another module by signature - so that case is always judged. Everything else
+            // is opt-in: an engine-registered type and a typo look identical from here, and the
+            // reasoning is in config::DiagnosticsConfig::reportUnknownTypes.
+            if ((sig.isImported || ctx.request.ReportsUnknownTypes()) &&
+                !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" &&
                 !IsKnownType(sig.returnBaseTypeName, ctx))
             {
                 ctx.LogRule("CheckReturnType", "as-err-unresolved-type", sym);
@@ -225,13 +230,12 @@ namespace angel_lsp::analysis::rules
             // It belongs with the use-site rules, and waits on the expression resolver reaching
             // far enough to answer what a return statement yields.
             //
-            // NOT IMPLEMENTED: as-err-unresolved-type on the return type.
-            //
-            // An engine-registered type and a typo look identical from here - neither resolves to a
-            // declaration this analyzer can read. The corpus is nothing but engine types, so the
-            // rule would report a finding on virtually every function in it. Reporting an unknown
-            // type is only decidable once the workspace's stubs are known to be complete, which is
-            // not something a single document's analysis can establish.
+            // as-err-unresolved-type on the return type used to be listed here as NOT IMPLEMENTED.
+            // The reasoning still holds - an engine-registered type and a typo look identical from
+            // here, and the corpus is nothing but engine types, so on-by-default would report
+            // virtually every function in it. What changed is that the workspaces where it *is*
+            // decidable now have a way to say so: angelscript.diagnostics.reportUnknownTypes, off
+            // by default. The rule is above.
         }
 
         // =============================================================================
@@ -657,8 +661,10 @@ namespace angel_lsp::analysis::rules
                 }
             }
 
-            if (sym.type == SymbolType::Function && sym.GetFunction().isImported &&
-                !param.baseTypeName.empty() && !IsKnownType(param.baseTypeName, ctx))
+            const bool judgeParameterType =
+                (sym.type == SymbolType::Function && sym.GetFunction().isImported) ||
+                ctx.request.ReportsUnknownTypes();
+            if (judgeParameterType && !param.baseTypeName.empty() && !IsKnownType(param.baseTypeName, ctx))
             {
                 ctx.LogParam("ValidateParameters", "as-err-unresolved-type", param, sym);
                 ctx.Emit(param, sym, "as-err-unresolved-type", param.baseTypeName);

@@ -40,6 +40,12 @@ namespace angel_lsp::analysis
          */
         const config::EngineProperties *engineProperties = nullptr;
 
+        /**
+         * @brief Opt-in diagnostics, or nullptr for the defaults. Owned by the caller, like the two
+         * above and for the same reason: a test that does not care should not have to build one.
+         */
+        const config::DiagnosticsConfig *diagnostics = nullptr;
+
         /** @brief Kill-switch for the conversion rules (see TypeConversionChecker.h). */
         bool enableTypeConversionChecks = true;
 
@@ -163,6 +169,13 @@ namespace angel_lsp::analysis
         /**
          * @brief Checks if a symbol name is in the registered engine symbol allowlist.
          */
+        /** @brief Whether an unresolved parameter or return type should be reported. See
+         *         config::DiagnosticsConfig::reportUnknownTypes for why this is off by default. */
+        bool ReportsUnknownTypes() const
+        {
+            return diagnostics && diagnostics->reportUnknownTypes;
+        }
+
         bool IsRegisteredSymbol(const std::string &name) const
         {
             return typeConfig && typeConfig->registeredSymbols.contains(name);

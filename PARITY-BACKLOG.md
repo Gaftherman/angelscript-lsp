@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1101 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1110 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -103,6 +103,22 @@ project treats as unacceptable.
   pushed before the pin can move. Until then the fix is reachable only with
   `-DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=<checkout>`, and the two `KnownGaps()` entries in
   `ParityAuditTest.cpp` stay. Delete them with the pin bump.
+- **Calls inside a namespace, unchecked entirely.** Reported from the field: `my_test_func(id)`
+  with an `int` argument and a `string` parameter drew nothing, while the identical call at file
+  scope was reported. `FindFreeCandidates` probed the symbol table for the unqualified spelling
+  only, and the collector keys a namespaced function under its qualified name alone —
+  `TEST::my_test_func`, never `my_test_func` — so the candidate set came back empty and *every*
+  call in the file went unjudged: counts, types, ambiguity, all of it. Because "no visible
+  declaration" is also what an engine function looks like, nothing about it looked wrong from the
+  inside. It now walks the scopes an unqualified name may name — innermost namespace, each
+  enclosing one, then global — stopping at the first that declares the name. `doc_r12`, `doc_r14`,
+  `doc_r15`.
+- **Initializer-list element types.** `array<int> a = {"x"}` was silent where the compiler answers
+  `Can't implicitly convert from 'const string' to 'int&'`. The list's shape was checked and its
+  contents were not, because the conversion pass skips initializer lists outright.
+  `CanConvertImplicitly` is now exported from that pass and `InitializerListChecker` borrows the
+  judgement — and with it the silence, since an unresolved element or target comes back
+  convertible. `doc_r10`.
 - **A bare accessor name inside a method.** `class C { int get_Up() const property { … } void T()
   { int v = Up; } }` compiles, and no symbol is ever named `Up` - the member is `C::get_Up` - so
   every use of a virtual property from inside its own class drew `as-err-undeclared-identifier`.
@@ -126,59 +142,67 @@ project treats as unacceptable.
 Real, oracle-confirmed, and none of it reports legal code today. Ordered by what a user notices
 first. Each lands with its `doc_`-prefixed parity case.
 
-1. **Initializer-list element types** — `array<int> a = {"x"}` is silent here and is not silent for
-   real: `Can't implicitly convert from 'const string' to 'int&'`. `InitializerListChecker`
-   validates shape against the list pattern but never an element's type. It also only visits
-   `variable_declaration` initializers — not call arguments, assignments or returns — and never
-   checks element *count*. Note for whoever does the count: an omitted element produces no node, so
-   `{ 0, 1, , 4, 5 }` arrives as four elements, not five. `doc_r10`
-2. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
+1. **Initializer lists, what is left of them.** Element *types* are checked now, but lists are only
+   visited on a `variable_declaration` — not on call arguments, assignments or returns — and the
+   element *count* is never checked against a fixed pattern. Note for whoever does the count: an
+   omitted element produces no node, so `{ 0, 1, , 4, 5 }` arrives as four elements, not five. Three
+   corpus cases stay missed for the visibility policy rather than for a defect: `il_a4`
+   (`array<array<int>> g = {1,2}` — the element type is a template, which does not resolve),
+   `il_a6` and `il_a7` (`string` declares no `@listpattern`, and an absent pattern only means the
+   stub did not say).
+2. **Unknown types on a declaration, beyond the opt-in.** `angelscript.diagnostics.reportUnknownTypes`
+   turns on `as-err-unresolved-type` for parameter and return types; it is off by default and the
+   measurement says why — on the 1061-file corpus the count goes from 7096 to 13999, and the extra
+   findings are `Vector` and `CBaseEntity`. What is still missing is a way for a workspace to
+   *establish* that its stubs are complete, which would let this be decided rather than declared.
+   `doc_r13`
+3. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
    (`angelscript.engine.propertyAccessorMode`, `--engine-property=propertyAccessorMode=<2|3>`,
    default `2`) and the undeclared-identifier rule already reads it. The rest of the accessor
    handling does not: `SemanticHelpers`' member-access fallback to `Type::get_X` still runs
    regardless of mode, so under `3` a `c.V` whose accessor lacks the `property` keyword is still
    accepted where the compiler answers `'V' is not a member of 'C'`. Missed diagnostic, not a false
    positive. `doc_r07`
-3. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
+4. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
    value`, `Float value truncated in implicit conversion to integer`, `Signed/Unsigned mismatch`.
    None exist here. Decidable from the source alone, so the visibility policy permits them; the
    narrowing tables at `OverloadResolver.cpp` already exist and feed only overload ranking today.
-4. **Completion hygiene** — suppress completion inside comments and string literals, and after the
+5. **Completion hygiene** — suppress completion inside comments and string literals, and after the
    `:` of a `case X:` label. `CompletionHandler::GetCompletion` is handed `request.tree` and never
    looks at it, so `case FOO:` currently offers every local, every global and all 60 keywords.
-5. **Typedef unwrapping inside template arguments** — `OverloadResolver` unwraps a typedef only at
+6. **Typedef unwrapping inside template arguments** — `OverloadResolver` unwraps a typedef only at
    the outer name, so a host declaring `typedef uint8 byte;` still fails on `array<byte>` against
    `array<uint8>`. This is the true, narrow form of `TYPE-05`.
-6. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
+7. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
    check when the class is abstract. Only emit where the whole hierarchy is visible. `doc_r08`
-7. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
+8. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
     so `arr.length()` on a bracket-declared variable gets no hover, no completion and no checking
     (`CallChecker` bails at the visibility guard). Normalization lives in exactly two places today
     and one of them hardcodes `"array"` rather than reading `config.types.arrayTypeName`.
-8. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
+9. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-9. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
+10. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
     no `showErrorMessage`, no `errorHandler` and no status bar. Highest value per line on the list.
-10. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
+11. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
     `contributes.commands` client-side.
-11. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
+12. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
     and every lambda argument are exploded Allman-style; `#if` is forced to column 0; a metadata
     block is joined onto the declaration line.
-12. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
+13. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
     line, so a cross-file hover can show an unrelated comment from the local file. The correct
     pattern is already in `ResolveCompletionItem`. Then inherit documentation from an overridden
     interface method (`SUGG-04`).
-13. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+14. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-14. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+15. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-15. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+16. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-16. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+17. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-17. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+18. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope

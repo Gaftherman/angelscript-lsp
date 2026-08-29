@@ -267,6 +267,11 @@
           "default": true,
           "markdownDescription": "Report conversions with no constructor, `opConv`/`opImplConv` or `opCast`/`opImplCast` to back them."
         },
+        "angelscript.diagnostics.reportUnknownTypes": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Report a parameter or return type that resolves to no declaration.\n\n`void f(TypoTypeName x)` is a compile error — the engine answers \"Identifier 'TypoTypeName' is not a data type in namespace 'TEST' or parent\" — and it is also exactly what a legitimate engine-registered type looks like from here. On a corpus of 1061 Sven Co-op scripts this setting takes the count from 7096 findings to 13999, and the extra ones are `Vector` and `CBaseEntity`: types the host registers in C++ that no stub declares.\n\nTurn it on when your API is fully described in `as.predefined` or by an engine profile. A typo in a signature is then caught at the declaration instead of surfacing as silence at every call site."
+        },
         "angelscript.engine.allowUnsafeReferences": {
           "type": "boolean",
           "default": false,

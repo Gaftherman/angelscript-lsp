@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/DiagnosticContext.h"
+#include "analysis/ScopeTree.h"
 
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -27,6 +28,15 @@ namespace angel_lsp::analysis
 
         /** @brief Document source text the tree was parsed from. */
         std::string_view sourceCode;
+
+        /**
+         * @brief Root of the document's lexical scope tree, or nullptr when none was collected.
+         *
+         * Needed to type an element that names something - `array<int> a = {count}` - rather than
+         * spelling a literal. Without it the element check still runs on literals and stays silent
+         * on everything else, which is the correct degradation.
+         */
+        const Scope *scopeRoot = nullptr;
     };
 
     /**
