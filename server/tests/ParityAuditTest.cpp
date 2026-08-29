@@ -137,13 +137,16 @@ namespace
               "behind optional<string> o(...) is not visible to any analyzer reading that stub. "
               "The engine registers one in C++. Stub gap, not an analyzer defect." },
 
-            // The two below are not stub gaps. They are grammar gaps this analyzer has and has
-            // not closed yet, each confirmed against the oracle and each written up in
-            // docs/PARITY-BACKLOG.md with the compiler output that proves it. They are listed here
-            // rather than deleted because the file failing is the point: when the grammar learns
-            // the construct, the entry comes out and the count moves. An entry left here after its
-            // gap is closed shows up as a file that no longer needs explaining, which is the only
-            // signal that would otherwise be silent.
+            // The two below are not stub gaps. They are grammar gaps, and both are already fixed -
+            // on tree-sitter-angelscript's feat/metadata-and-list-holes branch, which
+            // cmake/TreeSitter.cmake cannot pin until that branch is pushed. Building with
+            // -DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=<checkout> closes them today; the pinned
+            // fetch still carries the old grammar, so the entries stay until the pin moves.
+            //
+            // They are inert once the pin catches up: FindKnownGap is only consulted for a file
+            // that actually came back a false positive, so an entry whose gap is closed costs
+            // nothing. Delete them with the pin bump anyway - a list of gaps that are not gaps is
+            // how the next reader learns to distrust the list.
             { "doc_g02_metadata.as",
               "PARSER-09. CScriptBuilder strips a [Property, Category=\"x\"] block before the "
               "compiler sees the declaration, so metadata compiles. The grammar has no rule for it "

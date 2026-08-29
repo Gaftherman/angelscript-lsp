@@ -90,6 +90,19 @@ project treats as unacceptable.
   widening out of it, the explicit `Color(1)` cast and a class declaring an operator that produces
   one all stay legal. A test asserted the old, wrong answer under the heading "enums are out of
   scope"; it now asserts the compiler's. `doc_r09`, `doc_p15`
+- **Metadata blocks and omitted initializer elements.** `[Property, Category="Weapons"]` before a
+  declaration and `{ 0, 1, , 4, 5 }` both compile — `CScriptBuilder` strips the metadata before the
+  compiler sees it, and an omitted element takes the type's default. Neither had a grammar rule, so
+  each turned its whole declaration into an ERROR node and the symbol left the index along with the
+  annotation. Fixed in `tree-sitter-angelscript` on `feat/metadata-and-list-holes` (corpus
+  181 → 188): metadata is a sibling of the declaration it precedes, the way the builder treats it,
+  and the initializer list is written with the comma as the anchor so `{ }` keeps a single
+  derivation. `doc_g02`, `doc_g03`.
+
+  **Not yet shipped.** `server/cmake/TreeSitter.cmake` still pins `017b0d3`; the branch has to be
+  pushed before the pin can move. Until then the fix is reachable only with
+  `-DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=<checkout>`, and the two `KnownGaps()` entries in
+  `ParityAuditTest.cpp` stay. Delete them with the pin bump.
 - **A bare accessor name inside a method.** `class C { int get_Up() const property { … } void T()
   { int v = Up; } }` compiles, and no symbol is ever named `Up` - the member is `C::get_Up` - so
   every use of a virtual property from inside its own class drew `as-err-undeclared-identifier`.
@@ -113,65 +126,59 @@ project treats as unacceptable.
 Real, oracle-confirmed, and none of it reports legal code today. Ordered by what a user notices
 first. Each lands with its `doc_`-prefixed parity case.
 
-1. **Metadata blocks** — `[Property, Category="Weapons"]`. `CScriptBuilder` strips them, so they
-   compile; the grammar has no rule, so the block turns its whole declaration into an ERROR node and
-   the symbol leaves the index. Grammar work in `tree-sitter-angelscript`, then a pin bump in
-   `server/cmake/TreeSitter.cmake`. `doc_g02`
-2. **Omitted initializer-list elements** — `{ 0, 1, , 4, 5 }` gives the hole the type's default.
-   `initializer_list` uses `commaSep`, which has no empty alternative. Same grammar change.
-   `doc_g03`
-3. **Initializer-list element types** — `array<int> a = {"x"}` is silent here and is not silent for
+1. **Initializer-list element types** — `array<int> a = {"x"}` is silent here and is not silent for
    real: `Can't implicitly convert from 'const string' to 'int&'`. `InitializerListChecker`
    validates shape against the list pattern but never an element's type. It also only visits
    `variable_declaration` initializers — not call arguments, assignments or returns — and never
-   checks element *count*. `doc_r10`
-4. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
+   checks element *count*. Note for whoever does the count: an omitted element produces no node, so
+   `{ 0, 1, , 4, 5 }` arrives as four elements, not five. `doc_r10`
+2. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
    (`angelscript.engine.propertyAccessorMode`, `--engine-property=propertyAccessorMode=<2|3>`,
    default `2`) and the undeclared-identifier rule already reads it. The rest of the accessor
    handling does not: `SemanticHelpers`' member-access fallback to `Type::get_X` still runs
    regardless of mode, so under `3` a `c.V` whose accessor lacks the `property` keyword is still
    accepted where the compiler answers `'V' is not a member of 'C'`. Missed diagnostic, not a false
    positive. `doc_r07`
-5. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
+3. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
    value`, `Float value truncated in implicit conversion to integer`, `Signed/Unsigned mismatch`.
    None exist here. Decidable from the source alone, so the visibility policy permits them; the
    narrowing tables at `OverloadResolver.cpp` already exist and feed only overload ranking today.
-6. **Completion hygiene** — suppress completion inside comments and string literals, and after the
+4. **Completion hygiene** — suppress completion inside comments and string literals, and after the
    `:` of a `case X:` label. `CompletionHandler::GetCompletion` is handed `request.tree` and never
    looks at it, so `case FOO:` currently offers every local, every global and all 60 keywords.
-7. **Typedef unwrapping inside template arguments** — `OverloadResolver` unwraps a typedef only at
+5. **Typedef unwrapping inside template arguments** — `OverloadResolver` unwraps a typedef only at
    the outer name, so a host declaring `typedef uint8 byte;` still fails on `array<byte>` against
    `array<uint8>`. This is the true, narrow form of `TYPE-05`.
-8. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
+6. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
    check when the class is abstract. Only emit where the whole hierarchy is visible. `doc_r08`
-9. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
+7. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
     so `arr.length()` on a bracket-declared variable gets no hover, no completion and no checking
     (`CallChecker` bails at the visibility guard). Normalization lives in exactly two places today
     and one of them hardcodes `"array"` rather than reading `config.types.arrayTypeName`.
-10. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
+8. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-11. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
+9. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
     no `showErrorMessage`, no `errorHandler` and no status bar. Highest value per line on the list.
-12. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
+10. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
     `contributes.commands` client-side.
-13. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
+11. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
     and every lambda argument are exploded Allman-style; `#if` is forced to column 0; a metadata
     block is joined onto the declaration line.
-14. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
+12. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
     line, so a cross-file hover can show an unrelated comment from the local file. The correct
     pattern is already in `ResolveCompletionItem`. Then inherit documentation from an overridden
     interface method (`SUGG-04`).
-15. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+13. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-16. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+14. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-17. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+15. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-18. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+16. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-19. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+17. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope
