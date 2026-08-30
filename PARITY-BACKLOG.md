@@ -165,6 +165,17 @@ project treats as unacceptable.
   `LocalDefinitionKind::Variable` as a function-body local. Every legal global read inside
   `function(){}` was reported. `ResolveInScope` now has an overload reporting the owning scope, and
   the rule requires `Scope::isFunctionScope` somewhere in that scope's chain. `doc_p02`, `doc_r11`.
+- **A typedef inside a template argument.** `TYPE-05` in its true, narrow form, and the only item
+  on the WIP list that reported legal code. A typedef names a primitive and the name *is* that type
+  inside a template argument as much as anywhere else: `typedef uint8 byte;` makes `array<byte>`
+  and `array<uint8>` one instantiation, and the compiler accepts a call and an assignment between
+  them in either direction. `OverloadResolver::UnwrapTypedef` unwrapped the outer name only, so the
+  two were unrelated spellings, no candidate scored, and `Take(alias)` drew
+  `as-err-no-implicit-conversion` — a false positive. It now descends into the argument list,
+  splitting on top-level commas so `dictionary<string, array<int>>` stays two arguments and not
+  three, and rebuilding as it goes, which canonicalises the separator too: `array<int,string>` and
+  `array<int, string>` had been different types to a string comparison. The assignment direction
+  was already silent and now has a guard beside it. `doc_p19`.
 - **Initializer lists, the other five positions and the count.** A list was visited only on a
   `variable_declaration`. The grammar allows one under six parents, and the compiler accepts every
   one of them - it infers the target type from the parameter, the assignee or the declared return
@@ -228,39 +239,36 @@ first. Each lands with its `doc_`-prefixed parity case.
    value`, `Float value truncated in implicit conversion to integer`, `Signed/Unsigned mismatch`.
    None exist here. Decidable from the source alone, so the visibility policy permits them; the
    narrowing tables at `OverloadResolver.cpp` already exist and feed only overload ranking today.
-4. **Typedef unwrapping inside template arguments** — `OverloadResolver` unwraps a typedef only at
-   the outer name, so a host declaring `typedef uint8 byte;` still fails on `array<byte>` against
-   `array<uint8>`. This is the true, narrow form of `TYPE-05`.
-5. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
+4. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
    check when the class is abstract. Only emit where the whole hierarchy is visible. `doc_r08`
-6. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
+5. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
     so `arr.length()` on a bracket-declared variable gets no hover, no completion and no checking
     (`CallChecker` bails at the visibility guard). Normalization lives in exactly two places today
     and one of them hardcodes `"array"` rather than reading `config.types.arrayTypeName`.
-7. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
+6. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-8. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
+7. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
     no `showErrorMessage`, no `errorHandler` and no status bar. Highest value per line on the list.
-9. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
+8. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
     `contributes.commands` client-side.
-10. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
+9. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
     and every lambda argument are exploded Allman-style; `#if` is forced to column 0; a metadata
     block is joined onto the declaration line.
-11. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
+10. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
     line, so a cross-file hover can show an unrelated comment from the local file. The correct
     pattern is already in `ResolveCompletionItem`. Then inherit documentation from an overridden
     interface method (`SUGG-04`).
-12. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+11. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-13. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+12. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-14. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+13. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-15. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+14. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-16. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+15. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope

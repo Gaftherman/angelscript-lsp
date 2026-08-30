@@ -677,3 +677,22 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
     CHECK(totalFiles > 0);
     CHECK(totalFlagged == 0);
 }
+
+TEST_CASE("TypeConversion - A typedef inside a template argument is not a different type")
+{
+    // The assignment half of the same question the overload resolver answers. `typedef uint8 byte;`
+    // makes `array<byte>` and `array<uint8>` one instantiation, and the compiler accepts the
+    // assignment in either direction - tests/parity/doc_p19_typedef_template_argument.as.
+    const std::string toBase =
+        "class array<T> { uint length() const; }\n"
+        "typedef uint8 byte;\n"
+        "void main() { array<byte> a; array<uint8> b = a; }\n";
+
+    const std::string toTypedef =
+        "class array<T> { uint length() const; }\n"
+        "typedef uint8 byte;\n"
+        "void main() { array<uint8> a; array<byte> b = a; }\n";
+
+    CHECK(ConversionDiagnostics(toBase).empty());
+    CHECK(ConversionDiagnostics(toTypedef).empty());
+}

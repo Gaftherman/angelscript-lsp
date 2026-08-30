@@ -754,3 +754,77 @@ TEST_CASE("CallChecker - an inner namespace shadows the global scope")
 
     CHECK(HasCode(diagnostics, "as-err-no-implicit-conversion"));
 }
+
+// =====================================================================================
+// A typedef inside a template argument.
+//
+// AngelScript's typedef names a primitive, and the name is the type - inside a template argument
+// as much as anywhere else. The compiler accepts all four directions:
+//
+//   typedef uint8 byte;
+//   void Take(array<uint8> d);  array<byte> b;  Take(b);   accepted
+//   void Take(array<byte> d);   array<uint8> b; Take(b);   accepted
+//
+// tests/parity/doc_p19_typedef_template_argument.as. UnwrapTypedef ran on the outer name only, so
+// `array<byte>` and `array<uint8>` were two different types to overload resolution and a legal
+// call was reported - a false positive, which is the one failure mode this project does not accept.
+// =====================================================================================
+
+TEST_CASE("CallChecker - A typedef inside a template argument is the type it names")
+{
+    const std::string code =
+        "class array<T> { uint length() const; }\n"
+        "typedef uint8 byte;\n"
+        "void Take(array<uint8> data) {}\n"
+        "void main() { array<byte> b; Take(b); }\n";
+
+    const auto diagnostics = AnalyzeCallSnippet(code);
+
+    CHECK_FALSE(HasCode(diagnostics, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - A typedef in the parameter's template argument is the same type too")
+{
+    const std::string code =
+        "class array<T> { uint length() const; }\n"
+        "typedef uint8 byte;\n"
+        "void Take(array<byte> data) {}\n"
+        "void main() { array<uint8> b; Take(b); }\n";
+
+    const auto diagnostics = AnalyzeCallSnippet(code);
+
+    CHECK_FALSE(HasCode(diagnostics, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - A typedef in a nested template argument is unwrapped as well")
+{
+    const std::string code =
+        "class array<T> { uint length() const; }\n"
+        "typedef uint8 byte;\n"
+        "void Take(array<array<uint8>> data) {}\n"
+        "void main() { array<array<byte>> b; Take(b); }\n";
+
+    const auto diagnostics = AnalyzeCallSnippet(code);
+
+    CHECK_FALSE(HasCode(diagnostics, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - Unwrapping a template argument does not make unrelated types match")
+{
+    // The guard for the fix: unwrapping must not turn `array<byte>` into something that satisfies
+    // `array<string>`. The compiler answers this one "No matching signatures to 'Take(uint8[]&)'",
+    // and this analyzer names the argument rather than the call, because with a single candidate
+    // there is one parameter to blame.
+    const std::string code =
+        "class array<T> { uint length() const; }\n"
+        "typedef uint8 byte;\n"
+        "void Take(array<string> data) {}\n"
+        "void main() { array<byte> b; Take(b); }\n";
+
+    const auto diagnostics = AnalyzeCallSnippet(code);
+
+    CHECK(HasCode(diagnostics, "as-err-no-implicit-conversion"));
+}

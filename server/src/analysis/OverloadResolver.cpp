@@ -157,7 +157,44 @@ namespace angel_lsp::analysis
             return false;
         }
 
-        std::string UnwrapTypedef(const std::string &typeName, const SymbolTable &symbolTable)
+        /** @brief How deep a template argument may nest before unwrapping gives up. */
+        constexpr int k_maxTypedefDepth = 8;
+
+        /**
+         * @brief Splits `int, array<string>` into its top-level arguments.
+         *
+         * Depth-counted rather than split on every comma: `dictionary<string, array<int>>` has two
+         * arguments and three commas, and a plain split would produce `array<int` as a type name.
+         */
+        std::vector<std::string> SplitTemplateArguments(std::string_view arguments)
+        {
+            std::vector<std::string> parts;
+            int depth = 0;
+            size_t start = 0;
+
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                const char c = arguments[i];
+                if (c == '<')
+                {
+                    ++depth;
+                }
+                else if (c == '>')
+                {
+                    --depth;
+                }
+                else if (c == ',' && depth == 0)
+                {
+                    parts.emplace_back(arguments.substr(start, i - start));
+                    start = i + 1;
+                }
+            }
+            parts.emplace_back(arguments.substr(start));
+            return parts;
+        }
+
+        std::string UnwrapTypedef(const std::string &typeName, const SymbolTable &symbolTable,
+                                  int depth = 0)
         {
             std::string current = NormalizeType(typeName);
             const auto syms = symbolTable.FindSymbolsPtr(current);
@@ -171,7 +208,40 @@ namespace angel_lsp::analysis
                     }
                 }
             }
-            return current;
+
+            // A typedef names a primitive, and a primitive is most of what a template argument ever
+            // is. `typedef uint8 byte;` makes `array<byte>` and `array<uint8>` the same
+            // instantiation, and the compiler accepts a call between them in either direction -
+            // but unwrapping only the outer name left them as two unrelated spellings, so a legal
+            // call was reported. That is a false positive, which is the one failure mode this
+            // project does not accept. tests/parity/doc_p19_typedef_template_argument.as.
+            //
+            // Rebuilding also canonicalises the separator, so `array<int,string>` and
+            // `array<int, string>` stop being different types to a string comparison.
+            if (depth >= k_maxTypedefDepth)
+            {
+                return current;
+            }
+
+            const size_t open = current.find('<');
+            if (open == std::string::npos || open == 0 || current.back() != '>')
+            {
+                return current;
+            }
+
+            std::string rebuilt = current.substr(0, open) + "<";
+            const std::string inner = current.substr(open + 1, current.size() - open - 2);
+            bool first = true;
+            for (const auto &argument : SplitTemplateArguments(inner))
+            {
+                if (!first)
+                {
+                    rebuilt += ", ";
+                }
+                first = false;
+                rebuilt += UnwrapTypedef(argument, symbolTable, depth + 1);
+            }
+            return rebuilt + ">";
         }
     }
 
