@@ -5,6 +5,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "utils/LspLogger.h"
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>

@@ -9,6 +9,7 @@
 
 #include "config/ServerConfig.h"
 #include <tree_sitter/api.h>
+#include <cstdint>
 #include <cstring>
 #include <string_view>
 

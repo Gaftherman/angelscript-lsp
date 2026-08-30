@@ -8,7 +8,7 @@ namespace angel_lsp::analysis
     /**
      * @brief Extracts and formats the doc comment preceding a declaration.
      *
-     * Understands both `///`/`//` runs and `/** ... *\/` blocks, and renders the Doxygen tags a
+     * Understands both `///`/`//` runs and `/\*\* ... *\/` blocks, and renders the Doxygen tags a
      * declaration usually carries (@brief, @param, @return, @note, @warning, @see) as markdown.
      *
      * Lives in the analysis layer rather than with hover because more than one feature shows
