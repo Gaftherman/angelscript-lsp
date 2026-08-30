@@ -38,6 +38,10 @@ namespace
             const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
             dir = std::filesystem::temp_directory_path() / ("angel_lsp_server_" + unique);
             std::filesystem::create_directories(dir);
+            std::error_code ec;
+            auto c = std::filesystem::canonical(dir, ec);
+            if (!ec)
+                dir = std::move(c);
         }
 
         ~WorkspaceFixture()

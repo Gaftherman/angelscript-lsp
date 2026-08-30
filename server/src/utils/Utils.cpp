@@ -1,17 +1,33 @@
 #include "utils/Utils.h"
 
+#include <lsp/uri.h>
+
 #include <algorithm>
 #include <unordered_set>
 
 namespace angel_lsp::utils
 {
-    std::string UriToPath(const std::string &uri)
+    std::string UriToPath(const std::string &uriStr)
     {
+        if (uriStr.rfind("file://", 0) == 0)
+        {
+            const lsp::Uri uri = lsp::Uri::parse(uriStr);
+            if (uri.isValid() && uri.isFileUri())
+            {
+                return uri.fsPath();
+            }
+            std::string s = uriStr.substr(7);
 #if defined(_WIN32)
-        if (!uri.empty() && uri[0] == '/')
-            return uri.substr(1);
+            if (!s.empty() && s[0] == '/')
+                s = s.substr(1);
 #endif
-        return uri;
+            return s;
+        }
+#if defined(_WIN32)
+        if (!uriStr.empty() && uriStr[0] == '/')
+            return uriStr.substr(1);
+#endif
+        return uriStr;
     }
 
     std::string PathToUri(const std::string &filePath)
