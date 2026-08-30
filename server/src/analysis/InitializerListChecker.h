@@ -3,6 +3,7 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/ScopeTree.h"
 
+#include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
 
@@ -45,4 +46,24 @@ namespace angel_lsp::analysis
      * @param ctx Diagnostic sink; also carries the TypeConfig naming the array template.
      */
     void CheckInitializerLists(const InitializerListCheckRequest &request, DiagnosticContext &ctx);
+
+    /**
+     * @brief Checks one list against a target type the caller already knows.
+     *
+     * A list written as a call argument is compiled against the parameter it lands on, and which
+     * parameter that is depends on the overload the compiler picks - a question this pass cannot
+     * answer and CallChecker already has. So the argument case is driven from there: it names the
+     * type, this names the verdict, and the rules stay in one place.
+     *
+     * @param listNode   The `initializer_list` node.
+     * @param targetType The type it initializes, as written; decorations are stripped here.
+     * @param sourceCode Document text the tree was parsed from.
+     * @param scope      Scope the list sits in, for typing elements that name something.
+     * @param ctx        Diagnostic sink.
+     */
+    void CheckInitializerListAgainstType(TSNode listNode,
+                                         const std::string &targetType,
+                                         std::string_view sourceCode,
+                                         const Scope *scope,
+                                         DiagnosticContext &ctx);
 }

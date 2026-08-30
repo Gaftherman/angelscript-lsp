@@ -209,6 +209,8 @@ namespace angel_lsp::i18n
         m_messages["as-err-initializer-list-not-supported"] = "Initialization lists cannot be used with '{}'.";
         m_messages["as-hint-list-pattern-unknown"] = "No list pattern is declared for '{}', so the contents of this list are not checked. Add a /// @listpattern tag above its declaration in your .as.predefined, copied from the type's asBEHAVE_LIST_FACTORY registration - for example {{repeat T}}.";
         m_messages["as-err-initializer-list-expected"] = "Expected a list enclosed by {{ }} to match pattern.";
+        m_messages["as-err-initializer-list-too-few"] = "Not enough values to match pattern.";
+        m_messages["as-err-initializer-list-too-many"] = "Too many values to match pattern.";
         m_messages["as-err-no-matching-constructor"] = "No matching signatures to '{}'.";
         m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous.";
         m_messages["as-err-undefined-namespace"] = "Undefined namespace '{}'.";
@@ -346,6 +348,8 @@ namespace angel_lsp::i18n
             m_messages["as-err-initializer-list-not-supported"] = "No se pueden usar listas de inicialización con '{}'.";
             m_messages["as-hint-list-pattern-unknown"] = "No hay un patrón de lista declarado para '{}', así que el contenido de esta lista no se verifica. Añade una etiqueta /// @listpattern sobre su declaración en tu .as.predefined, copiada del registro asBEHAVE_LIST_FACTORY del tipo - por ejemplo {{repeat T}}.";
             m_messages["as-err-initializer-list-expected"] = "Se esperaba una lista entre {{ }} para coincidir con el patrón.";
+            m_messages["as-err-initializer-list-too-few"] = "No hay suficientes valores para coincidir con el patrón.";
+            m_messages["as-err-initializer-list-too-many"] = "Demasiados valores para coincidir con el patrón.";
             m_messages["as-err-no-matching-constructor"] = "No coinciden las firmas con '{}'.";
             m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";
             m_messages["as-err-undefined-namespace"] = "Namespace no definido '{}'.";
