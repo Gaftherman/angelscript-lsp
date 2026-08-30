@@ -334,8 +334,13 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         // anything at all about `array<int> a = {1, {2}}`.
         angel_lsp::config::TypeConfig types;
 
+        // The server's own defaults, not the struct's. reportUnknownTypes is on there, and an
+        // audit run without it judges a configuration nobody ships.
+        static const angel_lsp::config::DiagnosticsConfig diagnostics;
+
         SemanticAnalysisRequest request{ table, uri, ".as.predefined", &i18n };
         request.typeConfig = &types;
+        request.diagnostics = &diagnostics;
 
         std::shared_ptr<Scope> scopeRoot = scopes.CollectScopes(source, parser);
         request.scopeRoot = scopeRoot;

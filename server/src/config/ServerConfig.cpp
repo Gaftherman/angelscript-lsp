@@ -174,18 +174,12 @@ namespace angel_lsp::config
                   << "                                          and no predefined stub can express it, so a host\n"
                   << "                                          that registers its own has to say so here.\n"
                   << "  --diagnostic-severity=<code>=<severity> Override one diagnostic's severity: error|warning|information|hint (repeatable)\n"
-                  << "  --report-unknown-types                  Report a parameter or return type that resolves to nothing\n"
-                  << "                                          (default: off). Right for a workspace whose API is fully\n"
-                  << "                                          declared; wrong for one whose host registers types in C++,\n"
-                  << "                                          where every handler names one and none of them resolve.\n"
-                  << "  --engine-profile=<string>               Set built-in engine profile: standard|svencoop|urho3d|openxray|ootp|none|auto (default: standard)\n"
-                  << "  --engine-property=<name>=<value>        Describe the host engine's SetEngineProperty settings (repeatable).\n"
-                  << "                                          Known names, with the engine's own defaults:\n"
-                  << "                                            allowUnsafeReferences  (false) permit & on primitives and standalone references\n"
-                  << "                                            privatePropAsProtected (false) let a derived class reach a private member\n"
-                  << "                                            disallowGlobalVars     (false) reject global variable declarations\n"
-                  << "                                            propertyAccessorMode   (2)     how get_X/set_X become the property X:\n"
-                  << "                                                                           2 always, 3 only with the `property` keyword\n"
+                  << "  --no-report-unknown-types               Stop reporting a parameter or return type that resolves\n"
+                  << "                                          to nothing. On by default: an unreported one surfaces as\n"
+                  << "                                          silence at every call site, since a call whose parameter\n"
+                  << "                                          types are unknown cannot be judged either. Turn it off for\n"
+                  << "                                          a host that registers types in C++ and declares none of\n"
+                  << "                                          them - or better, name its --engine-profile.\n"
                   << "  -h, --help                              Show this help message and exit\n"
                   << "  -v, --version                           Show version information and exit\n";
     }
@@ -537,6 +531,11 @@ namespace angel_lsp::config
             else if (key == "--report-unknown-types")
             {
                 config.diagnostics.reportUnknownTypes = getBoolValue(true);
+            }
+            else if (key == "--no-report-unknown-types")
+            {
+                config.diagnostics.reportUnknownTypes =
+                    inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
             else if (key == "--engine-property" || key == "--engine-prop")
             {

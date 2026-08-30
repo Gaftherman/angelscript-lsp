@@ -395,6 +395,28 @@ namespace angel_lsp::analysis
             const ResolvedPattern resolved = ResolvePattern(type, ctx, arrayLikeTemplates);
             if (!resolved.pattern.valid)
             {
+                // Nothing said what this type's list looks like, so nothing about the list can be
+                // checked - not its shape, not its element types. Silence is right as a *verdict*
+                // and useless as an explanation: the user sees a list going unchecked and has no
+                // way to know that one doc tag would fix it.
+                //
+                // So a hint, at the declaration this is initialising, and only where a hint can be
+                // acted on: the type has to be one the analyzer can actually see, because for an
+                // engine-registered type there is no declaration to tag. That is the same
+                // visibility test the rest of this pass makes, used here to decide whether to
+                // suggest rather than whether to report.
+                //
+                // A Hint, not a warning. The code compiles - a list factory registered in C++ is
+                // invisible to any stub - so this says the analyzer is missing something, never
+                // that the script is.
+                if (depth == 0 && ctx.request.symbolTable.HasSymbolAnywhere(type) &&
+                    !ctx.request.IsRegisteredSymbol(type))
+                {
+                    const TSPoint start = ts_node_start_point(listNode);
+                    const TSPoint end = ts_node_end_point(listNode);
+                    ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                    "as-hint-list-pattern-unknown", type, DiagnosticSeverity::Hint);
+                }
                 return;
             }
 

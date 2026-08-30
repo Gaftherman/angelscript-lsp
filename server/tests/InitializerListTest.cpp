@@ -418,3 +418,52 @@ TEST_CASE("InitializerList - an element of unknown type is passed over")
 
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
 }
+
+// =====================================================================================
+// When nothing said what the list should look like.
+//
+// A list factory is registered in C++ and no stub can express it, so a type with no
+// `/// @listpattern` tag has its list left entirely unchecked - shape and contents both. Silence is
+// the right verdict and a useless explanation: the user sees a list going unchecked with no way to
+// know that one doc tag would fix it. A Hint says so, at the declaration, and only where it can be
+// acted on - an engine-registered type has no declaration to tag.
+// =====================================================================================
+
+TEST_CASE("InitializerList - a declared type with no list pattern is hinted, not reported")
+{
+    const auto diagnostics = DiagnoseAll(
+        "class Config { }" + std::string(1, char(10)) +
+        "void main() { Config c = {1, 2}; }" + std::string(1, char(10)));
+
+    CHECK(HasAnyCode(diagnostics, "as-hint-list-pattern-unknown"));
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
+}
+
+TEST_CASE("InitializerList - a type that does declare a pattern is not hinted")
+{
+    // k_arrayStub's array<T> is the engine's array, so the pattern resolves and the list is
+    // actually checked. Nothing to suggest.
+    const auto diagnostics = DiagnoseAll("void main() { array<int> a = {1, 2}; }" + std::string(1, char(10)));
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-hint-list-pattern-unknown"));
+}
+
+TEST_CASE("InitializerList - an invisible type is not hinted either")
+{
+    // `HostThing` resolves to no declaration, so there is nowhere to put the tag and nothing
+    // useful to say. This is the same visibility test the rest of the pass makes, used to decide
+    // whether to suggest rather than whether to report.
+    const auto diagnostics = DiagnoseAll("void main() { HostThing h = {1, 2}; }" + std::string(1, char(10)));
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-hint-list-pattern-unknown"));
+}
+
+TEST_CASE("InitializerList - a primitive is reported, not hinted")
+{
+    // A primitive is the one family that can never have a list factory, so its silence in a stub
+    // proves something. That stays an error and gains no suggestion.
+    const auto diagnostics = DiagnoseAll("void main() { int x = {5}; }" + std::string(1, char(10)));
+
+    CHECK(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-hint-list-pattern-unknown"));
+}
