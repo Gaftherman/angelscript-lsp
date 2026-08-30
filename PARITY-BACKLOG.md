@@ -34,7 +34,7 @@ Every claim below has a script in `server/tests/parity/`:
 |---|---|
 | `doc_p*` | The compiler **accepts** it, and so do we. These are the regression guards. |
 | `doc_r*` | The compiler **rejects** it. Several of these refute the document outright. |
-| `doc_g*` | The compiler accepts it and we do **not** yet. Listed in `KnownGaps()` in `ParityAuditTest.cpp` — the entry comes out when the gap closes. |
+| `doc_g*` | The compiler accepts it and we did **not**. Listed in `KnownGaps()` in `ParityAuditTest.cpp` while the gap is open; the entry comes out when it closes, and the file stays as an accept/accept guard. Both current `doc_g` files are closed. |
 
 ---
 
@@ -99,10 +99,11 @@ project treats as unacceptable.
   and the initializer list is written with the comma as the anchor so `{ }` keeps a single
   derivation. `doc_g02`, `doc_g03`.
 
-  **Not yet shipped.** `server/cmake/TreeSitter.cmake` still pins `017b0d3`; the branch has to be
-  pushed before the pin can move. Until then the fix is reachable only with
-  `-DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=<checkout>`, and the two `KnownGaps()` entries in
-  `ParityAuditTest.cpp` stay. Delete them with the pin bump.
+  **Shipped.** `server/cmake/TreeSitter.cmake` pins `aa14847`, and the two `KnownGaps()` entries
+  in `ParityAuditTest.cpp` are gone with it. The audit could never have held them anyway - it fails
+  only on a false positive, and an ERROR node costs a symbol rather than producing a diagnostic, so
+  both gaps read to it as silence. The guards that replace them are in `SymbolCollectorTest.cpp`:
+  each construct parses without an ERROR node and its symbol is still in the index.
 - **Calls through a `using namespace`, and a fabricated ambiguity rule.** A using-directive puts a
   name in reach and the compiler judges a call through one like any other — `using namespace A;
   f(id)` with `int` against `A::f(string)` is `No matching signatures to 'f(int)'`. Candidate lookup
@@ -164,6 +165,45 @@ project treats as unacceptable.
   `LocalDefinitionKind::Variable` as a function-body local. Every legal global read inside
   `function(){}` was reported. `ResolveInScope` now has an overload reporting the owning scope, and
   the rule requires `Scope::isFunctionScope` somewhere in that scope's chain. `doc_p02`, `doc_r11`.
+- **Initializer lists, the other five positions and the count.** A list was visited only on a
+  `variable_declaration`. The grammar allows one under six parents, and the compiler accepts every
+  one of them - it infers the target type from the parameter, the assignee or the declared return
+  type and compiles the list against that - so `Take({"x"})`, `a = {"x"}` and `return {1,"x"};` all
+  went unjudged where the compiler answers `Can't implicitly convert from 'const string' to 'int&'`.
+  All six are now reached: the declarator, the assignment (plain `=` only - `a += {1}` is "Illegal
+  operation on 'int[]&'", a verdict about the operator), the return, a nested list, the `array<int>
+  = {…}` anonymous object, and the call argument. The argument case is driven from `CallChecker`,
+  which is the pass that knows which overload was picked; it validates only where the pick is not in
+  question - one candidate of that arity and no named arguments - because with two the compiler's
+  own answer is `Multiple matching signatures to 'Take({...})'`. `doc_r18`, `doc_r19`, `doc_r20`,
+  `doc_p18`.
+
+  The element *count* is checked too, but only against a group with no `repeat` in it: a repeat
+  consumes everything from its position onward and is satisfied by none at all, so `array<int> a =
+  {};` compiles. A fixed group is exact in both directions - `dictionary`'s `{repeat {string, ?}}`
+  gives `Not enough values to match pattern` for `{{'a'}}` and `Too many values` for `{{'a',1,2}}` -
+  which is `as-err-initializer-list-too-few` and `-too-many`. The count comes from the *separators*,
+  never from the nodes: an omitted element produces no node and the compiler still counts it, and
+  `dictionary d = {{'a',}};` compiles, so counting children would have reported legal code.
+  `doc_r21`, `doc_r22`, and `doc_g03` for the hole.
+
+  Three corpus cases stay missed for the visibility policy rather than for a defect: `il_a4`
+  (`array<array<int>> g = {1,2}` — the element type is a template, which does not resolve), `il_a6`
+  and `il_a7` (`string` declares no `@listpattern`, and an absent pattern only means the stub did
+  not say).
+- **Completion inside comments, strings and after a `case` label.** `.` and `:` are trigger
+  characters and the global fallback answers whatever the earlier contexts do not claim, so typing
+  the colon of `case Red:` - a position where no symbol may be written - returned every local,
+  every global and all 60 keywords, and so did every character typed inside a comment or a string.
+  `GetCompletion` now classifies the cursor before anything else: a scan from the top of the file
+  says comment, string or code, and the first two are answered with nothing. Read by hand rather
+  than off `request.tree`, because completion is asked for mid-edit, where an unterminated string
+  and an unclosed block comment are ERROR nodes rather than string and comment ones - the exact
+  states the suppression exists for. The scan follows the default engine, like the ones in
+  `FormattingHandler` and `PreprocessorRegions`: `"` and `'` both end at the line break, so one
+  missing quote cannot silence the rest of the file, while a `"""` heredoc spans lines. `case
+  Some::` still completes - it ends in `::`, which is the qualifier context and not a finished
+  label.
 
 ---
 
@@ -172,66 +212,55 @@ project treats as unacceptable.
 Real, oracle-confirmed, and none of it reports legal code today. Ordered by what a user notices
 first. Each lands with its `doc_`-prefixed parity case.
 
-1. **Initializer lists, what is left of them.** Element *types* are checked now, but lists are only
-   visited on a `variable_declaration` — not on call arguments, assignments or returns — and the
-   element *count* is never checked against a fixed pattern. Note for whoever does the count: an
-   omitted element produces no node, so `{ 0, 1, , 4, 5 }` arrives as four elements, not five. Three
-   corpus cases stay missed for the visibility policy rather than for a defect: `il_a4`
-   (`array<array<int>> g = {1,2}` — the element type is a template, which does not resolve),
-   `il_a6` and `il_a7` (`string` declares no `@listpattern`, and an absent pattern only means the
-   stub did not say).
-2. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
+1. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
    user, not a deduction: nothing lets the server establish that an unresolved name is a typo rather
    than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
    exists the setting is the honest interface, but it is the reason the rule cannot simply be
    unconditional.
-3. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
+2. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
    (`angelscript.engine.propertyAccessorMode`, `--engine-property=propertyAccessorMode=<2|3>`,
    default `2`) and the undeclared-identifier rule already reads it. The rest of the accessor
    handling does not: `SemanticHelpers`' member-access fallback to `Type::get_X` still runs
    regardless of mode, so under `3` a `c.V` whose accessor lacks the `property` keyword is still
    accepted where the compiler answers `'V' is not a member of 'C'`. Missed diagnostic, not a false
    positive. `doc_r07`
-4. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
+3. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
    value`, `Float value truncated in implicit conversion to integer`, `Signed/Unsigned mismatch`.
    None exist here. Decidable from the source alone, so the visibility policy permits them; the
    narrowing tables at `OverloadResolver.cpp` already exist and feed only overload ranking today.
-5. **Completion hygiene** — suppress completion inside comments and string literals, and after the
-   `:` of a `case X:` label. `CompletionHandler::GetCompletion` is handed `request.tree` and never
-   looks at it, so `case FOO:` currently offers every local, every global and all 60 keywords.
-6. **Typedef unwrapping inside template arguments** — `OverloadResolver` unwraps a typedef only at
+4. **Typedef unwrapping inside template arguments** — `OverloadResolver` unwraps a typedef only at
    the outer name, so a host declaring `typedef uint8 byte;` still fails on `array<byte>` against
    `array<uint8>`. This is the true, narrow form of `TYPE-05`.
-7. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
+5. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
    check when the class is abstract. Only emit where the whole hierarchy is visible. `doc_r08`
-8. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
+6. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
     so `arr.length()` on a bracket-declared variable gets no hover, no completion and no checking
     (`CallChecker` bails at the visibility guard). Normalization lives in exactly two places today
     and one of them hardcodes `"array"` rather than reading `config.types.arrayTypeName`.
-9. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
+7. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-10. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
+8. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
     no `showErrorMessage`, no `errorHandler` and no status bar. Highest value per line on the list.
-11. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
+9. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
     `contributes.commands` client-side.
-12. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
+10. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
     and every lambda argument are exploded Allman-style; `#if` is forced to column 0; a metadata
     block is joined onto the declaration line.
-13. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
+11. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
     line, so a cross-file hover can show an unrelated comment from the local file. The correct
     pattern is already in `ResolveCompletionItem`. Then inherit documentation from an overridden
     interface method (`SUGG-04`).
-14. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+12. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-15. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+13. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-16. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+14. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-17. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+15. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-18. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+16. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope
