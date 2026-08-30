@@ -467,3 +467,203 @@ TEST_CASE("InitializerList - a primitive is reported, not hinted")
     CHECK(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
     CHECK_FALSE(HasAnyCode(diagnostics, "as-hint-list-pattern-unknown"));
 }
+
+// =====================================================================================
+// The other three positions a list may be written in.
+//
+// The grammar allows `initializer_list` under exactly six parents - a declarator, an argument list,
+// an assignment's right-hand side, a return, another list, and the `type = {...}` anonymous object -
+// and only the first was ever visited. The compiler infers the target type in each of the others
+// and compiles the list against it, so all four of these are errors it reports and this analyzer
+// used to pass over in silence:
+//
+//   void Take(array<int> v); Take({"x"});  Can't implicitly convert from 'const string' to 'int&'
+//   array<int> a;  a = {"x"};              Can't implicitly convert from 'const string' to 'int&'
+//   array<int> Make() { return {1,"x"}; }  Can't implicitly convert from 'const string' to 'int&'
+//   Take({1, {2}});                        Initialization lists cannot be used with 'int'
+//
+// tests/parity/doc_r18 through doc_r20, with doc_p18 holding every one of them written correctly.
+// =====================================================================================
+
+TEST_CASE("InitializerList - a list argument is judged against the parameter")
+{
+    const auto diagnostics = DiagnoseAll(
+        "void Take(array<int> values) {}\n"
+        "void main() { Take({\"x\"}); }\n");
+
+    CHECK(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("InitializerList - a nested list in an argument is judged too")
+{
+    const auto diagnostics = DiagnoseAll(
+        "void Take(array<int> values) {}\n"
+        "void main() { Take({1, {2}}); }\n");
+
+    CHECK(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
+    CHECK(Names(diagnostics, "int"));
+}
+
+TEST_CASE("InitializerList - a correct list argument stays silent")
+{
+    const auto diagnostics = DiagnoseAll(
+        "void Take(array<int> values) {}\n"
+        "void main() { Take({1, 2}); }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
+}
+
+TEST_CASE("InitializerList - an overloaded call leaves its list alone")
+{
+    // Which parameter the list is built against is the overload's answer, and with two candidates
+    // the compiler does not give one either: `Multiple matching signatures to 'Take({...})'`. A
+    // verdict about the list's contents here would be a guess about which overload was meant.
+    const auto diagnostics = DiagnoseAll(
+        "void Take(array<int> values) {}\n"
+        "void Take(array<string> values) {}\n"
+        "void main() { Take({\"x\"}); }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
+}
+
+TEST_CASE("InitializerList - a list assigned to a variable is judged against it")
+{
+    const auto diagnostics = DiagnoseAll(
+        "void main() { array<int> a; a = {\"x\"}; }\n");
+
+    CHECK(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("InitializerList - a correct assignment stays silent")
+{
+    const auto diagnostics = DiagnoseAll(
+        "void main() { array<int> a; a = {1, 2}; }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
+}
+
+TEST_CASE("InitializerList - a compound assignment says nothing about its list")
+{
+    // `a += {1};` is rejected as "Illegal operation on 'int[]&'" - a verdict about the operator,
+    // not about the list's shape. Blaming the list would name the wrong thing.
+    const auto diagnostics = DiagnoseAll(
+        "void main() { array<int> a; a += {1}; }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("InitializerList - a returned list is judged against the declared return type")
+{
+    const auto diagnostics = DiagnoseAll(
+        "array<int> Make() { return {1, \"x\"}; }\n");
+
+    CHECK(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("InitializerList - a correct returned list stays silent")
+{
+    const auto diagnostics = DiagnoseAll(
+        "array<int> Make() { return {1, 2}; }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
+}
+
+TEST_CASE("InitializerList - a list returned from a lambda stays silent")
+{
+    // A lambda returns into whichever funcdef it is being assigned to, which is not written at the
+    // list. The enclosing function's return type is the wrong answer, so the walk stops.
+    const auto diagnostics = DiagnoseAll(
+        "funcdef array<int>@ Factory();\n"
+        "void main() { Factory@ f = function() { return {1, \"x\"}; }; }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
+}
+
+TEST_CASE("InitializerList - an anonymous object carries its own target type")
+{
+    // `array<int> = {...}` writes the type at the list, so nothing has to be inferred to check it.
+    const auto diagnostics = DiagnoseAll(
+        "void Take(array<int> values) {}\n"
+        "void main() { Take(array<int> = {1, {2}}); }\n");
+
+    CHECK(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
+    CHECK(Names(diagnostics, "int"));
+}
+
+// =====================================================================================
+// How many values a pattern wants.
+//
+// A group with no `repeat` in it is an exact count, and the compiler says so in both directions.
+// Against `dictionary`'s `{repeat {string, ?}}`, whose inner group is a fixed pair:
+//
+//   dictionary d = {{'a'}};       Not enough values to match pattern   (doc_r21)
+//   dictionary d = {{'a', 1, 2}}; Too many values to match pattern     (doc_r22)
+//
+// A `repeat` has no count to check: it consumes every element from its position onward and is
+// satisfied by none at all, which is why `array<int> a = {};` compiles.
+//
+// The count comes from the separators, not from the nodes: an omitted element produces no node and
+// the compiler still counts it, which `dictionary d = {{'a',}};` proves by compiling.
+// =====================================================================================
+
+namespace
+{
+    /** @brief The dictionary pattern, declared the way the SDK stub declares it. */
+    const std::string k_dictStub =
+        "/// @listpattern {repeat {string, ?}}\n"
+        "class dict {}\n";
+}
+
+TEST_CASE("ListPattern - a fixed group wants exactly its own number of values")
+{
+    const auto tooFew = DiagnoseAll(k_dictStub + "void main() { dict d = {{'a'}}; }\n");
+    CHECK(HasAnyCode(tooFew, "as-err-initializer-list-too-few"));
+
+    const auto tooMany = DiagnoseAll(k_dictStub + "void main() { dict d = {{'a', 1, 2}}; }\n");
+    CHECK(HasAnyCode(tooMany, "as-err-initializer-list-too-many"));
+
+    const auto exact = DiagnoseAll(k_dictStub + "void main() { dict d = {{'a', 1}}; }\n");
+    CHECK_FALSE(HasAnyCode(exact, "as-err-initializer-list-too-few"));
+    CHECK_FALSE(HasAnyCode(exact, "as-err-initializer-list-too-many"));
+}
+
+TEST_CASE("ListPattern - a repeat has no count to check")
+{
+    const auto diagnostics = DiagnoseAll(
+        "void main() { array<int> none = {}; array<int> many = {1, 2, 3, 4, 5}; }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-too-few"));
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-too-many"));
+}
+
+TEST_CASE("ListPattern - a fixed pattern at the top level is counted too")
+{
+    // `complex`'s registration is `{float, float}` - the SDK stub in tests/fixtures carries it.
+    const std::string stub = "/// @listpattern {float, float}\nclass complex {}\n";
+
+    CHECK(HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1, 2, 3}; }\n"),
+                     "as-err-initializer-list-too-many"));
+    CHECK(HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1}; }\n"),
+                     "as-err-initializer-list-too-few"));
+    CHECK_FALSE(HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1, 2}; }\n"),
+                           "as-err-initializer-list-too-many"));
+}
+
+TEST_CASE("ListPattern - an omitted element counts as a value")
+{
+    // The guard for counting separators rather than nodes, and it could not be written until the
+    // grammar pin moved: before aa14847 a hole made the whole declaration an ERROR node, so there
+    // was no list to count. `dictionary d = {{'a',}};` compiles - the hole fills the pattern's
+    // second slot with the type's default - and counting the two child nodes of `{'a',}` as one
+    // value would have reported "Not enough values" on code the compiler accepts.
+    const auto diagnostics = DiagnoseAll(k_dictStub + "void main() { dict d = {{'a',}}; }\n");
+
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-too-few"));
+    CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-too-many"));
+}

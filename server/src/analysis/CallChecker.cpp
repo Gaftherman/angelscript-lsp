@@ -1,5 +1,6 @@
 #include "analysis/CallChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/InitializerListChecker.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
@@ -684,18 +685,42 @@ namespace angel_lsp::analysis
             // both declare `GetName()` compiles, because the mixin's member beats the base's and
             // the class's own beats the mixin's. Those precedence rules live in member lookup, not
             // here, so a member set of two same-named candidates is not evidence of a choice.
-            if (allArgsResolved && (!argTypes.empty() || candidatesAreFreeFunctions))
+            std::vector<Symbol> matchingArityCandidates;
+            for (const auto &sym : candidates)
             {
-                std::vector<Symbol> matchingArityCandidates;
-                for (const auto &sym : candidates)
+                const Arity arity = ArityOf(sym.GetFunction());
+                if (arity.variadic || (argumentCount >= arity.required && argumentCount <= arity.maximum))
                 {
-                    const Arity arity = ArityOf(sym.GetFunction());
-                    if (arity.variadic || (argumentCount >= arity.required && argumentCount <= arity.maximum))
+                    matchingArityCandidates.push_back(sym);
+                }
+            }
+
+            // An initializer list argument. `take({1, 2})` compiles - the compiler takes the target
+            // type from the parameter the list lands on and builds the list against it, so
+            // `take({"x"})` against `array<int>` is "Can't implicitly convert from 'const string' to
+            // 'int&'" (tests/parity/doc_r18_initlist_call_argument.as). The list itself resolves to
+            // no type, so nothing in this pass ever judged it.
+            //
+            // Only where the parameter is not in question: one candidate of this arity, and no
+            // named argument to move the positions around. With two overloads the compiler's own
+            // answer to a list argument is "Multiple matching signatures to 'take({...})'" - which
+            // parameter type the list was meant for is precisely what is undecided, so a verdict
+            // about its shape would be a guess wearing an error's clothes.
+            if (matchingArityCandidates.size() == 1 && !sawNamedArg)
+            {
+                const auto &only = matchingArityCandidates.front().GetFunction();
+                for (size_t i = 0; i < argNodes.size() && i < only.parameters.size(); ++i)
+                {
+                    if (NodeType(argNodes[i]) == "initializer_list")
                     {
-                        matchingArityCandidates.push_back(sym);
+                        CheckInitializerListAgainstType(argNodes[i], only.parameters[i].typeName,
+                                                        request.sourceCode, scope, ctx);
                     }
                 }
+            }
 
+            if (allArgsResolved && (!argTypes.empty() || candidatesAreFreeFunctions))
+            {
                 if (!matchingArityCandidates.empty())
                 {
                     OverloadMatchResult match = ResolveBestOverload(matchingArityCandidates, argTypes, table);

@@ -4,6 +4,7 @@
 #include "analysis/ListPattern.h"
 #include "analysis/SemanticHelpers.h"
 
+#include <algorithm>
 #include <cctype>
 #include <string>
 #include <unordered_set>
@@ -221,6 +222,76 @@ namespace angel_lsp::analysis
             const TSPoint start = ts_node_start_point(node);
             const TSPoint end = ts_node_end_point(node);
             ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg);
+        }
+
+        /**
+         * @brief The declared return type of the function a `return` sits in, or "" when unknown.
+         *
+         * Walks outward and stops at a lambda: `function() { return {1}; }` returns into whichever
+         * funcdef the lambda is being assigned to, which is not written anywhere near the list and
+         * is not a guess this pass makes. `void` comes back as itself and is passed over further
+         * down, where every type that accepts no list is.
+         */
+        std::string EnclosingReturnType(TSNode returnNode, std::string_view sourceCode)
+        {
+            for (TSNode parent = ts_node_parent(returnNode); !ts_node_is_null(parent);
+                 parent = ts_node_parent(parent))
+            {
+                const std::string_view type = NodeType(parent);
+                if (type == "lambda_expression" || type == "anonymous_function")
+                {
+                    return "";
+                }
+                if (type == "func_declaration" || type == "method_declaration" ||
+                    type == "function_definition")
+                {
+                    TSNode returnType = ts_node_child_by_field_name(parent, "return_type", 11);
+                    if (ts_node_is_null(returnType))
+                    {
+                        returnType = ts_node_child_by_field_name(parent, "type", k_typeFieldLength);
+                    }
+                    return ts_node_is_null(returnType) ? std::string()
+                                                       : GetNodeText(returnType, sourceCode);
+                }
+            }
+            return "";
+        }
+
+        /**
+         * @brief How many values a list writes, counting the ones that were left out.
+         *
+         * Counted from the separators rather than from the nodes, because an omitted element
+         * produces no node at all: `{ 0, 1, , 4, 5 }` is five values to the compiler and four
+         * children to the grammar (tests/parity/doc_g03_omitted_initlist_element.as). A hole is a
+         * value - it takes the type's default - and the compiler counts it as one, which
+         * `dictionary d = {{'a',}};` proves by compiling: the pattern's second slot is filled by
+         * the hole. Counting children would have made that a "Not enough values" report on legal
+         * code, which is the one failure mode this project does not accept.
+         */
+        uint32_t ListValueCount(TSNode listNode)
+        {
+            uint32_t separators = 0;
+            uint32_t written = 0;
+            const uint32_t count = ts_node_child_count(listNode);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(listNode, i);
+                const std::string_view type = NodeType(child);
+                if (type == ",")
+                {
+                    ++separators;
+                }
+                else if (ts_node_is_named(child) && type != "comment")
+                {
+                    ++written;
+                }
+            }
+
+            if (separators > 0)
+            {
+                return separators + 1;
+            }
+            return written > 0 ? 1 : 0;
         }
 
         /**
@@ -444,6 +515,36 @@ namespace angel_lsp::analysis
                 return;
             }
 
+            // A group with no `repeat` in it wants exactly as many values as it has items, and the
+            // compiler says so in both directions - from tests/parity/doc_r18 and doc_r19, against
+            // `dictionary`'s `{repeat {string, ?}}`:
+            //
+            //     dictionary d = {{'a'}};       Not enough values to match pattern
+            //     dictionary d = {{'a', 1, 2}}; Too many values to match pattern
+            //
+            // Only for a fixed group. A `repeat` consumes every element from its position onward
+            // and is satisfied by none at all - `array<int> a = {};` compiles - so a group holding
+            // one has no count to check, which is every top-level list the two standard add-ons
+            // accept.
+            const bool hasRepeat = std::any_of(group.children.begin(), group.children.end(),
+                                               [](const ListPatternNode &item)
+                                               { return item.kind == ListPatternNode::Kind::Repeat; });
+            if (!hasRepeat)
+            {
+                const uint32_t written = ListValueCount(listNode);
+                const auto wanted = static_cast<uint32_t>(group.children.size());
+                if (written < wanted)
+                {
+                    EmitAtNode(listNode, ctx, "as-err-initializer-list-too-few", "");
+                    return;
+                }
+                if (written > wanted)
+                {
+                    EmitAtNode(listNode, ctx, "as-err-initializer-list-too-many", "");
+                    return;
+                }
+            }
+
             const uint32_t count = ts_node_named_child_count(listNode);
 
             size_t patternIndex = 0;
@@ -472,10 +573,31 @@ namespace angel_lsp::analysis
         }
     }
 
+    void CheckInitializerListAgainstType(TSNode listNode,
+                                         const std::string &targetType,
+                                         std::string_view sourceCode,
+                                         const Scope *scope,
+                                         DiagnosticContext &ctx)
+    {
+        ValidateList(listNode, targetType, ctx, ElementContext{ sourceCode, scope },
+                     ctx.request.GetArrayLikeTemplateNames(), 0);
+    }
+
     void CheckInitializerLists(const InitializerListCheckRequest &request, DiagnosticContext &ctx)
     {
         const std::unordered_set<std::string> arrayLikeTemplates = ctx.request.GetArrayLikeTemplateNames();
-        const ElementContext elements{ request.sourceCode, request.scopeRoot };
+
+        // The scope the list sits in, not the document's root. Resolving a name walks a scope chain
+        // *upwards*, so a root handed to a list inside a function resolves globals and nothing else:
+        // `array<int> a = {someLocal}` had no way to type its own element.
+        const auto elementsAt = [&](TSNode node)
+        {
+            const TSPoint start = ts_node_start_point(node);
+            return ElementContext{ request.sourceCode,
+                                   request.scopeRoot
+                                       ? FindEnclosingScope(request.scopeRoot, start.row, start.column)
+                                       : nullptr };
+        };
 
         std::vector<TSNode> stack = { request.root };
         while (!stack.empty())
@@ -483,7 +605,70 @@ namespace angel_lsp::analysis
             TSNode node = stack.back();
             stack.pop_back();
 
-            if (NodeType(node) == "variable_declaration")
+            const std::string_view nodeType = NodeType(node);
+
+            // Every position the grammar lets a list appear in, and every one of them compiles:
+            // `take({1,2})`, `a = {1,2}` and `return {1,2};` are all accepted by the real compiler,
+            // which infers the target type from the parameter, the assignee and the declared return
+            // type in turn. Only the declaration was visited here, so the other three were checked
+            // nowhere - and the argument case is judged from CallChecker, which is the pass that
+            // knows which overload was picked.
+            if (nodeType == "typed_initializer_list")
+            {
+                // `array<int> = {1, 2}` - AngelScript's anonymous object. The target type is
+                // written at the list, so nothing has to be inferred to check it.
+                TSNode typeNode = ts_node_child_by_field_name(node, "type", k_typeFieldLength);
+                TSNode valueNode = ts_node_child_by_field_name(node, "value", k_valueFieldLength);
+                if (!ts_node_is_null(typeNode) && !ts_node_is_null(valueNode))
+                {
+                    ValidateList(valueNode, GetNodeText(typeNode, request.sourceCode), ctx,
+                                 elementsAt(valueNode), arrayLikeTemplates, 0);
+                }
+            }
+            else if (nodeType == "assignment_expression")
+            {
+                TSNode value = ts_node_child_by_field_name(node, "right", 5);
+                if (!ts_node_is_null(value) && NodeType(value) == "initializer_list")
+                {
+                    // Plain `=` only. A compound assignment takes no list at all - the compiler
+                    // answers `a += {1};` with "Illegal operation on 'int[]&'" - and that is a
+                    // verdict about the operator, not about the list, so it is left to say
+                    // nothing rather than blamed on the shape.
+                    TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
+                    TSNode target = ts_node_child_by_field_name(node, "left", 4);
+                    if (!ts_node_is_null(opNode) && !ts_node_is_null(target) &&
+                        GetNodeText(opNode, request.sourceCode) == "=")
+                    {
+                        const ElementContext elements = elementsAt(value);
+                        const std::string targetType = ResolveExpressionType(
+                            target, elements.scopeRoot, ctx.request.symbolTable,
+                            request.sourceCode, ctx.request.fileUri);
+                        if (!targetType.empty())
+                        {
+                            ValidateList(value, targetType, ctx, elements, arrayLikeTemplates, 0);
+                        }
+                    }
+                }
+            }
+            else if (nodeType == "return_statement")
+            {
+                if (ts_node_named_child_count(node) > 0)
+                {
+                    TSNode value = ts_node_named_child(node, 0);
+                    if (NodeType(value) == "initializer_list")
+                    {
+                        // A lambda stops the walk: `function() { return {1}; }` returns into a
+                        // funcdef this pass never sees, and guessing which one is not a verdict.
+                        const std::string returnType = EnclosingReturnType(node, request.sourceCode);
+                        if (!returnType.empty())
+                        {
+                            ValidateList(value, returnType, ctx, elementsAt(value),
+                                         arrayLikeTemplates, 0);
+                        }
+                    }
+                }
+            }
+            else if (nodeType == "variable_declaration")
             {
                 TSNode typeNode = ts_node_child_by_field_name(node, "var_type", k_varTypeFieldLength);
                 if (ts_node_is_null(typeNode))
@@ -511,7 +696,8 @@ namespace angel_lsp::analysis
                         TSNode valueNode = ts_node_child_by_field_name(declarator, "value", k_valueFieldLength);
                         if (!ts_node_is_null(valueNode) && NodeType(valueNode) == "initializer_list")
                         {
-                            ValidateList(valueNode, declaredType, ctx, elements, arrayLikeTemplates, 0);
+                            ValidateList(valueNode, declaredType, ctx, elementsAt(valueNode),
+                                         arrayLikeTemplates, 0);
                         }
                     }
                 }
