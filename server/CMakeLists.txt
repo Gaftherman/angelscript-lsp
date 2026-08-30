@@ -150,7 +150,7 @@ if(TEST_SOURCES)
         ANGELSCRIPT_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../angelscript"
     )
     if(MSVC)
-        target_compile_options(angel_lsp_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8> $<$<COMPILE_LANGUAGE:CXX>:/FS>)
+        target_compile_options(angel_lsp_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8> $<$<COMPILE_LANGUAGE:CXX>:/FS> $<$<COMPILE_LANGUAGE:CXX>:/wd5285>)
     endif()
     target_compile_options(angel_lsp_tests PRIVATE ${ANGELLSP_WARNING_FLAGS})
     add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests)
