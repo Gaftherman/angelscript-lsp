@@ -165,6 +165,27 @@ namespace angel_lsp::analysis
         }
 
         /**
+         * @brief True when `get_X`/`set_X` is only the property `X` if it carries `property`.
+         *
+         * asEP_PROPERTY_ACCESSOR_MODE. Under 3 - the SDK's own default - an accessor without the
+         * keyword is an ordinary method and `c.V` is "'V' is not a member of 'C'"; under 2 the name
+         * alone is enough. Both measured, in tests/parity/doc_r07_accessor_without_kw.as:
+         * `angelscript_oracle --property-accessor-mode=3` rejects it and `=2` accepts it.
+         *
+         * This server defaults to 2, the more permissive of the two, and the reasoning is at
+         * EngineProperties::propertyAccessorMode: under 2 the analyzer misses a diagnostic a
+         * mode-3 host would give, and under 3 it would invent one for a mode-2 host. Missing beats
+         * inventing.
+         *
+         * Every rule that treats an accessor as a property has to ask this, or the setting is only
+         * honoured in the one place that remembered to.
+         */
+        bool RequiresAccessorKeyword() const
+        {
+            return engineProperties && engineProperties->propertyAccessorMode == 3;
+        }
+
+        /**
          * @brief True when the host built its engine with asEP_DISALLOW_GLOBAL_VARS.
          */
         bool DisallowsGlobalVars() const

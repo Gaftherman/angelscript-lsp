@@ -110,9 +110,34 @@ namespace angel_lsp::analysis
          * was this rule's only false positive over the corpus, and it hit `this.Name = name;` in a
          * constructor - as ordinary a line as the corpus contains.
          */
+        /**
+         * @brief True when `get_X`/`set_X` may stand in for the member `X`.
+         *
+         * asEP_PROPERTY_ACCESSOR_MODE decides it, and the two settings really do accept different
+         * programs. Under mode 2 any method named `get_X` is the property `X`; under mode 3 - the
+         * SDK's own default - it is an ordinary method until the `property` keyword is written, and
+         * `c.V` is answered with "'V' is not a member of 'C'". Both halves measured directly:
+         *
+         *     angelscript_oracle doc_r07_accessor_without_kw.as --property-accessor-mode=3   rejects
+         *     angelscript_oracle doc_r07_accessor_without_kw.as --property-accessor-mode=2   accepts
+         *
+         * The `--property-accessor-mode` flag was added to the oracle for this, because a setting
+         * whose second half cannot be asked about is a setting recorded on faith.
+         */
+        bool AccessorStandsForProperty(const Symbol &sym, bool keywordRequired)
+        {
+            if (!keywordRequired)
+            {
+                return true;
+            }
+            return std::holds_alternative<FunctionSignature>(sym.signature) &&
+                   sym.GetFunction().modifiers.isProperty;
+        }
+
         MemberAccess FindMember(const std::string &typeName,
                                 const std::string &memberName,
-                                const SymbolTable &table)
+                                const SymbolTable &table,
+                                bool accessorKeywordRequired)
         {
             MemberAccess result;
             if (typeName.empty() || memberName.empty())
@@ -125,10 +150,17 @@ namespace angel_lsp::analysis
                 auto candidates = table.FindSymbols(owner + "::" + memberName);
                 if (candidates.empty())
                 {
-                    auto getCandidates = table.FindSymbols(owner + "::get_" + memberName);
-                    auto setCandidates = table.FindSymbols(owner + "::set_" + memberName);
-                    candidates.insert(candidates.end(), getCandidates.begin(), getCandidates.end());
-                    candidates.insert(candidates.end(), setCandidates.begin(), setCandidates.end());
+                    for (const auto &accessor : { owner + "::get_" + memberName,
+                                                  owner + "::set_" + memberName })
+                    {
+                        for (const auto &sym : table.FindSymbols(accessor))
+                        {
+                            if (AccessorStandsForProperty(sym, accessorKeywordRequired))
+                            {
+                                candidates.push_back(sym);
+                            }
+                        }
+                    }
                 }
 
                 if (candidates.empty())
@@ -147,14 +179,16 @@ namespace angel_lsp::analysis
                     {
                         for (const auto &sym : table.FindSymbols("get_" + memberName))
                         {
-                            if (IsSameType(sym.containerName, owner))
+                            if (IsSameType(sym.containerName, owner) &&
+                                AccessorStandsForProperty(sym, accessorKeywordRequired))
                             {
                                 candidates.push_back(sym);
                             }
                         }
                         for (const auto &sym : table.FindSymbols("set_" + memberName))
                         {
-                            if (IsSameType(sym.containerName, owner))
+                            if (IsSameType(sym.containerName, owner) &&
+                                AccessorStandsForProperty(sym, accessorKeywordRequired))
                             {
                                 candidates.push_back(sym);
                             }
@@ -243,7 +277,8 @@ namespace angel_lsp::analysis
             }
 
             const std::string memberName = NodeText(memberNode, request.sourceCode);
-            const MemberAccess member = FindMember(objectType, memberName, table);
+            const MemberAccess member = FindMember(objectType, memberName, table,
+                                                   ctx.request.RequiresAccessorKeyword());
             if (!member.found)
             {
                 const TSPoint start = ts_node_start_point(memberNode);
@@ -455,7 +490,8 @@ namespace angel_lsp::analysis
                 return;
             }
 
-            const MemberAccess member = FindMember(accessingClass, idText, table);
+            const MemberAccess member = FindMember(accessingClass, idText, table,
+                                                   ctx.request.RequiresAccessorKeyword());
             if (!member.decided)
             {
                 return;

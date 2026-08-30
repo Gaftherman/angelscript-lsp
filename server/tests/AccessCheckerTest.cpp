@@ -869,3 +869,90 @@ TEST_CASE("AccessChecker - Access Corpus Audit" * doctest::skip(true))
 
     CHECK(result.filesAnalysed > 0);
 }
+
+// =====================================================================================
+// asEP_PROPERTY_ACCESSOR_MODE.
+//
+// The setting existed and only one rule read it, so `angelscript.engine.propertyAccessorMode = 3`
+// changed the undeclared-identifier check and nothing else - a `c.V` whose accessor lacks the
+// `property` keyword was still accepted, where a mode-3 engine answers "'V' is not a member of
+// 'C'". Both halves measured directly, which is what the oracle's new --property-accessor-mode
+// flag exists for:
+//
+//     angelscript_oracle doc_r07_accessor_without_kw.as --property-accessor-mode=3   rejects
+//     angelscript_oracle doc_r07_accessor_without_kw.as --property-accessor-mode=2   accepts
+// =====================================================================================
+
+namespace
+{
+    /** @brief The accessor pair from tests/parity/doc_r07_accessor_without_kw.as, keyword-free. */
+    const char *k_accessorWithoutKeyword =
+        "class C\n"
+        "{\n"
+        "    private int m;\n"
+        "    int get_V() const { return m; }\n"
+        "    void set_V(int v) { m = v; }\n"
+        "}\n"
+        "void main() { C c; c.V = 3; }\n";
+
+    /** @brief The same pair with the keyword, which both modes accept. */
+    const char *k_accessorWithKeyword =
+        "class C\n"
+        "{\n"
+        "    private int m;\n"
+        "    int get_V() const property { return m; }\n"
+        "    void set_V(int v) property { m = v; }\n"
+        "}\n"
+        "void main() { C c; c.V = 3; }\n";
+}
+
+TEST_CASE("AccessChecker - Mode 3 reports an accessor written without the property keyword")
+{
+    angel_lsp::config::EngineProperties engine;
+    engine.propertyAccessorMode = 3;
+
+    CHECK(HasCode(AnalyzeAccessSnippet(k_accessorWithoutKeyword, "file:///access.as", &engine),
+                  "as-err-member-not-found"));
+}
+
+TEST_CASE("AccessChecker - Mode 2 accepts an accessor written without the keyword")
+{
+    // This server's default, and the reason it is: under 2 the analyzer misses a diagnostic a
+    // mode-3 host would give; under 3 it would invent one for a mode-2 host. Missing beats
+    // inventing, so an unset engine behaves as mode 2 as well.
+    angel_lsp::config::EngineProperties engine;
+    engine.propertyAccessorMode = 2;
+
+    CHECK_FALSE(HasCode(AnalyzeAccessSnippet(k_accessorWithoutKeyword, "file:///access.as", &engine),
+                        "as-err-member-not-found"));
+    CHECK_FALSE(HasCode(AnalyzeAccessSnippet(k_accessorWithoutKeyword),
+                        "as-err-member-not-found"));
+}
+
+TEST_CASE("AccessChecker - The property keyword satisfies both modes")
+{
+    for (const int mode : { 2, 3 })
+    {
+        angel_lsp::config::EngineProperties engine;
+        engine.propertyAccessorMode = mode;
+
+        INFO("propertyAccessorMode: " << mode);
+        CHECK_FALSE(HasCode(AnalyzeAccessSnippet(k_accessorWithKeyword, "file:///access.as", &engine),
+                            "as-err-member-not-found"));
+    }
+}
+
+TEST_CASE("AccessChecker - Mode 3 leaves a real member alone")
+{
+    // The guard: the mode governs whether an *accessor* stands for a property, and nothing else.
+    // A member declared outright is still found under either setting.
+    const std::string code =
+        "class C { int V; }\n"
+        "void main() { C c; c.V = 3; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.propertyAccessorMode = 3;
+
+    CHECK_FALSE(HasCode(AnalyzeAccessSnippet(code, "file:///access.as", &engine),
+                        "as-err-member-not-found"));
+}

@@ -16,7 +16,11 @@
 // there, and nothing is registered that the stub does not declare.
 //
 // Usage:
-//     angelscript_oracle <script.as> [--json]
+//     angelscript_oracle <script.as> [--json] [--property-accessor-mode=<2|3>]
+//
+// The accessor mode is the one engine property whose value changes what the language accepts in a
+// way this analyzer models as a setting, so both halves of that answer have to be recordable. Left
+// unset, the engine's own default (3) applies and every existing invocation is unchanged.
 //
 // Exit codes: 0 compiled, 1 rejected, 2 could not read the file or start the engine.
 
@@ -38,6 +42,7 @@
 #include <weakref/weakref.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -266,6 +271,16 @@ int main(int argc, char **argv)
     const char *scriptPath = nullptr;
     bool asJson = false;
 
+    // Engine properties, so a script whose verdict depends on one can be asked about under each
+    // setting rather than only under the SDK's default. asEP_PROPERTY_ACCESSOR_MODE is the first:
+    // the whole of `get_X`/`set_X` handling turns on it - mode 3 requires the `property` keyword,
+    // mode 2 does not - and a parity case recordable under only one of them records half the
+    // answer.
+    //
+    // -1 leaves the engine's own default, so every existing invocation and every script already in
+    // tests/parity answers exactly as it did.
+    int propertyAccessorMode = -1;
+
     for (int i = 1; i < argc; ++i)
     {
         // Unknown flags are ignored rather than rejected: the parity harness passes the same
@@ -277,6 +292,10 @@ int main(int argc, char **argv)
             {
                 asJson = true;
             }
+            else if (std::strncmp(argv[i], "--property-accessor-mode=", 25) == 0)
+            {
+                propertyAccessorMode = std::atoi(argv[i] + 25);
+            }
             continue;
         }
         if (scriptPath == nullptr)
@@ -287,7 +306,8 @@ int main(int argc, char **argv)
 
     if (scriptPath == nullptr)
     {
-        std::fprintf(stderr, "usage: angelscript_oracle <script.as> [--json]\n");
+        std::fprintf(stderr, "usage: angelscript_oracle <script.as> [--json] "
+                             "[--property-accessor-mode=<2|3>]\n");
         return 2;
     }
 
@@ -299,6 +319,13 @@ int main(int argc, char **argv)
     }
 
     engine->SetMessageCallback(asFUNCTION(MessageCallback), nullptr, asCALL_CDECL);
+
+    // Set before anything is registered: the property changes how declarations are interpreted.
+    if (propertyAccessorMode >= 0)
+    {
+        engine->SetEngineProperty(asEP_PROPERTY_ACCESSOR_MODE,
+                                  static_cast<asPWORD>(propertyAccessorMode));
+    }
 
     // Order matters: the dictionary needs `string` and `array<string>` to already exist, and the
     // grid and any add-ons assume the array is registered. This mirrors the order the SDK's own

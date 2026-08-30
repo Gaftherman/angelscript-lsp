@@ -340,10 +340,9 @@ namespace angel_lsp::analysis
             // which costs nothing, where the alternative was reporting every legal use of one.
             {
                 const auto &index = ctx.request.GetRuleIndex();
-                const bool keywordRequired = ctx.request.engineProperties != nullptr &&
-                                             ctx.request.engineProperties->propertyAccessorMode == 3;
-                const auto &accessorNames = keywordRequired ? index.keywordAccessorPropertyNames
-                                                            : index.accessorPropertyNames;
+                const auto &accessorNames = ctx.request.RequiresAccessorKeyword()
+                                                ? index.keywordAccessorPropertyNames
+                                                : index.accessorPropertyNames;
                 if (accessorNames.contains(ref.name))
                     continue;
             }

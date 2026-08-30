@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1195 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1199 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -48,7 +48,7 @@ Every claim below has a script in `server/tests/parity/`:
 | `PARSER-07` `class @Name {}` | declares a pure reference class | `Expected identifier / Instead found '@'` | Not a grammar gap. `doc_r04` |
 | `TYPE-05` `byte` == `uint8` | `byte` is a built-in alias | `Identifier 'byte' is not a data type` | `byte` is host-registered. The real defect it gestures at is narrower — see the typedef entry under WIP. `doc_r05` |
 | `TYPE-07` `opImplConv` → `bool` | makes `if (h && true)` work | `No conversion from 'H&' to 'bool' available.` | `as-err-ref-type-bool-conv-disallowed` is defensible. `doc_r06` |
-| `PROP-01` automatic accessors | `get_X`/`set_X` are always the property `X` | `'V' is not a member of 'C'` **without** the `property` keyword; accepted with it | Engine-configurable (`asEP_PROPERTY_ACCESSOR_MODE`, SDK default 3). Our unconditional leniency misses errors but never invents them, so it stays the default and mode 3 becomes a setting - see WIP. `doc_r07`, `doc_p04` |
+| `PROP-01` automatic accessors | `get_X`/`set_X` are always the property `X` | `'V' is not a member of 'C'` **without** the `property` keyword; accepted with it | Engine-configurable (`asEP_PROPERTY_ACCESSOR_MODE`, SDK default 3). Our unconditional leniency misses errors but never invents them, so mode 2 stays the default and mode 3 is a setting every accessor rule now honours. `doc_r07`, `doc_p04` |
 | `PROP-07` abstract classes | need not implement their interface | `Missing implementation of 'void I::P()'` | Inverted: `rules/ClassRules.cpp` skipped this check for abstract classes, which was a **missed** diagnostic. Fixed, and the same skip for mixins turned out to be wrong too. `doc_r08`, `doc_r23`, `doc_p21` |
 | `PREDEF-02` `#if`/`#else` | selects the live branch | With the word undefined, **both** branches were dropped and the symbol was unresolved — CScriptBuilder has no `#else` | `utils/PreprocessorRegions.cpp` models exactly this already. Adding `#else` would diverge from the host that actually compiles these scripts. |
 | `PARSER-04` UTF-8 BOM | breaks the lexer | accepted by the compiler — and by tree-sitter, because the grammar's `extras` is `/\s+/` and JavaScript's `\s` matches U+FEFF | Not a defect here. The only residue is that line 0 starts three bytes in. `doc_p14` |
@@ -214,6 +214,32 @@ treats as unacceptable.
   (`array<array<int>> g = {1,2}` — the element type is a template, which does not resolve), `il_a6`
   and `il_a7` (`string` declares no `@listpattern`, and an absent pattern only means the stub did
   not say).
+- **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3.** The setting existed, was documented, and exactly
+  one rule read it — so `propertyAccessorMode = 3` changed the undeclared-identifier check and
+  nothing else. A `c.V` whose accessor lacks the `property` keyword was still accepted, where a
+  mode-3 engine answers `'V' is not a member of 'C'`. A setting honoured in the one place that
+  remembered to is worse than no setting: it reads as supported.
+
+  `AccessChecker::FindMember` treated `get_X`/`set_X` as the member `X` unconditionally. It now
+  asks, and so does the rule that already did, through one shared
+  `SemanticAnalysisRequest::RequiresAccessorKeyword()` rather than the mode number spelled out at
+  each site.
+
+  **The oracle grew a `--property-accessor-mode` flag for this.** It had always used the SDK
+  default of 3, so the mode-2 half of every answer was unaskable — recorded on faith. Now both
+  halves are measured, and `doc_r07` carries them:
+
+  ```
+  angelscript_oracle doc_r07_accessor_without_kw.as --property-accessor-mode=3   'V' is not a member of 'C'
+  angelscript_oracle doc_r07_accessor_without_kw.as --property-accessor-mode=2   accepted
+  ```
+
+  The parity audit runs without the flag, so `doc_r07` is judged under the default and stays a
+  `doc_r`; the mode-2 half is asserted in `AccessCheckerTest`, because a `doc_p` file that only
+  compiles under a non-default engine property would fail the audit for a reason that has nothing
+  to do with the analyzer. Mode 2 remains this server's default: under 2 it misses a diagnostic a
+  mode-3 host would give, under 3 it would invent one for a mode-2 host, and missing beats
+  inventing.
 - **The 273 conversion false positives, down to 25 — and none of the 25 is a defect.** The first
   thing the corpus audits reported once they ran. Every corpus file is working AngelScript, so
   every finding was legal code called an error. Six causes accounted for 248 of them:
@@ -399,30 +425,23 @@ first. Each lands with its `doc_`-prefixed parity case.
    than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
    exists the setting is the honest interface, but it is the reason the rule cannot simply be
    unconditional.
-2. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
-   (`angelscript.engine.propertyAccessorMode`, `--engine-property=propertyAccessorMode=<2|3>`,
-   default `2`) and the undeclared-identifier rule already reads it. The rest of the accessor
-   handling does not: `SemanticHelpers`' member-access fallback to `Type::get_X` still runs
-   regardless of mode, so under `3` a `c.V` whose accessor lacks the `property` keyword is still
-   accepted where the compiler answers `'V' is not a member of 'C'`. Missed diagnostic, not a false
-   positive. `doc_r07`
-3. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
+2. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
    value`, `Float value truncated in implicit conversion to integer`, `Signed/Unsigned mismatch`.
    None exist here. Decidable from the source alone, so the visibility policy permits them; the
    narrowing tables at `OverloadResolver.cpp` already exist and feed only overload ranking today.
-4. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
+3. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-5. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+4. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-6. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+5. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-7. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+6. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-8. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+7. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-9. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+8. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope
