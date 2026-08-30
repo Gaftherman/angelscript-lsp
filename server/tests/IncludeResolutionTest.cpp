@@ -2,6 +2,7 @@
 
 #include "utils/IncludeResolver.h"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>

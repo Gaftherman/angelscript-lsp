@@ -1,5 +1,6 @@
 #include "utils/Utils.h"
 
+#include <algorithm>
 #include <unordered_set>
 
 namespace angel_lsp::utils

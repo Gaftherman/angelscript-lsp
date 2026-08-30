@@ -7,6 +7,7 @@
 #include "analysis/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
