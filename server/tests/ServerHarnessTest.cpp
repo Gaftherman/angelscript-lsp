@@ -3,6 +3,8 @@
 #include "helpers/ScriptedStream.h"
 #include "lsp/Server.h"
 
+#include "utils/Utils.h"
+
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -53,16 +55,12 @@ namespace
         /** @brief file:// URI of a workspace file, in the spelling a client would send. */
         std::string Uri(const std::string &name) const
         {
-            std::string path = (dir / name).string();
-            std::replace(path.begin(), path.end(), '\\', '/');
-            return "file:///" + path;
+            return angel_lsp::utils::PathToUri((dir / name).string());
         }
 
         std::string RootUri() const
         {
-            std::string path = dir.string();
-            std::replace(path.begin(), path.end(), '\\', '/');
-            return "file:///" + path;
+            return angel_lsp::utils::PathToUri(dir.string());
         }
     };
 
