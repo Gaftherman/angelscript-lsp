@@ -26,6 +26,7 @@
 #include "features/code_lens/CodeLensHandler.h"
 #include "analysis/EngineProfiles.h"
 
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
@@ -45,6 +46,25 @@ namespace angel_lsp
          * it can neither consume nor skip. Reset to zero by any message that dispatches cleanly.
          */
         constexpr unsigned k_maxConsecutiveMessageErrors = 64;
+
+        /**
+         * @brief Reads the configured brace style name.
+         *
+         * Only "kr" - and its spellings - selects K&R. Anything else, an empty string and a typo
+         * alike, is Allman, which is the default and the style every existing test asserts. A
+         * setting nobody can misspell into a surprise is worth more here than a diagnostic about
+         * a formatter option.
+         */
+        bool BraceStyleIsKR(std::string_view name)
+        {
+            std::string lowered;
+            lowered.reserve(name.size());
+            for (char c : name)
+            {
+                lowered.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            }
+            return lowered == "kr" || lowered == "k&r" || lowered == "kandr" || lowered == "onetbs";
+        }
 
         /**
          * @brief Maps this analyzer's severity onto the protocol's.
@@ -96,6 +116,7 @@ namespace angel_lsp
         // three goes through the accessors below; m_config's own copies are not read again.
         m_searchDirectories = std::make_shared<const std::vector<std::string>>(m_config.searchDirectories);
         m_engineProfile = m_config.engineProfile;
+        m_formatBraceStyleKR.store(BraceStyleIsKR(m_config.format.braceStyle), std::memory_order_relaxed);
 
         BuildDiagnosticSeverityOverrides();
 
@@ -901,6 +922,21 @@ namespace angel_lsp
         }
 
         bool shouldRescan = false;
+
+        // Nested one level down, because the client sends it as `angelscript.format.braceStyle`.
+        // Nothing to rescan: it changes only what the next format request produces.
+        if (const auto *formatVal = section->find("format"); formatVal && formatVal->isObject())
+        {
+            if (const auto *styleVal = formatVal->object().find("braceStyle");
+                styleVal && styleVal->isString())
+            {
+                const bool wantsKR = BraceStyleIsKR(styleVal->string());
+                if (wantsKR != m_formatBraceStyleKR.exchange(wantsKR, std::memory_order_relaxed))
+                {
+                    m_logger->LogInfo(fmt::format("Format brace style changed to '{}'", styleVal->string()));
+                }
+            }
+        }
 
         if (const auto *profileVal = section->find("engineProfile"); profileVal && profileVal->isString())
         {
@@ -2874,7 +2910,7 @@ namespace angel_lsp
                 }
                 TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::FormattingRequest fr{ uriStr, docIt->second, tree, req.options };
+                features::FormattingRequest fr{ uriStr, docIt->second, tree, req.options, CurrentBraceStyle() };
                 auto edits = features::FormatDocument(fr);
                 if (edits.has_value())
                 {
@@ -2926,7 +2962,7 @@ namespace angel_lsp
                 }
                 TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::RangeFormattingRequest rfr{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.range), req.options };
+                features::RangeFormattingRequest rfr{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.range), req.options, CurrentBraceStyle() };
                 auto edits = features::FormatRange(rfr);
                 if (edits.has_value())
                 {
@@ -2995,7 +3031,8 @@ namespace angel_lsp
                     tree,
                     codec::Decode(docIt->second, m_positionEncoding, req.position),
                     req.ch,
-                    req.options
+                    req.options,
+                    CurrentBraceStyle()
                 };
                 auto edits = features::FormatOnType(otfr);
                 if (edits.has_value())

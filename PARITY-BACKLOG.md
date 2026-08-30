@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1117 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1171 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -75,8 +75,9 @@ Accepted by the compiler and by this analyzer. They had no test before; they do 
 
 ## Fixed
 
-Both were false positives — legal code reported as an error, which is the one failure mode this
-project treats as unacceptable.
+Each entry says what the compiler answers and what this analyzer answered before. Several were
+false positives — legal code reported as an error, which is the one failure mode this project
+treats as unacceptable.
 
 - **`super(args)` in a constructor.** `NamespaceChecker` emitted `as-err-undefined-identifier` and
   `SemanticAnalyzer` a matching warning, because `super` resolves to no symbol and never will. Now
@@ -213,6 +214,44 @@ project treats as unacceptable.
   (`array<array<int>> g = {1,2}` — the element type is a template, which does not resolve), `il_a6`
   and `il_a7` (`string` declares no `@listpattern`, and an absent pattern only means the stub did
   not say).
+- **The formatter, which was rewriting working code.** Every `{` went onto its own line
+  unconditionally, so `array<int> a = {1, 2, 3};` and every lambda passed as an argument were
+  exploded Allman-style, `#if` was torn out of the block it delimits to column zero, and a metadata
+  block was joined onto the declaration it annotates. A brace is now classified as *block* or
+  *value*: a value brace stays on its line, costs no indent level, and is padded by what it holds -
+  `{ Log(a); }` for a lambda body, `{1, 2}` for a list. The test is not `parenDepth > 0` but
+  "deeper than the brace that encloses it", because `f(function() { if (c) { g(); } })` has both
+  braces at `parenDepth == 1` and only one of them is a value. `angelscript.format.braceStyle`
+  (`--format-brace-style=allman|kr`) moves the *block* brace and nothing else; Allman stays the
+  default, which is what every existing test asserts.
+
+  The measurement that mattered is in `tests/FormatterCorpusTest.cpp`: format every script, and
+  check the token stream is unchanged and that formatting twice equals formatting once. Run against
+  the corpus it found three ways the formatter had been changing what a file *means*, none of them
+  from this work:
+
+  - **`!isdigit(s)` came out as `!is digit(s)`.** `!is` is the handle-inequality operator and the
+    only operator spelled with letters, so it is the only one that can swallow the front of an
+    identifier; it matched greedily with no word-boundary test. **Twenty-eight of the 1061 corpus
+    scripts** were being rewritten into something that does not compile, on every format.
+    `doc_p20`.
+  - **A UTF-8 BOM was split into three tokens** with spaces between them, so `doc_p14` - a file the
+    compiler accepts - stopped compiling after formatting. The BOM is now held aside and put back
+    byte for byte, and any run of non-ASCII bytes is kept whole.
+  - **An unterminated string swallowed the next line.** `"` ends at the line break, matching the
+    default engine, and the token left over ran into the end of its line; joining the following
+    line onto it moved that code inside the literal. That is the state every string is in while it
+    is being typed.
+
+  Confirmed the way the rest of this file is: the oracle compiled all 87 parity scripts before and
+  after formatting, and every verdict is identical. Over the full 1061-script corpus the token
+  stream survives and formatting is idempotent for every file.
+- **`angelscript.restartServer`.** Purely client-side, and the sequence already existed inside
+  `onDidChangeConfiguration`: stop the client, reset the exit budget, build a new one. It is
+  extracted as `restartClient` and both callers use it. No `workspace/executeCommand` - every
+  setting that matters is a command-line argument captured when `ServerOptions` is constructed, so
+  a new client *is* the restart, and a request handled by the process being restarted could not
+  outlive it anyway.
 - **Completion inside comments, strings and after a `case` label.** `.` and `:` are trigger
   characters and the global fallback answers whatever the earlier contexts do not claim, so typing
   the colon of `case Red:` - a position where no symbol may be written - returned every local,
@@ -259,25 +298,20 @@ first. Each lands with its `doc_`-prefixed parity case.
 6. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-7. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
-    `contributes.commands` client-side.
-8. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
-    and every lambda argument are exploded Allman-style; `#if` is forced to column 0; a metadata
-    block is joined onto the declaration line.
-9. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
+7. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
     line, so a cross-file hover can show an unrelated comment from the local file. The correct
     pattern is already in `ResolveCompletionItem`. Then inherit documentation from an overridden
     interface method (`SUGG-04`).
-10. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+8. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-11. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+9. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-12. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+10. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-13. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+11. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-14. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+12. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope

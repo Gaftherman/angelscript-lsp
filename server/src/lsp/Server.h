@@ -14,6 +14,7 @@
 #include "analysis/CallGraph.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalyzer.h"
+#include "features/formatting/FormattingHandler.h"
 
 #include <lsp/messages.h>
 #include <lsp/connection.h>
@@ -23,6 +24,7 @@
 #include <ankerl/unordered_dense.h>
 
 #include <tree_sitter/api.h>
+#include <atomic>
 #include <cstdint>
 #include <unordered_map>
 #include <string>
@@ -56,6 +58,16 @@ namespace angel_lsp
         // without waiting for readers to finish.
         std::shared_ptr<const std::vector<std::string>> m_searchDirectories;
         std::string m_engineProfile;
+
+        /**
+         * @brief Whether a block's opening brace goes on the statement line (K&R) or its own.
+         *
+         * An atomic bool rather than a member of the mutex-guarded set above: it is one word, the
+         * formatting handlers read it on the message loop, and didChangeConfiguration writes it
+         * there too. Nothing frees a buffer under a reader, which is what that mutex is for.
+         */
+        std::atomic<bool> m_formatBraceStyleKR{ false };
+
         std::unique_ptr<angel_lsp::i18n::I18n> m_i18n;
         std::thread m_workspaceThread;
 
@@ -454,6 +466,13 @@ namespace angel_lsp
          * @brief Document URI for a filesystem path, in the spelling used for synthesised entries.
          */
         static std::string UriFromPath(const std::string &path);
+
+        /** @brief The brace style the formatting handlers should use right now. */
+        features::BraceStyle CurrentBraceStyle() const
+        {
+            return m_formatBraceStyleKR.load(std::memory_order_relaxed) ? features::BraceStyle::KAndR
+                                                                       : features::BraceStyle::Allman;
+        }
 
         /**
          * @brief Indexes every other file in the opened document's #include module.

@@ -553,8 +553,14 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
         CHECK(formatted == expected);
     }
 
-    TEST_CASE("Preprocessor directives remain at column 0 inside indented code")
+    TEST_CASE("Preprocessor directives are indented with the block they sit in")
     {
+        // This asserted column zero, which is what the formatter used to force unconditionally.
+        // AngelScript's only conditional is CScriptBuilder's `#if <word>` ... `#endif`, and it
+        // delimits *statements* - the block is part of the function body, so tearing it out to
+        // column zero left the body reading as though it had ended there. A directive at file
+        // scope still lands at column zero, because that is brace level zero rather than because
+        // it is a directive; the case below pins that half.
         std::string code =
             "class ConfigManager {\n"
             "    void Load() {\n"
@@ -574,13 +580,35 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
             "{\n"
             "    void Load()\n"
             "    {\n"
-            "#if DEBUG\n"
+            "        #if DEBUG\n"
             "        PrintDebug();\n"
-            "#endif\n"
+            "        #endif\n"
             "    }\n"
             "}\n";
 
         CHECK(formatted == expected);
+    }
+
+    TEST_CASE("A file-scope directive still lands at column zero")
+    {
+        std::string code =
+            "#include \"other.as\"\n"
+            "void Main() {\n"
+            "    Run();\n"
+            "}\n";
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        std::string expected =
+            "#include \"other.as\"\n"
+            "void Main()\n"
+            "{\n"
+            "    Run();\n"
+            "}\n";
+
+        CHECK(FormatSourceCode(code, options) == expected);
     }
 
     TEST_CASE("Strings with curly braces, semicolons and operators are preserved verbatim")

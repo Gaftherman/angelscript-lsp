@@ -16,6 +16,9 @@ let statusBarItem: StatusBarItem;
 /** @brief Command that reveals the server log. The status bar item and every error offer it. */
 const SHOW_LOG_COMMAND = 'angelscript.showServerLog';
 
+/** @brief Command that stops the running server and starts a fresh one with current settings. */
+const RESTART_COMMAND = 'angelscript.restartServer';
+
 /** @brief Wording of the button on every failure notification. */
 const SHOW_LOG_ACTION = 'Show Log';
 
@@ -304,6 +307,14 @@ function buildServerArgs(): string[] {
         args.push(`--engine-profile=${engineProfile}`);
     }
 
+    // Where a block's opening brace goes. Only "kr" moves it; anything else, a typo included, is
+    // the Allman default, so a misspelling reformats nothing unexpectedly. A list or a lambda body
+    // keeps its brace on the line under either style - that is not a matter of taste.
+    const braceStyle = config.get<string>('format.braceStyle', '').trim();
+    if (braceStyle.length > 0) {
+        args.push(`--format-brace-style=${braceStyle}`);
+    }
+
     const severities = config.get<Record<string, string>>('diagnosticSeverity', {});
     for (const [code, severity] of Object.entries(severities ?? {})) {
         if (code.trim().length > 0 && typeof severity === 'string' && severity.trim().length > 0) {
@@ -426,6 +437,9 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(
         commands.registerCommand(SHOW_LOG_COMMAND, () => lspOutputChannel.show(true)));
 
+    context.subscriptions.push(
+        commands.registerCommand(RESTART_COMMAND, () => restartClient(context, 'Restart requested from the command palette.')));
+
     statusBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 100);
     statusBarItem.command = SHOW_LOG_COMMAND;
     context.subscriptions.push(statusBarItem);
@@ -441,20 +455,36 @@ export async function activate(context: ExtensionContext) {
                 return;
             }
 
-            lspOutputChannel.appendLine('Configuration changed; restarting the language server.');
-            try {
-                await client?.stop();
-            } catch (error) {
-                lspOutputChannel.appendLine(`Failed to stop Language Client: ${error instanceof Error ? error.message : String(error)}`);
-            }
-
-            // A restart the user asked for by changing a setting starts the exit budget over. The
-            // stop above is an expected exit, and counting it would let four setting changes look
-            // like a crash loop.
-            unexpectedExits = 0;
-            await startClient(context);
+            await restartClient(context, 'Configuration changed; restarting the language server.');
         })
     );
+}
+
+/**
+ * @brief Stops the running client, if any, and builds a fresh one.
+ *
+ * Server-side this needs nothing: every setting that matters is a command-line argument captured
+ * when ServerOptions is constructed, so a new client *is* the restart. That is also why the
+ * command lives here rather than behind workspace/executeCommand - a request handled by the
+ * process being restarted cannot outlive the restart.
+ *
+ * @param context The extension execution context.
+ * @param reason Written to the log, so a restart is never a silent gap in it.
+ */
+async function restartClient(context: ExtensionContext, reason: string): Promise<void> {
+    lspOutputChannel.appendLine(reason);
+    setStatus('starting', 'AngelScript: restarting the language server');
+
+    try {
+        await client?.stop();
+    } catch (error) {
+        lspOutputChannel.appendLine(`Failed to stop Language Client: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // A restart the user asked for starts the exit budget over. The stop above is an expected
+    // exit, and counting it would let four deliberate restarts look like a crash loop.
+    unexpectedExits = 0;
+    await startClient(context);
 }
 
 /**7

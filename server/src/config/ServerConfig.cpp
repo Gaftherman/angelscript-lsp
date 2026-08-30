@@ -180,6 +180,9 @@ namespace angel_lsp::config
                   << "                                          types are unknown cannot be judged either. Turn it off for\n"
                   << "                                          a host that registers types in C++ and declares none of\n"
                   << "                                          them - or better, name its --engine-profile.\n"
+                  << "  --format-brace-style=<allman|kr>        Where a block's opening brace goes. Default allman.\n"
+                  << "                                          A list or a lambda body keeps its brace on the line\n"
+                  << "                                          either way - that is correctness, not style.\n"
                   << "  -h, --help                              Show this help message and exit\n"
                   << "  -v, --version                           Show version information and exit\n";
     }
@@ -518,6 +521,14 @@ namespace angel_lsp::config
                 if (getStringValue(val) && !val.empty())
                 {
                     config.predefinedFiles.push_back(std::string(val));
+                }
+            }
+            else if (key == "--format-brace-style" || key == "--brace-style")
+            {
+                std::string_view val;
+                if (getStringValue(val) && !val.empty())
+                {
+                    config.format.braceStyle = std::string(val);
                 }
             }
             else if (key == "--engine-profile" || key == "--profile")

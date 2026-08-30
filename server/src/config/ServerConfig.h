@@ -205,6 +205,23 @@ namespace angel_lsp::config
     };
 
     /**
+     * @brief Formatting preferences.
+     */
+    struct FormatConfig
+    {
+        /**
+         * @brief Where a *block*'s opening brace goes.
+         *
+         * A brace that opens a value - an initializer list, a lambda body - is not governed by
+         * this and never was: it stays on its line in either style. Kept as a string here because
+         * this is Layer 1 and the enum that names the two styles belongs to the formatting
+         * feature; the server maps it once, the way it already does for diagnostic severities.
+         * Anything other than "kr" reads as Allman, so a typo is the default rather than an error.
+         */
+        std::string braceStyle = "allman";
+    };
+
+    /**
      * @brief Full configuration bundle for the LSP server.
      */
     struct ServerConfig
@@ -214,6 +231,7 @@ namespace angel_lsp::config
         TypeConfig types;
         EngineProperties engine;
         DiagnosticsConfig diagnostics;
+        FormatConfig format;
         std::vector<std::string> searchDirectories;
 
         /**

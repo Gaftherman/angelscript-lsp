@@ -52,6 +52,11 @@
         "command": "angelscript.showServerLog",
         "title": "Show Server Log",
         "category": "AngelScript"
+      },
+      {
+        "command": "angelscript.restartServer",
+        "title": "Restart Server",
+        "category": "AngelScript"
       }
     ],
     "grammars": [
@@ -320,6 +325,19 @@
           ],
           "default": "standard",
           "markdownDescription": "Built-in AngelScript engine profile to automatically load predefined API stubs and rules (e.g. `svencoop`, `urho3d`, `standard`, `auto`)."
+        },
+        "angelscript.format.braceStyle": {
+          "type": "string",
+          "enum": [
+            "allman",
+            "kr"
+          ],
+          "enumDescriptions": [
+            "The opening brace of a block goes on its own line, aligned with the statement that owns it.",
+            "The opening brace of a block goes at the end of the statement line, and else sits beside the brace that closed the if."
+          ],
+          "default": "allman",
+          "description": "Where a block's opening brace goes. An initializer list and a lambda body keep their brace on the line under either style."
         }
       }
     }

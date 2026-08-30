@@ -11,6 +11,20 @@
 namespace angel_lsp::features
 {
     /**
+     * @brief Where a *block*'s opening brace goes.
+     *
+     * Only blocks. A brace that opens a value - an initializer list, a lambda body passed as an
+     * argument - stays on its line under either style, because that is not a matter of taste:
+     * `array<int> a =` followed by a lone `{` on the next line is what this formatter used to
+     * produce, and it is wrong in every brace style there is.
+     */
+    enum class BraceStyle
+    {
+        Allman,  ///< `{` on its own line, aligned with the statement that owns it. The default.
+        KAndR    ///< `{` at the end of the statement line, and `else` beside the `}` before it.
+    };
+
+    /**
      * @brief Context and options for document formatting.
      */
     struct FormattingRequest
@@ -19,6 +33,7 @@ namespace angel_lsp::features
         const std::string &sourceCode;
         TSTree *tree = nullptr;
         lsp::FormattingOptions options;
+        BraceStyle braceStyle = BraceStyle::Allman;
     };
 
     /**
@@ -31,6 +46,7 @@ namespace angel_lsp::features
         TSTree *tree = nullptr;
         lsp::Range range;
         lsp::FormattingOptions options;
+        BraceStyle braceStyle = BraceStyle::Allman;
     };
 
     /**
@@ -44,6 +60,7 @@ namespace angel_lsp::features
         lsp::Position position;
         std::string ch;
         lsp::FormattingOptions options;
+        BraceStyle braceStyle = BraceStyle::Allman;
     };
 
     using FormattingResult = std::vector<lsp::TextEdit>;
@@ -77,7 +94,9 @@ namespace angel_lsp::features
      * @brief Directly formats an AngelScript source code string.
      * @param sourceCode Source text to format.
      * @param options Formatting configuration options.
+     * @param braceStyle Where a block's opening brace goes. Value braces ignore this.
      * @return Formatted source code string.
      */
-    std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions &options);
+    std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions &options,
+                                 BraceStyle braceStyle = BraceStyle::Allman);
 }

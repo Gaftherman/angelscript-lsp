@@ -49,6 +49,27 @@ namespace angel_lsp::features
             uint32_t newlinesBefore = 0;
             bool isTemplateOpener = false;
             bool isTemplateCloser = false;
+
+            /**
+             * @brief For a brace sharing its line: whether its contents are padded with spaces.
+             *
+             * `{ Log(a); }` for a lambda body, `{1, 2}` for a list. Both are value braces and both
+             * stay on their line, but one holds statements and the other holds elements, and the
+             * two read differently enough that one rule for both is wrong either way round. Set
+             * while the braces are being classified, since that is the only pass that knows.
+             */
+            bool isPaddedBrace = false;
+
+            /**
+             * @brief A string or character literal whose closing quote is missing.
+             *
+             * `"` and `'` both end at the line break, matching the default engine - multiline
+             * strings are off unless the host turns them on. What is left is a token that ran into
+             * the end of its line, and joining the next line onto it would pull the following code
+             * *inside* the literal. Common enough to matter: it is the state every string is in
+             * while it is being typed.
+             */
+            bool isUnterminated = false;
         };
 
         static const std::unordered_set<std::string_view> kKeywords = {
@@ -227,12 +248,15 @@ namespace angel_lsp::features
                         i++;
                         curCol++;
                     }
-                    if (i < src.size() && src[i] == '"')
+                    const bool stringClosed = i < src.size() && src[i] == '"';
+                    if (stringClosed)
                     {
                         i++;
                         curCol++;
                     }
-                    tokens.push_back({ TokenType::StringLiteral, std::string(src.substr(start, i - start)), curLine, startCol, newlines });
+                    Token stringTok{ TokenType::StringLiteral, std::string(src.substr(start, i - start)), curLine, startCol, newlines };
+                    stringTok.isUnterminated = !stringClosed;
+                    tokens.push_back(std::move(stringTok));
                     newlines = 0;
                     continue;
                 }
@@ -259,12 +283,37 @@ namespace angel_lsp::features
                         i++;
                         curCol++;
                     }
-                    if (i < src.size() && src[i] == '\'')
+                    const bool charClosed = i < src.size() && src[i] == '\'';
+                    if (charClosed)
                     {
                         i++;
                         curCol++;
                     }
-                    tokens.push_back({ TokenType::CharacterLiteral, std::string(src.substr(start, i - start)), curLine, startCol, newlines });
+                    Token charTok{ TokenType::CharacterLiteral, std::string(src.substr(start, i - start)), curLine, startCol, newlines };
+                    charTok.isUnterminated = !charClosed;
+                    tokens.push_back(std::move(charTok));
+                    newlines = 0;
+                    continue;
+                }
+
+                // A run of non-ASCII bytes, kept whole.
+                //
+                // Nothing below this recognises one, so each byte of a UTF-8 sequence used to come
+                // out as its own token and the renderer put spaces between them - which is how a
+                // file that compiled before formatting stopped compiling after. Held together as
+                // one token it survives untouched. The formatter has no business inside a
+                // multi-byte sequence: AngelScript's own grammar is ASCII, so anything here is
+                // inside something the tokenizer already failed to claim.
+                if (static_cast<unsigned char>(c) >= 0x80)
+                {
+                    size_t start = i;
+                    uint32_t startCol = curCol;
+                    while (i < src.size() && static_cast<unsigned char>(src[i]) >= 0x80)
+                    {
+                        i++;
+                        curCol++;
+                    }
+                    tokens.push_back({ TokenType::Identifier, std::string(src.substr(start, i - start)), curLine, startCol, newlines });
                     newlines = 0;
                     continue;
                 }
@@ -382,7 +431,20 @@ namespace angel_lsp::features
                 if (i + 2 < src.size())
                 {
                     std::string_view op3 = src.substr(i, 3);
-                    if (op3 == "<<=" || op3 == ">>=" || op3 == ">>>" || op3 == "!is")
+
+                    // `!is` is the handle-inequality operator, and it is the only operator here
+                    // spelled with letters - so it is the only one that can swallow the front of
+                    // an identifier. `!isdigit(x)` matched it and came out as `!is digit(x)`,
+                    // which is not the same program and does not compile. Twenty-eight files in
+                    // the 1061-script corpus were being rewritten this way. A word boundary after
+                    // it is what tells the operator from the call.
+                    const bool op3IsWordOperator = op3 == "!is";
+                    const bool op3EndsAtWordBoundary =
+                        !op3IsWordOperator || i + 3 >= src.size() ||
+                        (std::isalnum(static_cast<unsigned char>(src[i + 3])) == 0 && src[i + 3] != '_');
+
+                    if ((op3 == "<<=" || op3 == ">>=" || op3 == ">>>" || op3IsWordOperator) &&
+                        op3EndsAtWordBoundary)
                     {
                         tokens.push_back({ TokenType::Operator, std::string(op3), curLine, curCol, newlines });
                         i += 3;
@@ -601,6 +663,16 @@ namespace angel_lsp::features
             const auto &prev = tokens[prevIdx];
             const auto &curr = tokens[currIdx];
 
+            // An omitted initializer-list element, which is legal and takes the type's default:
+            // `{0, 1, , 4}`. The hole is a gap between two separators and has no token of its
+            // own, so without this it closes up into `{0, 1,, 4}` - still the same four elements
+            // to the compiler, and invisible to whoever has to read it next.
+            if (curr.type == TokenType::Comma &&
+                (prev.type == TokenType::Comma || prev.type == TokenType::OpenBrace))
+            {
+                return true;
+            }
+
             // Never space before punctuation
             if (curr.type == TokenType::Comma || curr.type == TokenType::Semicolon ||
                 curr.type == TokenType::CloseParen || curr.type == TokenType::CloseBracket ||
@@ -616,6 +688,18 @@ namespace angel_lsp::features
                 prev.type == TokenType::Arrow)
             {
                 return false;
+            }
+
+            // Braces only share a line when they carry a value, and the padding then follows what
+            // the brace holds: `{ Log(a); }` for a lambda body, `{1, 2}` for a list. Decided while
+            // the braces were classified, since that is the pass that knows which is which.
+            if (prev.type == TokenType::OpenBrace)
+            {
+                return prev.isPaddedBrace;
+            }
+            if (curr.type == TokenType::CloseBrace)
+            {
+                return curr.isPaddedBrace;
             }
 
             // Postfix ++ / --
@@ -695,7 +779,10 @@ namespace angel_lsp::features
                 {
                     return true;
                 }
-                if (prev.type == TokenType::Identifier || prev.text == "super" || prev.text == "this" || prev.text == "cast")
+                // `function` opens a lambda's parameter list the way an identifier opens a call's,
+                // so it takes no space either - `function(int a)`, not `function (int a)`.
+                if (prev.type == TokenType::Identifier || prev.text == "super" ||
+                    prev.text == "this" || prev.text == "cast" || prev.text == "function")
                 {
                     return false;
                 }
@@ -801,7 +888,26 @@ namespace angel_lsp::features
             Generic,
             Switch,
             Enum,
-            Class
+            Class,
+            Value    ///< An initializer list or a lambda body - a brace that produces a value.
+        };
+
+        /**
+         * @brief One open brace, and the paren/bracket nesting the source was at when it opened.
+         *
+         * The depths are what separates a lambda's body from an `if` block written inside it.
+         * `f(function() { if (c) { g(); } })` has both braces at `parenDepth == 1`, so an absolute
+         * test - "inside parentheses means it is a value" - calls the `if` block a value too and
+         * runs its body onto one line. Measured against the brace that encloses it, the lambda body
+         * opens *deeper* than its enclosing scope and the `if` block opens at the same depth, which
+         * is the distinction that actually holds.
+         */
+        struct ScopeEntry
+        {
+            ScopeKind kind = ScopeKind::Generic;
+            int parenDepthAtOpen = 0;
+            int bracketDepthAtOpen = 0;
+            bool paddedBrace = false;  ///< Carried to the closing brace, which shares the answer.
         };
 
         struct LineInfo
@@ -813,11 +919,24 @@ namespace angel_lsp::features
         };
     }
 
-    std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions &options)
+    std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions &options,
+                                 BraceStyle braceStyle)
     {
         if (sourceCode.empty())
         {
             return "";
+        }
+
+        // A UTF-8 BOM is held aside and put back byte for byte. The compiler accepts one and so
+        // does the grammar, so it must survive formatting - and it is not a token: left in the
+        // stream it becomes the first "identifier" on line one, which is a different file.
+        std::string_view bom;
+        if (sourceCode.size() >= 3 && static_cast<unsigned char>(sourceCode[0]) == 0xEF &&
+            static_cast<unsigned char>(sourceCode[1]) == 0xBB &&
+            static_cast<unsigned char>(sourceCode[2]) == 0xBF)
+        {
+            bom = sourceCode.substr(0, 3);
+            sourceCode.remove_prefix(3);
         }
 
         auto tokens = Tokenize(sourceCode);
@@ -832,9 +951,20 @@ namespace angel_lsp::features
         int parenDepth = 0;
         int bracketDepth = 0;
 
-        std::vector<ScopeKind> scopeStack;
+        std::vector<ScopeEntry> scopeStack;
         ScopeKind pendingScope = ScopeKind::Generic;
         bool insideCaseBody = false;
+
+        // Set by `=` or `return` at the nesting the enclosing brace opened at, cleared at the end
+        // of the statement. It is what makes `array<int> a = {1, 2};` a value brace while
+        // `if (x = 5) {}` and `for (int i = 0; ...) {}` keep theirs as blocks - in those two the
+        // `=` sits inside parentheses, deeper than the scope, so it never arms this.
+        bool inValueContext = false;
+
+        auto currentScopeKind = [&]() -> ScopeKind
+        {
+            return scopeStack.empty() ? ScopeKind::Generic : scopeStack.back().kind;
+        };
 
         auto flushCurrentLine = [&]()
         {
@@ -843,6 +973,17 @@ namespace angel_lsp::features
                 lines.push_back(std::move(currentLine));
                 currentLine = LineInfo{};
             }
+        };
+
+        // The indent a fresh line takes, which a case body pushes one level deeper.
+        auto beginLineIfEmpty = [&]()
+        {
+            if (!currentLine.tokenIndices.empty())
+            {
+                return;
+            }
+            const bool inCaseBody = insideCaseBody && currentScopeKind() == ScopeKind::Switch;
+            currentLine.indentLevel = inCaseBody ? braceLevel + 1 : braceLevel;
         };
 
         for (size_t i = 0; i < tokens.size(); ++i)
@@ -891,30 +1032,113 @@ namespace angel_lsp::features
                 if (bracketDepth > 0) bracketDepth--;
             }
 
+            const int baseParen = scopeStack.empty() ? 0 : scopeStack.back().parenDepthAtOpen;
+            const int baseBracket = scopeStack.empty() ? 0 : scopeStack.back().bracketDepthAtOpen;
+            const bool atScopeNesting = parenDepth == baseParen && bracketDepth == baseBracket;
+
+            // Arm and disarm the value context. A top-level comma separates two declarators
+            // (`int[] a = {1}, b = {2};`), so it ends the first one's value context - but a comma
+            // *inside* a list separates its elements and must leave it alone.
+            if (atScopeNesting && currentScopeKind() != ScopeKind::Value)
+            {
+                if ((tok.type == TokenType::Operator && tok.text == "=") ||
+                    (tok.type == TokenType::Keyword && tok.text == "return"))
+                {
+                    inValueContext = true;
+                }
+                else if (tok.type == TokenType::Semicolon || tok.type == TokenType::Comma)
+                {
+                    inValueContext = false;
+                }
+            }
+
             // Preprocessor
             if (tok.type == TokenType::Preprocessor)
             {
                 flushCurrentLine();
                 LineInfo prep;
                 prep.isPreprocessor = true;
-                prep.indentLevel = 0;
+                // Indented with the block it sits in. Column zero is right for the `#include` at
+                // the top of a file and only because that is already brace level zero; forcing it
+                // everywhere tore a `#if` out of the function body it belongs to.
+                prep.indentLevel = braceLevel;
                 prep.tokenIndices.push_back(i);
                 lines.push_back(std::move(prep));
+                continue;
+            }
+
+            // Metadata block: `[Property, Category="Weapons"]` before a declaration.
+            //
+            // CScriptBuilder strips these before the compiler sees them, and the grammar makes the
+            // block a sibling of the declaration rather than part of it, so it is its own line.
+            // Told apart from an index expression by position alone: an index never opens a line -
+            // `arr[0] = 1;` starts with the identifier - and metadata always does.
+            if (tok.type == TokenType::OpenBracket && currentLine.tokenIndices.empty())
+            {
+                beginLineIfEmpty();
+                currentLine.tokenIndices.push_back(i);
+                int depth = 1;
+                while (depth > 0 && i + 1 < tokens.size())
+                {
+                    ++i;
+                    if (tokens[i].type == TokenType::OpenBracket)
+                    {
+                        depth++;
+                        bracketDepth++;
+                    }
+                    else if (tokens[i].type == TokenType::CloseBracket)
+                    {
+                        depth--;
+                        if (bracketDepth > 0) bracketDepth--;
+                    }
+                    currentLine.tokenIndices.push_back(i);
+                }
+                flushCurrentLine();
                 continue;
             }
 
             // Open brace {
             if (tok.type == TokenType::OpenBrace)
             {
-                flushCurrentLine();
-                LineInfo braceLine;
-                braceLine.indentLevel = braceLevel;
-                braceLine.tokenIndices.push_back(i);
-                lines.push_back(std::move(braceLine));
+                // A value brace: already inside one, opened deeper than its enclosing scope (a
+                // lambda or a list passed as an argument), or armed by an `=` or a `return`.
+                const bool isValueBrace = currentScopeKind() == ScopeKind::Value ||
+                                          parenDepth > baseParen || bracketDepth > baseBracket ||
+                                          inValueContext;
 
-                scopeStack.push_back(pendingScope);
+                if (isValueBrace)
+                {
+                    // Statements or elements? A lambda body follows its parameter list, so a `)`
+                    // or a bare `function` in front of the brace is the tell. Everything else -
+                    // `= {`, `, {`, `( {`, `return {`, a list nested in a list - holds elements.
+                    const bool padded = i > 0 && (tokens[i - 1].type == TokenType::CloseParen ||
+                                                  tokens[i - 1].text == "function");
+                    tokens[i].isPaddedBrace = padded;
+
+                    beginLineIfEmpty();
+                    currentLine.tokenIndices.push_back(i);
+                    scopeStack.push_back({ ScopeKind::Value, parenDepth, bracketDepth, padded });
+                    continue;
+                }
+
+                if (braceStyle == BraceStyle::KAndR && !currentLine.tokenIndices.empty())
+                {
+                    currentLine.tokenIndices.push_back(i);
+                    flushCurrentLine();
+                }
+                else
+                {
+                    flushCurrentLine();
+                    LineInfo braceLine;
+                    braceLine.indentLevel = braceLevel;
+                    braceLine.tokenIndices.push_back(i);
+                    lines.push_back(std::move(braceLine));
+                }
+
+                scopeStack.push_back({ pendingScope, parenDepth, bracketDepth });
                 pendingScope = ScopeKind::Generic;
                 insideCaseBody = false;
+                inValueContext = false;
 
                 braceLevel++;
                 continue;
@@ -923,6 +1147,17 @@ namespace angel_lsp::features
             // Close brace }
             if (tok.type == TokenType::CloseBrace)
             {
+                // Closing a value: stays on the line its list or lambda body is on, and costs no
+                // indent level, because opening it never took one.
+                if (currentScopeKind() == ScopeKind::Value)
+                {
+                    tokens[i].isPaddedBrace = scopeStack.back().paddedBrace;
+                    scopeStack.pop_back();
+                    beginLineIfEmpty();
+                    currentLine.tokenIndices.push_back(i);
+                    continue;
+                }
+
                 flushCurrentLine();
                 braceLevel = std::max(0, braceLevel - 1);
                 if (!scopeStack.empty())
@@ -930,6 +1165,7 @@ namespace angel_lsp::features
                     scopeStack.pop_back();
                 }
                 insideCaseBody = false;
+                inValueContext = false;
 
                 LineInfo braceLine;
                 braceLine.indentLevel = braceLevel;
@@ -949,6 +1185,22 @@ namespace angel_lsp::features
             if (tok.type == TokenType::Keyword && tok.text == "else")
             {
                 flushCurrentLine();
+
+                // K&R puts it beside the brace that closed the `if`: `} else`. Only when that is
+                // literally the line before - an `else` after a braceless `if` body has an
+                // ordinary statement there and must not be glued onto it.
+                if (braceStyle == BraceStyle::KAndR && !lines.empty() &&
+                    lines.back().tokenIndices.size() == 1 &&
+                    tokens[lines.back().tokenIndices.front()].type == TokenType::CloseBrace)
+                {
+                    // Taken back off the emitted list rather than appended to it, so the `{` that
+                    // follows finds a line still open and lands on it too: `} else {`.
+                    currentLine = std::move(lines.back());
+                    lines.pop_back();
+                    currentLine.tokenIndices.push_back(i);
+                    continue;
+                }
+
                 currentLine.indentLevel = braceLevel;
                 currentLine.tokenIndices.push_back(i);
                 continue;
@@ -980,22 +1232,24 @@ namespace angel_lsp::features
             }
 
             // First token on line
-            if (currentLine.tokenIndices.empty())
-            {
-                if (insideCaseBody && !scopeStack.empty() && scopeStack.back() == ScopeKind::Switch)
-                {
-                    currentLine.indentLevel = braceLevel + 1;
-                }
-                else
-                {
-                    currentLine.indentLevel = braceLevel;
-                }
-            }
+            beginLineIfEmpty();
 
             currentLine.tokenIndices.push_back(i);
 
-            // Semicolon outside paren/bracket ends statement
-            if (tok.type == TokenType::Semicolon && parenDepth == 0 && bracketDepth == 0)
+            // A literal with no closing quote ends its line, whatever follows. Joining the next
+            // line onto it would move that code inside the literal - the file would still be one
+            // the compiler rejects, but for a different reason and in a different place, and the
+            // user's own line breaks would be gone.
+            if (tok.isUnterminated)
+            {
+                flushCurrentLine();
+                continue;
+            }
+
+            // Semicolon outside paren/bracket ends statement. Inside a value scope it does not:
+            // a lambda body written as an argument keeps its statements on the argument's line.
+            if (tok.type == TokenType::Semicolon && parenDepth == 0 && bracketDepth == 0 &&
+                currentScopeKind() != ScopeKind::Value)
             {
                 // Check if next token is trailing comment on same line
                 if (i + 1 < tokens.size() && tokens[i + 1].newlinesBefore == 0 &&
@@ -1010,7 +1264,7 @@ namespace angel_lsp::features
 
             // Comma in enum body breaks line
             if (tok.type == TokenType::Comma && parenDepth == 0 && bracketDepth == 0 &&
-                !scopeStack.empty() && scopeStack.back() == ScopeKind::Enum)
+                currentScopeKind() == ScopeKind::Enum)
             {
                 // Check if next token is trailing comment on same line
                 if (i + 1 < tokens.size() && tokens[i + 1].newlinesBefore == 0 &&
@@ -1034,7 +1288,7 @@ namespace angel_lsp::features
             if (tok.type == TokenType::Colon && IsAccessSpecifierOrLabelColon(tokens, i))
             {
                 flushCurrentLine();
-                if (!scopeStack.empty() && scopeStack.back() == ScopeKind::Switch)
+                if (currentScopeKind() == ScopeKind::Switch)
                 {
                     insideCaseBody = true;
                 }
@@ -1054,11 +1308,7 @@ namespace angel_lsp::features
                 continue;
             }
 
-            std::string lineStr;
-            if (!line.isPreprocessor)
-            {
-                lineStr = MakeIndent(line.indentLevel, options);
-            }
+            std::string lineStr = MakeIndent(line.indentLevel, options);
 
             for (size_t k = 0; k < line.tokenIndices.size(); ++k)
             {
@@ -1116,7 +1366,7 @@ namespace angel_lsp::features
         }
 
         // Build result text
-        std::string result;
+        std::string result(bom);
         for (size_t idx = 0; idx < collapsedLines.size(); ++idx)
         {
             result += collapsedLines[idx];
@@ -1136,7 +1386,7 @@ namespace angel_lsp::features
             return std::vector<lsp::TextEdit>{};
         }
 
-        std::string formatted = FormatSourceCode(request.sourceCode, request.options);
+        std::string formatted = FormatSourceCode(request.sourceCode, request.options, request.braceStyle);
         if (formatted == request.sourceCode)
         {
             return std::vector<lsp::TextEdit>{};
@@ -1199,12 +1449,12 @@ namespace angel_lsp::features
 
         if (startLine == 0 && endLine >= totalLines - 1)
         {
-            FormattingRequest fullReq{ request.uri, request.sourceCode, request.tree, request.options };
+            FormattingRequest fullReq{ request.uri, request.sourceCode, request.tree, request.options, request.braceStyle };
             return FormatDocument(fullReq);
         }
 
         // Format document
-        std::string fullFormatted = FormatSourceCode(request.sourceCode, request.options);
+        std::string fullFormatted = FormatSourceCode(request.sourceCode, request.options, request.braceStyle);
         if (fullFormatted == request.sourceCode)
         {
             return std::vector<lsp::TextEdit>{};
@@ -1284,7 +1534,8 @@ namespace angel_lsp::features
                 lsp::Position{ startLine, 0 },
                 lsp::Position{ targetLine, request.position.character }
             },
-            request.options
+            request.options,
+            request.braceStyle
         };
 
         return FormatRange(rangeReq);
