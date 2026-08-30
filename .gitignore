@@ -1,8 +1,20 @@
 # OS & Editor Files
 .DS_Store
 Thumbs.db
-.vscode/
+# Anchored to the repository root. Unanchored, `.vscode/` matches a directory of that name at any
+# depth, which swallowed client/.vscode - four files that are committed on purpose, since they are
+# how the extension is launched and debugged. A tracked file an ignore rule also matches stays
+# tracked and silently stops being reported, so the rule read as if it were doing nothing.
+/.vscode/
 opencode.json
+
+# Agent tooling. Local configuration for the assistants used on this project, not part of it:
+# .mcp.json names absolute paths on one machine, and .claude/ carries per-machine settings and
+# slash commands. The project's own guide for an agent is .agents/AGENTS.md, which is tracked.
+.claude/
+.claudeignore
+.mcp.json
+CLAUDE.md
 
 # Temporary Logs & Output Files
 *.log
@@ -37,8 +49,6 @@ client/node_modules/
 client/out/
 client/.vscode/tasks.log
 client/.vscode-test/
-client/package-lock.json
-client/bin/
 angelscript/
 .agents/*
 !.agents/AGENTS.md
