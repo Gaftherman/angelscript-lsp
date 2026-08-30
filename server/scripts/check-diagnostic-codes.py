@@ -31,7 +31,7 @@ DELIBERATELY_NEVER_EMITTED = {
     'as-warn-shadow-global',
 }
 
-CODE_PATTERN = re.compile(r'"(as-(?:err|warn|syntax)-[a-z0-9-]+)"')
+CODE_PATTERN = re.compile(r'"(as-(?:err|warn|syntax|hint)-[a-z0-9-]+)"')
 
 
 def declared_codes() -> set:

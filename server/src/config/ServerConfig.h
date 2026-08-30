@@ -141,29 +141,28 @@ namespace angel_lsp::config
     struct DiagnosticsConfig
     {
         /**
-         * @brief Report a parameter or return type that resolves to no declaration (default: off).
+         * @brief Report a parameter or return type that resolves to no declaration (default: on).
          *
          * `void f(TypoTypeName x)` is a compile error - "Identifier 'TypoTypeName' is not a data
-         * type in namespace 'TEST' or parent" - and it is also exactly what a legitimate
-         * engine-registered type looks like from here: neither resolves to anything this analyzer
-         * can read. A Sven Co-op script naming `CBaseEntity` in every handler would light up on
-         * every function.
+         * type in namespace 'TEST' or parent" - and left unreported it surfaces as silence at every
+         * call site instead, since a call whose parameter types are unknown cannot be judged
+         * either. That is what makes it worth reporting: the cost is not one missing diagnostic but
+         * a whole function's worth.
          *
-         * Measured on the 1061-file corpus: 7096 findings with this off, 13999 with it on, and the
-         * sample is `Vector` and `CBaseEntity` all the way down - types a Sven Co-op host registers
-         * in C++ and no stub declares. That is the whole argument for the default.
+         * It is also, from here, indistinguishable from a legitimate engine-registered type -
+         * neither resolves to anything this analyzer can read - which is why this is a setting at
+         * all. Measured on the 1061-file corpus, with the Sven Co-op profile loaded the way such a
+         * workspace would: 1581 findings with this off, 3850 with it on. Without a profile, 4896
+         * against 9791. A workspace whose host registers types in C++ and declares none of them
+         * should turn this off, or better, name its engine profile.
          *
-         * So it is opt-in, for a workspace whose API is fully declared in `as.predefined` or covered
-         * by an engine profile. Turn it on there and a typo in a signature is caught at the
-         * declaration instead of surfacing as silence at every call site.
+         * Local variable declarations are reported regardless, and always were. This aligns
+         * parameters and return types with them.
          *
          * See tests/FunctionRulesTest.cpp, "Unknown Type Corpus Audit", to take that measurement
          * again.
-         *
-         * Local variable declarations are reported regardless, and always were: a local's type is
-         * almost always a script type, where a parameter's is very often the engine's.
          */
-        bool reportUnknownTypes = false;
+        bool reportUnknownTypes = true;
     };
 
     /**

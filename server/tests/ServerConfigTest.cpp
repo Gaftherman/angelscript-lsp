@@ -1251,16 +1251,19 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config.engine.allowUnsafeReferences == false);
         }
 
-        SUBCASE("reportUnknownTypes is off unless asked for")
+        SUBCASE("reportUnknownTypes is on, and can be turned off")
         {
-            // Measured on the 1061-file corpus: 7096 findings off, 13999 on, and the extra ones are
-            // Vector and CBaseEntity - types a host registers in C++ that no stub declares. That is
-            // the whole argument for the default. See DiagnosticsConfig::reportUnknownTypes.
+            // On because an unreported unknown type surfaces as silence at every call site, not as
+            // one missing diagnostic. Measured on the 1061-file corpus with the Sven Co-op profile
+            // loaded: 1581 findings off, 3850 on. See DiagnosticsConfig::reportUnknownTypes.
             ArgvHelper plain{"angel_lsp"};
-            CHECK(FromArgs(plain.argc(), plain.data()).diagnostics.reportUnknownTypes == false);
+            CHECK(FromArgs(plain.argc(), plain.data()).diagnostics.reportUnknownTypes == true);
 
-            ArgvHelper asked{"angel_lsp", "--report-unknown-types"};
-            CHECK(FromArgs(asked.argc(), asked.data()).diagnostics.reportUnknownTypes == true);
+            ArgvHelper off{"angel_lsp", "--no-report-unknown-types"};
+            CHECK(FromArgs(off.argc(), off.data()).diagnostics.reportUnknownTypes == false);
+
+            ArgvHelper backOn{"angel_lsp", "--no-report-unknown-types", "--report-unknown-types"};
+            CHECK(FromArgs(backOn.argc(), backOn.data()).diagnostics.reportUnknownTypes == true);
         }
 
         SUBCASE("propertyAccessorMode is an integer, not a bool")

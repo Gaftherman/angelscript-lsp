@@ -207,6 +207,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-call-no-matching-signature"] = "No matching signatures to call '{}'.";
         m_messages["as-err-constructor-not-callable"] = "'{}' is a constructor of '{}' and cannot be called on an instance.";
         m_messages["as-err-initializer-list-not-supported"] = "Initialization lists cannot be used with '{}'.";
+        m_messages["as-hint-list-pattern-unknown"] = "No list pattern is declared for '{}', so the contents of this list are not checked. Add a /// @listpattern tag above its declaration in your .as.predefined, copied from the type's asBEHAVE_LIST_FACTORY registration - for example {{repeat T}}.";
         m_messages["as-err-initializer-list-expected"] = "Expected a list enclosed by {{ }} to match pattern.";
         m_messages["as-err-no-matching-constructor"] = "No matching signatures to '{}'.";
         m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous.";
@@ -343,6 +344,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-call-no-matching-signature"] = "No hay firmas coincidentes para la llamada a '{}'.";
             m_messages["as-err-constructor-not-callable"] = "'{}' es un constructor de '{}' y no se puede llamar sobre una instancia.";
             m_messages["as-err-initializer-list-not-supported"] = "No se pueden usar listas de inicialización con '{}'.";
+            m_messages["as-hint-list-pattern-unknown"] = "No hay un patrón de lista declarado para '{}', así que el contenido de esta lista no se verifica. Añade una etiqueta /// @listpattern sobre su declaración en tu .as.predefined, copiada del registro asBEHAVE_LIST_FACTORY del tipo - por ejemplo {{repeat T}}.";
             m_messages["as-err-initializer-list-expected"] = "Se esperaba una lista entre {{ }} para coincidir con el patrón.";
             m_messages["as-err-no-matching-constructor"] = "No coinciden las firmas con '{}'.";
             m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";

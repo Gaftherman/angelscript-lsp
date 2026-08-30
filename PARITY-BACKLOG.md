@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1110 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1117 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -103,6 +103,21 @@ project treats as unacceptable.
   pushed before the pin can move. Until then the fix is reachable only with
   `-DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=<checkout>`, and the two `KnownGaps()` entries in
   `ParityAuditTest.cpp` stay. Delete them with the pin bump.
+- **Calls through a `using namespace`, and a fabricated ambiguity rule.** A using-directive puts a
+  name in reach and the compiler judges a call through one like any other — `using namespace A;
+  f(id)` with `int` against `A::f(string)` is `No matching signatures to 'f(int)'`. Candidate lookup
+  skipped directives entirely. It now falls through to the imported namespaces when no lexical scope
+  declares the name, and *merges* all of them rather than stopping at the first, which is what the
+  compiler does. Lexical scopes still shadow: `N::f(string)` hides the global `f(int)` from inside
+  `N`.
+
+  Writing that merge turned up `as-err-ambiguous-identifier`, raised whenever more than one
+  using-directive declared a name. The compiler merges and lets overload resolution choose, and says
+  `Multiple matching signatures` only when resolution itself cannot; two namespaces declaring the
+  same *variable* it does not report at all. The rule counted scopes and called that a verdict — the
+  same shape as the fabricated `as-err-unary-neg-on-unsigned` the earlier parity work removed — so
+  it is deleted. The verdict it stood in for now arrives honestly, as `as-err-call-ambiguous` from
+  overload resolution. `doc_r16`, `doc_r17`, `doc_p16`, `doc_p17`.
 - **Calls inside a namespace, unchecked entirely.** Reported from the field: `my_test_func(id)`
   with an `int` argument and a `string` parameter drew nothing, while the identical call at file
   scope was reported. `FindFreeCandidates` probed the symbol table for the unqualified spelling
@@ -113,6 +128,21 @@ project treats as unacceptable.
   inside. It now walks the scopes an unqualified name may name — innermost namespace, each
   enclosing one, then global — stopping at the first that declares the name. `doc_r12`, `doc_r14`,
   `doc_r15`.
+- **A list with no pattern said nothing about itself.** A list factory is registered in C++ and no
+  stub can express it, so a type with no `/// @listpattern` tag has its list left entirely
+  unchecked — shape and contents both. Silence is the right verdict and a useless explanation. There
+  is now a Hint, `as-hint-list-pattern-unknown`, on the list itself, naming the type and the tag to
+  add. Only where it can be acted on: an engine-registered type has no declaration to tag, and a
+  primitive is still an error rather than a suggestion, since its silence in a stub proves
+  something. A Hint and not a warning — the code compiles, and this says the analyzer is missing
+  something, never that the script is.
+- **Unknown parameter and return types, now on by default.** `void f(TypoTypeName x)` is a compile
+  error, and left unreported it surfaced as silence at *every call site*, since a call whose
+  parameter types are unknown cannot be judged either — the cost was a whole function's worth of
+  checking, not one diagnostic. `angelscript.diagnostics.reportUnknownTypes` defaults to `true`; a
+  workspace whose host registers types in C++ and declares none of them sets it to `false`, or
+  better, names its engine profile. Measured on the 1061-file corpus with the Sven Co-op profile
+  loaded: 1581 findings off, 3850 on. `doc_r13`.
 - **Initializer-list element types.** `array<int> a = {"x"}` was silent where the compiler answers
   `Can't implicitly convert from 'const string' to 'int&'`. The list's shape was checked and its
   contents were not, because the conversion pass skips initializer lists outright.
@@ -150,12 +180,11 @@ first. Each lands with its `doc_`-prefixed parity case.
    (`array<array<int>> g = {1,2}` — the element type is a template, which does not resolve),
    `il_a6` and `il_a7` (`string` declares no `@listpattern`, and an absent pattern only means the
    stub did not say).
-2. **Unknown types on a declaration, beyond the opt-in.** `angelscript.diagnostics.reportUnknownTypes`
-   turns on `as-err-unresolved-type` for parameter and return types; it is off by default and the
-   measurement says why — on the 1061-file corpus the count goes from 7096 to 13999, and the extra
-   findings are `Vector` and `CBaseEntity`. What is still missing is a way for a workspace to
-   *establish* that its stubs are complete, which would let this be decided rather than declared.
-   `doc_r13`
+2. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
+   user, not a deduction: nothing lets the server establish that an unresolved name is a typo rather
+   than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
+   exists the setting is the honest interface, but it is the reason the rule cannot simply be
+   unconditional.
 3. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
    (`angelscript.engine.propertyAccessorMode`, `--engine-property=propertyAccessorMode=<2|3>`,
    default `2`) and the undeclared-identifier rule already reads it. The rest of the accessor
