@@ -47,6 +47,13 @@
         "configuration": "./language-configuration.json"
       }
     ],
+    "commands": [
+      {
+        "command": "angelscript.showServerLog",
+        "title": "Show Server Log",
+        "category": "AngelScript"
+      }
+    ],
     "grammars": [
       {
         "language": "angelscript",

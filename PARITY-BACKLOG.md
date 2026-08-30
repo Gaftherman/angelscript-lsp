@@ -165,6 +165,17 @@ project treats as unacceptable.
   `LocalDefinitionKind::Variable` as a function-body local. Every legal global read inside
   `function(){}` was reported. `ResolveInScope` now has an overload reporting the owning scope, and
   the rule requires `Scope::isFunctionScope` somewhere in that scope's chain. `doc_p02`, `doc_r11`.
+- **The client had no failure surface.** `extension.ts` caught a start failure, wrote one line to
+  an output channel and returned, so a server that never started and a server working normally
+  looked identical from the editor - no diagnostics either way, and the only difference in a panel
+  nobody has open. Three things now report it. A missing binary is checked *before* the spawn, since
+  it is the one failure with a specific cause - no build for this platform, or a source checkout
+  that was never built - and arriving as a bare ENOENT threw that away; the message names the
+  platform and the log lists every path tried. A start failure raises `showErrorMessage` with a
+  button that opens the log. And an `errorHandler` reports the case the language client's default
+  handles by giving up quietly: after four unexpected exits it stops restarting, which used to be
+  indistinguishable from a server with nothing to say. A status bar item carries the state the rest
+  of the time, and `AngelScript: Show Server Log` reaches the channel from the palette.
 - **A typedef inside a template argument.** `TYPE-05` in its true, narrow form, and the only item
   on the WIP list that reported legal code. A typedef names a primitive and the name *is* that type
   inside a template argument as much as anywhere else: `typedef uint8 byte;` makes `array<byte>`
@@ -248,27 +259,25 @@ first. Each lands with its `doc_`-prefixed parity case.
 6. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-7. **Client failure surface** — `extension.ts` swallows a start failure into an output channel with
-    no `showErrorMessage`, no `errorHandler` and no status bar. Highest value per line on the list.
-8. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
+7. **`angelscript.restartServer`** — needs `workspace/executeCommand` server-side and
     `contributes.commands` client-side.
-9. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
+8. **Formatter** — every `{` goes onto its own line unconditionally, so `array<int> a = {1,2,3};`
     and every lambda argument are exploded Allman-style; `#if` is forced to column 0; a metadata
     block is joined onto the declaration line.
-10. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
+9. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
     line, so a cross-file hover can show an unrelated comment from the local file. The correct
     pattern is already in `ResolveCompletionItem`. Then inherit documentation from an overridden
     interface method (`SUGG-04`).
-11. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+10. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-12. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+11. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-13. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+12. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-14. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+13. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-15. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+14. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope

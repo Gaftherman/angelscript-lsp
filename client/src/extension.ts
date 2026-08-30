@@ -1,18 +1,92 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import { ExtensionContext, window, workspace, env, OutputChannel, ExtensionMode } from 'vscode';
-import { LanguageClient, LanguageClientOptions, ServerOptions } from 'vscode-languageclient/node';
+import {
+    ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
+    StatusBarAlignment, StatusBarItem, ThemeColor
+} from 'vscode';
+import {
+    LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler, ErrorAction, CloseAction
+} from 'vscode-languageclient/node';
 
 let client: LanguageClient;
 let lspOutputChannel: OutputChannel;
+let statusBarItem: StatusBarItem;
+
+/** @brief Command that reveals the server log. The status bar item and every error offer it. */
+const SHOW_LOG_COMMAND = 'angelscript.showServerLog';
+
+/** @brief Wording of the button on every failure notification. */
+const SHOW_LOG_ACTION = 'Show Log';
+
+/**
+ * @brief How many unexpected server exits are absorbed before the user is told and it stays down.
+ *
+ * A crash loop is worth reporting once, not four times a second. The count matches the language
+ * client's own default, so this changes what the user is told rather than how hard it tries.
+ */
+const MAX_SILENT_RESTARTS = 4;
+
+/** @brief Server exits absorbed so far, reset on every successful start. */
+let unexpectedExits = 0;
+
+/**
+ * @brief Reports the server's state where the user can see it without opening a panel.
+ *
+ * The extension had no surface at all: a server that never started and a server working normally
+ * looked identical from the editor, because the only difference was a line in an output channel
+ * nobody has open. Every state here is clickable and reveals that channel.
+ */
+function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): void {
+    if (!statusBarItem) {
+        return;
+    }
+
+    const label = { starting: '$(sync~spin) AngelScript', running: '$(check) AngelScript', failed: '$(error) AngelScript' };
+    statusBarItem.text = label[state];
+    statusBarItem.tooltip = `${tooltip}\nClick to open the server log.`;
+    statusBarItem.backgroundColor = state === 'failed'
+        ? new ThemeColor('statusBarItem.errorBackground')
+        : undefined;
+    statusBarItem.show();
+}
+
+/**
+ * @brief Tells the user the server is not running, in the editor rather than in a log.
+ *
+ * @param summary One line, and the only part most users will read.
+ * @param detail  What was tried, written to the log in full.
+ */
+function reportFailure(summary: string, detail?: string): void {
+    lspOutputChannel.appendLine(summary);
+    if (detail) {
+        lspOutputChannel.appendLine(detail);
+    }
+
+    setStatus('failed', summary);
+
+    void window.showErrorMessage(`AngelScript: ${summary}`, SHOW_LOG_ACTION).then(choice => {
+        if (choice === SHOW_LOG_ACTION) {
+            lspOutputChannel.show(true);
+        }
+    });
+}
+
+/** @brief Where the server binary was found, or every place that was looked when it was not. */
+interface ServerBinary {
+    /** @brief The binary to launch. When `found` is false this is where one was expected. */
+    path: string;
+    found: boolean;
+    /** @brief Every candidate, in the order they were tried. Only worth printing on a failure. */
+    searched: string[];
+}
 
 /**
  * @brief Resolves the absolute path of the engine binary based on runtime platform, architecture, and fallback paths.
  * @param context The extension execution context framework.
- * @return String representation of the target binary file location path.
+ * @return The binary, or the expected location and the full search when there is none.
  */
-function getServerPath(context: ExtensionContext): string {
+function resolveServerBinary(context: ExtensionContext): ServerBinary {
     const platform = os.platform();
     const architecture = os.arch();
     const isWindows = platform === 'win32';
@@ -54,11 +128,17 @@ function getServerPath(context: ExtensionContext): string {
                     // Non-blocking permission failure log tracking
                 }
             }
-            return candidate;
+            return { path: candidate, found: true, searched: candidates };
         }
     }
 
-    return context.asAbsolutePath(path.join('bin', platformFolder, binaryName));
+    // The primary production path is the honest thing to name when nothing exists: it is where a
+    // packaged extension is supposed to carry the binary for this platform.
+    return {
+        path: context.asAbsolutePath(path.join('bin', platformFolder, binaryName)),
+        found: false,
+        searched: candidates
+    };
 }
 
 /**
@@ -249,18 +329,57 @@ function buildServerArgs(): string[] {
  * @param context The extension execution context.
  */
 async function startClient(context: ExtensionContext): Promise<void> {
-    const serverPath = getServerPath(context);
+    const server = resolveServerBinary(context);
 
     lspOutputChannel.appendLine("--- AngelScript C++ Language Server Activation ---");
     lspOutputChannel.appendLine(`Runtime Platform Context: ${os.platform()}-${os.arch()}`);
-    lspOutputChannel.appendLine(`Resolved Server Binary Path: ${serverPath}`);
+    lspOutputChannel.appendLine(`Resolved Server Binary Path: ${server.path}`);
+
+    // Checked before launching rather than left to the spawn. A missing binary is the one failure
+    // with a specific, actionable cause - the extension carries no build for this platform, or a
+    // source checkout has not been built - and letting it arrive as a bare ENOENT threw that away.
+    if (!server.found) {
+        reportFailure(
+            `no language server binary for ${os.platform()}-${os.arch()}. Editor features are unavailable.`,
+            `Looked in:\n  ${server.searched.join('\n  ')}`);
+        return;
+    }
+
+    setStatus('starting', 'Starting the AngelScript language server.');
 
     const serverArgs = buildServerArgs();
     lspOutputChannel.appendLine(`Server Arguments: ${serverArgs.join(" ") || "(none)"}`);
 
     const serverOptions: ServerOptions = {
-        run: { command: serverPath, args: serverArgs },
-        debug: { command: serverPath, args: serverArgs }
+        run: { command: server.path, args: serverArgs },
+        debug: { command: server.path, args: serverArgs }
+    };
+
+    // Without one of these the client uses its default, which restarts a few times and then stops
+    // for good without a word. A server that has given up looks exactly like one with nothing to
+    // say, so the state is reported once, at the point it becomes permanent.
+    const errorHandler: ErrorHandler = {
+        error: (error, _message, count) => {
+            if (count !== undefined && count > 3) {
+                reportFailure(
+                    'the language server connection keeps failing, so it has been shut down.',
+                    error.message);
+                return { action: ErrorAction.Shutdown, handled: true };
+            }
+            lspOutputChannel.appendLine(`Language server connection error: ${error.message}`);
+            return { action: ErrorAction.Continue, handled: true };
+        },
+        closed: () => {
+            unexpectedExits++;
+            if (unexpectedExits > MAX_SILENT_RESTARTS) {
+                reportFailure(
+                    `the language server stopped ${unexpectedExits} times and will not be restarted again.`);
+                return { action: CloseAction.DoNotRestart, handled: true };
+            }
+            lspOutputChannel.appendLine(
+                `Language server exited unexpectedly (${unexpectedExits}/${MAX_SILENT_RESTARTS}); restarting.`);
+            return { action: CloseAction.Restart, handled: true };
+        }
     };
 
     const clientOptions: LanguageClientOptions = {
@@ -271,7 +390,8 @@ async function startClient(context: ExtensionContext): Promise<void> {
             // switch, a pull, or a generated script would leave every stale symbol in the index.
             fileEvents: workspace.createFileSystemWatcher('**/*.{as,angelscript,predefined}')
         },
-        outputChannel: lspOutputChannel
+        outputChannel: lspOutputChannel,
+        errorHandler
     };
 
     client = new LanguageClient(
@@ -283,11 +403,15 @@ async function startClient(context: ExtensionContext): Promise<void> {
 
     try {
         await client.start();
+        unexpectedExits = 0;
+        setStatus('running', 'The AngelScript language server is running.');
         client.onNotification("angelscript/debug", (params: { message: string }) => {
             lspOutputChannel.appendLine(`[AST Debug] ${params.message}`);
         });
     } catch (error) {
-        lspOutputChannel.appendLine(`Failed to start Language Client: ${error instanceof Error ? error.message : String(error)}`);
+        reportFailure(
+            'the language server failed to start. Editor features are unavailable.',
+            `Failed to start Language Client: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
     }
 }
 
@@ -297,6 +421,14 @@ async function startClient(context: ExtensionContext): Promise<void> {
  */
 export async function activate(context: ExtensionContext) {
     lspOutputChannel = window.createOutputChannel('AngelScript C++ Language Server');
+    context.subscriptions.push(lspOutputChannel);
+
+    context.subscriptions.push(
+        commands.registerCommand(SHOW_LOG_COMMAND, () => lspOutputChannel.show(true)));
+
+    statusBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 100);
+    statusBarItem.command = SHOW_LOG_COMMAND;
+    context.subscriptions.push(statusBarItem);
 
     await startClient(context);
 
@@ -315,6 +447,11 @@ export async function activate(context: ExtensionContext) {
             } catch (error) {
                 lspOutputChannel.appendLine(`Failed to stop Language Client: ${error instanceof Error ? error.message : String(error)}`);
             }
+
+            // A restart the user asked for by changing a setting starts the exit budget over. The
+            // stop above is an expected exit, and counting it would let four setting changes look
+            // like a crash loop.
+            unexpectedExits = 0;
             await startClient(context);
         })
     );
