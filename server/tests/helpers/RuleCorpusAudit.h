@@ -1,5 +1,6 @@
 #pragma once
 
+#include "helpers/CorpusDirectory.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "config/ServerConfig.h"
@@ -77,7 +78,7 @@ namespace angel_lsp::test
         CorpusResult result;
 
         std::vector<fs::path> files;
-        for (const auto &entry : fs::directory_iterator(ANGELSCRIPT_CORPUS_DIR))
+        for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
         {
             if (entry.is_regular_file() && entry.path().extension() == ".as")
             {

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SymbolCollector.h"
@@ -118,7 +119,7 @@ namespace
     /** @brief Reads an entire file from the angelscript/ corpus into memory; empty string if missing. */
     std::string ReadCorpusFile(const std::string &fileName)
     {
-        std::string path = std::string(ANGELSCRIPT_CORPUS_DIR) + "/" + fileName;
+        std::string path = angel_lsp::test::CorpusDirectory().string() + "/" + fileName;
         std::ifstream file(path, std::ios::binary);
         if (!file)
             return "";
@@ -621,10 +622,16 @@ void Foo()
 
 TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Across All angelscript Files" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(ANGELSCRIPT_CORPUS_DIR))
+    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -692,10 +699,16 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Across All angel
 
 TEST_CASE("SemanticAnalyzer - Unused Variable Corpus Audit Across All angelscript Files" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(ANGELSCRIPT_CORPUS_DIR))
+    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -761,10 +774,16 @@ TEST_CASE("SemanticAnalyzer - Unused Variable Corpus Audit Across All angelscrip
 
 TEST_CASE("SemanticAnalyzer - Null Non Handle Corpus Audit Across All angelscript Files" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(ANGELSCRIPT_CORPUS_DIR))
+    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -842,10 +861,16 @@ TEST_CASE("SemanticAnalyzer - Null Non Handle Corpus Audit Across All angelscrip
 
 TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Project (shared SymbolTable)" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(ANGELSCRIPT_CORPUS_DIR))
+    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());

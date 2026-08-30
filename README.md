@@ -120,6 +120,39 @@ server/build/Debug/angel_lsp_tests.exe
 server/build/angel_lsp_tests
 ```
 
+### The corpus audits
+
+Nineteen test cases walk `angelscript/` — roughly 1,061 files of real, working third-party
+AngelScript — and ask the one question this project treats as fatal: **does any rule report code
+that compiles?** The unit suite cannot answer it, because it only ever asks whether a rule fires on
+a snippet written to make it fire.
+
+They are `skip()`-decorated, so `ctest` passes them over. Run them deliberately, and build
+**Release** — one audit takes about 80 seconds optimised and roughly twenty minutes without:
+
+```bash
+cmake -B server/build-release -S server -DCMAKE_BUILD_TYPE=Release
+cmake --build server/build-release --config Release --target angel_lsp_tests -j 8
+
+server/build-release/Release/angel_lsp_tests --no-skip \
+  --test-case="*Corpus Audit*,*Corpus Files*,The formatter keeps every token*"
+```
+
+The corpus is 13 MB of other people's scripts and is **not in this repository** — `.gitignore` has
+excluded it from the start. Point `ANGELLSP_CORPUS_DIR` at wherever yours lives; without it the
+audits report that they measured nothing and pass, rather than failing or, worse, auditing some
+other directory and calling that a result.
+
+`.github/workflows/corpus-audit.yml` runs the same command weekly and on demand. It stays green and
+prints a notice until the `CORPUS_REPO` repository variable names a repository holding the corpus:
+
+| Variable | Purpose |
+|---|---|
+| `CORPUS_REPO` | `owner/name` of the repository holding the corpus. Nothing runs without it. |
+| `CORPUS_TOKEN` | A secret, only if that repository is private. |
+| `CORPUS_REF` | Branch, tag or SHA, to pin the corpus to a known revision. |
+| `CORPUS_SUBDIR` | Directory inside it, if the scripts are not at the root. |
+
 ### Test Suites Summary
 
 | Test Suite File | Coverage Area |

@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include "helpers/CorpusDirectory.h"
 #include "helpers/TestUtils.h"
 
 #include "helpers/RuleCorpusAudit.h"
@@ -471,6 +472,12 @@ TEST_CASE("CallChecker - Predefined engine stubs (.as.predefined) integrate with
 
 TEST_CASE("CallChecker - Call Argument Corpus Audit" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)
     {
         return code == "as-err-call-argument-count";

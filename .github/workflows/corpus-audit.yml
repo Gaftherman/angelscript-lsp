@@ -1,0 +1,79 @@
+name: Corpus audit
+
+# The false-positive detector, and until now it had never run here.
+#
+# The unit suite asks whether a rule fires on a snippet written to make it fire. These walk ~1,061
+# files of real, working third-party AngelScript and ask the only question this project treats as
+# fatal: does any rule report code that compiles? Every one of them is skip()-decorated, so `ctest`
+# passes them over and the CI workflow ran none - they executed only when a developer remembered
+# the incantation. That is how the formatter came to be rewriting 28 corpus files into code that
+# does not compile, on every format, with a green suite throughout.
+#
+# Its own workflow rather than a job in ci.yml, so the weekly schedule does not also drag the
+# six-platform build matrix and the extension packaging along with it.
+
+on:
+  schedule:
+    # Monday 06:00 UTC. Slow to run and slow to change, so weekly is the right cadence.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      test_case_filter:
+        description: 'doctest --test-case filter, to run one audit instead of all of them'
+        required: false
+        default: '*Corpus Audit*,*Corpus Files*,The formatter keeps every token*'
+
+jobs:
+  corpus-audit:
+    name: Rules against real AngelScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # The corpus is 13 MB of other people's scripts flattened out of some twenty Sven Co-op
+      # projects, and .gitignore has excluded it since the first commit. So it has to arrive from
+      # somewhere, and there is no default: with CORPUS_REPO unset every audit below reports that
+      # it measured nothing and the job stays green rather than pretending to have run.
+      - name: Fetch the script corpus
+        if: vars.CORPUS_REPO != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.CORPUS_REPO }}
+          ref: ${{ vars.CORPUS_REF || '' }}
+          token: ${{ secrets.CORPUS_TOKEN || github.token }}
+          path: corpus
+
+      - name: Configure CMake
+        run: cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release
+
+      # Release, not Debug. One audit takes about 80 seconds optimised and roughly twenty minutes
+      # without optimisation - the difference between a job that runs and one that times out.
+      - name: Build the test suite
+        run: cmake --build server/build --config Release --target angel_lsp_tests -j 4
+
+      - name: Run the corpus audits
+        working-directory: server
+        env:
+          # Deliberately a path that does not exist when no corpus was fetched. An override that
+          # fails to resolve is reported as absent rather than falling back to the build-time path,
+          # so a failed checkout cannot quietly audit a different tree and call it a pass - see
+          # tests/helpers/CorpusDirectory.h.
+          # CORPUS_SUBDIR is for a repository that keeps the scripts under a directory rather than
+          # at its root - set it to `angelscript`, say. Unset means the checkout root itself.
+          ANGELLSP_CORPUS_DIR: ${{ vars.CORPUS_REPO != '' && format('{0}/corpus/{1}', github.workspace, vars.CORPUS_SUBDIR) || '/corpus-not-configured' }}
+          FILTER: ${{ inputs.test_case_filter || '*Corpus Audit*,*Corpus Files*,The formatter keeps every token*' }}
+        run: ./build/angel_lsp_tests --no-skip --test-case="$FILTER"
+
+      - name: Explain that nothing was measured
+        if: vars.CORPUS_REPO == ''
+        run: |
+          echo "::notice title=Corpus audit measured nothing::Set the CORPUS_REPO repository"\
+               "variable to a repository holding the angelscript/ corpus to make this job gate."\
+               "CORPUS_TOKEN if it is private, CORPUS_REF to pin a revision, CORPUS_SUBDIR if the"\
+               "scripts sit under a directory rather than at the repository root. Until then every"\
+               "audit reports that the corpus is absent and passes."

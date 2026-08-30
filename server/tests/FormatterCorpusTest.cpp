@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include "helpers/CorpusDirectory.h"
 #include "features/formatting/FormattingHandler.h"
 
 #include <cctype>
@@ -209,12 +210,12 @@ TEST_SUITE("Formatting")
      */
     TEST_CASE("The formatter keeps every token across the full corpus" * doctest::skip())
     {
-        const fs::path corpusDir{ ANGELSCRIPT_CORPUS_DIR };
-        if (!fs::exists(corpusDir))
+        if (!angel_lsp::test::CorpusIsAvailable())
         {
-            MESSAGE("corpus directory not present - skipped.");
+            MESSAGE(angel_lsp::test::CorpusMissingMessage());
             return;
         }
+        const fs::path corpusDir = angel_lsp::test::CorpusDirectory();
 
         fs::path dumpDir;
         if (const char *dump = std::getenv("ANGELLSP_FORMAT_DUMP_DIR"); dump && *dump)

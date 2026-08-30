@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "analysis/rules/VariableRules.h"
 #include "analysis/SemanticAnalyzer.h"
@@ -100,6 +101,10 @@ TEST_CASE("VariableRules - An array of handles is not a double handle")
         "array<Schedule@>@ g_schedules;\n"
         "array<Schedule@> g_owned;\n";
 
+    for (const auto &d : AnalyzeVariableSnippet(code))
+    {
+        MESSAGE("  [" << d.code << "] " << d.message);
+    }
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-handle-on-primitive"));
 }
 
@@ -408,6 +413,12 @@ TEST_CASE("VariableRules - Ordinary template arguments are not judged")
 
 TEST_CASE("VariableRules - Variable Rules Corpus Audit" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     static const std::vector<std::string> k_codes = {
         "as-err-void-variable", "as-err-handle-on-primitive", "as-err-funcdef-not-handle",
         "as-err-mixin-not-a-type", "as-err-global-variable-access-modifier",
@@ -445,4 +456,24 @@ TEST_CASE("VariableRules - Variable Rules Corpus Audit" * doctest::skip(true))
     CHECK(result.Total() == 1);
     REQUIRE(result.hits.size() == 1);
     CHECK(result.hits[0].code == "as-err-void-variable");
+}
+
+// `auto` shares the grammar's primitive_type node with `int` and `float`, so the handle-on-a-
+// primitive rule read the node and reported `auto@` - the ordinary way to declare a deduced
+// handle - as an error on code that compiles. Two of the 1,061 corpus files use it, and the
+// corpus audit is what surfaced it. tests/parity/doc_p22_auto_handle.as and doc_r24.
+TEST_CASE("VariableRules - auto@ is a deduced handle, not a handle on a primitive")
+{
+    const std::string code =
+        "class Foo { int value; }\n"
+        "Foo@ MakeFoo() { return Foo(); }\n"
+        "void main() { auto@ deduced = MakeFoo(); }\n";
+
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-handle-on-primitive"));
+}
+
+TEST_CASE("VariableRules - A handle on a real primitive is still reported")
+{
+    CHECK(HasCode(AnalyzeVariableSnippet("void main() { int@ handleOnInt; }\n"),
+                  "as-err-handle-on-primitive"));
 }

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
@@ -392,6 +393,12 @@ TEST_SUITE("AngelScript_ObjectHandles_Verification")
 
 TEST_CASE("ConstChecker - Const Corpus Audit" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)
     {
         return code == "as-err-const-assignment" || code == "as-err-const-method-required";

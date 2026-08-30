@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "analysis/rules/FunctionRules.h"
 #include "analysis/SemanticAnalyzer.h"
@@ -767,6 +768,12 @@ TEST_CASE("FunctionRules - A predefined stub is exempt")
 
 TEST_CASE("FunctionRules - Function Rules Corpus Audit" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     static const std::vector<std::string> k_codes = {
         "as-err-missing-body", "as-err-delete-with-body", "as-err-delete-with-other-qualifier",
         "as-err-const-void-return", "as-err-void-reference",
@@ -822,6 +829,12 @@ TEST_CASE("FunctionRules - Function Rules Corpus Audit" * doctest::skip(true))
 //   angel_lsp_tests.exe --no-skip --test-case="*Unknown Type Corpus Audit*"
 TEST_CASE("FunctionRules - Unknown Type Corpus Audit" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     angel_lsp::config::DiagnosticsConfig strict;
     strict.reportUnknownTypes = true;
 

@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1184 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1186 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -214,6 +214,43 @@ treats as unacceptable.
   (`array<array<int>> g = {1,2}` — the element type is a template, which does not resolve), `il_a6`
   and `il_a7` (`string` declares no `@listpattern`, and an absent pattern only means the stub did
   not say).
+- **The corpus audits, which had never run in CI.** Nineteen test cases walk the ~1,061-file
+  `angelscript/` corpus and ask the only question this project treats as fatal — does any rule
+  report code that compiles? Every one is `skip()`-decorated, so `ctest` passes them over, and the
+  workflow ran none. They executed only when someone remembered the incantation.
+
+  Two things had to be true before CI could run them. First, the absence of the corpus had to be a
+  clean skip: `fs::directory_iterator` with no `error_code` **throws**, so in CI all nineteen would
+  have crashed rather than skipped. `tests/helpers/CorpusDirectory.h` resolves the directory once —
+  `ANGELLSP_CORPUS_DIR`, else the compiled-in path, else empty — and an override that was set but
+  does not resolve reports *absent* rather than falling back, so a failed checkout cannot quietly
+  audit a different tree and call it a pass. Second, the corpus is 13 MB of third-party scripts and
+  `.gitignore` has excluded it since the first commit, so `.github/workflows/corpus-audit.yml`
+  fetches it from a repository named by the `CORPUS_REPO` variable and, without one, reports that
+  it measured nothing. Weekly plus `workflow_dispatch`, on a **Release** build: one audit is 80
+  seconds optimised and about twenty minutes without.
+
+  Running them found three failing, all of it drift that predates this work — verified by building
+  `37c2dee` in a worktree and getting the identical numbers:
+
+  | Audit | Before | After |
+  |---|---|---|
+  | `TypeRules` | 3 | **1** |
+  | `VariableRules` | 3 | **1** |
+  | `TypeConversion` | 273 | 273, now a documented ratchet |
+
+  The two that are fixed were one false positive: **`auto@` was reported as a handle on a
+  primitive.** `IsCorePrimitive` lists `auto` beside `int` and `float`, and `auto` is not a
+  primitive — it is not a type at all, but a placeholder for whatever the initializer produces, so
+  whether a handle is allowed is decided by *that* type. The compiler accepts
+  `auto@ g = MakeFoo();` and rejects `int@ x;`; this reported both. Two corpus scripts declare a
+  deduced handle and both were flagged. `doc_p22`, `doc_r24`.
+
+  `TypeConversion`'s 273 stay open and are now asserted as a ceiling that may only fall, so the job
+  gates against regression while the causes are found. The largest known one:
+  `array<float> a(33);` draws `No conversion from 'int' to 'float'` — the initial-size constructor
+  takes a `uint` count and the argument is being checked against the *element* type instead. See
+  the WIP list.
 - **Array members, in both spellings.** `int[]` and `array<int>` are one type, and neither reached
   member resolution as one. `CleanBaseType` answers the *element* type — it reduces both to `int` —
   which is right for the question it is asked almost everywhere and wrong for "what type owns this
@@ -331,35 +368,43 @@ treats as unacceptable.
 Real, oracle-confirmed, and none of it reports legal code today. Ordered by what a user notices
 first. Each lands with its `doc_`-prefixed parity case.
 
-1. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
+1. **The 273 conversion false positives the corpus audit found.** Asserted as a ceiling in
+   `TypeConversionTest`'s audit so CI gates on regression; the work is finding each cause and
+   lowering it. `as-err-no-explicit-conversion` is 211 of them, `as-err-no-implicit-conversion` 60,
+   `as-err-invalid-cast` 2. Two shapes are already identified: `array<float> a(33);`, where the
+   initial-size constructor's `uint` count is being checked against the element type, and `"" + x`
+   concatenation against an enum or an `int64`, where the engine registers the operator in C++ and
+   no stub declares it. Every one is legal code being reported, which makes this the highest item
+   on the list.
+2. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
    user, not a deduction: nothing lets the server establish that an unresolved name is a typo rather
    than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
    exists the setting is the honest interface, but it is the reason the rule cannot simply be
    unconditional.
-2. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
+3. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
    (`angelscript.engine.propertyAccessorMode`, `--engine-property=propertyAccessorMode=<2|3>`,
    default `2`) and the undeclared-identifier rule already reads it. The rest of the accessor
    handling does not: `SemanticHelpers`' member-access fallback to `Type::get_X` still runs
    regardless of mode, so under `3` a `c.V` whose accessor lacks the `property` keyword is still
    accepted where the compiler answers `'V' is not a member of 'C'`. Missed diagnostic, not a false
    positive. `doc_r07`
-3. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
+4. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
    value`, `Float value truncated in implicit conversion to integer`, `Signed/Unsigned mismatch`.
    None exist here. Decidable from the source alone, so the visibility policy permits them; the
    narrowing tables at `OverloadResolver.cpp` already exist and feed only overload ranking today.
-4. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
+5. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-5. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+6. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-6. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+7. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-7. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+8. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-8. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+9. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-9. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+10. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "analysis/AccessChecker.h"
 #include "analysis/ConstChecker.h"
 #include "analysis/CallGraph.h"
@@ -45,7 +46,7 @@ namespace
         namespace fs = std::filesystem;
 
         std::vector<fs::path> paths;
-        for (const auto &entry : fs::directory_iterator(ANGELSCRIPT_CORPUS_DIR))
+        for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
         {
             if (entry.is_regular_file() && entry.path().extension() == ".as")
             {
@@ -95,6 +96,12 @@ namespace
 
 TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     const auto samples = LoadSamples();
     REQUIRE(!samples.empty());
 

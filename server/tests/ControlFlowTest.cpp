@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/SemanticAnalyzer.h"
@@ -545,6 +546,12 @@ TEST_CASE("ControlFlow - A container whose opFor methods are not declared stays 
 
 TEST_CASE("ControlFlow - Control Flow Corpus Audit" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     static const std::vector<std::string> k_codes = {
         "as-err-break-outside-loop", "as-err-continue-outside-loop", "as-err-invalid-case-type",
         "as-err-duplicate-case-value", "as-err-default-must-be-last", "as-err-not-all-paths-return",

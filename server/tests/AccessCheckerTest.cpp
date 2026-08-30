@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
@@ -842,6 +843,12 @@ TEST_CASE("AccessChecker - a lambda's own local is not an outer local")
 
 TEST_CASE("AccessChecker - Access Corpus Audit" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)
     {
         return code == "as-err-private-member-access" || code == "as-err-protected-member-access";

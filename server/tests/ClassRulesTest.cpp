@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/SemanticAnalyzer.h"
@@ -533,6 +534,12 @@ TEST_SUITE("AngelScript_ClassConstructors_Verification")
 
 TEST_CASE("ClassRules - Class Rules Corpus Audit" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     static const std::vector<std::string> k_codes = {
         "as-err-circular-inherit", "as-err-inherit-final", "as-err-multi-class-inherit",
         "as-err-mixin-final", "as-err-mixin-abstract", "as-err-mixin-child-type",

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
@@ -39,13 +40,13 @@ namespace
     bool CorpusIsAvailable()
     {
         std::error_code ec;
-        return std::filesystem::is_directory(ANGELSCRIPT_CORPUS_DIR, ec);
+        return std::filesystem::is_directory(angel_lsp::test::CorpusDirectory(), ec);
     }
 
     /** @brief Reads an entire file from the angelscript/ corpus into memory; empty string if missing. */
     std::string ReadCorpusFile(const std::string &fileName)
     {
-        std::string path = std::string(ANGELSCRIPT_CORPUS_DIR) + "/" + fileName;
+        std::string path = angel_lsp::test::CorpusDirectory().string() + "/" + fileName;
         std::ifstream file(path, std::ios::binary);
         if (!file)
             return "";
@@ -590,10 +591,16 @@ TEST_CASE("LocalScopeCollector - builds scope trees for real-world AngelScript f
 
 TEST_CASE("LocalScopeCollector - Local Scope Corpus Audit Across All angelscript Files" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(ANGELSCRIPT_CORPUS_DIR))
+    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());

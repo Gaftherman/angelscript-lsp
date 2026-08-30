@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "analysis/rules/OperatorRules.h"
 #include "analysis/SemanticAnalyzer.h"
@@ -412,6 +413,12 @@ TEST_CASE("Restrictions: Increment/Decrement and Indexed Compound Assignment")
 
 TEST_CASE("OperatorRules - Operator Rules Corpus Audit" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     static const std::vector<std::string> k_codes = {
         "as-err-opcmp-return-int", "as-err-opequals-return-bool", "as-err-opindex-no-params",
         "as-err-binary-operator-arity", "as-err-op-overload-global", "as-err-const-out-param",

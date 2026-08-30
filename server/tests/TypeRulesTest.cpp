@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "helpers/TestUtils.h"
 #include "analysis/rules/TypeRules.h"
@@ -2755,6 +2756,12 @@ TEST_SUITE("AngelScript_Constructor_Direct_Initialization_Verification")
 
 TEST_CASE("TypeRules - Type Rules Corpus Audit" * doctest::skip(true))
 {
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
     static const std::vector<std::string> k_codes = {
         "as-err-typedef-non-primitive", "as-err-enum-invalid-initializer",
         "as-err-interface-constructor", "as-err-duplicate-symbol", "as-err-name-conflict",
