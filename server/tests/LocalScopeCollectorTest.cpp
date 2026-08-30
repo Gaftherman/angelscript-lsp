@@ -27,6 +27,21 @@ namespace
         return collector.CollectScopes(sourceCode, parser);
     }
 
+    /**
+     * @brief Whether the angelscript/ corpus is present.
+     *
+     * It is not part of the repository - `.gitignore` excludes `angelscript/`, because it is a
+     * thousand third-party scripts collected for auditing rather than source of this project. So a
+     * fresh clone and every CI runner have no corpus, and a smoke test that REQUIREs one there is
+     * reporting the checkout rather than the code. The corpus audits are opt-in already
+     * (`doctest::skip`); these two smoke tests run by default and have to say so themselves.
+     */
+    bool CorpusIsAvailable()
+    {
+        std::error_code ec;
+        return std::filesystem::is_directory(ANGELSCRIPT_CORPUS_DIR, ec);
+    }
+
     /** @brief Reads an entire file from the angelscript/ corpus into memory; empty string if missing. */
     std::string ReadCorpusFile(const std::string &fileName)
     {
@@ -538,6 +553,12 @@ void Foo()
 
 TEST_CASE("LocalScopeCollector - builds scope trees for real-world AngelScript files without crashing")
 {
+    if (!CorpusIsAvailable())
+    {
+        MESSAGE("angelscript/ corpus not present - skipped. It is not checked into the repository.");
+        return;
+    }
+
     // Same representative small/medium/large files used by the SymbolCollector smoke test,
     // for the same reason: exercise both the common case and a stress case.
     const std::vector<std::string> corpusFiles = {

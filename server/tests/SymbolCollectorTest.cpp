@@ -30,6 +30,21 @@ namespace
         collector.CollectSymbols(fileUri, sourceCode, parser, table);
     }
 
+    /**
+     * @brief Whether the angelscript/ corpus is present.
+     *
+     * It is not part of the repository - `.gitignore` excludes `angelscript/`, because it is a
+     * thousand third-party scripts collected for auditing rather than source of this project. So a
+     * fresh clone and every CI runner have no corpus, and a smoke test that REQUIREs one there is
+     * reporting the checkout rather than the code. The corpus audits are opt-in already
+     * (`doctest::skip`); these two smoke tests run by default and have to say so themselves.
+     */
+    bool CorpusIsAvailable()
+    {
+        std::error_code ec;
+        return std::filesystem::is_directory(ANGELSCRIPT_CORPUS_DIR, ec);
+    }
+
     /** @brief Reads an entire file from the angelscript/ corpus into memory; empty string if missing. */
     std::string ReadCorpusFile(const std::string &fileName)
     {
@@ -353,6 +368,12 @@ TEST_CASE("SymbolCollector - Duplicate Declaration Modifier Warning On Class, Mi
 
 TEST_CASE("SymbolCollector - Parses Real-World AngelScript Files Without Crashing")
 {
+    if (!CorpusIsAvailable())
+    {
+        MESSAGE("angelscript/ corpus not present - skipped. It is not checked into the repository.");
+        return;
+    }
+
     // A small file, a medium one, and a large (~190KB) one, to exercise both the
     // common case and a stress case for the TAGS_QUERY dispatch and parse-error reporting.
     const std::vector<std::string> corpusFiles = {
