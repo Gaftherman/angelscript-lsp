@@ -619,3 +619,66 @@ TEST_CASE("SymbolCollector - A name nested in a template or array type is not a 
     // The class is still collected, so the declaration is understood rather than merely tolerated.
     CHECK(table.HasSymbolAnywhere("array"));
 }
+
+// =====================================================================================
+// The two grammar gaps the pin bump closed.
+//
+// Both constructs compile - checked against a real engine built from the SDK with CScriptBuilder -
+// and neither had a rule, so each turned its whole declaration into an ERROR node and the symbol
+// left the index along with it. Fixed in tree-sitter-angelscript aa14847, which
+// cmake/TreeSitter.cmake now pins.
+//
+// These are the guards that replace the two KnownGaps() entries in ParityAuditTest.cpp. The audit
+// could never have held them: it fails only on a *false positive*, and an ERROR node costs a symbol
+// rather than producing a diagnostic, so both gaps read to it as silence.
+//
+// tests/parity/doc_g02_metadata.as, tests/parity/doc_g03_omitted_initlist_element.as.
+// =====================================================================================
+
+TEST_CASE("Grammar - A metadata block leaves its declaration intact")
+{
+    // CScriptBuilder collects `[Property, Category="Weapons"]`, hands it to the host through
+    // GetMetadataForType and never passes it to the compiler. Three entry forms, all from the
+    // builder's own examples: a bare name, a name with a value, a name with an argument list.
+    const std::string code =
+        "[Property, Category=\"Weapons\"]\n"
+        "int m_Health = 100;\n"
+        "\n"
+        "[Category(\"Armas\")]\n"
+        "enum WeaponType { Pistol, Rifle }\n";
+
+    AngelScriptParser parser;
+    TSTree *tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+    CHECK_FALSE(ts_node_has_error(ts_tree_root_node(tree)));
+    ts_tree_delete(tree);
+
+    SymbolTable table;
+    CollectFromSource(code, table);
+
+    // The point of the fix: the annotated declarations are still symbols.
+    CHECK_FALSE(table.FindSymbols("m_Health").empty());
+    CHECK_FALSE(table.FindSymbols("WeaponType").empty());
+}
+
+TEST_CASE("Grammar - An omitted initializer element leaves its declaration intact")
+{
+    // `{ 0, 1, , 4, 5 }` gives the third element the type's default. Five values, four nodes -
+    // which is why anything counting elements has to count the separators instead.
+    const std::string code =
+        "void main()\n"
+        "{\n"
+        "    array<int> x = { 0, 1, , 4, 5 };\n"
+        "    int n = x.length();\n"
+        "}\n";
+
+    AngelScriptParser parser;
+    TSTree *tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+    CHECK_FALSE(ts_node_has_error(ts_tree_root_node(tree)));
+    ts_tree_delete(tree);
+
+    SymbolTable table;
+    CollectFromSource(code, table);
+    CHECK_FALSE(table.FindSymbols("main").empty());
+}
