@@ -101,8 +101,7 @@ namespace angel_lsp
 
         InitHandles();
 
-        m_analysisThread = std::jthread([this](std::stop_token stopToken)
-                                       { this->RunAnalysisLoop(stopToken); });
+        m_analysisThread = std::thread([this] { this->RunAnalysisLoop(); });
     }
 
     Server::~Server()
@@ -110,14 +109,18 @@ namespace angel_lsp
         m_running = false;
 
         // Stopped and joined before the trees below are freed: both threads read member state and
-        // must not outlive it. jthread would join on destruction anyway, but that happens in
-        // reverse declaration order - and m_workspaceThread is declared early enough that it would
-        // be joined only after the symbol table and include graph it reads were already gone.
-        m_analysisThread.request_stop();
+        // must not outlive it. A destructor that joined implicitly would do so in reverse
+        // declaration order - and m_workspaceThread is declared early enough that it would be
+        // joined only after the symbol table and include graph it reads were already gone.
+        {
+            std::lock_guard<std::mutex> lock(m_analysisMutex);
+            m_analysisStop = true;
+        }
+        m_analysisCv.notify_all();
         if (m_analysisThread.joinable())
             m_analysisThread.join();
 
-        m_workspaceThread.request_stop();
+        m_workspaceStop.Request();
         if (m_workspaceThread.joinable())
             m_workspaceThread.join();
 
@@ -494,10 +497,7 @@ namespace angel_lsp
     {
         // Started unconditionally: even with the predefined-stub loader disabled, the workspace
         // thread still has to build the #include graph that module-closure indexing depends on.
-        {
-            m_workspaceThread = std::jthread([this](std::stop_token stopToken)
-                                             { this->ReadWorkspaceFiles(stopToken); });
-        }
+        StartWorkspaceScan();
     }
 
     void Server::BeginWorkspaceProgress(const std::string &title)
@@ -569,7 +569,7 @@ namespace angel_lsp
         m_workspaceProgressToken.clear();
     }
 
-    void Server::ReadWorkspaceFiles(std::stop_token stopToken)
+    void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag &stopToken)
     {
         // Snapshotted once, up front. This runs on the workspace thread while the message loop is
         // free to add or remove a folder, and iterating the live vector while it reallocates is a
@@ -674,7 +674,8 @@ namespace angel_lsp
         EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
     }
 
-    void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser &parser, std::stop_token stopToken)
+    void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser &parser,
+                                           const angel_lsp::utils::StopFlag &stopToken)
     {
         if (!m_config.features.enablePredefinedLoader)
         {
@@ -760,7 +761,8 @@ namespace angel_lsp
         }
     }
 
-    void Server::LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser &parser, std::stop_token stopToken)
+    void Server::LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser &parser,
+                                               const angel_lsp::utils::StopFlag &stopToken)
     {
         for (const auto &entry : m_config.predefinedFiles)
         {
@@ -962,13 +964,22 @@ namespace angel_lsp
         return tokens;
     }
 
+    void Server::StartWorkspaceScan()
+    {
+        m_workspaceStop.Request();
+        if (m_workspaceThread.joinable())
+            m_workspaceThread.join();
+
+        m_workspaceStop.Clear();
+        m_workspaceThread = std::thread([this] { this->ReadWorkspaceFiles(m_workspaceStop); });
+    }
+
     void Server::RestartWorkspaceScan()
     {
-        // Assigning over a running jthread requests its stop and joins it, so the scan in flight
-        // ends at its next stop check rather than racing the new one. Run on the workspace thread
-        // for the same reason it is at startup: a full scan must not block the message loop.
-        m_workspaceThread = std::jthread([this](std::stop_token stopToken)
-                                         { this->ReadWorkspaceFiles(stopToken); });
+        // The scan in flight is stopped and joined before the new one begins, so the two never
+        // read the workspace state at once. Run on the workspace thread for the same reason it is
+        // at startup: a full scan must not block the message loop.
+        StartWorkspaceScan();
     }
 
     void Server::HandleNotificationsWorkspace_DidChangeWorkspaceFolders(lsp::notifications::Workspace_DidChangeWorkspaceFolders::Params &&params)
@@ -1592,20 +1603,11 @@ namespace angel_lsp
         m_analysisCv.notify_one();
     }
 
-    void Server::RunAnalysisLoop(std::stop_token stopToken)
+    void Server::RunAnalysisLoop()
     {
         // One parser for the life of the thread. Private to it, so no synchronisation is needed and
         // none of the message loop's trees are ever touched from here.
         angel_lsp::parser::AngelScriptParser parser(m_logger.get());
-
-        std::stop_callback wake(stopToken, [this]()
-                                {
-                                    {
-                                        std::lock_guard<std::mutex> lock(m_analysisMutex);
-                                        m_analysisStop = true;
-                                    }
-                                    m_analysisCv.notify_all();
-                                });
 
         for (;;)
         {

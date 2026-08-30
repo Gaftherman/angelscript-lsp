@@ -5,6 +5,7 @@
 #include "utils/LspLogger.h"
 #include "utils/PositionEncoding.h"
 #include "utils/PreprocessorRegions.h"
+#include "utils/StopFlag.h"
 #include "utils/WorkspaceIncludeGraph.h"
 #include "parser/AngelScriptParser.h"
 #include "analysis/SymbolTable.h"
@@ -22,6 +23,7 @@
 #include <ankerl/unordered_dense.h>
 
 #include <tree_sitter/api.h>
+#include <cstdint>
 #include <unordered_map>
 #include <string>
 #include <vector>
@@ -55,7 +57,10 @@ namespace angel_lsp
         std::shared_ptr<const std::vector<std::string>> m_searchDirectories;
         std::string m_engineProfile;
         std::unique_ptr<angel_lsp::i18n::I18n> m_i18n;
-        std::jthread m_workspaceThread;
+        std::thread m_workspaceThread;
+
+        /** @brief Cancels the workspace scan. Rearmed only after the thread reading it was joined. */
+        angel_lsp::utils::StopFlag m_workspaceStop;
         std::mutex m_messageHandlerMutex;
         std::unique_ptr<angel_lsp::utils::LspLogger> m_logger;
         std::unique_ptr<angel_lsp::parser::AngelScriptParser> m_parser;
@@ -115,7 +120,7 @@ namespace angel_lsp
         // always see a current tree, but symbol collection, scope building and semantic analysis
         // rebuild whole-document state and are far too heavy to run on every keystroke of a
         // 3000-line file. They are queued here instead and run once editing pauses.
-        std::jthread m_analysisThread;
+        std::thread m_analysisThread;
         std::mutex m_analysisMutex;
         std::condition_variable m_analysisCv;
         ankerl::unordered_dense::map<std::string, std::string> m_pendingAnalysis;
@@ -283,7 +288,17 @@ namespace angel_lsp
         void HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params);
         void HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params);
         void HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params &&params);
-        void ReadWorkspaceFiles(std::stop_token stopToken);
+        /**
+         * @brief Cancels any scan in flight and starts a fresh one on the workspace thread.
+         *
+         * The stop flag is shared by every generation of that thread, so the previous one has to be
+         * joined before it is rearmed: clearing it while the old scan still runs would leave that
+         * scan with a cancellation it can no longer see, and two scans reading the workspace at
+         * once. Every start goes through here for that reason.
+         */
+        void StartWorkspaceScan();
+
+        void ReadWorkspaceFiles(const angel_lsp::utils::StopFlag &stopToken);
         /**
          * @brief Reads a predefined stub off disk and indexes it.
          * @param forceReload Re-collect even when this server already owns the file, which is what
@@ -301,14 +316,16 @@ namespace angel_lsp
          * @param parser Parser to reuse across all of them.
          * @param stopToken Checked between files, so shutdown does not wait on the whole list.
          */
-        void LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser &parser, std::stop_token stopToken);
+        void LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser &parser,
+                                           const angel_lsp::utils::StopFlag &stopToken);
 
         /**
          * @brief Loads built-in predefined stub profiles (e.g. Standard, SvenCoop, Urho3D, OpenXRay, OOTP).
          * @param parser Parser to reuse.
          * @param stopToken Checked between profiles for early exit on cancellation.
          */
-        void LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser &parser, std::stop_token stopToken);
+        void LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser &parser,
+                                       const angel_lsp::utils::StopFlag &stopToken);
 
         /**
          * @brief Converts the configured severity names into the analyzer's enum, once at startup.
@@ -482,7 +499,7 @@ namespace angel_lsp
         /**
          * @brief Analysis worker: waits for a quiet period, then drains the queue.
          */
-        void RunAnalysisLoop(std::stop_token stopToken);
+        void RunAnalysisLoop();
 
         /**
          * @brief Rebuilds symbols, scopes and diagnostics for one document and publishes them.
