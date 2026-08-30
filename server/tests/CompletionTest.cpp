@@ -490,3 +490,180 @@ TEST_CASE("Completion - The second foreach variable is the index, not the elemen
     // `opForValue1` returns uint, so the index must not carry the element's members.
     CHECK_FALSE(HasItem(items, "health"));
 }
+
+// =====================================================================================
+// Completion hygiene.
+//
+// `.` and `:` are trigger characters, and the global fallback at the end of GetCompletion answers
+// anything the earlier contexts did not claim. Together that meant a comment, a string literal and
+// the colon of a `case` label each drew every local, every global and all 60 keywords. The lexical
+// state is scanned from the top of the file rather than read off the tree, because the text is
+// mid-edit: an unterminated string and an unclosed block comment are ERROR nodes, and those are
+// the states this has to be right in.
+// =====================================================================================
+
+TEST_CASE("Completion - A line comment offers nothing")
+{
+    const std::string code =
+        "int gHealth;\n" // 0
+        "void main()\n"  // 1
+        "{\n"            // 2
+        "    // gH\n"    // 3
+        "}\n";           // 4
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(3, 9);
+    CHECK(items.empty());
+}
+
+TEST_CASE("Completion - A block comment offers nothing on any of its lines")
+{
+    const std::string code =
+        "int gHealth;\n"     // 0
+        "/*\n"               // 1
+        " gH\n"              // 2
+        "*/\n"               // 3
+        "void main() { }\n"; // 4
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(2, 3);
+    CHECK(items.empty());
+}
+
+TEST_CASE("Completion - A closed comment does not swallow the code after it")
+{
+    const std::string code =
+        "int gHealth;\n"           // 0
+        "/* note */ void main()\n" // 1
+        "{\n"                      // 2
+        "    gH\n"                 // 3
+        "}\n";                     // 4
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(3, 6);
+    CHECK(HasItem(items, "gHealth"));
+}
+
+TEST_CASE("Completion - A string literal offers nothing")
+{
+    const std::string code =
+        "int gHealth;\n"           // 0
+        "void main()\n"            // 1
+        "{\n"                      // 2
+        "    string s = \"gH\";\n" // 3
+        "}\n";                     // 4
+
+    TestEnvironment env(code);
+    CHECK(env.CompleteAt(3, 18).empty());
+}
+
+TEST_CASE("Completion - A single-quoted string offers nothing")
+{
+    // `'...'` is a string by default too: asEP_USE_CHARACTER_LITERALS is off.
+    const std::string code =
+        "int gHealth;\n"        // 0
+        "void main()\n"         // 1
+        "{\n"                   // 2
+        "    string s = 'gH';\n"// 3
+        "}\n";                  // 4
+
+    TestEnvironment env(code);
+    CHECK(env.CompleteAt(3, 18).empty());
+}
+
+TEST_CASE("Completion - A heredoc offers nothing across its lines")
+{
+    const std::string code =
+        "int gHealth;\n"        // 0
+        "string s = \"\"\"\n"   // 1
+        "gH\n"                  // 2
+        "\"\"\";\n"             // 3
+        "void main() { }\n";    // 4
+
+    TestEnvironment env(code);
+    CHECK(env.CompleteAt(2, 2).empty());
+}
+
+TEST_CASE("Completion - Code after a closed string is completed")
+{
+    const std::string code =
+        "int gHealth;\n"            // 0
+        "void main()\n"             // 1
+        "{\n"                       // 2
+        "    string s = \"x\"; gH\n"// 3
+        "}\n";                      // 4
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(3, 22);
+    CHECK(HasItem(items, "gHealth"));
+}
+
+TEST_CASE("Completion - An unterminated string ends at the line break")
+{
+    // The default engine rejects a string spanning a newline, so the suppression has to end there
+    // as well. Letting it run on would silence completion for the rest of the file over one
+    // missing quote.
+    const std::string code =
+        "int gHealth;\n"             // 0
+        "void main()\n"              // 1
+        "{\n"                        // 2
+        "    string s = \"oops\n"    // 3
+        "    gH\n"                   // 4
+        "}\n";                       // 5
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(4, 6);
+    CHECK(HasItem(items, "gHealth"));
+}
+
+TEST_CASE("Completion - The colon of a case label offers nothing")
+{
+    const std::string code =
+        "int gHealth;\n"      // 0
+        "void main()\n"       // 1
+        "{\n"                 // 2
+        "    int mode = 0;\n" // 3
+        "    switch (mode)\n" // 4
+        "    {\n"             // 5
+        "    case 1:\n"       // 6
+        "    }\n"             // 7
+        "}\n";                // 8
+
+    TestEnvironment env(code);
+    CHECK(env.CompleteAt(6, 11).empty());
+}
+
+TEST_CASE("Completion - The colon of a default label offers nothing")
+{
+    const std::string code =
+        "int gHealth;\n"      // 0
+        "void main()\n"       // 1
+        "{\n"                 // 2
+        "    int mode = 0;\n" // 3
+        "    switch (mode)\n" // 4
+        "    {\n"             // 5
+        "    default:\n"      // 6
+        "    }\n"             // 7
+        "}\n";                // 8
+
+    TestEnvironment env(code);
+    CHECK(env.CompleteAt(6, 12).empty());
+}
+
+TEST_CASE("Completion - A case label still completes through a qualifier")
+{
+    // `case Mode::` ends in `::`, which is the scope-resolution context and not a finished label.
+    const std::string code =
+        "enum Mode { Idle, Busy }\n" // 0
+        "void main()\n"              // 1
+        "{\n"                        // 2
+        "    switch (m)\n"           // 3
+        "    {\n"                    // 4
+        "    case Mode::\n"          // 5
+        "    }\n"                    // 6
+        "}\n";                       // 7
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(5, 15);
+    CHECK(HasItem(items, "Idle"));
+}

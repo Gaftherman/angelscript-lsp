@@ -2,6 +2,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/DocComment.h"
 #include "analysis/SignatureFormatter.h"
+#include "utils/PositionEncoding.h"
 #include <unordered_set>
 #include <sstream>
 #include <regex>
@@ -267,6 +268,126 @@ namespace angel_lsp::features
             return snippet;
         }
 
+        /** @brief Where in the source's lexical structure a byte offset falls. */
+        enum class LexicalContext
+        {
+            Code,           ///< Anywhere a symbol may be written.
+            Comment,        ///< Inside `//`, `/*` or a `///` doc comment.
+            StringLiteral,  ///< Inside `"..."`, `'...'` or a `"""..."""` heredoc.
+        };
+
+        /**
+         * @brief Classifies the byte at `offset` as code, comment or string.
+         *
+         * Scanned by hand rather than read off `request.tree`, because the tree cannot answer this
+         * question in the state completion is asked in. A string being typed is unterminated and an
+         * open block comment swallows the rest of the file; both arrive as an ERROR node rather
+         * than as a string or a comment - and those are exactly the moments suppression is for.
+         *
+         * The rules are the default engine's, matching the scanners in FormattingHandler,
+         * PreprocessorRegions and IncludeResolver: `"` and `'` each open a string that ends at the
+         * closing quote or at the line break, since multiline strings are an engine property that
+         * is off by default; `"""` opens a heredoc, which does span lines and processes no escape
+         * sequences; and a block comment does not nest.
+         */
+        LexicalContext ContextAtOffset(std::string_view source, size_t offset)
+        {
+            const size_t end = std::min(offset, source.size());
+            size_t i = 0;
+
+            while (i < end)
+            {
+                const char c = source[i];
+
+                if (c == '/' && i + 1 < source.size() && source[i + 1] == '/')
+                {
+                    const size_t close = source.find('\n', i + 2);
+                    if (close == std::string_view::npos || close >= end)
+                    {
+                        return LexicalContext::Comment;
+                    }
+                    i = close + 1;
+                    continue;
+                }
+
+                if (c == '/' && i + 1 < source.size() && source[i + 1] == '*')
+                {
+                    const size_t close = source.find("*/", i + 2);
+                    if (close == std::string_view::npos || close + 2 > end)
+                    {
+                        return LexicalContext::Comment;
+                    }
+                    i = close + 2;
+                    continue;
+                }
+
+                if (c == '"' && i + 2 < source.size() && source[i + 1] == '"' && source[i + 2] == '"')
+                {
+                    const size_t close = source.find("\"\"\"", i + 3);
+                    if (close == std::string_view::npos || close + 3 > end)
+                    {
+                        return LexicalContext::StringLiteral;
+                    }
+                    i = close + 3;
+                    continue;
+                }
+
+                if (c == '"' || c == '\'')
+                {
+                    size_t j = i + 1;
+                    while (j < source.size() && source[j] != '\n' && source[j] != c)
+                    {
+                        // A backslash escapes the next character, but never the line break: the
+                        // string still ends there.
+                        if (source[j] == '\\' && j + 1 < source.size() && source[j + 1] != '\n')
+                        {
+                            ++j;
+                        }
+                        ++j;
+                    }
+
+                    // `j` is the closing quote, the line break that cut the string short, or the
+                    // end of the file. The offset is inside the literal up to and including `j`;
+                    // one past it is code again.
+                    if (end <= j)
+                    {
+                        return LexicalContext::StringLiteral;
+                    }
+                    i = j + 1;
+                    continue;
+                }
+
+                ++i;
+            }
+
+            return LexicalContext::Code;
+        }
+
+        /**
+         * @brief True when the prefix ends at the `:` that closes a `case` or `default` label.
+         *
+         * `:` is a completion trigger character because of `::`, so typing the colon of `case Red:`
+         * asked for completion and was handed the whole global scope - every local, every global
+         * and all 60 keywords - at a position where nothing at all may be written. A trailing `::`
+         * is left alone: that is the qualifier case, which reads the same prefix and answers it.
+         */
+        bool IsAfterCaseLabelColon(const std::string &prefix)
+        {
+            if (prefix.empty() || prefix.back() != ':')
+            {
+                return false;
+            }
+            if (prefix.size() >= 2 && prefix[prefix.size() - 2] == ':')
+            {
+                return false;
+            }
+
+            // Anchored on a word boundary rather than on the line start, so a one-line
+            // `switch (x) { case 1:` is recognised too. `case Some::Value:` keeps its `::`.
+            static const std::regex caseLabelRegex(R"((^|[\s{};])(case\s+[^;]*|default\s*):$)");
+            return std::regex_search(prefix, caseLabelRegex);
+        }
+
         /**
          * @brief True when the cursor sits inside an unclosed `Name<...>` argument list.
          *
@@ -365,6 +486,17 @@ namespace angel_lsp::features
         if (rootScope)
         {
             innermostScope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+        }
+
+        // 0. Positions where nothing may be completed. A comment, a string literal and the colon
+        //    of a `case` label are all places the language has no symbol for, and each of them
+        //    fell through to the global fallback below and answered with the entire scope.
+        const size_t cursorOffset =
+            utils::LineStartOffset(request.sourceCode, request.position.line) + prefix.size();
+        if (ContextAtOffset(request.sourceCode, cursorOffset) != LexicalContext::Code ||
+            IsAfterCaseLabelColon(prefix))
+        {
+            return items;
         }
 
         // 1. Check for Scope Resolution Context: "Qualifier::" or "Qualifier::partial"
