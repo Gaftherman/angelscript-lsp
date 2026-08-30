@@ -5,7 +5,9 @@ add_library(tree_sitter_runtime STATIC "${tree_sitter_runtime_SOURCE_DIR}/lib/sr
 target_include_directories(tree_sitter_runtime PUBLIC "${tree_sitter_runtime_SOURCE_DIR}/lib/include")
 set_target_properties(tree_sitter_runtime PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
 if(MSVC)
-    target_compile_options(tree_sitter_runtime PRIVATE /w) # Disable all warnings for tree_sitter_runtime
+    target_compile_options(tree_sitter_runtime PRIVATE /W0)
+else()
+    target_compile_options(tree_sitter_runtime PRIVATE -w)
 endif()
 
 # ── Tree-Sitter AngelScript Grammar ───────────────────────────────────────
@@ -50,7 +52,9 @@ target_include_directories(tree_sitter_angelscript_lib PUBLIC "${tree_sitter_ang
 target_link_libraries(tree_sitter_angelscript_lib PUBLIC tree_sitter_runtime)
 set_target_properties(tree_sitter_angelscript_lib PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
 if(MSVC)
-    target_compile_options(tree_sitter_angelscript_lib PRIVATE /w)
+    target_compile_options(tree_sitter_angelscript_lib PRIVATE /W0)
+else()
+    target_compile_options(tree_sitter_angelscript_lib PRIVATE -w)
 endif()
 
 # ── Tree-Sitter Doxygen Grammar ───────────────────────────────────────────
@@ -71,5 +75,7 @@ target_include_directories(tree_sitter_doxygen_lib PUBLIC "${tree_sitter_doxygen
 target_link_libraries(tree_sitter_doxygen_lib PUBLIC tree_sitter_runtime)
 set_target_properties(tree_sitter_doxygen_lib PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
 if(MSVC)
-    target_compile_options(tree_sitter_doxygen_lib PRIVATE /w)
+    target_compile_options(tree_sitter_doxygen_lib PRIVATE /W0)
+else()
+    target_compile_options(tree_sitter_doxygen_lib PRIVATE -w)
 endif()

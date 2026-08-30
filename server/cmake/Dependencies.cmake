@@ -35,3 +35,20 @@ FetchContent_Declare(
     GIT_TAG v2.4.11
 )
 FetchContent_MakeAvailable(doctest)
+
+# Suppress compiler warnings in third-party dependencies across all compilers
+if(TARGET lsp)
+    if(MSVC)
+        target_compile_options(lsp PRIVATE /W0)
+    else()
+        target_compile_options(lsp PRIVATE -w)
+    endif()
+endif()
+
+if(TARGET spdlog)
+    if(MSVC)
+        target_compile_options(spdlog PRIVATE /W0)
+    else()
+        target_compile_options(spdlog PRIVATE -w)
+    endif()
+endif()

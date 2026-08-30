@@ -91,67 +91,61 @@ TEST_CASE("Adversarial M2 - Malformed and Out-of-Bounds Ranges")
     AdversarialM2Env env(code);
 
     // 1. Completely out-of-bounds line numbers (e.g. line 9999)
-    CHECK_NOTHROW({
-        auto actions = env.CodeActions(lsp::Range{ { 9999, 0 }, { 9999, 10 } });
-        // Should not crash and shouldn't extract variable or method
-        if (actions.has_value())
+    std::optional<std::vector<lsp::CodeAction>> actions1;
+    CHECK_NOTHROW(actions1 = env.CodeActions(lsp::Range{ { 9999, 0 }, { 9999, 10 } }));
+    if (actions1.has_value())
+    {
+        for (const auto &act : *actions1)
         {
-            for (const auto &act : *actions)
-            {
-                CHECK(act.title != "Extract Variable");
-                CHECK(act.title != "Extract Method");
-            }
+            CHECK(act.title != "Extract Variable");
+            CHECK(act.title != "Extract Method");
         }
-    });
+    }
 
     // 2. Inverted line range (startLine > endLine)
-    CHECK_NOTHROW({
-        auto actions = env.CodeActions(lsp::Range{ { 4, 10 }, { 2, 5 } });
-        if (actions.has_value())
+    std::optional<std::vector<lsp::CodeAction>> actions2;
+    CHECK_NOTHROW(actions2 = env.CodeActions(lsp::Range{ { 4, 10 }, { 2, 5 } }));
+    if (actions2.has_value())
+    {
+        for (const auto &act : *actions2)
         {
-            for (const auto &act : *actions)
-            {
-                CHECK(act.title != "Extract Variable");
-            }
+            CHECK(act.title != "Extract Variable");
         }
-    });
+    }
 
     // 3. Inverted character range on same line (startCol > endCol)
-    CHECK_NOTHROW({
-        auto actions = env.CodeActions(lsp::Range{ { 3, 20 }, { 3, 5 } });
-        if (actions.has_value())
+    std::optional<std::vector<lsp::CodeAction>> actions3;
+    CHECK_NOTHROW(actions3 = env.CodeActions(lsp::Range{ { 3, 20 }, { 3, 5 } }));
+    if (actions3.has_value())
+    {
+        for (const auto &act : *actions3)
         {
-            for (const auto &act : *actions)
-            {
-                CHECK(act.title != "Extract Variable");
-            }
+            CHECK(act.title != "Extract Variable");
         }
-    });
+    }
 
     // 4. Zero-length range at (0, 0)
-    CHECK_NOTHROW({
-        auto actions = env.CodeActions(lsp::Range{ { 0, 0 }, { 0, 0 } });
-        if (actions.has_value())
+    std::optional<std::vector<lsp::CodeAction>> actions4;
+    CHECK_NOTHROW(actions4 = env.CodeActions(lsp::Range{ { 0, 0 }, { 0, 0 } }));
+    if (actions4.has_value())
+    {
+        for (const auto &act : *actions4)
         {
-            for (const auto &act : *actions)
-            {
-                CHECK(act.title != "Extract Variable");
-            }
+            CHECK(act.title != "Extract Variable");
         }
-    });
+    }
 
     // 5. Selection over pure whitespace between tokens
     // Line 1 is "{\n", column 0 is '{', line 2 has 4 spaces indent before "int"
-    CHECK_NOTHROW({
-        auto actions = env.CodeActions(lsp::Range{ { 2, 0 }, { 2, 3 } });
-        if (actions.has_value())
+    std::optional<std::vector<lsp::CodeAction>> actions5;
+    CHECK_NOTHROW(actions5 = env.CodeActions(lsp::Range{ { 2, 0 }, { 2, 3 } }));
+    if (actions5.has_value())
+    {
+        for (const auto &act : *actions5)
         {
-            for (const auto &act : *actions)
-            {
-                CHECK(act.title != "Extract Variable");
-            }
+            CHECK(act.title != "Extract Variable");
         }
-    });
+    }
 
     // 6. Selection over keywords
     // "void" on line 0, cols 0..4

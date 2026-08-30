@@ -492,14 +492,13 @@ namespace angel_lsp::features
                             }
                             else
                             {
-                                auto rootScope = request.scopeIndex.GetRoot(request.uri);
                                 if (rootScope)
                                 {
                                     TSPoint objPoint = ts_node_start_point(objNode);
-                                    const analysis::Scope *scope = FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column);
-                                    if (scope)
+                                    const analysis::Scope *objScope = FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column);
+                                    if (objScope)
                                     {
-                                        const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, objText);
+                                        const analysis::LocalDefinition *def = analysis::ResolveInScope(objScope, objText);
                                         if (def && !def->typeName.empty())
                                         {
                                             receiverType = analysis::CleanBaseType(def->typeName);
@@ -564,14 +563,13 @@ namespace angel_lsp::features
                     std::string memText = GetNodeText(memNode, request.sourceCode);
                     std::string receiverType;
 
-                    auto rootScope = request.scopeIndex.GetRoot(request.uri);
                     if (rootScope)
                     {
                         TSPoint objPoint = ts_node_start_point(objNode);
-                        const analysis::Scope *scope = FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column);
-                        if (scope)
+                        const analysis::Scope *objScope = FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column);
+                        if (objScope)
                         {
-                            const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, objText);
+                            const analysis::LocalDefinition *def = analysis::ResolveInScope(objScope, objText);
                             if (def && !def->typeName.empty())
                             {
                                 receiverType = analysis::CleanBaseType(def->typeName);
@@ -605,18 +603,12 @@ namespace angel_lsp::features
             if (type == "identifier" || type == "scoped_identifier")
             {
                 std::string name = GetNodeText(exprNode, request.sourceCode);
-                auto rootScope = request.scopeIndex.GetRoot(request.uri);
-                if (rootScope)
+                if (scope)
                 {
-                    TSPoint point = ts_node_start_point(exprNode);
-                    const analysis::Scope *scope = FindInnermostScope(rootScope.get(), point.row, point.column);
-                    if (scope)
+                    const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, name);
+                    if (def && !def->typeName.empty())
                     {
-                        const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, name);
-                        if (def && !def->typeName.empty())
-                        {
-                            return def->typeName;
-                        }
+                        return def->typeName;
                     }
                 }
 

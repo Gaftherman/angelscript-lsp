@@ -828,8 +828,8 @@ namespace angel_lsp::test
                     auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanObj, m_symbolTable);
                     for (const auto &typeName : hierarchy)
                     {
-                        auto found = m_symbolTable.FindSymbols(typeName + "::" + memName);
-                        for (const auto &sym : found)
+                        auto methodSymbols = m_symbolTable.FindSymbols(typeName + "::" + memName);
+                        for (const auto &sym : methodSymbols)
                         {
                             if (sym.type == analysis::SymbolType::Function)
                             {

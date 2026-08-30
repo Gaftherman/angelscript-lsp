@@ -433,19 +433,18 @@ TEST_CASE("Adversarial DocumentSymbols - Malformed and Incomplete Code Recovery"
     std::string uri = "file:///malformed.as";
     DocumentSymbolRequest req{ uri, malformedCode, nullptr, table };
 
-    CHECK_NOTHROW({
-        auto result = GetDocumentSymbols(req);
-        REQUIRE(result.has_value());
-        bool foundValidBefore = false;
-        bool foundValidAfter = false;
-        for (const auto &sym : *result)
-        {
-            if (sym.name == "ValidClassBefore") foundValidBefore = true;
-            if (sym.name == "ValidClassAfter") foundValidAfter = true;
-        }
-        CHECK(foundValidBefore);
-        CHECK(foundValidAfter);
-    });
+    std::optional<std::vector<lsp::DocumentSymbol>> result;
+    CHECK_NOTHROW(result = GetDocumentSymbols(req));
+    REQUIRE(result.has_value());
+    bool foundValidBefore = false;
+    bool foundValidAfter = false;
+    for (const auto &sym : *result)
+    {
+        if (sym.name == "ValidClassBefore") foundValidBefore = true;
+        if (sym.name == "ValidClassAfter") foundValidAfter = true;
+    }
+    CHECK(foundValidBefore);
+    CHECK(foundValidAfter);
 }
 
 // =====================================================================================

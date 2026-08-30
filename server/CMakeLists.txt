@@ -13,6 +13,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # when real-compiler diagnostics are actually built.
 
 if(MSVC)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
     # Suppress spdlog/fmt C++20 deprecation warnings on Windows
     add_compile_definitions(_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING)
     add_compile_definitions(_SILENCE_ALL_MS_EXT_DEPRECATION_WARNINGS)

@@ -497,18 +497,13 @@ namespace angel_lsp::analysis
         {
             using is_transparent = void;
 
-            // The cast is deliberate and has to be written out. ankerl's hash is uint64_t on every
-            // platform while size_t is 32 bits in the win32-x86 build this project ships, so the
-            // implicit conversion truncated the hash there - harmless for bucket selection, but a
-            // narrowing conversion the compiler is right to flag. Spelling it out keeps C4244
-            // available for the narrowings that are not harmless.
-            [[nodiscard]] size_t operator()(std::string_view sv) const noexcept
+            [[nodiscard]] uint64_t operator()(std::string_view sv) const noexcept
             {
-                return static_cast<size_t>(ankerl::unordered_dense::hash<std::string_view>{}(sv));
+                return ankerl::unordered_dense::hash<std::string_view>{}(sv);
             }
-            [[nodiscard]] size_t operator()(const std::string &s) const noexcept
+            [[nodiscard]] uint64_t operator()(const std::string &s) const noexcept
             {
-                return static_cast<size_t>(ankerl::unordered_dense::hash<std::string_view>{}(s));
+                return ankerl::unordered_dense::hash<std::string_view>{}(s);
             }
         };
 

@@ -495,7 +495,7 @@ namespace angel_lsp
         return result;
     }
 
-    void Server::HandleNotificationsInitialized(lsp::notifications::Initialized::Params &&params)
+    void Server::HandleNotificationsInitialized(lsp::notifications::Initialized::Params &&/*params*/)
     {
         // Started unconditionally: even with the predefined-stub loader disabled, the workspace
         // thread still has to build the #include graph that module-closure indexing depends on.
@@ -2514,7 +2514,6 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
                 return ComputeAndCacheSemanticTokens(uriStr, docIt->second);
             });

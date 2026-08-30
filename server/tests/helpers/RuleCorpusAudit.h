@@ -66,7 +66,7 @@ namespace angel_lsp::test
      */
     inline CorpusResult RunCorpusAudit(const std::function<bool(const std::string &)> &interesting,
                                        size_t maxHits = 80,
-                                       const angel_lsp::config::DiagnosticsConfig *diagnostics = nullptr,
+                                       const angel_lsp::config::DiagnosticsConfig *diagConfig = nullptr,
                                        angel_lsp::analysis::EngineProfileKind profile =
                                            angel_lsp::analysis::EngineProfileKind::None)
     {
@@ -151,7 +151,7 @@ namespace angel_lsp::test
                 TSTree *tree = parser.Parse(sourceCode);
 
                 SemanticAnalysisRequest request{ sharedTable, fileUri, "", &i18n };
-                request.diagnostics = diagnostics;
+                request.diagnostics = diagConfig;
 
                 // The server always analyses with a TypeConfig, and several rules read it - which
                 // types are the engine's string and array among them. Without one, `string` itself

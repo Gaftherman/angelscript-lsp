@@ -531,7 +531,6 @@ TEST_CASE("Adversarial SemanticTokens - Invariant Verification")
         uint32_t deltaChar = tokens.data[i * 5 + 1];
         uint32_t length    = tokens.data[i * 5 + 2];
         uint32_t tokenType = tokens.data[i * 5 + 3];
-        uint32_t tokenMods = tokens.data[i * 5 + 4];
 
         CHECK(length > 0);
         CHECK(tokenType < legend.tokenTypes.size());
@@ -556,10 +555,9 @@ TEST_CASE("Adversarial SemanticTokens - Severely Broken Syntax")
 {
     std::string malformed = "class { void () int === @@@ ??? } #include < \"unclosed string";
     AdversarialTestEnv env(malformed);
-    CHECK_NOTHROW({
-        auto tokens = env.Tokens();
-        CHECK(tokens.data.size() % 5 == 0);
-    });
+    lsp::SemanticTokens tokens;
+    CHECK_NOTHROW(tokens = env.Tokens());
+    CHECK(tokens.data.size() % 5 == 0);
 }
 
 // =============================================================================
