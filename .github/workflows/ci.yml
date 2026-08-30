@@ -37,14 +37,14 @@ jobs:
             cmake_arch: ""
           # macOS x64 (Intel)
           - os: macos
-            runner: macos-13
+            runner: macos-14
             arch: x64
-            cmake_arch: ""
+            cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
           # macOS arm64 (Apple Silicon)
           - os: macos
             runner: macos-14
             arch: arm64
-            cmake_arch: ""
+            cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=arm64"
 
     steps:
       - name: Checkout Repository
@@ -145,7 +145,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: client/package-lock.json
 

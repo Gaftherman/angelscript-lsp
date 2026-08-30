@@ -79,7 +79,7 @@ set_target_properties(angelscript_oracle PROPERTIES CXX_STANDARD 17 CXX_STANDARD
 
 # Third-party code, and not ours to keep warning-clean.
 if(MSVC)
-    target_compile_options(angelscript_oracle PRIVATE /w)
+    target_compile_options(angelscript_oracle PRIVATE /W0)
 else()
     target_compile_options(angelscript_oracle PRIVATE -w)
 endif()
