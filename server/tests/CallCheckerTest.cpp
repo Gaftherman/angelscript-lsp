@@ -828,3 +828,54 @@ TEST_CASE("CallChecker - Unwrapping a template argument does not make unrelated 
 
     CHECK(HasCode(diagnostics, "as-err-no-implicit-conversion"));
 }
+
+// =====================================================================================
+// Bracket-declared arrays.
+//
+// `int[]` and `array<int>` are the same type - tests/parity/doc_p09_bracket_array_members.as -
+// but only the template spelling reached the member-resolution path. The bracket one cleaned to
+// `int`, which has no hierarchy, so the visibility guard sent every call on it away unchecked:
+// no hover, no completion, no argument counting. The two spellings must answer identically.
+// =====================================================================================
+
+TEST_CASE("CallChecker - A method call on a bracket-declared array is judged")
+{
+    const std::string bracket =
+        "class array<T> { uint length() const; void insertLast(const T&in value); }\n"
+        "void main() { int[] a; a.insertLast(); }\n";
+
+    CHECK(HasCode(AnalyzeCallSnippet(bracket), "as-err-call-argument-count"));
+}
+
+TEST_CASE("CallChecker - Both array spellings answer a correct call the same way")
+{
+    const std::string bracket =
+        "class array<T> { uint length() const; void insertLast(const T&in value); }\n"
+        "void main() { int[] a; a.insertLast(1); uint n = a.length(); }\n";
+
+    const std::string templated =
+        "class array<T> { uint length() const; void insertLast(const T&in value); }\n"
+        "void main() { array<int> a; a.insertLast(1); uint n = a.length(); }\n";
+
+    std::vector<std::string> bracketCodes;
+    for (const auto &d : AnalyzeCallSnippet(bracket)) bracketCodes.push_back(d.code);
+    std::vector<std::string> templatedCodes;
+    for (const auto &d : AnalyzeCallSnippet(templated)) templatedCodes.push_back(d.code);
+
+    // Identical, which is the point: the two spellings are one type and must be judged as one.
+    // Neither list is empty - the minimal `array<T>` stub here has bodyless methods and an unused
+    // local, which both snippets share - and that is exactly why this compares them to each other
+    // rather than to nothing.
+    CHECK(bracketCodes == templatedCodes);
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(bracket), "as-err-call-argument-count"));
+}
+
+TEST_CASE("CallChecker - A nested bracket array resolves to the outer container")
+{
+    // `int[][]` is `array<array<int>>`, so the element canonicalises before it is wrapped.
+    const std::string code =
+        "class array<T> { uint length() const; void insertLast(const T&in value); }\n"
+        "void main() { int[][] grid; grid.insertLast(); }\n";
+
+    CHECK(HasCode(AnalyzeCallSnippet(code), "as-err-call-argument-count"));
+}

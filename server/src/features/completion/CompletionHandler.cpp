@@ -12,25 +12,10 @@ namespace angel_lsp::features
     namespace
     {
 
-        std::string CanonicalizeArrayType(std::string_view typeStr, const std::string &arrayTypeName = "array")
-        {
-            std::string s(typeStr);
-            while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
-            while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '@' || s.back() == '&')) s.pop_back();
-
-            if (s.starts_with("const "))
-            {
-                s = s.substr(6);
-            }
-
-            while (s.ends_with("[]"))
-            {
-                std::string inner = s.substr(0, s.size() - 2);
-                inner = CanonicalizeArrayType(inner, arrayTypeName);
-                s = arrayTypeName + "<" + inner + ">";
-            }
-            return s;
-        }
+        // `CanonicalizeArrayType` lived here, and only here, which is why `int[] a; a.length()`
+        // completed correctly and had neither hover nor call checking - the other two passes had
+        // no such function to call. It is now `analysis::CanonicalizeArrayType`, used by all three.
+        using analysis::CanonicalizeArrayType;
 
         /**
          * @brief True when a member is its class's constructor or destructor.

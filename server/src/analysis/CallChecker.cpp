@@ -228,33 +228,6 @@ namespace angel_lsp::analysis
             return memberName.front() == '~' && std::string_view(memberName).substr(1) == shortName;
         }
 
-        bool HierarchyIsFullyVisible(const std::string &typeName, const SymbolTable &table)
-        {
-            for (const auto &ancestor : GetInheritedTypeHierarchy(typeName, table))
-            {
-                const auto symbols = table.FindSymbolsPtr(ancestor);
-                if (!symbols)
-                {
-                    return false;
-                }
-                for (const auto &sym : *symbols)
-                {
-                    if (sym.type != SymbolType::Class)
-                    {
-                        continue;
-                    }
-                    for (const auto &base : sym.GetClass().bases)
-                    {
-                        if (!table.FindSymbolsPtr(CleanBaseType(base)))
-                        {
-                            return false;
-                        }
-                    }
-                }
-            }
-            return true;
-        }
-
         /** @brief Declarations of a method, across a type's whole visible hierarchy. */
         std::vector<Symbol> FindMethodCandidates(const std::string &typeName,
                                                  const std::string &methodName,
@@ -449,8 +422,12 @@ namespace angel_lsp::analysis
                     return;
                 }
 
-                const std::string rawObjType = ResolveExpressionType(
-                    objectNode, scope, table, request.sourceCode, ctx.request.fileUri);
+                // `int[]` is `array<int>`, and only the template spelling reached the branch below.
+                // The bracket one cleaned to `int`, which has no hierarchy, so the visibility guard
+                // sent every call on a bracket-declared array away unchecked.
+                const std::string rawObjType = CanonicalizeArrayType(
+                    ResolveExpressionType(objectNode, scope, table, request.sourceCode, ctx.request.fileUri),
+                    ctx.request.GetArrayTypeName().empty() ? "array" : ctx.request.GetArrayTypeName());
                 std::string objectType = CleanBaseType(rawObjType);
                 std::vector<std::string> templateArgs;
                 if (rawObjType.find('<') != std::string::npos && rawObjType.ends_with('>'))

@@ -70,41 +70,6 @@ namespace angel_lsp::analysis
             return false;
         }
 
-        /**
-         * @brief True when every type in a chain resolves to a declaration this analyzer can read.
-         *
-         * The rule's whole claim is "no declaration permits this access", so it may only speak once
-         * every declaration is on the table. One base that resolves to nothing is an
-         * engine-registered type as far as this pass knows, and those carry members - and access
-         * levels - written down nowhere in the workspace.
-         */
-        bool HierarchyIsFullyVisible(const std::string &typeName, const SymbolTable &table)
-        {
-            for (const auto &ancestor : GetInheritedTypeHierarchy(typeName, table))
-            {
-                const auto symbols = table.FindSymbolsPtr(ancestor);
-                if (!symbols)
-                {
-                    return false;
-                }
-                for (const auto &sym : *symbols)
-                {
-                    if (sym.type != SymbolType::Class)
-                    {
-                        continue;
-                    }
-                    for (const auto &base : sym.GetClass().bases)
-                    {
-                        if (!table.FindSymbolsPtr(CleanBaseType(base)))
-                        {
-                            return false;
-                        }
-                    }
-                }
-            }
-            return true;
-        }
-
         /** @brief The access modifier a declaration carries, whatever kind of declaration it is. */
         bool TryReadAccess(const Symbol &sym, AccessModifier &access)
         {

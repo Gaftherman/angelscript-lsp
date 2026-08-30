@@ -140,14 +140,29 @@ namespace angel_lsp::analysis::rules
          */
         void CheckInterfaceImplementation(const Symbol &sym, const ClassSignature &sig, const DiagnosticContext &ctx)
         {
-            // An abstract class or mixin is allowed to leave the interface to its own subclasses.
-            if (sig.modifiers.isAbstract || sig.modifiers.isMixin)
+            const SymbolTable &table = ctx.request.symbolTable;
+            const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+
+            // This used to return here for an abstract class or a mixin, on the reading that either
+            // may leave the interface to whoever derives from it. The compiler says otherwise, in
+            // both cases - tests/parity/doc_r08 and doc_r23:
+            //
+            //     abstract class A : I {}                       Missing implementation of 'void I::P()'
+            //     mixin class M : I {}  class C : M { void P(){} }   Missing implementation, at M
+            //
+            // The second is the surprising half: a mixin naming an interface must implement it
+            // itself, and a class that includes the mixin implementing it does not satisfy the
+            // mixin. Both were missed diagnostics rather than a policy.
+            //
+            // What replaces the skip is a visibility guard, which the rule never had. Every method
+            // it reports is a method it did not find, so a base it cannot see is a base whose
+            // members it would report as missing - and an engine-registered class this analyzer
+            // cannot read is exactly that. Silence over a guess, as everywhere else here.
+            if (!HierarchyIsFullyVisible(container, table))
             {
                 return;
             }
 
-            const SymbolTable &table = ctx.request.symbolTable;
-            const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
             const auto implemented = CollectImplementedMethodNames(container, table, ctx.request.GetRuleIndex());
 
             ankerl::unordered_dense::set<std::string> interfacesToCheck;

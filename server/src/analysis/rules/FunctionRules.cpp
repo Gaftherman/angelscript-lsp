@@ -424,33 +424,6 @@ namespace angel_lsp::analysis::rules
         // Override
         // =============================================================================
 
-        /** @brief True when every type in the container's inheritance chain resolves to a declaration. */
-        bool HierarchyIsFullyVisible(const std::string &typeName, const SymbolTable &table)
-        {
-            for (const auto &ancestor : GetInheritedTypeHierarchy(typeName, table))
-            {
-                const auto symbols = table.FindSymbolsPtr(ancestor);
-                if (!symbols)
-                {
-                    return false;
-                }
-                for (const auto &sym : *symbols)
-                {
-                    if (sym.type == SymbolType::Class)
-                    {
-                        for (const auto &base : sym.GetClass().bases)
-                        {
-                            if (!table.FindSymbolsPtr(CleanBaseType(base)))
-                            {
-                                return false;
-                            }
-                        }
-                    }
-                }
-            }
-            return true;
-        }
-
         void CheckOverride(const Symbol &sym, const FunctionSignature &sig, const FunctionContext &fctx,
                            const DiagnosticContext &ctx)
         {

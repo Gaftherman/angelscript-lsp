@@ -745,8 +745,19 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
         CHECK(doc->GetDiagnostics().empty());
     }
 
-    TEST_CASE("Interfaces: Mixin implements partial interface, class implements remainder")
+    TEST_CASE("Interfaces: A mixin naming an interface must implement it itself")
     {
+        // This case used to assert one diagnostic, on the reading that a mixin may implement half
+        // an interface and leave the rest to whoever includes it. The compiler disagrees, and the
+        // comment on CompleteService below was the wrong half:
+        //
+        //     ERROR (10, 7): Missing implementation of 'void IService::Stop()'   IncompleteService
+        //     ERROR (17, 7): Missing implementation of 'void IService::Stop()'   ServiceMixin
+        //
+        // CompleteService is fine - it does implement Stop - but implementing it there does not
+        // satisfy the mixin, which named the interface and must carry it. Two diagnostics, and
+        // ClassRules used to emit neither because it skipped the check for a mixin outright.
+        // tests/parity/doc_r23_mixin_missing_impl.as holds the compiler's answer.
         const char *script = R"(
             interface IService {
                 void Start();
@@ -754,13 +765,13 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
             }
 
             mixin class ServiceMixin : IService {
-                void Start() {} // Implements Start()
+                void Start() {}
             }
 
-            // Error: Missing Stop() implementation
+            // Missing Stop().
             class IncompleteService : ServiceMixin {}
 
-            // OK: Completes Stop() implementation
+            // Implements Stop() for itself, which does not implement it for the mixin.
             class CompleteService : ServiceMixin {
                 void Stop() {}
             }
@@ -770,10 +781,22 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
         REQUIRE(doc != nullptr);
 
         auto diagnostics = doc->GetDiagnostics();
-        REQUIRE(diagnostics.size() == 1);
+        REQUIRE(diagnostics.size() == 2);
 
-        CHECK(diagnostics[0].code == "E_UNIMPLEMENTED_INTERFACE_METHOD");
-        CHECK(diagnostics[0].range.start.line == 11); // IncompleteService
+        for (const auto &diagnostic : diagnostics)
+        {
+            CHECK(diagnostic.code == "E_UNIMPLEMENTED_INTERFACE_METHOD");
+        }
+
+        std::vector<uint32_t> reportedLines;
+        for (const auto &diagnostic : diagnostics)
+        {
+            reportedLines.push_back(diagnostic.range.start.line);
+        }
+        std::sort(reportedLines.begin(), reportedLines.end());
+
+        CHECK(reportedLines[0] == 6);   // ServiceMixin
+        CHECK(reportedLines[1] == 11);  // IncompleteService
     }
 
     TEST_CASE("Inheritance Restriction: Reject mixin inheriting from class")

@@ -51,6 +51,165 @@ namespace
             return GetHover(req);
         }
     };
+
+    /**
+     * @brief Two files, so a symbol's declaration and the hover position are not in the same text.
+     *
+     * The single-file environment above cannot see the defect this exists for: with one file,
+     * reading the declaration's line out of the hovered file is right by accident.
+     */
+    struct TwoFileEnvironment
+    {
+        AngelScriptParser parser;
+        SymbolCollector symbolCollector{ nullptr };
+        LocalScopeCollector scopeCollector{ nullptr };
+        SymbolTable symbolTable;
+        ScopeIndex scopeIndex;
+
+        std::string declaringUri = "file:///library.as";
+        std::string declaringCode;
+        std::string usingUri = "file:///main.as";
+        std::string usingCode;
+        TSTree *tree = nullptr;
+
+        TwoFileEnvironment(const std::string &library, const std::string &main)
+            : declaringCode(library), usingCode(main)
+        {
+            symbolCollector.CollectSymbols(declaringUri, declaringCode, parser, symbolTable);
+            symbolCollector.CollectSymbols(usingUri, usingCode, parser, symbolTable);
+
+            tree = parser.Parse(usingCode);
+            auto rootScope = scopeCollector.CollectScopes(usingCode, parser);
+            if (rootScope)
+            {
+                scopeIndex.SetScopeTree(usingUri, std::move(rootScope));
+            }
+        }
+
+        ~TwoFileEnvironment()
+        {
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
+        }
+
+        /** @brief Hovers in main.as, with library.as reachable through readDocument. */
+        std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character)
+        {
+            HoverRequest req{
+                usingUri, usingCode, tree, symbolTable, scopeIndex,
+                lsp::Position{ line, character },
+                [this](const std::string &uri) -> const std::string *
+                {
+                    if (uri == declaringUri) return &declaringCode;
+                    if (uri == usingUri) return &usingCode;
+                    return nullptr;
+                }
+            };
+            return GetHover(req);
+        }
+
+        /** @brief The same hover with no reader at all, which must show no documentation. */
+        std::optional<lsp::Hover> HoverAtWithoutReader(uint32_t line, uint32_t character)
+        {
+            HoverRequest req{ usingUri, usingCode, tree, symbolTable, scopeIndex,
+                              lsp::Position{ line, character } };
+            return GetHover(req);
+        }
+    };
+}
+
+// A documentation comment sits above the *declaration*, and startLine counts lines in the file
+// that declares the symbol - not in the file being hovered over. Pairing the two showed whatever
+// happened to be at that line number locally, so the decoy comment below is what this hover used
+// to render: a comment about something else entirely, presented as the symbol's documentation.
+TEST_CASE("HoverHandler - A cross-file hover reads the declaring file's comment")
+{
+    TwoFileEnvironment env(
+        "// filler\n"
+        "// filler\n"
+        "/// Fires the weapon and returns whether it hit.\n"
+        "bool Fire(int rounds) { return true; }\n",
+
+        "// filler\n"
+        "// filler\n"
+        "/// THIS IS THE WRONG COMMENT - it describes Reload, not Fire.\n"
+        "void Reload() {}\n"
+        "void Use() { Fire(1); }\n");
+
+    auto hover = env.HoverAt(4, 14); // 'Fire' in main.as
+    REQUIRE(hover.has_value());
+
+    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(markup.value.find("Fires the weapon") != std::string::npos);
+    CHECK(markup.value.find("WRONG COMMENT") == std::string::npos);
+}
+
+TEST_CASE("HoverHandler - A method with no comment inherits the interface's")
+{
+    // SUGG-04. The contract is written on the interface and repeating it on every implementer is
+    // what nobody does, so an implementation with no comment of its own should show the one it is
+    // implementing rather than nothing.
+    TwoFileEnvironment env(
+        "interface IWeapon\n"
+        "{\n"
+        "    /// Fires the weapon and returns whether it hit.\n"
+        "    bool Fire(int rounds);\n"
+        "}\n",
+
+        "class Rifle : IWeapon\n"
+        "{\n"
+        "    bool Fire(int rounds) { return true; }\n"
+        "}\n");
+
+    auto hover = env.HoverAt(2, 10); // 'Fire' in Rifle
+    REQUIRE(hover.has_value());
+
+    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(markup.value.find("Fires the weapon") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - A method's own comment wins over the interface's")
+{
+    TwoFileEnvironment env(
+        "interface IWeapon\n"
+        "{\n"
+        "    /// The interface contract.\n"
+        "    bool Fire(int rounds);\n"
+        "}\n",
+
+        "class Rifle : IWeapon\n"
+        "{\n"
+        "    /// Rifles fire one round at a time.\n"
+        "    bool Fire(int rounds) { return true; }\n"
+        "}\n");
+
+    auto hover = env.HoverAt(3, 10);
+    REQUIRE(hover.has_value());
+
+    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(markup.value.find("one round at a time") != std::string::npos);
+    CHECK(markup.value.find("interface contract") == std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Without a reader a cross-file hover shows no documentation")
+{
+    // Silence over a guess: the declaring file may have been indexed and released, and a hover
+    // that says less is better than one that says something untrue.
+    TwoFileEnvironment env(
+        "/// Fires the weapon and returns whether it hit.\n"
+        "bool Fire(int rounds) { return true; }\n",
+
+        "/// THIS IS THE WRONG COMMENT.\n"
+        "void Use() { Fire(1); }\n");
+
+    auto hover = env.HoverAtWithoutReader(1, 14);
+    REQUIRE(hover.has_value());
+
+    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(markup.value.find("WRONG COMMENT") == std::string::npos);
+    CHECK(markup.value.find("bool Fire") != std::string::npos);
 }
 
 TEST_CASE("HoverHandler - Primitive Type Hover")
@@ -367,3 +526,54 @@ TEST_CASE("HoverHandler - Global Variable vs Local Variable Hover")
     CHECK(textLocal.find("int local_var") != std::string::npos);
 }
 
+
+// `int[]` and `array<int>` are one type - tests/parity/doc_p09_bracket_array_members.as - and the
+// bracket spelling used to reach member resolution as plain `int`, which has no members at all.
+// Hovering `length` on it produced nothing where the template spelling produced its signature.
+TEST_CASE("HoverHandler - A method on a bracket-declared array resolves")
+{
+    TestEnvironment env(
+        "class array<T> { uint length() const; }\n"
+        "void main() { int[] a; uint n = a.length(); }\n");
+
+    auto hover = env.HoverAt(1, 34); // 'length'
+    REQUIRE(hover.has_value());
+
+    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(markup.value.find("length") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - A method on a template-declared array resolves too")
+{
+    // The template spelling was broken in the same place and for the same reason; it only looked
+    // healthy because `length`, `size` and `isEmpty` had a hardcoded shortcut elsewhere. A fourth
+    // method has no shortcut, so it is what this asks about.
+    TestEnvironment env(
+        "class array<T> { void insertLast(const T&in value); }\n"
+        "void main() { array<int> a; a.insertLast(1); }\n");
+
+    auto hover = env.HoverAt(1, 31); // 'insertLast'
+    REQUIRE(hover.has_value());
+
+    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(markup.value.find("insertLast") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Bracket and template arrays hover identically")
+{
+    TestEnvironment bracketEnv(
+        "class array<T> { void insertLast(const T&in value); }\n"
+        "void main() { int[] a; a.insertLast(1); }\n");
+
+    TestEnvironment templateEnv(
+        "class array<T> { void insertLast(const T&in value); }\n"
+        "void main() { array<int> a; a.insertLast(1); }\n");
+
+    auto bracketHover = bracketEnv.HoverAt(1, 26);   // 'insertLast'
+    auto templateHover = templateEnv.HoverAt(1, 31); // 'insertLast'
+
+    REQUIRE(bracketHover.has_value());
+    REQUIRE(templateHover.has_value());
+    CHECK(std::get<lsp::MarkupContent>(bracketHover->contents).value ==
+          std::get<lsp::MarkupContent>(templateHover->contents).value);
+}

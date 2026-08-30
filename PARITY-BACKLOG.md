@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1171 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1184 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -49,7 +49,7 @@ Every claim below has a script in `server/tests/parity/`:
 | `TYPE-05` `byte` == `uint8` | `byte` is a built-in alias | `Identifier 'byte' is not a data type` | `byte` is host-registered. The real defect it gestures at is narrower — see the typedef entry under WIP. `doc_r05` |
 | `TYPE-07` `opImplConv` → `bool` | makes `if (h && true)` work | `No conversion from 'H&' to 'bool' available.` | `as-err-ref-type-bool-conv-disallowed` is defensible. `doc_r06` |
 | `PROP-01` automatic accessors | `get_X`/`set_X` are always the property `X` | `'V' is not a member of 'C'` **without** the `property` keyword; accepted with it | Engine-configurable (`asEP_PROPERTY_ACCESSOR_MODE`, SDK default 3). Our unconditional leniency misses errors but never invents them, so it stays the default and mode 3 becomes a setting - see WIP. `doc_r07`, `doc_p04` |
-| `PROP-07` abstract classes | need not implement their interface | `Missing implementation of 'void I::P()'` | Inverted: `rules/ClassRules.cpp` skips this check for abstract classes, which is a **missed** diagnostic. See WIP. `doc_r08` |
+| `PROP-07` abstract classes | need not implement their interface | `Missing implementation of 'void I::P()'` | Inverted: `rules/ClassRules.cpp` skipped this check for abstract classes, which was a **missed** diagnostic. Fixed, and the same skip for mixins turned out to be wrong too. `doc_r08`, `doc_r23`, `doc_p21` |
 | `PREDEF-02` `#if`/`#else` | selects the live branch | With the word undefined, **both** branches were dropped and the symbol was unresolved — CScriptBuilder has no `#else` | `utils/PreprocessorRegions.cpp` models exactly this already. Adding `#else` would diverge from the host that actually compiles these scripts. |
 | `PARSER-04` UTF-8 BOM | breaks the lexer | accepted by the compiler — and by tree-sitter, because the grammar's `extras` is `/\s+/` and JavaScript's `\s` matches U+FEFF | Not a defect here. The only residue is that line 0 starts three bytes in. `doc_p14` |
 
@@ -214,6 +214,64 @@ treats as unacceptable.
   (`array<array<int>> g = {1,2}` — the element type is a template, which does not resolve), `il_a6`
   and `il_a7` (`string` declares no `@listpattern`, and an absent pattern only means the stub did
   not say).
+- **Array members, in both spellings.** `int[]` and `array<int>` are one type, and neither reached
+  member resolution as one. `CleanBaseType` answers the *element* type — it reduces both to `int` —
+  which is right for the question it is asked almost everywhere and wrong for "what type owns this
+  member", and the two were the same call. `a.length()` looked for `int::length`, found nothing,
+  and `CallChecker`'s visibility guard then sent every call on an array away unchecked.
+
+  Recorded in the backlog as a bracket-only defect, and it was not: the template spelling was
+  broken in the same place. It looked healthy because `length`, `size` and `isEmpty` had a
+  hardcoded shortcut in the call-expression branch — a fourth method has no shortcut and produced
+  nothing for either spelling. Two functions now say what was being conflated:
+  `CanonicalizeArrayType` (`int[]` → `array<int>`, innermost first so `int[][]` is
+  `array<array<int>>`) and `MemberOwnerType` (either spelling → `array`). `CompletionHandler` had
+  a private copy of the first, which is exactly why completion worked on `int[]` while hover and
+  call checking did not; it now uses the shared one. The container name is read from
+  `TypeConfig::arrayTypeName` where the config is in reach, and defaults to `"array"` where it is
+  not — which is what every hardcoded literal there was already assuming.
+- **Hover showed the wrong file's documentation comment.** A doc comment sits above the
+  *declaration*, and a symbol's `startLine` counts lines in the file that declares it — but the
+  handler read `request.sourceCode`, the file being hovered over. Hovering a symbol declared at
+  line 12 of another file rendered whatever was at line 12 *here*, presented as that symbol's
+  documentation. Wrong documentation is worse than none, and it fails silently: it looks like a
+  working feature.
+
+  Two of the four sites were affected; the other two resolve a `LocalDefinition`, which is
+  same-file by construction. The fix is the pattern `ResolveCompletionItem` already used — a
+  `readDocument` reader on the request, supplied from the same place in `Server.cpp` — and with no
+  reader the answer is no comment rather than a guess.
+
+  `SUGG-04` lands with it, because it is the same function: a method with no comment of its own now
+  shows the one on the declaration it implements. That is where the contract is written, and
+  repeating it on every implementer is what nobody does. Only from an ancestor of the method's own
+  container, so an unrelated method of the same name is never consulted.
+- **Abstract classes and mixins must implement their interfaces.** `CheckInterfaceImplementation`
+  opened with `if (sig.modifiers.isAbstract || sig.modifiers.isMixin) return;`, on the reading that
+  either may leave the interface to whoever derives from it. The compiler disagrees with both
+  halves, and the mixin half is the surprising one:
+
+  | Case | Compiler |
+  |---|---|
+  | `abstract class A : I {}` | `Missing implementation of 'void I::P()'` |
+  | `abstract class A : I { void P() {} }` | accepts |
+  | `mixin class M : I {}` + `class C : M { void P() {} }` | **rejects, against `M`** |
+  | `mixin class M : I { void P() {} }` + `class C : M {}` | accepts |
+
+  A mixin that names an interface carries it itself; a class including the mixin and implementing
+  the method does not satisfy the mixin. Two missed diagnostics, not a policy. `doc_r08`,
+  `doc_r23`, `doc_p21`.
+
+  The skip is replaced by the guard the rule never had. Every method it reports is one it did not
+  find, so a base it cannot read is a base whose members it would report as missing — and that is
+  exactly what an engine-registered class looks like from here. `HierarchyIsFullyVisible` answers
+  that, and it existed already: **four identical copies**, one in each of `CallChecker`,
+  `AccessChecker`, `ConstChecker` and `FunctionRules`, each in its own anonymous namespace. It is
+  now declared once in `SemanticHelpers`.
+
+  Two tests asserted the old answer and now assert the compiler's — `ClassRulesTest`'s "An abstract
+  class may leave the interface to its subclasses", and `TypeRulesTest`'s mixin case, whose
+  `// OK: Completes Stop() implementation` was the wrong half of the pair.
 - **The formatter, which was rewriting working code.** Every `{` went onto its own line
   unconditionally, so `array<int> a = {1, 2, 3};` and every lambda passed as an argument were
   exploded Allman-style, `#if` was torn out of the block it delimits to column zero, and a metadata
@@ -289,29 +347,19 @@ first. Each lands with its `doc_`-prefixed parity case.
    value`, `Float value truncated in implicit conversion to integer`, `Signed/Unsigned mismatch`.
    None exist here. Decidable from the source alone, so the visibility policy permits them; the
    narrowing tables at `OverloadResolver.cpp` already exist and feed only overload ranking today.
-4. **Abstract classes must still implement their interfaces** — `rules/ClassRules.cpp` skips the
-   check when the class is abstract. Only emit where the whole hierarchy is visible. `doc_r08`
-5. **Bracket-array member resolution** — `SemanticHelpers::CleanBaseType` reduces `int[]` to `int`,
-    so `arr.length()` on a bracket-declared variable gets no hover, no completion and no checking
-    (`CallChecker` bails at the visibility guard). Normalization lives in exactly two places today
-    and one of them hardcodes `"array"` rather than reading `config.types.arrayTypeName`.
-6. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
+4. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-7. **Hover doc comments** — the handler reads the *hovered* file's text at the *declaring* symbol's
-    line, so a cross-file hover can show an unrelated comment from the local file. The correct
-    pattern is already in `ResolveCompletionItem`. Then inherit documentation from an overridden
-    interface method (`SUGG-04`).
-8. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+5. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-9. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+6. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-10. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+7. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-11. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+8. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-12. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+9. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope

@@ -203,11 +203,48 @@ TEST_CASE("ClassRules - An implementation inherited from a base class counts")
     CHECK_FALSE(HasCode(AnalyzeClassSnippet(code), "as-err-interface-impl-missing"));
 }
 
-TEST_CASE("ClassRules - An abstract class may leave the interface to its subclasses")
+// This case asserted the opposite - that an abstract class may leave the interface to its
+// subclasses - which is what `PROP-07` claimed and what ClassRules implemented. The compiler
+// answers `Missing implementation of 'void I::P()'` either way, so the rule was skipping a
+// diagnostic it should have emitted. tests/parity/doc_r08_abstract_missing_impl.as.
+TEST_CASE("ClassRules - An abstract class must still implement its interface")
 {
     const std::string code =
         "interface IThink { void Think(); }\n"
         "abstract class Partial : IThink {}\n";
+
+    CHECK(HasCode(AnalyzeClassSnippet(code), "as-err-interface-impl-missing"));
+}
+
+TEST_CASE("ClassRules - An abstract class that implements its interface is silent")
+{
+    const std::string code =
+        "interface IThink { void Think(); }\n"
+        "abstract class Partial : IThink { void Think() {} }\n";
+
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet(code), "as-err-interface-impl-missing"));
+}
+
+// The surprising half, and the reason this needed the oracle rather than a reading of the docs:
+// a mixin that names an interface must implement it *itself*. A class including the mixin and
+// implementing the method does not satisfy the mixin - the compiler reports both.
+// tests/parity/doc_r23_mixin_missing_impl.as.
+TEST_CASE("ClassRules - A mixin naming an interface must implement it itself")
+{
+    const std::string code =
+        "interface IThink { void Think(); }\n"
+        "mixin class Helper : IThink { void Assist() {} }\n"
+        "class Agent : Helper { void Think() {} }\n";
+
+    CHECK(HasCode(AnalyzeClassSnippet(code), "as-err-interface-impl-missing"));
+}
+
+TEST_CASE("ClassRules - A mixin that implements its interface is silent")
+{
+    const std::string code =
+        "interface IThink { void Think(); }\n"
+        "mixin class Helper : IThink { void Think() {} }\n"
+        "class Agent : Helper {}\n";
 
     CHECK_FALSE(HasCode(AnalyzeClassSnippet(code), "as-err-interface-impl-missing"));
 }

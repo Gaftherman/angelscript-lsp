@@ -44,6 +44,10 @@ test_disc*.as
 client/bin/
 build/
 server/build/
+# A second, optimised build tree. The corpus audits walk 1,061 files and are ten to twenty
+# times faster here than in Debug - eighty seconds against twenty minutes - which is the
+# difference between running them and not.
+server/build-release/
 server/.cache/
 client/node_modules/
 client/out/

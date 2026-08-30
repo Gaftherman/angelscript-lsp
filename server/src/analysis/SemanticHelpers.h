@@ -264,6 +264,41 @@ namespace angel_lsp::analysis
     std::string CleanBaseType(std::string_view typeName);
 
     /**
+     * @brief Rewrites the bracket spelling of an array as its template spelling.
+     *
+     * `int[]` -> `array<int>`, `int[][]` -> `array<array<int>>`; anything without brackets comes
+     * back unchanged. The two are the same type to the compiler, and `T[]` is the spelling the
+     * language settles on its own - but only one of them survives to member resolution.
+     * `CleanBaseType` reduces *both* to `int`, which is correct for its own job (the element type)
+     * and useless for finding the container's members, so every site that asks "what type owns
+     * this member" has to canonicalise first. Left as-is, `int[] a; a.length();` had no hover, no
+     * completion and no call checking, while the identical `array<int> a;` had all three.
+     *
+     * @param typeName The declared type, in either spelling.
+     * @param arrayTypeName The workspace's array container, from `TypeConfig::arrayTypeName`.
+     *        Defaulted so a caller with no configuration in reach behaves as it did before, which
+     *        is what every hardcoded "array" in this file was already assuming.
+     */
+    std::string CanonicalizeArrayType(std::string_view typeName, std::string_view arrayTypeName = "array");
+
+    /**
+     * @brief The type whose members a `.` on a value of this type reaches.
+     *
+     * `int[]` and `array<int>` both answer `array`, `Foo@` answers `Foo`, `int` answers `int`.
+     *
+     * Distinct from `CleanBaseType`, which answers the *element* type and reduces every array -
+     * both spellings - to `int`. That is right for the question it is asked most often and wrong
+     * for this one, and the two were being conflated: `a.length()` looked for `int::length`, found
+     * nothing, and produced no hover for either spelling. The declaration `array<int> a;` happened
+     * to work anyway through a hardcoded shortcut for `length`/`size`/`isEmpty`, which is why this
+     * read as a bracket-only defect until the template spelling was tried on a fourth method.
+     *
+     * @param typeName The declared type, with any modifiers still attached.
+     * @param arrayTypeName The workspace's array container, from `TypeConfig::arrayTypeName`.
+     */
+    std::string MemberOwnerType(std::string_view typeName, std::string_view arrayTypeName = "array");
+
+    /**
      * @brief True when a type is AngelScript's variable type `?` (as in `const ?&in`, `?&out`).
      *
      * `?` is not a type name - it is the engine's wildcard parameter, and a parameter declared with
@@ -285,6 +320,20 @@ namespace angel_lsp::analysis
      * @return Vector of type names in the hierarchy including className and its transitive bases.
      */
     std::vector<std::string> GetInheritedTypeHierarchy(const std::string &className, const SymbolTable &symbolTable);
+
+    /**
+     * @brief True when every ancestor of a type, and every base each of them names, is in the table.
+     *
+     * The precondition for any rule that reasons about what a hierarchy contains. A base this
+     * server cannot see is a base whose members it cannot enumerate, and "I did not find it" is
+     * indistinguishable from "it is not there" - which is how a missing-implementation rule invents
+     * an error about a method the invisible base declares. Every such rule stays silent here
+     * instead, which is the analyzer's standing answer to a partial view.
+     *
+     * @param typeName The type whose hierarchy is being judged.
+     * @param symbolTable The table to resolve each ancestor and its bases in.
+     */
+    bool HierarchyIsFullyVisible(const std::string &typeName, const SymbolTable &symbolTable);
 
     /**
      * @brief Traverses both base classes/interfaces and derived classes in SymbolTable.

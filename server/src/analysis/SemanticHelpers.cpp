@@ -280,6 +280,61 @@ namespace angel_lsp::analysis
         return result;
     }
 
+    std::string CanonicalizeArrayType(std::string_view typeName, std::string_view arrayTypeName)
+    {
+        std::string s(typeName);
+
+        while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
+        while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '@' || s.back() == '&')) s.pop_back();
+
+        if (s.starts_with("const "))
+        {
+            s = s.substr(6);
+        }
+
+        if (arrayTypeName.empty())
+        {
+            return s;
+        }
+
+        // The element of `int[][]` is `int[]`, so the element is canonicalised before it is
+        // wrapped: `array<array<int>>`. Wrapping first would give `array<int[]>`, which is the
+        // same type spelled in a way nothing else here recognises.
+        while (s.ends_with("[]"))
+        {
+            const std::string element = CanonicalizeArrayType(s.substr(0, s.size() - 2), arrayTypeName);
+            s = std::string(arrayTypeName) + "<" + element + ">";
+        }
+
+        return s;
+    }
+
+    std::string MemberOwnerType(std::string_view typeName, std::string_view arrayTypeName)
+    {
+        const std::string canonical = CanonicalizeArrayType(typeName, arrayTypeName);
+
+        // A template instantiation's members are declared on the template, so `array<int>` reaches
+        // `array::length`. Split on the *first* `<`, which is also the outermost one.
+        if (canonical.ends_with(">"))
+        {
+            const size_t open = canonical.find('<');
+            if (open != std::string::npos && open > 0)
+            {
+                std::string container = canonical.substr(0, open);
+                while (!container.empty() && (container.back() == ' ' || container.back() == '\t'))
+                {
+                    container.pop_back();
+                }
+                if (!container.empty())
+                {
+                    return container;
+                }
+            }
+        }
+
+        return CleanBaseType(canonical);
+    }
+
     std::string SubstituteTypeParam(std::string_view typeStr, std::string_view paramName, std::string_view concreteType)
     {
         if (typeStr.empty() || paramName.empty())
@@ -463,6 +518,36 @@ namespace angel_lsp::analysis
         }
 
         return hierarchy;
+    }
+
+    bool HierarchyIsFullyVisible(const std::string &typeName, const SymbolTable &symbolTable)
+    {
+        for (const auto &ancestor : GetInheritedTypeHierarchy(typeName, symbolTable))
+        {
+            const auto symbols = symbolTable.FindSymbolsPtr(ancestor);
+            if (!symbols)
+            {
+                return false;
+            }
+
+            // The hierarchy walk itself stops at a name it cannot resolve, so an unresolvable base
+            // never appears in the list above and has to be looked for here, one level down.
+            for (const auto &sym : *symbols)
+            {
+                if (sym.type != SymbolType::Class)
+                {
+                    continue;
+                }
+                for (const auto &base : sym.GetClass().bases)
+                {
+                    if (!symbolTable.FindSymbolsPtr(CleanBaseType(base)))
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
     }
 
     std::vector<std::string> GetAllRelatedClasses(const std::string &className, const SymbolTable &symbolTable)
@@ -1463,7 +1548,11 @@ namespace angel_lsp::analysis
                 TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
                 if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
                 {
-                    std::string objType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri, depth + 1);
+                    // Canonicalised before it is parsed as a template: `int[]` and `array<int>` are
+                    // the same type, and only the second was ever recognised here, so `a.length()`
+                    // on a bracket-declared array resolved to nothing at all.
+                    std::string objType = CanonicalizeArrayType(
+                        ResolveExpressionType(objNode, scope, symbolTable, sourceCode, uri, depth + 1));
                     auto templateInfo = ParseTemplateType(objType);
                     std::string memName = GetNodeText(memNode, sourceCode);
                     while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front()))) memName.erase(memName.begin());

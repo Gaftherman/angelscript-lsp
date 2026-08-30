@@ -5,6 +5,7 @@
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <tree_sitter/api.h>
+#include <functional>
 #include <string>
 #include <optional>
 
@@ -21,6 +22,21 @@ namespace angel_lsp::features
         const analysis::SymbolTable &symbolTable;
         const analysis::ScopeIndex &scopeIndex;
         lsp::Position position;
+
+        /**
+         * @brief Reads a document's text by URI, or returns nullptr when the server holds none.
+         *
+         * A documentation comment lives above the *declaration*, which is often in another file,
+         * and `sourceCode` is the file being hovered over. Reading one at the other's line numbers
+         * produced whatever happened to be on that line here - so hovering a symbol declared at
+         * line 12 of a header could show a comment from line 12 of the current file, about
+         * something else entirely. Wrong documentation is worse than none, which is what an absent
+         * reader gets: no comment rather than a guess.
+         *
+         * The same shape as CompletionResolveRequest::readDocument, and supplied from the same
+         * place in Server.cpp.
+         */
+        std::function<const std::string *(const std::string &)> readDocument;
     };
 
     /**

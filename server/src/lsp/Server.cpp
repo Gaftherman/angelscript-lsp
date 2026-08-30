@@ -2171,7 +2171,17 @@ namespace angel_lsp
                 }
                 TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::HoverRequest hr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                features::HoverRequest hr{
+                    uriStr,
+                    docIt->second,
+                    tree,
+                    m_symbolTable,
+                    m_scopeIndex,
+                    codec::Decode(docIt->second, m_positionEncoding, req.position),
+                    // A symbol's documentation comment lives above its declaration, which is
+                    // usually in another file. The same reader CompletionItem/resolve is given.
+                    [this](const std::string &uri) { return FindDocumentText(uri); }
+                };
                 auto hover = features::GetHover(hr);
                 if (hover.has_value())
                 {

@@ -12,6 +12,88 @@ namespace angel_lsp::features
 {
     namespace
     {
+        /**
+         * @brief The documentation comment above a symbol's declaration, read out of its own file.
+         *
+         * `request.sourceCode` is the file being hovered over, and a symbol's `startLine` counts
+         * lines in the file that *declares* it. Pairing the two showed whatever happened to be at
+         * that line number here, which for a cross-file hover is an unrelated comment about
+         * something else. Empty rather than wrong when the declaring file's text is not held: the
+         * declaration may have been indexed and released, and a hover with no documentation is a
+         * hover that simply says less.
+         *
+         * The same-file case still goes through `request.sourceCode` directly, without a lookup -
+         * that is the common path and the URIs match by construction.
+         */
+        std::string OwnDocComment(const HoverRequest &request, const analysis::Symbol &symbol)
+        {
+            if (symbol.fileUri.empty() || symbol.fileUri == request.uri)
+            {
+                return analysis::ExtractDocComment(request.sourceCode, symbol.startLine);
+            }
+
+            if (!request.readDocument)
+            {
+                return "";
+            }
+
+            const std::string *declaringText = request.readDocument(symbol.fileUri);
+            if (!declaringText)
+            {
+                return "";
+            }
+
+            return analysis::ExtractDocComment(*declaringText, symbol.startLine);
+        }
+
+        /**
+         * @brief The comment on a symbol, or the one on the declaration it overrides.
+         *
+         * An implementation carries no comment of its own far more often than not - the interface
+         * is where the contract is written, and repeating it on every implementer is exactly what
+         * nobody does. Inherited only when the method has none itself, and only from an ancestor
+         * of its own container, so an unrelated method with the same name elsewhere is never
+         * consulted. The hierarchy walk returns the container first, so the loop skips it: it was
+         * already asked, and it answered nothing.
+         */
+        std::string DocCommentForSymbol(const HoverRequest &request, const analysis::Symbol &symbol)
+        {
+            std::string own = OwnDocComment(request, symbol);
+            if (!own.empty())
+            {
+                return own;
+            }
+
+            if (symbol.type != analysis::SymbolType::Function || symbol.containerName.empty())
+            {
+                return "";
+            }
+
+            for (const auto &ancestor : analysis::GetInheritedTypeHierarchy(symbol.containerName, request.symbolTable))
+            {
+                if (ancestor == symbol.containerName)
+                {
+                    continue;
+                }
+
+                const auto inherited = request.symbolTable.FindSymbolsPtr(ancestor + "::" + symbol.name);
+                if (!inherited)
+                {
+                    continue;
+                }
+
+                for (const auto &candidate : *inherited)
+                {
+                    std::string doc = OwnDocComment(request, candidate);
+                    if (!doc.empty())
+                    {
+                        return doc;
+                    }
+                }
+            }
+
+            return "";
+        }
 
         const analysis::Scope *FindScopeDeclaringDefinition(const analysis::Scope *current, const analysis::LocalDefinition &def)
         {
@@ -353,7 +435,9 @@ namespace angel_lsp::features
                     const analysis::LocalDefinition *objDef = analysis::ResolveInScope(scope, objText);
                     if (objDef && !objDef->typeName.empty())
                     {
-                        receiverTypeName = analysis::CleanBaseType(objDef->typeName);
+                        // The type whose members `.` reaches, not the element type. CleanBaseType
+                        // answers the second, so `int[] a; a.length` looked for `int::length`.
+                        receiverTypeName = analysis::MemberOwnerType(objDef->typeName);
                     }
                 }
             }
@@ -406,7 +490,7 @@ namespace angel_lsp::features
                     }
                     oss << "\n```";
 
-                    std::string doc = analysis::ExtractDocComment(request.sourceCode, memberSymbols[0].startLine);
+                    std::string doc = DocCommentForSymbol(request, memberSymbols[0]);
                     if (!doc.empty())
                     {
                         oss << "\n\n" << doc;
@@ -651,7 +735,7 @@ namespace angel_lsp::features
         }
         oss << "\n```";
 
-        std::string doc = analysis::ExtractDocComment(request.sourceCode, symbols[0].startLine);
+        std::string doc = DocCommentForSymbol(request, symbols[0]);
         if (!doc.empty())
         {
             oss << "\n\n" << doc;
