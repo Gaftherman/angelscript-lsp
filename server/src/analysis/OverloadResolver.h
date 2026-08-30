@@ -30,6 +30,21 @@ namespace angel_lsp::analysis
 
         Narrowing = 5,           ///< Lossy conversion (double -> float, int -> bool, float -> int)
         UserDefined = 6,         ///< opImplConv / single-arg converting constructor
+
+        /**
+         * @brief Neither type has a declaration this analyzer can read, so nothing can be ruled out.
+         *
+         * `CBasePlayer@` passed where `CBaseEntity@` is expected is an upcast in every Sven Co-op
+         * script, and both classes are registered by the engine in C++ - so the hierarchy walk
+         * finds no relation and, scored Incompatible, the call was reported as having no matching
+         * signature. Thirteen of the corpus findings were exactly this.
+         *
+         * Ranked last among the viable scores so it never displaces a match the analyzer can
+         * actually see: an overload set with one visible match still picks that one. It only keeps
+         * a call from being *rejected* on the strength of declarations that are not there.
+         */
+        UnknownTypes = 7,
+
         Incompatible = 999       ///< No viable conversion
     };
 

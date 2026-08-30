@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1186 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1195 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -214,6 +214,32 @@ treats as unacceptable.
   (`array<array<int>> g = {1,2}` — the element type is a template, which does not resolve), `il_a6`
   and `il_a7` (`string` declares no `@listpattern`, and an absent pattern only means the stub did
   not say).
+- **The 273 conversion false positives, down to 25 — and none of the 25 is a defect.** The first
+  thing the corpus audits reported once they ran. Every corpus file is working AngelScript, so
+  every finding was legal code called an error. Six causes accounted for 248 of them:
+
+  | Cause | Findings | Answer from |
+  |---|---|---|
+  | **`string` is a sink.** `IsConvertible` had `string` in its built-in set and then returned `false` for every non-numeric pair, so `string s = i;` was an error. The add-on registers an `opAssign` for every scalar — measured one type at a time — and `"" + x` asks the same question. | 149 | `doc_p23`, `doc_r25` |
+  | **Constructing a type whose constructors are the host's.** `string(count)`, `EHandle(h)`, `Vector(x)`. `CheckConstruction` walked the declared constructors and reported when it found none, without ever asking whether it could see any. Its sibling `CheckDefaultConstructor` had that guard already. | ~60 | the visibility policy |
+  | **Engine class handles.** `CBasePlayer@` where `CBaseEntity@` is expected is an upcast, and the hierarchy that makes it one is written in C++. The overload scorer walked a hierarchy that stops at the name and scored "found no relation" the same as "incompatible". Now `OverloadMatchPenalty::UnknownTypes`, ranked last among the viable scores so it never displaces a match that *is* visible. | 13 | the visibility policy |
+  | **An enum widening out to an integer.** `Take(ModeOne)` against `void Take(int)`. Only the inward direction is closed — `Color c = 1;` is still the error. | 11 | `doc_p24` |
+  | **A namespaced class's constructor.** `Hook`'s constructor is keyed `Hooks::Hook::Hook`, and both keys built from the written spelling — `Hook::Hook` — reach nothing. The *class* was found, because that lookup already falls back to the last segment, so the pass concluded it had no constructors at all. | 10 | `doc_p24` |
+  | **`auto`, in three separate places.** Not a type: a placeholder for what the initializer produces. It was in `IsCorePrimitive`'s list, so `auto@` was a handle on a primitive; it scored as incompatible in overload resolution; and it was judged as a conversion source. | 7 | `doc_p22`, `doc_p24` |
+  | **`array<T> a(33)`.** The count goes to the container's initial-size constructor, and `CleanBaseType` had already reduced the declared type to its *element*, so the question asked was whether an `int` can become a `PlayerSlide`. | 3 | `doc_p24` |
+
+  The 25 that remain are read and accounted for. **Nineteen are true positives**:
+  `AngelScripts_SteamIDHelper.as` passes an `int64` and a `STEAMID_FLAG` to `void println(string)`,
+  and the compiler rejects both — argument passing does not go through `opAssign` the way an
+  assignment does, which is the one asymmetry that makes `string s = v;` legal and `Take(v)` not.
+  Three more are `angelscript_clean_examples.as` declaring `class A` and `class B` twice with
+  different bases; it is a documentation dump rather than a module. The last three are an
+  eight-overload `ToArray` set across two namespace versions, not yet diagnosed.
+
+  `optional.as` came out of `KnownGaps()` on its own. It had been recorded as a stub gap —
+  `optional<T>`'s constructor is registered in C++ and no stub declares it — and it was never that:
+  it was the analyzer answering a question it could not see the evidence for, which is the same
+  mistake the 273 were, at one file's scale.
 - **The corpus audits, which had never run in CI.** Nineteen test cases walk the ~1,061-file
   `angelscript/` corpus and ask the only question this project treats as fatal — does any rule
   report code that compiles? Every one is `skip()`-decorated, so `ctest` passes them over, and the
@@ -368,43 +394,35 @@ treats as unacceptable.
 Real, oracle-confirmed, and none of it reports legal code today. Ordered by what a user notices
 first. Each lands with its `doc_`-prefixed parity case.
 
-1. **The 273 conversion false positives the corpus audit found.** Asserted as a ceiling in
-   `TypeConversionTest`'s audit so CI gates on regression; the work is finding each cause and
-   lowering it. `as-err-no-explicit-conversion` is 211 of them, `as-err-no-implicit-conversion` 60,
-   `as-err-invalid-cast` 2. Two shapes are already identified: `array<float> a(33);`, where the
-   initial-size constructor's `uint` count is being checked against the element type, and `"" + x`
-   concatenation against an enum or an `int64`, where the engine registers the operator in C++ and
-   no stub declares it. Every one is legal code being reported, which makes this the highest item
-   on the list.
-2. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
+1. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
    user, not a deduction: nothing lets the server establish that an unresolved name is a typo rather
    than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
    exists the setting is the honest interface, but it is the reason the rule cannot simply be
    unconditional.
-3. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
+2. **`asEP_PROPERTY_ACCESSOR_MODE` under mode 3** — the setting exists
    (`angelscript.engine.propertyAccessorMode`, `--engine-property=propertyAccessorMode=<2|3>`,
    default `2`) and the undeclared-identifier rule already reads it. The rest of the accessor
    handling does not: `SemanticHelpers`' member-access fallback to `Type::get_X` still runs
    regardless of mode, so under `3` a `c.V` whose accessor lacks the `property` keyword is still
    accepted where the compiler answers `'V' is not a member of 'C'`. Missed diagnostic, not a false
    positive. `doc_r07`
-4. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
+3. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
    value`, `Float value truncated in implicit conversion to integer`, `Signed/Unsigned mismatch`.
    None exist here. Decidable from the source alone, so the visibility policy permits them; the
    narrowing tables at `OverloadResolver.cpp` already exist and feed only overload ranking today.
-5. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
+4. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-6. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+5. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-7. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+6. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-8. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+7. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-9. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+8. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-10. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+9. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope

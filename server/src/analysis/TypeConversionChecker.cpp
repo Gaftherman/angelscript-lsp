@@ -348,6 +348,35 @@ namespace angel_lsp::analysis
             {
                 ForEachSymbolNamed(bare + "::" + bare, table, visit);
             }
+
+            // A class declared inside a namespace is keyed by its qualified name, so `Hook`'s
+            // constructor is `Hooks::Hook::Hook` and neither lookup above reaches it - the call
+            // site writes `Hook("OnMapActivate")` because it is inside the namespace, and the two
+            // keys built from that spelling match nothing. The class itself was still found,
+            // because FindTypeDeclaration already falls back to the last segment; the constructors
+            // were not, so every construction of a namespaced class read as having none. Ten
+            // corpus findings, all of them a class calling its own constructor.
+            //
+            // Matched on the last two segments together, so `Hooks::Hook::Hook` qualifies and a
+            // stray `Hook` function somewhere else does not.
+            if (!stopped && !sawAny)
+            {
+                const std::string suffix = "::" + bare + "::" + bare;
+                table.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &symbols)
+                {
+                    if (stopped || !qName.ends_with(suffix))
+                    {
+                        return;
+                    }
+                    for (const auto &sym : symbols)
+                    {
+                        if (visit(sym))
+                        {
+                            return;
+                        }
+                    }
+                });
+            }
         }
 
         /**
@@ -457,11 +486,16 @@ namespace angel_lsp::analysis
         /** @brief True for the built-in scalar types plus the configured string type.
          *  @note Conversions among these are the engine's business, not a declaration's, so the
          *        rules below let every primitive-to-primitive pair through. */
-        bool IsBuiltInValueType(const std::string &typeName, const DiagnosticContext &ctx)
+        /** @brief The workspace's string type, which defaults to `string` when unconfigured. */
+        bool IsStringType(const std::string &typeName, const DiagnosticContext &ctx)
         {
             const auto strType = ctx.request.GetStringTypeName();
-            const std::string_view effectiveStrType = strType.empty() ? std::string_view("string") : strType;
-            return IsPrimitiveTypeName(typeName) || typeName == effectiveStrType;
+            return typeName == (strType.empty() ? std::string_view("string") : strType);
+        }
+
+        bool IsBuiltInValueType(const std::string &typeName, const DiagnosticContext &ctx)
+        {
+            return IsPrimitiveTypeName(typeName) || IsStringType(typeName, ctx);
         }
 
         /**
@@ -486,6 +520,16 @@ namespace angel_lsp::analysis
             // format/scan helpers are all declared that way, so without this the analyzer reported
             // "Cannot implicitly convert 'int' to '?'" on code the real compiler accepts.
             if (IsVariableType(to) || IsVariableType(from))
+            {
+                return true;
+            }
+
+            // `auto` is not a type either - it is a placeholder for whatever the initializer
+            // produces, and the deduction happens in the compiler. Judging a conversion against it
+            // asks a question with no answer: the real target is the source's own type, so every
+            // `auto` conversion is trivially fine and reporting one is always wrong.
+            // tests/parity/doc_p22_auto_handle.as.
+            if (from == "auto" || to == "auto")
             {
                 return true;
             }
@@ -520,6 +564,25 @@ namespace angel_lsp::analysis
                 {
                     return true;
                 }
+
+                // `string` is a sink. The standard string add-on registers an opAssign for every
+                // scalar, so each of these compiles - measured one type at a time against the
+                // oracle, in tests/parity/doc_p23_string_is_a_sink.as:
+                //
+                //     string s = i8;  … = u64;  … = f;  … = d;  … = b;   all accepted
+                //
+                // and the `"" + x` concatenation everyone writes asks the same question. Between
+                // them this was 149 of the 273 findings the corpus audit reported, every one of
+                // them legal code.
+                //
+                // Only into it. Nothing leaves a string implicitly - `int i = s;` is
+                // "Can't implicitly convert from 'string' to 'int'" - which is doc_r25, and is why
+                // this tests the target rather than treating the pair as interchangeable.
+                if (IsStringType(to, ctx))
+                {
+                    return true;
+                }
+
                 return false;
             }
 
@@ -934,6 +997,18 @@ namespace angel_lsp::analysis
             std::string baseName;
             bool isHandle = false;
             bool usable = false;  ///< False when the shape is out of scope (array, template, unknown).
+
+            /**
+             * @brief True for `array<T>` and `T[]`, where baseName is the *element* type.
+             *
+             * CleanBaseType answers the element type, which is what the initializer comparisons
+             * below want - `array<int> a = other;` compares element to element. A construction
+             * argument is a different question: `array<PlayerSlide> g(33);` passes 33 to the
+             * container's initial-size constructor, and comparing it against `PlayerSlide` asked
+             * whether an int can become a PlayerSlide. It cannot, so three corpus declarations of
+             * exactly this shape were reported.
+             */
+            bool isTemplateOrArray = false;
         };
 
         /** @brief Reads a 'type' node into the shape the conversion rules can act on.
@@ -973,6 +1048,7 @@ namespace angel_lsp::analysis
             if (raw.find('<') != std::string::npos || raw.find('[') != std::string::npos)
             {
                 result.usable = true;
+                result.isTemplateOrArray = true;
                 return result;
             }
 
@@ -1169,6 +1245,32 @@ namespace angel_lsp::analysis
             }
 
             const SymbolTable &table = ctx.request.symbolTable;
+
+            // The verdict below is "no constructor accepts this", and it is only worth anything
+            // when the constructors are visible. Two kinds of target they are not:
+            //
+            //   - A built-in value type. `string(u)`, `float(i)` - the engine registers these in
+            //     C++ and no stub can express them. CheckDefaultConstructor already bails here for
+            //     the same reason; this one did not, so every `string(count)` in the corpus was
+            //     reported.
+            //   - A name with no declaration in the workspace. `EHandle(x)`, `Vector(x)`,
+            //     `array<float>(33)` - the host registers them, ForEachConstructor finds nothing,
+            //     and "I found no constructor" is indistinguishable from "they are written in C++".
+            //
+            // An enum is neither and stays judged: `Color(1)` has no constructor by design and the
+            // compiler's rule for it is known exactly, which the block further down applies.
+            //
+            // A visible class that declares no constructor is still reported - `class Plain {}`
+            // with `Plain(1)` is an error the compiler agrees with, and that is what separates the
+            // two cases. Together these were the bulk of the 273 corpus findings.
+            if (IsBuiltInValueType(targetType, ctx))
+            {
+                return;
+            }
+            if (!FindTypeDeclaration(targetType, table).found && !ResolvesToEnum(targetType, table))
+            {
+                return;
+            }
 
             if (AreHierarchyRelated(source.baseName, targetType, table))
             {
@@ -1801,8 +1903,13 @@ namespace angel_lsp::analysis
                                     {
                                         CheckDefaultConstructor(child, declared.baseName, ctx);
                                     }
-                                    else if (!ts_node_is_null(argsNode))
+                                    else if (!ts_node_is_null(argsNode) && !declared.isTemplateOrArray)
                                     {
+                                        // Skipped for a template: the argument belongs to the
+                                        // container's constructor and declared.baseName is the
+                                        // element type, so this would ask whether 33 can become a
+                                        // PlayerSlide. The container's own constructors are the
+                                        // engine's - see the visibility guard in CheckConstruction.
                                         CheckConstruction(argsNode, declared.baseName, scopeAt(), ctx, request.sourceCode);
                                     }
                                 }

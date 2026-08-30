@@ -527,6 +527,33 @@ namespace angel_lsp::analysis
             }
         }
 
+        // 3b. An enum widens out to an integer, and `auto` is not a type at all.
+        //
+        // `Take(ModeOne)` against `void Take(int)` compiles - an enum is an integer with a name,
+        // and only the *inward* direction is closed (`Color c = 1;` is the error, doc_r09). Eleven
+        // corpus findings were flag arguments spelled as the enum they belong to, which is how
+        // every one of them is meant to be written.
+        //
+        // `auto` reaches this as the resolved type of a deduced variable. The deduction happens in
+        // the compiler and its result is not written anywhere the analyzer can read, so scoring it
+        // against a parameter asks a question with no answer - four more findings, all of them
+        // `auto@` handles passed to a function expecting the type they were deduced from.
+        if (cleanArg == "auto" || cleanParam == "auto")
+        {
+            return static_cast<int>(OverloadMatchPenalty::UnknownTypes);
+        }
+        const auto namesAnEnum = [&symbolTable](const std::string &typeName)
+        {
+            const auto symbols = symbolTable.FindSymbolsPtr(typeName);
+            return symbols && std::any_of(symbols->begin(), symbols->end(),
+                                          [](const Symbol &sym) { return sym.type == SymbolType::Enum; });
+        };
+
+        if (IsIntegerType(cleanParam) && namesAnEnum(cleanArg))
+        {
+            return static_cast<int>(OverloadMatchPenalty::Widening);
+        }
+
         // 4. Primitive widening conversion. Integer -> floating point is still safe but ranks
         //    below integer -> wider integer, so an overload set offering both is resolvable.
         if (IsPrimitiveWidening(cleanArg, cleanParam))
@@ -546,6 +573,39 @@ namespace angel_lsp::analysis
         if (HasUserConversion(cleanArg, cleanParam, symbolTable))
         {
             return static_cast<int>(OverloadMatchPenalty::UserDefined);
+        }
+
+        // 7. Neither side has a declaration to read, so "no relation found" is not a verdict.
+        //
+        // Engine-registered classes are the whole of this case: `CBasePlayer@` where
+        // `CBaseEntity@` is expected is an upcast, and the hierarchy that makes it one is written
+        // in C++. Step 3 above walks a hierarchy that stops at the name itself and concludes
+        // nothing, and concluding nothing was scoring the same as concluding "incompatible".
+        //
+        // Both sides, deliberately. One unresolved name against a class this analyzer *can* read
+        // is still judged, because the visible half is enough to answer.
+        // A primitive is never "unknown": it has no symbol table entry either, but its conversions
+        // are the engine's and are fully known, so `int` against a host class must stay
+        // Incompatible rather than slip through this door.
+        // A template instantiation is judged by its container: `array<uint8>` is never a symbol
+        // table key, but `array` is, and a declared `array` is enough to decide that
+        // `array<uint8>` and `array<string>` are different instantiations of a type this analyzer
+        // can read. Without that, unwrapping one template argument into another would slip through
+        // here - see "Unwrapping a template argument does not make unrelated types match".
+        const auto isNamedAndUnresolved = [&symbolTable](const std::string &typeName)
+        {
+            if (typeName.empty() || IsCorePrimitive(typeName) || typeName == "string")
+            {
+                return false;
+            }
+            const std::string owner = MemberOwnerType(typeName);
+            return !symbolTable.FindSymbolsPtr(typeName) &&
+                   (owner.empty() || !symbolTable.FindSymbolsPtr(owner));
+        };
+
+        if (isNamedAndUnresolved(cleanArg) && isNamedAndUnresolved(cleanParam))
+        {
+            return static_cast<int>(OverloadMatchPenalty::UnknownTypes);
         }
 
         return static_cast<int>(OverloadMatchPenalty::Incompatible);

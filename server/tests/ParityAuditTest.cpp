@@ -132,11 +132,13 @@ namespace
               "utils/PreprocessorRegions.h - and the two error_handler diagnostics it produced are "
               "gone, which is why the count here dropped from 12 to 10." },
 
-            { "optional.as",
-              "as.predefined declares optional<T>::opAssign but no constructor, so the declaration "
-              "behind optional<string> o(...) is not visible to any analyzer reading that stub. "
-              "The engine registers one in C++. Stub gap, not an analyzer defect." },
-
+            // optional.as used to sit here for exactly the reason json.as still does: as.predefined
+            // declares optional<T>::opAssign but no constructor, so the declaration behind
+            // `optional<string> o(...)` was invisible and the construction was reported. That was
+            // never a stub gap to work around - it was the analyzer answering a question it could
+            // not see the evidence for, and the corpus audit's 273 findings were the same mistake
+            // at scale. CheckConstruction now stays silent when the target's constructors are not
+            // visible, and this entry closed on its own.
         };
         return gaps;
     }
