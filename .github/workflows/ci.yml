@@ -79,7 +79,7 @@ jobs:
       - name: Run CTest Suite
         working-directory: server/build
         shell: bash
-        run: ctest -C Release --output-on-failure --parallel 4
+        run: ctest -C Release --output-on-failure --extra-verbose
 
       # The server binary is what the extension ships, so keep every platform's build reachable
       # from the run that produced and tested it.
