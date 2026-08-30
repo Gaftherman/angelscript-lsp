@@ -18,11 +18,11 @@ namespace angel_lsp::utils
     {
         std::string normalized = filePath;
         std::replace(normalized.begin(), normalized.end(), '\\', '/');
-#if defined(_WIN32)
+        if (normalized.empty())
+            return "file:///";
+        if (normalized[0] == '/')
+            return "file://" + normalized;
         return "file:///" + normalized;
-#else
-        return "file://" + normalized;
-#endif
     }
 
     size_t PositionToOffset(const std::string &text, uint32_t line, uint32_t character, PositionEncoding enc)

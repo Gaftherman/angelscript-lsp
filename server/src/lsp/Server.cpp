@@ -264,7 +264,9 @@ namespace angel_lsp
             for (const auto &workspace : params.workspaceFolders.value().value())
             {
                 std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-                m_workspacesRoot.push_back(std::string(workspace.uri.path()));
+                const std::string fsPath = workspace.uri.fsPath();
+                if (!fsPath.empty())
+                    m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(fsPath));
             }
         }
 
@@ -990,13 +992,13 @@ namespace angel_lsp
 
             for (const auto &removed : params.event.removed)
             {
-                const std::string root{ removed.uri.path() };
+                const std::string root = angel_lsp::utils::IncludeResolver::NormalizePath(removed.uri.fsPath());
                 std::erase(m_workspacesRoot, root);
             }
 
             for (const auto &added : params.event.added)
             {
-                const std::string root{ added.uri.path() };
+                const std::string root = angel_lsp::utils::IncludeResolver::NormalizePath(added.uri.fsPath());
                 if (std::find(m_workspacesRoot.begin(), m_workspacesRoot.end(), root) == m_workspacesRoot.end())
                     m_workspacesRoot.push_back(root);
             }
@@ -1544,7 +1546,7 @@ namespace angel_lsp
 
     std::string Server::UriFromPath(const std::string &path)
     {
-        return lsp::Uri::fileUriFromPath(path).toString();
+        return angel_lsp::utils::PathToUri(angel_lsp::utils::IncludeResolver::NormalizePath(path));
     }
 
     void Server::IndexClosureFile(const std::string &path, angel_lsp::parser::AngelScriptParser &parser)

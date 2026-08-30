@@ -408,14 +408,14 @@ TEST_CASE("Server - A watched file deleted on disk stops contributing symbols")
     test::ScriptedStream stream;
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    const std::string mainText = "#include \\\"helper.as\\\"\\nvoid main() { Helper(); }";
+    const std::string mainText = "#include \"helper.as\"\nvoid main() { Helper(); }";
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), mainText));
 
     // A save, not just an open: didSave patches the include graph synchronously before computing
     // the module closure, whereas the graph an open relies on is built by the background workspace
     // scan. Without this the test would race that scan.
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
-                fixture.Uri("main.as") + R"("},"text":")" + mainText + R"("}})");
+                fixture.Uri("main.as") + R"("},"text":")" + JsonEscape(mainText) + R"("}})");
 
     // Asked before and after, because the effect of the deletion is a change to the index rather
     // than anything the server volunteers: the re-analysis it schedules runs on the debounced

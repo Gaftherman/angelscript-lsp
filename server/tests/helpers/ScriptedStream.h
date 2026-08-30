@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -64,18 +65,21 @@ namespace angel_lsp::test
 
         void write(const char *buffer, std::size_t size) override
         {
+            std::lock_guard<std::mutex> lock(m_outputMutex);
             m_output.append(buffer, size);
         }
 
         /** @brief Everything the server has written back, framing included. */
-        const std::string &Output() const
+        std::string Output() const
         {
+            std::lock_guard<std::mutex> lock(m_outputMutex);
             return m_output;
         }
 
         /** @brief True if the server wrote anything containing the given fragment. */
         bool OutputContains(const std::string &fragment) const
         {
+            std::lock_guard<std::mutex> lock(m_outputMutex);
             return m_output.find(fragment) != std::string::npos;
         }
 
@@ -88,6 +92,7 @@ namespace angel_lsp::test
          */
         std::string ResponseFor(int id) const
         {
+            std::lock_guard<std::mutex> lock(m_outputMutex);
             const std::string marker = "\"id\":" + std::to_string(id) + ",\"result\":";
             const size_t start = m_output.find(marker);
             if (start == std::string::npos)
@@ -108,6 +113,7 @@ namespace angel_lsp::test
                 return 0;
             }
 
+            std::lock_guard<std::mutex> lock(m_outputMutex);
             size_t count = 0;
             for (size_t pos = m_output.find(fragment); pos != std::string::npos;
                  pos = m_output.find(fragment, pos + fragment.size()))
@@ -136,6 +142,7 @@ namespace angel_lsp::test
 
         std::string m_input;
         std::string m_output;
+        mutable std::mutex m_outputMutex;
         std::size_t m_readOffset = 0;
         std::vector<ScheduledAction> m_actions;
         std::size_t m_nextAction = 0;
