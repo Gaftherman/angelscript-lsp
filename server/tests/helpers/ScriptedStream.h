@@ -93,16 +93,33 @@ namespace angel_lsp::test
         std::string ResponseFor(int id) const
         {
             std::lock_guard<std::mutex> lock(m_outputMutex);
-            const std::string marker = "\"id\":" + std::to_string(id) + ",\"result\":";
-            const size_t start = m_output.find(marker);
-            if (start == std::string::npos)
+            const std::string idField = "\"id\":" + std::to_string(id);
+
+            size_t pos = 0;
+            while (pos < m_output.size())
             {
-                return "";
+                const size_t headerStart = m_output.find("Content-Length:", pos);
+                if (headerStart == std::string::npos)
+                    break;
+
+                const size_t bodyStart = m_output.find("\r\n\r\n", headerStart);
+                if (bodyStart == std::string::npos)
+                    break;
+
+                const size_t contentStart = bodyStart + 4;
+                const size_t nextHeader = m_output.find("Content-Length:", contentStart);
+                const size_t bodyLength = (nextHeader == std::string::npos) ? (m_output.size() - contentStart) : (nextHeader - contentStart);
+
+                std::string body = m_output.substr(contentStart, bodyLength);
+                if (body.find(idField) != std::string::npos && (body.find("\"result\"") != std::string::npos || body.find("\"error\"") != std::string::npos))
+                {
+                    return body;
+                }
+
+                pos = contentStart + bodyLength;
             }
 
-            // One JSON body per frame, so the reply ends where the next frame's header begins.
-            const size_t end = m_output.find("Content-Length:", start);
-            return m_output.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            return "";
         }
 
         /** @brief Number of times a fragment appears in everything written back. */

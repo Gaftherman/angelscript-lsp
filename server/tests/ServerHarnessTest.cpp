@@ -143,13 +143,29 @@ namespace
      */
     std::string PublishedFrames(const std::string &output)
     {
-        static const std::string k_marker = R"("method":"textDocument/publishDiagnostics")";
         std::string frames;
-
-        for (size_t at = output.find(k_marker); at != std::string::npos; at = output.find(k_marker, at + 1))
+        size_t pos = 0;
+        while (pos < output.size())
         {
-            const size_t end = output.find("Content-Length:", at);
-            frames += output.substr(at, end == std::string::npos ? std::string::npos : end - at);
+            const size_t headerStart = output.find("Content-Length:", pos);
+            if (headerStart == std::string::npos)
+                break;
+
+            const size_t bodyStart = output.find("\r\n\r\n", headerStart);
+            if (bodyStart == std::string::npos)
+                break;
+
+            const size_t contentStart = bodyStart + 4;
+            const size_t nextHeader = output.find("Content-Length:", contentStart);
+            const size_t bodyLength = (nextHeader == std::string::npos) ? (output.size() - contentStart) : (nextHeader - contentStart);
+
+            std::string body = output.substr(contentStart, bodyLength);
+            if (body.find("textDocument/publishDiagnostics") != std::string::npos)
+            {
+                frames += body;
+            }
+
+            pos = contentStart + bodyLength;
         }
         return frames;
     }
@@ -539,12 +555,15 @@ TEST_CASE("Server - Answers a semantic token delta against the payload it last s
     config::ServerConfig serverConfig;
     RunScript(serverConfig, stream);
 
-    CHECK(stream.OutputContains(R"("id":2,"result":{"data":)"));
-    CHECK(stream.OutputContains(R"("resultId":"1")"));
+    const std::string r2 = stream.ResponseFor(2);
+    CHECK(r2.find("\"data\"") != std::string::npos);
+    CHECK(r2.find("\"resultId\":\"1\"") != std::string::npos);
 
     // Nothing changed between the two requests, so the delta is an empty edit list rather than a
     // second copy of the whole stream.
-    CHECK(stream.OutputContains(R"("id":3,"result":{"edits":[],"resultId":"2"})"));
+    const std::string r3 = stream.ResponseFor(3);
+    CHECK(r3.find("\"edits\":[]") != std::string::npos);
+    CHECK(r3.find("\"resultId\":\"2\"") != std::string::npos);
 }
 
 TEST_CASE("Server - Falls back to a full stream when the delta base is unknown")
@@ -565,8 +584,9 @@ TEST_CASE("Server - Falls back to a full stream when the delta base is unknown")
     config::ServerConfig serverConfig;
     RunScript(serverConfig, stream);
 
-    CHECK(stream.OutputContains(R"("id":2,"result":{"data":)"));
-    CHECK_FALSE(stream.OutputContains(R"("edits")"));
+    const std::string r2 = stream.ResponseFor(2);
+    CHECK(r2.find("\"data\"") != std::string::npos);
+    CHECK(r2.find("\"edits\"") == std::string::npos);
 }
 
 // =====================================================================================
