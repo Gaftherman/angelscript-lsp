@@ -9,10 +9,15 @@ if(MSVC)
 endif()
 
 # ── Tree-Sitter AngelScript Grammar ───────────────────────────────────────
-# 017b0d3 adds `array<T>::less` / `T[]::less` - a name nested in a template or array type, which is
-# how the array add-on registers its sort comparator and how every predefined stub declaring `sort`
-# spells it. Before it, that declaration produced an ERROR node and the server reported a syntax
-# error in a stub the user did not write.
+# aa14847 adds metadata blocks and omitted initializer elements. `[Property, Category="Weapons"]`
+# before a declaration is stripped by CScriptBuilder before the compiler sees it, and `{ 0, 1, , 4 }`
+# gives the omitted element the type's default - both compile, and neither had a grammar rule, so
+# each turned its whole declaration into an ERROR node and the symbol left the index with it.
+#
+# 017b0d3, its parent, adds `array<T>::less` / `T[]::less` - a name nested in a template or array
+# type, which is how the array add-on registers its sort comparator and how every predefined stub
+# declaring `sort` spells it. Before it, that declaration produced an ERROR node and the server
+# reported a syntax error in a stub the user did not write.
 #
 # ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE builds against a local checkout instead of fetching one.
 # A grammar change and the analyzer change that depends on it land together, and the pin above
@@ -33,7 +38,7 @@ if(ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE)
     set(tree_sitter_angelscript_SOURCE_DIR "${ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE}")
     message(STATUS "tree-sitter-angelscript: local checkout at ${tree_sitter_angelscript_SOURCE_DIR}")
 else()
-    FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG 017b0d3ea2fefb2fb5c90ce22cc36743b21244c8)
+    FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG aa1484767edd381ae48084f0136ee82f4c8784f8)
     FetchContent_MakeAvailable(tree_sitter_angelscript)
 endif()
 

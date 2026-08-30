@@ -137,26 +137,6 @@ namespace
               "behind optional<string> o(...) is not visible to any analyzer reading that stub. "
               "The engine registers one in C++. Stub gap, not an analyzer defect." },
 
-            // The two below are not stub gaps. They are grammar gaps, and both are already fixed -
-            // on tree-sitter-angelscript's feat/metadata-and-list-holes branch, which
-            // cmake/TreeSitter.cmake cannot pin until that branch is pushed. Building with
-            // -DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=<checkout> closes them today; the pinned
-            // fetch still carries the old grammar, so the entries stay until the pin moves.
-            //
-            // They are inert once the pin catches up: FindKnownGap is only consulted for a file
-            // that actually came back a false positive, so an entry whose gap is closed costs
-            // nothing. Delete them with the pin bump anyway - a list of gaps that are not gaps is
-            // how the next reader learns to distrust the list.
-            { "doc_g02_metadata.as",
-              "PARSER-09. CScriptBuilder strips a [Property, Category=\"x\"] block before the "
-              "compiler sees the declaration, so metadata compiles. The grammar has no rule for it "
-              "and the block turns its whole declaration into an ERROR node, which costs the symbol "
-              "rather than just the annotation." },
-
-            { "doc_g03_omitted_initlist_element.as",
-              "PARSER-05. `{ 0, 1, , 4, 5 }` gives the third element the type's default. The "
-              "grammar's initializer_list uses commaSep, which has no empty alternative, so the "
-              "hole makes the declaration an ERROR node." },
         };
         return gaps;
     }
