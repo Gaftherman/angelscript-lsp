@@ -95,7 +95,6 @@ namespace angel_lsp::features
                 else if (type == "comment")
                 {
                     uint32_t startByte = ts_node_start_byte(node);
-                    uint32_t endByte = ts_node_end_byte(node);
                     if (startByte + 2 <= sourceCode.size() && sourceCode[startByte] == '/' && sourceCode[startByte + 1] == '*')
                     {
                         lsp::FoldingRange fr;

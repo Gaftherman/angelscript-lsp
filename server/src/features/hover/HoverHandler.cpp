@@ -41,33 +41,6 @@ namespace angel_lsp::features
             return nullptr;
         }
 
-        std::vector<std::string> SplitLines(const std::string &str)
-        {
-            std::vector<std::string> lines;
-            std::string line;
-            std::istringstream stream(str);
-            while (std::getline(stream, line))
-            {
-                if (!line.empty() && line.back() == '\r')
-                {
-                    line.pop_back();
-                }
-                lines.push_back(line);
-            }
-            return lines;
-        }
-
-        std::string Trim(const std::string &str)
-        {
-            size_t first = str.find_first_not_of(" \t\r\n");
-            if (first == std::string::npos)
-            {
-                return "";
-            }
-            size_t last = str.find_last_not_of(" \t\r\n");
-            return str.substr(first, (last - first + 1));
-        }
-
         std::string FormatFunctionSignature(const analysis::Symbol &sym)
         {
             return analysis::FormatFunctionDeclaration(sym);

@@ -1640,7 +1640,7 @@ namespace angel_lsp::features
          */
         void TryAddSortAndCleanIncludesAction(
             const CodeActionRequest &request,
-            TSNode rootNode,
+            TSNode /*rootNode*/,
             std::vector<lsp::CodeAction> &actions)
         {
             auto includes = utils::IncludeResolver::ExtractIncludes(request.sourceCode);

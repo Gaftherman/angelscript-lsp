@@ -44,7 +44,7 @@ namespace angel_lsp::analysis
             m_logger->LogDebug(fmt::format("=== [SYMBOL COLLECTOR OUTPUT] Document: {} ===", request.fileUri));
             request.symbolTable.ForEachSymbolInFile(
                 request.fileUri,
-                [&](const std::string &qualifiedName, const std::vector<Symbol> &symbols)
+                [&](const std::string & /*qualifiedName*/, const std::vector<Symbol> &symbols)
                 {
                     for (const auto &sym : symbols)
                     {

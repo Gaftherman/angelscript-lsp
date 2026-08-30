@@ -290,7 +290,7 @@ namespace angel_lsp::analysis::rules
         }
 
         /** @brief Reports property accessor get/set type mismatches within a class/interface. */
-        void CheckPropertyAccessors(const Symbol &sym, const ClassSignature &sig, const DiagnosticContext &ctx)
+        void CheckPropertyAccessors(const Symbol &sym, const ClassSignature & /*sig*/, const DiagnosticContext &ctx)
         {
             const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
             if (container.empty())
@@ -303,7 +303,7 @@ namespace angel_lsp::analysis::rules
             ankerl::unordered_dense::map<std::string, const Symbol *> getters;
             ankerl::unordered_dense::map<std::string, const Symbol *> setters;
 
-            table.ForEachSymbolInFile(ctx.request.fileUri, [&](const std::string &qName, const std::vector<Symbol> &syms) {
+            table.ForEachSymbolInFile(ctx.request.fileUri, [&](const std::string & /*qName*/, const std::vector<Symbol> &syms) {
                 for (const auto &s : syms)
                 {
                     if (s.containerName == container && s.type == SymbolType::Function &&

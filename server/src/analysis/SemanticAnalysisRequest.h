@@ -21,6 +21,12 @@ namespace angel_lsp::analysis
      */
     struct SemanticAnalysisRequest
     {
+        SemanticAnalysisRequest(const SymbolTable &st,
+                                std::string uri,
+                                std::string predefinedExt = "",
+                                const i18n::I18n *i18nPtr = nullptr)
+            : symbolTable(st), fileUri(std::move(uri)), predefinedFileExtension(std::move(predefinedExt)), i18n(i18nPtr) {}
+
         const SymbolTable &symbolTable;
         std::string fileUri;
         std::string predefinedFileExtension;

@@ -132,6 +132,10 @@ namespace angel_lsp::analysis
 
     struct ParameterInformation
     {
+        ParameterInformation() = default;
+        ParameterInformation(std::string name_, std::string typeName_, std::string rawText_ = "", std::string baseTypeName_ = "")
+            : name(std::move(name_)), typeName(std::move(typeName_)), rawText(std::move(rawText_)), baseTypeName(std::move(baseTypeName_)) {}
+
         std::string name;
         std::string typeName;
         std::string rawText;

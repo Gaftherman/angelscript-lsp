@@ -16,6 +16,13 @@ namespace angel_lsp::features
      */
     struct DocumentLinkRequest
     {
+        DocumentLinkRequest(const std::string &u,
+                            const std::string &sc,
+                            const std::vector<std::string> &sd,
+                            const angel_lsp::i18n::I18n *i18nPtr = nullptr,
+                            std::vector<std::string> ar = {})
+            : uri(u), sourceCode(sc), searchDirectories(sd), i18n(i18nPtr), allowedRoots(std::move(ar)) {}
+
         const std::string &uri;
         const std::string &sourceCode;
         const std::vector<std::string> &searchDirectories;

@@ -129,7 +129,7 @@ namespace angel_lsp::analysis
         }
     }
 
-    std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, const angel_lsp::config::TypeConfig *typeConfig)
+    std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string &fileUri, const std::string &sourceCode, angel_lsp::parser::AngelScriptParser &parser, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, const angel_lsp::config::TypeConfig * /*typeConfig*/)
     {
         std::vector<Diagnostic> diagnostics;
         TSTree *tree = parser.Parse(sourceCode);
@@ -144,7 +144,7 @@ namespace angel_lsp::analysis
         return diagnostics;
     }
 
-    std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const std::string &fileUri, const std::string &sourceCode, TSTree *tree, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, const angel_lsp::config::TypeConfig *typeConfig)
+    std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const std::string &fileUri, const std::string &sourceCode, TSTree *tree, SymbolTable &symbolTable, const angel_lsp::i18n::I18n *i18n, const angel_lsp::config::TypeConfig * /*typeConfig*/)
     {
         std::vector<Diagnostic> diagnostics;
         if (!tree)

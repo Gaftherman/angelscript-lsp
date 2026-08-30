@@ -36,11 +36,18 @@ namespace angel_lsp::analysis
         uint32_t endCharacter = 0;
     };
 
-    /** @brief A single named declaration site inside a Scope (function parameter, local variable, class field, ...). */
     struct LocalDefinition
     {
+        LocalDefinition() = default;
+        LocalDefinition(std::string name_, LocalDefinitionKind kind_,
+                        uint32_t sl = 0, uint32_t sc = 0, uint32_t el = 0, uint32_t ec = 0,
+                        uint32_t tsl = 0, uint32_t tsc = 0, uint32_t tel = 0, uint32_t tec = 0)
+            : name(std::move(name_)), kind(kind_),
+              startLine(sl), startCharacter(sc), endLine(el), endCharacter(ec),
+              typeStartLine(tsl), typeStartCharacter(tsc), typeEndLine(tel), typeEndCharacter(tec) {}
+
         std::string name;
-        LocalDefinitionKind kind;
+        LocalDefinitionKind kind = LocalDefinitionKind::Variable;
 
         uint32_t startLine = 0;
         uint32_t startCharacter = 0;

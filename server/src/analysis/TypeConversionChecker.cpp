@@ -1367,7 +1367,7 @@ namespace angel_lsp::analysis
         void CheckFuncdefAssignment(TSNode targetNode,
                                     const FuncdefSignature &funcdefSig,
                                     TSNode valueNode,
-                                    const Scope *scope,
+                                    const Scope * /*scope*/,
                                     DiagnosticContext &ctx,
                                     std::string_view sourceCode)
         {
@@ -1757,8 +1757,8 @@ namespace angel_lsp::analysis
                 }
                 else
                 {
-                    const std::string rawType = NodeText(typeNode, request.sourceCode);
-                    const std::string baseType = CleanBaseType(rawType);
+                    const std::string fullType = NodeText(typeNode, request.sourceCode);
+                    const std::string baseType = CleanBaseType(fullType);
                     auto funcdefSym = FindFuncdef(baseType, ctx.request.symbolTable);
                     if (funcdefSym)
                     {

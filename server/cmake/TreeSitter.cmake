@@ -2,7 +2,8 @@
 FetchContent_Declare(tree_sitter_runtime GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter.git GIT_TAG v0.26.11)
 FetchContent_MakeAvailable(tree_sitter_runtime)
 add_library(tree_sitter_runtime STATIC "${tree_sitter_runtime_SOURCE_DIR}/lib/src/lib.c")
-target_include_directories(tree_sitter_runtime PUBLIC "${tree_sitter_runtime_SOURCE_DIR}/lib/include")
+target_include_directories(tree_sitter_runtime PUBLIC "${tree_sitter_runtime_SOURCE_DIR}/lib/include"
+                                               PRIVATE "${tree_sitter_runtime_SOURCE_DIR}/lib/src")
 set_target_properties(tree_sitter_runtime PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
 if(MSVC)
     target_compile_options(tree_sitter_runtime PRIVATE /W0)
