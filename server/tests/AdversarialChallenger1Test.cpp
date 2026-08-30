@@ -453,7 +453,6 @@ TEST_CASE("Adversarial DocumentSymbols - Malformed and Incomplete Code Recovery"
 
 TEST_CASE("Adversarial WorkspaceSymbols - Exact, Prefix, Substring, and Fuzzy Score Hierarchy")
 {
-    WorkspaceSymbolRequest req{ "", SymbolTable{}, 100 };
     SymbolCollector collector{ nullptr };
     AngelScriptParser parser;
     SymbolTable table;

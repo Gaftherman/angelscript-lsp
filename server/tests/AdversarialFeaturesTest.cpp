@@ -522,9 +522,6 @@ TEST_CASE("Adversarial SemanticTokens - Invariant Verification")
     const auto &legend = GetSemanticTokensLegend();
     size_t numTokens = tokens.data.size() / 5;
 
-    uint32_t currentAbsLine = 0;
-    uint32_t currentAbsChar = 0;
-
     for (size_t i = 0; i < numTokens; ++i)
     {
         uint32_t deltaLine = tokens.data[i * 5 + 0];
@@ -535,18 +532,9 @@ TEST_CASE("Adversarial SemanticTokens - Invariant Verification")
         CHECK(length > 0);
         CHECK(tokenType < legend.tokenTypes.size());
 
-        if (deltaLine > 0)
+        if (deltaLine == 0 && i > 0)
         {
-            currentAbsLine += deltaLine;
-            currentAbsChar = deltaChar;
-        }
-        else
-        {
-            if (i > 0)
-            {
-                CHECK(deltaChar > 0);
-            }
-            currentAbsChar += deltaChar;
+            CHECK(deltaChar > 0);
         }
     }
 }

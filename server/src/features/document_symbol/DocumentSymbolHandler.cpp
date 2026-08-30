@@ -11,16 +11,6 @@ namespace angel_lsp::features
     namespace
     {
         /**
-         * @brief Converts a Tree-Sitter TSPoint to an LSP Position.
-         * @param pt Tree-Sitter point with row and column.
-         * @return Equivalent LSP Position.
-         */
-        inline lsp::Position ToLspPosition(TSPoint pt)
-        {
-            return lsp::Position{ pt.row, pt.column };
-        }
-
-        /**
          * @brief Converts a Tree-Sitter TSNode range to an LSP Range.
          * @param node Tree-Sitter AST node.
          * @return Enclosing LSP Range.
