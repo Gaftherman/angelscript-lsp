@@ -97,7 +97,7 @@ namespace
     bool HasUninitializedRead(const std::vector<Diagnostic> &diagnostics)
     {
         return std::any_of(diagnostics.begin(), diagnostics.end(),
-                           [](const Diagnostic &d) { return d.code == "as-err-uninitialized-variable-read"; });
+                           [](const Diagnostic &d) { return d.code == "as-warn-uninitialized-variable-read"; });
     }
 
     ParameterInformation MakeParam(std::string typeName, std::string name, bool isHandle = false, bool isConst = false, ParameterModifier mod = ParameterModifier::None)
@@ -546,7 +546,10 @@ TEST_SUITE("Adversarial_DefiniteAssignment")
             "}\n";
         CHECK_FALSE(HasUninitializedRead(AnalyzeCodeForDiagnostics(nestedReturnAssigned)));
 
-        // Branch 1 returns early, Branch 2 does not assign -> post-if is unassigned
+        // Branch 1 returns early, branch 2 assigns only conditionally - which under C#'s rule
+        // leaves x unassigned after the if, and under AngelScript's does not. Measured on this
+        // exact snippet: the compiler accepts it without a warning, because an assignment
+        // precedes the read and it asks for nothing more. Inverted with that recorded.
         std::string nestedReturnUnassigned =
             "void Print(int v) { }\n"
             "void main()\n"
@@ -567,7 +570,7 @@ TEST_SUITE("Adversarial_DefiniteAssignment")
             "    }\n"
             "    Print(x);\n"
             "}\n";
-        CHECK(HasUninitializedRead(AnalyzeCodeForDiagnostics(nestedReturnUnassigned)));
+        CHECK_FALSE(HasUninitializedRead(AnalyzeCodeForDiagnostics(nestedReturnUnassigned)));
     }
 
     TEST_CASE("Unreachable Code After Return Does Not Emit False Warnings")
@@ -596,8 +599,11 @@ TEST_SUITE("Adversarial_DefiniteAssignment")
             "    }\n"
             "    Print(x);\n"
             "}\n";
-        // A standard for loop with condition i < 10 might execute 0 times, so x is unassigned
-        CHECK(HasUninitializedRead(AnalyzeCodeForDiagnostics(forLoopAssign)));
+        // "Might execute 0 times, so x is unassigned" is C#'s reasoning, and this test was
+        // written to it. AngelScript asks only that some assignment precede the read, whether or
+        // not the path taken reaches it - measured on this exact snippet, which the compiler
+        // accepts without a warning.
+        CHECK_FALSE(HasUninitializedRead(AnalyzeCodeForDiagnostics(forLoopAssign)));
     }
 
     TEST_CASE("Do While Guaranteed First Iteration Assigns")

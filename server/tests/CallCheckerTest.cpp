@@ -1135,7 +1135,7 @@ TEST_CASE("CallChecker - A method's &out parameter initialises its argument")
     // real compiler accepts without even a warning.
     const auto flagged = [](const std::string &code)
     {
-        return HasCode(AnalyzeCallSnippet(code), "as-err-uninitialized-variable-read");
+        return HasCode(AnalyzeCallSnippet(code), "as-warn-uninitialized-variable-read");
     };
 
     CHECK_FALSE(flagged(
@@ -1187,3 +1187,4 @@ TEST_CASE("CallChecker - A bracket-array size is not an element conversion")
     // A real primitive construction is still judged: `bool b(33)` is not an array.
     CHECK(flagged("void main() { bool b(33); }\n"));
 }
+

@@ -46,7 +46,6 @@ namespace angel_lsp::diagnostics::codes
     inline constexpr std::string_view CaseNotConstant = "as-err-case-not-constant";
     inline constexpr std::string_view DuplicateCaseValue = "as-err-duplicate-case-value";
     inline constexpr std::string_view DefaultMustBeLast = "as-err-default-must-be-last";
-    inline constexpr std::string_view UninitializedVariableRead = "as-err-uninitialized-variable-read";
 
     // Shared and Isolation Errors
     inline constexpr std::string_view SharedNotAllowedOnEntity = "as-err-shared-not-allowed-on-entity";
@@ -66,4 +65,10 @@ namespace angel_lsp::diagnostics::codes
     // constant folder to answer. See TypeConversionChecker.cpp's numeric-warning section.
     inline constexpr std::string_view SignedUnsignedMismatch = "as-warn-signed-unsigned-mismatch";
     inline constexpr std::string_view FloatTruncation = "as-warn-float-truncation";
+
+    // Definite Assignment Warnings
+    //
+    // A warning, not an error, which is what the compiler answers: reading a local before
+    // writing it is accepted with `WARNING: 'n' is not initialized.` in every shape measured.
+    inline constexpr std::string_view UninitializedVariableRead = "as-warn-uninitialized-variable-read";
 }

@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1237 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1240 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -79,6 +79,56 @@ Each entry says what the compiler answers and what this analyzer answered before
 false positives — legal code reported as an error, which is the one failure mode this project
 treats as unacceptable.
 
+- **Definite assignment: 749 findings over the corpus, and the rule was the wrong rule.** Found by
+  giving `as-err-uninitialized-variable-read` a corpus audit, which it had never had. Five separate
+  causes, each measured against the compiler rather than reasoned about:
+
+  - **It was an ERROR and the compiler says WARNING.** Seven shapes measured, every one accepted
+    with `WARNING: 'n' is not initialized.` and exit 0 — a plain read, a read inside an expression,
+    a by-value argument, a `const &in` argument. Errors are what the parity audit counts and what a
+    build gate stops on, so the severity was not cosmetic. Renamed to
+    `as-warn-uninitialized-variable-read`.
+  - **The rule was C#'s, not AngelScript's.** It implemented "definitely assigned on every path",
+    intersecting branch states at every join. AngelScript warns only when **no assignment precedes
+    the read at all**, conditional or not — `if (false) { x = 5; } Print(x);` is clean, and so is
+    every loop form. Measured on ten shapes. The joins now union.
+  - **A loop body's assignments did not survive the loop** unless the loop was provably infinite,
+    which is the same C# reading. `for (...) { x = i; } Print(x);` is clean to the compiler.
+  - **The conditions of `if`, `while`, `do`/`while` and `switch` were never analysed at all.**
+    None of them carries a `condition` field in the grammar — the expression is an unnamed child —
+    and the checker asked for the field, got null, and skipped it every time. Both halves were
+    wrong: a read inside a condition went unchecked, and an `&out` argument written there never
+    marked its variable assigned, which then reported the body. `for` was the same story under a
+    different name: its field is `init`, not `initializer`, so `for (i = 0; i < n; i++)` reported
+    the `i` in its own header.
+  - **An argument to an invisible callee was read as a read.** Whether that parameter is `&out`
+    is exactly what cannot be established, and `&out` is AngelScript's only way to return a second
+    value, so it is what a bare local passed to an unknown function usually is. It is now treated
+    as possibly written — the same ignorance runs both ways, so the variable is marked assigned
+    rather than merely unread. Only a bare identifier: `f(x + 1)` cannot be an out-argument, so a
+    compound expression stays judged.
+
+  **749 → 7**, against the compiler's own 7 over the same files. Exactly one is the same finding.
+  The other six of ours are all `value.Get(fvalue, strict)` in the JSON library, where the
+  receiver's type IS visible and the out-parameter should have been recognised — and that is the
+  same overload set `ResolveBestOverload` calls ambiguous 75 times, so the two are one defect. The
+  six the compiler finds and this analyzer does not are misses, which is the safe direction.
+
+  Six test assertions asserted the C# answer and have been inverted, each with the compiler's reply
+  recorded beside it. One of them argued the point explicitly — "a standard for loop with condition
+  i < 10 might execute 0 times, so x is unassigned" — which is exactly right about C# and wrong
+  about AngelScript.
+
+- **An `&out` parameter of a METHOD initialises its argument.** Found by `doc_p28`: the analyzer
+  reported `int n; reader.Get(n, strict);` as using `n` uninitialised, which is the line that
+  initialises it. The out-parameter rule existed and worked for free functions, whose candidate
+  lookup takes the call node; the method branch resolved the receiver's type against
+  `m_request.scopeRoot`, and a local receiver is never in the root scope. Now resolved in the scope
+  the call is written in. **Measured effect on the corpus: none** — 749 both with and without it,
+  because the corpus's method receivers are host types the analyzer cannot see at all, so the
+  lookup fails for a different reason. It is proven by its unit tests and by `doc_p28`, where the
+  class is declared in the script, and that is the honest extent of the claim.
+
 - **`bool` is not a number, and three tables said it was.** It was listed as convertible to and from
   every numeric type in `OverloadResolver`'s `IsPrimitiveWidening` and `IsPrimitiveNarrowing`, and
   in `TypeConversionChecker`'s `IsConvertible`. The compiler allows none of it. Measured across the
@@ -122,46 +172,6 @@ treats as unacceptable.
   `array<int>` keeps `array` as its container name, which is not a primitive, so it already took
   the class path.
 
-- **An `&out` parameter of a METHOD initialises its argument.** Found by `doc_p28` while proving the
-  first entry: the analyzer reported `int n; reader.Get(n, strict);` as using `n` uninitialised,
-  which is the exact line that initialises it, and which the compiler accepts without even a
-  warning. `DefiniteAssignmentChecker` had the out-parameter rule and it worked — for free
-  functions, whose candidate lookup takes the call node. The method branch resolved the receiver's
-  type against `m_request.scopeRoot`, and a local receiver is never in the root scope, so the type
-  came back empty, the hierarchy was empty, no candidate was found and the parameter's `&out` was
-  never read. Every out-parameter of every method was affected. Now resolved in the scope the call
-  is written in, via `FindEnclosingScope`.
-- **A lambda against its funcdef, the remaining three quarters.** The first pass covered an
-  assignment and a conversion. The corpus said that was the wrong three quarters: it writes 33
-  lambdas across 17 files and **not one** is `CB@ cb = function(...)`. Every one is a call
-  argument. Both remaining shapes are now checked, and the return type with them:
-  - **As a call argument** (`CallChecker`). A lambda resolves to no type, so `allArgsResolved` was
-    false and the entire overload check was skipped for any call taking one — which covered every
-    lambda in the corpus. A candidate is viable when every lambda argument satisfies the funcdef at
-    its position; none viable is `No matching signatures`, more than one is `Multiple matching
-    signatures`, both measured. Two candidates naming the **same** funcdef are not an ambiguity —
-    the corpus flattens twenty projects into one directory, so one function arrives as several
-    identical symbols — so the check compares funcdefs rather than counting candidates.
-  - **The return type** (`ControlFlowChecker`, `TypeConversionChecker`). A lambda writes no return
-    type; the grammar gives `lambda_expression` a parameter list and a body and nothing else, so
-    `return_type` was null and the not-all-paths check simply never ran for one. The requirement
-    comes from the target: `funcdef int CB(); CB@ cb = function() { };` is "Not all paths return a
-    value", `funcdef void CB(); ... { return 1; }` is "Can't return value when return type is
-    'void'", and `funcdef int CB(); ... { return 'x'; }` is "No conversion from 'const string' to
-    'int'". All three measured, all three now reported.
-
-  The connective tissue is `SemanticHelpers::FuncdefTargetOfLambda`, which answers "which funcdef
-  is this lambda being handed to" for the three shapes and **nullopt for anything else** — a call
-  with two candidates offering different funcdefs included, because which one the lambda was
-  written against is exactly what is undecided there. `ReadLambdaParameters` and
-  `LambdaContradictsFuncdef` moved to `SemanticHelpers` alongside it, since the rule is now asked
-  by three modules and one copy is the point.
-
-  Corpus after the change: call-argument audit **1**, control-flow **1**, type-conversion **25** —
-  every one unchanged. The rule reaches all 33 corpus lambdas and declines every one, because the
-  funcdefs they name are registered by the game engine in C++ and declared in no script. Parity:
-  0 unexplained false positives over 98 scripts, and `doc_r26` matches the compiler line for line.
-  `doc_p27`, `doc_r26`.
 
 - **The corpus audits run in CI, in parallel.** They share nothing and are single-threaded, so the
   workflow now runs one process per audit at `nproc` at a time: measured locally, 19 of them took
@@ -614,7 +624,10 @@ treats as unacceptable.
 Real, oracle-confirmed, and none of it reports legal code today. Ordered by what a user notices
 first. Each lands with its `doc_`-prefixed parity case.
 
-1. **75 `as-err-call-ambiguous` findings over the corpus, not diagnosed.** Legal code reported as
+1. **One overload-resolution defect, two symptoms, not diagnosed.** 75 `as-err-call-ambiguous`
+   findings over the corpus, and the six definite-assignment findings that remain after that rule
+   was fixed - both on the same `Get` / `opAssign` / `opIndex` overload sets in a JSON library the
+   corpus carries twice. The ambiguity half: Legal code reported as
    an ambiguous call, concentrated in a JSON library the corpus carries twice - `opAssign`,
    `opIndex`, `Get`, `Set`. The `bool` conversion tables were the first hypothesis and correcting
    them moved the number not at all, so that is ruled out and so are the two other obvious
