@@ -3269,7 +3269,16 @@ namespace angel_lsp
                 }
                 TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::CodeActionRequest car{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.range), req.context, m_symbolTable, m_scopeIndex };
+                // The context's diagnostics carry ranges too, and they arrive in the client's
+                // encoding exactly as req.range does. Decoding the one and not the other left the
+                // handler mixing coordinate systems: every quick fix driven by a diagnostic reads
+                // diag.range as a Tree-sitter point, which is only the same number while the line
+                // is ASCII. Decoded here so the handler sees one system throughout.
+                lsp::CodeActionContext context = req.context;
+                for (auto &diag : context.diagnostics)
+                    diag.range = codec::Decode(docIt->second, m_positionEncoding, diag.range);
+
+                features::CodeActionRequest car{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.range), context, m_symbolTable, m_scopeIndex };
                 auto actions = features::GetCodeActions(car);
                 if (actions.has_value())
                 {

@@ -285,3 +285,234 @@ TEST_CASE("CodeActionHandler - ResolveCodeAction returns resolved code action")
     CHECK(resolved->title == "Test Action");
 }
 
+
+// =====================================================================================
+// "Did you mean 'X'?" for an undefined identifier.
+//
+// Of the ~130 diagnostic codes this server emits, exactly one had a quick fix bound to it before
+// this. Undefined identifier is the one worth having next - it is what a typo looks like, and the
+// name the user meant is nearly always already in the symbol table.
+//
+// What these tests defend is mostly the silence. A wrong suggestion is worse than no suggestion:
+// the user reads "did you mean" as the server knowing something. So the threshold is tight, and
+// most of what follows checks that nothing is offered when nothing is close.
+// =====================================================================================
+
+namespace
+{
+    /** @brief A CodeActionContext carrying one undefined-identifier diagnostic over a range. */
+    lsp::CodeActionContext UndefinedIdentifierAt(lsp::Range range)
+    {
+        lsp::Diagnostic diag;
+        diag.range = range;
+        diag.code = lsp::String("as-err-undefined-identifier");
+        diag.message = "Undefined identifier";
+
+        lsp::CodeActionContext context;
+        context.diagnostics.push_back(diag);
+        return context;
+    }
+
+    /** @brief Titles of every "Did you mean" action, in the order they were offered. */
+    std::vector<std::string> SuggestionTitles(const std::optional<std::vector<lsp::CodeAction>> &actions)
+    {
+        std::vector<std::string> titles;
+        if (!actions.has_value())
+        {
+            return titles;
+        }
+        for (const auto &action : *actions)
+        {
+            if (action.title.rfind("Did you mean", 0) == 0)
+            {
+                titles.push_back(action.title);
+            }
+        }
+        return titles;
+    }
+}
+
+TEST_CASE("CodeActionHandler - Suggests the local whose name was mistyped")
+{
+    std::string code =
+        "void main() {\n"
+        "    int counter = 0;\n"
+        "    countor = 1;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {2, 4}, {2, 11} };
+    auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
+
+    const auto titles = SuggestionTitles(actions);
+    REQUIRE_FALSE(titles.empty());
+    CHECK(titles[0] == "Did you mean 'counter'?");
+}
+
+TEST_CASE("CodeActionHandler - The suggestion replaces exactly the identifier")
+{
+    // The edit is built from the AST node, not from the diagnostic's range, so it stays right even
+    // when the diagnostic covers more or less than the name.
+    std::string code =
+        "void main() {\n"
+        "    int counter = 0;\n"
+        "    countor = 1;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {2, 4}, {2, 11} };
+    auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
+
+    REQUIRE(actions.has_value());
+    const lsp::CodeAction *suggestion = nullptr;
+    for (const auto &action : *actions)
+    {
+        if (action.title == "Did you mean 'counter'?")
+        {
+            suggestion = &action;
+            break;
+        }
+    }
+    REQUIRE(suggestion != nullptr);
+    REQUIRE(suggestion->edit.has_value());
+    REQUIRE(suggestion->edit->changes.has_value());
+
+    const auto &edits = suggestion->edit->changes->begin()->second;
+    REQUIRE(edits.size() == 1);
+    CHECK(edits[0].newText == "counter");
+    CHECK(edits[0].range.start.line == 2);
+    CHECK(edits[0].range.start.character == 4);
+    CHECK(edits[0].range.end.character == 11);
+}
+
+TEST_CASE("CodeActionHandler - A case-only difference is suggested")
+{
+    // The most common miss of all, and the reason the comparison is case-folded rather than exact.
+    std::string code =
+        "void main() {\n"
+        "    int myVariable = 0;\n"
+        "    myvariable = 1;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {2, 4}, {2, 14} };
+    auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
+
+    const auto titles = SuggestionTitles(actions);
+    REQUIRE_FALSE(titles.empty());
+    CHECK(titles[0] == "Did you mean 'myVariable'?");
+}
+
+TEST_CASE("CodeActionHandler - A global function is suggested as readily as a local")
+{
+    std::string code =
+        "void CalculateDamage() { }\n"
+        "void main() {\n"
+        "    CalculateDamag();\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {2, 4}, {2, 19} };
+    auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
+
+    const auto titles = SuggestionTitles(actions);
+    REQUIRE_FALSE(titles.empty());
+    CHECK(titles[0] == "Did you mean 'CalculateDamage'?");
+}
+
+TEST_CASE("CodeActionHandler - Nothing is suggested when nothing is close")
+{
+    // The case that matters most. A name that resembles nothing gets silence, not the nearest
+    // string in the workspace.
+    std::string code =
+        "void main() {\n"
+        "    int counter = 0;\n"
+        "    zzzzqqqqwwww = 1;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {2, 4}, {2, 16} };
+    auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
+
+    CHECK(SuggestionTitles(actions).empty());
+}
+
+TEST_CASE("CodeActionHandler - A short name is not matched loosely")
+{
+    // `ab` and `xy` are two edits apart, which is the whole of a two-letter name. At that length a
+    // difference is not a typo, it is a different name.
+    std::string code =
+        "void main() {\n"
+        "    int ab = 0;\n"
+        "    xy = 1;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {2, 4}, {2, 6} };
+    auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
+
+    CHECK(SuggestionTitles(actions).empty());
+}
+
+TEST_CASE("CodeActionHandler - No suggestion without an undefined-identifier diagnostic")
+{
+    // The quick fix is bound to the diagnostic, not to the cursor. Without one, the same position
+    // offers nothing - otherwise every identifier in the file would sprout a menu of near-misses.
+    std::string code =
+        "void main() {\n"
+        "    int counter = 0;\n"
+        "    countor = 1;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {2, 4}, {2, 11} };
+    auto actions = env.CodeActions(typo, lsp::CodeActionContext{});
+
+    CHECK(SuggestionTitles(actions).empty());
+}
+
+TEST_CASE("CodeActionHandler - A tie offers no preferred fix")
+{
+    // Two candidates one edit away. Marking a preferred action is what lets an editor apply it
+    // without asking, so a tie must not have one.
+    std::string code =
+        "void main() {\n"
+        "    int cat = 0;\n"
+        "    int cut = 0;\n"
+        "    cot = 1;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {3, 4}, {3, 7} };
+    auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
+
+    REQUIRE(actions.has_value());
+    for (const auto &action : *actions)
+    {
+        if (action.title.rfind("Did you mean", 0) == 0)
+        {
+            CHECK_FALSE(action.isPreferred.value_or(false));
+        }
+    }
+}
+
+TEST_CASE("CodeActionHandler - At most three suggestions are offered")
+{
+    // Five names within the threshold, so the cap is what limits the list rather than the
+    // threshold doing it incidentally.
+    std::string code =
+        "void main() {\n"
+        "    int value = 0;\n"
+        "    int valus = 0;\n"
+        "    int valui = 0;\n"
+        "    int valuz = 0;\n"
+        "    int valve = 0;\n"
+        "    valuu = 1;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {6, 4}, {6, 9} };
+    auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
+
+    CHECK(SuggestionTitles(actions).size() == 3);
+}

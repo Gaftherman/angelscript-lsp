@@ -3,6 +3,7 @@
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
 #include "utils/IncludeResolver.h"
+#include "analysis/DiagnosticCodes.h"
 
 #include <string>
 #include <string_view>
@@ -1451,6 +1452,229 @@ namespace angel_lsp::features
         }
 
         /**
+         * @brief Edit distance between two names, abandoned as soon as it passes `limit`.
+         *
+         * Bounded rather than exact because the answer is only ever compared against a threshold:
+         * once every cell of a row is over the limit no later row can come back under it, so the
+         * remaining work cannot change the verdict. That matters here - this runs against every
+         * name in the workspace symbol table.
+         */
+        size_t BoundedEditDistance(std::string_view a, std::string_view b, size_t limit)
+        {
+            if (a.size() > b.size())
+            {
+                std::swap(a, b);
+            }
+
+            // Length alone already settles it.
+            if (b.size() - a.size() > limit)
+            {
+                return limit + 1;
+            }
+
+            std::vector<size_t> previous(a.size() + 1);
+            std::vector<size_t> current(a.size() + 1);
+            for (size_t i = 0; i <= a.size(); ++i)
+            {
+                previous[i] = i;
+            }
+
+            for (size_t j = 1; j <= b.size(); ++j)
+            {
+                current[0] = j;
+                size_t rowBest = current[0];
+                for (size_t i = 1; i <= a.size(); ++i)
+                {
+                    const size_t substitution = previous[i - 1] + (a[i - 1] == b[j - 1] ? 0 : 1);
+                    current[i] = std::min({ substitution, previous[i] + 1, current[i - 1] + 1 });
+                    rowBest = std::min(rowBest, current[i]);
+                }
+
+                if (rowBest > limit)
+                {
+                    return limit + 1;
+                }
+                previous.swap(current);
+            }
+
+            return previous[a.size()];
+        }
+
+        /**
+         * @brief How far a suggestion may sit from what the user typed, by name length.
+         *
+         * Deliberately tight. A wrong suggestion is worse than none: the user reads "did you mean"
+         * as the server knowing something, and two edits away from a three-letter name is not a
+         * typo, it is a different name. Zero is still useful - the comparison is case-folded, so a
+         * limit of zero catches `myvar` for `myVar`, which is the single most common miss.
+         */
+        size_t SuggestionLimit(size_t nameLength)
+        {
+            if (nameLength < 3)
+            {
+                return 0;
+            }
+            if (nameLength < 5)
+            {
+                return 1;
+            }
+            if (nameLength < 8)
+            {
+                return 2;
+            }
+            return 3;
+        }
+
+        std::string FoldCase(std::string_view text)
+        {
+            std::string folded(text);
+            std::transform(folded.begin(), folded.end(), folded.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return folded;
+        }
+
+        /** @brief Every name declared in the scope chain enclosing a point. */
+        void CollectVisibleLocalNames(const analysis::Scope *scope, std::vector<std::string> &names)
+        {
+            for (const analysis::Scope *walk = scope; walk != nullptr; walk = walk->parent)
+            {
+                for (const auto &def : walk->definitions)
+                {
+                    names.push_back(def.name);
+                }
+            }
+        }
+
+        /**
+         * @brief "Did you mean 'X'?" for an undefined identifier, when something is close enough.
+         *
+         * Of the ~130 codes this server can emit, one had a quick fix before this. Undefined
+         * identifier is the one worth having next: it is what a typo looks like, and the name the
+         * user meant is nearly always already in the symbol table.
+         *
+         * Offers nothing when nothing is close. That is the whole design - see SuggestionLimit.
+         */
+        void TryAddUndefinedIdentifierSuggestions(
+            const CodeActionRequest &request,
+            TSNode rootNode,
+            std::vector<lsp::CodeAction> &actions)
+        {
+            if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+            {
+                return;
+            }
+
+            for (const auto &diag : request.context.diagnostics)
+            {
+                if (!MatchDiagnosticCode(diag, diagnostics::codes::UndefinedIdentifier))
+                {
+                    continue;
+                }
+
+                const TSPoint point = { diag.range.start.line, diag.range.start.character };
+                TSNode identifier = ts_node_descendant_for_point_range(rootNode, point, point);
+                if (ts_node_is_null(identifier))
+                {
+                    continue;
+                }
+
+                const std::string typed = GetNodeText(identifier, request.sourceCode);
+                if (typed.empty())
+                {
+                    continue;
+                }
+
+                const std::string typedFolded = FoldCase(typed);
+                const size_t limit = SuggestionLimit(typed.size());
+
+                // Locals and parameters first - they are what an identifier in a function body
+                // most often meant - then everything the workspace declares.
+                std::vector<std::string> candidates;
+                auto rootScope = request.scopeIndex.GetRoot(request.uri);
+                if (rootScope)
+                {
+                    CollectVisibleLocalNames(FindScopeByLineOrRoot(rootScope.get(), point.row, point.column), candidates);
+                }
+
+                request.symbolTable.ForEachSymbol([&candidates](const std::string &name, const std::vector<analysis::Symbol> &)
+                {
+                    candidates.push_back(name);
+                });
+
+                struct Suggestion
+                {
+                    std::string name;
+                    size_t distance = 0;
+                };
+
+                std::vector<Suggestion> ranked;
+                ankerl::unordered_dense::set<std::string> seen;
+
+                for (const auto &candidate : candidates)
+                {
+                    if (candidate.empty() || candidate == typed || !seen.insert(candidate).second)
+                    {
+                        continue;
+                    }
+
+                    const size_t distance = BoundedEditDistance(typedFolded, FoldCase(candidate), limit);
+                    if (distance <= limit)
+                    {
+                        ranked.push_back({ candidate, distance });
+                    }
+                }
+
+                if (ranked.empty())
+                {
+                    continue;
+                }
+
+                std::sort(ranked.begin(), ranked.end(), [](const Suggestion &a, const Suggestion &b)
+                {
+                    if (a.distance != b.distance)
+                    {
+                        return a.distance < b.distance;
+                    }
+                    return a.name < b.name;
+                });
+
+                // Three at most. A list of near-misses is a menu to read, not a fix to accept.
+                const size_t offered = std::min<size_t>(ranked.size(), 3);
+                const bool hasClearWinner = ranked.size() == 1 || ranked[0].distance < ranked[1].distance;
+
+                for (size_t i = 0; i < offered; ++i)
+                {
+                    lsp::CodeAction action;
+                    action.title = "Did you mean '" + ranked[i].name + "'?";
+                    action.kind = lsp::CodeActionKind::QuickFix;
+                    action.diagnostics = std::vector<lsp::Diagnostic>{ diag };
+
+                    // Only when one candidate is strictly closer than the rest. Marking a preferred
+                    // fix is what lets an editor apply it without asking, so a tie must not have one.
+                    if (i == 0 && hasClearWinner)
+                    {
+                        action.isPreferred = true;
+                    }
+
+                    lsp::TextEdit edit;
+                    edit.range.start.line = ts_node_start_point(identifier).row;
+                    edit.range.start.character = ts_node_start_point(identifier).column;
+                    edit.range.end.line = ts_node_end_point(identifier).row;
+                    edit.range.end.character = ts_node_end_point(identifier).column;
+                    edit.newText = ranked[i].name;
+
+                    lsp::WorkspaceEdit wsEdit;
+                    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+                    changes[lsp::DocumentUri::parse(request.uri)] = { std::move(edit) };
+                    wsEdit.changes = std::move(changes);
+                    action.edit = std::move(wsEdit);
+
+                    actions.push_back(std::move(action));
+                }
+            }
+        }
+
+        /**
          * @brief Tries to generate Missing const Qualifier quick fixes and intention actions.
          */
         void TryAddConstQualifierActions(
@@ -2118,6 +2342,7 @@ namespace angel_lsp::features
         // Feature 4: Missing const Qualifier Quick Fix & Intention
         // =========================================================================
         TryAddConstQualifierActions(request, rootNode, actions);
+        TryAddUndefinedIdentifierSuggestions(request, rootNode, actions);
 
         // =========================================================================
         // Feature 5: Sort and Clean #include Directives
