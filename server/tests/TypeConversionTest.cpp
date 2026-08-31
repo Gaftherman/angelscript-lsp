@@ -906,3 +906,453 @@ TEST_CASE("TypeConversion - auto is never judged")
 
     CHECK(ConversionDiagnostics(code).empty());
 }
+
+// =====================================================================================
+// Numeric conversion warnings (TYPE-03)
+//
+// Every expectation below is a recording of what `angelscript_oracle` answered, not a reading
+// of the documentation - and the two disagreed. The documentation-derived backlog entry said
+// three warnings decided by a narrowing table; the compiler emits five, only two of which are
+// decidable from types, and the mismatch one fires on a far narrower set of expressions than
+// "a narrowing conversion". The negative cases here are the important half: each one is a shape
+// the compiler is silent about, and emitting there would be a false positive.
+//
+// Reproduce any single line with:
+//   server/build-release/Release/angelscript_oracle.exe <file>.as
+// =====================================================================================
+
+namespace
+{
+    /** @brief Runs the pipeline and returns only the two numeric warnings. */
+    std::vector<Diagnostic> NumericWarnings(const std::string &code)
+    {
+        ConversionEnvironment env(code);
+        std::vector<Diagnostic> result;
+        for (auto &diag : env.Analyze())
+        {
+            if (diag.code == "as-warn-signed-unsigned-mismatch" ||
+                diag.code == "as-warn-float-truncation")
+            {
+                result.push_back(std::move(diag));
+            }
+        }
+        return result;
+    }
+
+    size_t CountCode(const std::vector<Diagnostic> &diags, std::string_view code)
+    {
+        return static_cast<size_t>(std::count_if(diags.begin(), diags.end(),
+            [code](const Diagnostic &d) { return d.code == code; }));
+    }
+}
+
+TEST_CASE("NumericWarnings - Every comparison operator between a signed and an unsigned reports")
+{
+    // Oracle: each of the six answers `WARNING: Signed/Unsigned mismatch`, anchored on the operator.
+    for (const std::string op : { "<", ">", "<=", ">=", "==", "!=" })
+    {
+        const std::string code =
+            "void main() { int i = ReadI(); uint u = ReadU(); bool b = i " + op + " u; }\n"
+            "int ReadI() { return 1; }\n"
+            "uint ReadU() { return 1; }\n";
+        INFO("operator: " << op);
+        CHECK(CountCode(NumericWarnings(code), "as-warn-signed-unsigned-mismatch") == 1);
+    }
+}
+
+TEST_CASE("NumericWarnings - Arithmetic and bitwise operators mixing signs are silent")
+{
+    // Oracle: `i * u`, `i & u` and the rest are all clean. The warning follows the comparison,
+    // not the conversion - which is why the narrowing table in OverloadResolver cannot drive it.
+    for (const std::string op : { "+", "-", "*", "/", "%", "&", "|", "^" })
+    {
+        const std::string code =
+            "void main() { int i = ReadI(); uint u = ReadU(); uint r = i " + op + " u; }\n"
+            "int ReadI() { return 1; }\n"
+            "uint ReadU() { return 1; }\n";
+        INFO("operator: " << op);
+        CHECK(NumericWarnings(code).empty());
+    }
+}
+
+TEST_CASE("NumericWarnings - Width does not matter and float counts as signed")
+{
+    // Oracle: the full 8x8 integer matrix warns on every signed/unsigned pairing and on no
+    // same-signedness pairing, whatever the widths. `float < uint` warns; `float < int` does not.
+    auto compare = [](const std::string &a, const std::string &b)
+    {
+        return "void main() { " + a + " x = Left(); " + b + " y = Right(); bool r = x < y; }\n" +
+               a + " Left() { return 0; }\n" +
+               b + " Right() { return 0; }\n";
+    };
+
+    CHECK(CountCode(NumericWarnings(compare("int8", "uint64")), "as-warn-signed-unsigned-mismatch") == 1);
+    CHECK(CountCode(NumericWarnings(compare("int64", "uint8")), "as-warn-signed-unsigned-mismatch") == 1);
+    CHECK(CountCode(NumericWarnings(compare("float", "uint")), "as-warn-signed-unsigned-mismatch") == 1);
+    CHECK(CountCode(NumericWarnings(compare("double", "uint64")), "as-warn-signed-unsigned-mismatch") == 1);
+
+    CHECK(NumericWarnings(compare("int8", "int64")).empty());
+    CHECK(NumericWarnings(compare("uint8", "uint64")).empty());
+    CHECK(NumericWarnings(compare("float", "int")).empty());
+    CHECK(NumericWarnings(compare("double", "int64")).empty());
+}
+
+TEST_CASE("NumericWarnings - A constant operand folds the comparison away and is silent")
+{
+    // Oracle, and this is the whole false-positive surface of the rule: the compiler knows a
+    // constant's value, so it compares values rather than types and no mismatch arises.
+    //
+    //   const int i = 1; uint u; i < u    ->  clean
+    //   int i;           const uint u;    ->  clean
+    //   const int G = 1 (global)          ->  clean
+    //   int i < 5                         ->  clean
+    CHECK(NumericWarnings(
+        "void main() { const int i = 1; uint u = ReadU(); bool r = i < u; }\n"
+        "uint ReadU() { return 1; }\n").empty());
+
+    CHECK(NumericWarnings(
+        "void main() { int i = ReadI(); const uint u = 2; bool r = i < u; }\n"
+        "int ReadI() { return 1; }\n").empty());
+
+    CHECK(NumericWarnings(
+        "const int G = 1;\n"
+        "void main() { uint u = ReadU(); bool r = G < u; }\n"
+        "uint ReadU() { return 1; }\n").empty());
+
+    CHECK(NumericWarnings(
+        "void main() { uint u = ReadU(); bool r = u < 5; }\n"
+        "uint ReadU() { return 1; }\n").empty());
+
+    CHECK(NumericWarnings(
+        "void main() { int i = ReadI(); bool r = i < 5; }\n"
+        "int ReadI() { return 1; }\n").empty());
+}
+
+TEST_CASE("NumericWarnings - A bare enum member is a constant and is silent")
+{
+    // Oracle: `enum E { A } ... A < u` is clean, the same folding as any other constant.
+    CHECK(NumericWarnings(
+        "enum E { A }\n"
+        "void main() { uint u = ReadU(); bool r = A < u; }\n"
+        "uint ReadU() { return 1; }\n").empty());
+}
+
+TEST_CASE("NumericWarnings - The mismatch survives a member access, a call and an expression")
+{
+    // Oracle: none of these fold, so all three warn. They are the shapes that make the rule
+    // worth having - `for (int i = 0; i < a.length(); i++)` is the one real code writes.
+    CHECK(CountCode(NumericWarnings(
+        "class C { uint u; }\n"
+        "void main() { C c; int i = ReadI(); bool r = i < c.u; }\n"
+        "int ReadI() { return 1; }\n"), "as-warn-signed-unsigned-mismatch") == 1);
+
+    CHECK(CountCode(NumericWarnings(
+        "uint Count() { return 1; }\n"
+        "void main() { int i = ReadI(); bool r = i < Count(); }\n"
+        "int ReadI() { return 1; }\n"), "as-warn-signed-unsigned-mismatch") == 1);
+
+    CHECK(CountCode(NumericWarnings(
+        "void main() { int i = ReadI(); uint u = ReadU(); bool r = i < u + u; }\n"
+        "int ReadI() { return 1; }\n"
+        "uint ReadU() { return 1; }\n"), "as-warn-signed-unsigned-mismatch") == 1);
+}
+
+TEST_CASE("NumericWarnings - A float value reaching an integer reports where it is written")
+{
+    // Oracle: all four warn, at the source expression.
+    //   int i = f;      int i; i = f;      i += f;      return f;  (from an int function)
+    CHECK(CountCode(NumericWarnings(
+        "void main() { float f = Read(); int i = f; }\n"
+        "float Read() { return 1.5f; }\n"), "as-warn-float-truncation") == 1);
+
+    CHECK(CountCode(NumericWarnings(
+        "void main() { float f = Read(); int i = 0; i = f; }\n"
+        "float Read() { return 1.5f; }\n"), "as-warn-float-truncation") == 1);
+
+    CHECK(CountCode(NumericWarnings(
+        "void main() { float f = Read(); int i = 0; i += f; }\n"
+        "float Read() { return 1.5f; }\n"), "as-warn-float-truncation") == 1);
+
+    CHECK(CountCode(NumericWarnings(
+        "int Truncate() { float f = Read(); return f; }\n"
+        "float Read() { return 1.5f; }\n"), "as-warn-float-truncation") == 1);
+}
+
+TEST_CASE("NumericWarnings - Widening, an explicit cast and a literal source are all silent")
+{
+    // Oracle: `float f = i;` and `double d = f;` are clean - the warning is one-directional.
+    // `int i = int(f);` is clean because the conversion is written. A literal source is clean
+    // too, or answered by a different warning: `int i = 2.0f;` is clean and `int i = 1.5f;` is
+    // "Implicit conversion of value is not exact", which needs a constant folder this analyzer
+    // does not have. Staying silent on literals is what keeps the two apart.
+    CHECK(NumericWarnings(
+        "void main() { int i = Read(); float f = i; }\n"
+        "int Read() { return 1; }\n").empty());
+
+    CHECK(NumericWarnings(
+        "void main() { float f = Read(); double d = f; }\n"
+        "float Read() { return 1.5f; }\n").empty());
+
+    CHECK(NumericWarnings(
+        "void main() { float f = Read(); int i = int(f); }\n"
+        "float Read() { return 1.5f; }\n").empty());
+
+    CHECK(NumericWarnings("void main() { int i = 1.5f; }\n").empty());
+    CHECK(NumericWarnings("void main() { int i = 2.0f; }\n").empty());
+}
+
+TEST_CASE("NumericWarnings - Both warnings are warnings, not errors")
+{
+    // A false error blocks a build; a false warning is noise. These are the compiler's own
+    // severity, and nothing here may be promoted to an error without the oracle changing first.
+    const auto mismatch = NumericWarnings(
+        "void main() { int i = ReadI(); uint u = ReadU(); bool r = i < u; }\n"
+        "int ReadI() { return 1; }\n"
+        "uint ReadU() { return 1; }\n");
+    REQUIRE(mismatch.size() == 1);
+    CHECK(mismatch[0].severity == DiagnosticSeverity::Warning);
+
+    const auto truncation = NumericWarnings(
+        "void main() { float f = Read(); int i = f; }\n"
+        "float Read() { return 1.5f; }\n");
+    REQUIRE(truncation.size() == 1);
+    CHECK(truncation[0].severity == DiagnosticSeverity::Warning);
+}
+
+TEST_CASE("NumericWarnings - A const float source is folded and is silent")
+{
+    // Oracle, and the first thing the corpus audit caught - 34 findings of exactly this shape
+    // across the Sven Co-op weapon scripts before the rule learned to fold:
+    //
+    //   const float D = 15.0; int m = D;   ->  clean (15.0 survives exactly)
+    //   const float D = 100;  int m = D;   ->  clean
+    //   const float D = 15.5; int m = D;   ->  "Implicit conversion of value is not exact",
+    //                                          a different code, and one that needs the folder
+    //   float D = 15.0;       int m = D;   ->  "Float value truncated", which is this rule
+    //
+    // Only the last is ours, so a constant source is skipped whatever its value.
+    CHECK(NumericWarnings(
+        "const float D = 15.0;\n"
+        "void main() { int m = D; }\n").empty());
+
+    CHECK(NumericWarnings(
+        "const float D = 15.5;\n"
+        "void main() { int m = D; }\n").empty());
+
+    CHECK(NumericWarnings(
+        "const float D = 15.0;\n"
+        "class C { int m = D; }\n"
+        "void main() { C c; }\n").empty());
+
+    CHECK(CountCode(NumericWarnings(
+        "float D = 15.0;\n"
+        "void main() { int m = D; }\n"), "as-warn-float-truncation") == 1);
+}
+
+TEST_CASE("NumericWarnings - A hex literal is not a float because it contains an f")
+{
+    // `d`, `e` and `f` are hex digits. ResolveExpressionType scanned every number literal for
+    // the float suffix and the exponent marker, so `0xefc60000` resolved to `float` and every
+    // rule downstream believed a bitwise expression was floating point. The corpus audit found
+    // it on a Mersenne twister - `y ^= (y << 15) & 0xefc60000;` with `uint64 y` - reported as a
+    // truncation into an integer.
+    CHECK(NumericWarnings(
+        "void main() { uint64 y = Seed(); y ^= (y << 15) & 0xefc60000; }\n"
+        "uint64 Seed() { return 1; }\n").empty());
+
+    CHECK(NumericWarnings(
+        "void main() { uint64 y = Seed(); y ^= (y >> 11) & 0xdeadbeef; }\n"
+        "uint64 Seed() { return 1; }\n").empty());
+
+}
+
+// =====================================================================================
+// NUMERIC WARNING CORPUS AUDIT (skip()-decorated, run it deliberately:
+// `angel_lsp_tests.exe --no-skip --test-case="*Numeric Warning Corpus Audit*"`)
+//
+// Unlike the conversion audit above, a finding here is not by itself a defect: the compiler
+// warns about these too, and a real 1,061-file corpus is expected to contain thousands of
+// signed/unsigned comparisons. Counting them proves nothing on its own.
+//
+// What proves something is the comparison against the compiler, so this writes every finding
+// as `file:line:column code` to the path in ANGELLSP_NUMERIC_WARNING_DUMP when that is set.
+// The compiler's own side of the comparison is one loop:
+//
+//   for f in angelscript/*.as; do server/build-release/Release/angelscript_oracle.exe "$f"; done \
+//     | grep -E 'Signed/Unsigned mismatch|Float value truncated'
+//
+// Any finding in the dump that the compiler does not also make is a false positive, and that
+// count - not the total - is the number these two rules live or die by. The same audit runs
+// over tests/parity/ by pointing ANGELLSP_CORPUS_DIR at it, which is how doc_p25 and doc_p26
+// were checked position by position against the compiler.
+// =====================================================================================
+
+TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript Files" * doctest::skip(true))
+{
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
+    namespace fs = std::filesystem;
+
+    std::vector<fs::path> files;
+    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    {
+        if (entry.is_regular_file() && entry.path().extension() == ".as")
+        {
+            files.push_back(entry.path());
+        }
+    }
+    REQUIRE_MESSAGE(!files.empty(), "Expected the angelscript/ corpus directory to contain .as files");
+    std::sort(files.begin(), files.end());
+
+    std::unordered_map<std::string, std::vector<fs::path>> groups;
+    for (const auto &path : files)
+    {
+        const std::string name = path.filename().string();
+        const size_t underscore = name.find('_');
+        groups[underscore == std::string::npos ? name : name.substr(0, underscore)].push_back(path);
+    }
+
+    angel_lsp::i18n::I18n i18n;
+    size_t totalFiles = 0;
+    size_t filesWithFindings = 0;
+    std::unordered_map<std::string, size_t> byCode;
+    std::vector<std::string> dump;
+    std::vector<std::string> sample;
+
+    for (auto &[groupName, groupFiles] : groups)
+    {
+        SymbolTable sharedTable;
+        std::map<std::string, std::string> sources;
+
+        for (const auto &path : groupFiles)
+        {
+            std::ifstream file(path, std::ios::binary);
+            if (!file)
+            {
+                continue;
+            }
+            std::ostringstream buffer;
+            buffer << file.rdbuf();
+            std::string sourceCode = buffer.str();
+            if (sourceCode.empty())
+            {
+                continue;
+            }
+
+            const std::string fileUri = "file:///" + path.filename().string();
+            sources[fileUri] = sourceCode;
+
+            AngelScriptParser parser;
+            SymbolCollector collector(nullptr);
+            collector.CollectSymbols(fileUri, sourceCode, parser, sharedTable);
+        }
+
+        for (const auto &[fileUri, sourceCode] : sources)
+        {
+            ++totalFiles;
+
+            AngelScriptParser parser;
+            LocalScopeCollector scopeCollector(nullptr);
+            TSTree *tree = parser.Parse(sourceCode);
+
+            SemanticAnalysisRequest request{ sharedTable, fileUri, "", &i18n };
+            request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
+            request.sourceCode = sourceCode;
+            request.tree = tree;
+
+            SemanticAnalyzer analyzer(nullptr);
+            std::vector<Diagnostic> diagnostics;
+            CHECK_NOTHROW(diagnostics = analyzer.Analyze(request));
+
+            bool flaggedHere = false;
+            for (const auto &diag : diagnostics)
+            {
+                if (diag.code != "as-warn-signed-unsigned-mismatch" &&
+                    diag.code != "as-warn-float-truncation")
+                {
+                    continue;
+                }
+
+                flaggedHere = true;
+                ++byCode[diag.code];
+
+                // 1-based line and column, which is how the compiler reports a position, so the
+                // two dumps can be compared without either side having to be re-indexed.
+                dump.push_back(fileUri.substr(8) + ":" +
+                               std::to_string(diag.range.start.line + 1) + ":" +
+                               std::to_string(diag.range.start.character + 1) + " " + diag.code);
+
+                if (sample.size() < 40)
+                {
+                    sample.push_back(dump.back());
+                }
+            }
+            if (flaggedHere)
+            {
+                ++filesWithFindings;
+            }
+
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
+        }
+    }
+
+    MESSAGE("Numeric warning corpus audit: files=" << totalFiles
+            << " filesWithFindings=" << filesWithFindings
+            << " findings=" << dump.size());
+    for (const auto &[code, count] : byCode)
+    {
+        MESSAGE("  " << code << ": " << count);
+    }
+    for (const auto &line : sample)
+    {
+        MESSAGE("  " << line);
+    }
+
+    if (const char *dumpPath = std::getenv("ANGELLSP_NUMERIC_WARNING_DUMP"); dumpPath && *dumpPath)
+    {
+        std::sort(dump.begin(), dump.end());
+        std::ofstream out(dumpPath, std::ios::binary);
+        for (const auto &line : dump)
+        {
+            out << line << "\n";
+        }
+        MESSAGE("  wrote " << dump.size() << " findings to " << std::string(dumpPath));
+    }
+
+    CHECK(totalFiles > 0);
+
+    // Cross-checked against the compiler itself, by running angelscript_oracle over all 1,061
+    // files and counting its own numeric warnings:
+    //
+    //     compiler:  2 signed/unsigned,  0 float truncation   (483 files compile cleanly)
+    //     analyzer:  0 signed/unsigned,  0 float truncation
+    //
+    // So: nothing invented, two missed. Both misses are the same one - `key[0] == '*'` on a
+    // `string`, where the compiler knows opIndex returns uint8 and this audit, which loads no
+    // predefined stubs, cannot see the string type at all. That is the silent-unless-visible
+    // policy working, not a defect in these rules.
+    //
+    // Real AngelScript turns out to write almost none of this: 541 of the corpus's indexed loops
+    // declare `uint i` against 10 that declare `int`, and all 10 of those bound on `ArgC()`,
+    // which returns `int` - so the compiler has nothing to warn about either.
+    // The rules are exercised for real by doc_p25 and doc_p26 in tests/parity/, where the
+    // analyzer matches the compiler line and column on 10 of 10 mismatches and 8 of 9
+    // truncations - see doc_p26 for the ninth, which is a stated gap.
+    //
+    // The first run of this audit reported 35, every one of them a false positive, and fixing
+    // them is what the two constant-folding guards and the hex-literal fix in SemanticHelpers
+    // are for. Zero is therefore a measured ratchet, not an untested default: a finding here
+    // means either a new false positive or a corpus that has grown a real one, and the way to
+    // tell them apart is to run the file through angelscript_oracle.
+    constexpr size_t k_accountedFindings = 0;
+
+    CHECK(dump.size() <= k_accountedFindings);
+    CHECK(filesWithFindings <= k_accountedFindings);
+}

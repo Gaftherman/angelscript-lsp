@@ -280,6 +280,14 @@ namespace angel_lsp::analysis
      *
      * The explicit `int32`/`uint32` spellings are listed beside `int`/`uint` because a source file
      * may write either and nothing canonicalises them away.
+     *
+     * @warning This is not the table for `as-warn-signed-unsigned-mismatch`, and reusing it there
+     *          would reintroduce the bug above. This table answers "does the compiler accept the
+     *          conversion", and it does; the warning answers "does the compiler complain while
+     *          accepting it", and it complains about exactly the signed/unsigned pairs listed here
+     *          as safe - but only across a comparison operator, and only when neither side folds
+     *          to a constant. Two questions, two tables. See the numeric-warning section of
+     *          TypeConversionChecker.cpp.
      */
     bool IsPrimitiveWidening(const std::string &fromType, const std::string &toType)
     {

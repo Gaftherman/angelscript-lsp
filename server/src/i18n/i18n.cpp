@@ -199,6 +199,8 @@ namespace angel_lsp::i18n
         m_messages["as-err-mixin-not-a-type"] = "Mixin '{}' cannot be used as a data type.";
         m_messages["as-err-undeclared-identifier"] = "Undeclared identifier '{}'.";
         m_messages["as-warn-unused-variable"] = "Local variable '{}' is never used.";
+        m_messages["as-warn-signed-unsigned-mismatch"] = "Signed/Unsigned mismatch: '{}' is compared with '{}'. Half of one range has no counterpart in the other, so the conversion wraps.";
+        m_messages["as-warn-float-truncation"] = "Float value truncated in implicit conversion to integer: '{}' becomes '{}'. The fractional part is discarded.";
         m_messages["as-err-null-non-handle"] = "Cannot assign 'null' to non-handle type '{}'.";
         m_messages["as-err-no-implicit-conversion"] = "Cannot implicitly convert '{}' to '{}'. Declare a matching constructor, an 'opImplConv' or an 'opAssign' overload.";
         m_messages["as-err-no-explicit-conversion"] = "No conversion from '{}' to '{}' exists. Declare a matching constructor on the target, or an 'opConv'/'opImplConv' overload on the source.";
@@ -338,6 +340,8 @@ namespace angel_lsp::i18n
             m_messages["as-err-mixin-not-a-type"] = "El mixin '{}' no puede ser usado como un tipo de dato.";
             m_messages["as-err-undeclared-identifier"] = "Identificador no declarado '{}'.";
             m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";
+            m_messages["as-warn-signed-unsigned-mismatch"] = "Discrepancia con/sin signo: se compara '{}' con '{}'. La mitad de un rango no tiene equivalente en el otro, así que la conversión da la vuelta.";
+            m_messages["as-warn-float-truncation"] = "Valor flotante truncado en la conversión implícita a entero: '{}' pasa a '{}'. La parte fraccionaria se descarta.";
             m_messages["as-err-null-non-handle"] = "No se puede asignar 'null' al tipo no-handle '{}'.";
             m_messages["as-err-no-implicit-conversion"] = "No se puede convertir implícitamente '{}' a '{}'. Declara un constructor compatible, un 'opImplConv' o una sobrecarga 'opAssign'.";
             m_messages["as-err-no-explicit-conversion"] = "No existe conversión de '{}' a '{}'. Declara un constructor compatible en el destino, o una sobrecarga 'opConv'/'opImplConv' en el origen.";

@@ -1141,13 +1141,27 @@ namespace angel_lsp::analysis
         if (nodeType == "number_literal")
         {
             std::string text = GetNodeText(exprNode, sourceCode);
-            if (text.find('f') != std::string::npos || text.find('F') != std::string::npos)
+
+            // `d`, `e` and `f` are hex digits, so a hex literal must never be scanned for the
+            // float suffix and the exponent marker: `0xefc60000` is a uint, and reading it as a
+            // float made every rule downstream believe a bitwise expression was floating point.
+            // Found by the numeric-warning corpus audit, which reported a truncation on
+            // `y ^= (y << 15) & 0xefc60000;` in a Mersenne twister. `u` and `l` are not hex
+            // digits, so the width suffixes below stay meaningful either way.
+            const bool isRadixPrefixed = text.size() > 1 && text[0] == '0' &&
+                                         (text[1] == 'x' || text[1] == 'X' ||
+                                          text[1] == 'b' || text[1] == 'B');
+
+            if (!isRadixPrefixed)
             {
-                return "float";
-            }
-            if (text.find('.') != std::string::npos || text.find('e') != std::string::npos || text.find('E') != std::string::npos)
-            {
-                return "double";
+                if (text.find('f') != std::string::npos || text.find('F') != std::string::npos)
+                {
+                    return "float";
+                }
+                if (text.find('.') != std::string::npos || text.find('e') != std::string::npos || text.find('E') != std::string::npos)
+                {
+                    return "double";
+                }
             }
             if ((text.find('u') != std::string::npos || text.find('U') != std::string::npos) &&
                 (text.find('l') != std::string::npos || text.find('L') != std::string::npos))

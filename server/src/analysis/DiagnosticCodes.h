@@ -57,4 +57,13 @@ namespace angel_lsp::diagnostics::codes
     // Engine Property Disallowed Errors
     inline constexpr std::string_view PrimitiveInoutRefDisallowed = "as-err-inout-on-primitive";
     inline constexpr std::string_view GlobalVarsDisallowed = "as-err-global-vars-disallowed";
+
+    // Numeric Conversion Warnings
+    //
+    // The compiler emits five of these; these are the two it decides from types alone. The other
+    // three - "Implicit conversion changed sign of value", "Value is too large for data type" and
+    // "Implicit conversion of value is not exact" - fire only on constant expressions and need a
+    // constant folder to answer. See TypeConversionChecker.cpp's numeric-warning section.
+    inline constexpr std::string_view SignedUnsignedMismatch = "as-warn-signed-unsigned-mismatch";
+    inline constexpr std::string_view FloatTruncation = "as-warn-float-truncation";
 }

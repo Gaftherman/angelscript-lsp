@@ -991,6 +991,250 @@ namespace angel_lsp::analysis
                             DiagnosticSeverity::Error);
         }
 
+        void EmitWarningAtNode(TSNode node,
+                               DiagnosticContext &ctx,
+                               std::string_view code,
+                               const std::string &from = "",
+                               const std::string &to = "")
+        {
+            const TSPoint start = ts_node_start_point(node);
+            const TSPoint end = ts_node_end_point(node);
+            ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, from, to,
+                            DiagnosticSeverity::Warning);
+        }
+
+        // --- Numeric conversion warnings (TYPE-03) -------------------------------------------
+        //
+        // The compiler emits five numeric warnings. Two of them - these - it decides from the
+        // operand types alone. The other three ("Implicit conversion changed sign of value",
+        // "Value is too large for data type", "Implicit conversion of value is not exact") fire
+        // only on constant expressions, so answering them needs a constant folder this analyzer
+        // does not have. They are left unimplemented rather than approximated: a warning that is
+        // right about the shape and wrong about the value is worse than no warning.
+        //
+        // Everything below was measured against angelscript_oracle, not read off documentation,
+        // and the measurements corrected the backlog on three points:
+        //
+        //   * Signed/Unsigned mismatch fires ONLY on the six comparison operators. `i * u`,
+        //     `i & u` and every other arithmetic or bitwise pairing is silent, and so are
+        //     assignment, argument passing and return. The backlog implied it followed the
+        //     conversion, which it does not.
+        //   * Width is irrelevant - every signed integer paired with every unsigned one warns -
+        //     and float and double count as SIGNED: `float < uint` warns, `float < int` does not.
+        //   * A compile-time constant on either side folds the comparison away and it is silent.
+        //     `const int i = 1; i < u` is clean, a bare enum member is clean, and `i < 5` is
+        //     clean. Only a constant whose value is itself out of range warns, and then under one
+        //     of the three codes above.
+        //
+        // The last point is the whole false-positive risk, so the rule stays silent whenever
+        // either operand is constant. That costs `u < -5`, which the compiler does warn about;
+        // missing beats inventing, and the alternative is the folder again.
+        //
+        // Neither warning reuses IsPrimitiveWidening from OverloadResolver, and that is
+        // deliberate: it lists signed/unsigned pairs as SAFE on purpose, because removing them
+        // produced real false positives on `array<int> a(1)`. The compiler warns on exactly the
+        // pairs that table calls safe, so the two questions need two tables.
+
+        bool IsUnsignedIntegerPrimitive(std::string_view typeName) noexcept
+        {
+            return typeName == "uint" || typeName == "uint8" || typeName == "uint16" ||
+                   typeName == "uint32" || typeName == "uint64";
+        }
+
+        /** @brief Signed for the purpose of the mismatch warning, which counts float and double. */
+        bool IsSignedNumericPrimitive(std::string_view typeName) noexcept
+        {
+            return typeName == "int" || typeName == "int8" || typeName == "int16" ||
+                   typeName == "int32" || typeName == "int64" ||
+                   typeName == "float" || typeName == "double";
+        }
+
+        bool IsComparisonOperator(std::string_view op) noexcept
+        {
+            return op == "<" || op == ">" || op == "<=" || op == ">=" || op == "==" || op == "!=";
+        }
+
+        /** @brief True for a written-out number, through any parentheses and unary sign. */
+        bool IsNumericLiteralExpression(TSNode node, int depth = 0)
+        {
+            if (ts_node_is_null(node) || depth > k_maxAstDepth)
+            {
+                return false;
+            }
+
+            const std::string_view nodeType = NodeType(node);
+            if (nodeType.ends_with("_literal") || nodeType == "number")
+            {
+                return true;
+            }
+            if (nodeType != "parenthesized_expression" && nodeType != "unary_expression")
+            {
+                return false;
+            }
+            for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+            {
+                if (IsNumericLiteralExpression(ts_node_named_child(node, i), depth + 1))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * @brief True when the operand is something the compiler folds before it compares.
+         *
+         * Constants are what lets the mismatch rule stay silent instead of guessing: the compiler
+         * knows the value, so it compares values rather than types and no mismatch arises. A name
+         * counts as constant here when its declaration says `const` - the one spelling that
+         * survives into both LocalDefinition::typeName and VariableSignature::typeName - or when
+         * it is a literal.
+         *
+         * An enum member needs no case of its own. ResolveExpressionType answers a bare `A` with
+         * its enum's name rather than `int`, so it never reaches the numeric test at all.
+         *
+         * An unrecognised shape answers false, which is the emitting side. That is what the
+         * corpus audit in TypeConversionTest.cpp exists to hold honest.
+         */
+        bool IsFoldedConstantOperand(TSNode node,
+                                     const Scope *scope,
+                                     const DiagnosticContext &ctx,
+                                     std::string_view sourceCode,
+                                     int depth = 0)
+        {
+            if (ts_node_is_null(node) || depth > k_maxAstDepth)
+            {
+                return false;
+            }
+
+            const std::string_view nodeType = NodeType(node);
+            if (IsNumericLiteralExpression(node))
+            {
+                return true;
+            }
+
+            if (nodeType == "parenthesized_expression")
+            {
+                for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+                {
+                    if (IsFoldedConstantOperand(ts_node_named_child(node, i), scope, ctx, sourceCode, depth + 1))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            if (nodeType != "identifier" && nodeType != "scoped_identifier" &&
+                nodeType != "qualified_identifier")
+            {
+                return false;
+            }
+
+            const std::string name = NodeText(node, sourceCode);
+            if (scope)
+            {
+                if (const LocalDefinition *def = ResolveInScope(scope, LastScopeSegment(name)))
+                {
+                    return def->typeName.starts_with("const ");
+                }
+            }
+
+            bool folded = false;
+            ForEachSymbolNamed(name, ctx.request.symbolTable, [&folded](const Symbol &sym)
+            {
+                if (sym.type != SymbolType::Variable && sym.type != SymbolType::Property)
+                {
+                    return false;
+                }
+                folded = sym.GetVariable().typeName.starts_with("const ");
+                return true;
+            });
+            return folded;
+        }
+
+        /**
+         * @brief `as-warn-signed-unsigned-mismatch`, anchored on the operator the way the compiler
+         *        anchors it.
+         */
+        void CheckSignedUnsignedComparison(TSNode node,
+                                           const Scope *scope,
+                                           DiagnosticContext &ctx,
+                                           std::string_view sourceCode)
+        {
+            TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
+            if (ts_node_is_null(opNode) || !IsComparisonOperator(NodeText(opNode, sourceCode)))
+            {
+                return;
+            }
+
+            TSNode left = ts_node_child_by_field_name(node, "left", 4);
+            TSNode right = ts_node_child_by_field_name(node, "right", 5);
+            if (ts_node_is_null(left) || ts_node_is_null(right))
+            {
+                return;
+            }
+
+            const std::string leftType = CleanBaseType(
+                ResolveExpressionType(left, scope, ctx.request.symbolTable, sourceCode, ctx.request.fileUri));
+            const std::string rightType = CleanBaseType(
+                ResolveExpressionType(right, scope, ctx.request.symbolTable, sourceCode, ctx.request.fileUri));
+
+            const bool mismatched =
+                (IsUnsignedIntegerPrimitive(leftType) && IsSignedNumericPrimitive(rightType)) ||
+                (IsUnsignedIntegerPrimitive(rightType) && IsSignedNumericPrimitive(leftType));
+            if (!mismatched)
+            {
+                return;
+            }
+
+            if (IsFoldedConstantOperand(left, scope, ctx, sourceCode) ||
+                IsFoldedConstantOperand(right, scope, ctx, sourceCode))
+            {
+                return;
+            }
+
+            EmitWarningAtNode(opNode, ctx, "as-warn-signed-unsigned-mismatch", leftType, rightType);
+        }
+
+        /**
+         * @brief `as-warn-float-truncation` where a float value implicitly becomes an integer.
+         *
+         * Anchored at the source expression, which is where the compiler anchors it.
+         *
+         * A CONSTANT source is excluded, for the same reason the mismatch rule excludes one: the
+         * compiler folds it and then judges the value, not the type. `const float D = 15.0;
+         * int i = D;` is clean because 15.0 survives the trip exactly, and `const float D = 15.5`
+         * is "Implicit conversion of value is not exact" - a different code, and one that needs
+         * the constant folder. A written literal is the same story: `int i = 2.0f;` is clean and
+         * `int i = 1.5f;` is not.
+         *
+         * This is not a hypothetical. The corpus audit's first run reported 34 findings of the
+         * shape `const float WEAPON_DAMAGE = 15.0; int m_iBulletDamage = WEAPON_DAMAGE;` across
+         * the Sven Co-op weapon scripts, and the compiler is silent on every one of them.
+         */
+        void CheckFloatTruncation(TSNode valueNode,
+                                  const std::string &sourceType,
+                                  const std::string &targetType,
+                                  const Scope *scope,
+                                  DiagnosticContext &ctx,
+                                  std::string_view sourceCode)
+        {
+            if (ts_node_is_null(valueNode))
+            {
+                return;
+            }
+            if (!IsFloatingPointPrimitive(sourceType) || !IsIntegerPrimitive(targetType))
+            {
+                return;
+            }
+            if (IsFoldedConstantOperand(valueNode, scope, ctx, sourceCode))
+            {
+                return;
+            }
+            EmitWarningAtNode(valueNode, ctx, "as-warn-float-truncation", sourceType, targetType);
+        }
+
         /** @brief Everything one declared type text says that the rules below need to know. */
         struct DeclaredType
         {
@@ -1115,6 +1359,11 @@ namespace angel_lsp::analysis
                     }
                 }
                 return;
+            }
+
+            if (!declared.isHandle)
+            {
+                CheckFloatTruncation(valueNode, source.baseName, declared.baseName, scope, ctx, sourceCode);
             }
 
             // A handle binds to objects.
@@ -1965,6 +2214,10 @@ namespace angel_lsp::analysis
                     std::string cleanLeft = CleanBaseType(leftType);
                     std::string cleanRight = CleanBaseType(rightType);
 
+                    // Covers `i = f;` and `i += f;` alike - the compiler warns on both, and a
+                    // compound assignment reaches here with the same left and right types.
+                    CheckFloatTruncation(right, cleanRight, cleanLeft, scopeAt(), ctx, request.sourceCode);
+
                     auto leftFuncdef = FindFuncdef(cleanLeft, ctx.request.symbolTable);
                     if (leftFuncdef)
                     {
@@ -2063,6 +2316,10 @@ namespace angel_lsp::analysis
                         }
                     }
                 }
+            }
+            else if (nodeType == "binary_expression")
+            {
+                CheckSignedUnsignedComparison(node, scopeAt(), ctx, request.sourceCode);
             }
             else if (nodeType == "update_expression" || nodeType == "unary_expression" || nodeType == "postfix_expression")
             {
@@ -2272,6 +2529,7 @@ namespace angel_lsp::analysis
                                 {
                                     const std::string actual = CleanBaseType(ResolveExpressionType(
                                         expr, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
+                                    CheckFloatTruncation(expr, actual, expected, scopeAt(), ctx, request.sourceCode);
                                     if (!actual.empty() && actual != expected)
                                     {
                                         if (!IsConvertible(actual, expected, ctx))

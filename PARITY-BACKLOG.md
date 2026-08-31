@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1199 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1210 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -79,6 +79,52 @@ Each entry says what the compiler answers and what this analyzer answered before
 false positives — legal code reported as an error, which is the one failure mode this project
 treats as unacceptable.
 
+- **Numeric warnings** (`TYPE-03`). The compiler emits **five**, not the three the issue list named,
+  and only two of the five are decidable from types. The other three — `Implicit conversion changed
+  sign of value`, `Value is too large for data type`, `Implicit conversion of value is not exact` —
+  fire only on *constant* expressions and need a constant folder, so they are deliberately not
+  implemented rather than approximated. The two that landed, both in `TypeConversionChecker`:
+  - `as-warn-signed-unsigned-mismatch` fires **only on the six comparison operators**. The issue
+    list implied it followed the conversion; the oracle says `i * u`, `i & u`, assignment, argument
+    passing and return are all silent. Width is irrelevant — every signed integer against every
+    unsigned one warns — and **float and double count as signed**: `float < uint` warns, `float <
+    int` does not.
+  - `as-warn-float-truncation` fires wherever a float value implicitly reaches an integer slot:
+    initializer, assignment, compound assignment, return.
+
+  The whole false-positive surface is constant folding, and it is not hypothetical. **A compile-time
+  constant on either side is folded and judged by value, not by type**, so the compiler is silent
+  where a type-only rule would speak: `const int i = 1; i < u` is clean, a bare enum member is
+  clean, and `const float D = 15.0; int m = D;` is clean because 15.0 survives the trip exactly —
+  while `const float D = 15.5` is answered by `Implicit conversion of value is not exact`, a
+  different code. Both rules therefore stay silent whenever the operand is constant. That costs
+  `u < -5`, which the compiler does warn about; missing beats inventing, and the alternative is the
+  folder again.
+
+  The first run of the new corpus audit reported **35 findings, every one a false positive**: 34 of
+  the `const float WEAPON_DAMAGE = 15.0; int m_iBulletDamage = WEAPON_DAMAGE;` shape across the
+  Sven Co-op weapon scripts, and one on a Mersenne twister — `y ^= (y << 15) & 0xefc60000;` with
+  `uint64 y`, reported as a truncation into an integer. That last one was **a pre-existing defect in
+  `ResolveExpressionType`, not in the new rule**: it scanned every number literal for the float
+  suffix and the exponent marker, and `d`, `e` and `f` are hex digits, so `0xefc60000` resolved to
+  `float` for every rule downstream. Hex and binary literals are now excluded from that scan; `u`
+  and `l` are not hex digits, so the width suffixes still read.
+
+  `IsPrimitiveWidening` was **not** reused, and the note at its site now says why: it lists
+  signed/unsigned pairs as *safe* on purpose, because removing them produced real false positives on
+  `array<int> a(1)`. The compiler warns on exactly the pairs that table calls safe. Two questions,
+  two tables.
+
+  Cross-checked by running `angelscript_oracle` over all 1,061 corpus files and counting its own
+  numeric warnings: **compiler 2 and 0, analyzer 0 and 0** — nothing invented, two missed, both the
+  same `key[0] == '*'` on a `string`, where the audit loads no stubs and cannot see that `opIndex`
+  returns `uint8`. Real AngelScript writes almost none of this: 541 of the corpus's indexed loops
+  declare `uint i` against 10 that declare `int`, and all 10 of those bound on `ArgC()`, which
+  returns `int` - so the compiler has nothing to warn about either. The rules
+  are exercised for real by the parity files, where the analyzer matches the compiler **line and
+  column** on 10 of 10 mismatches and 8 of 9 truncations. `doc_p25`, `doc_p26` (which states the
+  ninth: `int i = f * 2.0f;`, missed because the initializer path resolves through
+  `ResolveValueType`, which has no binary-expression case).
 - **`super(args)` in a constructor.** `NamespaceChecker` emitted `as-err-undefined-identifier` and
   `SemanticAnalyzer` a matching warning, because `super` resolves to no symbol and never will. Now
   `SemanticHelpers::IsBaseConstructorCall` tests the *shape* — a constructor of a class with a base
@@ -425,23 +471,19 @@ first. Each lands with its `doc_`-prefixed parity case.
    than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
    exists the setting is the honest interface, but it is the reason the rule cannot simply be
    unconditional.
-2. **Numeric warnings** (`TYPE-03`) — the compiler emits three: `Implicit conversion changed sign of
-   value`, `Float value truncated in implicit conversion to integer`, `Signed/Unsigned mismatch`.
-   None exist here. Decidable from the source alone, so the visibility policy permits them; the
-   narrowing tables at `OverloadResolver.cpp` already exist and feed only overload ranking today.
-3. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
+2. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
     function on the right-hand side and returns silently for a lambda, so neither parameters nor
     return type are compared.
-4. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+3. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-5. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+4. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-6. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+5. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-7. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+6. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-8. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+7. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 
 ### Out of scope
