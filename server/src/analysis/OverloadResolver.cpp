@@ -530,11 +530,43 @@ namespace angel_lsp::analysis
         // Mutable non-const reference parameter requires exact type and non-const lvalue
         if (isMutableRef)
         {
-            if (!isMatchingType(cleanArg, cleanParam) || argIsHandle != paramIsHandle || argIsConst)
+            if (argIsHandle != paramIsHandle || argIsConst)
             {
                 return static_cast<int>(OverloadMatchPenalty::Incompatible);
             }
-            return static_cast<int>(OverloadMatchPenalty::Exact);
+            if (isMatchingType(cleanArg, cleanParam))
+            {
+                return static_cast<int>(OverloadMatchPenalty::Exact);
+            }
+
+            // An `&out` takes any NUMERIC type, converting on the way back out. This required an
+            // exact match, and that was measured wrong - `schema.Get("minItems", uiTemp)` with a
+            // `uint` against `int &out` was reported "No matching signatures" on code the compiler
+            // accepts. Measured, one shape at a time against a single `int &out` parameter:
+            //
+            //     uint   accepted        float  accepted        int64  accepted
+            //     string "No matching signatures to 'S::Get(string)'"
+            //
+            // and `bool` is refused in both directions, as it is everywhere else - it is not a
+            // numeric type. So the test is "both numeric", not "identical", and IsNumericPrimitive
+            // already excludes bool for exactly this reason.
+            //
+            // Scored through the ordinary conversion ladder rather than as Exact, so two numeric
+            // `&out` overloads do not tie: `Get(int &out)` and `Get(float &out)` given a `uint` are
+            // accepted by the compiler without complaint, which they could not be if it ranked them
+            // equal.
+            if (IsNumericPrimitive(cleanArg) && IsNumericPrimitive(cleanParam))
+            {
+                if (IsPrimitiveWidening(cleanArg, cleanParam))
+                {
+                    const bool crossesKind = IsIntegerType(cleanArg) && IsFloatingPointType(cleanParam);
+                    return static_cast<int>(crossesKind ? OverloadMatchPenalty::WideningAcrossKind
+                                                        : OverloadMatchPenalty::Widening);
+                }
+                return static_cast<int>(OverloadMatchPenalty::Narrowing);
+            }
+
+            return static_cast<int>(OverloadMatchPenalty::Incompatible);
         }
 
         // 1. Exact match
@@ -751,7 +783,28 @@ namespace angel_lsp::analysis
                 // --predefined-file and a built-in engine profile that both describe the standard
                 // library will each declare `array<T>::insertLast(const T&in)`, and reporting every
                 // call to it as ambiguous made the server unusable against that setup.
-                if (result.bestCandidate && !HasSameSignature(*result.bestCandidate, sym))
+                // An argument whose type is unknown scores Exact against every parameter - see
+                // ScoreArgumentMatch, where that is the right answer for "do not reject". It is the
+                // wrong answer for "these two tie": a tie reached through an unknown is a fact
+                // about this analyzer's knowledge, not about the code.
+                //
+                // `auto` is the spelling that matters here. An empty type also scores Exact, but
+                // CheckCall's allArgsResolved gate stops those calls before they reach a verdict;
+                // `auto` is not empty, so it sails past that gate and ties every candidate. Both of
+                // the last two ambiguity findings over the corpus were exactly this - `auto ptr =
+                // __Tests__[ui]; Start(ptr);` against two unrelated `Start` overloads, and an
+                // `auto@` schema handle against two `Validate` overloads. Found by instrumenting
+                // the emit site, which printed `args=[auto,]`.
+                const bool anyArgumentUnknown =
+                    std::any_of(argumentTypes.begin(), argumentTypes.end(),
+                                [](const std::string &argType)
+                                {
+                                    const std::string bare = NormalizeType(argType);
+                                    return bare.empty() || bare == "auto";
+                                });
+
+                if (result.bestCandidate && !anyArgumentUnknown &&
+                    !HasSameSignature(*result.bestCandidate, sym))
                 {
                     result.isAmbiguous = true;
                 }

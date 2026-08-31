@@ -956,3 +956,34 @@ TEST_CASE("AccessChecker - Mode 3 leaves a real member alone")
     CHECK_FALSE(HasCode(AnalyzeAccessSnippet(code, "file:///access.as", &engine),
                         "as-err-member-not-found"));
 }
+
+TEST_CASE("AccessChecker - A member access on an array reaches the array's members")
+{
+    // `CleanBaseType` answers the ELEMENT type - it reduces `array<Item>` to `Item` - and this
+    // check used it for the receiver, so `items.insertLast(x)` looked for `Item::insertLast` and
+    // reported "Class 'Item' has no member 'insertLast'" on ordinary code.
+    //
+    // It stayed hidden because the element is usually a primitive, and a primitive has no
+    // hierarchy, so the visibility guard returned before the lookup could fail. Only an array of a
+    // SCRIPT-DECLARED class got far enough to be reported. Found by doc_p30, which happened to
+    // need `array<Item@>`. MemberOwnerType is the function that answers this question and this
+    // call site had never been migrated to it.
+    const std::string arrayDeclaration =
+        "class Item {}\n"
+        "class array<T> { void insertLast(const T&in value) {} uint length() const { return 0; } }\n";
+
+    for (const std::string spelling : { "array<Item>", "array<Item@>", "Item[]" })
+    {
+        const std::string code =
+            arrayDeclaration +
+            "void main() { " + spelling + " items; items.insertLast(Item()); items.length(); }\n";
+        INFO("spelling: " << spelling);
+        CHECK_FALSE(HasCode(AnalyzeAccessSnippet(code), "as-err-member-not-found"));
+    }
+
+    // A member the array really does not have is still reported, which is what keeps this from
+    // being a blanket exemption for anything with brackets.
+    CHECK(HasCode(AnalyzeAccessSnippet(
+        arrayDeclaration +
+        "void main() { array<Item> items; items.noSuchMethod(); }\n"), "as-err-member-not-found"));
+}

@@ -269,8 +269,25 @@ namespace angel_lsp::analysis
 
             const SymbolTable &table = ctx.request.symbolTable;
 
-            const std::string objectType = CleanBaseType(ResolveExpressionType(
-                objectNode, scope, table, request.sourceCode, ctx.request.fileUri));
+            // MemberOwnerType, not CleanBaseType. A `.` on an array reaches the ARRAY's members,
+            // and CleanBaseType answers the element type - it reduces `array<Item>` to `Item`, so
+            // `items.insertLast(x)` went looking for `Item::insertLast` and reported "Class 'Item'
+            // has no member 'insertLast'" on ordinary code. It stayed hidden because the element
+            // type is usually a primitive, and a primitive has no hierarchy, so the guard below
+            // returned before the lookup: only an array of a SCRIPT-DECLARED class reached far
+            // enough to be reported. Found by doc_p30, which happened to need `array<Item@>`.
+            //
+            // The container name falls back to `array` when nothing is configured:
+            // GetArrayTypeName() answers empty with no TypeConfig, and an empty container name
+            // leaves CanonicalizeArrayType unable to turn `Item[]` into `array<Item>` at all - so
+            // the bracket spelling kept resolving to its element while the template spelling was
+            // already fixed. `array` is the language's own default and TypeConfig's too.
+            const std::string_view arrayContainer =
+                ctx.request.GetArrayTypeName().empty() ? std::string_view("array")
+                                                       : ctx.request.GetArrayTypeName();
+            const std::string objectType = MemberOwnerType(
+                ResolveExpressionType(objectNode, scope, table, request.sourceCode, ctx.request.fileUri),
+                arrayContainer);
             if (objectType.empty() || !HierarchyIsFullyVisible(objectType, table))
             {
                 return;

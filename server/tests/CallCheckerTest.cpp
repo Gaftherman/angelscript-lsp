@@ -501,37 +501,29 @@ TEST_CASE("CallChecker - Call Argument Corpus Audit" * doctest::skip(true))
 
     CHECK(result.filesAnalysed > 0);
 
-    // 9 findings, down from 103 when this audit was widened to all three call diagnostics.
-    //
-    // The 75 `as-err-call-ambiguous` were one defect, and it was not where this comment first
-    // guessed: a method redeclared in a SUBCLASS was being collected as a second candidate beside
-    // the base's declaration it overrides, the two scored identically, and legal code was reported
-    // "Multiple matching signatures". Found by instrumenting the emit site rather than reasoning:
-    // the trace printed two candidates with byte-identical parameter lists. HasSameSignature had
-    // not caught it because it compares the qualified name too, and `json::Contains` and
-    // `meta_api::json::v2::json::Contains` are genuinely different names for one method. See
-    // FindMethodCandidates, doc_p29 and doc_r28.
-    //
-    // (Two earlier hypotheses were wrong and are recorded because the measurements that killed them
-    // are worth keeping: `bool` being listed as convertible - corrected, and the count did not
-    // move - and a tie reached through an unresolved argument type - traced, and those ties are
-    // discarded upstream before they can be reported.)
-    //
-    // What remains:
-    //
-    //   1  as-err-call-argument-count         a genuine bug in the corpus
-    //   3  as-err-call-ambiguous              `Validate` and `Start`, not yet triaged
-    //   4  as-err-call-no-matching-signature  `Get` in the JSON schema, twice over, not triaged
-    //   1  the same argument-count finding is not duplicated; the other eight are two copies of
-    //      four, from the library the corpus carries twice
-    //
-    // The one genuine finding: `Logger::Log` is declared once, taking one string, and
+    // ONE finding, down from 103 when this audit was widened to all three call diagnostics, and
+    // it is a genuine bug in the corpus: `Logger::Log` is declared once, taking one string, and
     // AngelScripts_CTJALoader.as:30 passes three - a format string and two values, as though an
-    // overload existed for it. The same file calls it correctly with one argument eleven lines
-    // later.
+    // overload existed. The same file calls it correctly with one argument eleven lines later.
+    //
+    // The 102 that went were three defects, each found by instrumenting THIS emit site rather than
+    // reasoning about the resolver:
+    //
+    //   75  a method redeclared in a subclass was collected beside the base declaration it
+    //       overrides, and the two tied. See FindMethodCandidates, doc_p29, doc_r28.
+    //    4  an `&out` parameter was required to match its argument exactly; it takes any numeric
+    //       type, converting on the way back out. See ScoreArgumentMatch, doc_p30.
+    //    2  an argument of unknown type tied every candidate. `auto` is the spelling that reaches
+    //       a verdict - an empty type is stopped by the allArgsResolved gate below, `auto` is not
+    //       empty and sails past it. See ResolveBestOverload, doc_p30.
+    //   21  the same findings again, from the library the corpus carries twice.
+    //
+    // Two hypotheses were wrong along the way and are recorded because their measurements are
+    // worth keeping: `bool` listed as convertible (it was, it was corrected, and this count did
+    // not move) and an EMPTY argument type tying candidates (real, but discarded upstream).
     //
     // The number is a ratchet and may only go down.
-    CHECK(result.Total() <= 9);
+    CHECK(result.Total() <= 1);
 
     // The argument-count finding specifically, named rather than counted: it is the one this
     // audit was written for, and widening the audit must not lose it among the other two codes.
@@ -1218,6 +1210,67 @@ TEST_CASE("CallChecker - A genuine ambiguity across a hierarchy is still reporte
     // declaration takes `int &out` and the base takes `int`, which are DIFFERENT parameter lists,
     // so neither overrides the other and an `int` argument really does match both. Oracle:
     // "Multiple matching signatures to 'D::Get(int)'".
+    CHECK(HasCode(AnalyzeCallSnippet(
+        "class B { bool Get(int v) { return true; } }\n"
+        "class D : B { bool Get(int &out v) { v = 1; return true; } }\n"
+        "void main() { D d; int n; d.Get(n); }\n"), "as-err-call-ambiguous"));
+}
+
+TEST_CASE("CallChecker - An &out parameter takes any numeric type, not only its own")
+{
+    // `int &out` converts on the way back out, so it accepts every numeric type. This pass wanted
+    // an exact match and reported `schema.Get("minItems", uiTemp)` with a `uint` as "No matching
+    // signatures" - four findings over the corpus, on code the compiler accepts. Measured against
+    // a single `int &out` parameter, one type at a time:
+    //
+    //     uint accepted    float accepted    int64 accepted
+    //     string "No matching signatures to 'S::Get(string)'"
+    //
+    // and `bool` is refused in both directions, as everywhere else - it is not a numeric type.
+    const std::string set =
+        "class S {\n"
+        "  bool Get(const string &in k, int &out v) { v = 1; return true; }\n"
+        "  bool Get(const string &in k, float &out v) { v = 1; return true; }\n"
+        "}\n";
+
+    const auto uintArgument = AnalyzeCallSnippet(
+        set + "void main() { S s; uint u; s.Get('k', u); }\n");
+    CHECK_FALSE(HasCode(uintArgument, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(uintArgument, "as-err-call-ambiguous"));
+
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(
+        "class S { bool Get(int &out v) { v = 1; return true; } }\n"
+        "void main() { S s; int64 n; s.Get(n); }\n"), "as-err-call-no-matching-signature"));
+
+    // A non-numeric type is still refused, which is the half that keeps this from being a
+    // blanket "anything goes".
+    CHECK(HasCode(AnalyzeCallSnippet(
+        "class S { bool Get(int &out v) { v = 1; return true; } }\n"
+        "void main() { S s; string t; s.Get(t); }\n"), "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - An argument of unknown type does not make a call ambiguous")
+{
+    // An unresolved argument scores Exact against every parameter, which is the right answer for
+    // "do not reject" and the wrong one for "these tie". `auto` is the spelling that reaches a
+    // verdict: an empty type is stopped by the allArgsResolved gate, `auto` is not empty and sails
+    // past it, tying every candidate. Both of the corpus's last two ambiguity findings were this.
+    // Oracle accepts both snippets - the compiler resolves the `auto` and picks the one overload
+    // that fits.
+    const std::string overloads =
+        "class T {}\n"
+        "class V {}\n"
+        "void S(T@ t) {}\n"
+        "void S(const V &in v) {}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(
+        overloads + "void main() { array<T@> a; auto p = a[0]; S(p); }\n"), "as-err-call-ambiguous"));
+
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(
+        overloads + "void main() { T@ h; auto@ p = h; S(p); }\n"), "as-err-call-ambiguous"));
+
+    // A resolved argument matching two different signatures is still ambiguous - the guard is
+    // about ignorance, not about switching the rule off.
     CHECK(HasCode(AnalyzeCallSnippet(
         "class B { bool Get(int v) { return true; } }\n"
         "class D : B { bool Get(int &out v) { v = 1; return true; } }\n"

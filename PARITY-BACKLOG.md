@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1243 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1246 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -78,6 +78,51 @@ Accepted by the compiler and by this analyzer. They had no test before; they do 
 Each entry says what the compiler answers and what this analyzer answered before. Several were
 false positives — legal code reported as an error, which is the one failure mode this project
 treats as unacceptable.
+
+- **A member access on an array reached the ELEMENT's members.** `array<Item> items;
+  items.insertLast(x);` was reported "Class 'Item' has no member 'insertLast'" - on ordinary code,
+  for every method of every array whose element is a script-declared class. `CheckMemberExpression`
+  resolved its receiver through `CleanBaseType`, which answers the element type by design;
+  `MemberOwnerType` is the function that answers "whose members does a `.` on this reach", it had
+  existed since the array-member work, and this call site had never been migrated to it.
+
+  It hid behind the common case: an array's element is usually a primitive, a primitive has no
+  hierarchy, and the visibility guard returns before the lookup can fail. Only an array of a
+  script-declared class got far enough to be reported, which is why no corpus audit had caught it.
+  Found by `doc_p30`, written for something else, which happened to need `array<Item@>`.
+
+  The bracket spelling needed a second fix on top: `GetArrayTypeName()` answers empty when no
+  `TypeConfig` is supplied, and with no container name `CanonicalizeArrayType` cannot turn `Item[]`
+  into `array<Item>` at all - so `array<Item>` was fixed while `Item[]` was not. It now falls back
+  to `array`, which is the language's default and `TypeConfig`'s.
+
+- **The call audit's last two defects, and the corpus down to one finding.** Triaging what the
+  override fix left behind found two more, both by instrumenting the emit site rather than
+  reasoning about the resolver - the method that had just worked:
+
+  - **An `&out` parameter takes any NUMERIC type**, converting on the way back out; it does not
+    need an exact match. This required identity, so `schema.Get("minItems", uiTemp)` with a `uint`
+    against `int &out` was reported "No matching signatures". Measured one type at a time against a
+    single `int &out`: `uint`, `float` and `int64` are all accepted, `string` is
+    "No matching signatures", and `bool` is refused in both directions as everywhere else. Scored
+    through the ordinary conversion ladder rather than as Exact, so two numeric `&out` overloads do
+    not tie - the compiler accepts `Get(int &out)` and `Get(float &out)` given a `uint` without
+    complaint, which it could not if it ranked them equal.
+  - **An argument of unknown type tied every candidate.** An unresolved argument scores Exact
+    against every parameter, which is right for "do not reject" and wrong for "these tie". `auto`
+    is the spelling that reaches a verdict: an empty type is stopped by `CheckCall`'s
+    `allArgsResolved` gate, and `auto` is not empty, so it sails past. The trace printed
+    `args=[auto,]` on both remaining findings - `auto ptr = __Tests__[ui]; Start(ptr);` against two
+    unrelated `Start` overloads, and an `auto@` schema handle against two `Validate` overloads.
+
+  **Call-argument audit 103 → 1**, and the one that remains is a genuine bug in the corpus:
+  `Logger::Log` is declared once taking one string and called with three arguments eleven lines
+  before it is called correctly with one. `doc_p30`.
+
+  Worth recording about the method: this same guard on unknown argument types was written once
+  before, for EMPTY types, and reverted because it changed no measurement. That was right - those
+  ties are discarded upstream - and the mistake was reaching for the resolver at all. Both times
+  the answer came from printing what the emit site actually saw.
 
 - **A method redeclared in a subclass was collected as a second candidate.** The 75
   `as-err-call-ambiguous` findings, and the last six definite-assignment ones with them. A member
@@ -677,13 +722,6 @@ first. Each lands with its `doc_`-prefixed parity case.
     workspace root, with no way to skip build output.
 6. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
-7. **Nine call findings left over the corpus, seven untriaged.** One is a genuine bug in the corpus
-    (`Logger::Log` called with three arguments where one is declared). The rest are three
-    `as-err-call-ambiguous` on `Validate` and `Start`, and four `as-err-call-no-matching-signature`
-    on `Get` in the JSON schema - two copies of each, from the library the corpus carries twice.
-    Pinned at 9 in `CallCheckerTest.cpp`. The method that found the last one applies: instrument the
-    emit site, not the resolver.
-
 ### Out of scope
 
 `TOOL-04` (a Debug Adapter Protocol sidecar) is a separate program, not a language-server feature.
