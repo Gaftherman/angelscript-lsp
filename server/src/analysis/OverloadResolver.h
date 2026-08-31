@@ -89,6 +89,17 @@ namespace angel_lsp::analysis
      * @param toType Destination primitive type.
      * @return True if widening conversion is valid.
      */
+    /**
+     * @brief True when two declarations take the same parameters, whoever declares them.
+     *
+     * The internal HasSameSignature also compares the qualified name, which is right for its own
+     * question - "the same function arriving twice", from two stubs describing one library. This is
+     * a different question: a method redeclared in a SUBCLASS. A member lookup walks the hierarchy
+     * and finds the base's declaration alongside the derived one that overrides it, and those two
+     * are one method rather than a choice between two.
+     */
+    bool HasSameParameterList(const Symbol &left, const Symbol &right);
+
     bool IsPrimitiveWidening(const std::string &fromType, const std::string &toType);
 
     /**

@@ -391,6 +391,35 @@ namespace angel_lsp::analysis
      * Used to tell a genuine overload ambiguity apart from the same declaration arriving twice,
      * which is what happens when two stubs describing the same standard library are both loaded.
      */
+    bool HasSameParameterList(const Symbol &left, const Symbol &right)
+    {
+        if (!std::holds_alternative<FunctionSignature>(left.signature) ||
+            !std::holds_alternative<FunctionSignature>(right.signature))
+        {
+            return false;
+        }
+
+        const auto &a = left.GetFunction();
+        const auto &b = right.GetFunction();
+
+        if (a.parameters.size() != b.parameters.size())
+        {
+            return false;
+        }
+        for (size_t i = 0; i < a.parameters.size(); ++i)
+        {
+            if (NormalizeType(a.parameters[i].typeName) != NormalizeType(b.parameters[i].typeName))
+            {
+                return false;
+            }
+            if (a.parameters[i].modifier != b.parameters[i].modifier)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool HasSameSignature(const Symbol &left, const Symbol &right)
     {
         if (!std::holds_alternative<FunctionSignature>(left.signature) ||

@@ -243,7 +243,31 @@ namespace angel_lsp::analysis
                 }
                 for (const auto &sym : *found)
                 {
-                    if (IsFunctionSymbol(sym))
+                    if (!IsFunctionSymbol(sym))
+                    {
+                        continue;
+                    }
+
+                    // A method redeclared in a subclass OVERRIDES the base's; it does not compete
+                    // with it. GetInheritedTypeHierarchy walks derived-first, so the first
+                    // declaration of a given parameter list is the one that wins and every later
+                    // one is the same method seen further up.
+                    //
+                    // Without this the hierarchy handed back both, they scored identically, and the
+                    // call was reported "Multiple matching signatures" - 75 times over the corpus,
+                    // every one on legal code. The library that produces them declares
+                    // `class json : meta_api::json::v2::json` and restates its methods, which is an
+                    // ordinary way to write an interface summary. HasSameSignature did not catch it
+                    // because it compares the qualified name too, and `json::Contains` and
+                    // `meta_api::json::v2::json::Contains` are genuinely different names for what
+                    // is one method.
+                    //
+                    // The same tie also handed DefiniteAssignmentChecker an arbitrary overload to
+                    // read `&out` from, which is where the last six of its findings came from.
+                    const bool overriddenLower =
+                        std::any_of(candidates.begin(), candidates.end(),
+                                    [&sym](const Symbol &kept) { return HasSameParameterList(kept, sym); });
+                    if (!overriddenLower)
                     {
                         candidates.push_back(sym);
                     }

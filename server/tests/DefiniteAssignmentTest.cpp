@@ -264,15 +264,19 @@ TEST_CASE("DefiniteAssignment - Definite Assignment Corpus Audit" * doctest::ski
     //   unknown callees      an `&out` argument cannot be told from a read when the callee is
     //                        invisible, and `&out` is what it usually is
     //
-    // The compiler's own count over the same 1,061 files is also 7, and exactly one of them is the
-    // same finding - `angelscript_clean_examples.as:2269`. The other six of ours are all
-    // `value.Get(fvalue, strict)` in the JSON library, where the receiver's type IS visible and the
-    // out-parameter should have been recognised; that overload set is the one ResolveBestOverload
-    // also calls ambiguous 75 times, so the two are one defect and it is the first WIP item.
-    // The six the compiler finds and we do not are misses, which is the safe direction.
+    // A sixth cause was found after those five, and it took the count from 7 to 1: an `&out`
+    // parameter was read off whichever overload resolution happened to pick, and picking one is a
+    // guess whenever the candidates disagree. The corpus shape is a subclass restating its base's
+    // methods, so the lookup offers two declarations of one method and there is no reason to
+    // prefer either; reading `&out` off the loser reported the line that INITIALISES the variable.
+    // It now asks whether ANY candidate declares an out-parameter at that position.
+    //
+    // The one finding left is `angelscript_clean_examples.as:2269`, and it is exactly the finding
+    // the compiler makes on that line. Six more the compiler reports are missed here, which is the
+    // safe direction.
     //
     // The count is a ratchet and may only go down.
-    constexpr size_t k_accountedFindings = 7;
+    constexpr size_t k_accountedFindings = 1;
     CHECK(result.Total() <= k_accountedFindings);
 }
 
@@ -328,5 +332,27 @@ TEST_SUITE("DefiniteAssignmentConditions")
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(
             "void Use(int v) { }\n"
             "void main() { for (int i = 0; i < 3; i++) { Use(i); } }\n")));
+    }
+}
+
+TEST_SUITE("DefiniteAssignmentOverloads")
+{
+    TEST_CASE("An out-parameter is recognised when any candidate declares one")
+    {
+        // Overload resolution picks one candidate; reading `&out` off that pick is a guess whenever
+        // the candidates disagree, and a wrong guess reports the line that INITIALISES the
+        // variable. Asking "could this be an out-parameter" instead of "is the chosen one" is the
+        // same silence-over-guessing the unknown-callee case uses.
+        CHECK_FALSE(HasUninitializedRead(AnalyzeCode(
+            "void Use(int v) { }\n"
+            "class B { bool Get(int &out v) { v = 1; return true; } }\n"
+            "class D : B { bool Get(int &out v) override { v = 2; return true; } }\n"
+            "void main() { D d; int n; d.Get(n); Use(n); }\n")));
+
+        // Still reported where NO candidate declares an out-parameter at that position.
+        CHECK(HasUninitializedRead(AnalyzeCode(
+            "void Use(int v) { }\n"
+            "class B { bool Get(int v) { return true; } }\n"
+            "void main() { B b; int n; b.Get(n); }\n")));
     }
 }

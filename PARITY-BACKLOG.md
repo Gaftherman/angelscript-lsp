@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1240 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1243 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -78,6 +78,43 @@ Accepted by the compiler and by this analyzer. They had no test before; they do 
 Each entry says what the compiler answers and what this analyzer answered before. Several were
 false positives — legal code reported as an error, which is the one failure mode this project
 treats as unacceptable.
+
+- **A method redeclared in a subclass was collected as a second candidate.** The 75
+  `as-err-call-ambiguous` findings, and the last six definite-assignment ones with them. A member
+  lookup walks the hierarchy and finds the base's declaration alongside the derived one that
+  **overrides** it; both were kept, they scored identically, and legal code was reported "Multiple
+  matching signatures". The library that produces them declares
+  `class json : meta_api::json::v2::json` and restates its methods, which is an ordinary way to
+  write an interface summary.
+
+  `HasSameSignature` — the guard that exists for "the same function arriving twice" — did not catch
+  it, and could not: it compares the qualified name too, and `json::Contains` and
+  `meta_api::json::v2::json::Contains` are genuinely different names for one method. Member lookup
+  now drops a base declaration whose parameter list a derived one already claimed, through a new
+  `HasSameParameterList`. `GetInheritedTypeHierarchy` walks derived-first, so the first declaration
+  wins.
+
+  The same tie also handed `DefiniteAssignmentChecker` an arbitrary overload to read `&out` from,
+  and reading it off the loser reported the line that *initialises* a variable. That now asks
+  whether **any** candidate declares an out-parameter at that position rather than whether the
+  chosen one does — the same silence-over-guessing the unknown-callee case uses.
+
+  **Call-argument audit 103 → 9. Definite-assignment 749 → 1**, and that one finding is exactly the
+  one the compiler makes on the same line.
+
+  **Two hypotheses were wrong before this one, and the measurements that killed them are worth
+  keeping.** First: `bool` listed as convertible, which would have made `Get(bool&out, bool)` and
+  `Get(int&out, bool)` tie. `bool` *was* wrong and was corrected — and the count did not move.
+  Second: a tie reached through an argument whose type did not resolve, since an unresolved argument
+  scores Exact against everything. Instrumenting `ResolveBestOverload` showed those ties are real
+  but discarded upstream before they can be reported, so that change was reverted rather than kept
+  as an unmeasured guess. What found it in the end was instrumenting the **emit site** instead of
+  the resolver: the trace printed two candidates with byte-identical parameter lists, which is not
+  something any hypothesis had predicted.
+
+  Boundary kept and tested: two declarations across a hierarchy whose parameter lists **differ** -
+  `int` against `int &out` - are still two candidates, and an `int` argument matching both is still
+  "Multiple matching signatures". Measured. `doc_p29`, `doc_r28`.
 
 - **Definite assignment: 749 findings over the corpus, and the rule was the wrong rule.** Found by
   giving `as-err-uninitialized-variable-read` a corpus audit, which it had never had. Five separate
@@ -624,37 +661,28 @@ treats as unacceptable.
 Real, oracle-confirmed, and none of it reports legal code today. Ordered by what a user notices
 first. Each lands with its `doc_`-prefixed parity case.
 
-1. **One overload-resolution defect, two symptoms, not diagnosed.** 75 `as-err-call-ambiguous`
-   findings over the corpus, and the six definite-assignment findings that remain after that rule
-   was fixed - both on the same `Get` / `opAssign` / `opIndex` overload sets in a JSON library the
-   corpus carries twice. The ambiguity half: Legal code reported as
-   an ambiguous call, concentrated in a JSON library the corpus carries twice - `opAssign`,
-   `opIndex`, `Get`, `Set`. The `bool` conversion tables were the first hypothesis and correcting
-   them moved the number not at all, so that is ruled out and so are the two other obvious
-   candidates: `ScoreArgumentMatch`'s mutable-reference path already refuses a converting argument
-   against an `&out` parameter, and `HasSameSignature` already stops one function arriving twice
-   from tying with itself. What is left is a genuine tie between two DIFFERENT signatures, and it
-   has not been reproduced outside the corpus - three hand-written versions of the shape, including
-   the namespaced spelling, all resolve cleanly. The next step is to instrument
-   `ResolveBestOverload` over one of those files rather than to guess again. Pinned at 103 in
-   `CallCheckerTest.cpp` so it can only go down.
-
-2. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
+1. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
    user, not a deduction: nothing lets the server establish that an unresolved name is a typo rather
    than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
    exists the setting is the honest interface, but it is the reason the rule cannot simply be
    unconditional.
-3. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+2. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-4. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+3. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-5. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+4. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-6. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+5. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-7. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+6. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
+7. **Nine call findings left over the corpus, seven untriaged.** One is a genuine bug in the corpus
+    (`Logger::Log` called with three arguments where one is declared). The rest are three
+    `as-err-call-ambiguous` on `Validate` and `Start`, and four `as-err-call-no-matching-signature`
+    on `Get` in the JSON schema - two copies of each, from the library the corpus carries twice.
+    Pinned at 9 in `CallCheckerTest.cpp`. The method that found the last one applies: instrument the
+    emit site, not the resolver.
 
 ### Out of scope
 

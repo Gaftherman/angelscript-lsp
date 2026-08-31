@@ -501,43 +501,37 @@ TEST_CASE("CallChecker - Call Argument Corpus Audit" * doctest::skip(true))
 
     CHECK(result.filesAnalysed > 0);
 
-    // 103 findings, and the breakdown is the point:
+    // 9 findings, down from 103 when this audit was widened to all three call diagnostics.
+    //
+    // The 75 `as-err-call-ambiguous` were one defect, and it was not where this comment first
+    // guessed: a method redeclared in a SUBCLASS was being collected as a second candidate beside
+    // the base's declaration it overrides, the two scored identically, and legal code was reported
+    // "Multiple matching signatures". Found by instrumenting the emit site rather than reasoning:
+    // the trace printed two candidates with byte-identical parameter lists. HasSameSignature had
+    // not caught it because it compares the qualified name too, and `json::Contains` and
+    // `meta_api::json::v2::json::Contains` are genuinely different names for one method. See
+    // FindMethodCandidates, doc_p29 and doc_r28.
+    //
+    // (Two earlier hypotheses were wrong and are recorded because the measurements that killed them
+    // are worth keeping: `bool` being listed as convertible - corrected, and the count did not
+    // move - and a tie reached through an unresolved argument type - traced, and those ties are
+    // discarded upstream before they can be reported.)
+    //
+    // What remains:
     //
     //   1  as-err-call-argument-count         a genuine bug in the corpus
-    //  75  as-err-call-ambiguous              NOT YET DIAGNOSED
-    //   4  as-err-call-no-matching-signature  not yet triaged
-    //  23  the same findings again, from the second copy of the same JSON library
+    //   3  as-err-call-ambiguous              `Validate` and `Start`, not yet triaged
+    //   4  as-err-call-no-matching-signature  `Get` in the JSON schema, twice over, not triaged
+    //   1  the same argument-count finding is not duplicated; the other eight are two copies of
+    //      four, from the library the corpus carries twice
     //
-    // The single finding is real: `Logger::Log` is declared once, taking one string, and
+    // The one genuine finding: `Logger::Log` is declared once, taking one string, and
     // AngelScripts_CTJALoader.as:30 passes three - a format string and two values, as though an
     // overload existed for it. The same file calls it correctly with one argument eleven lines
     // later.
     //
-    // THE 75 ARE NOT DIAGNOSED, and this comment used to claim they were. The claim was that
-    // `bool` being wrongly listed as convertible in OverloadResolver made `Get(bool&out, bool)`
-    // and `Get(int&out, bool)` tie on an int argument. `bool` WAS wrongly listed - all forty
-    // combinations of {bool -> T, T -> bool} x {argument, initializer} over the ten numeric types
-    // are rejected by the compiler, and the tables now say so - but correcting it did not move
-    // this number at all. The hypothesis was wrong, and the measurement is what says so.
-    //
-    // What is known now: the mutable-reference path in ScoreArgumentMatch already refused an `int`
-    // against a `bool&out` before any of that, so the `&out` overload set was never the tie; and
-    // the duplicate-declaration guard in ResolveBestOverload (HasSameSignature) already handles
-    // the same function arriving twice, so two copies of one library are not it either. That
-    // leaves a genuine tie between two DIFFERENT signatures - `opAssign(json@)` against
-    // `opAssign(const float)` for a `json@` argument, say - and the shape has not been reproduced
-    // outside the corpus: three hand-written versions of it, including the namespaced spelling,
-    // all resolve cleanly.
-    //
-    // So it is recorded rather than explained, which is the honest state. See PARITY-BACKLOG.md.
     // The number is a ratchet and may only go down.
-    //
-    // Seven others were reported by the first version of this rule, and every one was a false
-    // positive fixed at its source rather than suppressed: a mixin body GetEnclosingContainers did
-    // not recognise as a class, a funcdef construction read as a call, globals matched across two
-    // plugins that never include one another, and unqualified names that could have been
-    // constructions of engine-registered types. See FindFreeCandidates for what each one cost.
-    CHECK(result.Total() <= 103);
+    CHECK(result.Total() <= 9);
 
     // The argument-count finding specifically, named rather than counted: it is the one this
     // audit was written for, and widening the audit must not lose it among the other two codes.
@@ -1188,3 +1182,44 @@ TEST_CASE("CallChecker - A bracket-array size is not an element conversion")
     CHECK(flagged("void main() { bool b(33); }\n"));
 }
 
+
+TEST_CASE("CallChecker - A method redeclared in a subclass overrides, it does not overload")
+{
+    // A member lookup walks the hierarchy and finds the base's declaration alongside the derived
+    // one that overrides it. Those two are one method. Treating them as competing candidates made
+    // them score identically and reported "Multiple matching signatures" on legal code - 75 times
+    // over the corpus, from one library that declares `class json : meta_api::json::v2::json` and
+    // restates its methods, which is an ordinary way to write an interface summary.
+    //
+    // Oracle: accepted, and so are the two variations below it.
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(
+        "class B { bool Get(int &out v) { v = 1; return true; } }\n"
+        "class D : B { bool Get(int &out v) override { v = 2; return true; } }\n"
+        "void main() { D d; int n; d.Get(n); }\n"), "as-err-call-ambiguous"));
+
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(
+        "class A { void F(int v) {} }\n"
+        "class B : A { void F(int v) override {} }\n"
+        "class C : B { void F(int v) override {} }\n"
+        "void main() { C c; c.F(1); }\n"), "as-err-call-ambiguous"));
+
+    // A derived class ADDING an overload keeps both, and both stay callable.
+    const auto added = AnalyzeCallSnippet(
+        "class B { bool Get(int &out v) { v = 1; return true; } }\n"
+        "class D : B { bool Get(const string &in k) { return true; } }\n"
+        "void main() { D d; int n; d.Get(n); d.Get('k'); }\n");
+    CHECK_FALSE(HasCode(added, "as-err-call-ambiguous"));
+    CHECK_FALSE(HasCode(added, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - A genuine ambiguity across a hierarchy is still reported")
+{
+    // The boundary, and what keeps the override rule from swallowing real findings: the derived
+    // declaration takes `int &out` and the base takes `int`, which are DIFFERENT parameter lists,
+    // so neither overrides the other and an `int` argument really does match both. Oracle:
+    // "Multiple matching signatures to 'D::Get(int)'".
+    CHECK(HasCode(AnalyzeCallSnippet(
+        "class B { bool Get(int v) { return true; } }\n"
+        "class D : B { bool Get(int &out v) { v = 1; return true; } }\n"
+        "void main() { D d; int n; d.Get(n); }\n"), "as-err-call-ambiguous"));
+}

@@ -318,15 +318,44 @@ namespace angel_lsp::analysis
 
                     for (size_t i = 0; i < argNodes.size(); ++i)
                     {
+                        // `&out` if ANY candidate declares one at this position, not only the one
+                        // overload resolution happened to pick.
+                        //
+                        // Picking one is a guess whenever the candidates disagree, and a wrong
+                        // guess here reports the line that initialises the variable. The corpus
+                        // shape is `class json : meta_api::json::v2::json` restating its methods,
+                        // so a member lookup finds the base's `Get` beside the derived one and the
+                        // resolver has no reason to prefer either; reading `&out` off the loser
+                        // produced the last six findings this rule made. Asking "could this be an
+                        // out-parameter" instead of "is the chosen one" is the same
+                        // silence-over-guessing the unknown-callee case above applies.
                         bool isOutParam = false;
-                        if (sig && i < sig->parameters.size())
+                        const auto declaresOutAt = [i](const FunctionSignature &candidate)
                         {
-                            const auto &param = sig->parameters[i];
-                            if (param.modifier == ParameterModifier::Out ||
-                                param.typeName.find("&out") != std::string::npos ||
-                                param.rawText.find("&out") != std::string::npos)
+                            if (i >= candidate.parameters.size())
                             {
-                                isOutParam = true;
+                                return false;
+                            }
+                            const auto &param = candidate.parameters[i];
+                            return param.modifier == ParameterModifier::Out ||
+                                   param.typeName.find("&out") != std::string::npos ||
+                                   param.rawText.find("&out") != std::string::npos;
+                        };
+
+                        if (sig && declaresOutAt(*sig))
+                        {
+                            isOutParam = true;
+                        }
+                        else
+                        {
+                            for (const auto &candidate : candidates)
+                            {
+                                if (std::holds_alternative<FunctionSignature>(candidate.signature) &&
+                                    declaresOutAt(candidate.GetFunction()))
+                                {
+                                    isOutParam = true;
+                                    break;
+                                }
                             }
                         }
 
