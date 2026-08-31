@@ -684,3 +684,142 @@ TEST_CASE("CodeActionHandler - The interface fix names the diagnostic it fixes")
     REQUIRE(named.code.has_value());
     CHECK(std::get<lsp::String>(named.code.value()) == "as-err-interface-impl-missing");
 }
+
+// =====================================================================================
+// "Did you mean this file?" for an #include that resolves to nothing.
+//
+// The candidates are the files the server has actually indexed. That is the honest set - a file it
+// has never heard of is one it cannot vouch for - and it makes the common case, a file that moved
+// to another directory under the same name, land at distance zero.
+// =====================================================================================
+
+namespace
+{
+    /**
+     * @brief A workspace of several files, so an include can be pointed at one of the others.
+     *
+     * TestEnvironment above indexes exactly one document, which is enough for every rule that reads
+     * a single file. An include suggestion is about the relationship between two.
+     */
+    struct MultiFileEnvironment
+    {
+        AngelScriptParser parser;
+        SymbolCollector symbolCollector{ nullptr };
+        LocalScopeCollector scopeCollector{ nullptr };
+        SymbolTable symbolTable;
+        ScopeIndex scopeIndex;
+        std::string uri;
+        std::string sourceCode;
+        TSTree *tree = nullptr;
+
+        MultiFileEnvironment(const std::string &mainUri, const std::string &mainCode)
+            : uri(mainUri), sourceCode(mainCode)
+        {
+            tree = parser.Parse(sourceCode);
+            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+            auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+            if (rootScope)
+            {
+                scopeIndex.SetScopeTree(uri, std::move(rootScope));
+            }
+        }
+
+        ~MultiFileEnvironment()
+        {
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
+        }
+
+        /** @brief Indexes another file, the way the server's include-closure walk would. */
+        void AddFile(const std::string &otherUri, const std::string &code)
+        {
+            symbolCollector.CollectSymbols(otherUri, code, parser, symbolTable);
+        }
+
+        std::optional<std::vector<lsp::CodeAction>> CodeActions(lsp::Range range, lsp::CodeActionContext context)
+        {
+            CodeActionRequest req{ uri, sourceCode, tree, range, context, symbolTable, scopeIndex };
+            return GetCodeActions(req);
+        }
+    };
+}
+
+TEST_CASE("CodeActionHandler - Points a broken #include at the file that moved")
+{
+    // The name is unchanged and only the directory moved, which is the case that actually happens
+    // and the one that lands at distance zero.
+    const std::string mainCode =
+        "#include \"helper.as\"\n"
+        "void main() { }\n";
+
+    MultiFileEnvironment env("file:///project/main.as", mainCode);
+    env.AddFile("file:///project/lib/helper.as", "void Helped() { }\n");
+
+    const lsp::Range includeLine{ {0, 0}, {0, 20} };
+    auto actions = env.CodeActions(includeLine, DiagnosticAt(includeLine, "as-warn-include-not-found"));
+
+    const auto *fix = ActionTitled(actions, "Did you mean");
+    REQUIRE(fix != nullptr);
+    CHECK(fix->title == "Did you mean 'lib/helper.as'?");
+
+    REQUIRE(fix->edit.has_value());
+    REQUIRE(fix->edit->changes.has_value());
+    const auto &edits = fix->edit->changes->begin()->second;
+    REQUIRE(edits.size() == 1);
+    CHECK(edits[0].newText == "lib/helper.as");
+
+    // Only what is inside the quotes. Rewriting the whole line would take the directive with it.
+    CHECK(edits[0].range.start.line == 0);
+    CHECK(edits[0].range.start.character == 10);
+    CHECK(edits[0].range.end.character == 19);
+}
+
+TEST_CASE("CodeActionHandler - Points a broken #include at a near-miss filename")
+{
+    const std::string mainCode =
+        "#include \"helpers.as\"\n"
+        "void main() { }\n";
+
+    MultiFileEnvironment env("file:///project/main.as", mainCode);
+    env.AddFile("file:///project/helper.as", "void Helped() { }\n");
+
+    const lsp::Range includeLine{ {0, 0}, {0, 21} };
+    auto actions = env.CodeActions(includeLine, DiagnosticAt(includeLine, "as-warn-include-not-found"));
+
+    const auto *fix = ActionTitled(actions, "Did you mean");
+    REQUIRE(fix != nullptr);
+    CHECK(fix->title == "Did you mean 'helper.as'?");
+}
+
+TEST_CASE("CodeActionHandler - A broken #include resembling nothing indexed gets no suggestion")
+{
+    const std::string mainCode =
+        "#include \"zzzzqqqqwwww.as\"\n"
+        "void main() { }\n";
+
+    MultiFileEnvironment env("file:///project/main.as", mainCode);
+    env.AddFile("file:///project/helper.as", "void Helped() { }\n");
+
+    const lsp::Range includeLine{ {0, 0}, {0, 26} };
+    auto actions = env.CodeActions(includeLine, DiagnosticAt(includeLine, "as-warn-include-not-found"));
+
+    CHECK(ActionTitled(actions, "Did you mean") == nullptr);
+}
+
+TEST_CASE("CodeActionHandler - No include suggestion without the include diagnostic")
+{
+    // Bound to the diagnostic, not to the cursor sitting on an #include line.
+    const std::string mainCode =
+        "#include \"helper.as\"\n"
+        "void main() { }\n";
+
+    MultiFileEnvironment env("file:///project/main.as", mainCode);
+    env.AddFile("file:///project/lib/helper.as", "void Helped() { }\n");
+
+    const lsp::Range includeLine{ {0, 0}, {0, 20} };
+    auto actions = env.CodeActions(includeLine, lsp::CodeActionContext{});
+
+    CHECK(ActionTitled(actions, "Did you mean") == nullptr);
+}

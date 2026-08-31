@@ -5,6 +5,8 @@
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
 #include "analysis/DiagnosticCodes.h"
+#include "utils/Utils.h"
+#include <filesystem>
 
 #include <string>
 #include <string_view>
@@ -1758,6 +1760,192 @@ namespace angel_lsp::features
         }
 
         /**
+         * @brief "Did you mean this file?" for an `#include` that resolves to nothing.
+         *
+         * The candidates are the files the server has actually indexed, which is the honest set: it
+         * is what the server can see, and a file it has never heard of is one it cannot vouch for.
+         * A moved file is the common case and lands at distance zero - the name is unchanged and
+         * only the directory moved - so it sorts to the front on its own.
+         *
+         * The replacement is spelled relative to the including file with forward slashes, which is
+         * how every `#include` in the corpus is written and what ResolveIncludePath reads back.
+         */
+        void TryAddUnresolvedIncludeSuggestions(
+            const CodeActionRequest &request,
+            std::vector<lsp::CodeAction> &actions)
+        {
+            if (request.sourceCode.empty())
+            {
+                return;
+            }
+
+            const bool anyUnresolvedInclude = std::any_of(
+                request.context.diagnostics.begin(), request.context.diagnostics.end(),
+                [](const lsp::Diagnostic &diag) { return MatchDiagnosticCode(diag, "as-warn-include-not-found"); });
+            if (!anyUnresolvedInclude)
+            {
+                return;
+            }
+
+            const std::string includerPath = angel_lsp::utils::UriToPath(request.uri);
+            if (includerPath.empty())
+            {
+                return;
+            }
+
+            // One entry per file, not per symbol: a file with four hundred declarations is still one
+            // candidate.
+            ankerl::unordered_dense::set<std::string> indexedUris;
+            request.symbolTable.ForEachSymbol([&indexedUris](const std::string &, const std::vector<analysis::Symbol> &symbols)
+            {
+                for (const auto &sym : symbols)
+                {
+                    if (!sym.fileUri.empty())
+                    {
+                        indexedUris.insert(sym.fileUri);
+                    }
+                }
+            });
+
+            const auto directives = angel_lsp::utils::IncludeResolver::ExtractIncludes(request.sourceCode);
+
+            for (const auto &diag : request.context.diagnostics)
+            {
+                if (!MatchDiagnosticCode(diag, "as-warn-include-not-found"))
+                {
+                    continue;
+                }
+
+                const auto directive = std::find_if(directives.begin(), directives.end(),
+                    [&diag](const angel_lsp::utils::IncludeDirective &candidate)
+                    {
+                        return candidate.line == diag.range.start.line;
+                    });
+                if (directive == directives.end() || directive->rawPath.empty())
+                {
+                    continue;
+                }
+
+                const std::string typedName = std::filesystem::path(directive->rawPath).filename().generic_string();
+                if (typedName.empty())
+                {
+                    continue;
+                }
+
+                const std::string typedFolded = FoldCase(typedName);
+                const size_t limit = SuggestionLimit(typedName.size());
+
+                struct Candidate
+                {
+                    std::string spelling;
+                    size_t distance = 0;
+                };
+
+                std::vector<Candidate> ranked;
+                ankerl::unordered_dense::set<std::string> seen;
+
+                for (const std::string &candidateUri : indexedUris)
+                {
+                    if (candidateUri == request.uri)
+                    {
+                        continue;
+                    }
+
+                    const std::string candidatePath = angel_lsp::utils::UriToPath(candidateUri);
+                    if (candidatePath.empty())
+                    {
+                        continue;
+                    }
+
+                    const std::string candidateName = std::filesystem::path(candidatePath).filename().generic_string();
+                    const size_t distance = BoundedEditDistance(typedFolded, FoldCase(candidateName), limit);
+                    if (distance > limit)
+                    {
+                        continue;
+                    }
+
+                    std::error_code relativeError;
+                    const std::filesystem::path relative = std::filesystem::relative(
+                        std::filesystem::path(candidatePath),
+                        std::filesystem::path(includerPath).parent_path(),
+                        relativeError);
+                    if (relativeError || relative.empty())
+                    {
+                        continue;
+                    }
+
+                    const std::string spelling = relative.generic_string();
+                    if (spelling == directive->rawPath || !seen.insert(spelling).second)
+                    {
+                        continue;
+                    }
+
+                    ranked.push_back({ spelling, distance });
+                }
+
+                if (ranked.empty())
+                {
+                    continue;
+                }
+
+                std::sort(ranked.begin(), ranked.end(), [](const Candidate &a, const Candidate &b)
+                {
+                    if (a.distance != b.distance)
+                    {
+                        return a.distance < b.distance;
+                    }
+                    return a.spelling < b.spelling;
+                });
+
+                // The span inside the quotes or brackets, which is all that may be rewritten -
+                // replacing the whole line would take the directive and any trailing comment with it.
+                const std::string_view line = angel_lsp::utils::GetLine(request.sourceCode, static_cast<uint32_t>(directive->line));
+                const char open = directive->isAngled ? '<' : '"';
+                const char close = directive->isAngled ? '>' : '"';
+                const size_t openPos = line.find(open);
+                if (openPos == std::string_view::npos)
+                {
+                    continue;
+                }
+                const size_t closePos = line.find(close, openPos + 1);
+                if (closePos == std::string_view::npos)
+                {
+                    continue;
+                }
+
+                const size_t offered = std::min<size_t>(ranked.size(), 3);
+                const bool hasClearWinner = ranked.size() == 1 || ranked[0].distance < ranked[1].distance;
+
+                for (size_t i = 0; i < offered; ++i)
+                {
+                    lsp::CodeAction action;
+                    action.title = "Did you mean '" + ranked[i].spelling + "'?";
+                    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+                    action.diagnostics = std::vector<lsp::Diagnostic>{ diag };
+                    if (i == 0 && hasClearWinner)
+                    {
+                        action.isPreferred = true;
+                    }
+
+                    lsp::TextEdit edit;
+                    edit.range.start.line = static_cast<uint32_t>(directive->line);
+                    edit.range.start.character = static_cast<uint32_t>(openPos + 1);
+                    edit.range.end.line = static_cast<uint32_t>(directive->line);
+                    edit.range.end.character = static_cast<uint32_t>(closePos);
+                    edit.newText = ranked[i].spelling;
+
+                    lsp::WorkspaceEdit wsEdit;
+                    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+                    changes[lsp::DocumentUri::parse(request.uri)] = { std::move(edit) };
+                    wsEdit.changes = std::move(changes);
+                    action.edit = std::move(wsEdit);
+
+                    actions.push_back(std::move(action));
+                }
+            }
+        }
+
+        /**
          * @brief Tries to generate Missing const Qualifier quick fixes and intention actions.
          */
         void TryAddConstQualifierActions(
@@ -2445,6 +2633,7 @@ namespace angel_lsp::features
         TryAddConstQualifierActions(request, rootNode, actions);
         TryAddUndefinedIdentifierSuggestions(request, rootNode, actions);
         TryAddHandleOnPrimitiveFix(request, rootNode, actions);
+        TryAddUnresolvedIncludeSuggestions(request, actions);
 
         // =========================================================================
         // Feature 5: Sort and Clean #include Directives
