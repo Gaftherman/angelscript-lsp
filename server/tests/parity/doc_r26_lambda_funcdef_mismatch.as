@@ -53,4 +53,23 @@ void ThroughAConversion()
     Register(TakesInt(function() { }));
 }
 
+void AsAnArgument()
+{
+    // The lambda lands on a funcdef parameter and contradicts it. The compiler answers a call
+    // rather than a conversion here: "No matching signatures to 'Register(<auto> lambda())'".
+    Register(function() { });
+    RegisterAt(1, function(uint v) { });
+}
+
+void ReturnType()
+{
+    // A lambda writes no return type; the funcdef supplies one, and the body has to satisfy it.
+    ReturnsInt@ a = function() { };                 // Not all paths return a value
+    ReturnsInt@ b = function() { return 'x'; };     // No conversion from 'const string' to 'int'
+    TakesNothing@ c = function() { return 1; };     // Can't return value when return type is 'void'
+}
+
+funcdef int ReturnsInt();
+
 void Register(TakesInt@ cb) {}
+void RegisterAt(int at, TakesInt@ cb) {}

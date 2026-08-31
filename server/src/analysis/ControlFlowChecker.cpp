@@ -448,13 +448,37 @@ namespace angel_lsp::analysis
 
                 TSNode body = ts_node_child_by_field_name(node, "body", k_bodyFieldLength);
                 TSNode returnType = ts_node_child_by_field_name(node, "return_type", k_returnTypeFieldLength);
-                if (!ts_node_is_null(body) && !ts_node_is_null(returnType) &&
-                    Trim(NodeText(returnType, sourceCode)) != "void" &&
+                TSNode name = ts_node_child_by_field_name(node, "name", k_nameFieldLength);
+
+                // What this body is required to return, and under whose name to say so.
+                //
+                // A lambda has neither: the grammar gives `lambda_expression` a parameter list and
+                // a body and nothing else, so `return_type` is null and this check simply never
+                // ran for one. The requirement comes from the funcdef it is being handed to -
+                // `funcdef int CB(); CB@ cb = function() { };` is "Not all paths return a value"
+                // to the real compiler - and that funcdef is also the only name there is to
+                // report, so the message names it and the diagnostic is anchored on the lambda.
+                std::string requiredReturn;
+                std::string reportedName;
+                if (!ts_node_is_null(returnType))
+                {
+                    requiredReturn = Trim(NodeText(returnType, sourceCode));
+                    reportedName = std::string(NodeText(name, sourceCode));
+                }
+                else if (type == node_types::LambdaExpression)
+                {
+                    if (const auto target = FuncdefTargetOfLambda(node, ctx.request.symbolTable, sourceCode))
+                    {
+                        requiredReturn = CleanBaseType(target->GetFuncdef().returnType);
+                        reportedName = target->name;
+                    }
+                }
+
+                if (!ts_node_is_null(body) && !requiredReturn.empty() && requiredReturn != "void" &&
                     !DefinitelyReturns(body, sourceCode))
                 {
-                    TSNode name = ts_node_child_by_field_name(node, "name", k_nameFieldLength);
                     EmitAtNode(ts_node_is_null(name) ? node : name, ctx, "as-err-not-all-paths-return",
-                               std::string(NodeText(name, sourceCode)));
+                               reportedName);
                 }
             }
             else if (type == "while_statement" || type == "for_statement" ||

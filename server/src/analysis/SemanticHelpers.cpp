@@ -5,6 +5,8 @@
 #include "analysis/DiagnosticContext.h"
 #include "utils/Utils.h"
 
+#include <optional>
+
 namespace angel_lsp::analysis
 {
     std::string CleanExpressionType(std::string_view typeName)
@@ -1855,6 +1857,369 @@ namespace angel_lsp::analysis
 
         return cleaned == "?";
     }
+
+    // --- A lambda against the funcdef it is being handed to -------------------------------
+
+    namespace
+    {
+        /** @brief `int32` and `uint32` are the explicit spellings of `int` and `uint`. */
+        std::string_view CanonicalPrimitiveSpelling(std::string_view typeName) noexcept
+        {
+            if (typeName == "int32") return "int";
+            if (typeName == "uint32") return "uint";
+            return typeName;
+        }
+
+        std::string LastSegmentOf(const std::string &name)
+        {
+            const size_t at = name.rfind("::");
+            return at == std::string::npos ? name : name.substr(at + 2);
+        }
+
+        /** @brief True for a name that denotes a typedef, whose alias no spelling can see through. */
+        bool NamesATypedef(const std::string &name, const SymbolTable &table)
+        {
+            const auto bucket = table.FindSymbolsPtr(name);
+            if (!bucket)
+            {
+                return false;
+            }
+            for (const auto &sym : *bucket)
+            {
+                if (sym.type == SymbolType::Typedef)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    bool IsLambdaExpression(TSNode node) noexcept
+    {
+        if (ts_node_is_null(node))
+        {
+            return false;
+        }
+        const std::string_view type(ts_node_type(node));
+        return type == node_types::LambdaExpression || type == "anonymous_function";
+    }
+
+    std::vector<LambdaParameter> ReadLambdaParameters(TSNode listNode, std::string_view sourceCode)
+    {
+        std::vector<LambdaParameter> parameters;
+        if (ts_node_is_null(listNode))
+        {
+            return parameters;
+        }
+
+        LambdaParameter current;
+        bool groupHasContent = false;
+
+        const uint32_t childCount = ts_node_child_count(listNode);
+        for (uint32_t i = 0; i < childCount; ++i)
+        {
+            TSNode child = ts_node_child(listNode, i);
+            const std::string text = GetNodeText(child, sourceCode);
+
+            if (text == "(")
+            {
+                continue;
+            }
+            if (text == ")")
+            {
+                break;
+            }
+            if (text == ",")
+            {
+                parameters.push_back(current);
+                current = LambdaParameter{};
+                groupHasContent = false;
+                continue;
+            }
+
+            const char *field = ts_node_field_name_for_child(listNode, i);
+            if (field && std::string_view(field) == "param_type")
+            {
+                current.hasWrittenType = true;
+                current.isConst = text.starts_with("const ") || text == "const";
+                current.isHandle = text.find('@') != std::string::npos;
+                current.typeName = CleanBaseType(text);
+            }
+            else if (text == "&")
+            {
+                current.isReference = true;
+            }
+            else if (text == "in" || text == "out" || text == "inout")
+            {
+                current.modifier = text == "in"  ? ParameterModifier::In
+                                 : text == "out" ? ParameterModifier::Out
+                                                 : ParameterModifier::InOut;
+            }
+
+            groupHasContent = true;
+        }
+
+        if (groupHasContent)
+        {
+            parameters.push_back(current);
+        }
+        return parameters;
+    }
+
+    bool LambdaContradictsFuncdef(const std::vector<LambdaParameter> &lambdaParameters,
+                                  const FuncdefSignature &funcdefSig,
+                                  const SymbolTable &table)
+    {
+        if (lambdaParameters.size() != funcdefSig.parameters.size())
+        {
+            return true;
+        }
+
+        for (size_t i = 0; i < lambdaParameters.size(); ++i)
+        {
+            const LambdaParameter &written = lambdaParameters[i];
+            if (!written.hasWrittenType)
+            {
+                continue;
+            }
+
+            const ParameterInformation &expected = funcdefSig.parameters[i];
+            if (written.isHandle != expected.isHandle ||
+                written.isReference != expected.isReference ||
+                written.modifier != expected.modifier)
+            {
+                return true;
+            }
+
+            // Compared by last `::` segment, so a name the funcdef writes bare and the lambda
+            // writes qualified - or the other way round - is the same name. That costs the
+            // `A::Foo` against `B::Foo` case, which is a rejection this misses rather than a legal
+            // program it reports.
+            const std::string writtenBase(CanonicalPrimitiveSpelling(LastSegmentOf(written.typeName)));
+            const std::string expectedBase(
+                CanonicalPrimitiveSpelling(LastSegmentOf(CleanBaseType(expected.typeName))));
+
+            if (writtenBase.empty() || expectedBase.empty() || writtenBase == expectedBase)
+            {
+                continue;
+            }
+            if (NamesATypedef(writtenBase, table) || NamesATypedef(expectedBase, table))
+            {
+                continue;
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    bool LambdaContradictsFuncdef(TSNode lambdaNode,
+                                  const FuncdefSignature &funcdefSig,
+                                  const SymbolTable &table,
+                                  std::string_view sourceCode)
+    {
+        TSNode listNode = ts_node_child_by_field_name(lambdaNode, "parameters", 10);
+        if (ts_node_is_null(listNode))
+        {
+            // No parameter list to read is not the same as an empty one, and guessing which it is
+            // would be guessing about the whole signature.
+            return false;
+        }
+        return LambdaContradictsFuncdef(ReadLambdaParameters(listNode, sourceCode), funcdefSig, table);
+    }
+
+    std::optional<Symbol> FindFuncdefSymbol(const std::string &typeName, const SymbolTable &table)
+    {
+        if (typeName.empty())
+        {
+            return std::nullopt;
+        }
+
+        if (const auto bucket = table.FindSymbolsPtr(typeName))
+        {
+            for (const auto &sym : *bucket)
+            {
+                if (sym.type == SymbolType::Funcdef)
+                {
+                    return sym;
+                }
+            }
+        }
+
+        const std::string bare = LastSegmentOf(typeName);
+        std::optional<Symbol> found;
+        table.ForEachSymbol([&](const std::string &qualifiedName, const std::vector<Symbol> &symbols)
+        {
+            if (found || (qualifiedName != bare && LastSegmentOf(qualifiedName) != bare))
+            {
+                return;
+            }
+            for (const auto &sym : symbols)
+            {
+                if (sym.type == SymbolType::Funcdef)
+                {
+                    found = sym;
+                    return;
+                }
+            }
+        });
+        return found;
+    }
+
+    /**
+     * @brief The funcdef a lambda is being handed to, read from where it is written.
+     *
+     * A lambda has no return type of its own - the grammar gives `lambda_expression` a parameter
+     * list and a body and nothing else - so every question about what its body must return has to
+     * come from the target. That is what this answers, for the three shapes a lambda reaches a
+     * funcdef through:
+     *
+     *     CB@ cb = function(...) { };      a declaration whose written type is a funcdef
+     *     Register(CB(function(...)));     a funcdef used as a conversion
+     *     Take(function(...));             an argument landing on a funcdef parameter
+     *
+     * Anything else answers nullopt, and so does a call with more than one candidate offering a
+     * different funcdef at that position: which one the lambda was written against is precisely
+     * what is undecided there, and a return-type verdict drawn from a guess would be worse than
+     * the silence it replaced.
+     */
+    std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode,
+                                                const SymbolTable &table,
+                                                std::string_view sourceCode)
+    {
+        if (!IsLambdaExpression(lambdaNode))
+        {
+            return std::nullopt;
+        }
+
+        TSNode parent = ts_node_parent(lambdaNode);
+        if (ts_node_is_null(parent))
+        {
+            return std::nullopt;
+        }
+
+        const std::string_view parentType(ts_node_type(parent));
+
+        // `CB@ cb = function(...) { };` - the declaration writes the type down.
+        if (parentType == "variable_declarator")
+        {
+            TSNode declaration = ts_node_parent(parent);
+            if (!ts_node_is_null(declaration))
+            {
+                TSNode typeNode = ts_node_child_by_field_name(declaration, "var_type", 8);
+                if (ts_node_is_null(typeNode))
+                {
+                    typeNode = ts_node_child_by_field_name(declaration, "type", 4);
+                }
+                if (!ts_node_is_null(typeNode))
+                {
+                    return FindFuncdefSymbol(CleanBaseType(GetNodeText(typeNode, sourceCode)), table);
+                }
+            }
+            return std::nullopt;
+        }
+
+        if (parentType != "argument_list")
+        {
+            return std::nullopt;
+        }
+
+        // Which argument this lambda is, and what is being called.
+        uint32_t position = 0;
+        bool found = false;
+        for (uint32_t i = 0; i < ts_node_named_child_count(parent); ++i)
+        {
+            if (ts_node_eq(ts_node_named_child(parent, i), lambdaNode))
+            {
+                position = i;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+        {
+            return std::nullopt;
+        }
+
+        TSNode call = ts_node_parent(parent);
+        if (ts_node_is_null(call))
+        {
+            return std::nullopt;
+        }
+
+        TSNode callee = ts_node_child_by_field_name(call, "type", 4);
+        if (ts_node_is_null(callee))
+        {
+            callee = ts_node_child_by_field_name(call, "function", 8);
+        }
+        if (ts_node_is_null(callee) && ts_node_child_count(call) > 0)
+        {
+            callee = ts_node_child(call, 0);
+        }
+        if (ts_node_is_null(callee))
+        {
+            return std::nullopt;
+        }
+
+        const std::string calleeName = CleanBaseType(GetNodeText(callee, sourceCode));
+
+        // `Register(CB(function(...)))` - the callee IS the funcdef, used as a conversion.
+        if (position == 0 && ts_node_named_child_count(parent) == 1)
+        {
+            if (auto asConversion = FindFuncdefSymbol(calleeName, table))
+            {
+                return asConversion;
+            }
+        }
+
+        // `Take(function(...))` - the parameter at this position names the funcdef. Every
+        // candidate has to agree on which one, or there is nothing to be sure of.
+        std::optional<Symbol> agreed;
+        bool sawCandidate = false;
+        const auto lookUp = [&](const std::string &name) -> bool
+        {
+            const auto bucket = table.FindSymbolsPtr(name);
+            if (!bucket)
+            {
+                return false;
+            }
+            for (const auto &sym : *bucket)
+            {
+                if (sym.type != SymbolType::Function ||
+                    !std::holds_alternative<FunctionSignature>(sym.signature))
+                {
+                    continue;
+                }
+                const auto &parameters = sym.GetFunction().parameters;
+                if (position >= parameters.size())
+                {
+                    return false;
+                }
+                auto funcdef = FindFuncdefSymbol(CleanBaseType(parameters[position].typeName), table);
+                if (!funcdef)
+                {
+                    return false;
+                }
+                if (sawCandidate && agreed && agreed->name != funcdef->name)
+                {
+                    return false;
+                }
+                agreed = std::move(funcdef);
+                sawCandidate = true;
+            }
+            return sawCandidate;
+        };
+
+        const size_t lastSeparator = calleeName.rfind("::");
+        const std::string memberName = calleeName.rfind('.') != std::string::npos
+                                           ? calleeName.substr(calleeName.rfind('.') + 1)
+                                           : calleeName;
+        if (!lookUp(calleeName) && !lookUp(memberName) &&
+            !(lastSeparator != std::string::npos && lookUp(calleeName.substr(lastSeparator + 2))))
+        {
+            return std::nullopt;
+        }
+        return agreed;
+    }
 }
-
-

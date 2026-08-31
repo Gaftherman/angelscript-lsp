@@ -96,4 +96,29 @@ void OtherShapes()
     ReturnsInt@ b = function() { return 1; };
 }
 
+void AsArgument()
+{
+    // The shape real code writes: the lambda lands on a funcdef parameter. Accepted whether the
+    // types are written out or left to the funcdef.
+    Register(function(int v) { });
+    Register(function(v) { });
+    RegisterAt(1, function(int v) { });
+}
+
+int ReturnsFromEveryPath()
+{
+    // A non-void funcdef requires every path of the lambda to return, and this one does.
+    ReturnsInt@ a = function() { if (true) return 1; return 2; };
+
+    // A void funcdef requires nothing, and a bare return satisfies it.
+    TakesInt@ b = function(v) { return; };
+
+    // int widens to float on the way out, the same as anywhere else.
+    ReturnsFloat@ c = function() { return 1; };
+    return 0;
+}
+
+funcdef float ReturnsFloat();
+
 void Register(TakesInt@ cb) {}
+void RegisterAt(int at, TakesInt@ cb) {}

@@ -56,6 +56,19 @@ jobs:
       - name: Build the test suite
         run: cmake --build server/build --config Release --target angel_lsp_tests -j 4
 
+      # One audit per process, run in parallel.
+      #
+      # Every audit walks the same ~1,061 files, parses them, builds the symbol table and runs the
+      # whole analyzer, and then keeps only its own diagnostic code - so the 21 of them repeat that
+      # work 21 times. They share nothing and are single-threaded, which makes them embarrassingly
+      # parallel: measured locally, 19 of them took about 40 minutes in series and about 7 in
+      # parallel on the same machine. (The real fix is one pass counting every code at once. That
+      # is a change to 21 test cases and their ratchets, so it is its own piece of work.)
+      #
+      # One process each also buys the thing a single `--test-case="*Corpus Audit*"` run cannot
+      # give: if the job is cancelled or times out, the audits that finished have already written
+      # their logs. A single process buffers its output and a kill leaves nothing behind at all -
+      # which is exactly how a truncated run once looked identical to a passing one.
       - name: Run the corpus audits
         working-directory: server
         env:
@@ -67,7 +80,75 @@ jobs:
           # at its root - set it to `angelscript`, say. Unset means the checkout root itself.
           ANGELLSP_CORPUS_DIR: ${{ vars.CORPUS_REPO != '' && format('{0}/corpus/{1}', github.workspace, vars.CORPUS_SUBDIR) || '/corpus-not-configured' }}
           FILTER: ${{ inputs.test_case_filter || '*Corpus Audit*,*Corpus Files*,The formatter keeps every token*' }}
-        run: ./build/angel_lsp_tests --no-skip --test-case="$FILTER"
+        run: |
+          set -uo pipefail
+          rm -rf audit-logs && mkdir -p audit-logs
+
+          # doctest applies --test-case to --list-test-cases too, so the filter stays one
+          # doctest expression rather than becoming a second, differently-spelled grep.
+          ./build/angel_lsp_tests --list-test-cases --no-skip --test-case="$FILTER" \
+            | tr -d '\r' \
+            | grep -vE '^\[doctest\]|^=+$|^[[:space:]]*$' \
+            > audit-logs/names.txt
+
+          total=$(wc -l < audit-logs/names.txt)
+          if [ "$total" -eq 0 ]; then
+            echo "::error title=No audits matched::--test-case=$FILTER selected nothing."
+            exit 1
+          fi
+          echo "Running $total audits, $(nproc) at a time."
+
+          # Exit status per audit, written by the child itself so a killed parent still leaves a
+          # record of what had finished.
+          run_one() {
+            name="$1"
+            slug=$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '_')
+            ./build/angel_lsp_tests --no-skip --test-case="$name" > "audit-logs/$slug.log" 2>&1
+            printf '%s\t%s\t%s\n' "$?" "$slug" "$name" >> audit-logs/status.tsv
+          }
+          export -f run_one
+
+          xargs -d '\n' -P "$(nproc)" -I NAME \
+            bash -c 'run_one "$@"' _ NAME < audit-logs/names.txt
+
+          # The findings themselves, into the job summary, so a maintainer reads the numbers
+          # without downloading the artifact.
+          {
+            echo "## Corpus audit"
+            echo
+            while IFS=$'\t' read -r status slug name; do
+              if [ "$status" -eq 0 ]; then echo "### ✅ $name"; else echo "### ❌ $name (exit $status)"; fi
+              echo '```'
+              grep -E 'MESSAGE:|Status:|ERROR:' "audit-logs/$slug.log" | head -40
+              echo '```'
+            done < audit-logs/status.tsv
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          finished=$(wc -l < audit-logs/status.tsv)
+          failed=$(awk -F'\t' '$1 != 0' audit-logs/status.tsv | wc -l)
+          echo "Finished $finished of $total; $failed failed."
+
+          # Both halves matter. A non-zero exit is an audit that found something; a missing status
+          # line is an audit that never reported, and treating that as a pass is the failure mode
+          # this whole step is shaped around.
+          if [ "$finished" -ne "$total" ]; then
+            echo "::error title=Audit did not report::$((total - finished)) of $total audits produced no result."
+            exit 1
+          fi
+          if [ "$failed" -ne 0 ]; then
+            awk -F'\t' '$1 != 0 { print "::error title=Corpus audit failed::" $3 }' audit-logs/status.tsv
+            exit 1
+          fi
+
+      # Kept whatever the outcome: a failing audit's log is the finding, and a cancelled job's
+      # partial logs say how far it got.
+      - name: Upload the audit logs
+        if: always() && vars.CORPUS_REPO != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-audit-logs
+          path: server/audit-logs/
+          if-no-files-found: ignore
 
       - name: Explain that nothing was measured
         if: vars.CORPUS_REPO == ''

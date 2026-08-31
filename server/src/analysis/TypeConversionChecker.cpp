@@ -1752,165 +1752,6 @@ namespace angel_lsp::analysis
         // typedefs alias primitives only (see as-err-typedef-non-primitive), and a namespace
         // qualifies a name without changing whether it is a handle.
 
-        /** @brief `int32` and `uint32` are the explicit spellings of `int` and `uint`. */
-        std::string_view CanonicalPrimitiveSpelling(std::string_view typeName) noexcept
-        {
-            if (typeName == "int32") return "int";
-            if (typeName == "uint32") return "uint";
-            return typeName;
-        }
-
-        /** @brief One lambda parameter, exactly as the source wrote it. */
-        struct LambdaParameter
-        {
-            bool hasWrittenType = false;  ///< False means "inherit from the funcdef", so unjudgeable.
-            std::string typeName;
-            bool isConst = false;
-            bool isHandle = false;
-            bool isReference = false;
-            ParameterModifier modifier = ParameterModifier::None;
-        };
-
-        /**
-         * @brief Reads a `lambda_parameter_list`, which does not wrap its entries.
-         *
-         * The grammar puts `param_type` and `name` directly on the list node, once per parameter,
-         * and leaves `&` and `in`/`out`/`inout` as anonymous tokens between them - so the entries
-         * have to be grouped here, by the commas. `const`, the namespace qualifier and the `@` and
-         * `[]` suffixes are all inside the `param_type` node's own text.
-         *
-         * @see BuiltQueries.h, which needs its own query pattern for the same reason.
-         */
-        std::vector<LambdaParameter> ReadLambdaParameters(TSNode listNode, std::string_view sourceCode)
-        {
-            std::vector<LambdaParameter> parameters;
-            if (ts_node_is_null(listNode))
-            {
-                return parameters;
-            }
-
-            LambdaParameter current;
-            bool groupHasContent = false;
-
-            const uint32_t childCount = ts_node_child_count(listNode);
-            for (uint32_t i = 0; i < childCount; ++i)
-            {
-                TSNode child = ts_node_child(listNode, i);
-                const std::string text = NodeText(child, sourceCode);
-
-                if (text == "(")
-                {
-                    continue;
-                }
-                if (text == ")")
-                {
-                    break;
-                }
-                if (text == ",")
-                {
-                    parameters.push_back(current);
-                    current = LambdaParameter{};
-                    groupHasContent = false;
-                    continue;
-                }
-
-                const char *field = ts_node_field_name_for_child(listNode, i);
-                if (field && std::string_view(field) == "param_type")
-                {
-                    current.hasWrittenType = true;
-                    current.isConst = text.starts_with("const ") || text == "const";
-                    current.isHandle = text.find('@') != std::string::npos;
-                    current.typeName = CleanBaseType(text);
-                }
-                else if (text == "&")
-                {
-                    current.isReference = true;
-                }
-                else if (text == "in" || text == "out" || text == "inout")
-                {
-                    current.modifier = text == "in"  ? ParameterModifier::In
-                                     : text == "out" ? ParameterModifier::Out
-                                                     : ParameterModifier::InOut;
-                }
-
-                groupHasContent = true;
-            }
-
-            if (groupHasContent)
-            {
-                parameters.push_back(current);
-            }
-            return parameters;
-        }
-
-        /** @brief True when `name` denotes a typedef, whose alias no spelling comparison can see through. */
-        bool NamesATypedef(const std::string &name, const SymbolTable &table)
-        {
-            bool isTypedef = false;
-            ForEachSymbolNamed(name, table, [&isTypedef](const Symbol &sym)
-            {
-                if (sym.type == SymbolType::Typedef)
-                {
-                    isTypedef = true;
-                    return true;
-                }
-                return false;
-            });
-            return isTypedef;
-        }
-
-        /** @brief True when a written lambda signature contradicts the funcdef it is assigned to. */
-        bool LambdaContradictsFuncdef(const std::vector<LambdaParameter> &lambdaParameters,
-                                      const FuncdefSignature &funcdefSig,
-                                      const SymbolTable &table)
-        {
-            if (lambdaParameters.size() != funcdefSig.parameters.size())
-            {
-                return true;
-            }
-
-            for (size_t i = 0; i < lambdaParameters.size(); ++i)
-            {
-                const LambdaParameter &written = lambdaParameters[i];
-                if (!written.hasWrittenType)
-                {
-                    continue;
-                }
-
-                const ParameterInformation &expected = funcdefSig.parameters[i];
-                if (written.isHandle != expected.isHandle ||
-                    written.isReference != expected.isReference ||
-                    written.modifier != expected.modifier)
-                {
-                    return true;
-                }
-
-                // Compared by last `::` segment, so a name the funcdef writes bare and the lambda
-                // writes qualified - or the other way round - is the same name. That costs the
-                // `A::Foo` against `B::Foo` case, which is a rejection this misses rather than a
-                // legal program it reports.
-                //
-                // A typedef is the one spelling that cannot be compared at all: `real` and `float`
-                // are the same type to the compiler and different strings here, so either side
-                // naming one ends the comparison.
-                const std::string writtenBase(CanonicalPrimitiveSpelling(LastScopeSegment(written.typeName)));
-                const std::string expectedBase(
-                    CanonicalPrimitiveSpelling(LastScopeSegment(CleanBaseType(expected.typeName))));
-
-                if (writtenBase.empty() || expectedBase.empty() || writtenBase == expectedBase)
-                {
-                    continue;
-                }
-                if (NamesATypedef(writtenBase, table) || NamesATypedef(expectedBase, table))
-                {
-                    continue;
-                }
-                return true;
-            }
-
-            return false;
-        }
-
         void CheckFuncdefAssignment(TSNode targetNode,
                                     const FuncdefSignature &funcdefSig,
                                     TSNode valueNode,
@@ -2683,6 +2524,37 @@ namespace angel_lsp::analysis
                         const std::string_view pType = ts_node_type(parent);
                         if (pType == "lambda_expression" || pType == "anonymous_function")
                         {
+                            // A lambda writes no return type; the funcdef it is handed to supplies
+                            // one. Measured: `funcdef void CB(); CB@ cb = function() { return 1; };`
+                            // is "Can't return value when return type is 'void'", and
+                            // `funcdef int CB(); ... { return 'x'; }` is "No conversion from
+                            // 'const string' to 'int'". Both are the same two checks the named-
+                            // function branch below makes, against a return type read from
+                            // elsewhere - so this stops at the lambda either way, having judged
+                            // what it could.
+                            const auto target = FuncdefTargetOfLambda(parent, ctx.request.symbolTable,
+                                                                      request.sourceCode);
+                            if (target)
+                            {
+                                const std::string expected = CleanBaseType(target->GetFuncdef().returnType);
+                                if (expected == "void")
+                                {
+                                    EmitAtNode(expr, ctx, "as-err-void-return-value");
+                                }
+                                else if (!expected.empty())
+                                {
+                                    const std::string actual = CleanBaseType(ResolveExpressionType(
+                                        expr, scopeAt(), ctx.request.symbolTable, request.sourceCode,
+                                        ctx.request.fileUri));
+                                    CheckFloatTruncation(expr, actual, expected, scopeAt(), ctx,
+                                                         request.sourceCode);
+                                    if (!actual.empty() && actual != expected &&
+                                        !IsConvertible(actual, expected, ctx))
+                                    {
+                                        EmitAtNode(expr, ctx, "as-err-no-implicit-conversion", actual, expected);
+                                    }
+                                }
+                            }
                             break;
                         }
                         if (pType == "func_declaration" || pType == "method_declaration" ||

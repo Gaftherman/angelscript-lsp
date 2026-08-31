@@ -391,6 +391,115 @@ namespace angel_lsp::analysis
             return candidates;
         }
 
+        /**
+         * @brief Judges a lambda argument against the funcdef parameter it lands on.
+         *
+         * The same problem the initializer-list check above solves, and for the same reason: a
+         * lambda resolves to no type, so `allArgsResolved` is false and the entire overload check
+         * below is skipped for any call that takes one. Every lambda in the 1,061-file corpus is a
+         * call argument, so that silence covered all of them.
+         *
+         * Measured against angelscript_oracle:
+         *
+         *     void Take(CB@ c);   Take(function(int a){})  -> accepted
+         *                         Take(function(a){})      -> accepted, type comes from CB
+         *                         Take(function(){})       -> "No matching signatures to
+         *                                                      'Take(<auto> lambda())'"
+         *     void T(A@); void T(B@);
+         *                         T(function(int a){})     -> accepted, one overload matches
+         *                         T(function(int, int){})  -> "No matching signatures"
+         *                         T(function(a){})         -> "Multiple matching signatures"
+         *
+         * A candidate is viable when every lambda argument satisfies the funcdef at its position;
+         * none viable is the rejection, more than one is the ambiguity. If ANY candidate's
+         * parameter at a lambda position is not a funcdef this analyzer can see - the usual case
+         * for a host-registered callback - nothing is judged at all, because the question is then
+         * about a signature that is not in the workspace.
+         */
+        void CheckLambdaArguments(const std::vector<TSNode> &argNodes,
+                                  const std::vector<Symbol> &candidates,
+                                  TSNode callee,
+                                  TSNode arguments,
+                                  const std::string &reportedName,
+                                  const SymbolTable &table,
+                                  std::string_view sourceCode,
+                                  DiagnosticContext &ctx)
+        {
+            std::vector<size_t> lambdaPositions;
+            for (size_t i = 0; i < argNodes.size(); ++i)
+            {
+                if (IsLambdaExpression(argNodes[i]))
+                {
+                    lambdaPositions.push_back(i);
+                }
+            }
+            if (lambdaPositions.empty() || candidates.empty())
+            {
+                return;
+            }
+
+            // The funcdef each accepting candidate wants, per lambda position. Two candidates that
+            // name the SAME funcdef are the same overload reached twice - the corpus flattens
+            // twenty projects into one directory, so a function declared once per project arrives
+            // as several identical symbols - and that is not the ambiguity the compiler means.
+            std::vector<std::vector<std::string>> acceptedShapes;
+
+            for (const auto &candidate : candidates)
+            {
+                const auto &fn = candidate.GetFunction();
+                std::vector<std::string> shape;
+                bool takesEveryLambda = true;
+
+                for (const size_t position : lambdaPositions)
+                {
+                    if (position >= fn.parameters.size())
+                    {
+                        takesEveryLambda = false;
+                        break;
+                    }
+
+                    const std::string parameterType = CleanBaseType(fn.parameters[position].typeName);
+                    const auto funcdef = FindFuncdefSymbol(parameterType, table);
+                    if (!funcdef)
+                    {
+                        return;
+                    }
+                    if (LambdaContradictsFuncdef(argNodes[position], funcdef->GetFuncdef(),
+                                                 table, sourceCode))
+                    {
+                        takesEveryLambda = false;
+                        break;
+                    }
+                    shape.push_back(funcdef->name);
+                }
+
+                if (takesEveryLambda)
+                {
+                    acceptedShapes.push_back(std::move(shape));
+                }
+            }
+
+            const TSPoint start = ts_node_start_point(callee);
+            const TSPoint end = ts_node_end_point(arguments);
+
+            if (acceptedShapes.empty())
+            {
+                ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                "as-err-call-no-matching-signature", reportedName);
+                return;
+            }
+
+            const bool everyShapeIdentical =
+                std::all_of(acceptedShapes.begin(), acceptedShapes.end(),
+                            [&](const std::vector<std::string> &shape)
+                            { return shape == acceptedShapes.front(); });
+            if (acceptedShapes.size() > 1 && !everyShapeIdentical)
+            {
+                ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                "as-err-call-ambiguous", reportedName);
+            }
+        }
+
         void CheckCall(TSNode node, const CallCheckRequest &request, const Scope *scope, DiagnosticContext &ctx)
         {
             TSNode callee = ts_node_child_by_field_name(node, "function", k_functionFieldLength);
@@ -694,6 +803,14 @@ namespace angel_lsp::analysis
                                                         request.sourceCode, scope, ctx);
                     }
                 }
+            }
+
+            // A lambda argument, which resolves to no type and therefore turns allArgsResolved
+            // off for the whole call - see CheckLambdaArguments for what the compiler does answer.
+            if (!sawNamedArg)
+            {
+                CheckLambdaArguments(argNodes, matchingArityCandidates, callee, arguments,
+                                     reportedName, table, request.sourceCode, ctx);
             }
 
             if (allArgsResolved && (!argTypes.empty() || candidatesAreFreeFunctions))

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -454,6 +455,94 @@ namespace angel_lsp::analysis
         std::string_view sourceCode,
         std::string_view uri = "",
         int depth = 0);
+
+    // --- A lambda against the funcdef it is being handed to ---------------------------------
+    //
+    // Shared because a lambda reaches a funcdef three ways and the compiler judges all three by
+    // the same rule: an assignment or initializer (`CB@ cb = function(...)`), a conversion
+    // (`CB(function(...))`), and a call argument (`Take(function(...))`). The first two are
+    // TypeConversionChecker's, the third is CallChecker's.
+
+    /** @brief One lambda parameter, exactly as the source wrote it. */
+    struct LambdaParameter
+    {
+        bool hasWrittenType = false;  ///< False means "inherit from the funcdef", so unjudgeable.
+        std::string typeName;
+        bool isConst = false;
+        bool isHandle = false;
+        bool isReference = false;
+        ParameterModifier modifier = ParameterModifier::None;
+    };
+
+    /**
+     * @brief Reads a `lambda_parameter_list`, which does not wrap its entries.
+     *
+     * The grammar puts `param_type` and `name` directly on the list node, once per parameter, and
+     * leaves `&` and `in`/`out`/`inout` as anonymous tokens between them - so the entries have to
+     * be grouped here, by the commas. `const`, the namespace qualifier and the `@` and `[]`
+     * suffixes are all inside the `param_type` node's own text.
+     *
+     * @see BuiltQueries.h, which needs its own query pattern for the same reason.
+     */
+    std::vector<LambdaParameter> ReadLambdaParameters(TSNode listNode, std::string_view sourceCode);
+
+    /**
+     * @brief True when a written lambda signature contradicts the funcdef it is handed to.
+     *
+     * The compiler compares the WRITTEN signature and does not convert it, so this is an exact
+     * match rather than a conversion test. Measured against angelscript_oracle:
+     *
+     *     funcdef void CB(const string &in);
+     *     function(s) { }                  // accepted, the type comes from CB
+     *     function(const string &in s) { } // accepted, written and identical
+     *     function(string s) { }           // REJECTED - no const, no &in
+     *     function(string &in s) { }       // REJECTED - no const
+     *     funcdef void CB(int);
+     *     function(uint a) { }             // REJECTED - int does not widen here
+     *
+     * Arity is a hard equality even when every parameter is untyped, and a funcdef's default
+     * argument does not relax it: `funcdef void CB(int a = 1)` still rejects `function() { }`.
+     *
+     * The type NAME is compared by its last `::` segment, and not at all when either side names a
+     * typedef - the alias no spelling comparison can see through. That is not caution for its own
+     * sake: `typedef float real` against `float`, `array<int>@` against `int[]@`, and a namespaced
+     * type written bare inside its namespace are all ACCEPTED by the compiler, and a plain string
+     * comparison reports every one. The decorations, by contrast, are compared whatever the name
+     * is, because none of them can be hidden by a spelling.
+     */
+    bool LambdaContradictsFuncdef(const std::vector<LambdaParameter> &lambdaParameters,
+                                  const FuncdefSignature &funcdefSig,
+                                  const SymbolTable &table);
+
+    /** @brief The `lambda_expression` overload: reads the parameter list off the node itself. */
+    bool LambdaContradictsFuncdef(TSNode lambdaNode,
+                                  const FuncdefSignature &funcdefSig,
+                                  const SymbolTable &table,
+                                  std::string_view sourceCode);
+
+    /** @brief True when the node is a lambda in either of the two spellings the grammar uses. */
+    [[nodiscard]] bool IsLambdaExpression(TSNode node) noexcept;
+
+    /**
+     * @brief The funcdef a type name denotes, or nullopt.
+     *
+     * Falls back to a last-`::`-segment scan when the qualified name resolves to nothing, the way
+     * a bare name inside a namespace has to.
+     */
+    std::optional<Symbol> FindFuncdefSymbol(const std::string &typeName, const SymbolTable &table);
+
+    /**
+     * @brief The funcdef a lambda is being handed to, read from where the lambda is written.
+     *
+     * A lambda has no return type of its own - the grammar gives `lambda_expression` a parameter
+     * list and a body and nothing else - so every question about what its body must return has to
+     * come from the target. Handles the three shapes a lambda reaches a funcdef through: a
+     * declaration whose written type is a funcdef, a funcdef used as a conversion, and an argument
+     * landing on a funcdef parameter. Anything else answers nullopt.
+     */
+    std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode,
+                                                const SymbolTable &table,
+                                                std::string_view sourceCode);
 }
 
 

@@ -1415,6 +1415,141 @@ TEST_CASE("LambdaFuncdef - A class construction that happens to take a lambda is
 }
 
 // =====================================================================================
+// A lambda's RETURN type against its funcdef.
+//
+// A lambda writes no return type - the grammar gives `lambda_expression` a parameter list and a
+// body and nothing else - so the requirement comes from the funcdef it is handed to, and until
+// SemanticHelpers::FuncdefTargetOfLambda existed there was nothing to read it from. The three
+// shapes below are the three ways a lambda reaches a funcdef, and the compiler judges all three.
+//
+// Every expectation is a recording of what `angelscript_oracle` answered.
+// =====================================================================================
+
+namespace
+{
+    std::vector<Diagnostic> LambdaReturnDiagnostics(const std::string &code)
+    {
+        ConversionEnvironment env(code);
+        std::vector<Diagnostic> result;
+        for (auto &diag : env.Analyze())
+        {
+            if (diag.code == "as-err-not-all-paths-return" ||
+                diag.code == "as-err-void-return-value" ||
+                diag.code == "as-err-no-implicit-conversion")
+            {
+                result.push_back(std::move(diag));
+            }
+        }
+        return result;
+    }
+
+    bool ReturnsCode(const std::string &code, const std::string &wanted)
+    {
+        const auto diagnostics = LambdaReturnDiagnostics(code);
+        return std::any_of(diagnostics.begin(), diagnostics.end(),
+                           [&wanted](const Diagnostic &d) { return d.code == wanted; });
+    }
+}
+
+TEST_CASE("LambdaFuncdef - A non-void funcdef requires every path of the lambda to return")
+{
+    // Oracle: "Not all paths return a value" for the first two, accepted for the third.
+    CHECK(ReturnsCode(
+        "funcdef int CB();\n"
+        "void main() { CB@ cb = function() { }; }\n", "as-err-not-all-paths-return"));
+
+    CHECK(ReturnsCode(
+        "funcdef int CB();\n"
+        "void main() { CB@ cb = function() { if (true) return 1; }; }\n",
+        "as-err-not-all-paths-return"));
+
+    CHECK(LambdaReturnDiagnostics(
+        "funcdef int CB();\n"
+        "void main() { CB@ cb = function() { if (true) return 1; return 2; }; }\n").empty());
+
+    // A void funcdef requires nothing, and a bare `return;` satisfies it.
+    CHECK(LambdaReturnDiagnostics(
+        "funcdef void CB();\n"
+        "void main() { CB@ cb = function() { }; }\n").empty());
+
+    CHECK(LambdaReturnDiagnostics(
+        "funcdef void CB();\n"
+        "void main() { CB@ cb = function() { return; }; }\n").empty());
+}
+
+TEST_CASE("LambdaFuncdef - A returned value is judged against the funcdef's return type")
+{
+    // Oracle: "Can't return value when return type is 'void'".
+    CHECK(ReturnsCode(
+        "funcdef void CB();\n"
+        "void main() { CB@ cb = function() { return 1; }; }\n", "as-err-void-return-value"));
+
+    // Oracle: "No conversion from 'const string' to 'int' available."
+    CHECK(ReturnsCode(
+        "funcdef int CB();\n"
+        "void main() { CB@ cb = function() { return 'x'; }; }\n", "as-err-no-implicit-conversion"));
+
+    // Oracle accepts both of these: int widens to float, and int to int is int.
+    CHECK(LambdaReturnDiagnostics(
+        "funcdef float CB();\n"
+        "void main() { CB@ cb = function() { return 1; }; }\n").empty());
+
+    CHECK(LambdaReturnDiagnostics(
+        "funcdef int CB();\n"
+        "void main() { CB@ cb = function() { return 1; }; }\n").empty());
+}
+
+TEST_CASE("LambdaFuncdef - The return type is found through all three ways a lambda reaches a funcdef")
+{
+    // A declaration, an argument, and a conversion. Oracle rejects each.
+    CHECK(ReturnsCode(
+        "funcdef int CB();\n"
+        "void main() { CB@ cb = function() { }; }\n", "as-err-not-all-paths-return"));
+
+    CHECK(ReturnsCode(
+        "funcdef int CB();\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(function() { }); }\n", "as-err-not-all-paths-return"));
+
+    CHECK(ReturnsCode(
+        "funcdef int CB();\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(CB(function() { })); }\n", "as-err-not-all-paths-return"));
+
+    CHECK(ReturnsCode(
+        "funcdef void CB();\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(function() { return 1; }); }\n", "as-err-void-return-value"));
+
+    CHECK(ReturnsCode(
+        "funcdef int CB();\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(function() { return 'x'; }); }\n", "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("LambdaFuncdef - A lambda with no reachable funcdef keeps its old silence")
+{
+    // Nothing names a return type here, so there is no requirement to check against - which is
+    // the state every lambda was in before FuncdefTargetOfLambda existed. Reporting one would be
+    // inventing a requirement, which is worse than the missing diagnostic it replaces.
+    CHECK(LambdaReturnDiagnostics(
+        "void Take(UnknownCallback@ c) {}\n"
+        "void main() { Take(function() { }); }\n").empty());
+
+    CHECK(LambdaReturnDiagnostics(
+        "void main() { SomeHostCall(function() { }); }\n").empty());
+
+    // Two candidates offering different funcdefs: which one the lambda was written against is
+    // exactly what is undecided, so no return-type verdict is drawn from it.
+    CHECK(LambdaReturnDiagnostics(
+        "funcdef int WantsInt();\n"
+        "funcdef void WantsNothing();\n"
+        "void T(WantsInt@ c) {}\n"
+        "void T(WantsNothing@ c) {}\n"
+        "void main() { T(function() { }); }\n").empty());
+}
+
+// =====================================================================================
 // FUNCDEF SIGNATURE CORPUS AUDIT (skip()-decorated, run it deliberately:
 // `angel_lsp_tests.exe --no-skip --test-case="*Funcdef Signature Corpus Audit*"`)
 //
@@ -1422,18 +1557,18 @@ TEST_CASE("LambdaFuncdef - A class construction that happens to take a lambda is
 // right-hand side. It now also fires for a lambda, which is a new emit path, so it gets its
 // own measurement.
 //
-// READ THE RESULT HONESTLY: zero here is a guard, not yet a measurement. The corpus writes 33
-// lambdas across 17 files, and every one of them is a CALL ARGUMENT - `arrOut.sort(function(a,
-// b){})`, `SetCallback(function(...))`, `Hooks.RegisterHook(..., @MapChangeHook(function(...)))`.
-// The funcdefs those name - MapChangeHook, ClientSayHook, CClientCommand's callback - are
-// registered by the game engine in C++ and declared in no script, so FindFuncdef sees nothing
-// and the rule stays silent by the visibility policy rather than by judging anything. Not one
-// file writes `CB@ cb = function(...)`, which is the shape this rule checks.
+// READ THE RESULT HONESTLY: zero here is a guard, not a measurement of the judging path. The
+// corpus writes 33 lambdas across 17 files, and every one is a CALL ARGUMENT -
+// `arrOut.sort(function(a, b){})`, `Hooks.RegisterHook(..., @MapChangeHook(function(...)))`. The
+// call-argument rule does now reach all 33, but the funcdefs they name - MapChangeHook,
+// ClientSayHook, CClientCommand's callback, `array<T>::less` - are registered by the game engine
+// in C++ and declared in no script, so FindFuncdefSymbol sees nothing and the rule declines by the
+// visibility policy rather than by judging anything. Not one file writes `CB@ cb = function(...)`.
 //
-// So what this audit currently proves is that the rule does not fire where it should not. The
-// evidence that it fires correctly is the 36 assertions above, each a recorded oracle verdict.
-// If the corpus ever grows a script-declared funcdef taking a lambda, this becomes a real
-// measurement - which is why it is here now rather than later.
+// So this audit proves the rule does not fire where it must not, on the exact shapes real code
+// writes. The evidence that it fires correctly is the assertions above, each a recorded oracle
+// verdict, and doc_r26 in tests/parity, where it matches the compiler line for line. A corpus that
+// grew one script-declared callback funcdef would turn this into a measurement of both halves.
 //
 // Every finding is written as `file:line:column` to ANGELLSP_FUNCDEF_MISMATCH_DUMP when that
 // is set, so each one can be replayed through the compiler:

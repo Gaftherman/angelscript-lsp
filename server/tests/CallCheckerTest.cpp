@@ -468,6 +468,11 @@ TEST_CASE("CallChecker - Predefined engine stubs (.as.predefined) integrate with
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Call Argument Corpus Audit*"`)
+//
+// Counts all three call diagnostics, not just the argument count. It counted one of them until a
+// lambda argument became judgeable and the other two acquired a new emit site with no measurement
+// behind it - and widening it immediately found 102 findings that had been firing on real code,
+// uncounted, since long before any of this. See the ratchet at the bottom.
 // =====================================================================================
 
 TEST_CASE("CallChecker - Call Argument Corpus Audit" * doctest::skip(true))
@@ -480,7 +485,9 @@ TEST_CASE("CallChecker - Call Argument Corpus Audit" * doctest::skip(true))
 
     const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)
     {
-        return code == "as-err-call-argument-count";
+        return code == "as-err-call-argument-count" ||
+               code == "as-err-call-no-matching-signature" ||
+               code == "as-err-call-ambiguous";
     });
 
     MESSAGE("Call-argument corpus audit: files=" << result.filesAnalysed
@@ -494,19 +501,56 @@ TEST_CASE("CallChecker - Call Argument Corpus Audit" * doctest::skip(true))
 
     CHECK(result.filesAnalysed > 0);
 
-    // One finding survives triage over 1,061 files, and it is a genuine bug in the corpus:
-    // `Logger::Log` is declared once, taking one string, and AngelScripts_CTJALoader.as:30 passes
-    // three - a format string and two values, as though an overload existed for it. The same file
-    // calls it correctly with one argument eleven lines later.
+    // 103 findings, and the breakdown is the point:
+    //
+    //   1  as-err-call-argument-count       a genuine bug in the corpus
+    //  75  as-err-call-ambiguous            ONE defect, root-caused below
+    //   4  as-err-call-no-matching-signature  not yet triaged
+    //  23  the same findings again, from the second copy of the same JSON library
+    //
+    // The single finding is real: `Logger::Log` is declared once, taking one string, and
+    // AngelScripts_CTJALoader.as:30 passes three - a format string and two values, as though an
+    // overload existed for it. The same file calls it correctly with one argument eleven lines
+    // later.
+    //
+    // The 75 are a FALSE POSITIVE, one cause, and it is not in this file: `bool` is listed as
+    // convertible to and from the numeric types in OverloadResolver's IsPrimitiveWidening, and it
+    // is not. Measured against angelscript_oracle, all six directions:
+    //
+    //     void f(int);   f(boolVar)    -> "No matching signatures to 'f(bool)'"
+    //     void f(float); f(boolVar)    -> "No matching signatures to 'f(bool)'"
+    //     void f(bool);  f(intVar)     -> "No matching signatures to 'f(int)'"
+    //     void f(bool);  f(floatVar)   -> "No matching signatures to 'f(float)'"
+    //     int n = boolVar;             -> "Can't implicitly convert from 'bool' to 'int'"
+    //     bool b = intVar;             -> "Can't implicitly convert from 'int' to 'bool'"
+    //
+    // With bool convertible, `obj.Get(intValue, strict)` against the overload set
+    // `Get(bool&out, bool)` / `Get(int&out, bool)` scores both as viable and ties, so the call is
+    // called ambiguous - and the compiler accepts it without hesitating, because only one of those
+    // parameters can take an int at all. That set is a JSON library the corpus carries twice, which
+    // is why so few files account for so many findings.
+    //
+    // Not fixed here. That table is the same one whose signed/unsigned entries were added to stop
+    // a real false positive on `array<int> a(1)`, and changing it moves every overload decision in
+    // the analyzer - so it wants its own measurement across all nineteen audits, not a passenger
+    // seat in a change about lambdas. Recorded in PARITY-BACKLOG.md as the next item.
+    //
+    // The number is a ratchet and may only go down.
     //
     // Seven others were reported by the first version of this rule, and every one was a false
     // positive fixed at its source rather than suppressed: a mixin body GetEnclosingContainers did
     // not recognise as a class, a funcdef construction read as a call, globals matched across two
     // plugins that never include one another, and unqualified names that could have been
     // constructions of engine-registered types. See FindFreeCandidates for what each one cost.
-    CHECK(result.Total() == 1);
-    REQUIRE(result.hits.size() == 1);
-    CHECK(result.hits[0].fileName == "AngelScripts_CTJALoader.as");
+    CHECK(result.Total() <= 103);
+
+    // The argument-count finding specifically, named rather than counted: it is the one this
+    // audit was written for, and widening the audit must not lose it among the other two codes.
+    CHECK(std::any_of(result.hits.begin(), result.hits.end(), [](const auto &hit)
+    {
+        return hit.code == "as-err-call-argument-count" &&
+               hit.fileName == "AngelScripts_CTJALoader.as";
+    }));
 }
 
 // =====================================================================================
@@ -885,4 +929,141 @@ TEST_CASE("CallChecker - A nested bracket array resolves to the outer container"
         "void main() { int[][] grid; grid.insertLast(); }\n";
 
     CHECK(HasCode(AnalyzeCallSnippet(code), "as-err-call-argument-count"));
+}
+
+// =====================================================================================
+// A lambda handed to a function whose parameter is a funcdef handle.
+//
+// A lambda resolves to no type, so `allArgsResolved` was false and the whole overload check was
+// skipped for any call taking one. Every lambda in the 1,061-file corpus is a call argument, so
+// that silence covered all of them.
+//
+// Each expectation below is a recording of what `angelscript_oracle` answered.
+// =====================================================================================
+
+namespace
+{
+    bool RejectsLambdaCall(const std::string &code)
+    {
+        return HasCode(AnalyzeCallSnippet(code), "as-err-call-no-matching-signature");
+    }
+
+    bool AmbiguousLambdaCall(const std::string &code)
+    {
+        return HasCode(AnalyzeCallSnippet(code), "as-err-call-ambiguous");
+    }
+
+    bool SilentOnLambdaCall(const std::string &code)
+    {
+        const auto diagnostics = AnalyzeCallSnippet(code);
+        return !HasCode(diagnostics, "as-err-call-no-matching-signature") &&
+               !HasCode(diagnostics, "as-err-call-ambiguous") &&
+               !HasCode(diagnostics, "as-err-call-argument-count");
+    }
+}
+
+TEST_CASE("CallChecker - A lambda argument is judged against the funcdef parameter")
+{
+    // Oracle: "No matching signatures to 'Take(<auto> lambda())'".
+    CHECK(RejectsLambdaCall(
+        "funcdef void CB(int);\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(function() { }); }\n"));
+
+    CHECK(SilentOnLambdaCall(
+        "funcdef void CB(int);\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(function(int a) { }); }\n"));
+
+    // Untyped parameters take their type from the funcdef, so this one is accepted.
+    CHECK(SilentOnLambdaCall(
+        "funcdef void CB(int);\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(function(a) { }); }\n"));
+
+    // Oracle: "No matching signatures to 'C::Take(<auto> lambda())'" - a method is judged too.
+    CHECK(RejectsLambdaCall(
+        "funcdef void CB(int);\n"
+        "class C { void Take(CB@ c) {} }\n"
+        "void main() { C c; c.Take(function() { }); }\n"));
+
+    // Not only in first position.
+    CHECK(RejectsLambdaCall(
+        "funcdef void CB(int);\n"
+        "void Take(int n, CB@ c) {}\n"
+        "void main() { Take(1, function() { }); }\n"));
+
+    CHECK(SilentOnLambdaCall(
+        "funcdef void CB(int);\n"
+        "void Take(int n, CB@ c) {}\n"
+        "void main() { Take(1, function(int a) { }); }\n"));
+}
+
+TEST_CASE("CallChecker - A lambda argument written wrong is rejected the same way as an assignment")
+{
+    // The decorations and the written type carry over from the assignment rule; the oracle
+    // rejects each of these with "No matching signatures".
+    CHECK(RejectsLambdaCall(
+        "funcdef void CB(int);\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(function(uint a) { }); }\n"));
+
+    CHECK(RejectsLambdaCall(
+        "funcdef void CB(const string &in);\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(function(string s) { }); }\n"));
+
+    CHECK(SilentOnLambdaCall(
+        "funcdef void CB(const string &in);\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(function(const string &in s) { }); }\n"));
+}
+
+TEST_CASE("CallChecker - Overloads: one match passes, none match reports, several are ambiguous")
+{
+    // Oracle, in order: accepted; "No matching signatures to 'T(<auto> lambda(int, int))'";
+    // "Multiple matching signatures to 'T(<auto> lambda(<auto>))'" - because an untyped lambda of
+    // arity one satisfies both funcdefs and nothing chooses between them.
+    const std::string overloads =
+        "funcdef void A(int);\n"
+        "funcdef void B(string);\n"
+        "void T(A@ c) {}\n"
+        "void T(B@ c) {}\n";
+
+    CHECK(SilentOnLambdaCall(overloads + "void main() { T(function(int a) { }); }\n"));
+    CHECK(RejectsLambdaCall(overloads + "void main() { T(function(int a, int b) { }); }\n"));
+    CHECK(AmbiguousLambdaCall(overloads + "void main() { T(function(a) { }); }\n"));
+}
+
+TEST_CASE("CallChecker - A callback the workspace cannot see is not judged at all")
+{
+    // The usual shape in real code: `Hooks.RegisterHook(..., @MapChangeHook(function(...)))`,
+    // where MapChangeHook is registered by the host in C++ and declared in no script. With the
+    // funcdef invisible the parameter's signature is unknown, so there is nothing to compare
+    // against - and silence is the whole visibility policy, not a gap in this rule.
+    CHECK(SilentOnLambdaCall(
+        "void Take(UnknownCallback@ c) {}\n"
+        "void main() { Take(function() { }); }\n"));
+
+    // Even when one overload IS visible: which one the call meant is undecided.
+    CHECK(SilentOnLambdaCall(
+        "funcdef void CB(int);\n"
+        "void Take(CB@ c) {}\n"
+        "void Take(UnknownCallback@ c) {}\n"
+        "void main() { Take(function() { }); }\n"));
+}
+
+TEST_CASE("CallChecker - The same funcdef reached twice is not an ambiguity")
+{
+    // Not a compiler case - the snippet below is a duplicate definition the compiler rejects
+    // outright. It stands in for the shape the corpus really produces: twenty projects flattened
+    // into one directory, so a function declared once per project arrives in the shared symbol
+    // table as several identical candidates. Two of them naming the SAME funcdef is that, not the
+    // ambiguity the compiler means, so the ambiguity check compares the funcdefs rather than
+    // counting the candidates.
+    CHECK(SilentOnLambdaCall(
+        "funcdef void CB(int);\n"
+        "void Take(CB@ c) {}\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(function(int a) { }); }\n"));
 }

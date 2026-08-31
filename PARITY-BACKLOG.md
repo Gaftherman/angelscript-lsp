@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1221 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1230 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -79,6 +79,51 @@ Each entry says what the compiler answers and what this analyzer answered before
 false positives — legal code reported as an error, which is the one failure mode this project
 treats as unacceptable.
 
+- **A lambda against its funcdef, the remaining three quarters.** The first pass covered an
+  assignment and a conversion. The corpus said that was the wrong three quarters: it writes 33
+  lambdas across 17 files and **not one** is `CB@ cb = function(...)`. Every one is a call
+  argument. Both remaining shapes are now checked, and the return type with them:
+  - **As a call argument** (`CallChecker`). A lambda resolves to no type, so `allArgsResolved` was
+    false and the entire overload check was skipped for any call taking one — which covered every
+    lambda in the corpus. A candidate is viable when every lambda argument satisfies the funcdef at
+    its position; none viable is `No matching signatures`, more than one is `Multiple matching
+    signatures`, both measured. Two candidates naming the **same** funcdef are not an ambiguity —
+    the corpus flattens twenty projects into one directory, so one function arrives as several
+    identical symbols — so the check compares funcdefs rather than counting candidates.
+  - **The return type** (`ControlFlowChecker`, `TypeConversionChecker`). A lambda writes no return
+    type; the grammar gives `lambda_expression` a parameter list and a body and nothing else, so
+    `return_type` was null and the not-all-paths check simply never ran for one. The requirement
+    comes from the target: `funcdef int CB(); CB@ cb = function() { };` is "Not all paths return a
+    value", `funcdef void CB(); ... { return 1; }` is "Can't return value when return type is
+    'void'", and `funcdef int CB(); ... { return 'x'; }` is "No conversion from 'const string' to
+    'int'". All three measured, all three now reported.
+
+  The connective tissue is `SemanticHelpers::FuncdefTargetOfLambda`, which answers "which funcdef
+  is this lambda being handed to" for the three shapes and **nullopt for anything else** — a call
+  with two candidates offering different funcdefs included, because which one the lambda was
+  written against is exactly what is undecided there. `ReadLambdaParameters` and
+  `LambdaContradictsFuncdef` moved to `SemanticHelpers` alongside it, since the rule is now asked
+  by three modules and one copy is the point.
+
+  Corpus after the change: call-argument audit **1**, control-flow **1**, type-conversion **25** —
+  every one unchanged. The rule reaches all 33 corpus lambdas and declines every one, because the
+  funcdefs they name are registered by the game engine in C++ and declared in no script. Parity:
+  0 unexplained false positives over 98 scripts, and `doc_r26` matches the compiler line for line.
+  `doc_p27`, `doc_r26`.
+
+- **The corpus audits run in CI, in parallel.** They share nothing and are single-threaded, so the
+  workflow now runs one process per audit at `nproc` at a time: measured locally, 19 of them took
+  about 40 minutes in series and about 7 in parallel. One process each also buys what a single
+  `--test-case="*Corpus Audit*"` run cannot — a killed or timed-out job leaves the finished audits'
+  logs behind, where one buffered process leaves nothing and a truncated run looks exactly like a
+  passing one. That is not hypothetical: it happened here, and the empty log was read as success
+  until the missing `Status:` line gave it away. The step now fails on an audit that reported
+  nothing, not only on one that reported a finding, and uploads every log whatever the outcome.
+
+  Still worth doing: the 21 audits repeat the same walk — 1,061 files parsed, symbol table built,
+  the whole analyzer run — 21 times, to keep one diagnostic code each. One pass counting every code
+  would be roughly 21× less work. It is a change to 21 test cases and their ratchets, so it is its
+  own piece of work rather than a passenger in this one.
 - **A lambda against its target funcdef.** `CheckFuncdefAssignment` handled only a named function
   on the right-hand side; a lambda fell through the symbol lookup, found nothing and returned in
   silence, so neither arity nor parameter types were compared. The compiler compares the **written**
@@ -517,32 +562,35 @@ treats as unacceptable.
 Real, oracle-confirmed, and none of it reports legal code today. Ordered by what a user notices
 first. Each lands with its `doc_`-prefixed parity case.
 
-1. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
+1. **`bool` is not a numeric type, and `IsPrimitiveWidening` says it is.** A false positive on real
+   code, 75 findings, found by widening the call-argument corpus audit to the two call diagnostics
+   it had never counted. All six directions measured against the oracle and all six rejected:
+   `void f(int); f(boolVar)`, `void f(float); f(boolVar)`, `void f(bool); f(intVar)`,
+   `void f(bool); f(floatVar)`, `int n = boolVar;`, `bool b = intVar;`. With the conversion
+   wrongly allowed, `obj.Get(intValue, strict)` against the overload set `Get(bool&out, bool)` /
+   `Get(int&out, bool)` scores both viable and ties, so a call the compiler accepts without
+   hesitating is reported ambiguous. Concentrated in one JSON library the corpus carries twice.
+
+   The fix is small and its blast radius is not: that table is the one whose signed/unsigned
+   entries exist to stop a real false positive on `array<int> a(1)`, and every overload decision in
+   the analyzer goes through it. It wants its own measurement across all nineteen audits. The count
+   is pinned at 103 in `CallCheckerTest.cpp` so it can only go down.
+2. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
    user, not a deduction: nothing lets the server establish that an unresolved name is a typo rather
    than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
    exists the setting is the honest interface, but it is the reason the rule cannot simply be
    unconditional.
-2. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+3. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-3. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+4. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-4. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+5. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-5. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+6. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-6. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+7. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
-7. **A lambda passed straight to a function** — `f(function(...))` where `f`'s parameter is a
-    funcdef handle. The compiler judges it by the same rules as an assignment ("No matching
-    signatures to 'Take(<auto> lambda())'"), but it runs through `CallChecker`'s overload
-    resolution rather than `CheckFuncdefAssignment`, so it needs its own false-positive work. This
-    is where the corpus's lambdas actually live - see the funcdef entry under Fixed.
-8. **A lambda's return type against its funcdef** — the compiler compiles the body against the
-    funcdef's return type, so `funcdef int CB(); CB@ cb = function() { };` is "Not all paths return
-    a value" and `funcdef void CB(); ... { return 1; }` is "Can't return value when return type is
-    'void'". Both need the target funcdef threaded into ControlFlowChecker, which today reads the
-    return type off the enclosing `func_declaration` and finds none for a lambda.
 
 ### Out of scope
 
