@@ -3,6 +3,7 @@
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
 #include "utils/IncludeResolver.h"
+#include "utils/PositionEncoding.h"
 #include "analysis/DiagnosticCodes.h"
 
 #include <string>
@@ -1545,12 +1546,26 @@ namespace angel_lsp::features
             }
         }
 
+        /** @brief True for the symbol kinds that can legally stand where a type name was written. */
+        bool IsTypeLikeSymbol(analysis::SymbolType type)
+        {
+            return type == analysis::SymbolType::Class
+                || type == analysis::SymbolType::Interface
+                || type == analysis::SymbolType::Enum
+                || type == analysis::SymbolType::Typedef
+                || type == analysis::SymbolType::Funcdef;
+        }
+
         /**
-         * @brief "Did you mean 'X'?" for an undefined identifier, when something is close enough.
+         * @brief "Did you mean 'X'?" for a name that resolved to nothing, when something is close.
          *
-         * Of the ~130 codes this server can emit, one had a quick fix before this. Undefined
-         * identifier is the one worth having next: it is what a typo looks like, and the name the
-         * user meant is nearly always already in the symbol table.
+         * Of the 132 codes this server can emit, one had a quick fix before this. These two are
+         * what a typo looks like - an identifier or a type name that resolved to nothing - and the
+         * name the user meant is nearly always already in the symbol table.
+         *
+         * The candidate set differs by which one it is. An unresolved TYPE is only ever a type, so
+         * offering a function name there would be a suggestion that cannot compile; an unresolved
+         * identifier can be anything in scope. Everything else about the two is the same.
          *
          * Offers nothing when nothing is close. That is the whole design - see SuggestionLimit.
          */
@@ -1566,7 +1581,9 @@ namespace angel_lsp::features
 
             for (const auto &diag : request.context.diagnostics)
             {
-                if (!MatchDiagnosticCode(diag, diagnostics::codes::UndefinedIdentifier))
+                const bool isIdentifier = MatchDiagnosticCode(diag, diagnostics::codes::UndefinedIdentifier);
+                const bool isType = MatchDiagnosticCode(diag, diagnostics::codes::UnknownType);
+                if (!isIdentifier && !isType)
                 {
                     continue;
                 }
@@ -1587,17 +1604,26 @@ namespace angel_lsp::features
                 const std::string typedFolded = FoldCase(typed);
                 const size_t limit = SuggestionLimit(typed.size());
 
-                // Locals and parameters first - they are what an identifier in a function body
-                // most often meant - then everything the workspace declares.
                 std::vector<std::string> candidates;
-                auto rootScope = request.scopeIndex.GetRoot(request.uri);
-                if (rootScope)
+
+                // Locals and parameters first - they are what an identifier in a function body most
+                // often meant. Not for a type: no local declares one.
+                if (isIdentifier)
                 {
-                    CollectVisibleLocalNames(FindScopeByLineOrRoot(rootScope.get(), point.row, point.column), candidates);
+                    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+                    if (rootScope)
+                    {
+                        CollectVisibleLocalNames(FindScopeByLineOrRoot(rootScope.get(), point.row, point.column), candidates);
+                    }
                 }
 
-                request.symbolTable.ForEachSymbol([&candidates](const std::string &name, const std::vector<analysis::Symbol> &)
+                request.symbolTable.ForEachSymbol([&candidates, isType](const std::string &name, const std::vector<analysis::Symbol> &symbols)
                 {
+                    if (isType && std::none_of(symbols.begin(), symbols.end(),
+                                               [](const analysis::Symbol &sym) { return IsTypeLikeSymbol(sym.type); }))
+                    {
+                        return;
+                    }
                     candidates.push_back(name);
                 });
 
@@ -1671,6 +1697,63 @@ namespace angel_lsp::features
 
                     actions.push_back(std::move(action));
                 }
+            }
+        }
+
+        /**
+         * @brief Drops the `@` from a handle declared on a primitive.
+         *
+         * AngelScript has no handle to a primitive - `int@` is not a type that exists - so there is
+         * exactly one thing the user can have meant, and the fix is to delete one character. Worth
+         * having precisely because it is unambiguous: the diagnostic already says what is wrong and
+         * the reader still has to go and edit it by hand.
+         */
+        void TryAddHandleOnPrimitiveFix(
+            const CodeActionRequest &request,
+            TSNode rootNode,
+            std::vector<lsp::CodeAction> &actions)
+        {
+            if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+            {
+                return;
+            }
+
+            for (const auto &diag : request.context.diagnostics)
+            {
+                if (!MatchDiagnosticCode(diag, diagnostics::codes::HandleOnPrimitive))
+                {
+                    continue;
+                }
+
+                // Located in the source rather than trusted from the range: the diagnostic points at
+                // the type, and the `@` may sit anywhere across it (`int@`, `int @`, `const int@`).
+                const std::string_view line = angel_lsp::utils::GetLine(request.sourceCode, diag.range.start.line);
+                const size_t at = line.find('@', diag.range.start.character);
+                if (at == std::string_view::npos || at >= diag.range.end.character)
+                {
+                    continue;
+                }
+
+                lsp::TextEdit edit;
+                edit.range.start.line = diag.range.start.line;
+                edit.range.start.character = static_cast<uint32_t>(at);
+                edit.range.end.line = diag.range.start.line;
+                edit.range.end.character = static_cast<uint32_t>(at + 1);
+                edit.newText = "";
+
+                lsp::CodeAction action;
+                action.title = "Remove '@' - a primitive has no handle type";
+                action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+                action.isPreferred = true;
+                action.diagnostics = std::vector<lsp::Diagnostic>{ diag };
+
+                lsp::WorkspaceEdit wsEdit;
+                lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+                changes[lsp::DocumentUri::parse(request.uri)] = { std::move(edit) };
+                wsEdit.changes = std::move(changes);
+                action.edit = std::move(wsEdit);
+
+                actions.push_back(std::move(action));
             }
         }
 
@@ -2312,6 +2395,24 @@ namespace angel_lsp::features
                     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
                     action.isPreferred = true;
 
+                    // Bound to the diagnostic that asks for it, not only to the cursor sitting in
+                    // the class. Without this the action existed but never appeared as the fix for
+                    // the problem it fixes: an editor grouping quick fixes under a diagnostic, or
+                    // asking for actions at a diagnostic's range, sees nothing to offer.
+                    std::vector<lsp::Diagnostic> matchingDiags;
+                    for (const auto &diag : request.context.diagnostics)
+                    {
+                        if (MatchDiagnosticCode(diag, "as-err-interface-impl-missing") &&
+                            diag.range.start.line <= clsSym.endLine && diag.range.end.line >= clsSym.startLine)
+                        {
+                            matchingDiags.push_back(diag);
+                        }
+                    }
+                    if (!matchingDiags.empty())
+                    {
+                        action.diagnostics = std::move(matchingDiags);
+                    }
+
                     lsp::WorkspaceEdit wsEdit;
                     lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
                     changes[lsp::DocumentUri::parse(request.uri)].push_back(std::move(edit));
@@ -2343,6 +2444,7 @@ namespace angel_lsp::features
         // =========================================================================
         TryAddConstQualifierActions(request, rootNode, actions);
         TryAddUndefinedIdentifierSuggestions(request, rootNode, actions);
+        TryAddHandleOnPrimitiveFix(request, rootNode, actions);
 
         // =========================================================================
         // Feature 5: Sort and Clean #include Directives

@@ -516,3 +516,171 @@ TEST_CASE("CodeActionHandler - At most three suggestions are offered")
 
     CHECK(SuggestionTitles(actions).size() == 3);
 }
+
+// =====================================================================================
+// Quick fixes bound to the diagnostics that ask for them.
+//
+// A diagnostic-driven fix is not the same thing as an action that happens to be available where
+// the diagnostic sits. An editor grouping fixes under a problem, or asking for actions at a
+// diagnostic's range, only finds an action that names the diagnostic in its `diagnostics` field.
+// =====================================================================================
+
+namespace
+{
+    /** @brief A CodeActionContext carrying one diagnostic of the given code over a range. */
+    lsp::CodeActionContext DiagnosticAt(lsp::Range range, const std::string &code)
+    {
+        lsp::Diagnostic diag;
+        diag.range = range;
+        diag.code = lsp::String(code);
+        diag.message = code;
+
+        lsp::CodeActionContext context;
+        context.diagnostics.push_back(diag);
+        return context;
+    }
+
+    /** @brief The first action whose title starts with the given prefix, or nullptr. */
+    const lsp::CodeAction *ActionTitled(const std::optional<std::vector<lsp::CodeAction>> &actions,
+                                        const std::string &prefix)
+    {
+        if (!actions.has_value())
+        {
+            return nullptr;
+        }
+        for (const auto &action : *actions)
+        {
+            if (action.title.rfind(prefix, 0) == 0)
+            {
+                return &action;
+            }
+        }
+        return nullptr;
+    }
+}
+
+TEST_CASE("CodeActionHandler - Suggests the type whose name was mistyped")
+{
+    std::string code =
+        "class PlayerController { }\n"
+        "void main() {\n"
+        "    PlayerControler pc;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {2, 4}, {2, 19} };
+    auto actions = env.CodeActions(typo, DiagnosticAt(typo, "as-err-unresolved-type"));
+
+    const auto *suggestion = ActionTitled(actions, "Did you mean");
+    REQUIRE(suggestion != nullptr);
+    CHECK(suggestion->title == "Did you mean 'PlayerController'?");
+}
+
+TEST_CASE("CodeActionHandler - A function name is not offered where a type was written")
+{
+    // The candidate set is what separates the two cases. `Calculat` is one edit from the function
+    // `Calculate`, but a function cannot stand where a type name goes, so suggesting it would be
+    // offering something that cannot compile.
+    std::string code =
+        "void Calculate() { }\n"
+        "void main() {\n"
+        "    Calculat value;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {2, 4}, {2, 12} };
+    auto actions = env.CodeActions(typo, DiagnosticAt(typo, "as-err-unresolved-type"));
+
+    CHECK(ActionTitled(actions, "Did you mean") == nullptr);
+}
+
+TEST_CASE("CodeActionHandler - A function name IS offered for a plain undefined identifier")
+{
+    // The same workspace, the other diagnostic. Here a function is exactly what the user meant.
+    std::string code =
+        "void Calculate() { }\n"
+        "void main() {\n"
+        "    Calculat();\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range typo{ {2, 4}, {2, 12} };
+    auto actions = env.CodeActions(typo, DiagnosticAt(typo, "as-err-undefined-identifier"));
+
+    const auto *suggestion = ActionTitled(actions, "Did you mean");
+    REQUIRE(suggestion != nullptr);
+    CHECK(suggestion->title == "Did you mean 'Calculate'?");
+}
+
+TEST_CASE("CodeActionHandler - Removes the '@' from a handle on a primitive")
+{
+    // There is no handle to a primitive in AngelScript, so there is exactly one thing the user can
+    // have meant and the fix is to delete one character.
+    std::string code =
+        "void main() {\n"
+        "    int@ h = null;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 4}, {1, 8} };
+    auto actions = env.CodeActions(at, DiagnosticAt(at, "as-err-handle-on-primitive"));
+
+    const auto *fix = ActionTitled(actions, "Remove '@'");
+    REQUIRE(fix != nullptr);
+    REQUIRE(fix->edit.has_value());
+    REQUIRE(fix->edit->changes.has_value());
+
+    const auto &edits = fix->edit->changes->begin()->second;
+    REQUIRE(edits.size() == 1);
+
+    // Exactly the '@', nothing around it.
+    CHECK(edits[0].newText.empty());
+    CHECK(edits[0].range.start.line == 1);
+    CHECK(edits[0].range.start.character == 7);
+    CHECK(edits[0].range.end.character == 8);
+}
+
+TEST_CASE("CodeActionHandler - Finds the '@' when it is spaced away from the type")
+{
+    std::string code =
+        "void main() {\n"
+        "    int @h = null;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 4}, {1, 9} };
+    auto actions = env.CodeActions(at, DiagnosticAt(at, "as-err-handle-on-primitive"));
+
+    const auto *fix = ActionTitled(actions, "Remove '@'");
+    REQUIRE(fix != nullptr);
+
+    const auto &edits = fix->edit->changes->begin()->second;
+    REQUIRE(edits.size() == 1);
+    CHECK(edits[0].range.start.character == 8);
+    CHECK(edits[0].range.end.character == 9);
+}
+
+TEST_CASE("CodeActionHandler - The interface fix names the diagnostic it fixes")
+{
+    // It was already offered when the cursor sat in the class. What it never did was say which
+    // problem it solves, so an editor asking for the fixes for that problem found none.
+    std::string code =
+        "interface IThinker {\n"
+        "    void Think();\n"
+        "}\n"
+        "class Robot : IThinker {\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range atClass{ {3, 0}, {3, 22} };
+    auto actions = env.CodeActions(atClass, DiagnosticAt(atClass, "as-err-interface-impl-missing"));
+
+    const auto *fix = ActionTitled(actions, "Implement missing interface methods");
+    REQUIRE(fix != nullptr);
+    REQUIRE(fix->diagnostics.has_value());
+    REQUIRE(fix->diagnostics->size() == 1);
+
+    const auto &named = (*fix->diagnostics)[0];
+    REQUIRE(named.code.has_value());
+    CHECK(std::get<lsp::String>(named.code.value()) == "as-err-interface-impl-missing");
+}
