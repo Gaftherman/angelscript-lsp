@@ -1,4 +1,6 @@
 #include "utils/Utils.h"
+#include <string_view>
+#include <vector>
 
 #include <lsp/uri.h>
 
@@ -99,5 +101,128 @@ namespace angel_lsp::utils
             "float", "double", "bool", "void"
         };
         return primitiveTypes.find(typeName) != primitiveTypes.end();
+    }
+
+    namespace
+    {
+        /** @brief Splits a `/`-separated path into segments, dropping empties. */
+        std::vector<std::string_view> PathSegments(std::string_view path)
+        {
+            std::vector<std::string_view> segments;
+            size_t start = 0;
+            for (size_t i = 0; i <= path.size(); ++i)
+            {
+                if (i == path.size() || path[i] == '/' || path[i] == '\\')
+                {
+                    if (i > start)
+                    {
+                        segments.push_back(path.substr(start, i - start));
+                    }
+                    start = i + 1;
+                }
+            }
+            return segments;
+        }
+
+        /** @brief `*` and `?` within one segment. `*` does not cross a separator. */
+        bool SegmentMatches(std::string_view segment, std::string_view pattern)
+        {
+            size_t s = 0;
+            size_t p = 0;
+            size_t starAt = std::string_view::npos;
+            size_t sAtStar = 0;
+
+            while (s < segment.size())
+            {
+                if (p < pattern.size() && (pattern[p] == '?' || pattern[p] == segment[s]))
+                {
+                    ++s;
+                    ++p;
+                }
+                else if (p < pattern.size() && pattern[p] == '*')
+                {
+                    starAt = p++;
+                    sAtStar = s;
+                }
+                else if (starAt != std::string_view::npos)
+                {
+                    p = starAt + 1;
+                    s = ++sAtStar;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            while (p < pattern.size() && pattern[p] == '*')
+            {
+                ++p;
+            }
+            return p == pattern.size();
+        }
+
+        /** @brief Segment-wise match with `**` spanning any number of segments, including none. */
+        bool SegmentsMatch(const std::vector<std::string_view> &path, size_t pi,
+                           const std::vector<std::string_view> &pattern, size_t qi)
+        {
+            while (qi < pattern.size())
+            {
+                if (pattern[qi] == "**")
+                {
+                    // `**` at the end matches whatever is left, including nothing.
+                    if (qi + 1 == pattern.size())
+                    {
+                        return true;
+                    }
+                    for (size_t skip = pi; skip <= path.size(); ++skip)
+                    {
+                        if (SegmentsMatch(path, skip, pattern, qi + 1))
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                if (pi >= path.size() || !SegmentMatches(path[pi], pattern[qi]))
+                {
+                    return false;
+                }
+                ++pi;
+                ++qi;
+            }
+            return pi == path.size();
+        }
+    }
+
+    bool MatchesGlob(std::string_view path, std::string_view pattern)
+    {
+        const std::vector<std::string_view> pathSegments = PathSegments(path);
+        const std::vector<std::string_view> patternSegments = PathSegments(pattern);
+        return SegmentsMatch(pathSegments, 0, patternSegments, 0);
+    }
+
+    bool IsExcludedPath(std::string_view path, const std::vector<std::string> &patterns)
+    {
+        return std::any_of(patterns.begin(), patterns.end(),
+                           [path](const std::string &pattern) { return MatchesGlob(path, pattern); });
+    }
+
+    bool IsExcludedDirectory(std::string_view path, const std::vector<std::string> &patterns)
+    {
+        // A directory is excluded when the directory ITSELF matches, or when a pattern reaches into
+        // it. a pattern ending in `/` + `**` names what is inside that directory, not `build`, and pruning is the whole
+        // point - filtering the results afterwards still walks every file in it. So the trailing
+        // `/**` is dropped before the directory is tested, which is what turns "exclude everything
+        // under build" into "do not descend into build".
+        return std::any_of(patterns.begin(), patterns.end(), [path](const std::string &pattern)
+        {
+            std::string_view trimmed(pattern);
+            while (trimmed.ends_with("/**") || trimmed.ends_with("\\**"))
+            {
+                trimmed.remove_suffix(3);
+            }
+            return !trimmed.empty() && MatchesGlob(path, trimmed);
+        });
     }
 }

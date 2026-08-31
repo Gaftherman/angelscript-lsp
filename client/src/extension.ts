@@ -225,6 +225,12 @@ function buildServerArgs(): string[] {
     const args: string[] = [];
 
     // #include search paths.
+    for (const entry of config.get<string[]>('exclude', [])) {
+        if (entry.trim().length > 0) {
+            args.push(`--exclude=${entry}`);
+        }
+    }
+
     for (const entry of config.get<string[]>('searchDirectories', [])) {
         for (const resolved of resolveAgainstWorkspace(entry)) {
             args.push(`--search-dir=${resolved}`);
@@ -399,6 +405,11 @@ async function startClient(context: ExtensionContext): Promise<void> {
             configurationSection: 'angelscript',
             // Without this the server only ever learns about files the user opened: a branch
             // switch, a pull, or a generated script would leave every stale symbol in the index.
+            // angelscript.exclude does NOT apply here: createFileSystemWatcher takes a single
+            // include glob and no exclusions, so a build tree full of .as files is still watched.
+            // VS Code's own `files.watcherExclude` governs that, and it already excludes .git and
+            // node_modules by default. Said plainly because the server-side scans ARE pruned, and
+            // assuming the watcher followed them would be the natural mistake to make.
             fileEvents: workspace.createFileSystemWatcher('**/*.{as,angelscript,predefined}')
         },
         outputChannel: lspOutputChannel,

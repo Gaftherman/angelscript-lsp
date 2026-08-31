@@ -615,7 +615,9 @@ namespace angel_lsp
         m_includeGraph.Build(roots,
                              *searchDirectories,
                              m_config.info.fileExtension,
-                             [&stopToken]() { return stopToken.stop_requested(); });
+                             [&stopToken]() { return stopToken.stop_requested(); },
+                             {},
+                             m_config.exclude);
 
         if (stopToken.stop_requested())
         {
@@ -670,15 +672,29 @@ namespace angel_lsp
                 // below abandoned the whole predefined-stub scan - so one permission-protected
                 // folder silently cost the user every stub in the workspace.
                 std::error_code scanError;
-                for (const auto &entry : std::filesystem::recursive_directory_iterator(
-                         angel_lsp::utils::UriToPath(workspaceRoot),
-                         std::filesystem::directory_options::skip_permission_denied,
-                         scanError))
+                std::filesystem::recursive_directory_iterator scan(
+                    angel_lsp::utils::UriToPath(workspaceRoot),
+                    std::filesystem::directory_options::skip_permission_denied,
+                    scanError);
+                const std::filesystem::recursive_directory_iterator scanEnd;
+                for (; scan != scanEnd; ++scan)
                 {
                     if (stopToken.stop_requested())
                     {
                         EndWorkspaceProgress("Cancelled");
                         return;
+                    }
+
+                    const auto &entry = *scan;
+
+                    // Pruned, not filtered: disable_recursion_pending stops the walk from entering
+                    // the directory at all, where a filter would still visit every file inside it.
+                    std::error_code dirError;
+                    if (entry.is_directory(dirError) &&
+                        angel_lsp::utils::IsExcludedDirectory(entry.path().generic_string(), m_config.exclude))
+                    {
+                        scan.disable_recursion_pending();
+                        continue;
                     }
 
                     if (entry.exists() && entry.is_regular_file())
@@ -730,11 +746,23 @@ namespace angel_lsp
                 // early with no profile detected, and because RestartWorkspaceScan joins this thread
                 // from the message loop, a large tree here was the one place that join could
                 // actually be felt as a pause.
-                for (const auto &entry : std::filesystem::recursive_directory_iterator(
-                         rootPath, std::filesystem::directory_options::skip_permission_denied, ec))
+                std::filesystem::recursive_directory_iterator scan(
+                    rootPath, std::filesystem::directory_options::skip_permission_denied, ec);
+                const std::filesystem::recursive_directory_iterator scanEnd;
+                for (; scan != scanEnd; ++scan)
                 {
                     if (stopToken.stop_requested())
                         return;
+
+                    const auto &entry = *scan;
+
+                    std::error_code dirError;
+                    if (entry.is_directory(dirError) &&
+                        angel_lsp::utils::IsExcludedDirectory(entry.path().generic_string(), m_config.exclude))
+                    {
+                        scan.disable_recursion_pending();
+                        continue;
+                    }
 
                     if (entry.is_regular_file())
                     {

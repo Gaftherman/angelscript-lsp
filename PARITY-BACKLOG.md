@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1249 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1252 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -78,6 +78,30 @@ Accepted by the compiler and by this analyzer. They had no test before; they do 
 Each entry says what the compiler answers and what this analyzer answered before. Several were
 false positives — legal code reported as an error, which is the one failure mode this project
 treats as unacceptable.
+
+- **Exclude globs, and the walks that could not be told to stop.** Three recursive walks cross
+  every workspace root - the include graph, the predefined-stub scan and the engine-profile
+  detector - and none took an exclusion. On a repository with a build tree that is most of the work
+  they do, and the profile detector was the worst of the three: it collected the name of EVERY file
+  it saw, with no extension filter at all.
+
+  `ServerConfig::exclude` now carries the globs, defaulting to `.git`, `build` and `node_modules`,
+  with `--exclude=<glob>` on the command line and `angelscript.exclude` in the client. The syntax is
+  the one every editor's exclude setting already uses - `?`, `*` within a segment, `**` across them
+  - so a user can paste what they have.
+
+  Applied by **pruning the directory**, through `disable_recursion_pending`, rather than filtering
+  the results: a filter still descends into the tree to reject every file in it one at a time. The
+  include-graph walk already had an extension filter and was still doing exactly that. The test
+  proves the pruning rather than the matcher, by building the same tree twice - once with the
+  exclusion and once without - and checking the file is unknown in the first and known in the
+  second.
+
+  One thing deliberately NOT done, and said plainly at its site: the client's file watcher does not
+  follow this list. `createFileSystemWatcher` takes a single include glob and no exclusions, so a
+  build tree full of `.as` files is still watched; VS Code's own `files.watcherExclude` governs
+  that. Assuming the watcher followed the server's scans is the natural mistake, so the comment
+  says it does not.
 
 - **URI normalization.** `CanonicalPathFromUri` and `UriFromPath` existed and were used at nine
   places, none of them a request entry point; the 37 that read a document keyed their maps on the
@@ -751,8 +775,6 @@ first. Each lands with its `doc_`-prefixed parity case.
    unconditional.
 2. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-3. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
-    workspace root, with no way to skip build output.
 ### Out of scope
 
 `TOOL-04` (a Debug Adapter Protocol sidecar) is a separate program, not a language-server feature.

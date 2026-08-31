@@ -7,6 +7,8 @@
 
 #include "utils/PositionEncoding.h"
 
+#include <vector>
+
 namespace angel_lsp::utils
 {
     std::string UriToPath(const std::string &uri);
@@ -44,6 +46,27 @@ namespace angel_lsp::utils
      * @return True if the file should be treated as a stub.
      */
     bool IsPredefinedFile(const std::string_view &fileUri, const std::string_view extension);
+
+    /**
+     * @brief Glob match over a `/`-separated path.
+     *
+     * `?` matches one character, `*` matches within a single segment, and `**` spans any number of
+     * segments including none - the same three the exclude settings every editor ships use,
+     * so a user can paste what they already have.
+     */
+    bool MatchesGlob(std::string_view path, std::string_view pattern);
+
+    /** @brief True when any pattern matches the path. */
+    bool IsExcludedPath(std::string_view path, const std::vector<std::string> &patterns);
+
+    /**
+     * @brief True when a directory should not be descended into.
+     *
+     * Distinct from IsExcludedPath because a pattern like `**` + `/build/` + `**` names what is INSIDE `build` and never
+     * `build` itself, and pruning is the whole point: filtering results afterwards still walks
+     * every file under it. The trailing slash-star-star is dropped before the directory is tested.
+     */
+    bool IsExcludedDirectory(std::string_view path, const std::vector<std::string> &patterns);
 
     /**
      * @brief Checks whether the given type name is a standard AngelScript primitive type.

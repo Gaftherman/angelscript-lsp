@@ -114,3 +114,57 @@ TEST_CASE("Document - struct initialization and fields")
 }
 
 
+
+// =====================================================================================
+// Exclude globs.
+//
+// Three recursive walks cross every workspace root - the include graph, the predefined-stub scan
+// and the engine-profile detector - and none of them could be told to stop. The profile detector
+// was the worst: it collected the name of every file it saw, with no extension filter at all.
+//
+// The syntax is the one every editor's exclude settings already use, so a user can paste what they
+// have: `?` for one character, `*` within a segment, `**` across segments.
+// =====================================================================================
+
+TEST_CASE("Utils - MatchesGlob handles the three wildcards")
+{
+    using angel_lsp::utils::MatchesGlob;
+
+    // `**` spans any number of segments, including none.
+    CHECK(MatchesGlob("build/CMakeCache.txt", "**/CMakeCache.txt"));
+    CHECK(MatchesGlob("CMakeCache.txt", "**/CMakeCache.txt"));
+    CHECK(MatchesGlob("a/b/c/build/x/y.as", "**/build/**"));
+    CHECK_FALSE(MatchesGlob("a/b/c/rebuild/x/y.as", "**/build/**"));
+
+    // `*` stays inside one segment.
+    CHECK(MatchesGlob("src/main.as", "src/*.as"));
+    CHECK_FALSE(MatchesGlob("src/deep/main.as", "src/*.as"));
+    CHECK(MatchesGlob("src/deep/main.as", "src/**/*.as"));
+
+    // `?` is exactly one character.
+    CHECK(MatchesGlob("a1.as", "a?.as"));
+    CHECK_FALSE(MatchesGlob("a12.as", "a?.as"));
+
+    // Windows separators read the same as forward slashes.
+    CHECK(MatchesGlob(R"(C:\work\build\x.as)", "**/build/**"));
+}
+
+TEST_CASE("Utils - A directory is pruned when a pattern reaches into it")
+{
+    using angel_lsp::utils::IsExcludedDirectory;
+
+    const std::vector<std::string> defaults = { "**/.git/**", "**/build/**", "**/node_modules/**" };
+
+    // The directory itself matches, which is what pruning needs - the pattern names what is INSIDE
+    // it, and testing the directory against the pattern unchanged would never fire.
+    CHECK(IsExcludedDirectory("C:/work/project/build", defaults));
+    CHECK(IsExcludedDirectory("C:/work/project/.git", defaults));
+    CHECK(IsExcludedDirectory("C:/work/project/sub/node_modules", defaults));
+
+    // And a source directory is not.
+    CHECK_FALSE(IsExcludedDirectory("C:/work/project/src", defaults));
+    CHECK_FALSE(IsExcludedDirectory("C:/work/project/scripts/build_tools", defaults));
+
+    // An empty list excludes nothing, which is what every caller that passes no globs relies on.
+    CHECK_FALSE(IsExcludedDirectory("C:/work/project/build", {}));
+}

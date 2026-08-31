@@ -106,6 +106,19 @@
       "type": "object",
       "title": "AngelScript Language Server",
       "properties": {
+        "angelscript.exclude": {
+          "type": "array",
+          "scope": "resource",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/.git/**",
+            "**/build/**",
+            "**/node_modules/**"
+          ],
+          "markdownDescription": "Directory globs the workspace scans do not descend into. Supports `?`, `*` within a path segment and `**` across segments. Setting this replaces the defaults rather than adding to them."
+        },
         "angelscript.searchDirectories": {
           "type": "array",
           "scope": "resource",

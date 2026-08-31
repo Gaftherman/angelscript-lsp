@@ -235,6 +235,24 @@ namespace angel_lsp::config
         std::vector<std::string> searchDirectories;
 
         /**
+         * @brief Directory globs the workspace scans do not descend into.
+         *
+         * Three recursive walks cross every workspace root - the include graph, the predefined-stub
+         * scan and the engine-profile detector - and none of them could be told to stop. On a
+         * repository with a build tree that is most of the work, and the profile detector was the
+         * worst of the three: it collected the name of EVERY file it saw, with no extension filter
+         * at all.
+         *
+         * Applied by pruning the directory rather than filtering the result, which is the whole
+         * point: a filter still walks what it then throws away.
+         *
+         * `?`, `*` within a segment and `**` across segments, which is what the exclude settings
+         * every editor ships already use, so a user can paste what they have. The defaults are the
+         * three directories that are never source and are always large.
+         */
+        std::vector<std::string> exclude = { "**/.git/**", "**/build/**", "**/node_modules/**" };
+
+        /**
          * @brief Words treated as defined for `#if <word>`, mirroring CScriptBuilder::DefineWord.
          *
          * AngelScript's preprocessor lives in the CScriptBuilder add-on and has exactly one

@@ -51,11 +51,16 @@ namespace angel_lsp::utils
          * @param shouldStop Polled between files so a shutdown can interrupt a long scan; may be empty.
          * @param fileReader Optional content source; reads from disk when not supplied.
          */
+        /**
+         * @param excludeGlobs Directory globs the walk does not descend into. Defaults to none, so
+         *                     an unconfigured caller behaves exactly as before.
+         */
         void Build(const std::vector<std::string> &workspaceRoots,
                    const std::vector<std::string> &searchDirectories,
                    std::string_view scriptExtension,
                    const std::function<bool()> &shouldStop = {},
-                   const FileReader &fileReader = {});
+                   const FileReader &fileReader = {},
+                   const std::vector<std::string> &excludeGlobs = {});
 
         /**
          * @brief Re-reads one file's directives and patches just its edges.

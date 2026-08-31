@@ -1,4 +1,5 @@
 #include "utils/WorkspaceIncludeGraph.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -79,7 +80,8 @@ namespace angel_lsp::utils
                                       const std::vector<std::string> &searchDirectories,
                                       std::string_view scriptExtension,
                                       const std::function<bool()> &shouldStop,
-                                      const FileReader &fileReader)
+                                      const FileReader &fileReader,
+                                      const std::vector<std::string> &excludeGlobs)
     {
         // An edge may only point at a file inside the workspace or one of the configured search
         // directories. Those are exactly the two places a script is legitimately allowed to include
@@ -105,10 +107,23 @@ namespace angel_lsp::utils
             if (ec)
                 continue;
 
-            for (const auto &entry : it)
+            const std::filesystem::recursive_directory_iterator end;
+            for (; it != end; ++it)
             {
                 if (shouldStop && shouldStop())
                     return;
+
+                const auto &entry = *it;
+
+                // Pruned, not filtered. This walk already had an extension filter, and a filter
+                // still descends into a build tree to reject every file in it one at a time.
+                std::error_code dirError;
+                if (entry.is_directory(dirError) &&
+                    IsExcludedDirectory(entry.path().generic_string(), excludeGlobs))
+                {
+                    it.disable_recursion_pending();
+                    continue;
+                }
 
                 if (!entry.is_regular_file(ec) || ec)
                     continue;

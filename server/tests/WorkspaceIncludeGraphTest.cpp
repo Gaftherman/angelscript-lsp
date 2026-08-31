@@ -335,3 +335,44 @@ TEST_CASE("RemoveFile - leaves the dangling directive of whoever still includes 
     CHECK(fixture.graph.Contains(fixture.Path("root.as")));
     CHECK(fixture.ClosureOf("root.as").contains(fixture.Path("leaf.as")));
 }
+
+TEST_CASE("Build - an excluded directory is never descended into")
+{
+    // Pruned, not filtered. The difference is the whole point: a filter still walks a build tree
+    // to reject every file in it one at a time, and on a repository with one that is most of the
+    // work the scan does.
+    GraphFixture fixture;
+
+    fixture.Write("src/main.as", "#include \"helper.as\"\n");
+    fixture.Write("src/helper.as", "\n");
+
+    // A copy of the same tree under a directory the defaults exclude. Its files are perfectly
+    // valid scripts; the point is that they must not be in the graph at all.
+    fixture.Write("build/generated/main.as", "#include \"helper.as\"\n");
+    fixture.Write("build/generated/helper.as", "\n");
+
+    const std::vector<std::string> excluded = { "**/build/**" };
+
+    WorkspaceIncludeGraph graph;
+    graph.Build({ fixture.Root() }, {}, ".as", {}, {}, excluded);
+
+    const auto has = [](const std::vector<std::string> &closure, const std::string &path)
+    {
+        return std::find(closure.begin(), closure.end(), path) != closure.end();
+    };
+
+    const auto closure = graph.GetModuleClosure(fixture.Path("src/main.as"));
+    CHECK(has(closure, fixture.Path("src/main.as")));
+    CHECK(has(closure, fixture.Path("src/helper.as")));
+
+    // Nothing under build reached the graph, so nothing under build can be in any closure.
+    const auto buildClosure = graph.GetModuleClosure(fixture.Path("build/generated/main.as"));
+    CHECK(buildClosure.size() <= 1);
+
+    // Without the exclusion the same tree is walked and the file IS known, which is what shows
+    // the pruning did the work rather than the file simply being unreachable.
+    WorkspaceIncludeGraph unpruned;
+    unpruned.Build({ fixture.Root() }, {}, ".as");
+    const auto unprunedClosure = unpruned.GetModuleClosure(fixture.Path("build/generated/main.as"));
+    CHECK(has(unprunedClosure, fixture.Path("build/generated/helper.as")));
+}

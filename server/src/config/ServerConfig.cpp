@@ -167,6 +167,10 @@ namespace angel_lsp::config
                   << "  --file-ext=<string>                     Set script file extension (default: .as)\n"
                   << "  --predefined-ext=<string>               Set predefined symbols file extension (default: .as.predefined)\n"
                   << "  --predefined-file=<path>                Load a predefined stub by path, even outside the workspace (repeatable)\n"
+                  << "  --exclude=<glob>                        Directory glob the workspace scans do not descend\n"
+                  << "                                          into (repeatable). ?, * within a segment and **\n"
+                  << "                                          across segments. The first one given replaces the\n"
+                  << "                                          defaults: .git, build and node_modules.\n"
                   << "  --search-dir=<string>                   Add directory to search path for #include resolution\n"
                   << "  --array-like-type=<name>                Name a template whose initializer list is a plain\n"
                   << "                                          repeat of its element type, as array<T>'s is\n"
@@ -200,6 +204,9 @@ namespace angel_lsp::config
         {
             return config;
         }
+
+        // The first --exclude replaces the built-in defaults; see the handler below.
+        bool sawExclude = false;
 
         for (int i = 1; i < argc; ++i)
         {
@@ -497,6 +504,22 @@ namespace angel_lsp::config
                 if (getStringValue(val))
                 {
                     config.info.predefinedFileExtension = std::string(val);
+                }
+            }
+            else if (key == "--exclude")
+            {
+                std::string_view val;
+                if (getStringValue(val))
+                {
+                    // The first --exclude replaces the defaults rather than adding to them: a user
+                    // who names their own list means that list, and appending would leave them
+                    // unable to scan a directory called `build` at all.
+                    if (!sawExclude)
+                    {
+                        config.exclude.clear();
+                        sawExclude = true;
+                    }
+                    config.exclude.push_back(std::string(val));
                 }
             }
             else if (key == "--search-dir" || key == "--search-directory" || key == "--search-path")
