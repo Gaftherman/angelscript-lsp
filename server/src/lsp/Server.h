@@ -132,6 +132,31 @@ namespace angel_lsp
         ankerl::unordered_dense::map<std::string, SemanticTokensSnapshot> m_semanticTokensCache;
         uint64_t m_semanticTokensRevision = 0;
 
+        /**
+         * @brief The last diagnostics computed for a document, as they went out on the wire.
+         *
+         * Pull diagnostics (`textDocument/diagnostic`) are answered from here rather than by
+         * running the analyzer on the message loop. That is not an optimisation: symbol
+         * collection replaces whole-document state in m_symbolTable, and the analysis thread is
+         * already doing exactly that on its own schedule. Two of them at once is a data race.
+         *
+         * Stored post-conversion - excluded `#if` lines already dropped, ranges already in the
+         * client's encoding - so a pulled diagnostic and a pushed one cannot disagree. They come
+         * from the same vector.
+         */
+        struct DiagnosticsSnapshot
+        {
+            std::string resultId;
+            std::vector<lsp::Diagnostic> items;
+        };
+
+        // Written by the analysis thread through PublishDiagnostics, read by the message loop
+        // answering a pull. Its own mutex rather than m_analysisMutex: that one is held across the
+        // debounce wait, and a pull would block behind a sleeping worker.
+        mutable std::mutex m_diagnosticsCacheMutex;
+        ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot> m_diagnosticsCache;
+        uint64_t m_diagnosticsRevision = 0;
+
         // Per-rule severity overrides, typed from m_config.diagnosticSeverities at startup and
         // handed to every SemanticAnalysisRequest. Empty means "leave every rule at its own
         // severity", which is why BuildAnalysisRequest passes nullptr rather than an empty map.
@@ -453,6 +478,37 @@ namespace angel_lsp
          * message loop - and the text is what the ranges are converted against.
          */
         void PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics);
+
+        /**
+         * @brief Analyzer diagnostics as the client receives them: filtered, encoded, converted.
+         *
+         * The one place that translation happens. Both the push notification and the pull request
+         * answer from this, which is what keeps them from drifting into two slightly different
+         * answers for the same document.
+         */
+        std::vector<lsp::Diagnostic> ToProtocolDiagnostics(const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics) const;
+
+        /**
+         * @brief Answers `textDocument/diagnostic` from the cache the analysis thread fills.
+         *
+         * Reports `unchanged` when the client's previousResultId still matches, which is the whole
+         * point of the pull model - an unedited file costs a result id and nothing else.
+         *
+         * A document the analyzer has not reached yet is answered with ServerCancelled and
+         * `retriggerRequest`, not with an empty report. An empty report is a positive claim that
+         * the file is clean, and the server does not know that yet.
+         */
+        lsp::requests::TextDocument_Diagnostic::Result HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagnostic::Params &&params);
+
+        /**
+         * @brief Answers `workspace/diagnostic` for every document the server has already analysed.
+         *
+         * Deliberately not a workspace scan. It reports what is known - open documents and the
+         * `#include` closure files pulled in on their behalf - rather than parsing the tree from
+         * scratch, which on a 1,061-file corpus is minutes of work for a request the client sends
+         * on a timer.
+         */
+        lsp::requests::Workspace_Diagnostic::Result HandleRequestsWorkspace_Diagnostic(lsp::requests::Workspace_Diagnostic::Params &&params);
 
         /**
          * @brief Full text of an indexed document, or nullptr when the server holds none.

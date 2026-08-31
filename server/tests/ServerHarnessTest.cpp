@@ -6,6 +6,7 @@
 #include "utils/Utils.h"
 
 #include <algorithm>
+#include <cstring>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -1340,4 +1341,226 @@ TEST_CASE("Server - Deleting a file drops its symbols from the workspace")
     // does: the server also writes log notifications that quote the name.
     CHECK(stream.ResponseFor(2).find("UniquelyNamedHelper") != std::string::npos);
     CHECK(stream.ResponseFor(3).find("UniquelyNamedHelper") == std::string::npos);
+}
+
+// =====================================================================================
+// Pull diagnostics - textDocument/diagnostic and workspace/diagnostic.
+//
+// The push model has one structural hole: the server decides when to send, so a client that was
+// not listening yet, or that wants diagnostics for a file it is about to show, has no way to ask.
+// LSP 3.17 added the request; this server now answers it from the cache the analysis thread fills,
+// because running the analyzer on the message loop would race that thread over the symbol table.
+//
+// The point these tests defend is that pull and push cannot disagree. Both go through
+// ToProtocolDiagnostics, so a diagnostic that reaches one reaches the other.
+// =====================================================================================
+
+TEST_CASE("Server - Announces the pull-diagnostic capabilities")
+{
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string initializeReply = stream.ResponseFor(1);
+    INFO(initializeReply);
+    CHECK(initializeReply.find("diagnosticProvider") != std::string::npos);
+
+    // An #include changes the diagnostics of every file including it, which is the case the flag
+    // exists for - a client that reads it false will not re-pull the includers.
+    CHECK(initializeReply.find("\"interFileDependencies\":true") != std::string::npos);
+    CHECK(initializeReply.find("\"workspaceDiagnostics\":true") != std::string::npos);
+}
+
+TEST_CASE("Server - A pulled diagnostic carries what the pushed one carried")
+{
+    // Same document, same finding, both routes. If these two ever diverge the server is telling two
+    // different stories about one file depending on which way the client asked.
+    WorkspaceFixture fixture;
+
+    const std::string source = "void Main()\n{\n    UndefinedThingy();\n}\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+
+    // The analyzer debounces for 200ms on its own thread and the cache is filled by the publish
+    // that follows. Two spacers first: the reader runs a frame ahead of the message loop, so an
+    // action registered right after a notification fires while that notification is still being
+    // processed.
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("publishDiagnostics"))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string pulled = stream.ResponseFor(2);
+    INFO(pulled);
+
+    CHECK(pulled.find("\"kind\":\"full\"") != std::string::npos);
+    CHECK(pulled.find("resultId") != std::string::npos);
+
+    // The finding itself, and it must be the same code the push route carried.
+    CHECK(pulled.find("UndefinedThingy") != std::string::npos);
+    CHECK(Published(stream.Output(), "as-err-undefined-identifier"));
+    CHECK(pulled.find("as-err-undefined-identifier") != std::string::npos);
+}
+
+TEST_CASE("Server - A second pull of an unedited document is answered unchanged")
+{
+    // What the pull model is for. The client echoes the result id back and an untouched file costs
+    // one string instead of its whole diagnostic list.
+    //
+    // Run twice rather than once. The follow-up request has to carry the id the server chose, and
+    // that id cannot be scripted in advance - but neither can it be read mid-session: PushAction
+    // runs inside the message loop's own read(), so an action waiting for a reply is waiting for
+    // the thread it is blocking. So the first run learns the id and the second, over an identical
+    // script against a fresh server, sends it back. Identical input, identical id; if that ever
+    // stops holding, this fails loudly rather than quietly testing nothing.
+    const std::string source = "void Main()\n{\n    UndefinedThingy();\n}\n";
+
+    const auto pullOnce = [&source](const std::string &previousResultId)
+    {
+        WorkspaceFixture fixture;
+        fixture.Write("main.as", source);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeMessage(fixture.RootUri()));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+
+        stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+        stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+        stream.PushAction([&stream]()
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("publishDiagnostics"))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
+
+        std::string request = R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                              fixture.Uri("main.as") + R"("})";
+        if (!previousResultId.empty())
+            request += R"(,"previousResultId":")" + previousResultId + R"(")";
+        request += "}}";
+
+        stream.Push(request);
+        stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        RunScript(serverConfig, stream);
+        return stream.ResponseFor(2);
+    };
+
+    const std::string first = pullOnce("");
+    INFO("first: " << first);
+    REQUIRE(first.find("\"kind\":\"full\"") != std::string::npos);
+
+    const size_t at = first.find("\"resultId\":\"");
+    REQUIRE(at != std::string::npos);
+    const size_t idStart = at + 12;
+    const size_t idEnd = first.find('"', idStart);
+    REQUIRE(idEnd != std::string::npos);
+    const std::string resultId = first.substr(idStart, idEnd - idStart);
+    REQUIRE_FALSE(resultId.empty());
+
+    const std::string second = pullOnce(resultId);
+    INFO("second: " << second);
+
+    CHECK(second.find("\"kind\":\"unchanged\"") != std::string::npos);
+
+    // Unchanged means unchanged: the items are not resent.
+    CHECK(second.find("UndefinedThingy") == std::string::npos);
+}
+
+TEST_CASE("Server - Pulling a document the analyzer has not reached asks the client to retry")
+{
+    // The interesting case, and the one where the easy answer is wrong. An empty full report is a
+    // positive claim that the file is clean. The server has not looked at this file, so it says so
+    // - ServerCancelled with retriggerRequest, which is the protocol's way of "ask me again".
+    WorkspaceFixture fixture;
+    fixture.Write("never-opened.as", "void Main() { }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("never-opened.as") + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+
+    CHECK(reply.find("\"error\"") != std::string::npos);
+    CHECK(reply.find("-32802") != std::string::npos);
+    CHECK(reply.find("\"retriggerRequest\":true") != std::string::npos);
+
+    // And emphatically not a clean bill of health.
+    CHECK(reply.find("\"kind\":\"full\"") == std::string::npos);
+}
+
+TEST_CASE("Server - workspace/diagnostic reports the documents already analysed")
+{
+    WorkspaceFixture fixture;
+
+    const std::string source = "void Main()\n{\n    UndefinedThingy();\n}\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("publishDiagnostics"))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/diagnostic","params":{"previousResultIds":[]}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+
+    CHECK(reply.find("\"items\"") != std::string::npos);
+    CHECK(reply.find("main.as") != std::string::npos);
+    CHECK(reply.find("as-err-undefined-identifier") != std::string::npos);
 }

@@ -502,6 +502,19 @@ namespace angel_lsp
             result.capabilities.documentLinkProvider = linkOpts;
         }
 
+        // Pull diagnostics alongside the push ones, not instead of them. A client that supports
+        // pull uses it and ignores the notifications; one that does not never sends the request.
+        // Announcing both is what lets the same server serve either.
+        //
+        // interFileDependencies is true and it is not a formality: an `#include` changes the
+        // diagnostics of every file including it, which is exactly the case the flag exists for.
+        // workspaceDiagnostics reports what has already been analysed - see the handler.
+        lsp::DiagnosticOptions diagnosticOpts;
+        diagnosticOpts.identifier = std::string("angelscript");
+        diagnosticOpts.interFileDependencies = true;
+        diagnosticOpts.workspaceDiagnostics = true;
+        result.capabilities.diagnosticProvider = diagnosticOpts;
+
         // Announced unconditionally: both the include graph and the predefined-stub scan are scoped
         // to the known roots, so a folder added mid-session has to reach the server whatever else
         // is switched off.
@@ -1980,6 +1993,13 @@ namespace angel_lsp
 
     void Server::PurgeClosureFile(const std::string &uriStr)
     {
+        // Or workspace/diagnostic would keep reporting a file that is gone, under a result id no
+        // edit can ever invalidate.
+        {
+            std::lock_guard<std::mutex> lock(m_diagnosticsCacheMutex);
+            m_diagnosticsCache.erase(uriStr);
+        }
+
         m_symbolTable.ClearDocumentSymbols(uriStr);
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
@@ -2300,27 +2320,16 @@ namespace angel_lsp
         PublishDiagnostics(uriStr, docText ? *docText : std::string(), diagnostics);
     }
 
-    void Server::PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics)
+    std::vector<lsp::Diagnostic> Server::ToProtocolDiagnostics(const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics) const
     {
-        lsp::notifications::TextDocument_PublishDiagnostics::Params params;
-
-        // Back out under the CLIENT's spelling, not the internal key. Every map in this server is
-        // keyed by DocumentKey so that one file cannot become several documents, and that key is
-        // `file:///E:/dir/f.as` where VS Code sends `file:///e%3A/dir/f.as`. To a client matching a
-        // notification against its open editors those are two different documents, so publishing
-        // under the key would have keyed everything correctly and shown the user nothing.
-        //
-        // Falls back to the key for a document the client never announced - the workspace scan
-        // indexes files nobody has opened, and a synthesised URI is the only spelling there is.
-        const auto clientUri = m_clientUriByKey.find(uriStr);
-        const std::string &outgoingUri = clientUri != m_clientUriByKey.end() ? clientUri->second : uriStr;
-        params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
-
         // Applied here, at the one place every diagnostic passes through on its way to the client.
         // SemanticAnalyzer already filters its own output, but symbol-collection and unresolved-
         // include diagnostics do not go through it, and a `#if` block that the preprocessor removes
         // is not code no matter which pass produced the complaint about it.
         const auto excluded = ExcludedLineRanges(text);
+
+        std::vector<lsp::Diagnostic> converted;
+        converted.reserve(diagnostics.size());
 
         for (const auto &diag : diagnostics)
         {
@@ -2343,11 +2352,117 @@ namespace angel_lsp
             if (!text.empty())
                 codec::Encode(text, m_positionEncoding, lspDiag.range);
 
-            params.diagnostics.push_back(lspDiag);
+            converted.push_back(std::move(lspDiag));
+        }
+
+        return converted;
+    }
+
+    void Server::PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics)
+    {
+        lsp::notifications::TextDocument_PublishDiagnostics::Params params;
+
+        // Back out under the CLIENT's spelling, not the internal key. Every map in this server is
+        // keyed by DocumentKey so that one file cannot become several documents, and that key is
+        // `file:///E:/dir/f.as` where VS Code sends `file:///e%3A/dir/f.as`. To a client matching a
+        // notification against its open editors those are two different documents, so publishing
+        // under the key would have keyed everything correctly and shown the user nothing.
+        //
+        // Falls back to the key for a document the client never announced - the workspace scan
+        // indexes files nobody has opened, and a synthesised URI is the only spelling there is.
+        const auto clientUri = m_clientUriByKey.find(uriStr);
+        const std::string &outgoingUri = clientUri != m_clientUriByKey.end() ? clientUri->second : uriStr;
+        params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
+
+        params.diagnostics = ToProtocolDiagnostics(text, diagnostics);
+
+        // Cached for the pull path before it goes out, under a fresh result id. The client echoes
+        // that id back and is told `unchanged` while it still matches, so a file nobody edits costs
+        // one string per poll instead of its whole diagnostic list.
+        {
+            std::lock_guard<std::mutex> cacheLock(m_diagnosticsCacheMutex);
+            DiagnosticsSnapshot snapshot;
+            snapshot.resultId = std::to_string(++m_diagnosticsRevision);
+            snapshot.items = params.diagnostics;
+            m_diagnosticsCache[uriStr] = std::move(snapshot);
         }
 
         std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
         m_messageHandler->sendNotification<lsp::notifications::TextDocument_PublishDiagnostics>(std::move(params));
+    }
+
+    lsp::requests::TextDocument_Diagnostic::Result Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagnostic::Params &&params)
+    {
+        const std::string uriStr = DocumentKey(params.textDocument.uri.toString());
+
+        {
+            std::lock_guard<std::mutex> lock(m_diagnosticsCacheMutex);
+            if (const auto it = m_diagnosticsCache.find(uriStr); it != m_diagnosticsCache.end())
+            {
+                if (params.previousResultId.has_value() && *params.previousResultId == it->second.resultId)
+                {
+                    lsp::RelatedUnchangedDocumentDiagnosticReport unchanged;
+                    unchanged.resultId = it->second.resultId;
+                    return unchanged;
+                }
+
+                lsp::RelatedFullDocumentDiagnosticReport full;
+                full.resultId = it->second.resultId;
+                full.items = it->second.items;
+                return full;
+            }
+        }
+
+        // Nothing analysed yet. Queue it and tell the client to ask again rather than answering
+        // with an empty report - an empty report says "this file is clean", which is a claim this
+        // server is in no position to make about a document it has not looked at.
+        if (const std::string *text = FindDocumentText(uriStr))
+            ScheduleAnalysis(uriStr, *text);
+
+        lsp::json::Object retrigger;
+        retrigger["retriggerRequest"] = true;
+
+        throw lsp::RequestError(lsp::MessageError::ServerCancelled,
+                                "Diagnostics for this document are still being computed",
+                                lsp::json::Value(std::move(retrigger)));
+    }
+
+    lsp::requests::Workspace_Diagnostic::Result Server::HandleRequestsWorkspace_Diagnostic(lsp::requests::Workspace_Diagnostic::Params &&params)
+    {
+        // What the client already holds, so an unedited document can be answered with its id alone.
+        ankerl::unordered_dense::map<std::string, std::string> known;
+        for (const auto &previous : params.previousResultIds)
+            known[DocumentKey(previous.uri.toString())] = previous.value;
+
+        lsp::WorkspaceDiagnosticReport report;
+
+        std::lock_guard<std::mutex> lock(m_diagnosticsCacheMutex);
+        for (const auto &[uriStr, snapshot] : m_diagnosticsCache)
+        {
+            // Out under the client's own spelling, for the same reason PublishDiagnostics does it:
+            // the key is canonical and the client matches these against its own URIs.
+            const auto clientUri = m_clientUriByKey.find(uriStr);
+            const std::string &outgoingUri = clientUri != m_clientUriByKey.end() ? clientUri->second : uriStr;
+
+            if (const auto it = known.find(uriStr); it != known.end() && it->second == snapshot.resultId)
+            {
+                lsp::WorkspaceUnchangedDocumentDiagnosticReport unchanged;
+                unchanged.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
+                unchanged.version = nullptr;
+                unchanged.resultId = snapshot.resultId;
+                report.items.push_back(std::move(unchanged));
+                continue;
+            }
+
+            lsp::WorkspaceFullDocumentDiagnosticReport full;
+            full.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
+            full.version = nullptr;
+            full.resultId = snapshot.resultId;
+            full.items = snapshot.items;
+            report.items.push_back(std::move(full));
+        }
+
+        return report;
     }
 
     void Server::InitHandles()
@@ -2368,6 +2483,18 @@ namespace angel_lsp
             [this]()
             {
                 return this->HandleRequestsShutdown();
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_Diagnostic>(
+            [this](lsp::requests::TextDocument_Diagnostic::Params &&params)
+            {
+                return this->HandleRequestsTextDocument_Diagnostic(std::move(params));
+            });
+
+        m_messageHandler->add<lsp::requests::Workspace_Diagnostic>(
+            [this](lsp::requests::Workspace_Diagnostic::Params &&params)
+            {
+                return this->HandleRequestsWorkspace_Diagnostic(std::move(params));
             });
 
         m_messageHandler->add<lsp::notifications::Exit>(
