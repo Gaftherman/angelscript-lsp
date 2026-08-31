@@ -1013,6 +1013,21 @@ namespace angel_lsp::analysis
                 return;
             }
 
+            // `int[] a(33)` sizes an array; it does not construct an `int` from 33. The bracket
+            // spelling reduces to its ELEMENT type here - CleanBaseType takes `bool[]` to `bool` -
+            // so the primitive branch below read `bool[] flags(32+1);` as converting 32+1 into a
+            // bool. It stayed silent for years because `int[] a(33)` and `float[] a(33)` are the
+            // same misreading and `int -> int` and `int -> float` score fine; correcting `bool` to
+            // be unconvertible from the numeric types is what made it visible, on
+            // `bool[] g_playerGlowEnable(32+1);` in the corpus.
+            //
+            // The angle spelling needs no guard: `array<int>` keeps `array` as its container name,
+            // which is not a primitive, so it already takes the class path.
+            if (rawTypeStr.find('[') != std::string::npos)
+            {
+                return;
+            }
+
             TemplateTypeInfo tmplInfo = ParseTemplateType(declaredType);
             std::string baseName = tmplInfo.containerName.empty() ? declaredType : tmplInfo.containerName;
             baseName = CleanBaseType(baseName);

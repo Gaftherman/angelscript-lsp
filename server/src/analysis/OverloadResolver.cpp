@@ -299,11 +299,20 @@ namespace angel_lsp::analysis
             return false;
         }
 
-        if (from == "bool")
+        // `bool` is not a number and converts to none of them, in either direction. It used to be
+        // listed here as widening to every integer and both floats, and that was measured wrong:
+        // the compiler rejects all forty combinations of {bool -> T, T -> bool} x {argument,
+        // initializer} over the ten numeric types, and rejects the explicit `int(b)` and `bool(n)`
+        // casts, `b + 1`, `return b` from an int function, `b == n`, and `if (n)` besides.
+        //
+        // It is spelled out rather than simply absent because of what it cost: with bool viable,
+        // `obj.Get(intValue, strict)` against the overload set `Get(bool&out, bool)` /
+        // `Get(int&out, bool)` scored both candidates and tied, so a call the compiler accepts
+        // without hesitating was reported "Multiple matching signatures" - 75 times over the
+        // corpus, in a JSON library it carries twice.
+        if (from == "bool" || to == "bool")
         {
-            return to == "int8" || to == "uint8" || to == "int16" || to == "uint16" ||
-                   to == "int" || to == "uint" || to == "int64" || to == "uint64" ||
-                   to == "float" || to == "double";
+            return false;
         }
         if (from == "int8")
         {
@@ -367,14 +376,12 @@ namespace angel_lsp::analysis
         {
             return !IsPrimitiveWidening(from, to);
         }
-        if (isNumeric(from) && to == "bool")
-        {
-            return true;
-        }
-        if (from == "bool" && isNumeric(to))
-        {
-            return true;
-        }
+        // `bool` against a number reaches here and falls through, which is the point - see the
+        // note in IsPrimitiveWidening. It used to answer true in both directions, and narrowing is
+        // a penalty rather than a refusal, so the pairing scored as viable. The compiler's answer
+        // is "No matching signatures", so the honest score is Incompatible, and that is what the
+        // caller produces when neither this nor IsPrimitiveWidening claims the pair.
+        // IsNumericPrimitive excludes bool, so nothing above can have claimed it.
         return false;
     }
 

@@ -556,13 +556,16 @@ namespace angel_lsp::analysis
                 {
                     return true;
                 }
-                if (from == "bool" && toNum)
+                // `bool` is deliberately absent from both directions. It is not a number and
+                // converts to none of them: all forty combinations of {bool -> T, T -> bool} x
+                // {argument, initializer} over the ten numeric types are rejected by the compiler,
+                // and so are `int(b)`, `bool(n)`, `b + 1`, `return b` from an int function, and
+                // `if (n)`. It used to answer true here and in OverloadResolver, where the cost
+                // was 75 spurious ambiguities over the corpus. `string s = b;` stays legal through
+                // the string sink below, which is a real opAssign the add-on registers.
+                if ((from == "bool" && toNum) || (fromNum && to == "bool"))
                 {
-                    return true;
-                }
-                if (fromNum && to == "bool")
-                {
-                    return true;
+                    return false;
                 }
 
                 // `string` is a sink. The standard string add-on registers an opAssign for every
@@ -1283,16 +1286,25 @@ namespace angel_lsp::analysis
                 return result;
             }
 
-            if (IsBuiltInValueType(result.baseName, ctx))
-            {
-                result.usable = true;
-                return result;
-            }
-
+            // The written SHAPE is decided before anything about the base name, and the order
+            // matters. CleanBaseType reduces `bool[]` to `bool`, which is a built-in value type,
+            // so the test below used to claim the declaration first and return with
+            // isTemplateOrArray false - and then `bool[] flags(33);` was read as constructing a
+            // `bool` from 33 rather than sizing an array. It stayed silent only by accident:
+            // `int[] a(33)` and `float[] a(33)` are the same mistake, and `int -> int` and
+            // `int -> float` are convertible, so nothing was reported. Correcting `bool` to be
+            // unconvertible from the numeric types is what made the accident visible, on
+            // `bool[] g_playerGlowEnable(32+1);` in the corpus.
             if (raw.find('<') != std::string::npos || raw.find('[') != std::string::npos)
             {
                 result.usable = true;
                 result.isTemplateOrArray = true;
+                return result;
+            }
+
+            if (IsBuiltInValueType(result.baseName, ctx))
+            {
+                result.usable = true;
                 return result;
             }
 

@@ -228,7 +228,22 @@ namespace angel_lsp::analysis
                         TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
                         if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
                         {
-                            std::string objType = ResolveExpressionType(objNode, m_request.scopeRoot, m_ctx.request.symbolTable, m_request.sourceCode, m_ctx.request.fileUri);
+                            // Resolved in the scope the call is written in, not at the root.
+                            //
+                            // The receiver of a method call is almost always a local - `Reader
+                            // reader; reader.Get(value)` - and a local is not in the root scope, so
+                            // resolving there answered nothing, the hierarchy came back empty, no
+                            // candidate was found and the `&out` parameter below was never
+                            // recognised. Every out-parameter of a METHOD was therefore read as a
+                            // read, and `int n; obj.Get(n);` - which is how you initialise `n` -
+                            // was reported as using it uninitialised. Free functions were fine,
+                            // because their lookup takes the node and not the root.
+                            const TSPoint objStart = ts_node_start_point(objNode);
+                            const Scope *callScope =
+                                m_request.scopeRoot
+                                    ? FindEnclosingScope(m_request.scopeRoot, objStart.row, objStart.column)
+                                    : nullptr;
+                            std::string objType = ResolveExpressionType(objNode, callScope ? callScope : m_request.scopeRoot, m_ctx.request.symbolTable, m_request.sourceCode, m_ctx.request.fileUri);
                             std::string cleanObj = CleanBaseType(objType);
                             std::string memName = NodeText(memNode, m_request.sourceCode);
                             auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);

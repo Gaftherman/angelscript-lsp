@@ -750,9 +750,25 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
     //    3  Mikk-Sven-Co-op_scripts_plugins_anticlip.as, an overload set of eight `ToArray`
     //       declarations across two namespace versions. Not yet diagnosed.
     //
+    // Two more arrived when `bool` stopped converting to and from the numeric types, and both are
+    // TRUE POSITIVES the analyzer had been unable to see:
+    //
+    //    2  AngelScripts_CSquadMonster.as:220-221, `int InSquad() { return m_hSquadLeader != NULL; }`
+    //       returns a bool from an int function. The compiler answers "No conversion from
+    //       'const bool' to 'int' available." - measured. The same file is a header-style stub and
+    //       already accounts for fifteen of the missing-body findings.
+    //
+    // A third arrived with them and was a FALSE POSITIVE, fixed rather than counted:
+    // `bool[] g_playerGlowEnable(32+1);` was read as converting 32+1 into a bool, because the
+    // bracket spelling reduces to its element type and the size then looks like an initializer.
+    // `int[] a(33)` and `float[] a(33)` are the same misreading and had been silent since forever,
+    // since `int -> int` and `int -> float` score fine. See the guards in ReadDeclaredType and
+    // CallChecker's CheckVariableDirectInitialization.
+    //
     // The count is a ratchet. It may only go down: lowering it as each cause is found is the work,
-    // and raising it is a regression this fails on.
-    constexpr size_t k_accountedFindings = 25;
+    // and raising it is a regression this fails on. It moved 25 -> 27 here because two real
+    // rejections became visible, which is the one reason a ratchet is allowed to rise.
+    constexpr size_t k_accountedFindings = 27;
 
     CHECK(totalFiles > 0);
     CHECK(totalFlagged <= k_accountedFindings);
@@ -1164,6 +1180,57 @@ TEST_CASE("NumericWarnings - A hex literal is not a float because it contains an
         "void main() { uint64 y = Seed(); y ^= (y >> 11) & 0xdeadbeef; }\n"
         "uint64 Seed() { return 1; }\n").empty());
 
+}
+
+// =====================================================================================
+// `bool` is not a number.
+//
+// It was listed as convertible to and from every numeric type, in OverloadResolver's widening
+// and narrowing tables and in IsConvertible. The compiler allows none of it. Measured over the
+// full matrix - {bool -> T, T -> bool} x {argument, initializer} across all ten numeric types,
+// forty combinations, forty rejections - plus the explicit casts, arithmetic, return and
+// condition forms below.
+//
+// The cost of the old answer was not a missed diagnostic but an invented one: with bool viable,
+// two overloads differing only in `bool&out` versus `int&out` tied on an int argument, and the
+// call was reported ambiguous. 75 times over the corpus.
+// =====================================================================================
+
+TEST_CASE("TypeConversion - bool does not convert to any numeric type")
+{
+    for (const std::string target : { "int8", "int16", "int", "int64",
+                                      "uint8", "uint16", "uint", "uint64", "float", "double" })
+    {
+        const std::string code =
+            "void main() { bool b = true; " + target + " n = b; }\n";
+        INFO("target: " << target);
+        CHECK(HasConversionDiagnostic(ConversionDiagnostics(code),
+                                      "as-err-no-implicit-conversion", "bool", target));
+    }
+}
+
+TEST_CASE("TypeConversion - no numeric type converts to bool")
+{
+    for (const std::string source : { "int8", "int16", "int", "int64",
+                                      "uint8", "uint16", "uint", "uint64", "float", "double" })
+    {
+        const std::string code =
+            "void main() { " + source + " n = 1; bool b = n; }\n";
+        INFO("source: " << source);
+        CHECK(HasConversionDiagnostic(ConversionDiagnostics(code),
+                                      "as-err-no-implicit-conversion", source, "bool"));
+    }
+}
+
+TEST_CASE("TypeConversion - bool still reaches string, which is a real opAssign")
+{
+    // The string add-on registers an opAssign for every scalar including bool, so this one is
+    // legal and must not be caught by the rejection above. doc_p23 has the measurement.
+    CHECK(ConversionDiagnostics(
+        "void main() { bool b = true; string s = b; }\n").empty());
+
+    CHECK(ConversionDiagnostics(
+        "void main() { bool b = true; bool c = b; }\n").empty());
 }
 
 // =====================================================================================

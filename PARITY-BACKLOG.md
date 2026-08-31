@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1230 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1237 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -79,6 +79,58 @@ Each entry says what the compiler answers and what this analyzer answered before
 false positives — legal code reported as an error, which is the one failure mode this project
 treats as unacceptable.
 
+- **`bool` is not a number, and three tables said it was.** It was listed as convertible to and from
+  every numeric type in `OverloadResolver`'s `IsPrimitiveWidening` and `IsPrimitiveNarrowing`, and
+  in `TypeConversionChecker`'s `IsConvertible`. The compiler allows none of it. Measured across the
+  full matrix before anything changed — {`bool` → T, T → `bool`} × {argument, initializer} over all
+  ten numeric types, **forty combinations, forty rejections** — and the forms outside the matrix
+  agree: `int(b)` and `bool(n)` are "No conversion available", `b + 1` is "No conversion from 'bool'
+  to math type available", `return b` from an `int` function and `b == n` are refusals, and `if (n)`
+  is "Expression must be of boolean type". Narrowing was the worse of the two entries: narrowing is
+  a *penalty*, which means viable, so the pairing scored as a candidate rather than being refused.
+
+  `bool` is now refused explicitly in all three places rather than merely absent, with the
+  measurement beside it, because the entry that was there looked deliberate. `string s = b;` stays
+  legal — the string add-on really does register that `opAssign`, and it is the sink below the
+  rejection rather than through it. `doc_r27`, `doc_p28`.
+
+  **The hypothesis about what it was costing was wrong, and the measurement is what says so.** This
+  item was filed claiming the 75 `as-err-call-ambiguous` findings over the corpus came from it:
+  with `bool` convertible, `Get(bool&out, bool)` and `Get(int&out, bool)` would tie on an `int`
+  argument. Correcting the tables **did not move that number at all** — the call-argument audit
+  reads 103 before and after. Two things are now known that were not: the mutable-reference path in
+  `ScoreArgumentMatch` already refused an `int` against a `bool&out` independently, so that overload
+  set was never the tie; and `HasSameSignature` in `ResolveBestOverload` already handles one
+  function arriving twice, so two copies of one library are not it either. The 75 are a genuine tie
+  between two *different* signatures, they have not been reproduced outside the corpus — three
+  hand-written versions including the namespaced spelling all resolve cleanly — and they are now
+  recorded as **not diagnosed** rather than explained. That is the next item.
+
+  What the fix did do, measured: the type-conversion audit moved **25 → 27**, and every one of the
+  three findings that appeared was worth having. Two are true positives the analyzer had been unable
+  to see — `int InSquad() { return m_hSquadLeader != NULL; }` returns a bool from an int function,
+  which the compiler refuses. The third was a false positive, fixed rather than counted, below.
+
+- **`T[] name(size)` was read as converting the size into one element.** Found by the entry above:
+  `bool[] g_playerGlowEnable(32+1);` was reported as "Cannot implicitly convert 'int' to 'bool'".
+  The bracket spelling reduces to its ELEMENT type in both places that judge a direct
+  initialization, so the size looked like an initializer for one `T`. It had been silent since
+  forever because `int[] a(33)` and `float[] a(33)` are the same misreading and `int -> int` and
+  `int -> float` score fine — correcting `bool` is what made it visible. Guarded now in
+  `ReadDeclaredType`, where the written SHAPE is tested before anything about the base name, and in
+  `CallChecker::CheckVariableDirectInitialization`. The angle spelling never needed a guard:
+  `array<int>` keeps `array` as its container name, which is not a primitive, so it already took
+  the class path.
+
+- **An `&out` parameter of a METHOD initialises its argument.** Found by `doc_p28` while proving the
+  first entry: the analyzer reported `int n; reader.Get(n, strict);` as using `n` uninitialised,
+  which is the exact line that initialises it, and which the compiler accepts without even a
+  warning. `DefiniteAssignmentChecker` had the out-parameter rule and it worked — for free
+  functions, whose candidate lookup takes the call node. The method branch resolved the receiver's
+  type against `m_request.scopeRoot`, and a local receiver is never in the root scope, so the type
+  came back empty, the hierarchy was empty, no candidate was found and the parameter's `&out` was
+  never read. Every out-parameter of every method was affected. Now resolved in the scope the call
+  is written in, via `FindEnclosingScope`.
 - **A lambda against its funcdef, the remaining three quarters.** The first pass covered an
   assignment and a conversion. The corpus said that was the wrong three quarters: it writes 33
   lambdas across 17 files and **not one** is `CB@ cb = function(...)`. Every one is a call
@@ -562,19 +614,18 @@ treats as unacceptable.
 Real, oracle-confirmed, and none of it reports legal code today. Ordered by what a user notices
 first. Each lands with its `doc_`-prefixed parity case.
 
-1. **`bool` is not a numeric type, and `IsPrimitiveWidening` says it is.** A false positive on real
-   code, 75 findings, found by widening the call-argument corpus audit to the two call diagnostics
-   it had never counted. All six directions measured against the oracle and all six rejected:
-   `void f(int); f(boolVar)`, `void f(float); f(boolVar)`, `void f(bool); f(intVar)`,
-   `void f(bool); f(floatVar)`, `int n = boolVar;`, `bool b = intVar;`. With the conversion
-   wrongly allowed, `obj.Get(intValue, strict)` against the overload set `Get(bool&out, bool)` /
-   `Get(int&out, bool)` scores both viable and ties, so a call the compiler accepts without
-   hesitating is reported ambiguous. Concentrated in one JSON library the corpus carries twice.
+1. **75 `as-err-call-ambiguous` findings over the corpus, not diagnosed.** Legal code reported as
+   an ambiguous call, concentrated in a JSON library the corpus carries twice - `opAssign`,
+   `opIndex`, `Get`, `Set`. The `bool` conversion tables were the first hypothesis and correcting
+   them moved the number not at all, so that is ruled out and so are the two other obvious
+   candidates: `ScoreArgumentMatch`'s mutable-reference path already refuses a converting argument
+   against an `&out` parameter, and `HasSameSignature` already stops one function arriving twice
+   from tying with itself. What is left is a genuine tie between two DIFFERENT signatures, and it
+   has not been reproduced outside the corpus - three hand-written versions of the shape, including
+   the namespaced spelling, all resolve cleanly. The next step is to instrument
+   `ResolveBestOverload` over one of those files rather than to guess again. Pinned at 103 in
+   `CallCheckerTest.cpp` so it can only go down.
 
-   The fix is small and its blast radius is not: that table is the one whose signed/unsigned
-   entries exist to stop a real false positive on `array<int> a(1)`, and every overload decision in
-   the analyzer goes through it. It wants its own measurement across all nineteen audits. The count
-   is pinned at 103 in `CallCheckerTest.cpp` so it can only go down.
 2. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
    user, not a deduction: nothing lets the server establish that an unresolved name is a typo rather
    than a host type. An engine profile is the closest thing, and it is a fixed list. Until that

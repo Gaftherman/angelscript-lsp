@@ -503,8 +503,8 @@ TEST_CASE("CallChecker - Call Argument Corpus Audit" * doctest::skip(true))
 
     // 103 findings, and the breakdown is the point:
     //
-    //   1  as-err-call-argument-count       a genuine bug in the corpus
-    //  75  as-err-call-ambiguous            ONE defect, root-caused below
+    //   1  as-err-call-argument-count         a genuine bug in the corpus
+    //  75  as-err-call-ambiguous              NOT YET DIAGNOSED
     //   4  as-err-call-no-matching-signature  not yet triaged
     //  23  the same findings again, from the second copy of the same JSON library
     //
@@ -513,28 +513,23 @@ TEST_CASE("CallChecker - Call Argument Corpus Audit" * doctest::skip(true))
     // overload existed for it. The same file calls it correctly with one argument eleven lines
     // later.
     //
-    // The 75 are a FALSE POSITIVE, one cause, and it is not in this file: `bool` is listed as
-    // convertible to and from the numeric types in OverloadResolver's IsPrimitiveWidening, and it
-    // is not. Measured against angelscript_oracle, all six directions:
+    // THE 75 ARE NOT DIAGNOSED, and this comment used to claim they were. The claim was that
+    // `bool` being wrongly listed as convertible in OverloadResolver made `Get(bool&out, bool)`
+    // and `Get(int&out, bool)` tie on an int argument. `bool` WAS wrongly listed - all forty
+    // combinations of {bool -> T, T -> bool} x {argument, initializer} over the ten numeric types
+    // are rejected by the compiler, and the tables now say so - but correcting it did not move
+    // this number at all. The hypothesis was wrong, and the measurement is what says so.
     //
-    //     void f(int);   f(boolVar)    -> "No matching signatures to 'f(bool)'"
-    //     void f(float); f(boolVar)    -> "No matching signatures to 'f(bool)'"
-    //     void f(bool);  f(intVar)     -> "No matching signatures to 'f(int)'"
-    //     void f(bool);  f(floatVar)   -> "No matching signatures to 'f(float)'"
-    //     int n = boolVar;             -> "Can't implicitly convert from 'bool' to 'int'"
-    //     bool b = intVar;             -> "Can't implicitly convert from 'int' to 'bool'"
+    // What is known now: the mutable-reference path in ScoreArgumentMatch already refused an `int`
+    // against a `bool&out` before any of that, so the `&out` overload set was never the tie; and
+    // the duplicate-declaration guard in ResolveBestOverload (HasSameSignature) already handles
+    // the same function arriving twice, so two copies of one library are not it either. That
+    // leaves a genuine tie between two DIFFERENT signatures - `opAssign(json@)` against
+    // `opAssign(const float)` for a `json@` argument, say - and the shape has not been reproduced
+    // outside the corpus: three hand-written versions of it, including the namespaced spelling,
+    // all resolve cleanly.
     //
-    // With bool convertible, `obj.Get(intValue, strict)` against the overload set
-    // `Get(bool&out, bool)` / `Get(int&out, bool)` scores both as viable and ties, so the call is
-    // called ambiguous - and the compiler accepts it without hesitating, because only one of those
-    // parameters can take an int at all. That set is a JSON library the corpus carries twice, which
-    // is why so few files account for so many findings.
-    //
-    // Not fixed here. That table is the same one whose signed/unsigned entries were added to stop
-    // a real false positive on `array<int> a(1)`, and changing it moves every overload decision in
-    // the analyzer - so it wants its own measurement across all nineteen audits, not a passenger
-    // seat in a change about lambdas. Recorded in PARITY-BACKLOG.md as the next item.
-    //
+    // So it is recorded rather than explained, which is the honest state. See PARITY-BACKLOG.md.
     // The number is a ratchet and may only go down.
     //
     // Seven others were reported by the first version of this rule, and every one was a false
@@ -1066,4 +1061,129 @@ TEST_CASE("CallChecker - The same funcdef reached twice is not an ambiguity")
         "void Take(CB@ c) {}\n"
         "void Take(CB@ c) {}\n"
         "void main() { Take(function(int a) { }); }\n"));
+}
+
+namespace
+{
+    /** @brief True when a conversion diagnostic names both types in its message. */
+    bool HasBoolConversion(const std::vector<Diagnostic> &diagnostics,
+                           const std::string &from,
+                           const std::string &to)
+    {
+        const std::string quotedFrom = "'" + from + "'";
+        const std::string quotedTo = "'" + to + "'";
+        return std::any_of(diagnostics.begin(), diagnostics.end(), [&](const Diagnostic &diag)
+        {
+            return diag.code == "as-err-no-implicit-conversion" &&
+                   diag.message.find(quotedFrom) != std::string::npos &&
+                   diag.message.find(quotedTo) != std::string::npos;
+        });
+    }
+}
+
+TEST_CASE("CallChecker - Two overloads differing only in bool versus int are not ambiguous")
+{
+    // The 75-finding false positive, in miniature. `bool` was listed as convertible to and from
+    // the numeric types, so an int argument scored against BOTH `bool&out` and `int&out` and tied.
+    // Oracle: the call is accepted, unambiguously, because only one of those parameters can take
+    // an int at all - and with only the bool overload present it is "No matching signatures to
+    // 'J::Get(int, bool)'".
+    const std::string set =
+        "class J {\n"
+        "  bool Get(bool &out v, bool s = true) const { v = true; return s; }\n"
+        "  bool Get(int &out v, bool s = true) const { v = 1; return s; }\n"
+        "}\n";
+
+    const auto diagnostics = AnalyzeCallSnippet(
+        set + "void main() { J j; int n; bool st = true; j.Get(n, st); }\n");
+    CHECK_FALSE(HasCode(diagnostics, "as-err-call-ambiguous"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-call-no-matching-signature"));
+
+    // Only the bool overload: now there is genuinely nothing to call. Reported by naming the
+    // offending argument rather than with the generic message - with one candidate, "which
+    // argument is at fault" is not in doubt, and this checker says so on purpose.
+    CHECK(HasCode(AnalyzeCallSnippet(
+        "class J { bool Get(bool &out v, bool s = true) const { v = true; return s; } }\n"
+        "void main() { J j; int n; bool st = true; j.Get(n, st); }\n"),
+        "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - A bool argument does not satisfy a numeric parameter, or the reverse")
+{
+    // Oracle: "No matching signatures to 'f(bool)'" and "No matching signatures to 'f(int)'" -
+    // said here as the offending argument, which is the same refusal put more precisely.
+    CHECK(HasBoolConversion(AnalyzeCallSnippet(
+        "void f(int v) {}\n"
+        "void main() { bool b = true; f(b); }\n"), "bool", "int"));
+
+    CHECK(HasBoolConversion(AnalyzeCallSnippet(
+        "void f(bool v) {}\n"
+        "void main() { int n = 1; f(n); }\n"), "int", "bool"));
+
+    // The matching call stays silent, which is the half that guards against over-correcting.
+    CHECK_FALSE(HasCode(AnalyzeCallSnippet(
+        "void f(bool v) {}\n"
+        "void main() { bool b = true; f(b); }\n"), "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - A method's &out parameter initialises its argument")
+{
+    // `int n; obj.Get(n);` is how you initialise `n`, and it was reported as using it
+    // uninitialised. The out-parameter rule existed and worked for free functions; for a METHOD
+    // it resolved the receiver's type in the ROOT scope, where a local never lives, so no
+    // candidate was found and the parameter's `&out` was never seen. Found by doc_p28, which the
+    // real compiler accepts without even a warning.
+    const auto flagged = [](const std::string &code)
+    {
+        return HasCode(AnalyzeCallSnippet(code), "as-err-uninitialized-variable-read");
+    };
+
+    CHECK_FALSE(flagged(
+        "class R { bool Get(int &out v) const { v = 1; return true; } }\n"
+        "void main() { R r; int n; r.Get(n); }\n"));
+
+    CHECK_FALSE(flagged(
+        "class R { bool Get(int &out v, bool s = true) const { v = 1; return s; } }\n"
+        "void main() { R r; int n; bool st = true; r.Get(n, st); }\n"));
+
+    CHECK_FALSE(flagged(
+        "class R { bool Get(bool &out v, bool s = true) const { v = true; return s; }\n"
+        "          bool Get(int &out v, bool s = true) const { v = 1; return s; } }\n"
+        "void main() { R r; int n; bool st = true; r.Get(n, st); }\n"));
+
+    // The free-function form, which always worked and must keep working.
+    CHECK_FALSE(flagged(
+        "bool Get(int &out v, bool s = true) { v = 1; return s; }\n"
+        "void main() { int n; bool st = true; Get(n, st); }\n"));
+
+    // And the rule still fires where the parameter is NOT an out - which is the half that shows
+    // the fix widened the lookup rather than switching the check off.
+    CHECK(flagged(
+        "class R { bool Get(int v) const { return v > 0; } }\n"
+        "void main() { R r; int n; r.Get(n); }\n"));
+}
+
+
+TEST_CASE("CallChecker - A bracket-array size is not an element conversion")
+{
+    // `T[] name(size)` sizes an array. The bracket spelling reduces to its ELEMENT type in this
+    // pass, so it used to be read as constructing one `T` from the size - silently, because
+    // `int -> int` and `int -> float` score fine. `bool[] flags(33);` is the same declaration and
+    // the compiler accepts it; it only became visible once bool stopped converting from int.
+    const auto flagged = [](const std::string &code)
+    {
+        return HasCode(AnalyzeCallSnippet(code), "as-err-no-implicit-conversion") ||
+               HasCode(AnalyzeCallSnippet(code), "as-err-no-matching-constructor");
+    };
+
+    CHECK_FALSE(flagged("bool[] flags(33);\nvoid main() { }\n"));
+    CHECK_FALSE(flagged("int[] counts(33);\nvoid main() { }\n"));
+    CHECK_FALSE(flagged("float[] weights(32 + 1);\nvoid main() { }\n"));
+    CHECK_FALSE(flagged("void main() { bool[] flags(33); }\n"));
+
+    // The angle spelling always took the class path and must keep taking it.
+    CHECK_FALSE(flagged("array<bool> flags(33);\nvoid main() { }\n"));
+
+    // A real primitive construction is still judged: `bool b(33)` is not an array.
+    CHECK(flagged("void main() { bool b(33); }\n"));
 }
