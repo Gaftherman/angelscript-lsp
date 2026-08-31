@@ -88,6 +88,16 @@ namespace angel_lsp::utils
         std::vector<std::string> GetModuleClosure(const std::string &filePath) const;
 
         /**
+         * @brief The files whose `#include` lines name this one, directly.
+         *
+         * The graph has always held this edge - it is what GetModuleClosure ascends - but only ever
+         * offered the transitive closure. A rename needs the direct edge and nothing more: the
+         * files to rewrite are the ones that literally spell the old path, not everything that
+         * ends up in the same module.
+         */
+        std::vector<std::string> GetFilesIncluding(const std::string &filePath) const;
+
+        /**
          * @brief Drops one file from the graph, detaching it from both edge directions.
          *
          * Called when a file is deleted on disk. Distinct from UpdateFile(path, "", ...), which

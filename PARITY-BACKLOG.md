@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1252 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1256 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -78,6 +78,34 @@ Accepted by the compiler and by this analyzer. They had no test before; they do 
 Each entry says what the compiler answers and what this analyzer answered before. Several were
 false positives — legal code reported as an error, which is the one failure mode this project
 treats as unacceptable.
+
+- **`workspace.fileOperations`.** `didRenameFiles` and `didDeleteFiles`, announced with a filter so
+  the editor does not wake this server for every file in the repository. The `will` variants are
+  deliberately NOT announced: they are requests, and answering one blocks the rename in the editor
+  until the server replies. Nothing here needs to veto an operation, and a rename that pauses
+  because a language server is thinking is worse than an `#include` fixup that arrives a moment
+  later.
+
+  The editor knows about a rename before the watcher does, and knows it as ONE operation rather than
+  as whatever burst of create and delete events the platform produces - which is what makes the
+  fixup possible at all. By the time a watcher reports a deletion and a creation, nothing connects
+  the two.
+
+  On rename: the includers are collected from the graph **before** the old file leaves it, since
+  `RemoveFile` takes that edge with it; each one's `#include` line is rewritten to the new relative
+  path; and the result is **sent as a `workspace/applyEdit`** rather than written. The change
+  belongs on the editor's undo stack beside the rename that caused it - a server editing files
+  behind the user's back leaves them unable to undo the consequences along with the cause. The
+  includer is read from the editor's buffer when it has one, because rewriting against the copy on
+  disk would produce an edit whose line numbers do not match what the user is looking at.
+
+  A file nothing includes asks for no edit, which is the guard against a directory rename: it
+  reports every file in it, and an edit per unreferenced file is noise the user has to review.
+
+  The prerequisite the backlog named is done with it: `WorkspaceIncludeGraph::GetFilesIncluding`
+  exposes the direct reverse edge. The graph had always held it - `GetModuleClosure` ascends it -
+  but only ever offered the transitive closure, and a rename needs the files that literally spell
+  the old path, not everything in the same module.
 
 - **Exclude globs, and the walks that could not be told to stop.** Three recursive walks cross
   every workspace root - the include graph, the predefined-stub scan and the engine-profile
@@ -765,16 +793,36 @@ treats as unacceptable.
 
 ## WIP
 
-Real, oracle-confirmed, and none of it reports legal code today. Ordered by what a user notices
-first. Each lands with its `doc_`-prefixed parity case.
+Empty. Every item that was here has landed, each with its `doc_`-prefixed parity case and its
+number in a corpus audit. What is left below is not implementation work.
 
-1. **A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
-   user, not a deduction: nothing lets the server establish that an unresolved name is a typo rather
-   than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
-   exists the setting is the honest interface, but it is the reason the rule cannot simply be
-   unconditional.
-2. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
-    rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
+## Open design
+
+One question, and it is not a task: nothing here is waiting on someone to write the code.
+
+**A way to know a workspace's stubs are complete.** `reportUnknownTypes` is a declaration by the
+user, not a deduction. Nothing lets the server establish that an unresolved name is a typo rather
+than a type the host registers in C++ - both are a name with no declaration anywhere it can read -
+and the measurement is not close: with the setting off the corpus yields 1581 findings under the
+Sven Co-op profile and 4896 with no profile at all; with it on, 3850 and 9791. An engine profile is
+the closest thing to an answer and it is a fixed list.
+
+This sat in WIP for as long as this file has existed, which was the wrong shelf: WIP is work someone
+could pick up, and there is no implementation here to pick up. The options that exist, none of them
+free:
+
+  * **A named engine profile**, which works today and is what a real workspace should do. It only
+    covers the hosts someone has written a profile for.
+  * **A marker in the stub** - an `@engineonly` or similar - letting a stub author say "this file
+    describes the whole API". That is a real answer, and it asks every stub author to make a claim
+    they may not be able to keep.
+  * **Learning from the workspace**: a name used consistently across many files and declared in none
+    is more likely registered than mistyped. That is a heuristic, and a heuristic that produces an
+    ERROR is the failure mode this project exists to avoid.
+
+Until one of those is chosen the setting is the honest interface: it makes the user's knowledge the
+input, because the user is the only one who has it.
+
 ### Out of scope
 
 `TOOL-04` (a Debug Adapter Protocol sidecar) is a separate program, not a language-server feature.

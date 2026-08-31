@@ -491,6 +491,23 @@ namespace angel_lsp
          */
         static std::string DocumentKey(const std::string &uriStr);
 
+        void HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Workspace_DidRenameFiles::Params &&params);
+        void HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Workspace_DidDeleteFiles::Params &&params);
+
+        /**
+         * @brief One file's `#include` lines rewritten to a renamed target, or nullopt.
+         *
+         * Returns an edit for the editor to apply rather than writing the file: the change belongs
+         * on the undo stack beside the rename that caused it, and a server editing files behind the
+         * user's back is not something they can undo.
+         */
+        std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const std::string &includerPath,
+                                                                 const std::string &oldTargetPath,
+                                                                 const std::string &newTargetPath);
+
+        /** @brief Recomputes every open document's module closure and re-diagnoses it. */
+        void ReanalyseOpenDocuments();
+
         /**
          * @brief Document URI for a filesystem path, in the spelling used for synthesised entries.
          */

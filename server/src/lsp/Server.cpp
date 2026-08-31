@@ -511,6 +511,32 @@ namespace angel_lsp
 
         lsp::WorkspaceOptions workspaceOpts;
         workspaceOpts.workspaceFolders = folderCaps;
+
+        // Renames and deletions of script files. Announced with a filter so the editor does not
+        // wake this server for every file in the repository - it is only ever interested in the
+        // ones the include graph can hold.
+        //
+        // didRename and didDelete only: the `will` variants are REQUESTS, and answering one blocks
+        // the rename in the editor until the server replies. A rename that pauses because a
+        // language server is thinking is a worse experience than one whose #include fixup arrives a
+        // moment later, and nothing here needs to veto the operation.
+        {
+            lsp::FileOperationPattern scriptPattern;
+            scriptPattern.glob = fmt::format("**/*{}", m_config.info.fileExtension);
+
+            lsp::FileOperationFilter scriptFilter;
+            scriptFilter.pattern = scriptPattern;
+            scriptFilter.scheme = std::string("file");
+
+            lsp::FileOperationRegistrationOptions registration;
+            registration.filters = lsp::Array<lsp::FileOperationFilter>{ scriptFilter };
+
+            lsp::FileOperationOptions fileOps;
+            fileOps.didRename = registration;
+            fileOps.didDelete = registration;
+            workspaceOpts.fileOperations = fileOps;
+        }
+
         result.capabilities.workspace = workspaceOpts;
 
         return result;
@@ -1171,6 +1197,171 @@ namespace angel_lsp
 
         // An edited #include line can move a file between modules, so every open document's
         // closure is recomputed and re-diagnosed against whatever it now sees.
+        ReanalyseOpenDocuments();
+    }
+
+
+    void Server::HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Workspace_DidDeleteFiles::Params &&params)
+    {
+        // The editor tells us directly rather than through the file watcher, which means it arrives
+        // even when the watcher's own glob would have missed the file, and it arrives once rather
+        // than as whatever burst the filesystem happened to produce.
+        bool anythingChanged = false;
+
+        for (const auto &deleted : params.files)
+        {
+            const std::string uriStr = DocumentKey(deleted.uri.toString());
+            const std::string path = CanonicalPathFromUri(uriStr);
+            if (path.empty())
+                continue;
+
+            PurgeClosureFile(uriStr);
+            anythingChanged = m_includeGraph.RemoveFile(path) || anythingChanged;
+            m_clientUriByKey.erase(uriStr);
+        }
+
+        if (!anythingChanged)
+            return;
+
+        ReanalyseOpenDocuments();
+    }
+
+    void Server::HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Workspace_DidRenameFiles::Params &&params)
+    {
+        angel_lsp::parser::AngelScriptParser renameParser(m_logger.get());
+        std::vector<lsp::TextDocumentEdit> documentEdits;
+        bool anythingChanged = false;
+
+        for (const auto &renamed : params.files)
+        {
+            const std::string oldUri = DocumentKey(renamed.oldUri.toString());
+            const std::string newUri = DocumentKey(renamed.newUri.toString());
+            const std::string oldPath = CanonicalPathFromUri(oldUri);
+            const std::string newPath = CanonicalPathFromUri(newUri);
+            if (oldPath.empty() || newPath.empty())
+                continue;
+
+            // Collected BEFORE the old file leaves the graph: the edge that says who included it is
+            // the only record of which files need rewriting, and RemoveFile takes it with it.
+            const std::vector<std::string> includers = m_includeGraph.GetFilesIncluding(oldPath);
+
+            PurgeClosureFile(oldUri);
+            m_includeGraph.RemoveFile(oldPath);
+            m_clientUriByKey.erase(oldUri);
+            anythingChanged = true;
+
+            for (const std::string &includer : includers)
+            {
+                auto edit = BuildIncludeRewrite(includer, oldPath, newPath);
+                if (edit.has_value())
+                    documentEdits.push_back(std::move(*edit));
+            }
+
+            // The file at its new name is indexed only if something already reached it - the same
+            // rule the watched-files handler applies, and for the same reason: reading every
+            // renamed file off disk would turn a directory rename into a full workspace parse.
+            if (!includers.empty() || m_indexedUriByPath.contains(oldPath))
+                IndexClosureFile(newPath, renameParser);
+        }
+
+        if (!documentEdits.empty())
+        {
+            using DocumentChange = lsp::OneOf<lsp::TextDocumentEdit, lsp::CreateFile,
+                                              lsp::RenameFile, lsp::DeleteFile>;
+            lsp::WorkspaceEdit workspaceEdit;
+            lsp::Array<DocumentChange> changes;
+            for (auto &edit : documentEdits)
+                changes.push_back(DocumentChange(std::move(edit)));
+            workspaceEdit.documentChanges = std::move(changes);
+
+            lsp::ApplyWorkspaceEditParams applyParams;
+            applyParams.label = std::string("Update #include paths");
+            applyParams.edit = std::move(workspaceEdit);
+
+            // Sent rather than applied: the edit belongs to the editor's undo stack, and a server
+            // writing the files itself would leave the user unable to undo a rename's consequences
+            // along with the rename.
+            m_messageHandler->sendRequest<lsp::requests::Workspace_ApplyEdit>(
+                std::move(applyParams), [](auto &&) {}, [](const auto &) {});
+        }
+
+        if (anythingChanged)
+            ReanalyseOpenDocuments();
+    }
+
+    std::optional<lsp::TextDocumentEdit> Server::BuildIncludeRewrite(const std::string &includerPath,
+                                                                     const std::string &oldTargetPath,
+                                                                     const std::string &newTargetPath)
+    {
+        // Read from the editor's buffer when it has one - it may hold unsaved edits, and rewriting
+        // against the copy on disk would produce an edit whose line numbers do not match what the
+        // user is looking at.
+        const std::string includerUri = UriFromPath(includerPath);
+        std::string text;
+        if (const std::string *open = FindDocumentText(includerUri))
+        {
+            text = *open;
+        }
+        else
+        {
+            std::ifstream file(includerPath, std::ios::binary);
+            if (!file.is_open())
+                return std::nullopt;
+            text.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        }
+
+        // The path as the directive should now spell it: relative to the including file, with
+        // forward slashes, which is how every #include in the corpus is written and what
+        // ResolveIncludePath will read back.
+        std::error_code relativeError;
+        std::filesystem::path relative = std::filesystem::relative(
+            std::filesystem::path(newTargetPath), std::filesystem::path(includerPath).parent_path(), relativeError);
+        if (relativeError || relative.empty())
+            return std::nullopt;
+        const std::string replacement = relative.generic_string();
+
+        std::vector<lsp::TextEdit> edits;
+        for (const auto &directive : angel_lsp::utils::IncludeResolver::ExtractIncludes(text))
+        {
+            const std::string resolved = angel_lsp::utils::IncludeResolver::ResolveIncludePath(
+                directive.rawPath, includerPath, *SearchDirectories(), IncludeAllowedRoots());
+            if (resolved != oldTargetPath)
+                continue;
+
+            const std::string_view line = angel_lsp::utils::GetLine(text, static_cast<uint32_t>(directive.line));
+            const char open = directive.isAngled ? '<' : '"';
+            const char close = directive.isAngled ? '>' : '"';
+            const size_t openPos = line.find(open);
+            if (openPos == std::string_view::npos)
+                continue;
+            const size_t closePos = line.find(close, openPos + 1);
+            if (closePos == std::string_view::npos)
+                continue;
+
+            lsp::TextEdit edit;
+            edit.range.start.line = static_cast<uint32_t>(directive.line);
+            edit.range.start.character = static_cast<uint32_t>(openPos + 1);
+            edit.range.end.line = static_cast<uint32_t>(directive.line);
+            edit.range.end.character = static_cast<uint32_t>(closePos);
+            edit.newText = replacement;
+            edits.push_back(std::move(edit));
+        }
+
+        if (edits.empty())
+            return std::nullopt;
+
+        lsp::TextDocumentEdit documentEdit;
+        lsp::OptionalVersionedTextDocumentIdentifier identifier;
+        identifier.uri = lsp::DocumentUri(lsp::Uri::parse(includerUri));
+        documentEdit.textDocument = identifier;
+        for (auto &edit : edits)
+            documentEdit.edits.push_back(std::move(edit));
+
+        return documentEdit;
+    }
+
+    void Server::ReanalyseOpenDocuments()
+    {
         for (const auto &[openUri, text] : m_openDocuments)
         {
             IndexModuleClosure(openUri);
@@ -2189,6 +2380,18 @@ namespace angel_lsp
             [this](lsp::notifications::Workspace_DidChangeConfiguration::Params &&params)
             {
                 this->HandleNotificationsWorkspace_DidChangeConfiguration(std::move(params));
+            });
+
+        m_messageHandler->add<lsp::notifications::Workspace_DidRenameFiles>(
+            [this](lsp::notifications::Workspace_DidRenameFiles::Params &&params)
+            {
+                HandleNotificationsWorkspace_DidRenameFiles(std::move(params));
+            });
+
+        m_messageHandler->add<lsp::notifications::Workspace_DidDeleteFiles>(
+            [this](lsp::notifications::Workspace_DidDeleteFiles::Params &&params)
+            {
+                HandleNotificationsWorkspace_DidDeleteFiles(std::move(params));
             });
 
         m_messageHandler->add<lsp::notifications::Workspace_DidChangeWatchedFiles>(

@@ -1213,3 +1213,131 @@ TEST_CASE("Server - Editing a predefined stub re-diagnoses the open documents")
     INFO("publishDiagnostics notifications: " << count);
     CHECK(count >= 2);
 }
+
+// =====================================================================================
+// workspace/didRenameFiles and didDeleteFiles.
+//
+// The editor knows about a rename before the filesystem watcher does, and it knows it as ONE
+// operation rather than as whatever burst of create/delete events the platform produces. That is
+// what makes the #include fixup possible at all: by the time a watcher reports a deletion and a
+// creation, nothing connects the two.
+// =====================================================================================
+
+TEST_CASE("Server - Announces the file-operation capabilities")
+{
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.OutputContains("fileOperations"));
+    CHECK(stream.OutputContains("didRename"));
+    CHECK(stream.OutputContains("didDelete"));
+
+    // The `will` variants are requests, and answering one blocks the rename in the editor until the
+    // server replies. Nothing here needs to veto an operation, so they are not announced.
+    CHECK_FALSE(stream.OutputContains("willRename"));
+}
+
+TEST_CASE("Server - Renaming an included file rewrites the #include that named it")
+{
+    WorkspaceFixture fixture;
+
+    const std::string mainSource = "#include \"helper.as\"\nvoid Think() { }\n";
+    fixture.Write("main.as", mainSource);
+    fixture.Write("helper.as", "void Helped() { }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), mainSource));
+
+    // A save, not just an open: didSave patches the include graph synchronously, whereas the graph
+    // an open relies on is built by the background workspace scan - and the rewrite needs the edge
+    // that says main.as includes helper.as. Same reason the watched-files test does this.
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"text":")" + JsonEscape(mainSource) + R"("}})");
+
+    // The file is not moved on disk here, on purpose. The rewrite is computed from the graph edge
+    // and the INCLUDING file's text, neither of which is the renamed file - and moving it would
+    // have to be sequenced against the message loop, which the reader runs a frame ahead of.
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didRenameFiles","params":{"files":[{"oldUri":")" +
+                fixture.Uri("helper.as") + R"(","newUri":")" + fixture.Uri("renamed.as") + R"("}]}})");
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    // An applyEdit request carrying the new name. Sent rather than written: the change belongs on
+    // the editor's undo stack beside the rename that caused it.
+    CHECK(stream.OutputContains("workspace/applyEdit"));
+    CHECK(stream.OutputContains("renamed.as"));
+}
+
+TEST_CASE("Server - Renaming a file nothing includes asks for no edit")
+{
+    // The guard against a rename storm: a directory rename reports every file in it, and an edit
+    // per file that nobody references would be noise the user has to review and undo.
+    WorkspaceFixture fixture;
+
+    const std::string mainSource = "void Think() { }\n";
+    fixture.Write("main.as", mainSource);
+    fixture.Write("orphan.as", "void Alone() { }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), mainSource));
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didRenameFiles","params":{"files":[{"oldUri":")" +
+                fixture.Uri("orphan.as") + R"(","newUri":")" + fixture.Uri("moved.as") + R"("}]}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK_FALSE(stream.OutputContains("workspace/applyEdit"));
+}
+
+TEST_CASE("Server - Deleting a file drops its symbols from the workspace")
+{
+    WorkspaceFixture fixture;
+
+    const std::string mainSource = "#include \"helper.as\"\nvoid Think() { }\n";
+    fixture.Write("main.as", mainSource);
+    fixture.Write("helper.as", "void UniquelyNamedHelper() { }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), mainSource));
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"text":")" + JsonEscape(mainSource) + R"("}})");
+
+    // Present before.
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/symbol","params":{"query":"UniquelyNamedHelper"}})");
+
+    stream.PushAction([dir = fixture.dir]()
+    {
+        std::error_code ec;
+        std::filesystem::remove(dir / "helper.as", ec);
+    });
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didDeleteFiles","params":{"files":[{"uri":")" +
+                fixture.Uri("helper.as") + R"("}]}})");
+
+    // And gone after.
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"workspace/symbol","params":{"query":"UniquelyNamedHelper"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    // Asserted per reply rather than over the whole transcript, the way the watched-files test
+    // does: the server also writes log notifications that quote the name.
+    CHECK(stream.ResponseFor(2).find("UniquelyNamedHelper") != std::string::npos);
+    CHECK(stream.ResponseFor(3).find("UniquelyNamedHelper") == std::string::npos);
+}

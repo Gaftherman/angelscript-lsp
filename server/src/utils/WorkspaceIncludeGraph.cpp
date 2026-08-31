@@ -184,6 +184,15 @@ namespace angel_lsp::utils
         return true;
     }
 
+    std::vector<std::string> WorkspaceIncludeGraph::GetFilesIncluding(const std::string &filePath) const
+    {
+        const std::string normalized = IncludeResolver::NormalizePath(filePath);
+
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        const auto found = m_includedBy.find(normalized);
+        return found == m_includedBy.end() ? std::vector<std::string>{} : found->second;
+    }
+
     std::vector<std::string> WorkspaceIncludeGraph::GetModuleClosure(const std::string &filePath) const
     {
         const std::string normalized = IncludeResolver::NormalizePath(filePath);
