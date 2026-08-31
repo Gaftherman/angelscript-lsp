@@ -157,6 +157,15 @@ jobs:
         working-directory: client
         run: npm run pretest
 
+      # The extension tests run inside a real VS Code, which needs a display even headless - hence
+      # xvfb-run. Until now the harness was configured and empty: package.json declared
+      # `"test": "vscode-test"`, .vscode-test.mjs pointed at out/test/**/*.test.js, no such file
+      # existed, and nothing here invoked it. Zero tests reported success, which is the same shape
+      # of false green the corpus-audit workflow exists to prevent on the server side.
+      - name: Test Client
+        working-directory: client
+        run: xvfb-run -a npm test
+
       # Downloaded into the layout getServerPath() expects, so the packaged extension carries a
       # server for every platform the matrix above built.
       - name: Download Server Binaries

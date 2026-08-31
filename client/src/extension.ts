@@ -220,11 +220,12 @@ function resolveAgainstWorkspace(entry: string): string[] {
     return (workspace.workspaceFolders ?? []).map(folder => path.resolve(folder.uri.fsPath, trimmed));
 }
 
-function buildServerArgs(): string[] {
+export function buildServerArgs(): string[] {
     const config = workspace.getConfiguration('angelscript');
     const args: string[] = [];
 
-    // #include search paths.
+    // Directories the server must not walk. Passed first because the server treats the first
+    // --exclude as replacing its built-in defaults rather than adding to them.
     for (const entry of config.get<string[]>('exclude', [])) {
         if (entry.trim().length > 0) {
             args.push(`--exclude=${entry}`);
@@ -298,9 +299,10 @@ function buildServerArgs(): string[] {
     }
 
     // asEP_PROPERTY_ACCESSOR_MODE takes a number, not a boolean, so it is not one of
-    // ENGINE_PROPERTIES above either. Passed on only when the user asked for something other than
-    // this server's default, keeping an untouched setting off the command line the way the
-    // booleans are.
+    // ENGINE_PROPERTIES above either. The test against 2 and 3 is a whitelist, not a
+    // default-skipping check: those are the only values package.json offers, and a number arriving
+    // from a hand-edited settings.json is dropped rather than passed through to be rejected by the
+    // server's own parser.
     const accessorMode = config.get<number>('engine.propertyAccessorMode', 2);
     if (accessorMode === 2 || accessorMode === 3) {
         args.push(`--engine-property=propertyAccessorMode=${accessorMode}`);

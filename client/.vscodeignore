@@ -9,6 +9,12 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+# The test suite and the workspace it runs against. `src/**` already keeps the sources out, but the
+# compiled tests land in out/ alongside the extension itself and would otherwise ship.
+out/test/**
+test-fixtures/**
+
 # Load-bearing. bin/ holds the compiled server and is now ignored by git - CI builds it per
 # platform and stages it here before packaging. vsce reads this file rather than .gitignore, so
 # this negation is the only thing keeping the server inside the .vsix. Removing it ships an
