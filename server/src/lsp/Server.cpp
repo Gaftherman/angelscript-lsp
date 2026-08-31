@@ -1058,7 +1058,7 @@ namespace angel_lsp
 
         for (const auto &event : params.changes)
         {
-            const std::string uriStr = event.uri.toString();
+            const std::string uriStr = DocumentKey(event.uri.toString());
 
             // The editor's buffer wins over the copy on disk: it may hold unsaved edits, and
             // didChange/didSave already keep it indexed.
@@ -1097,7 +1097,21 @@ namespace angel_lsp
             if (isPredefined)
             {
                 if (m_config.features.enablePredefinedLoader)
+                {
                     ParserPredefined(path, watchedParser, /*forceReload=*/true);
+
+                    // The stub was re-read, and every open document was judged against the old
+                    // one. Editing a stub is how a user teaches this server about the types their
+                    // host registers, so the diagnostics it changes are exactly the ones they are
+                    // watching - and until this line they did not move until the next keystroke in
+                    // some other file. The `continue` below skips the `graphChanged = true` that
+                    // the ordinary path sets, so the fan-out at the end of this function never ran.
+                    //
+                    // Reusing that flag rather than fanning out here: a workspace can hold several
+                    // stubs, and one save should reanalyse each open document once, not once per
+                    // stub.
+                    graphChanged = true;
+                }
                 continue;
             }
 
@@ -1285,7 +1299,11 @@ namespace angel_lsp
 
     void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params &&params)
     {
-        std::string uriStr = params.textDocument.uri.toString();
+        std::string uriStr = DocumentKey(params.textDocument.uri.toString());
+        // Remembered so diagnostics go back out under the client's own spelling - see
+        // m_clientUriByKey. Recorded on every notification that carries a document, because the
+        // client is free to change how it writes the URI between them.
+        m_clientUriByKey[uriStr] = params.textDocument.uri.toString();
         std::string text = params.text.has_value() ? params.text.value() : "";
 
         if (text.empty() && m_openDocuments.contains(uriStr))
@@ -1344,7 +1362,11 @@ namespace angel_lsp
 
     void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params)
     {
-        std::string uriStr = params.textDocument.uri.toString();
+        std::string uriStr = DocumentKey(params.textDocument.uri.toString());
+        // Remembered so diagnostics go back out under the client's own spelling - see
+        // m_clientUriByKey. Recorded on every notification that carries a document, because the
+        // client is free to change how it writes the URI between them.
+        m_clientUriByKey[uriStr] = params.textDocument.uri.toString();
         std::string text = params.textDocument.text;
 
         m_openDocuments[uriStr] = text;
@@ -1396,7 +1418,11 @@ namespace angel_lsp
 
     void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params)
     {
-        std::string uriStr = params.textDocument.uri.toString();
+        std::string uriStr = DocumentKey(params.textDocument.uri.toString());
+        // Remembered so diagnostics go back out under the client's own spelling - see
+        // m_clientUriByKey. Recorded on every notification that carries a document, because the
+        // client is free to change how it writes the URI between them.
+        m_clientUriByKey[uriStr] = params.textDocument.uri.toString();
         auto it = m_openDocuments.find(uriStr);
         if (it == m_openDocuments.end())
             return;
@@ -1518,7 +1544,7 @@ namespace angel_lsp
 
     void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params &&params)
     {
-        std::string uriStr = params.textDocument.uri.toString();
+        std::string uriStr = DocumentKey(params.textDocument.uri.toString());
         m_openDocuments.erase(uriStr);
 
         // The cached token payload is only meaningful while the client still holds it. Dropping it
@@ -1578,6 +1604,12 @@ namespace angel_lsp
             return "";
 
         return angel_lsp::utils::IncludeResolver::NormalizePath(uri.fsPath());
+    }
+
+    std::string Server::DocumentKey(const std::string &uriStr)
+    {
+        const std::string path = CanonicalPathFromUri(uriStr);
+        return path.empty() ? uriStr : UriFromPath(path);
     }
 
     std::string Server::UriFromPath(const std::string &path)
@@ -1955,7 +1987,7 @@ namespace angel_lsp
 
         for (auto &location : locations)
         {
-            if (const std::string *text = FindDocumentText(location.uri.toString()))
+            if (const std::string *text = FindDocumentText(DocumentKey(location.uri.toString())))
                 codec::Encode(*text, m_positionEncoding, location.range);
         }
     }
@@ -1967,7 +1999,7 @@ namespace angel_lsp
 
         for (auto &symbol : symbols)
         {
-            if (const std::string *text = FindDocumentText(symbol.location.uri.toString()))
+            if (const std::string *text = FindDocumentText(DocumentKey(symbol.location.uri.toString())))
                 codec::Encode(*text, m_positionEncoding, symbol.location.range);
         }
     }
@@ -1993,7 +2025,7 @@ namespace angel_lsp
                 if (std::holds_alternative<lsp::TextDocumentEdit>(docChange))
                 {
                     auto &docEdit = std::get<lsp::TextDocumentEdit>(docChange);
-                    if (const std::string *text = FindDocumentText(docEdit.textDocument.uri.toString()))
+                    if (const std::string *text = FindDocumentText(DocumentKey(docEdit.textDocument.uri.toString())))
                     {
                         for (auto &e : docEdit.edits)
                         {
@@ -2052,7 +2084,18 @@ namespace angel_lsp
     void Server::PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics)
     {
         lsp::notifications::TextDocument_PublishDiagnostics::Params params;
-        params.uri = lsp::DocumentUri(lsp::Uri::parse(uriStr));
+
+        // Back out under the CLIENT's spelling, not the internal key. Every map in this server is
+        // keyed by DocumentKey so that one file cannot become several documents, and that key is
+        // `file:///E:/dir/f.as` where VS Code sends `file:///e%3A/dir/f.as`. To a client matching a
+        // notification against its open editors those are two different documents, so publishing
+        // under the key would have keyed everything correctly and shown the user nothing.
+        //
+        // Falls back to the key for a document the client never announced - the workspace scan
+        // indexes files nobody has opened, and a synthesised URI is the only spelling there is.
+        const auto clientUri = m_clientUriByKey.find(uriStr);
+        const std::string &outgoingUri = clientUri != m_clientUriByKey.end() ? clientUri->second : uriStr;
+        params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
 
         // Applied here, at the one place every diagnostic passes through on its way to the client.
         // SemanticAnalyzer already filters its own output, but symbol-collection and unresolved-
@@ -2163,7 +2206,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2198,7 +2241,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2224,7 +2267,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2249,7 +2292,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2274,7 +2317,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2312,7 +2355,7 @@ namespace angel_lsp
                 for (auto &call : calls.value())
                 {
                     EncodeItemRanges(call.from);
-                    EncodeRangesIn(call.from.uri.toString(), call.fromRanges);
+                    EncodeRangesIn(DocumentKey(call.from.uri.toString()), call.fromRanges);
                 }
                 return calls.value();
             });
@@ -2328,7 +2371,7 @@ namespace angel_lsp
                 // fromRanges are ranges in the *caller*, which is the item the client asked about -
                 // not in the callee the entry points at. Encoding them against the callee's
                 // document would shift every one of them on a file with non-ASCII text.
-                const std::string callerUri = req.item.uri.toString();
+                const std::string callerUri = DocumentKey(req.item.uri.toString());
 
                 features::CallHierarchyItemRequest ir{ m_symbolTable, m_callGraph, req.item };
                 auto calls = features::GetOutgoingCalls(ir);
@@ -2351,7 +2394,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2421,7 +2464,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2453,7 +2496,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2494,7 +2537,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2519,7 +2562,7 @@ namespace angel_lsp
                 {
                     return lsp::Array<lsp::CompletionItem>{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2554,7 +2597,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2571,7 +2614,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2606,7 +2649,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2632,7 +2675,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2656,7 +2699,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2698,7 +2741,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2723,7 +2766,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2754,7 +2797,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2785,7 +2828,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2810,7 +2853,7 @@ namespace angel_lsp
                 {
                     return lsp::Array<lsp::FoldingRange>{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2835,7 +2878,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2860,7 +2903,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2912,7 +2955,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2937,7 +2980,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2964,7 +3007,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -2989,7 +3032,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {
@@ -3027,7 +3070,7 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = req.textDocument.uri.toString();
+                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
                 auto docIt = m_openDocuments.find(uriStr);
                 if (docIt == m_openDocuments.end())
                 {

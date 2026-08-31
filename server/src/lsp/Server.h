@@ -91,6 +91,17 @@ namespace angel_lsp
         std::unique_ptr<angel_lsp::analysis::LocalScopeCollector> m_localScopeCollector;
         std::unique_ptr<angel_lsp::analysis::SemanticAnalyzer> m_semanticAnalyzer;
         ankerl::unordered_dense::map<std::string, std::string> m_openDocuments;
+
+        /**
+         * @brief DocumentKey -> the URI spelling the client last used for that document.
+         *
+         * Diagnostics have to go back out under the client's own spelling. `PathToUri` writes
+         * `file:///E:/dir/f.as` while VS Code sends `file:///e%3A/dir/f.as`, and those are
+         * different strings to a client matching a notification to an open editor - so keying
+         * internally by the canonical form and publishing under it would have quietly stopped
+         * diagnostics from appearing at all.
+         */
+        ankerl::unordered_dense::map<std::string, std::string> m_clientUriByKey;
         std::unordered_map<std::string, TSTree*> m_documentTrees;
         std::mutex m_predefinedMutex;
         ankerl::unordered_dense::set<std::string> m_predefinedUris;
@@ -461,6 +472,24 @@ namespace angel_lsp
          * mixed separators). Everything crossing between the two goes through this.
          */
         static std::string CanonicalPathFromUri(const std::string &uriStr);
+
+        /**
+         * @brief The key every map in this server uses for a document.
+         *
+         * One file arrives spelled several ways and they must not become several documents. VS Code
+         * sends `file:///e%3A/dir/f.as`; the workspace scan synthesises `file:///E:/dir/f.as` from
+         * the path it walked; an `#include` resolves to a third spelling again. Keyed raw, an edit
+         * to a file opened one way left the copy indexed the other way stale, and the predefined
+         * loader had already needed a private map of its own to work around exactly this.
+         *
+         * Answers the raw string unchanged for anything that is not a file URI - `untitled:` has no
+         * fsPath, and a document being edited before it is saved has to keep working.
+         *
+         * @warning This is a KEY, not something to send back. It is not the spelling the client
+         *          uses, so a diagnostic published under it may not reach the document the user is
+         *          looking at. PublishDiagnostics translates it back through m_clientUriByKey.
+         */
+        static std::string DocumentKey(const std::string &uriStr);
 
         /**
          * @brief Document URI for a filesystem path, in the spelling used for synthesised entries.

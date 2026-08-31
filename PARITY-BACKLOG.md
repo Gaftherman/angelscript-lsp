@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1246 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1249 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -78,6 +78,44 @@ Accepted by the compiler and by this analyzer. They had no test before; they do 
 Each entry says what the compiler answers and what this analyzer answered before. Several were
 false positives — legal code reported as an error, which is the one failure mode this project
 treats as unacceptable.
+
+- **URI normalization.** `CanonicalPathFromUri` and `UriFromPath` existed and were used at nine
+  places, none of them a request entry point; the 37 that read a document keyed their maps on the
+  raw string. So one file arrived as several documents: VS Code sends `file:///e%3A/dir/f.as`, the
+  workspace scan synthesises `file:///E:/dir/f.as` from the path it walked, and an `#include`
+  resolves to a third. An edit to a file opened one way left the copy indexed the other way stale,
+  and the predefined loader had already grown a private map to work around exactly this.
+
+  One chokepoint, `Server::DocumentKey`, now answers "which document is this", and all 37 sites go
+  through it - verifiable by grep: no `.uri.toString()` survives outside it. It answers the raw
+  string unchanged for anything that is not a file URI, so `untitled:` keeps working.
+
+  The other half is what a key alone would have broken. Diagnostics must go back out under the
+  CLIENT's spelling: `PathToUri` writes `file:///E:/…` unencoded while the client sends
+  `file:///e%3A/…`, and to a client matching a notification against its open editors those are two
+  different documents - so keying everything correctly and publishing under the key would have
+  shown the user nothing at all. `m_clientUriByKey` records what the client last used and
+  `PublishDiagnostics` translates back. Both halves are tested over the wire, and the first test
+  was checked by disabling `DocumentKey` and watching it fail.
+
+- **`as.predefined` hot reload.** The stub was re-read on change and every open document went on
+  being judged against the old one until something else happened to touch it. The predefined branch
+  of the watched-files handler `continue`d past the `graphChanged = true` that the ordinary path
+  sets, so the fan-out at the end of that function never ran. A stub is how a user tells this server
+  about the types their host registers, so the diagnostics an edit to it changes are precisely the
+  ones they are watching.
+
+  Testing it needed one discovery about the harness, recorded because the next person will hit it:
+  the reader runs a frame ahead of the message loop, so a `PushAction` registered immediately after
+  a notification fires while that notification is still being processed. The wait has to sit two
+  frames behind. With that, the transcript shows the worker waking with one pending analysis and a
+  second `publishDiagnostics` arriving; without the fix it shows one.
+
+- **`Foo obj(bar);` has a parity case.** Confirmed correct and untested, which is worse than
+  untested-and-unknown: `func_declaration`'s `prec.dynamic(2)` against `variable_declaration`'s `1`
+  is a precedence written for a reason with nothing pinning it. `doc_p31` covers the shapes that
+  would break first - an identifier argument, empty parentheses, a nested construction, a class
+  member and a nested block.
 
 - **A member access on an array reached the ELEMENT's members.** `array<Item> items;
   items.insertLast(x);` was reported "Class 'Item' has no member 'insertLast'" - on ordinary code,
@@ -711,17 +749,10 @@ first. Each lands with its `doc_`-prefixed parity case.
    than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
    exists the setting is the honest interface, but it is the reason the rule cannot simply be
    unconditional.
-2. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
-    request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
-    `file:///E%3A/…` are different documents on Windows.
-3. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
-    graph dirty, so open documents keep stale diagnostics until the next keystroke.
-4. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+2. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-5. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+3. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-6. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
-    where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
 ### Out of scope
 
 `TOOL-04` (a Debug Adapter Protocol sidecar) is a separate program, not a language-server feature.

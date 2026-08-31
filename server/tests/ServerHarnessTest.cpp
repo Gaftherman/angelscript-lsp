@@ -1076,3 +1076,140 @@ TEST_CASE("ServerHarness - Sends no progress to a client that did not ask for it
     CHECK(output.find("$/progress") == std::string::npos);
     CHECK(output.find("window/workDoneProgress/create") == std::string::npos);
 }
+
+// =====================================================================================
+// One file, several spellings, one document.
+//
+// The same file arrives written more than one way: VS Code sends `file:///e%3A/dir/f.as`, the
+// workspace scan synthesises `file:///E:/dir/f.as` from the path it walked, and an `#include`
+// resolves to a third. Keyed raw, those were three documents - an edit to one left the others
+// stale, and the predefined loader had already needed a private map to work around exactly this.
+//
+// Server::DocumentKey is the one place that answers "which document is this", and
+// m_clientUriByKey is what keeps diagnostics reaching the editor the user is actually looking at.
+// =====================================================================================
+
+TEST_CASE("Server - Two spellings of one URI are one document")
+{
+    const std::string source = "void Think() { }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    const std::string plain = fixture.Uri("main.as");
+
+    // The spelling a client actually sends on Windows: percent-encoded drive colon, lowercased
+    // drive letter. PathToUri writes neither, which is what made these two different strings.
+    std::string encoded = plain;
+    const size_t colon = encoded.find(":/", std::string("file:///").size());
+    if (colon != std::string::npos)
+    {
+        encoded.replace(colon, 1, "%3A");
+        const size_t drive = std::string("file:///").size();
+        encoded[drive] = static_cast<char>(std::tolower(static_cast<unsigned char>(encoded[drive])));
+    }
+
+    INFO("plain:   " << plain);
+    INFO("encoded: " << encoded);
+    // The test is only worth anything if the two spellings really do differ. On a path with no
+    // drive letter they would not, and this would pass without proving a thing.
+    REQUIRE(plain != encoded);
+
+    // Opened one way and asked about the other. Keyed raw, the request would find no document and
+    // the answer would be empty.
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(encoded, source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
+                plain + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.OutputContains("Think"));
+}
+
+TEST_CASE("Server - Diagnostics come back under the spelling the client sent")
+{
+    // The half that a key alone would have broken. Everything inside the server is keyed by the
+    // canonical form; a diagnostic published under it is addressed to a document the client has
+    // never heard of, so the user would see nothing at all.
+    const std::string source = "void Think(  { }\n";  // deliberately malformed, to force one
+
+    WorkspaceFixture fixture;
+    fixture.Write("broken.as", source);
+
+    std::string encoded = fixture.Uri("broken.as");
+    const size_t colon = encoded.find(":/", std::string("file:///").size());
+    REQUIRE(colon != std::string::npos);
+    encoded.replace(colon, 1, "%3A");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(encoded, source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    INFO("expected the client's own spelling: " << encoded);
+    CHECK(stream.OutputContains("publishDiagnostics"));
+    CHECK(stream.OutputContains("%3A"));
+}
+
+TEST_CASE("Server - Editing a predefined stub re-diagnoses the open documents")
+{
+    // A stub is how a user tells this server about the types their host registers in C++, so the
+    // diagnostics an edit to it changes are precisely the ones they are watching. The reload
+    // happened - the stub was re-read - but the branch that did it skipped the flag that fans the
+    // change out, so every open document kept being judged against the old stub until something
+    // else happened to touch it.
+    WorkspaceFixture fixture;
+
+    // A document naming a type only the stub can supply.
+    const std::string source = "void Think(HostThing@ thing) { }\n";
+    fixture.Write("main.as", source);
+
+    // The stub, initially declaring nothing of the sort.
+    fixture.Write("engine.as.predefined", "class SomethingElse {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+
+    // Now the stub learns about it, and the client reports the change on disk.
+    fixture.Write("engine.as.predefined", "class SomethingElse {}\nclass HostThing {}\n");
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[{"uri":")" +
+                fixture.Uri("engine.as.predefined") + R"(","type":2}]}})");
+
+    // The fan-out schedules analysis on the worker thread, which debounces for 200ms and drops
+    // whatever is pending the moment shutdown is requested - correct in production, and the reason
+    // this has to wait before asking for shutdown rather than racing it.
+    // Two spacers before the wait. The reader runs a frame ahead of the message loop, so an action
+    // registered immediately after a notification fires while that notification is still being
+    // processed - the wait has to sit far enough behind to land after the fan-out has scheduled.
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.PushAction([] { std::this_thread::sleep_for(std::chrono::milliseconds(1500)); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.features.enablePredefinedLoader = true;
+    RunScript(serverConfig, stream);
+
+    // Two publishDiagnostics for the document: the one from didOpen, and a second after the stub
+    // changed. Without the fan-out there is only ever the first.
+    const std::string needle = "publishDiagnostics";
+    size_t count = 0;
+    const std::string output = stream.Output();
+    for (size_t at = output.find(needle); at != std::string::npos; at = output.find(needle, at + 1))
+    {
+        ++count;
+    }
+    INFO("publishDiagnostics notifications: " << count);
+    CHECK(count >= 2);
+}
