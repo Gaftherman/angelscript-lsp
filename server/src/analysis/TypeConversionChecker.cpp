@@ -1715,6 +1715,202 @@ namespace angel_lsp::analysis
             return true;
         }
 
+        // --- Lambda against its target funcdef ------------------------------------------------
+        //
+        // A lambda takes its parameter types from the funcdef it is assigned to, so it may leave
+        // them out. What it writes, though, has to match exactly - the compiler compares the
+        // written signature, it does not convert it. Measured against angelscript_oracle, and the
+        // exactness is the surprising half:
+        //
+        //     funcdef void CB(const string &in);
+        //     CB@ cb = function(s) { };                    // accepted, type comes from CB
+        //     CB@ cb = function(const string &in s) { };    // accepted, written and identical
+        //     CB@ cb = function(string s) { };              // REJECTED - no const, no &in
+        //     CB@ cb = function(string &in s) { };          // REJECTED - no const
+        //     funcdef void CB(int);
+        //     CB@ cb = function(uint a) { };                // REJECTED - int does not widen here
+        //
+        // ARITY is a hard equality even when every parameter is untyped, and a funcdef's default
+        // argument does not relax it: `funcdef void CB(int a = 1)` still rejects `function()`.
+        // That is the whole of what this rule can check without risking a false positive, and it
+        // is also the mistake real code actually makes.
+        //
+        // The TYPE NAME is another matter, because the compiler resolves it and this rule only
+        // reads it. All of these are ACCEPTED, and a string comparison would report every one:
+        //
+        //     typedef float real;  funcdef void CB(real);   function(float a)   // typedef
+        //     funcdef void CB(array<int>@);                 function(int[]@ a)  // two spellings
+        //     namespace N { class Foo{} funcdef void CB(Foo@); }
+        //                                                   function(N::Foo@ f) // qualification
+        //
+        // So the name is compared by its last `::` segment, and not at all when either side names
+        // a typedef - the one alias no spelling comparison can see through. `array<int>` and
+        // `int[]` need no case of their own: CleanBaseType reduces both to the element type.
+        //
+        // The DECORATIONS - `const`, `&`, the in/out/inout modifier and `@` - are compared
+        // whatever the type name is, because none of them can be hidden by a spelling: AngelScript
+        // typedefs alias primitives only (see as-err-typedef-non-primitive), and a namespace
+        // qualifies a name without changing whether it is a handle.
+
+        /** @brief `int32` and `uint32` are the explicit spellings of `int` and `uint`. */
+        std::string_view CanonicalPrimitiveSpelling(std::string_view typeName) noexcept
+        {
+            if (typeName == "int32") return "int";
+            if (typeName == "uint32") return "uint";
+            return typeName;
+        }
+
+        /** @brief One lambda parameter, exactly as the source wrote it. */
+        struct LambdaParameter
+        {
+            bool hasWrittenType = false;  ///< False means "inherit from the funcdef", so unjudgeable.
+            std::string typeName;
+            bool isConst = false;
+            bool isHandle = false;
+            bool isReference = false;
+            ParameterModifier modifier = ParameterModifier::None;
+        };
+
+        /**
+         * @brief Reads a `lambda_parameter_list`, which does not wrap its entries.
+         *
+         * The grammar puts `param_type` and `name` directly on the list node, once per parameter,
+         * and leaves `&` and `in`/`out`/`inout` as anonymous tokens between them - so the entries
+         * have to be grouped here, by the commas. `const`, the namespace qualifier and the `@` and
+         * `[]` suffixes are all inside the `param_type` node's own text.
+         *
+         * @see BuiltQueries.h, which needs its own query pattern for the same reason.
+         */
+        std::vector<LambdaParameter> ReadLambdaParameters(TSNode listNode, std::string_view sourceCode)
+        {
+            std::vector<LambdaParameter> parameters;
+            if (ts_node_is_null(listNode))
+            {
+                return parameters;
+            }
+
+            LambdaParameter current;
+            bool groupHasContent = false;
+
+            const uint32_t childCount = ts_node_child_count(listNode);
+            for (uint32_t i = 0; i < childCount; ++i)
+            {
+                TSNode child = ts_node_child(listNode, i);
+                const std::string text = NodeText(child, sourceCode);
+
+                if (text == "(")
+                {
+                    continue;
+                }
+                if (text == ")")
+                {
+                    break;
+                }
+                if (text == ",")
+                {
+                    parameters.push_back(current);
+                    current = LambdaParameter{};
+                    groupHasContent = false;
+                    continue;
+                }
+
+                const char *field = ts_node_field_name_for_child(listNode, i);
+                if (field && std::string_view(field) == "param_type")
+                {
+                    current.hasWrittenType = true;
+                    current.isConst = text.starts_with("const ") || text == "const";
+                    current.isHandle = text.find('@') != std::string::npos;
+                    current.typeName = CleanBaseType(text);
+                }
+                else if (text == "&")
+                {
+                    current.isReference = true;
+                }
+                else if (text == "in" || text == "out" || text == "inout")
+                {
+                    current.modifier = text == "in"  ? ParameterModifier::In
+                                     : text == "out" ? ParameterModifier::Out
+                                                     : ParameterModifier::InOut;
+                }
+
+                groupHasContent = true;
+            }
+
+            if (groupHasContent)
+            {
+                parameters.push_back(current);
+            }
+            return parameters;
+        }
+
+        /** @brief True when `name` denotes a typedef, whose alias no spelling comparison can see through. */
+        bool NamesATypedef(const std::string &name, const SymbolTable &table)
+        {
+            bool isTypedef = false;
+            ForEachSymbolNamed(name, table, [&isTypedef](const Symbol &sym)
+            {
+                if (sym.type == SymbolType::Typedef)
+                {
+                    isTypedef = true;
+                    return true;
+                }
+                return false;
+            });
+            return isTypedef;
+        }
+
+        /** @brief True when a written lambda signature contradicts the funcdef it is assigned to. */
+        bool LambdaContradictsFuncdef(const std::vector<LambdaParameter> &lambdaParameters,
+                                      const FuncdefSignature &funcdefSig,
+                                      const SymbolTable &table)
+        {
+            if (lambdaParameters.size() != funcdefSig.parameters.size())
+            {
+                return true;
+            }
+
+            for (size_t i = 0; i < lambdaParameters.size(); ++i)
+            {
+                const LambdaParameter &written = lambdaParameters[i];
+                if (!written.hasWrittenType)
+                {
+                    continue;
+                }
+
+                const ParameterInformation &expected = funcdefSig.parameters[i];
+                if (written.isHandle != expected.isHandle ||
+                    written.isReference != expected.isReference ||
+                    written.modifier != expected.modifier)
+                {
+                    return true;
+                }
+
+                // Compared by last `::` segment, so a name the funcdef writes bare and the lambda
+                // writes qualified - or the other way round - is the same name. That costs the
+                // `A::Foo` against `B::Foo` case, which is a rejection this misses rather than a
+                // legal program it reports.
+                //
+                // A typedef is the one spelling that cannot be compared at all: `real` and `float`
+                // are the same type to the compiler and different strings here, so either side
+                // naming one ends the comparison.
+                const std::string writtenBase(CanonicalPrimitiveSpelling(LastScopeSegment(written.typeName)));
+                const std::string expectedBase(
+                    CanonicalPrimitiveSpelling(LastScopeSegment(CleanBaseType(expected.typeName))));
+
+                if (writtenBase.empty() || expectedBase.empty() || writtenBase == expectedBase)
+                {
+                    continue;
+                }
+                if (NamesATypedef(writtenBase, table) || NamesATypedef(expectedBase, table))
+                {
+                    continue;
+                }
+                return true;
+            }
+
+            return false;
+        }
+
         void CheckFuncdefAssignment(TSNode targetNode,
                                     const FuncdefSignature &funcdefSig,
                                     TSNode valueNode,
@@ -1739,6 +1935,24 @@ namespace angel_lsp::analysis
                         actualVal = operand;
                     }
                 }
+            }
+
+            const std::string_view valueType = NodeType(actualVal);
+            if (valueType == node_types::LambdaExpression || valueType == "anonymous_function")
+            {
+                // A lambda has no symbol to look up, so the name search below would find nothing
+                // and return in silence - which is what it did before this branch existed.
+                TSNode listNode = ts_node_child_by_field_name(actualVal, "parameters", 10);
+                if (ts_node_is_null(listNode))
+                {
+                    return;
+                }
+                if (LambdaContradictsFuncdef(ReadLambdaParameters(listNode, sourceCode), funcdefSig,
+                                             ctx.request.symbolTable))
+                {
+                    EmitAtNode(targetNode, ctx, "as-err-signature-mismatch-func-handle");
+                }
+                return;
             }
 
             std::string funcName = NodeText(actualVal, sourceCode);
@@ -2558,9 +2772,43 @@ namespace angel_lsp::analysis
                 }
 
                 const std::string calleeName = CleanBaseType(NodeText(callee, request.sourceCode));
+
+                // `MapChangeHook( function(...) )` - a funcdef used as a conversion. This is how
+                // real code writes a callback: across the whole 1,061-file corpus there is not one
+                // `CB@ cb = function(...)`, and every lambda that reaches a funcdef reaches it
+                // through this shape or as a call argument. The compiler answers a wrong lambda
+                // here with "No matching signatures to 'CB(<auto> lambda())'", by the same rules as
+                // the assignment - so it is the same call.
+                //
+                // Guarded on the argument actually being a lambda, because FindFuncdef falls back
+                // to a last-segment scan across the whole table: without the guard, a class that
+                // shares its bare name with some namespace's funcdef would take this branch and
+                // lose its CheckConstruction below.
+                TSNode argsNode = ts_node_child_by_field_name(node, "arguments", k_argsFieldLength);
+                TSNode soleArgument = {};
+                if (!ts_node_is_null(argsNode) && ts_node_named_child_count(argsNode) == 1)
+                {
+                    soleArgument = ts_node_named_child(argsNode, 0);
+                }
+                const std::string_view soleArgumentType = NodeType(soleArgument);
+                const bool soleArgumentIsLambda =
+                    soleArgumentType == node_types::LambdaExpression ||
+                    soleArgumentType == "anonymous_function";
+
+                std::optional<Symbol> calleeFuncdef;
+                if (soleArgumentIsLambda)
+                {
+                    calleeFuncdef = FindFuncdef(calleeName, ctx.request.symbolTable);
+                }
+
                 if (ClassifyNonInstantiable(calleeName, ctx.request.symbolTable) == NonInstantiableKind::Abstract)
                 {
                     EmitAtNode(node, ctx, "as-err-abstract-instantiated", calleeName, calleeName);
+                }
+                else if (calleeFuncdef)
+                {
+                    CheckFuncdefAssignment(node, calleeFuncdef->GetFuncdef(), soleArgument,
+                                           scopeAt(), ctx, request.sourceCode);
                 }
                 else
                 {

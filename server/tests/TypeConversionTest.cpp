@@ -1167,6 +1167,406 @@ TEST_CASE("NumericWarnings - A hex literal is not a float because it contains an
 }
 
 // =====================================================================================
+// A lambda against the funcdef it is assigned to
+//
+// Every expectation is a recording of what `angelscript_oracle` answered. The accepting cases
+// are the important half: a lambda inherits its parameter types from the funcdef, and the type
+// name it writes goes through the compiler's own resolution - typedefs, namespace qualification
+// and the two array spellings all compare equal there and would compare unequal as strings.
+//
+// Reproduce any line with:
+//   server/build-release/Release/angelscript_oracle.exe <file>.as
+// =====================================================================================
+
+namespace
+{
+    /** @brief Runs the pipeline and returns only the funcdef signature mismatches. */
+    std::vector<Diagnostic> FuncdefMismatches(const std::string &code)
+    {
+        ConversionEnvironment env(code);
+        std::vector<Diagnostic> result;
+        for (auto &diag : env.Analyze())
+        {
+            if (diag.code == "as-err-signature-mismatch-func-handle")
+            {
+                result.push_back(std::move(diag));
+            }
+        }
+        return result;
+    }
+}
+
+TEST_CASE("LambdaFuncdef - Arity is a hard equality, even when every parameter is untyped")
+{
+    // Oracle: all three are "Can't implicitly convert from '<auto> lambda(...)' to 'CB@&'".
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void main() { CB@ cb = function() { }; }\n").size() == 1);
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void main() { CB@ cb = function(a, b) { }; }\n").size() == 1);
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB();\n"
+        "void main() { CB@ cb = function(int a) { }; }\n").size() == 1);
+}
+
+TEST_CASE("LambdaFuncdef - A funcdef's default argument does not relax the arity")
+{
+    // Oracle: `funcdef void CB(int a = 1); CB@ cb = function() { };` is REJECTED. A default
+    // argument is for calls, not for the shape of the handle.
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int a = 1);\n"
+        "void main() { CB@ cb = function() { }; }\n").size() == 1);
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int a = 1);\n"
+        "void main() { CB@ cb = function(int a) { }; }\n").empty());
+}
+
+TEST_CASE("LambdaFuncdef - An untyped or partly typed parameter list is accepted")
+{
+    // Oracle: the type comes from the funcdef, so leaving it out is the point of the feature.
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void main() { CB@ cb = function(a) { }; }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int, int);\n"
+        "void main() { CB@ cb = function(int a, b) { }; }\n").empty());
+
+    // A written type with no name is still a written type, and still accepted.
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void main() { CB@ cb = function(int) { }; }\n").empty());
+}
+
+TEST_CASE("LambdaFuncdef - A written parameter type must match, and does not widen")
+{
+    // Oracle: `funcdef void CB(int); function(uint a)` is REJECTED. The compiler compares the
+    // written signature; it does not convert it, so int -> uint buys nothing here.
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void main() { CB@ cb = function(uint a) { }; }\n").size() == 1);
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void main() { CB@ cb = function(string a) { }; }\n").size() == 1);
+
+    // int32 and uint32 are the explicit spellings of int and uint, and compare equal.
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void main() { CB@ cb = function(int32 a) { }; }\n").empty());
+}
+
+TEST_CASE("LambdaFuncdef - Handle, reference and modifier decorations must match")
+{
+    // Oracle, one rejection each. None of these depends on resolving the type name, which is why
+    // they are checked whatever the name is.
+    CHECK(FuncdefMismatches(
+        "class Foo {}\n"
+        "funcdef void CB(Foo@);\n"
+        "void main() { CB@ cb = function(Foo f) { }; }\n").size() == 1);
+
+    CHECK(FuncdefMismatches(
+        "class Foo {}\n"
+        "funcdef void CB(Foo);\n"
+        "void main() { CB@ cb = function(Foo@ f) { }; }\n").size() == 1);
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int &out);\n"
+        "void main() { CB@ cb = function(int a) { a = 1; }; }\n").size() == 1);
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(array<int>@);\n"
+        "void main() { CB@ cb = function(int[] a) { }; }\n").size() == 1);
+}
+
+TEST_CASE("LambdaFuncdef - Writing the decorations out in full is accepted")
+{
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(const string &in);\n"
+        "void main() { CB@ cb = function(const string &in s) { }; }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int &out);\n"
+        "void main() { CB@ cb = function(int &out a) { a = 1; }; }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "class Foo {}\n"
+        "funcdef void CB(Foo@);\n"
+        "void main() { CB@ cb = function(Foo@ f) { }; }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(const string &in);\n"
+        "void main() { CB@ cb = function(s) { }; }\n").empty());
+}
+
+TEST_CASE("LambdaFuncdef - A typedef, a namespace and the two array spellings all compare equal")
+{
+    // Oracle accepts every one of these, and a string comparison would report every one. They
+    // are the reason the name check goes through LastScopeSegment and steps aside for typedefs.
+    CHECK(FuncdefMismatches(
+        "typedef float real;\n"
+        "funcdef void CB(real);\n"
+        "void main() { CB@ cb = function(float a) { }; }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "typedef float real;\n"
+        "funcdef void CB(float);\n"
+        "void main() { CB@ cb = function(real a) { }; }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(array<int>@);\n"
+        "void main() { CB@ cb = function(int[]@ a) { }; }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int[]@);\n"
+        "void main() { CB@ cb = function(array<int>@ a) { }; }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "namespace N { class Foo {} }\n"
+        "funcdef void CB(N::Foo@);\n"
+        "void main() { CB@ cb = function(N::Foo@ f) { }; }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "namespace N { class Foo {} funcdef void CB(Foo@); void Use() { CB@ cb = function(Foo@ f) { }; } }\n"
+        "void main() { }\n").empty());
+}
+
+TEST_CASE("LambdaFuncdef - The check reaches a handle assignment as well as an initializer")
+{
+    // Oracle rejects both spellings of the same mistake.
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void main() { CB@ cb; @cb = function() { }; }\n").size() == 1);
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void main() { CB@ cb; @cb = function(int a) { }; }\n").empty());
+}
+
+TEST_CASE("LambdaFuncdef - A named function on the right-hand side is judged as it always was")
+{
+    // The branch this rule adds must not have taken the existing path with it.
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void Handler(int a) {}\n"
+        "void main() { CB@ cb = @Handler; }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void Handler(string a) {}\n"
+        "void main() { CB@ cb = @Handler; }\n").size() == 1);
+}
+
+TEST_CASE("LambdaFuncdef - A funcdef conversion carries the same check as an assignment")
+{
+    // `MapChangeHook( function(...) )` is the shape real code uses, and the only one the corpus
+    // contains: across all 1,061 files there is not a single `CB@ cb = function(...)`. Oracle:
+    //
+    //   Take(CB(function(int a){}))     ->  accepted
+    //   Take(CB(function(){}))          ->  "No matching signatures to 'CB(<auto> lambda())'"
+    //   Take(CB(function(string a){}))  ->  "No matching signatures to 'CB(<auto> lambda(string))'"
+    //   Take(CB(function(a){}))         ->  accepted, the type comes from CB
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(CB(function(int a) { })); }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(CB(function(a) { })); }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(CB(function() { })); }\n").size() == 1);
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(int);\n"
+        "void Take(CB@ c) {}\n"
+        "void main() { Take(CB(function(string a) { })); }\n").size() == 1);
+
+    // The corpus writes it with a handle-of, and nested inside another call.
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(const string &in);\n"
+        "void Register(CB@ c) {}\n"
+        "void main() { Register(@CB(function(const string &in name) { })); }\n").empty());
+
+    CHECK(FuncdefMismatches(
+        "funcdef void CB(const string &in);\n"
+        "void Register(CB@ c) {}\n"
+        "void main() { Register(@CB(function() { })); }\n").size() == 1);
+}
+
+TEST_CASE("LambdaFuncdef - A class construction that happens to take a lambda is not a funcdef")
+{
+    // FindFuncdef falls back to a last-segment scan across the whole symbol table, so a class
+    // sharing its bare name with a funcdef elsewhere could have been mistaken for one. The guard
+    // is that the sole argument must be a lambda AND the name must reach a funcdef; a real class
+    // keeps its own construction check.
+    CHECK(FuncdefMismatches(
+        "namespace N { funcdef void Handler(int); }\n"
+        "class Handler { Handler(int v) {} }\n"
+        "void main() { Handler h(1); }\n").empty());
+}
+
+// =====================================================================================
+// FUNCDEF SIGNATURE CORPUS AUDIT (skip()-decorated, run it deliberately:
+// `angel_lsp_tests.exe --no-skip --test-case="*Funcdef Signature Corpus Audit*"`)
+//
+// as-err-signature-mismatch-func-handle used to fire only for a named function on the
+// right-hand side. It now also fires for a lambda, which is a new emit path, so it gets its
+// own measurement.
+//
+// READ THE RESULT HONESTLY: zero here is a guard, not yet a measurement. The corpus writes 33
+// lambdas across 17 files, and every one of them is a CALL ARGUMENT - `arrOut.sort(function(a,
+// b){})`, `SetCallback(function(...))`, `Hooks.RegisterHook(..., @MapChangeHook(function(...)))`.
+// The funcdefs those name - MapChangeHook, ClientSayHook, CClientCommand's callback - are
+// registered by the game engine in C++ and declared in no script, so FindFuncdef sees nothing
+// and the rule stays silent by the visibility policy rather than by judging anything. Not one
+// file writes `CB@ cb = function(...)`, which is the shape this rule checks.
+//
+// So what this audit currently proves is that the rule does not fire where it should not. The
+// evidence that it fires correctly is the 36 assertions above, each a recorded oracle verdict.
+// If the corpus ever grows a script-declared funcdef taking a lambda, this becomes a real
+// measurement - which is why it is here now rather than later.
+//
+// Every finding is written as `file:line:column` to ANGELLSP_FUNCDEF_MISMATCH_DUMP when that
+// is set, so each one can be replayed through the compiler:
+//
+//   server/build-release/Release/angelscript_oracle.exe angelscript/<file>.as
+//
+// A finding the compiler does not also reject is a false positive, and that count is the only
+// number this rule lives or dies by.
+// =====================================================================================
+
+TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript Files" * doctest::skip(true))
+{
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
+    namespace fs = std::filesystem;
+
+    std::vector<fs::path> files;
+    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    {
+        if (entry.is_regular_file() && entry.path().extension() == ".as")
+        {
+            files.push_back(entry.path());
+        }
+    }
+    REQUIRE_MESSAGE(!files.empty(), "Expected the angelscript/ corpus directory to contain .as files");
+    std::sort(files.begin(), files.end());
+
+    std::unordered_map<std::string, std::vector<fs::path>> groups;
+    for (const auto &path : files)
+    {
+        const std::string name = path.filename().string();
+        const size_t underscore = name.find('_');
+        groups[underscore == std::string::npos ? name : name.substr(0, underscore)].push_back(path);
+    }
+
+    angel_lsp::i18n::I18n i18n;
+    size_t totalFiles = 0;
+    std::vector<std::string> dump;
+
+    for (auto &[groupName, groupFiles] : groups)
+    {
+        SymbolTable sharedTable;
+        std::map<std::string, std::string> sources;
+
+        for (const auto &path : groupFiles)
+        {
+            std::ifstream file(path, std::ios::binary);
+            if (!file)
+            {
+                continue;
+            }
+            std::ostringstream buffer;
+            buffer << file.rdbuf();
+            std::string sourceCode = buffer.str();
+            if (sourceCode.empty())
+            {
+                continue;
+            }
+
+            const std::string fileUri = "file:///" + path.filename().string();
+            sources[fileUri] = sourceCode;
+
+            AngelScriptParser parser;
+            SymbolCollector collector(nullptr);
+            collector.CollectSymbols(fileUri, sourceCode, parser, sharedTable);
+        }
+
+        for (const auto &[fileUri, sourceCode] : sources)
+        {
+            ++totalFiles;
+
+            AngelScriptParser parser;
+            LocalScopeCollector scopeCollector(nullptr);
+            TSTree *tree = parser.Parse(sourceCode);
+
+            SemanticAnalysisRequest request{ sharedTable, fileUri, "", &i18n };
+            request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
+            request.sourceCode = sourceCode;
+            request.tree = tree;
+
+            SemanticAnalyzer analyzer(nullptr);
+            std::vector<Diagnostic> diagnostics;
+            CHECK_NOTHROW(diagnostics = analyzer.Analyze(request));
+
+            for (const auto &diag : diagnostics)
+            {
+                if (diag.code != "as-err-signature-mismatch-func-handle")
+                {
+                    continue;
+                }
+                dump.push_back(fileUri.substr(8) + ":" +
+                               std::to_string(diag.range.start.line + 1) + ":" +
+                               std::to_string(diag.range.start.character + 1));
+            }
+
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
+        }
+    }
+
+    MESSAGE("Funcdef signature corpus audit: files=" << totalFiles << " findings=" << dump.size());
+    std::sort(dump.begin(), dump.end());
+    for (size_t i = 0; i < dump.size() && i < 40; ++i)
+    {
+        MESSAGE("  " << dump[i]);
+    }
+
+    if (const char *dumpPath = std::getenv("ANGELLSP_FUNCDEF_MISMATCH_DUMP"); dumpPath && *dumpPath)
+    {
+        std::ofstream out(dumpPath, std::ios::binary);
+        for (const auto &line : dump)
+        {
+            out << line << "\n";
+        }
+        MESSAGE("  wrote " << dump.size() << " findings to " << std::string(dumpPath));
+    }
+
+    CHECK(totalFiles > 0);
+
+    // Zero, and see the header for what that does and does not establish. It is still a
+    // ratchet: a finding appearing here means either a false positive or a corpus that has
+    // grown a real one, and angelscript_oracle on the named file tells them apart.
+    constexpr size_t k_accountedFindings = 0;
+    CHECK(dump.size() <= k_accountedFindings);
+}
+
+// =====================================================================================
 // NUMERIC WARNING CORPUS AUDIT (skip()-decorated, run it deliberately:
 // `angel_lsp_tests.exe --no-skip --test-case="*Numeric Warning Corpus Audit*"`)
 //
@@ -1356,3 +1756,4 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
     CHECK(dump.size() <= k_accountedFindings);
     CHECK(filesWithFindings <= k_accountedFindings);
 }
+

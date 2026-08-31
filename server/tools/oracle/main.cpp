@@ -279,7 +279,16 @@ int main(int argc, char **argv)
     //
     // -1 leaves the engine's own default, so every existing invocation and every script already in
     // tests/parity answers exactly as it did.
+    //
+    // The other three are the rest of config::EngineProperties. The rule that produced this list
+    // is: every property the analyzer models must be askable here, or its behaviour under that
+    // setting is recorded on faith. That is exactly what had happened to the accessor mode - the
+    // server had a setting, the document claimed an answer for both of its values, and only one
+    // of them had ever been measured.
     int propertyAccessorMode = -1;
+    int allowUnsafeReferences = -1;
+    int privatePropAsProtected = -1;
+    int disallowGlobalVars = -1;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -296,6 +305,18 @@ int main(int argc, char **argv)
             {
                 propertyAccessorMode = std::atoi(argv[i] + 25);
             }
+            else if (std::strncmp(argv[i], "--allow-unsafe-references=", 26) == 0)
+            {
+                allowUnsafeReferences = std::atoi(argv[i] + 26);
+            }
+            else if (std::strncmp(argv[i], "--private-prop-as-protected=", 28) == 0)
+            {
+                privatePropAsProtected = std::atoi(argv[i] + 28);
+            }
+            else if (std::strncmp(argv[i], "--disallow-global-vars=", 23) == 0)
+            {
+                disallowGlobalVars = std::atoi(argv[i] + 23);
+            }
             continue;
         }
         if (scriptPath == nullptr)
@@ -306,8 +327,12 @@ int main(int argc, char **argv)
 
     if (scriptPath == nullptr)
     {
-        std::fprintf(stderr, "usage: angelscript_oracle <script.as> [--json] "
-                             "[--property-accessor-mode=<2|3>]\n");
+        std::fprintf(stderr, "usage: angelscript_oracle <script.as> [--json]\n"
+                             "       [--property-accessor-mode=<0|1|2|3>]\n"
+                             "       [--allow-unsafe-references=<0|1>]\n"
+                             "       [--private-prop-as-protected=<0|1>]\n"
+                             "       [--disallow-global-vars=<0|1>]\n"
+                             "Any option left out keeps the engine's own default.\n");
         return 2;
     }
 
@@ -320,11 +345,26 @@ int main(int argc, char **argv)
 
     engine->SetMessageCallback(asFUNCTION(MessageCallback), nullptr, asCALL_CDECL);
 
-    // Set before anything is registered: the property changes how declarations are interpreted.
+    // Set before anything is registered: these change how declarations are interpreted.
     if (propertyAccessorMode >= 0)
     {
         engine->SetEngineProperty(asEP_PROPERTY_ACCESSOR_MODE,
                                   static_cast<asPWORD>(propertyAccessorMode));
+    }
+    if (allowUnsafeReferences >= 0)
+    {
+        engine->SetEngineProperty(asEP_ALLOW_UNSAFE_REFERENCES,
+                                  static_cast<asPWORD>(allowUnsafeReferences));
+    }
+    if (privatePropAsProtected >= 0)
+    {
+        engine->SetEngineProperty(asEP_PRIVATE_PROP_AS_PROTECTED,
+                                  static_cast<asPWORD>(privatePropAsProtected));
+    }
+    if (disallowGlobalVars >= 0)
+    {
+        engine->SetEngineProperty(asEP_DISALLOW_GLOBAL_VARS,
+                                  static_cast<asPWORD>(disallowGlobalVars));
     }
 
     // Order matters: the dictionary needs `string` and `array<string>` to already exist, and the

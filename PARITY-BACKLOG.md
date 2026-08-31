@@ -5,7 +5,7 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1210 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1221 with zero unexplained false positives across six corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
 to cover.
 
@@ -79,6 +79,57 @@ Each entry says what the compiler answers and what this analyzer answered before
 false positives — legal code reported as an error, which is the one failure mode this project
 treats as unacceptable.
 
+- **A lambda against its target funcdef.** `CheckFuncdefAssignment` handled only a named function
+  on the right-hand side; a lambda fell through the symbol lookup, found nothing and returned in
+  silence, so neither arity nor parameter types were compared. The compiler compares the **written**
+  signature and does not convert it, which makes the accepting cases the hard part:
+  - **Arity is a hard equality**, even when every parameter is untyped, and **a funcdef's default
+    argument does not relax it**: `funcdef void CB(int a = 1)` still rejects `function() { }`. A
+    default argument is for calls, not for the shape of the handle.
+  - **A written parameter type does not widen.** `funcdef void CB(int)` rejects `function(uint a)`.
+  - **The decorations are part of the signature.** `const string &in` rejects `string`, rejects
+    `string &in`, and `Foo@` rejects `Foo` — each with its own error.
+  - **An omitted type is a wildcard**, which is the point of the feature: the type comes from the
+    funcdef, and a partly-typed list like `function(int a, b)` is legal.
+
+  The false-positive surface is the type NAME, because the compiler resolves it and this rule only
+  reads it. All of these are accepted, and a string comparison reports every one: a `typedef float
+  real` against `float`, `array<int>@` against `int[]@`, and a namespaced type written bare inside
+  its namespace and qualified outside. So the name is compared by its last `::` segment and not at
+  all when either side names a typedef — the one alias no spelling can see through. `array<int>`
+  and `int[]` need no case of their own, since `CleanBaseType` reduces both to the element type.
+  The decorations, by contrast, are compared whatever the name is: a typedef aliases primitives
+  only (see `as-err-typedef-non-primitive`) and a namespace qualifies a name without changing
+  whether it is a handle, so no spelling can hide one.
+
+  The corpus decided the scope. It writes 33 lambdas across 17 files and **not one** of them is
+  `CB@ cb = function(...)`; every one is a call argument — `arrOut.sort(function(a, b){})`,
+  `Hooks.RegisterHook(..., @MapChangeHook(function(...)))`. So the funcdef *conversion* form
+  `MapChangeHook( function(...) )` was implemented alongside the assignment, since the compiler
+  judges it by the same rules — `No matching signatures to 'CB(<auto> lambda())'` — and it is what
+  real code writes. **Still a gap:** a lambda passed straight to an ordinary function whose
+  parameter is a funcdef handle. That is `CallChecker`'s overload resolution rather than this rule,
+  with its own false-positive surface, and it is where the remaining corpus lambdas live.
+
+  Verified against the compiler position by position: over `tests/parity/`, the analyzer reports
+  **12 of the compiler's 12** rejections in `doc_r26`, on the same lines, and **nothing at all** in
+  `doc_p27`, which collects every accepting shape including the three spelling traps. The corpus
+  audit reads 0, but that number is a guard rather than a measurement and says so at its own site:
+  the funcdefs the corpus's lambdas name are registered by the game engine in C++ and declared in no
+  script, so the rule stays silent there by the visibility policy rather than by judging anything.
+  `doc_p27`, `doc_r26`.
+
+- **Every engine property the analyzer models is now askable of the oracle.** `angelscript_oracle`
+  could set only `asEP_PROPERTY_ACCESSOR_MODE`, so the other three members of
+  `config::EngineProperties` had their behaviour recorded on faith — the same defect that had left
+  half of `doc_r07` unmeasured. Added `--allow-unsafe-references`, `--private-prop-as-protected`
+  and `--disallow-global-vars`, each `-1`-by-default so every existing invocation answers exactly
+  as it did. All three were then confirmed to flip a verdict: `void f(int &x)` goes from
+  "Only object types that support object handles can use &inout" to accepted, a global variable
+  from accepted to "Global variables have been disabled by the application", and inherited private
+  access from an error to `WARNING: Accessing private property 'm' of parent class` — a warning
+  this analyzer does not yet emit under that setting, which is a gap the flag has now made
+  visible rather than one it created.
 - **Numeric warnings** (`TYPE-03`). The compiler emits **five**, not the three the issue list named,
   and only two of the five are decidable from types. The other three — `Implicit conversion changed
   sign of value`, `Value is too large for data type`, `Implicit conversion of value is not exact` —
@@ -471,20 +522,27 @@ first. Each lands with its `doc_`-prefixed parity case.
    than a host type. An engine profile is the closest thing, and it is a fixed list. Until that
    exists the setting is the honest interface, but it is the reason the rule cannot simply be
    unconditional.
-2. **Lambda body against its target funcdef** — `CheckFuncdefAssignment` only handles a named
-    function on the right-hand side and returns silently for a lambda, so neither parameters nor
-    return type are compared.
-3. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
+2. **URI normalization** — `Server::CanonicalPathFromUri` and `UriFromPath` exist and are used at no
     request entry point; handlers key their maps on the raw string, so `file:///e%3A/…` and
     `file:///E%3A/…` are different documents on Windows.
-4. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
+3. **`as.predefined` hot reload** — the stub is re-parsed on change but the reload does not mark the
     graph dirty, so open documents keep stale diagnostics until the next keystroke.
-5. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
+4. **`workspace.fileOperations`** — `didRenameFiles` / `didDeleteFiles`, plus an `#include` fixup on
     rename. `WorkspaceIncludeGraph` already holds the graph the edit needs.
-6. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
+5. **Exclude globs and a project root** (`PREDEF-07`) — three unbounded recursive directory walks per
     workspace root, with no way to skip build output.
-7. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
+6. **Untested but confirmed correct** — a corpus case for the `Foo obj(bar);` most-vexing-parse,
     where `func_declaration`'s `prec.dynamic(2)` currently outranks `variable_declaration`'s `1`.
+7. **A lambda passed straight to a function** — `f(function(...))` where `f`'s parameter is a
+    funcdef handle. The compiler judges it by the same rules as an assignment ("No matching
+    signatures to 'Take(<auto> lambda())'"), but it runs through `CallChecker`'s overload
+    resolution rather than `CheckFuncdefAssignment`, so it needs its own false-positive work. This
+    is where the corpus's lambdas actually live - see the funcdef entry under Fixed.
+8. **A lambda's return type against its funcdef** — the compiler compiles the body against the
+    funcdef's return type, so `funcdef int CB(); CB@ cb = function() { };` is "Not all paths return
+    a value" and `funcdef void CB(); ... { return 1; }` is "Can't return value when return type is
+    'void'". Both need the target funcdef threaded into ControlFlowChecker, which today reads the
+    return type off the enclosing `func_declaration` and finds none for a lambda.
 
 ### Out of scope
 
