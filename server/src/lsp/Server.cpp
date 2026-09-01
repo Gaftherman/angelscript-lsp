@@ -509,11 +509,14 @@ namespace angel_lsp
         // interFileDependencies is true and it is not a formality: an `#include` changes the
         // diagnostics of every file including it, which is exactly the case the flag exists for.
         // workspaceDiagnostics reports what has already been analysed - see the handler.
-        lsp::DiagnosticOptions diagnosticOpts;
-        diagnosticOpts.identifier = std::string("angelscript");
-        diagnosticOpts.interFileDependencies = true;
-        diagnosticOpts.workspaceDiagnostics = true;
-        result.capabilities.diagnosticProvider = diagnosticOpts;
+        if (m_config.features.enablePullDiagnostics)
+        {
+            lsp::DiagnosticOptions diagnosticOpts;
+            diagnosticOpts.identifier = std::string("angelscript");
+            diagnosticOpts.interFileDependencies = true;
+            diagnosticOpts.workspaceDiagnostics = true;
+            result.capabilities.diagnosticProvider = diagnosticOpts;
+        }
 
         // Announced unconditionally: both the include graph and the predefined-stub scan are scoped
         // to the known roots, so a folder added mid-session has to reach the server whatever else
@@ -2393,6 +2396,11 @@ namespace angel_lsp
 
     lsp::requests::TextDocument_Diagnostic::Result Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagnostic::Params &&params)
     {
+        if (!m_config.features.enablePullDiagnostics)
+        {
+            throw lsp::RequestError(lsp::MessageError::MethodNotFound, "Pull diagnostics are disabled");
+        }
+
         const std::string uriStr = DocumentKey(params.textDocument.uri.toString());
 
         {
@@ -2429,6 +2437,11 @@ namespace angel_lsp
 
     lsp::requests::Workspace_Diagnostic::Result Server::HandleRequestsWorkspace_Diagnostic(lsp::requests::Workspace_Diagnostic::Params &&params)
     {
+        if (!m_config.features.enablePullDiagnostics)
+        {
+            return lsp::WorkspaceDiagnosticReport{};
+        }
+
         // What the client already holds, so an unedited document can be answered with its id alone.
         ankerl::unordered_dense::map<std::string, std::string> known;
         for (const auto &previous : params.previousResultIds)

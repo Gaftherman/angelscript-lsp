@@ -183,7 +183,8 @@ const FEATURE_FLAGS: ReadonlyArray<readonly [string, string]> = [
     ['linkedEditing', '--disable-linked-editing'],
     ['typeConversionChecks', '--disable-type-conversion-checks'],
     ['codeLens', '--disable-code-lens'],
-    ['onTypeFormatting', '--disable-on-type-formatting']
+    ['onTypeFormatting', '--disable-on-type-formatting'],
+    ['pullDiagnostics', '--disable-pull-diagnostics']
 ];
 
 /**

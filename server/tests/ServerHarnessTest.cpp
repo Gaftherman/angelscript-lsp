@@ -1564,3 +1564,117 @@ TEST_CASE("Server - workspace/diagnostic reports the documents already analysed"
     CHECK(reply.find("main.as") != std::string::npos);
     CHECK(reply.find("as-err-undefined-identifier") != std::string::npos);
 }
+
+// =====================================================================================
+// The pull-diagnostic kill switch.
+//
+// Every other capability this server offers has one, and a flag that is declared but does not
+// actually switch anything off is worse than no flag: the setting promises a control that does
+// nothing. So both halves are asserted - the capability disappears from initialize, and the
+// requests stop being answered.
+// =====================================================================================
+
+TEST_CASE("Server - The pull-diagnostic capability disappears when the feature is off")
+{
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = false;
+    RunScript(serverConfig, stream);
+
+    const std::string initializeReply = stream.ResponseFor(1);
+    INFO(initializeReply);
+    CHECK(initializeReply.find("diagnosticProvider") == std::string::npos);
+}
+
+TEST_CASE("Server - A pull request is refused when the feature is off")
+{
+    // MethodNotFound rather than an empty report: an empty report is a positive claim that the
+    // document is clean, and a switched-off feature has no opinion about the document at all.
+    WorkspaceFixture fixture;
+
+    const std::string source = "void Main()\n{\n    UndefinedThingy();\n}\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = false;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") != std::string::npos);
+    CHECK(reply.find("-32601") != std::string::npos);
+    CHECK(reply.find("\"kind\":\"full\"") == std::string::npos);
+}
+
+TEST_CASE("Server - Push diagnostics keep working with pull switched off")
+{
+    // The two are independent, which is the reason turning pull off is safe: a client that never
+    // pulled loses nothing. If this ever fails, the kill switch took the notifications with it.
+    WorkspaceFixture fixture;
+
+    const std::string source = "void Main()\n{\n    UndefinedThingy();\n}\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("publishDiagnostics"))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = false;
+    RunScript(serverConfig, stream);
+
+    CHECK(Published(stream.Output(), "as-err-undefined-identifier"));
+}
+
+TEST_CASE("Server - workspace/diagnostic answers empty rather than failing when off")
+{
+    // Unlike the document request, this one is answered. A workspace report listing no documents
+    // is a truthful statement - the server is reporting on nothing - where an error would leave a
+    // polling client retrying a request that will never succeed.
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void Main() { }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/diagnostic","params":{"previousResultIds":[]}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = false;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") == std::string::npos);
+    CHECK(reply.find("\"items\":[]") != std::string::npos);
+}

@@ -37,6 +37,7 @@ namespace angel_lsp::config
         bool enableLinkedEditing = true;
         bool enableCodeLens = true;
         bool enableOnTypeFormatting = true;
+        bool enablePullDiagnostics = true;
     };
 
     /**

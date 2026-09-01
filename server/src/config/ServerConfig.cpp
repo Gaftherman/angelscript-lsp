@@ -140,6 +140,7 @@ namespace angel_lsp::config
                   << "  --disable-inlay-hints                   Disable inlay hints\n"
                   << "  --enable-code-action[=true|false]       Enable/disable code actions (default: true)\n"
                   << "  --disable-code-action                   Disable code actions\n"
+                  << "  --disable-pull-diagnostics              Disable LSP 3.17 pull diagnostics\n"
                   << "  --enable-formatting[=true|false]        Enable/disable formatting (default: true)\n"
                   << "  --disable-formatting                    Disable formatting\n"
                   << "  --enable-document-link[=true|false]     Enable/disable #include links (default: true)\n"
@@ -385,6 +386,14 @@ namespace angel_lsp::config
             else if (key == "--disable-code-action" || key == "--disable-codeaction")
             {
                 config.features.enableCodeAction = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-pull-diagnostics" || key == "--enable-pulldiagnostics")
+            {
+                config.features.enablePullDiagnostics = getBoolValue(true);
+            }
+            else if (key == "--disable-pull-diagnostics" || key == "--disable-pulldiagnostics")
+            {
+                config.features.enablePullDiagnostics = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
             else if (key == "--enable-document-link" || key == "--enable-documentlink")
             {

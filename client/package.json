@@ -287,6 +287,11 @@
           "default": true,
           "markdownDescription": "Automatically format code on typing specific trigger characters (semicolon, closing brace, newline)."
         },
+        "angelscript.features.pullDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Answer `textDocument/diagnostic` and `workspace/diagnostic` (LSP 3.17). The editor asks for diagnostics instead of waiting to be told. Push notifications are sent either way, so turning this off loses nothing a client that does not pull was using."
+        },
         "angelscript.features.typeConversionChecks": {
           "type": "boolean",
           "default": true,
