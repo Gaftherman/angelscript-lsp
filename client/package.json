@@ -312,6 +312,11 @@
           "default": false,
           "markdownDescription": "Hint when a class is used where a `bool` is expected, such as `if (h)`. Under `asEP_BOOL_CONVERSION_MODE` 0, the engine's default, this is a compile error even when the class declares `opImplConv`. A quick fix calls the conversion operator explicitly, which compiles under both modes. Off by default, and silent entirely when `angelscript.engine.boolConversionMode` is 1."
         },
+        "angelscript.diagnostics.reportMissingFuncdef": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Hint when a type position names a function rather than a type, such as `Foo@ h` where `Foo` is a function. A function handle needs a `funcdef` to name its signature, and a quick fix declares one from the function's own parameters and return type. Off by default, since the name could belong to a host type this analyzer cannot see."
+        },
         "angelscript.engine.allowUnsafeReferences": {
           "type": "boolean",
           "default": false,

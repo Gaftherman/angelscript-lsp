@@ -930,3 +930,111 @@ TEST_CASE("CodeActionHandler - No accessor fix without the hint")
 
     CHECK(ActionTitled(actions, "Add the 'property' keyword") == nullptr);
 }
+
+
+// =====================================================================================
+// Generating the funcdef a function handle needs.
+//
+// Two edits, because either alone leaves the file no more compilable than before: a funcdef nobody
+// references, or a reference to a funcdef that does not exist.
+// =====================================================================================
+
+TEST_CASE("CodeActionHandler - Declares a funcdef from the function's own signature")
+{
+    std::string code =
+        "void Foo(int a) { }\n"
+        "void main() { Foo@ h = @Foo; }\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 14}, {1, 17} };
+    auto actions = env.CodeActions(at, DiagnosticAt(at, "as-hint-funcdef-missing"));
+
+    const auto *fix = ActionTitled(actions, "Declare funcdef");
+    REQUIRE(fix != nullptr);
+    CHECK(fix->title == "Declare funcdef 'FooFunc' for 'Foo'");
+
+    REQUIRE(fix->edit.has_value());
+    REQUIRE(fix->edit->changes.has_value());
+    const auto &edits = fix->edit->changes->begin()->second;
+    REQUIRE(edits.size() == 2);
+
+    // The declaration, at the top of the file. Parameters exactly as the function wrote them -
+    // a funcdef accepts names, and carrying the text across whole is what keeps `&in` intact.
+    CHECK(edits[0].newText == "funcdef void FooFunc(int a);\n");
+    CHECK(edits[0].range.start.line == 0);
+    CHECK(edits[0].range.start.character == 0);
+    CHECK(edits[0].range.end.line == 0);
+    CHECK(edits[0].range.end.character == 0);
+
+    // And the type position rewritten to name it.
+    CHECK(edits[1].newText == "FooFunc");
+    CHECK(edits[1].range.start.line == 1);
+}
+
+TEST_CASE("CodeActionHandler - The generated funcdef carries the return type and every parameter")
+{
+    std::string code =
+        "int Compute(float f, const string &in s) { return 0; }\n"
+        "void main() { Compute@ h = @Compute; }\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 14}, {1, 21} };
+    auto actions = env.CodeActions(at, DiagnosticAt(at, "as-hint-funcdef-missing"));
+
+    const auto *fix = ActionTitled(actions, "Declare funcdef");
+    REQUIRE(fix != nullptr);
+
+    const auto &edits = fix->edit->changes->begin()->second;
+    REQUIRE(edits.size() == 2);
+
+    // The parameters as written, names and all. Dropping the `&in` was the first version's bug and
+    // it is not cosmetic: the oracle answers "Can't implicitly convert from '<function>@const' to
+    // 'ComputeFunc@&'" for a funcdef whose reference qualifier does not match the function's.
+    CHECK(edits[0].newText == "funcdef int ComputeFunc(float f, const string &in s);\n");
+}
+
+TEST_CASE("CodeActionHandler - A no-parameter function yields an empty parameter list")
+{
+    std::string code =
+        "void Nothing() { }\n"
+        "void main() { Nothing@ h = @Nothing; }\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 14}, {1, 21} };
+    auto actions = env.CodeActions(at, DiagnosticAt(at, "as-hint-funcdef-missing"));
+
+    const auto *fix = ActionTitled(actions, "Declare funcdef");
+    REQUIRE(fix != nullptr);
+
+    const auto &edits = fix->edit->changes->begin()->second;
+    CHECK(edits[0].newText == "funcdef void NothingFunc();\n");
+}
+
+TEST_CASE("CodeActionHandler - An overloaded function gets no generated funcdef")
+{
+    // Two overloads have no single signature to derive one from, and offering one of them would be
+    // a guess dressed as an answer.
+    std::string code =
+        "void Foo(int a) { }\n"
+        "void Foo(float f) { }\n"
+        "void main() { Foo@ h = @Foo; }\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {2, 14}, {2, 17} };
+    auto actions = env.CodeActions(at, DiagnosticAt(at, "as-hint-funcdef-missing"));
+
+    CHECK(ActionTitled(actions, "Declare funcdef") == nullptr);
+}
+
+TEST_CASE("CodeActionHandler - No funcdef is generated without the hint")
+{
+    std::string code =
+        "void Foo(int a) { }\n"
+        "void main() { Foo@ h = @Foo; }\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 14}, {1, 17} };
+    auto actions = env.CodeActions(at, lsp::CodeActionContext{});
+
+    CHECK(ActionTitled(actions, "Declare funcdef") == nullptr);
+}

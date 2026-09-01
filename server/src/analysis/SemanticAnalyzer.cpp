@@ -566,6 +566,21 @@ namespace angel_lsp::analysis
                         ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar,
                                         "as-err-mixin-not-a-type", base, DiagnosticSeverity::Error);
                     }
+                    // A type position naming a FUNCTION. `void Foo(int) {}` then `Foo@ h = @Foo;`
+                    // is rejected - "Identifier 'Foo' is not a data type", verified against the
+                    // oracle - because a function handle needs a funcdef to name its signature. The
+                    // intent is unmistakable and the funcdef is derivable from the function itself,
+                    // which is what makes this worth saying rather than leaving as silence.
+                    //
+                    // Opt-in and a Hint: the name could equally belong to a host type this analyzer
+                    // cannot see, and a workspace whose engine registers one would otherwise be told
+                    // its own type does not exist.
+                    else if (ctx.request.diagnostics && ctx.request.diagnostics->reportMissingFuncdef &&
+                             base != "auto" && NamesAFunctionNotAType(base, ctx.request.symbolTable))
+                    {
+                        ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar,
+                                        "as-hint-funcdef-missing", base, DiagnosticSeverity::Hint);
+                    }
                     // `auto` is in IsCorePrimitive's list, and it is not a primitive - it is not a
                     // type at all, but a placeholder for whatever the initializer produces, so
                     // whether a handle is allowed is decided by *that* type. The compiler accepts

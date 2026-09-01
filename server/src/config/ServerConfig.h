@@ -201,6 +201,19 @@ namespace angel_lsp::config
          * be a false positive on working code.
          */
         bool reportBoolConversion = false;
+
+        /**
+         * @brief Hint when a type position names a function instead of a type (default: off).
+         *
+         * `void Foo(int) {}` followed by `Foo@ h = @Foo;` is rejected - "Identifier 'Foo' is not a
+         * data type", verified against angelscript_oracle - because a function handle needs a
+         * funcdef to name its signature. The intent is unmistakable and the fix is mechanical, so
+         * this is worth offering rather than leaving as a bare unresolved-type complaint.
+         *
+         * Off by default: the name could also belong to a host type this analyzer cannot see, and a
+         * workspace whose engine registers one would get a hint about a type that exists.
+         */
+        bool reportMissingFuncdef = false;
     };
 
     /**

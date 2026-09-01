@@ -158,6 +158,53 @@ namespace angel_lsp::analysis
         return {};
     }
 
+    bool NamesAFunctionNotAType(std::string_view name, const SymbolTable &table)
+    {
+        if (name.empty())
+        {
+            return false;
+        }
+
+        const auto symsPtr = table.FindSymbolsPtr(std::string(name));
+        if (!symsPtr)
+        {
+            // Resolves to nothing. That is an unresolved type, assumed engine-registered, and not
+            // this rule's business - see the header.
+            return false;
+        }
+
+        bool isFunction = false;
+        for (const auto &sym : *symsPtr)
+        {
+            switch (sym.type)
+            {
+            case SymbolType::Function:
+                // A method is reached through its container and cannot be written bare in a type
+                // position, so it says nothing about what the user meant here.
+                if (sym.containerName.empty())
+                {
+                    isFunction = true;
+                }
+                break;
+
+            // Anything that CAN stand in a type position settles it: the name is a type, whatever
+            // else it also is. Funcdef in particular - a funcdef and a function may share a name,
+            // and then `Foo@` is already valid.
+            case SymbolType::Class:
+            case SymbolType::Interface:
+            case SymbolType::Enum:
+            case SymbolType::Typedef:
+            case SymbolType::Funcdef:
+                return false;
+
+            default:
+                break;
+            }
+        }
+
+        return isFunction;
+    }
+
     bool IsMixinClass(std::string_view baseTypeName, const SymbolTable &table)
     {
         if (baseTypeName.empty())

@@ -226,6 +226,18 @@ namespace angel_lsp::analysis
      */
     bool IsMixinClass(std::string_view baseTypeName, const class SymbolTable &table);
 
+    /**
+     * @brief True when a name resolves to a function and to nothing that could be a type.
+     *
+     * The shape behind `void Foo(int) {}` followed by `Foo@ h`: the compiler answers "Identifier
+     * 'Foo' is not a data type" because a function handle needs a funcdef to name its signature.
+     *
+     * Both halves are required. A name that resolves to nothing at all is an unresolved type and is
+     * assumed engine-registered - that is this analyzer's central policy - and a name that resolves
+     * to BOTH a function and a type is a legal overload of the two, so neither is worth reporting.
+     */
+    bool NamesAFunctionNotAType(std::string_view name, const class SymbolTable &table);
+
     /** @brief What a type is when it cannot be instantiated, for the message that says so. */
     enum class NonInstantiableKind
     {

@@ -8,6 +8,7 @@
 #include "analysis/SymbolTable.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+#include "config/ServerConfig.h"
 
 #include <algorithm>
 #include <chrono>
@@ -27,7 +28,8 @@ namespace
      *         pipeline for sourceCode and returns the analyzer's diagnostics. table and i18n are
      *         caller-owned since SemanticAnalysisRequest only holds a reference/pointer to them. */
     std::vector<Diagnostic> AnalyzeSource(const std::string &sourceCode, SymbolTable &table,
-                                           const angel_lsp::i18n::I18n &i18n, const std::string &fileUri = "file:///test.as")
+                                           const angel_lsp::i18n::I18n &i18n, const std::string &fileUri = "file:///test.as",
+                                           const angel_lsp::config::DiagnosticsConfig *diagnosticsConfig = nullptr)
     {
         AngelScriptParser symbolParser;
         SymbolCollector symbolCollector(nullptr);
@@ -37,6 +39,7 @@ namespace
         LocalScopeCollector scopeCollector(nullptr);
 
         SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+        req.diagnostics = diagnosticsConfig;
         req.scopeRoot = scopeCollector.CollectScopes(sourceCode, scopeParser);
 
         // The server always analyses with the source text and the parsed tree in hand
@@ -1162,4 +1165,54 @@ TEST_CASE("virtual property - a get_ prefix with nothing after it is not a prope
         table, i18n);
 
     CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "Whatever"));
+}
+
+TEST_CASE("SemanticAnalyzer - Hints that a function name in a type position needs a funcdef")
+{
+    const std::string code =
+        "void Foo(int a) { }\n"
+        "void main() { Foo@ h = @Foo; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportMissingFuncdef = true;
+
+    auto diagnostics = AnalyzeSource(code, table, i18n, "file:///script.as", &diagnosticsConfig);
+
+    CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
+                      [](const Diagnostic &d) { return d.code == "as-hint-funcdef-missing"; }));
+}
+
+TEST_CASE("SemanticAnalyzer - Silent about a function name in a type position unless asked")
+{
+    const std::string code =
+        "void Foo(int a) { }\n"
+        "void main() { Foo@ h = @Foo; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    auto diagnostics = AnalyzeSource(code, table, i18n);
+
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-funcdef-missing"; }));
+}
+
+TEST_CASE("SemanticAnalyzer - A real funcdef of the same name draws no hint")
+{
+    const std::string code =
+        "funcdef void Foo(int);\n"
+        "void Foo(int a) { }\n"
+        "void main() { Foo@ h = @Foo; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportMissingFuncdef = true;
+
+    auto diagnostics = AnalyzeSource(code, table, i18n, "file:///script.as", &diagnosticsConfig);
+
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-funcdef-missing"; }));
 }

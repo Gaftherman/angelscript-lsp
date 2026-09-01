@@ -1946,6 +1946,129 @@ namespace angel_lsp::features
         }
 
         /**
+         * @brief Declares the funcdef a function handle needs, derived from the function itself.
+         *
+         * `void Foo(int) {}` then `Foo@ h` is rejected - a function handle needs a funcdef naming
+         * its signature - and the signature is sitting right there on the function. So the fix
+         * writes `funcdef void FooFunc(int);` at the top of the file and rewrites the type position
+         * to name it. Two edits, because either alone leaves the file no more compilable than
+         * before: a funcdef nobody references, or a reference to a funcdef that does not exist.
+         *
+         * Parameter TYPES only, no names - that is what a funcdef takes, and `const string &in`
+         * survives verbatim. Verified against the oracle, including the reference-qualified case.
+         */
+        void TryAddGenerateFuncdefFix(
+            const CodeActionRequest &request,
+            TSNode rootNode,
+            std::vector<lsp::CodeAction> &actions)
+        {
+            if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+            {
+                return;
+            }
+
+            for (const auto &diag : request.context.diagnostics)
+            {
+                if (!MatchDiagnosticCode(diag, "as-hint-funcdef-missing"))
+                {
+                    continue;
+                }
+
+                const TSPoint point = { diag.range.start.line, diag.range.start.character };
+                TSNode typeNode = ts_node_descendant_for_point_range(rootNode, point, point);
+                if (ts_node_is_null(typeNode))
+                {
+                    continue;
+                }
+
+                const std::string functionName = GetNodeText(typeNode, request.sourceCode);
+                if (functionName.empty())
+                {
+                    continue;
+                }
+
+                // The global overload. A method cannot be written bare in a type position, so it is
+                // not what the user was reaching for, and an overload set has no single signature to
+                // derive a funcdef from - offering one of several would be a guess.
+                const analysis::Symbol *target = nullptr;
+                size_t globalOverloads = 0;
+                request.symbolTable.ForEachSymbol([&](const std::string &name, const std::vector<analysis::Symbol> &symbols)
+                {
+                    if (name != functionName)
+                        return;
+                    for (const auto &sym : symbols)
+                    {
+                        if (sym.type == analysis::SymbolType::Function && sym.containerName.empty() &&
+                            std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                        {
+                            ++globalOverloads;
+                            target = &sym;
+                        }
+                    }
+                });
+
+                if (target == nullptr || globalOverloads != 1)
+                {
+                    continue;
+                }
+
+                const auto &signature = target->GetFunction();
+                const std::string funcdefName = functionName + "Func";
+
+                std::string declaration = "funcdef ";
+                declaration += signature.returnType.empty() ? "void" : signature.returnType;
+                declaration += " " + funcdefName + "(";
+                for (size_t i = 0; i < signature.parameters.size(); ++i)
+                {
+                    if (i > 0)
+                        declaration += ", ";
+
+                    // The parameter as the user wrote it, not its typeName. typeName drops the
+                    // reference qualifier - `const string &in` arrives as `const string` - and a
+                    // funcdef missing it does not match the function it was derived from: the
+                    // oracle answers "Can't implicitly convert from '<function>@const' to
+                    // 'ComputeFunc@&'". A funcdef accepts parameter names, so rawText carries
+                    // across whole and verbatim.
+                    const auto &parameter = signature.parameters[i];
+                    declaration += parameter.rawText.empty() ? parameter.typeName : parameter.rawText;
+                }
+                declaration += ");\n";
+
+                std::vector<lsp::TextEdit> edits;
+
+                lsp::TextEdit insertion;
+                insertion.range.start.line = 0;
+                insertion.range.start.character = 0;
+                insertion.range.end.line = 0;
+                insertion.range.end.character = 0;
+                insertion.newText = declaration;
+                edits.push_back(std::move(insertion));
+
+                lsp::TextEdit rename;
+                rename.range.start.line = ts_node_start_point(typeNode).row;
+                rename.range.start.character = ts_node_start_point(typeNode).column;
+                rename.range.end.line = ts_node_end_point(typeNode).row;
+                rename.range.end.character = ts_node_end_point(typeNode).column;
+                rename.newText = funcdefName;
+                edits.push_back(std::move(rename));
+
+                lsp::CodeAction action;
+                action.title = "Declare funcdef '" + funcdefName + "' for '" + functionName + "'";
+                action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+                action.isPreferred = true;
+                action.diagnostics = std::vector<lsp::Diagnostic>{ diag };
+
+                lsp::WorkspaceEdit wsEdit;
+                lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+                changes[lsp::DocumentUri::parse(request.uri)] = std::move(edits);
+                wsEdit.changes = std::move(changes);
+                action.edit = std::move(wsEdit);
+
+                actions.push_back(std::move(action));
+            }
+        }
+
+        /**
          * @brief Calls the bool conversion operator explicitly, turning `if (h)` into `if (h.opImplConv())`.
          *
          * Sound for the same reason the accessor fix is, and verified the same way: measured against
@@ -2794,6 +2917,7 @@ namespace angel_lsp::features
         TryAddUnresolvedIncludeSuggestions(request, actions);
         TryAddAccessorPropertyKeywordFix(request, rootNode, actions);
         TryAddBoolConversionFix(request, rootNode, actions);
+        TryAddGenerateFuncdefFix(request, rootNode, actions);
 
         // =========================================================================
         // Feature 5: Sort and Clean #include Directives
