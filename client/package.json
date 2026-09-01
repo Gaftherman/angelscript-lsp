@@ -302,6 +302,11 @@
           "default": true,
           "markdownDescription": "Report a parameter or return type that resolves to no declaration.\n\n`void f(TypoTypeName x)` is a compile error — the engine answers \"Identifier 'TypoTypeName' is not a data type in namespace 'TEST' or parent\" — and left unreported it surfaces as silence at every call site instead, because a call whose parameter types are unknown cannot be checked either.\n\nIt is also, from the server's side, indistinguishable from a legitimate engine-registered type. Measured on 1061 Sven Co-op scripts with the matching engine profile loaded: 1581 findings with this off, 3850 with it on. Turn it off if your host registers types in C++ and declares none of them — or better, set `angelscript.engine.profile`."
         },
+        "angelscript.diagnostics.reportAccessorPortability": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Hint on a `get_`/`set_` accessor written without the `property` keyword. Such an accessor is a property under `asEP_PROPERTY_ACCESSOR_MODE` 2, this server's default, but not under mode 3, which is the engine's own. Adding the keyword is accepted under both, so the quick fix cannot break a working build. Off by default."
+        },
         "angelscript.engine.allowUnsafeReferences": {
           "type": "boolean",
           "default": false,

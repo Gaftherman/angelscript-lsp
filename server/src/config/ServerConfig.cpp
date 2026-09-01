@@ -185,6 +185,7 @@ namespace angel_lsp::config
                   << "                                          types are unknown cannot be judged either. Turn it off for\n"
                   << "                                          a host that registers types in C++ and declares none of\n"
                   << "                                          them - or better, name its --engine-profile.\n"
+                  << "  --report-accessor-portability           Hint on accessors without the 'property' keyword\n"
                   << "  --format-brace-style=<allman|kr>        Where a block's opening brace goes. Default allman.\n"
                   << "                                          A list or a lambda body keeps its brace on the line\n"
                   << "                                          either way - that is correctness, not style.\n"
@@ -578,6 +579,15 @@ namespace angel_lsp::config
             else if (key == "--no-report-unknown-types")
             {
                 config.diagnostics.reportUnknownTypes =
+                    inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--report-accessor-portability")
+            {
+                config.diagnostics.reportAccessorPortability = getBoolValue(true);
+            }
+            else if (key == "--no-report-accessor-portability")
+            {
+                config.diagnostics.reportAccessorPortability =
                     inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
             else if (key == "--engine-property" || key == "--engine-prop")

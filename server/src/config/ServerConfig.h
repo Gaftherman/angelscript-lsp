@@ -164,6 +164,19 @@ namespace angel_lsp::config
          * again.
          */
         bool reportUnknownTypes = true;
+
+        /**
+         * @brief Hint on a get_/set_ accessor that carries no `property` keyword (default: off).
+         *
+         * Not a defect. Under asEP_PROPERTY_ACCESSOR_MODE 2, which is this server's default, such an
+         * accessor is a property and the code compiles. Under mode 3, the engine's own default, it is
+         * not, and `c.X` becomes "'X' is not a member of 'C'". Adding the keyword is accepted under
+         * both, so the hint is portability advice with a fix that cannot break the current build.
+         *
+         * Off by default because a workspace that has settled on mode 2 would otherwise see one hint
+         * per accessor for a decision it already made.
+         */
+        bool reportAccessorPortability = false;
     };
 
     /**

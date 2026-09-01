@@ -823,3 +823,110 @@ TEST_CASE("CodeActionHandler - No include suggestion without the include diagnos
 
     CHECK(ActionTitled(actions, "Did you mean") == nullptr);
 }
+
+// =====================================================================================
+// The accessor portability hint's quick fix.
+//
+// Measured against angelscript_oracle, and the measurement is what makes this a fix rather than a
+// suggestion: `class C { int get_X() {...} }` used as `c.X` is ACCEPTED under
+// asEP_PROPERTY_ACCESSOR_MODE 2 and REJECTED under 3, while the same accessor carrying the
+// `property` keyword is accepted under BOTH. So applying this cannot break a build that works
+// today - it can only stop one from breaking on a host running the engine's own default.
+// =====================================================================================
+
+namespace
+{
+    /** @brief A context carrying the portability hint over a range. */
+    lsp::CodeActionContext AccessorHintAt(lsp::Range range)
+    {
+        return DiagnosticAt(range, "as-hint-accessor-portability");
+    }
+}
+
+TEST_CASE("CodeActionHandler - Adds the 'property' keyword to a bare accessor")
+{
+    std::string code =
+        "class C {\n"
+        "    int get_X() { return 1; }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 4}, {1, 14} };
+    auto actions = env.CodeActions(at, AccessorHintAt(at));
+
+    const auto *fix = ActionTitled(actions, "Add the 'property' keyword");
+    REQUIRE(fix != nullptr);
+    REQUIRE(fix->edit.has_value());
+    REQUIRE(fix->edit->changes.has_value());
+
+    const auto &edits = fix->edit->changes->begin()->second;
+    REQUIRE(edits.size() == 1);
+
+    // An insertion, not a replacement: nothing existing is touched.
+    CHECK(edits[0].newText == " property");
+    CHECK(edits[0].range.start.line == edits[0].range.end.line);
+    CHECK(edits[0].range.start.character == edits[0].range.end.character);
+
+    // Immediately after the parameter list's ')'. On `    int get_X() { return 1; }` the ')' sits
+    // at column 14, so the insertion point - one past it - is 15.
+    CHECK(edits[0].range.start.line == 1);
+    CHECK(edits[0].range.start.character == 15);
+}
+
+TEST_CASE("CodeActionHandler - The accessor fix produces text the compiler accepts")
+{
+    // Applying the edit by hand and reading the result back, so the assertion is about the code the
+    // user ends up with rather than about an offset.
+    std::string code =
+        "class C {\n"
+        "    int get_X() { return 1; }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 4}, {1, 14} };
+    auto actions = env.CodeActions(at, AccessorHintAt(at));
+
+    const auto *fix = ActionTitled(actions, "Add the 'property' keyword");
+    REQUIRE(fix != nullptr);
+    const auto &edit = fix->edit->changes->begin()->second[0];
+
+    // Rebuild the edited line.
+    std::string line = "    int get_X() { return 1; }";
+    line.insert(edit.range.start.character, edit.newText);
+
+    CHECK(line == "    int get_X() property { return 1; }");
+}
+
+TEST_CASE("CodeActionHandler - An interface accessor is offered no keyword to add")
+{
+    // AngelScript's parser refuses `property` on an interface method outright - the oracle answers
+    // "Expected ';'" - so a fix here would hand the user code that does not compile. The mode-3
+    // rejection an interface like this causes lands on the IMPLEMENTING class's accessor, and that
+    // is where both the hint and the fix belong.
+    std::string code =
+        "interface I {\n"
+        "    int get_X();\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 4}, {1, 14} };
+    auto actions = env.CodeActions(at, AccessorHintAt(at));
+
+    CHECK(ActionTitled(actions, "Add the 'property' keyword") == nullptr);
+}
+
+TEST_CASE("CodeActionHandler - No accessor fix without the hint")
+{
+    // Bound to the diagnostic. The hint is opt-in, and with it switched off no accessor in the file
+    // should sprout an offer to rewrite it.
+    std::string code =
+        "class C {\n"
+        "    int get_X() { return 1; }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 4}, {1, 14} };
+    auto actions = env.CodeActions(at, lsp::CodeActionContext{});
+
+    CHECK(ActionTitled(actions, "Add the 'property' keyword") == nullptr);
+}

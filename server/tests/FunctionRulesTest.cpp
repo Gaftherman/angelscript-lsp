@@ -23,7 +23,8 @@ namespace
 {
     std::vector<Diagnostic> AnalyzeFunctionSnippet(const std::string &code,
                                                    const std::string &fileUri = "file:///funcs.as",
-                                                   const angel_lsp::config::EngineProperties *engine = nullptr)
+                                                   const angel_lsp::config::EngineProperties *engine = nullptr,
+                                                   const angel_lsp::config::DiagnosticsConfig *diagnostics = nullptr)
     {
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);
@@ -35,6 +36,7 @@ namespace
 
         SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
         request.engineProperties = engine;
+        request.diagnostics = diagnostics;
         request.scopeRoot = scopes.CollectScopes(code, parser);
         request.sourceCode = code;
 
@@ -859,4 +861,156 @@ TEST_CASE("FunctionRules - Unknown Type Corpus Audit" * doctest::skip(true))
         MESSAGE("  " << hit.fileName << ":" << hit.line << " " << hit.message);
     }
     CHECK(bare.filesAnalysed > 0);
+}
+
+
+// =====================================================================================
+// The accessor portability hint itself.
+//
+// Off by default, and that is the load-bearing part: a workspace that has settled on
+// asEP_PROPERTY_ACCESSOR_MODE 2 would otherwise get one hint per accessor for a decision it
+// already made.
+// =====================================================================================
+
+TEST_CASE("FunctionRules - No accessor portability hint unless it is asked for")
+{
+    std::string code =
+        "class C {\n"
+        "    int get_X() { return 1; }\n"
+        "    void set_X(int v) { }\n"
+        "}\n";
+
+    // The default config: reportAccessorPortability is false.
+    auto diagnostics = AnalyzeFunctionSnippet(code);
+
+    for (const auto &d : diagnostics)
+        CHECK(d.code != "as-hint-accessor-portability");
+}
+
+TEST_CASE("FunctionRules - The hint names each accessor's property when switched on")
+{
+    std::string code =
+        "class C {\n"
+        "    int get_X() { return 1; }\n"
+        "    void set_X(int v) { }\n"
+        "}\n";
+
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportAccessorPortability = true;
+
+    auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
+
+    size_t hints = 0;
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-hint-accessor-portability")
+        {
+            ++hints;
+            CHECK(d.severity == DiagnosticSeverity::Hint);
+            CHECK(d.message.find("'X'") != std::string::npos);
+        }
+    }
+    CHECK(hints == 2);
+}
+
+TEST_CASE("FunctionRules - An accessor that already carries the keyword is left alone")
+{
+    // The whole point: the hint is about accessors that would stop being properties under mode 3,
+    // and one with the keyword would not.
+    std::string code =
+        "class C {\n"
+        "    int get_X() property { return 1; }\n"
+        "}\n";
+
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportAccessorPortability = true;
+
+    auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
+
+    for (const auto &d : diagnostics)
+        CHECK(d.code != "as-hint-accessor-portability");
+}
+
+TEST_CASE("FunctionRules - A global function named get_X is not an accessor")
+{
+    // An accessor is a class member. A free function called `get_Config()` is an ordinary function
+    // with an ordinary name, and hinting at it would be noise in every codebase that uses that
+    // naming convention.
+    std::string code =
+        "int get_Config() { return 1; }\n";
+
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportAccessorPortability = true;
+
+    auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
+
+    for (const auto &d : diagnostics)
+        CHECK(d.code != "as-hint-accessor-portability");
+}
+
+TEST_CASE("FunctionRules - A member literally named get_ is not an accessor")
+{
+    // Same exclusion RuleIndex makes: the suffix is the property name, and an empty one is not a
+    // property.
+    std::string code =
+        "class C {\n"
+        "    int get_() { return 1; }\n"
+        "}\n";
+
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportAccessorPortability = true;
+
+    auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
+
+    for (const auto &d : diagnostics)
+        CHECK(d.code != "as-hint-accessor-portability");
+}
+
+TEST_CASE("FunctionRules - No portability hint on an interface method")
+{
+    // The one case where the advice would be a trap: AngelScript's parser refuses `property` on an
+    // interface method - the oracle answers "Expected ';'" - so there is no legal fix to offer. A
+    // mode-3 rejection caused by an interface like this lands on the implementing class's accessor,
+    // and that one does get hinted.
+    std::string code =
+        "interface I {\n"
+        "    int get_X();\n"
+        "}\n";
+
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportAccessorPortability = true;
+
+    auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
+
+    for (const auto &d : diagnostics)
+        CHECK(d.code != "as-hint-accessor-portability");
+}
+
+TEST_CASE("FunctionRules - The implementing class's accessor is still hinted")
+{
+    // The other half of the pair above. The interface declares it, the class implements it, and the
+    // class is where the keyword can actually go.
+    std::string code =
+        "interface I {\n"
+        "    int get_X();\n"
+        "}\n"
+        "class C : I {\n"
+        "    int get_X() { return 1; }\n"
+        "}\n";
+
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportAccessorPortability = true;
+
+    auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
+
+    size_t hints = 0;
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-hint-accessor-portability")
+        {
+            ++hints;
+            CHECK(d.range.start.line == 4);
+        }
+    }
+    CHECK(hints == 1);
 }

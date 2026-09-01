@@ -1946,6 +1946,77 @@ namespace angel_lsp::features
         }
 
         /**
+         * @brief Adds the `property` keyword to an accessor that carries none.
+         *
+         * The fix for the portability hint, and the reason it is offered as a fix at all: measured
+         * against the oracle, an accessor WITH the keyword is accepted under
+         * asEP_PROPERTY_ACCESSOR_MODE 2 and 3 alike, while one without it is rejected under 3. So
+         * applying this cannot break a build that works today - it can only stop one from breaking
+         * on a host that runs the engine's own default.
+         */
+        void TryAddAccessorPropertyKeywordFix(
+            const CodeActionRequest &request,
+            TSNode rootNode,
+            std::vector<lsp::CodeAction> &actions)
+        {
+            if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+            {
+                return;
+            }
+
+            for (const auto &diag : request.context.diagnostics)
+            {
+                if (!MatchDiagnosticCode(diag, "as-hint-accessor-portability"))
+                {
+                    continue;
+                }
+
+                const TSPoint point = { diag.range.start.line, diag.range.start.character };
+                TSNode node = ts_node_descendant_for_point_range(rootNode, point, point);
+                while (!ts_node_is_null(node) && std::string_view(ts_node_type(node)) != "func_declaration")
+                {
+                    node = ts_node_parent(node);
+                }
+                if (ts_node_is_null(node))
+                {
+                    continue;
+                }
+
+                // After the parameter list, which is where `property` goes and where `const` would
+                // also sit. Anchored to the parameter list rather than to the body: an interface
+                // declaration or a stub has no body to anchor to.
+                const TSNode parameters = ts_node_child_by_field_name(node, "parameters", 10);
+                if (ts_node_is_null(parameters))
+                {
+                    continue;
+                }
+
+                const TSPoint insertAt = ts_node_end_point(parameters);
+
+                lsp::TextEdit edit;
+                edit.range.start.line = insertAt.row;
+                edit.range.start.character = insertAt.column;
+                edit.range.end.line = insertAt.row;
+                edit.range.end.character = insertAt.column;
+                edit.newText = " property";
+
+                lsp::CodeAction action;
+                action.title = "Add the 'property' keyword";
+                action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+                action.isPreferred = true;
+                action.diagnostics = std::vector<lsp::Diagnostic>{ diag };
+
+                lsp::WorkspaceEdit wsEdit;
+                lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+                changes[lsp::DocumentUri::parse(request.uri)] = { std::move(edit) };
+                wsEdit.changes = std::move(changes);
+                action.edit = std::move(wsEdit);
+
+                actions.push_back(std::move(action));
+            }
+        }
+
+        /**
          * @brief Tries to generate Missing const Qualifier quick fixes and intention actions.
          */
         void TryAddConstQualifierActions(
@@ -2634,6 +2705,7 @@ namespace angel_lsp::features
         TryAddUndefinedIdentifierSuggestions(request, rootNode, actions);
         TryAddHandleOnPrimitiveFix(request, rootNode, actions);
         TryAddUnresolvedIncludeSuggestions(request, actions);
+        TryAddAccessorPropertyKeywordFix(request, rootNode, actions);
 
         // =========================================================================
         // Feature 5: Sort and Clean #include Directives

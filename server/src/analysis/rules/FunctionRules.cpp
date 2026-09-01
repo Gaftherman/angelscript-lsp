@@ -689,5 +689,25 @@ namespace angel_lsp::analysis::rules
         CheckConstructorDestructor(sym, sig, fctx, ctx);
         CheckOverride(sym, sig, fctx, ctx);
         ValidateParameters(sym, sig.parameters, false, ctx);
+
+        // Not on an interface method, and this is not a refinement - it is the difference between
+        // a hint and a trap. AngelScript's parser refuses `property` on an interface method
+        // outright ("Expected ';'", verified against angelscript_oracle), so hinting there would be
+        // advice whose only fix does not compile. The mode-3 rejection such an interface produces
+        // lands on the IMPLEMENTING class's accessor, which this rule reaches on its own.
+        if (ctx.request.diagnostics && ctx.request.diagnostics->reportAccessorPortability &&
+            !sym.containerName.empty() && !sig.isInterfaceMethod && !sig.modifiers.isProperty)
+        {
+            std::string_view accessor = sym.name;
+            if (accessor.starts_with("get_") || accessor.starts_with("set_"))
+            {
+                accessor.remove_prefix(4);
+                if (!accessor.empty())
+                {
+                    ctx.LogRule("ValidateFunction", "as-hint-accessor-portability", sym);
+                    ctx.Emit(sym, "as-hint-accessor-portability", accessor, DiagnosticSeverity::Hint);
+                }
+            }
+        }
     }
 }

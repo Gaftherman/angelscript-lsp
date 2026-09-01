@@ -298,6 +298,9 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportUnknownTypes', true) === false) {
         args.push('--no-report-unknown-types');
     }
+    if (config.get<boolean>('diagnostics.reportAccessorPortability', false) === true) {
+        args.push('--report-accessor-portability');
+    }
 
     // asEP_PROPERTY_ACCESSOR_MODE takes a number, not a boolean, so it is not one of
     // ENGINE_PROPERTIES above either. The test against 2 and 3 is a whitelist, not a
