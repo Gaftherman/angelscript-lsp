@@ -101,6 +101,66 @@ namespace angel_lsp::config
                 return false;
             }
 
+            if (name == "useCharacterLiterals")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.useCharacterLiterals = raw == "1" ? 1 : 0;
+                    return true;
+                }
+                return false;
+            }
+
+            if (name == "disallowValueAssignForRef")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.disallowValueAssignForRef = raw == "1";
+                    return true;
+                }
+                return false;
+            }
+
+            if (name == "alterSyntaxNamedArgs")
+            {
+                if (raw == "0" || raw == "1" || raw == "2")
+                {
+                    engine.alterSyntaxNamedArgs = raw == "2" ? 2 : (raw == "1" ? 1 : 0);
+                    return true;
+                }
+                return false;
+            }
+
+            if (name == "disableIntegerDivision")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.disableIntegerDivision = raw == "1";
+                    return true;
+                }
+                return false;
+            }
+
+            if (name == "disallowEmptyListElements")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.disallowEmptyListElements = raw == "1";
+                    return true;
+                }
+                return false;
+            }
+
+            if (name == "foreachSupport")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.foreachSupport = raw == "1";
+                    return true;
+                }
+                return false;
+            }
+
             if (!IsBoolLiteral(raw))
             {
                 return false;
@@ -207,6 +267,10 @@ namespace angel_lsp::config
                   << "  --report-accessor-portability           Hint on accessors without the 'property' keyword\n"
                   << "  --report-bool-conversion                Hint on a class used where a bool is expected\n"
                   << "  --report-missing-funcdef                Hint when a type position names a function\n"
+                  << "  --report-integer-division               Hint on integer division expressions\n"
+                  << "  --report-named-argument-syntax          Hint on named argument syntax\n"
+                  << "  --report-empty-list-elements            Hint on empty elements in initialization lists\n"
+                  << "  --report-value-assign-for-ref           Hint on value assignment for reference types\n"
                   << "  --format-brace-style=<allman|kr>        Where a block's opening brace goes. Default allman.\n"
                   << "                                          A list or a lambda body keeps its brace on the line\n"
                   << "                                          either way - that is correctness, not style.\n"
@@ -627,6 +691,15 @@ namespace angel_lsp::config
             else if (key == "--no-report-missing-funcdef")
             {
                 config.diagnostics.reportMissingFuncdef =
+                    inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--report-integer-division")
+            {
+                config.diagnostics.reportIntegerDivision = getBoolValue(true);
+            }
+            else if (key == "--no-report-integer-division")
+            {
+                config.diagnostics.reportIntegerDivision =
                     inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
             else if (key == "--engine-property" || key == "--engine-prop")

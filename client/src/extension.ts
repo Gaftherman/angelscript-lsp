@@ -307,6 +307,9 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportMissingFuncdef', false) === true) {
         args.push('--report-missing-funcdef');
     }
+    if (config.get<boolean>('diagnostics.reportIntegerDivision', false) === true) {
+        args.push('--report-integer-division');
+    }
 
     // asEP_PROPERTY_ACCESSOR_MODE takes a number, not a boolean, so it is not one of
     // ENGINE_PROPERTIES above either. The test against 2 and 3 is a whitelist, not a
@@ -326,6 +329,32 @@ export function buildServerArgs(): string[] {
     const boolConversionMode = config.get<number>('engine.boolConversionMode', 0);
     if (boolConversionMode === 0 || boolConversionMode === 1) {
         args.push(`--engine-property=boolConversionMode=${boolConversionMode}`);
+    }
+
+    const useCharacterLiterals = config.get<number>('engine.useCharacterLiterals', 0);
+    if (useCharacterLiterals === 0 || useCharacterLiterals === 1) {
+        args.push(`--engine-property=useCharacterLiterals=${useCharacterLiterals}`);
+    }
+
+    if (config.get<boolean>('engine.disallowValueAssignForRef', false) === true) {
+        args.push('--engine-property=disallowValueAssignForRef=1');
+    }
+
+    const alterSyntaxNamedArgs = config.get<number>('engine.alterSyntaxNamedArgs', 0);
+    if (alterSyntaxNamedArgs === 0 || alterSyntaxNamedArgs === 1 || alterSyntaxNamedArgs === 2) {
+        args.push(`--engine-property=alterSyntaxNamedArgs=${alterSyntaxNamedArgs}`);
+    }
+
+    if (config.get<boolean>('engine.disableIntegerDivision', false) === true) {
+        args.push('--engine-property=disableIntegerDivision=1');
+    }
+
+    if (config.get<boolean>('engine.disallowEmptyListElements', false) === true) {
+        args.push('--engine-property=disallowEmptyListElements=1');
+    }
+
+    if (config.get<boolean>('engine.foreachSupport', true) === false) {
+        args.push('--engine-property=foreachSupport=0');
     }
 
     // The host dialect. An enum rather than a boolean, so it is not one of ENGINE_PROPERTIES above

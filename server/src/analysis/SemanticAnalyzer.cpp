@@ -151,7 +151,7 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckDefiniteAssignment(assignRequest, ctx);
-            CheckMultilineStrings(ts_tree_root_node(request.tree), ctx);
+            CheckEngineDialectRules(ts_tree_root_node(request.tree), ctx);
         }
 
         // Needs the tree, not just the symbol table: an initializer or a cast is an expression, and
@@ -204,24 +204,245 @@ namespace angel_lsp::analysis
         return diagnostics;
     }
 
-    void SemanticAnalyzer::CheckMultilineStrings(TSNode node, DiagnosticContext &ctx, int depth) const
+    void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext &ctx, int depth) const
     {
         if (ts_node_is_null(node) || depth > k_maxAstDepth)
         {
             return;
         }
 
-        if (ctx.request.AllowsMultilineStrings())
+        const std::string_view engineNodeType = ts_node_type(node);
+
+        // `foreach (T v : c)` is a compile error - "Expected '('" at the loop variable - when the
+        // host built its engine with asEP_FOREACH_SUPPORT off. On by the engine's default, so this
+        // fires only for a host that says otherwise.
+        if (engineNodeType == "foreach_statement" && !ctx.request.SupportsForeach())
         {
-            return;
+            const TSPoint start = ts_node_start_point(node);
+            ctx.EmitAtRange(start.row, start.column, start.row, start.column + 7,
+                            "as-err-foreach-unsupported", DiagnosticSeverity::Error);
         }
 
-        if (std::string_view(ts_node_type(node)) == "string_literal")
+        // A hole in an initializer list - `{1, , 3}` - which asEP_DISALLOW_EMPTY_LIST_ELEMENTS
+        // rejects with "Empty list element is not allowed". Allowed by the engine's default, so
+        // again this speaks only for a host that turned it off.
+        if (engineNodeType == "initializer_list" && ctx.request.DisallowsEmptyListElements())
+        {
+            const uint32_t childCount = ts_node_child_count(node);
+            for (uint32_t i = 1; i < childCount; ++i)
+            {
+                // Two commas in a row, or a comma immediately before the closing brace: either way
+                // the element between them is missing. Read off the punctuation rather than the
+                // named children, because the missing element has no node to find.
+                const std::string_view previous = ts_node_type(ts_node_child(node, i - 1));
+                const std::string_view current = ts_node_type(ts_node_child(node, i));
+                if (previous == "," && (current == "," || current == "}"))
+                {
+                    const TSPoint at = ts_node_start_point(ts_node_child(node, i - 1));
+                    ctx.EmitAtRange(at.row, at.column, at.row, at.column + 1,
+                                    "as-err-empty-list-element", DiagnosticSeverity::Error);
+                }
+            }
+        }
+
+        // `'x'` is a one-character STRING under the engine's default and an integer only when the
+        // host sets asEP_USE_CHARACTER_LITERALS. So `int c = 'x';` is rejected by default - "Can't
+        // implicitly convert from 'const string' to 'int'" - and legal for a host that set it.
+        // Verified both ways against angelscript_oracle.
+        //
+        // Read at the declaration rather than at the literal: the literal alone says nothing about
+        // which reading was intended, and the declared type is what makes the two distinguishable.
+        if (engineNodeType == "variable_declaration" && ctx.request.CharacterLiteralMode() == 0)
+        {
+            const TSNode typeNode = ts_node_child_by_field_name(node, "var_type", 8);
+            if (!ts_node_is_null(typeNode))
+            {
+                const std::string declared = CleanBaseType(GetNodeText(typeNode, ctx.request.sourceCode));
+                if (IsPrimitiveTypeName(declared) && declared != "auto" && declared != "void")
+                {
+                    const uint32_t declaratorCount = ts_node_child_count(node);
+                    for (uint32_t i = 0; i < declaratorCount; ++i)
+                    {
+                        const TSNode declarator = ts_node_child(node, i);
+                        if (std::string_view(ts_node_type(declarator)) != "variable_declarator")
+                            continue;
+
+                        const TSNode value = ts_node_child_by_field_name(declarator, "value", 5);
+                        if (ts_node_is_null(value) ||
+                            std::string_view(ts_node_type(value)) != "string_literal")
+                            continue;
+
+                        const uint32_t from = ts_node_start_byte(value);
+                        // The opening delimiter is what separates 'x' from "x": the grammar gives
+                        // both the same string_literal node type.
+                        if (from < ctx.request.sourceCode.size() && ctx.request.sourceCode[from] == '\'')
+                        {
+                            const TSPoint start = ts_node_start_point(value);
+                            const TSPoint end = ts_node_end_point(value);
+                            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                            "as-err-character-literal-is-string", declared,
+                                            DiagnosticSeverity::Error);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Integer division under asEP_DISABLE_INTEGER_DIVISION. Not a compile error either way -
+        // all three probes compile - but the VALUE differs: `float f = 1 / 2;` is 0.0 by the
+        // engine's default and 0.5 when the host disables integer division. That is the classic
+        // `1/2 == 0` surprise, and here it is configuration-dependent, so it is worth a hint and
+        // not worth an error.
+        //
+        // Only when the host has NOT disabled integer division, because only then does the
+        // truncation happen; and only opt-in, because a codebase that means integer division
+        // writes exactly this and wants no comment on it.
+        if (engineNodeType == "binary_expression" &&
+            ctx.request.diagnostics && ctx.request.diagnostics->reportIntegerDivision &&
+            !ctx.request.DisablesIntegerDivision())
+        {
+            const TSNode op = ts_node_child_by_field_name(node, "operator", 8);
+            if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "/")
+            {
+                const TSNode left = ts_node_child_by_field_name(node, "left", 4);
+                const TSNode right = ts_node_child_by_field_name(node, "right", 5);
+
+                // Integer LITERALS on both sides. Deliberately not variables: their types would have
+                // to be resolved, and a false hint here is noise on every division in the file.
+                const auto isIntegerLiteral = [&ctx](TSNode candidate)
+                {
+                    if (ts_node_is_null(candidate) ||
+                        std::string_view(ts_node_type(candidate)) != "number_literal")
+                        return false;
+                    const std::string text = GetNodeText(candidate, ctx.request.sourceCode);
+                    return text.find('.') == std::string::npos &&
+                           text.find('e') == std::string::npos &&
+                           text.find('E') == std::string::npos &&
+                           text.find('f') == std::string::npos &&
+                           text.find('F') == std::string::npos;
+                };
+
+                if (isIntegerLiteral(left) && isIntegerLiteral(right))
+                {
+                    const TSPoint start = ts_node_start_point(node);
+                    const TSPoint end = ts_node_end_point(node);
+                    ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                    "as-hint-integer-division", DiagnosticSeverity::Hint);
+                }
+            }
+        }
+
+        // `f(name = value)` under asEP_ALTER_SYNTAX_NAMED_ARGS. AngelScript's own named-argument
+        // syntax is `name: value`; the `=` spelling is a compile error under the engine's default
+        // ("No matching symbol 'width'"), a warning under mode 1 and silent under mode 2. Measured
+        // all three ways against angelscript_oracle.
+        //
+        // Gated on the engine mode alone, with no separate opt-in: unlike the integer-division
+        // hint, this is not advice about legal code - under mode 0 it does not compile.
+        if (engineNodeType == "argument_list" && ctx.request.NamedArgumentSyntaxMode() != 2)
+        {
+            const uint32_t argCount = ts_node_named_child_count(node);
+            for (uint32_t i = 0; i < argCount; ++i)
+            {
+                const TSNode argument = ts_node_named_child(node, i);
+                if (std::string_view(ts_node_type(argument)) != "assignment_expression")
+                    continue;
+
+                // Only a bare name on the left. `f(obj.field = 1)` is an ordinary assignment
+                // expression and a legal argument; a lone name is what a named argument looks like.
+                //
+                // `scoped_identifier` as well as `identifier`, because the grammar wraps every bare
+                // identifier expression in one - matching only the inner node found nothing, which
+                // is how the first version of this rule silently never fired.
+                const TSNode target = ts_node_child_by_field_name(argument, "left", 4);
+                if (ts_node_is_null(target))
+                    continue;
+                const std::string_view targetType = ts_node_type(target);
+                if (targetType != "identifier" && targetType != "scoped_identifier")
+                    continue;
+                // A qualified name is not a parameter name.
+                if (targetType == "scoped_identifier" && ts_node_named_child_count(target) != 1)
+                    continue;
+
+                const TSPoint start = ts_node_start_point(argument);
+                const TSPoint end = ts_node_end_point(argument);
+                const std::string name = GetNodeText(target, ctx.request.sourceCode);
+
+                ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                "as-err-named-argument-syntax", name,
+                                ctx.request.NamedArgumentSyntaxMode() == 1 ? DiagnosticSeverity::Warning
+                                                                           : DiagnosticSeverity::Error);
+            }
+        }
+
+        // `a = b` on a reference type under asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE, which the
+        // engine answers with "Value assignment on reference types is not allowed. Did you mean to
+        // do a handle assignment?". Off by the engine's default, so this speaks only for a host
+        // that turned it on.
+        if (engineNodeType == "assignment_expression" && ctx.request.DisallowsValueAssignForRef())
+        {
+            const TSNode op = ts_node_child_by_field_name(node, "operator", 8);
+            const TSNode target = ts_node_child_by_field_name(node, "left", 4);
+
+            // Every compound operator is arithmetic on a value, so only a bare `=` is a candidate.
+            if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "=" &&
+                !ts_node_is_null(target))
+            {
+                // `@a = @b` is the handle assignment the compiler's own message asks for, and it is
+                // accepted under the property - verified against the oracle. Its operator is also a
+                // bare `=`; the `@` is a unary prefix on each side, which is the only thing telling
+                // the two forms apart. Matching on the operator alone reported the very fix the
+                // diagnostic recommends.
+                bool isHandleAssignment = false;
+                if (std::string_view(ts_node_type(target)) == "unary_expression")
+                {
+                    const TSNode prefix = ts_node_child_by_field_name(target, "operator", 8);
+                    isHandleAssignment = !ts_node_is_null(prefix) &&
+                                         std::string_view(ts_node_type(prefix)) == "@";
+                }
+                // The TYPE of the assignment target, not its text. Reading the text compared the
+                // variable's NAME against the symbol table, which never matches a local - the first
+                // version of this rule was silent for exactly that reason.
+                const Scope *scope = ctx.request.scopeRoot
+                                         ? FindInnermostScope(ctx.request.scopeRoot.get(),
+                                                              ts_node_start_point(target).row,
+                                                              ts_node_start_point(target).column)
+                                         : nullptr;
+                const std::string targetType = CleanBaseType(ResolveExpressionType(
+                    target, scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri));
+
+                // Silent unless fully visible: only a class this analyzer can find the declaration
+                // of is known to be a reference type. A host type it cannot see might be a value
+                // type, and reporting one would be a false positive on working code.
+                bool isVisibleClass = false;
+                if (const auto symbols = ctx.request.symbolTable.FindSymbolsPtr(targetType))
+                {
+                    for (const auto &sym : *symbols)
+                    {
+                        if (sym.type == SymbolType::Class)
+                        {
+                            isVisibleClass = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (isVisibleClass && !isHandleAssignment)
+                {
+                    const TSPoint start = ts_node_start_point(node);
+                    const TSPoint end = ts_node_end_point(node);
+                    ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                    "as-err-value-assign-for-ref", targetType, DiagnosticSeverity::Error);
+                }
+            }
+        }
+
+        if (engineNodeType == "string_literal")
         {
             const TSPoint start = ts_node_start_point(node);
             const TSPoint end = ts_node_end_point(node);
 
-            if (end.row > start.row)
+            if (end.row > start.row && !ctx.request.AllowsMultilineStrings())
             {
                 // A heredoc spans lines under every setting; only the plain quote form is governed
                 // by asEP_ALLOW_MULTILINE_STRINGS. The grammar gives both the same node type, so
@@ -247,7 +468,7 @@ namespace angel_lsp::analysis
         const uint32_t count = ts_node_child_count(node);
         for (uint32_t i = 0; i < count; ++i)
         {
-            CheckMultilineStrings(ts_node_child(node, i), ctx, depth + 1);
+            CheckEngineDialectRules(ts_node_child(node, i), ctx, depth + 1);
         }
     }
 

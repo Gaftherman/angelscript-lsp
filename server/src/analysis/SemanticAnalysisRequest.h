@@ -209,6 +209,60 @@ namespace angel_lsp::analysis
         }
 
         /**
+         * @brief asEP_USE_CHARACTER_LITERALS: 0 = 'x' is a string, 1 = 'x' is an integer.
+         *
+         * Answers 0 with no engine properties, matching the engine's default.
+         */
+        int CharacterLiteralMode() const
+        {
+            return engineProperties ? engineProperties->useCharacterLiterals : 0;
+        }
+
+        /**
+         * @brief True when the host built its engine with asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE.
+         */
+        bool DisallowsValueAssignForRef() const
+        {
+            return engineProperties && engineProperties->disallowValueAssignForRef;
+        }
+
+        /**
+         * @brief asEP_ALTER_SYNTAX_NAMED_ARGS: 0 = ':' only, 1 = '=' with warning, 2 = '=' silently.
+         *
+         * Answers 0 with no engine properties, matching the engine's default.
+         */
+        int NamedArgumentSyntaxMode() const
+        {
+            return engineProperties ? engineProperties->alterSyntaxNamedArgs : 0;
+        }
+
+        /**
+         * @brief True when the host built its engine with asEP_DISABLE_INTEGER_DIVISION.
+         */
+        bool DisablesIntegerDivision() const
+        {
+            return engineProperties && engineProperties->disableIntegerDivision;
+        }
+
+        /**
+         * @brief True when the host built its engine with asEP_DISALLOW_EMPTY_LIST_ELEMENTS.
+         */
+        bool DisallowsEmptyListElements() const
+        {
+            return engineProperties && engineProperties->disallowEmptyListElements;
+        }
+
+        /**
+         * @brief True when the host built its engine with asEP_FOREACH_SUPPORT (default: true).
+         *
+         * Answers true with no engine properties, matching the engine's default.
+         */
+        bool SupportsForeach() const
+        {
+            return engineProperties ? engineProperties->foreachSupport : true;
+        }
+
+        /**
          * @brief True when the host built its engine with asEP_DISALLOW_GLOBAL_VARS.
          */
         bool DisallowsGlobalVars() const

@@ -157,6 +157,51 @@ namespace angel_lsp::config
          * A host that sets the property turns this off and the rule goes quiet.
          */
         bool allowMultilineStrings = false;
+
+        /**
+         * @brief asEP_USE_CHARACTER_LITERALS: character literal interpretation (engine default: 0).
+         *
+         * 0 = 'x' is treated as a one-character string literal (the default).
+         * 1 = 'x' is treated as an integer value representing the character code.
+         */
+        int useCharacterLiterals = 0;
+
+        /**
+         * @brief asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE (engine default: false).
+         *
+         * When enabled, disallows value assignment for reference types, requiring handle assignment instead.
+         */
+        bool disallowValueAssignForRef = false;
+
+        /**
+         * @brief asEP_ALTER_SYNTAX_NAMED_ARGS: syntax for named arguments (engine default: 0).
+         *
+         * 0 = ':' only (standard syntax).
+         * 1 = '=' allowed with a compiler warning.
+         * 2 = '=' allowed silently.
+         */
+        int alterSyntaxNamedArgs = 0;
+
+        /**
+         * @brief asEP_DISABLE_INTEGER_DIVISION: integer division behavior (engine default: false).
+         *
+         * When enabled, division between two integers yields a float rather than truncating to an integer.
+         */
+        bool disableIntegerDivision = false;
+
+        /**
+         * @brief asEP_DISALLOW_EMPTY_LIST_ELEMENTS (engine default: false).
+         *
+         * When enabled, empty elements in initialization lists (e.g. `{1, , 3}`) are disallowed.
+         */
+        bool disallowEmptyListElements = false;
+
+        /**
+         * @brief asEP_FOREACH_SUPPORT (engine default: true).
+         *
+         * Whether the `for each` / `foreach` loop syntax is supported. Enabled by default in the engine.
+         */
+        bool foreachSupport = true;
     };
 
     /**
@@ -228,6 +273,17 @@ namespace angel_lsp::config
          * workspace whose engine registers one would get a hint about a type that exists.
          */
         bool reportMissingFuncdef = false;
+
+        /**
+         * @brief Hint on integer division expressions (default: off).
+         *
+         * Off by default because it only matters when the host sets the matching engine property
+         * asEP_DISABLE_INTEGER_DIVISION.
+         */
+        bool reportIntegerDivision = false;
+
+
+
     };
 
     /**

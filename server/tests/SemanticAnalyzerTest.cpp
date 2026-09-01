@@ -3,6 +3,7 @@
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "analysis/SemanticAnalyzer.h"
+#include <functional>
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
@@ -1334,4 +1335,350 @@ TEST_CASE("SemanticAnalyzer - Multiline String Corpus Audit" * doctest::skip(tru
     {
         MESSAGE("  " << hit.fileName << ":" << hit.line << " " << hit.message);
     }
+}
+
+
+// =====================================================================================
+// The rules a host's SetEngineProperty calls decide.
+//
+// AngelScript is a family of dialects rather than one language, and each of these was undecidable
+// from script text alone - which is why they sat in i18n.cpp as codes nobody emitted. Every
+// expectation below was measured against angelscript_oracle, which grew a flag per property.
+//
+// The accessors answer the ENGINE's default when no configuration is supplied, so the tests that
+// pass no EngineProperties are asserting what an unconfigured workspace gets.
+// =====================================================================================
+
+namespace
+{
+    std::vector<Diagnostic> AnalyzeWithEngine(const std::string &code,
+                                              const angel_lsp::config::EngineProperties &engine,
+                                              const angel_lsp::config::DiagnosticsConfig *diagnostics = nullptr)
+    {
+        SymbolTable table;
+        static angel_lsp::i18n::I18n i18n;
+        return AnalyzeSource(code, table, i18n, "file:///dialect.as", diagnostics, &engine);
+    }
+
+    bool Emitted(const std::vector<Diagnostic> &diagnostics, const std::string &code)
+    {
+        return std::any_of(diagnostics.begin(), diagnostics.end(),
+                           [&code](const Diagnostic &d) { return d.code == code; });
+    }
+}
+
+// --- asEP_USE_CHARACTER_LITERALS ---------------------------------------------------------------
+
+TEST_CASE("EngineDialect - 'x' cannot initialise an int under the engine's default")
+{
+    // Measured: REJECTS with no flag, ACCEPTS with --use-character-literals=1.
+    const std::string code = "void main() { int c = 'x'; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    CHECK(Emitted(AnalyzeSource(code, table, i18n), "as-err-character-literal-is-string"));
+}
+
+TEST_CASE("EngineDialect - 'x' initialising an int is fine when the host sets character literals")
+{
+    const std::string code = "void main() { int c = 'x'; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.useCharacterLiterals = 1;
+
+    CHECK_FALSE(Emitted(AnalyzeWithEngine(code, engine), "as-err-character-literal-is-string"));
+}
+
+TEST_CASE("EngineDialect - 'x' initialising a string is accepted under either setting")
+{
+    // Measured: ACCEPTS both ways. A one-character string is exactly what the default reading
+    // produces, so there is nothing to say.
+    const std::string code = "void main() { string s = 'x'; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    CHECK_FALSE(Emitted(AnalyzeSource(code, table, i18n), "as-err-character-literal-is-string"));
+}
+
+TEST_CASE("EngineDialect - a double-quoted initialiser is never a character literal")
+{
+    // Both spellings are one string_literal node in the grammar; the opening delimiter is the only
+    // thing separating them. Without that check every `int x = "..."` would carry the wrong message.
+    const std::string code = "void main() { int c = \"x\"; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    CHECK_FALSE(Emitted(AnalyzeSource(code, table, i18n), "as-err-character-literal-is-string"));
+}
+
+// --- asEP_FOREACH_SUPPORT ----------------------------------------------------------------------
+
+TEST_CASE("EngineDialect - foreach is fine by default")
+{
+    // The one accessor that must default TRUE. Getting it backwards would report every foreach
+    // loop in every workspace.
+    const std::string code =
+        "void main() { array<int> a = {1,2,3}; foreach (int v : a) { } }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    CHECK_FALSE(Emitted(AnalyzeSource(code, table, i18n), "as-err-foreach-unsupported"));
+}
+
+TEST_CASE("EngineDialect - foreach is reported when the host disabled it")
+{
+    const std::string code =
+        "void main() { array<int> a = {1,2,3}; foreach (int v : a) { } }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.foreachSupport = false;
+
+    CHECK(Emitted(AnalyzeWithEngine(code, engine), "as-err-foreach-unsupported"));
+}
+
+// --- asEP_DISALLOW_EMPTY_LIST_ELEMENTS ---------------------------------------------------------
+
+TEST_CASE("EngineDialect - a hole in a list is fine by default")
+{
+    const std::string code = "void main() { array<int> a = {1, , 3}; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    CHECK_FALSE(Emitted(AnalyzeSource(code, table, i18n), "as-err-empty-list-element"));
+}
+
+TEST_CASE("EngineDialect - a hole in a list is reported when the host disallows one")
+{
+    const std::string code = "void main() { array<int> a = {1, , 3}; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.disallowEmptyListElements = true;
+
+    CHECK(Emitted(AnalyzeWithEngine(code, engine), "as-err-empty-list-element"));
+}
+
+TEST_CASE("EngineDialect - a list without holes draws nothing even when they are disallowed")
+{
+    const std::string code = "void main() { array<int> a = {1, 2, 3}; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.disallowEmptyListElements = true;
+
+    CHECK_FALSE(Emitted(AnalyzeWithEngine(code, engine), "as-err-empty-list-element"));
+}
+
+// --- asEP_DISABLE_INTEGER_DIVISION -------------------------------------------------------------
+
+TEST_CASE("EngineDialect - integer division is hinted when asked for")
+{
+    // Not a compile error either way - all three oracle probes compile. What differs is the VALUE:
+    // 1 / 2 is 0 by the engine's default and 0.5 when the host disables integer division.
+    const std::string code = "void main() { float f = 1 / 2; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    angel_lsp::config::DiagnosticsConfig diagnostics;
+    diagnostics.reportIntegerDivision = true;
+
+    CHECK(Emitted(AnalyzeWithEngine(code, engine, &diagnostics), "as-hint-integer-division"));
+}
+
+TEST_CASE("EngineDialect - integer division says nothing unless asked")
+{
+    const std::string code = "void main() { float f = 1 / 2; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    CHECK_FALSE(Emitted(AnalyzeSource(code, table, i18n), "as-hint-integer-division"));
+}
+
+TEST_CASE("EngineDialect - integer division says nothing when the host disabled it")
+{
+    // With the property set there is no truncation to warn about: the division is already float.
+    const std::string code = "void main() { float f = 1 / 2; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.disableIntegerDivision = true;
+    angel_lsp::config::DiagnosticsConfig diagnostics;
+    diagnostics.reportIntegerDivision = true;
+
+    CHECK_FALSE(Emitted(AnalyzeWithEngine(code, engine, &diagnostics), "as-hint-integer-division"));
+}
+
+TEST_CASE("EngineDialect - a division with a float operand is not integer division")
+{
+    const std::string code = "void main() { float f = 1.0 / 2; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    angel_lsp::config::DiagnosticsConfig diagnostics;
+    diagnostics.reportIntegerDivision = true;
+
+    CHECK_FALSE(Emitted(AnalyzeWithEngine(code, engine, &diagnostics), "as-hint-integer-division"));
+}
+
+TEST_CASE("EngineDialect - only literals are judged, not variables")
+{
+    // Deliberate: resolving operand types here would put a hint on every division in the file, and
+    // a wrong one is noise the user cannot switch off per-site.
+    const std::string code =
+        "void main() { int a = 1; int b = 2; float f = a / b; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    angel_lsp::config::DiagnosticsConfig diagnostics;
+    diagnostics.reportIntegerDivision = true;
+
+    CHECK_FALSE(Emitted(AnalyzeWithEngine(code, engine, &diagnostics), "as-hint-integer-division"));
+}
+
+// The measurement behind emitting as-err-character-literal-is-string by default. It is the only
+// one of the engine-dialect rules that fires without the host configuring anything, so it is the
+// only one that can produce a false positive on a workspace that says nothing.
+//   angel_lsp_tests.exe --no-skip --test-case="*Character Literal Corpus Audit*"
+TEST_CASE("SemanticAnalyzer - Character Literal Corpus Audit" * doctest::skip(true))
+{
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
+    const auto interesting = [](const std::string &code)
+    { return code == "as-err-character-literal-is-string" || code == "as-err-foreach-unsupported" ||
+             code == "as-err-named-argument-syntax" || code == "as-err-value-assign-for-ref" ||
+             code == "as-err-empty-list-element"; };
+
+    const auto result = angel_lsp::test::RunCorpusAudit(interesting, 10, nullptr);
+
+    MESSAGE("Character-literal / foreach corpus audit: files=" << result.filesAnalysed
+            << " findings=" << result.Total());
+    for (const auto &hit : result.hits)
+    {
+        MESSAGE("  " << hit.fileName << ":" << hit.line << " " << hit.message);
+    }
+}
+
+// --- asEP_ALTER_SYNTAX_NAMED_ARGS --------------------------------------------------------------
+
+TEST_CASE("EngineDialect - f(name = value) is an error under the engine's default")
+{
+    // Measured: "No matching symbol 'width'" with no flag, a warning under mode 1, silent under 2.
+    const std::string code =
+        "void Configure(int width = 0) {}\n"
+        "void main() { Configure(width = 5); }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    const auto diagnostics = AnalyzeSource(code, table, i18n);
+
+    CHECK(Emitted(diagnostics, "as-err-named-argument-syntax"));
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-err-named-argument-syntax")
+            CHECK(d.severity == DiagnosticSeverity::Error);
+    }
+}
+
+TEST_CASE("EngineDialect - f(name = value) is a warning under mode 1")
+{
+    const std::string code =
+        "void Configure(int width = 0) {}\n"
+        "void main() { Configure(width = 5); }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.alterSyntaxNamedArgs = 1;
+
+    const auto diagnostics = AnalyzeWithEngine(code, engine);
+    CHECK(Emitted(diagnostics, "as-err-named-argument-syntax"));
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-err-named-argument-syntax")
+            CHECK(d.severity == DiagnosticSeverity::Warning);
+    }
+}
+
+TEST_CASE("EngineDialect - f(name = value) is silent under mode 2")
+{
+    const std::string code =
+        "void Configure(int width = 0) {}\n"
+        "void main() { Configure(width = 5); }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.alterSyntaxNamedArgs = 2;
+
+    CHECK_FALSE(Emitted(AnalyzeWithEngine(code, engine), "as-err-named-argument-syntax"));
+}
+
+TEST_CASE("EngineDialect - the colon spelling is never reported")
+{
+    // AngelScript's own named-argument syntax. Reporting it would be reporting the correct form.
+    const std::string code =
+        "void Configure(int width = 0) {}\n"
+        "void main() { Configure(width: 5); }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    CHECK_FALSE(Emitted(AnalyzeSource(code, table, i18n), "as-err-named-argument-syntax"));
+}
+
+TEST_CASE("EngineDialect - an assignment to a member is an ordinary argument")
+{
+    // `f(obj.field = 1)` is a legal assignment expression passed as an argument. Only a bare name
+    // on the left looks like a named argument, and the rule requires one.
+    const std::string code =
+        "class C { int field; }\n"
+        "void Take(int v) {}\n"
+        "void main() { C obj; Take(obj.field = 1); }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    CHECK_FALSE(Emitted(AnalyzeSource(code, table, i18n), "as-err-named-argument-syntax"));
+}
+
+// --- asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE ---------------------------------------------------
+
+TEST_CASE("EngineDialect - value assignment on a class is fine by default")
+{
+    const std::string code =
+        "class R { int v; }\n"
+        "void main() { R@ a = R(); R@ b = R(); a = b; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    CHECK_FALSE(Emitted(AnalyzeSource(code, table, i18n), "as-err-value-assign-for-ref"));
+}
+
+TEST_CASE("EngineDialect - value assignment on a class is reported when the host forbids it")
+{
+    const std::string code =
+        "class R { int v; }\n"
+        "void main() { R@ a = R(); R@ b = R(); a = b; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.disallowValueAssignForRef = true;
+
+    CHECK(Emitted(AnalyzeWithEngine(code, engine), "as-err-value-assign-for-ref"));
+}
+
+TEST_CASE("EngineDialect - a handle assignment is what the rule asks for, so it is not reported")
+{
+    const std::string code =
+        "class R { int v; }\n"
+        "void main() { R@ a = R(); R@ b = R(); @a = @b; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.disallowValueAssignForRef = true;
+
+    CHECK_FALSE(Emitted(AnalyzeWithEngine(code, engine), "as-err-value-assign-for-ref"));
+}
+
+TEST_CASE("EngineDialect - a type this analyzer cannot see is left alone")
+{
+    // Silent unless fully visible. A host type might be a VALUE type, and the property only forbids
+    // assignment on reference types - so reporting one would be a false positive on working code.
+    const std::string code =
+        "void main() { CBaseEntity@ a; CBaseEntity@ b; a = b; }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.disallowValueAssignForRef = true;
+
+    CHECK_FALSE(Emitted(AnalyzeWithEngine(code, engine), "as-err-value-assign-for-ref"));
 }

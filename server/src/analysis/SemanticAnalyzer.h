@@ -86,15 +86,20 @@ namespace angel_lsp::analysis
         void CheckDeclarationRules(const SymbolTable &symbolTable, DiagnosticContext &ctx) const;
 
         /**
-         * @brief Reports a plain "..." that spans lines, unless the host allows multiline strings.
+         * @brief The rules a host's SetEngineProperty calls decide, walked in one pass.
          *
-         * The grammar accepts one - its character class admits a newline - so nothing else in this
-         * server notices. The engine does: "Multiline strings are not allowed in this application"
-         * unless asEP_ALLOW_MULTILINE_STRINGS is set, which it is not by default.
+         * AngelScript is a family of dialects rather than one language, and several of these are
+         * undecidable from script text alone - which is why they sat unimplemented. Each reads the
+         * matching accessor on SemanticAnalysisRequest, which answers the ENGINE's default when the
+         * host supplied no configuration, so a workspace that says nothing is judged the way its
+         * engine will judge it.
          *
-         * A `"""heredoc"""` spans lines under any setting and is left alone.
+         * Covers: a plain "..." spanning lines (asEP_ALLOW_MULTILINE_STRINGS - a """heredoc""" is
+         * left alone under every setting), `foreach` where the host disabled it
+         * (asEP_FOREACH_SUPPORT, which is ON by default), and a hole in an initializer list
+         * (asEP_DISALLOW_EMPTY_LIST_ELEMENTS).
          */
-        void CheckMultilineStrings(TSNode node, DiagnosticContext &ctx, int depth = 0) const;
+        void CheckEngineDialectRules(TSNode node, DiagnosticContext &ctx, int depth = 0) const;
 
         /**
          * @brief Same rule as CheckNullAssignedToNonHandle, applied to function-body locals -
