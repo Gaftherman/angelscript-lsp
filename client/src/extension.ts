@@ -367,6 +367,10 @@ export function buildServerArgs(): string[] {
     // Where a block's opening brace goes. Only "kr" moves it; anything else, a typo included, is
     // the Allman default, so a misspelling reformats nothing unexpectedly. A list or a lambda body
     // keeps its brace on the line under either style - that is not a matter of taste.
+    if (config.get<boolean>('format.onSave', false) === true) {
+        args.push('--format-on-save');
+    }
+
     const braceStyle = config.get<string>('format.braceStyle', '').trim();
     if (braceStyle.length > 0) {
         args.push(`--format-brace-style=${braceStyle}`);

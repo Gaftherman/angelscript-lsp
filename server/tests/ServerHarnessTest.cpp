@@ -1994,3 +1994,177 @@ TEST_CASE("Server - rangesFormatting with no ranges is an empty edit, not an err
     INFO(reply);
     CHECK(reply.find("\"error\"") == std::string::npos);
 }
+
+
+// =====================================================================================
+// willSave, willSaveWaitUntil and executeCommand.
+//
+// The save pair is where a language server can do real damage: willSaveWaitUntil returns edits the
+// editor applies to the user's file, so the question is not whether it can format but when it
+// should be allowed to. Answer: only a manual save, and only when asked.
+// =====================================================================================
+
+TEST_CASE("Server - Announces the save hooks and its one command")
+{
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(1);
+    INFO(reply);
+    CHECK(reply.find("\"willSave\":true") != std::string::npos);
+    CHECK(reply.find("\"willSaveWaitUntil\":true") != std::string::npos);
+    CHECK(reply.find("angelscript.rescanWorkspace") != std::string::npos);
+}
+
+TEST_CASE("Server - A manual save formats nothing unless format-on-save was asked for")
+{
+    // The default, and the one that matters most. The editor has its own format-on-save setting; a
+    // server that reformats regardless would override a choice made somewhere else, on a file the
+    // user was only trying to save.
+    const std::string source = "void  a( ) { int   x=1; }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/willSaveWaitUntil","params":)"
+                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"reason":1}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("newText") == std::string::npos);
+}
+
+TEST_CASE("Server - A manual save formats when format-on-save is on")
+{
+    const std::string source = "void  a( ) { int   x=1; }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    // reason 1 is Manual.
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/willSaveWaitUntil","params":)"
+                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"reason":1}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.format.formatOnSave = true;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("newText") != std::string::npos);
+}
+
+TEST_CASE("Server - An autosave never formats, even with format-on-save on")
+{
+    // reason 2 is AfterDelay: the autosave timer, which fires while the user is still typing.
+    // Rewriting the file underneath them is not something the setting above is allowed to buy.
+    const std::string source = "void  a( ) { int   x=1; }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/willSaveWaitUntil","params":)"
+                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"reason":2}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.format.formatOnSave = true;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("newText") == std::string::npos);
+}
+
+TEST_CASE("Server - A focus-change save never formats either")
+{
+    // reason 3 is FocusOut. Same argument as the autosave: the user did not ask to save, so they
+    // certainly did not ask to have the file rewritten.
+    const std::string source = "void  a( ) { int   x=1; }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/willSaveWaitUntil","params":)"
+                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"reason":3}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.format.formatOnSave = true;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.ResponseFor(2).find("newText") == std::string::npos);
+}
+
+TEST_CASE("Server - willSave is consumed rather than dropped")
+{
+    const std::string source = "void a() { }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/willSave","params":)"
+                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"reason":1}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    CHECK_NOTHROW(RunScript(serverConfig, stream));
+}
+
+TEST_CASE("Server - executeCommand runs the rescan and refuses anything else")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/executeCommand","params":{"command":"angelscript.rescanWorkspace"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"workspace/executeCommand","params":{"command":"angelscript.notARealCommand"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string known = stream.ResponseFor(2);
+    INFO(known);
+    CHECK(known.find("\"error\"") == std::string::npos);
+
+    // An unknown command is refused rather than silently doing nothing: a client that asked for
+    // something this server does not have should hear so.
+    const std::string unknown = stream.ResponseFor(3);
+    INFO(unknown);
+    CHECK(unknown.find("\"error\"") != std::string::npos);
+    CHECK(unknown.find("notARealCommand") != std::string::npos);
+}

@@ -340,6 +340,8 @@ namespace angel_lsp
         lsp::TextDocumentSyncOptions sync;
         sync.openClose = true;
         sync.change = lsp::TextDocumentSyncKind::Incremental;
+        sync.willSave = true;
+        sync.willSaveWaitUntil = true;
 
         lsp::SaveOptions saveOptions;
         saveOptions.includeText = true;
@@ -561,6 +563,10 @@ namespace angel_lsp
         }
 
         result.capabilities.workspace = workspaceOpts;
+
+        lsp::ExecuteCommandOptions cmdOpts;
+        cmdOpts.commands = lsp::Array<lsp::String>{ "angelscript.rescanWorkspace" };
+        result.capabilities.executeCommandProvider = cmdOpts;
 
         return result;
     }
@@ -1624,6 +1630,13 @@ namespace angel_lsp
         return diagnostics;
     }
 
+    void Server::HandleNotificationsTextDocument_WillSave(lsp::notifications::TextDocument_WillSave::Params &&/*params*/)
+    {
+        // The server has nothing it must do before a save - the analysis is already current and the
+        // document text is already held - so the handler body is empty apart from this comment: it exists
+        // so the notification is consumed rather than dropped by a server that advertised the capability.
+    }
+
     void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params &&params)
     {
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
@@ -2647,6 +2660,58 @@ namespace angel_lsp
         return allEdits;
     }
 
+    lsp::requests::TextDocument_WillSaveWaitUntil::Result Server::HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument_WillSaveWaitUntil::Params &&params)
+    {
+        // Opt-in, and that is the load-bearing part. The editor has its own format-on-save
+        // setting; a language server that reformats every manual save regardless would override a
+        // choice the user made somewhere else, silently, on a file they were only trying to save.
+        if (!m_config.features.enableFormatting || !m_config.format.formatOnSave)
+        {
+            return lsp::Array<lsp::TextEdit>{};
+        }
+
+        // A format triggered by an autosave timer rewrites the user's file while they are still
+        // typing in it. Manual saves only, whatever the setting above says.
+        if (params.reason != lsp::TextDocumentSaveReason::Manual)
+        {
+            return lsp::Array<lsp::TextEdit>{};
+        }
+
+        std::string uriStr = DocumentKey(params.textDocument.uri.toString());
+        auto docIt = m_openDocuments.find(uriStr);
+        if (docIt == m_openDocuments.end())
+        {
+            return lsp::Array<lsp::TextEdit>{};
+        }
+
+        TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        features::FormattingRequest fr{ uriStr, docIt->second, tree, options, CurrentBraceStyle() };
+        auto edits = features::FormatDocument(fr);
+        if (edits.has_value())
+        {
+            EncodeIn(docIt->second, edits.value());
+            return edits.value();
+        }
+
+        return lsp::Array<lsp::TextEdit>{};
+    }
+
+    lsp::requests::Workspace_ExecuteCommand::Result Server::HandleRequestsWorkspace_ExecuteCommand(lsp::requests::Workspace_ExecuteCommand::Params &&params)
+    {
+        if (params.command == "angelscript.rescanWorkspace")
+        {
+            RestartWorkspaceScan();
+            return lsp::Null{};
+        }
+
+        throw lsp::RequestError(lsp::MessageError::InvalidParams, "Unknown command: " + params.command);
+    }
+
     void Server::InitHandles()
     {
         m_messageHandler->add<lsp::requests::Initialize>(
@@ -2731,6 +2796,12 @@ namespace angel_lsp
             [this](lsp::notifications::Workspace_DidChangeWorkspaceFolders::Params &&params)
             {
                 this->HandleNotificationsWorkspace_DidChangeWorkspaceFolders(std::move(params));
+            });
+
+        m_messageHandler->add<lsp::notifications::TextDocument_WillSave>(
+            [this](lsp::notifications::TextDocument_WillSave::Params &&params)
+            {
+                this->HandleNotificationsTextDocument_WillSave(std::move(params));
             });
 
         m_messageHandler->add<lsp::notifications::TextDocument_DidSave>(
@@ -3614,6 +3685,18 @@ namespace angel_lsp
             [this](lsp::requests::TextDocument_RangesFormatting::Params &&req) -> lsp::requests::TextDocument_RangesFormatting::Result
             {
                 return this->HandleRequestsTextDocument_RangesFormatting(std::move(req));
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_WillSaveWaitUntil>(
+            [this](lsp::requests::TextDocument_WillSaveWaitUntil::Params &&req) -> lsp::requests::TextDocument_WillSaveWaitUntil::Result
+            {
+                return this->HandleRequestsTextDocument_WillSaveWaitUntil(std::move(req));
+            });
+
+        m_messageHandler->add<lsp::requests::Workspace_ExecuteCommand>(
+            [this](lsp::requests::Workspace_ExecuteCommand::Params &&req) -> lsp::requests::Workspace_ExecuteCommand::Result
+            {
+                return this->HandleRequestsWorkspace_ExecuteCommand(std::move(req));
             });
 
         m_messageHandler->add<lsp::requests::TextDocument_CodeLens>(

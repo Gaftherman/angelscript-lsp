@@ -332,6 +332,16 @@ namespace angel_lsp
          * @return Tokens carrying the freshly minted result id.
          */
         lsp::SemanticTokens ComputeAndCacheSemanticTokens(const std::string &uriStr, const std::string &text);
+
+        /**
+         * @brief Consumes `textDocument/willSave` notifications.
+         *
+         * The server has nothing it must do before a save: analysis is already kept current
+         * on change notifications and document text is already held in memory. This handler
+         * exists so the notification is consumed rather than dropped by a server that advertised
+         * the capability.
+         */
+        void HandleNotificationsTextDocument_WillSave(lsp::notifications::TextDocument_WillSave::Params &&params);
         void HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params &&params);
         void HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params);
         void HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params);
@@ -545,6 +555,25 @@ namespace angel_lsp
          * across each range and the resulting edits are merged and encoded into the client's coordinate space.
          */
         lsp::requests::TextDocument_RangesFormatting::Result HandleRequestsTextDocument_RangesFormatting(lsp::requests::TextDocument_RangesFormatting::Params &&params);
+
+        /**
+         * @brief Answers `textDocument/willSaveWaitUntil` by formatting the document before save.
+         *
+         * Automatically formats the document on save, but only when manually triggered by the user
+         * (`TextDocumentSaveReason::Manual`). Saves triggered by an autosave timer or focus loss
+         * are ignored and return an empty edit array because an autosave timer would rewrite the
+         * user's file while they are still actively typing in it.
+         */
+        lsp::requests::TextDocument_WillSaveWaitUntil::Result HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument_WillSaveWaitUntil::Params &&params);
+
+        /**
+         * @brief Answers `workspace/executeCommand` requests.
+         *
+         * Supports explicit workspace rescans (`angelscript.rescanWorkspace`) so external commands
+         * or editor extensions can force an immediate rescan of all search paths and workspace
+         * folders on demand. Unknown commands are rejected with InvalidParams.
+         */
+        lsp::requests::Workspace_ExecuteCommand::Result HandleRequestsWorkspace_ExecuteCommand(lsp::requests::Workspace_ExecuteCommand::Params &&params);
 
         /**
          * @brief Full text of an indexed document, or nullptr when the server holds none.

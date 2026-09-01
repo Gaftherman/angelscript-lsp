@@ -649,6 +649,10 @@ namespace angel_lsp::config
                     config.format.braceStyle = std::string(val);
                 }
             }
+            else if (key == "--format-on-save")
+            {
+                config.format.formatOnSave = getBoolValue(true);
+            }
             else if (key == "--engine-profile" || key == "--profile")
             {
                 std::string_view val;

@@ -355,6 +355,20 @@ namespace angel_lsp::config
          * Anything other than "kr" reads as Allman, so a typo is the default rather than an error.
          */
         std::string braceStyle = "allman";
+
+        /**
+         * @brief Format the whole document when the user saves it manually (default: off).
+         *
+         * Drives the answer to `textDocument/willSaveWaitUntil`. OFF by default and that matters:
+         * the editor already has its own format-on-save setting, and a language server that
+         * reformats every manual save regardless would override a choice the user made somewhere
+         * else - silently, and on a file they were only trying to save.
+         *
+         * Only manual saves, never an autosave timer or a focus change, whatever this is set to.
+         * Rewriting a file while the user is still typing in it is not something to offer as an
+         * option.
+         */
+        bool formatOnSave = false;
     };
 
     /**

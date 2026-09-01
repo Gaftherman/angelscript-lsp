@@ -424,6 +424,11 @@
           "default": "standard",
           "markdownDescription": "Built-in AngelScript engine profile to automatically load predefined API stubs and rules (e.g. `svencoop`, `urho3d`, `standard`, `auto`)."
         },
+        "angelscript.format.onSave": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Format the whole document when you save it manually.\n\nOff by default: your editor already has `editor.formatOnSave`, and a language server that reformats every save regardless would override that choice silently. Autosave and focus-change saves never format, whatever this is set to - rewriting a file while you are still typing in it is not on offer."
+        },
         "angelscript.format.braceStyle": {
           "type": "string",
           "enum": [
