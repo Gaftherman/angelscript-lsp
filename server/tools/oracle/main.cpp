@@ -297,6 +297,7 @@ int main(int argc, char **argv)
     int disableIntegerDivision = -1;
     int disallowEmptyListElements = -1;
     int foreachSupport = -1;
+    int heredocTrimMode = -1;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -357,6 +358,10 @@ int main(int argc, char **argv)
             {
                 foreachSupport = std::atoi(argv[i] + 18);
             }
+            else if (std::strncmp(argv[i], "--heredoc-trim-mode=", 20) == 0)
+            {
+                heredocTrimMode = std::atoi(argv[i] + 20);
+            }
             continue;
         }
         if (scriptPath == nullptr)
@@ -380,6 +385,7 @@ int main(int argc, char **argv)
                              "       [--disable-integer-division=<0|1>]\n"
                              "       [--disallow-empty-list-elements=<0|1>]\n"
                              "       [--foreach-support=<0|1>]\n"
+                             "       [--heredoc-trim-mode=<0|1|2>]\n"
                              "Any option left out keeps the engine's own default.\n");
         return 2;
     }
@@ -453,6 +459,11 @@ int main(int argc, char **argv)
     {
         engine->SetEngineProperty(asEP_FOREACH_SUPPORT,
                                   static_cast<asPWORD>(foreachSupport));
+    }
+    if (heredocTrimMode >= 0)
+    {
+        engine->SetEngineProperty(asEP_HEREDOC_TRIM_MODE,
+                                  static_cast<asPWORD>(heredocTrimMode));
     }
 
     // Order matters: the dictionary needs `string` and `array<string>` to already exist, and the

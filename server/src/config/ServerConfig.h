@@ -202,6 +202,21 @@ namespace angel_lsp::config
          * Whether the `for each` / `foreach` loop syntax is supported. Enabled by default in the engine.
          */
         bool foreachSupport = true;
+
+        // asEP_HEREDOC_TRIM_MODE and asEP_DISABLE_INTEGER_DIVISION are the two properties in the
+        // brief that are NOT here, and both are absent for a measured reason rather than an
+        // oversight. The oracle reads them - see server/tools/oracle/main.cpp - which is how the
+        // measurement was taken.
+        //
+        // Heredoc trim (legal values 0..2, SDK default 1) decides whether a """..."""'s leading and
+        // trailing blank lines are stripped. Eight probes across both settings and both shapes of
+        // heredoc: every one compiles, with identical output. It changes the string's CONTENT, and
+        // nothing about the source text tells a reader which content was wanted, so there is no
+        // diagnostic to emit and no surprise to warn about.
+        //
+        // Integer division is the near-miss that shows the difference: it also changes no verdict,
+        // but `float f = 1 / 2;` being 0.0 rather than 0.5 IS a surprise worth naming, so it is
+        // here as disableIntegerDivision and gates an opt-in hint. Heredoc trim has no equivalent.
     };
 
     /**
