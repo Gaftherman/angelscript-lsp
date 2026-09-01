@@ -548,6 +548,34 @@ namespace angel_lsp
         static std::string DocumentKey(const std::string &uriStr);
 
         void HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Workspace_DidRenameFiles::Params &&params);
+
+        /**
+         * @brief Stops the workspace scan when the user dismisses its progress notification.
+         *
+         * The scan already polls a stop flag on every file so a folder change or a shutdown can
+         * interrupt it; this is that flag reached from the other side. Compared against the token
+         * the scan announced, because a client may run several progress operations at once.
+         */
+        void HandleNotificationsWindow_WorkDoneProgress_Cancel(lsp::notifications::Window_WorkDoneProgress_Cancel::Params &&params);
+
+        /**
+         * @brief Raises or lowers log verbosity without a restart.
+         *
+         * The protocol's three trace values are mapped onto this server's levels rather than parsed
+         * into them - `off` still reports real failures, because a log that hides errors is not
+         * what a user asking for less noise meant.
+         */
+        void HandleNotificationsSetTrace(lsp::notifications::SetTrace::Params &&params);
+
+        /**
+         * @brief Re-resolves open documents' `#include` directives when a script file appears.
+         *
+         * Deliberately the reverse direction from what it first looks like. The graph has no edge
+         * INTO a file that did not exist when the edge was built, so asking who includes the new
+         * file answers nobody - which is exactly the case this notification exists for. What
+         * changed is that an OPEN document's directive now names something real.
+         */
+        void HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Workspace_DidCreateFiles::Params &&params);
         void HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Workspace_DidDeleteFiles::Params &&params);
 
         /**

@@ -532,7 +532,7 @@ namespace angel_lsp
         // wake this server for every file in the repository - it is only ever interested in the
         // ones the include graph can hold.
         //
-        // didRename and didDelete only: the `will` variants are REQUESTS, and answering one blocks
+        // The three `did` operations. The `will` variants are REQUESTS, and answering one blocks
         // the rename in the editor until the server replies. A rename that pauses because a
         // language server is thinking is a worse experience than one whose #include fixup arrives a
         // moment later, and nothing here needs to veto the operation.
@@ -548,6 +548,7 @@ namespace angel_lsp
             registration.filters = lsp::Array<lsp::FileOperationFilter>{ scriptFilter };
 
             lsp::FileOperationOptions fileOps;
+            fileOps.didCreate = registration;
             fileOps.didRename = registration;
             fileOps.didDelete = registration;
             workspaceOpts.fileOperations = fileOps;
@@ -588,7 +589,10 @@ namespace angel_lsp
 
         lsp::WorkDoneProgressBegin begin;
         begin.title = title;
-        begin.cancellable = false;
+        // Cancellable now that window/workDoneProgress/cancel is answered. Announcing it while
+        // nothing handled the notification would have shown the user a cancel button that did
+        // nothing, which is worse than no button.
+        begin.cancellable = true;
         begin.percentage = 0u;
 
         lsp::notifications::Progress::Params params;
@@ -1216,6 +1220,88 @@ namespace angel_lsp
         ReanalyseOpenDocuments();
     }
 
+
+    void Server::HandleNotificationsWindow_WorkDoneProgress_Cancel(lsp::notifications::Window_WorkDoneProgress_Cancel::Params &&params)
+    {
+        // The workspace scan already polls a stop flag on every file - it has to, so a folder change
+        // or a shutdown can interrupt it - so honouring a cancel is a matter of setting that flag
+        // rather than of building anything. What was missing was the notification, and the
+        // `cancellable` flag on the progress begin, which was false.
+        //
+        // Compared against the token this scan announced. A client may run several progress
+        // operations at once and cancel any of them; cancelling on token alone would have stopped
+        // the scan because something unrelated was dismissed.
+        if (std::holds_alternative<lsp::String>(params.token) &&
+            std::get<lsp::String>(params.token) == m_workspaceProgressToken)
+        {
+            m_workspaceStop.Request();
+        }
+    }
+
+    void Server::HandleNotificationsSetTrace(lsp::notifications::SetTrace::Params &&params)
+    {
+        // `$/setTrace` is how a client turns verbose logging on without restarting the server, which
+        // is the difference between a user being able to send a useful log and having to reproduce
+        // the problem twice.
+        //
+        // The protocol's three values do not line up with this server's five levels, so they are
+        // mapped rather than parsed: `off` is the quietest setting that still reports real
+        // failures, and both verbose steps below map onto what this server actually distinguishes.
+        if (!m_logger)
+            return;
+
+        using angel_lsp::utils::LogLevel;
+        switch (params.value)
+        {
+        case lsp::TraceValue::Off:
+            m_logger->SetLevel(LogLevel::Error);
+            break;
+        case lsp::TraceValue::Messages:
+            m_logger->SetLevel(LogLevel::Info);
+            break;
+        case lsp::TraceValue::Verbose:
+            m_logger->SetLevel(LogLevel::Debug);
+            break;
+        }
+    }
+
+    void Server::HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Workspace_DidCreateFiles::Params &&params)
+    {
+        // The third of the file-operation notifications, and the one that was missing. A file the
+        // editor has just created is on no watcher's tick yet, and an `#include` naming it has been
+        // resolving to nothing - so the whole module it belongs to is missing declarations.
+        //
+        // The first version of this guarded on `GetFilesIncluding(path)` being non-empty, which
+        // reads well and cannot work: the graph has no edge INTO a file that did not exist when the
+        // edge was built. That is precisely the case this notification exists for, so the guard
+        // excluded the only scenario it was meant to serve. The test caught it.
+        //
+        // What actually has to happen is the reverse direction: the OPEN documents' directives are
+        // re-resolved, because one of them now names a file that exists.
+        bool anyScriptCreated = false;
+        for (const auto &created : params.files)
+        {
+            const std::string path = CanonicalPathFromUri(DocumentKey(created.uri.toString()));
+            if (!path.empty() && path.ends_with(m_config.info.fileExtension))
+            {
+                anyScriptCreated = true;
+                break;
+            }
+        }
+
+        if (!anyScriptCreated)
+            return;
+
+        const auto searchDirectories = SearchDirectories();
+        for (const auto &[openUri, text] : m_openDocuments)
+        {
+            const std::string openPath = CanonicalPathFromUri(openUri);
+            if (!openPath.empty())
+                m_includeGraph.UpdateFile(openPath, text, *searchDirectories, IncludeAllowedRoots());
+        }
+
+        ReanalyseOpenDocuments();
+    }
 
     void Server::HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Workspace_DidDeleteFiles::Params &&params)
     {
@@ -2496,6 +2582,24 @@ namespace angel_lsp
             [this]()
             {
                 return this->HandleRequestsShutdown();
+            });
+
+        m_messageHandler->add<lsp::notifications::Window_WorkDoneProgress_Cancel>(
+            [this](lsp::notifications::Window_WorkDoneProgress_Cancel::Params &&params)
+            {
+                this->HandleNotificationsWindow_WorkDoneProgress_Cancel(std::move(params));
+            });
+
+        m_messageHandler->add<lsp::notifications::SetTrace>(
+            [this](lsp::notifications::SetTrace::Params &&params)
+            {
+                this->HandleNotificationsSetTrace(std::move(params));
+            });
+
+        m_messageHandler->add<lsp::notifications::Workspace_DidCreateFiles>(
+            [this](lsp::notifications::Workspace_DidCreateFiles::Params &&params)
+            {
+                this->HandleNotificationsWorkspace_DidCreateFiles(std::move(params));
             });
 
         m_messageHandler->add<lsp::requests::TextDocument_Diagnostic>(

@@ -1678,3 +1678,164 @@ TEST_CASE("Server - workspace/diagnostic answers empty rather than failing when 
     CHECK(reply.find("\"error\"") == std::string::npos);
     CHECK(reply.find("\"items\":[]") != std::string::npos);
 }
+
+
+// =====================================================================================
+// Three protocol messages that were in the framework's ClientToServer list and unanswered.
+//
+// The audit that found them compared every ClientToServer message the generated messages.h
+// declares against the handlers Server.cpp registers. Most of what it turned up is deliberate -
+// notebook documents, colour pickers, the `will` file operations that block the editor - but these
+// three were absent for no reason but that nobody had written them.
+// =====================================================================================
+
+TEST_CASE("Server - Announces didCreate alongside didRename and didDelete")
+{
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(1);
+    INFO(reply);
+    CHECK(reply.find("didCreate") != std::string::npos);
+    CHECK(reply.find("didRename") != std::string::npos);
+    CHECK(reply.find("didDelete") != std::string::npos);
+}
+
+TEST_CASE("Server - The workspace scan announces itself as cancellable")
+{
+    // It was announced as `cancellable: false` while nothing handled the cancel notification, which
+    // is the honest pairing. Now that one exists, the flag has to say so - a client will not offer
+    // the button otherwise.
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    // With the progress capability declared: the server reports nothing at all to a client that
+    // did not advertise window.workDoneProgress, so without this the assertion below would be
+    // about a notification the server was right not to send.
+    stream.Push(InitializeWithProgress(fixture.RootUri(), true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("\"kind\":\"end\""))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    config::ServerConfig serverConfig;
+    const std::string output = RunScript(serverConfig, stream);
+
+    INFO(output);
+    CHECK(output.find("\"cancellable\":true") != std::string::npos);
+}
+
+TEST_CASE("Server - Survives a cancel naming a progress token it never issued")
+{
+    // A client may run several progress operations at once and cancel any of them. Cancelling on
+    // the notification alone rather than on the token would have stopped this server's scan
+    // because something entirely unrelated was dismissed.
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"window/workDoneProgress/cancel","params":{"token":"someone-elses-token"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    CHECK_NOTHROW(RunScript(serverConfig, stream));
+}
+
+TEST_CASE("Server - Accepts $/setTrace without complaint")
+{
+    // Unhandled, this was silently dropped: a notification gets no error reply, so a client asking
+    // for verbose logging simply did not get it and had no way to find out.
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"verbose"}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    CHECK_NOTHROW(RunScript(serverConfig, stream));
+}
+
+TEST_CASE("Server - A created file that something includes becomes visible")
+{
+    // The editor knows about the file before any watcher tick does. Without this the `#include`
+    // naming it stayed unresolved until something else happened to trigger a rescan.
+    WorkspaceFixture fixture;
+
+    const std::string mainSource = "#include \"helper.as\"\nvoid Think() { }\n";
+    fixture.Write("main.as", mainSource);
+    fixture.Write("helper.as", "void PlaceholderHelper() { }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), mainSource));
+
+    // The editor creates the file, then reports it.
+    stream.PushAction([dir = fixture.dir]()
+    {
+        std::ofstream out(dir / "helper.as", std::ios::binary);
+        out << "void UniquelyNamedNewcomer() { }\n";
+    });
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didCreateFiles","params":{"files":[{"uri":")" +
+                fixture.Uri("helper.as") + R"("}]}})");
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/symbol","params":{"query":"UniquelyNamedNewcomer"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("UniquelyNamedNewcomer") != std::string::npos);
+}
+
+TEST_CASE("Server - A created file nothing includes is not indexed")
+{
+    // The guard against a scaffolder. A template that writes forty files would otherwise cost forty
+    // parses of code nobody has referenced yet.
+    WorkspaceFixture fixture;
+
+    const std::string mainSource = "void Think() { }\n";
+    fixture.Write("main.as", mainSource);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), mainSource));
+
+    stream.PushAction([dir = fixture.dir]()
+    {
+        std::ofstream out(dir / "unreferenced.as", std::ios::binary);
+        out << "void NobodyAsksForThis() { }\n";
+    });
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didCreateFiles","params":{"files":[{"uri":")" +
+                fixture.Uri("unreferenced.as") + R"("}]}})");
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/symbol","params":{"query":"NobodyAsksForThis"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.ResponseFor(2).find("NobodyAsksForThis") == std::string::npos);
+}
