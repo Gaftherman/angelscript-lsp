@@ -186,6 +186,18 @@ namespace angel_lsp::analysis
         }
 
         /**
+         * @brief asEP_BOOL_CONVERSION_MODE: 0 when a class may never stand where a bool is expected.
+         *
+         * Answers 0 with no engine properties at all, which is both the engine's own default and
+         * the conservative reading - a rule that fires under 0 is one the analyzer has to be asked
+         * for anyway, and one that stays silent under 1 cannot be wrong by defaulting to 0.
+         */
+        int BoolConversionMode() const
+        {
+            return engineProperties ? engineProperties->boolConversionMode : 0;
+        }
+
+        /**
          * @brief True when the host built its engine with asEP_DISALLOW_GLOBAL_VARS.
          */
         bool DisallowsGlobalVars() const

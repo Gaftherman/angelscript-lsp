@@ -1946,6 +1946,93 @@ namespace angel_lsp::features
         }
 
         /**
+         * @brief Calls the bool conversion operator explicitly, turning `if (h)` into `if (h.opImplConv())`.
+         *
+         * Sound for the same reason the accessor fix is, and verified the same way: measured against
+         * the oracle, the explicit call is accepted under asEP_BOOL_CONVERSION_MODE 0 AND 1, while
+         * the bare `if (h)` is accepted only under 1. Applying it cannot break a host that already
+         * works; it can only stop one from breaking on the engine's own default.
+         *
+         * The operator's name comes from the diagnostic's own message rather than being resolved
+         * again here: the rule already picked between opImplConv and opConv, and picking a second
+         * time is a second chance to disagree with it.
+         */
+        void TryAddBoolConversionFix(
+            const CodeActionRequest &request,
+            TSNode rootNode,
+            std::vector<lsp::CodeAction> &actions)
+        {
+            if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+            {
+                return;
+            }
+
+            for (const auto &diag : request.context.diagnostics)
+            {
+                if (!MatchDiagnosticCode(diag, "as-hint-bool-conversion"))
+                {
+                    continue;
+                }
+
+                // The message names the operator in quotes, second of the two quoted spans. Read
+                // from there because the rule's choice is the one that must be honoured - and if the
+                // message ever stops carrying it, no fix is offered rather than a guessed one.
+                //
+                // Coupled to the message's shape, and bounded on purpose: the operator name is an
+                // AngelScript identifier and is not translated, and the result is checked against
+                // the only two names that exist before any edit is built. A message that changes
+                // shape produces no fix rather than a wrong one.
+                if (!std::holds_alternative<lsp::String>(diag.message))
+                {
+                    continue;
+                }
+                const std::string &message = std::get<lsp::String>(diag.message);
+
+                const size_t firstQuote = message.find('\'');
+                const size_t firstClose = firstQuote == std::string::npos
+                                              ? std::string::npos
+                                              : message.find('\'', firstQuote + 1);
+                const size_t secondQuote = firstClose == std::string::npos
+                                               ? std::string::npos
+                                               : message.find('\'', firstClose + 1);
+                const size_t secondClose = secondQuote == std::string::npos
+                                               ? std::string::npos
+                                               : message.find('\'', secondQuote + 1);
+                if (secondClose == std::string::npos)
+                {
+                    continue;
+                }
+
+                const std::string oper = message.substr(secondQuote + 1, secondClose - secondQuote - 1);
+                if (oper != "opImplConv" && oper != "opConv")
+                {
+                    continue;
+                }
+
+                // Appended after the condition, not wrapped around it: the diagnostic's range is
+                // exactly the condition expression, so `.opImplConv()` at its end is the whole edit.
+                lsp::TextEdit edit;
+                edit.range.start = diag.range.end;
+                edit.range.end = diag.range.end;
+                edit.newText = "." + oper + "()";
+
+                lsp::CodeAction action;
+                action.title = "Call " + oper + "() explicitly";
+                action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+                action.isPreferred = true;
+                action.diagnostics = std::vector<lsp::Diagnostic>{ diag };
+
+                lsp::WorkspaceEdit wsEdit;
+                lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+                changes[lsp::DocumentUri::parse(request.uri)] = { std::move(edit) };
+                wsEdit.changes = std::move(changes);
+                action.edit = std::move(wsEdit);
+
+                actions.push_back(std::move(action));
+            }
+        }
+
+        /**
          * @brief Adds the `property` keyword to an accessor that carries none.
          *
          * The fix for the portability hint, and the reason it is offered as a fix at all: measured
@@ -2706,6 +2793,7 @@ namespace angel_lsp::features
         TryAddHandleOnPrimitiveFix(request, rootNode, actions);
         TryAddUnresolvedIncludeSuggestions(request, actions);
         TryAddAccessorPropertyKeywordFix(request, rootNode, actions);
+        TryAddBoolConversionFix(request, rootNode, actions);
 
         // =========================================================================
         // Feature 5: Sort and Clean #include Directives

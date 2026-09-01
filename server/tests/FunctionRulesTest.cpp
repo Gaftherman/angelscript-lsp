@@ -883,8 +883,10 @@ TEST_CASE("FunctionRules - No accessor portability hint unless it is asked for")
     // The default config: reportAccessorPortability is false.
     auto diagnostics = AnalyzeFunctionSnippet(code);
 
-    for (const auto &d : diagnostics)
-        CHECK(d.code != "as-hint-accessor-portability");
+    // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing,
+    // so the test would pass just as happily against a rule that never runs at all.
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-accessor-portability"; }));
 }
 
 TEST_CASE("FunctionRules - The hint names each accessor's property when switched on")
@@ -927,8 +929,10 @@ TEST_CASE("FunctionRules - An accessor that already carries the keyword is left 
 
     auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
 
-    for (const auto &d : diagnostics)
-        CHECK(d.code != "as-hint-accessor-portability");
+    // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing,
+    // so the test would pass just as happily against a rule that never runs at all.
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-accessor-portability"; }));
 }
 
 TEST_CASE("FunctionRules - A global function named get_X is not an accessor")
@@ -944,8 +948,10 @@ TEST_CASE("FunctionRules - A global function named get_X is not an accessor")
 
     auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
 
-    for (const auto &d : diagnostics)
-        CHECK(d.code != "as-hint-accessor-portability");
+    // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing,
+    // so the test would pass just as happily against a rule that never runs at all.
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-accessor-portability"; }));
 }
 
 TEST_CASE("FunctionRules - A member literally named get_ is not an accessor")
@@ -962,8 +968,10 @@ TEST_CASE("FunctionRules - A member literally named get_ is not an accessor")
 
     auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
 
-    for (const auto &d : diagnostics)
-        CHECK(d.code != "as-hint-accessor-portability");
+    // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing,
+    // so the test would pass just as happily against a rule that never runs at all.
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-accessor-portability"; }));
 }
 
 TEST_CASE("FunctionRules - No portability hint on an interface method")
@@ -982,8 +990,10 @@ TEST_CASE("FunctionRules - No portability hint on an interface method")
 
     auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
 
-    for (const auto &d : diagnostics)
-        CHECK(d.code != "as-hint-accessor-portability");
+    // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing,
+    // so the test would pass just as happily against a rule that never runs at all.
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-accessor-portability"; }));
 }
 
 TEST_CASE("FunctionRules - The implementing class's accessor is still hinted")

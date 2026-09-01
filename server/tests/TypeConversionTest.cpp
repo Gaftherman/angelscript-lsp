@@ -1959,3 +1959,229 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
     CHECK(filesWithFindings <= k_accountedFindings);
 }
 
+
+
+// =====================================================================================
+// A class standing where a bool is expected.
+//
+// Measured against angelscript_oracle after teaching it --bool-conversion-mode: under
+// asEP_BOOL_CONVERSION_MODE 0, the engine's own default, `if (h)` on a class is rejected -
+// "Expression must be of boolean type, instead found 'H&'" - whether the class declares opImplConv,
+// opConv, or both. Under mode 1 both are accepted. The SDK's own summary reads as though mode 0
+// permits opImplConv; it does not.
+//
+// A Hint and opt-in rather than an error, because the analyzer cannot see the host's engine setup.
+// A host on mode 1 makes this code legal, and reporting it there would be a false positive on
+// working code.
+// =====================================================================================
+
+namespace
+{
+    /**
+     * @brief Runs the pipeline with the bool-conversion hint and an engine mode chosen per call.
+     *
+     * The config objects have to outlive Analyze(), which holds them by pointer, so they are locals
+     * of the environment's lifetime rather than temporaries.
+     */
+    std::vector<Diagnostic> AnalyzeForBoolConversion(const std::string &code,
+                                                     bool enabled = true,
+                                                     int mode = 0)
+    {
+        ConversionEnvironment env(code);
+
+        angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+        diagnosticsConfig.reportBoolConversion = enabled;
+
+        angel_lsp::config::EngineProperties engineProperties;
+        engineProperties.boolConversionMode = mode;
+
+        SemanticAnalysisRequest request{ env.symbolTable, env.uri, "", &env.i18n };
+        request.scopeRoot = env.scopeCollector.CollectScopes(env.sourceCode, env.parser);
+        request.sourceCode = env.sourceCode;
+        request.tree = env.tree;
+        request.enableTypeConversionChecks = true;
+        request.diagnostics = &diagnosticsConfig;
+        request.engineProperties = &engineProperties;
+
+        SemanticAnalyzer analyzer(nullptr);
+        return analyzer.Analyze(request);
+    }
+}
+
+TEST_CASE("TypeConversion - Hints when a class with opImplConv is used as a condition")
+{
+    const std::string code =
+        "class H { bool opImplConv() const { return true; } }\n"
+        "void main() { H h; if (h) {} }\n";
+
+    const auto diagnostics = AnalyzeForBoolConversion(code);
+
+    bool found = false;
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-hint-bool-conversion")
+        {
+            found = true;
+            CHECK(d.severity == DiagnosticSeverity::Hint);
+            CHECK(d.message.find("opImplConv") != std::string::npos);
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("TypeConversion - opConv is named when that is the only conversion")
+{
+    const std::string code =
+        "class H { bool opConv() const { return true; } }\n"
+        "void main() { H h; if (h) {} }\n";
+
+    const auto diagnostics = AnalyzeForBoolConversion(code);
+
+    bool found = false;
+    for (const auto &d : diagnostics)
+    {
+        if (d.code == "as-hint-bool-conversion")
+        {
+            found = true;
+            CHECK(d.message.find("opConv") != std::string::npos);
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("TypeConversion - Silent when the host runs bool conversion mode 1")
+{
+    // The setting exists so this rule can be wrong-proof: a host on mode 1 compiles this, and the
+    // hint would be describing a restriction that host does not have.
+    const std::string code =
+        "class H { bool opImplConv() const { return true; } }\n"
+        "void main() { H h; if (h) {} }\n";
+
+    const auto diagnostics = AnalyzeForBoolConversion(code, true, 1);
+
+    // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing
+    // at all, so the test would pass just as happily against a rule that never runs.
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+}
+
+TEST_CASE("TypeConversion - Silent unless the hint is asked for")
+{
+    const std::string code =
+        "class H { bool opImplConv() const { return true; } }\n"
+        "void main() { H h; if (h) {} }\n";
+
+    const auto diagnostics = AnalyzeForBoolConversion(code, false);
+
+    // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing
+    // at all, so the test would pass just as happily against a rule that never runs.
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+}
+
+TEST_CASE("TypeConversion - Silent on a type whose declaration is not visible")
+{
+    // The load-bearing silence. A workspace's host types are registered in C++ and appear in no
+    // stub this analyzer can read; assuming such a type has no bool conversion would report every
+    // legal use of one.
+    const std::string code =
+        "void main() { CBaseEntity e; if (e) {} }\n";
+
+    const auto diagnostics = AnalyzeForBoolConversion(code);
+
+    // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing
+    // at all, so the test would pass just as happily against a rule that never runs.
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+}
+
+TEST_CASE("TypeConversion - A bool expression is left alone")
+{
+    const std::string code =
+        "void main() { bool b = true; if (b) {} while (b) {} }\n";
+
+    const auto diagnostics = AnalyzeForBoolConversion(code);
+
+    // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing
+    // at all, so the test would pass just as happily against a rule that never runs.
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+}
+
+TEST_CASE("TypeConversion - A non-bool opConv is not a condition conversion")
+{
+    // `int opConv()` converts to something, but not to what a condition needs.
+    const std::string code =
+        "class H { int opConv() const { return 1; } }\n"
+        "void main() { H h; if (h) {} }\n";
+
+    const auto diagnostics = AnalyzeForBoolConversion(code);
+
+    // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing
+    // at all, so the test would pass just as happily against a rule that never runs.
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+}
+
+TEST_CASE("TypeConversion - while and do-while conditions are covered too")
+{
+    // do/while keeps its condition in the SECOND named child - the body comes first - which is the
+    // kind of grammar detail that silently disables a rule for one statement shape.
+    const std::string whileCode =
+        "class H { bool opImplConv() const { return true; } }\n"
+        "void main() { H h; while (h) {} }\n";
+
+    const std::string doWhileCode =
+        "class H { bool opImplConv() const { return true; } }\n"
+        "void main() { H h; do { } while (h); }\n";
+
+    const auto whileDiagnostics = AnalyzeForBoolConversion(whileCode);
+    const auto doWhileDiagnostics = AnalyzeForBoolConversion(doWhileCode);
+
+    CHECK(std::any_of(whileDiagnostics.begin(), whileDiagnostics.end(),
+                      [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+    CHECK(std::any_of(doWhileDiagnostics.begin(), doWhileDiagnostics.end(),
+                      [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+}
+
+TEST_CASE("TypeConversion - Finds the class under a logical operator")
+{
+    // `if (h && true)` resolves to bool at the top, because `&&` yields one. Checking only the
+    // condition as a whole missed this entirely - and it is the exact shape of the parity corpus's
+    // doc_r06_opimplconv_bool.as, which stayed listed as a gap until the operands were walked.
+    const std::string code =
+        "class H { bool opImplConv() const { return true; } }\n"
+        "void main() { H h; if (h && true) {} }\n";
+
+    const auto diagnostics = AnalyzeForBoolConversion(code);
+
+    CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
+                      [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+}
+
+TEST_CASE("TypeConversion - Finds the class under a negation")
+{
+    const std::string code =
+        "class H { bool opImplConv() const { return true; } }\n"
+        "void main() { H h; if (!h) {} }\n";
+
+    const auto diagnostics = AnalyzeForBoolConversion(code);
+
+    CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
+                      [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+}
+
+TEST_CASE("TypeConversion - A comparison's operands are not condition conversions")
+{
+    // `==` yields a bool too, but its operands are compared rather than converted to bool. Only the
+    // logical operators recurse, or every `h == other` would be reported as a failed conversion.
+    const std::string code =
+        "class H { bool opImplConv() const { return true; }\n"
+        "          bool opEquals(const H &in o) const { return true; } }\n"
+        "void main() { H a; H b; if (a == b) {} }\n";
+
+    const auto diagnostics = AnalyzeForBoolConversion(code);
+
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+}

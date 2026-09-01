@@ -254,6 +254,10 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     size_t agreeAccept = 0;
     size_t agreeReject = 0;
     size_t falseNegatives = 0;
+
+    // The same count with the opt-in hints enabled. Kept separate so a change to either default
+    // shows up as a change to one number rather than silently moving the other.
+    size_t falseNegativesWithHints = 0;
     size_t analysed = 0;
     std::vector<ParityCase> falsePositives;
     std::vector<std::string> falseNegativeFiles;
@@ -324,6 +328,19 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         // audit run without it judges a configuration nobody ships.
         static const angel_lsp::config::DiagnosticsConfig diagnostics;
 
+        // The same defaults with the two opt-in portability hints turned on. Measured alongside
+        // rather than instead: the first number is what a user gets out of the box, the second is
+        // what the analyzer is capable of saying when asked, and reporting only one of them hides
+        // half the answer. Both hints stay off by default because the analyzer cannot see the
+        // host's engine setup - see EngineProperties::propertyAccessorMode and boolConversionMode.
+        static const angel_lsp::config::DiagnosticsConfig withHints = []
+        {
+            angel_lsp::config::DiagnosticsConfig config;
+            config.reportAccessorPortability = true;
+            config.reportBoolConversion = true;
+            return config;
+        }();
+
         SemanticAnalysisRequest request{ table, uri, ".as.predefined", &i18n };
         request.typeConfig = &types;
         request.diagnostics = &diagnostics;
@@ -340,6 +357,15 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         auto ours = collectorDiagnostics;
         for (const auto &diagnostic : analyzer.Analyze(request))
             ours.push_back(diagnostic);
+
+        // A second pass differing only in the two opt-in hints. Same tree, same table, same
+        // everything else, so any difference between the two counts is those hints and nothing
+        // else.
+        request.diagnostics = &withHints;
+        const auto oursWithHints = analyzer.Analyze(request);
+        request.diagnostics = &diagnostics;
+        const bool saidSomethingWithHints =
+            !oursWithHints.empty() || !collectorDiagnostics.empty();
 
         // Asymmetric on purpose, and the asymmetry is the point.
         //
@@ -377,6 +403,8 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         {
             ++falseNegatives;
             falseNegativeFiles.push_back(current.path.filename().string());
+            if (!saidSomethingWithHints)
+                ++falseNegativesWithHints;
         }
         else
         {
@@ -407,7 +435,8 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
               << "  agree, both reject         : " << agreeReject << "\n"
               << "  known gaps (documented)    : " << explained.size() << "\n"
               << "  UNEXPLAINED FALSE POSITIVES: " << unexplained.size() << "   <- must be zero\n"
-              << "  false negatives (by design): " << falseNegatives << "\n";
+              << "  false negatives (by design): " << falseNegatives << "\n"
+              << "    ... with the opt-in hints on: " << falseNegativesWithHints << "\n";
 
     // Listed, not just counted. A false negative is acceptable by design - this is not a compiler
     // - but this list is the only place a genuinely *missing rule* would show up, so it is worth
@@ -432,9 +461,21 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     //   configuration. Reporting it would be a false positive for every host that sets 2 - see
     //   EngineProperties::propertyAccessorMode for why the default differs deliberately.
     //
-    //   doc_r06_opimplconv_bool.as IS a gap. `class H { bool opImplConv() const {...} }` used as
-    //   `if (h && true)` is rejected by the compiler - "No conversion from 'H&' to 'bool'
-    //   available" - and no rule here says so. It is the one genuinely missing rule on this corpus.
+    //   doc_r06_opimplconv_bool.as is the same shape. Measured with --bool-conversion-mode, which
+    //   the oracle grew for this: under asEP_BOOL_CONVERSION_MODE 0 the compiler rejects `if (h)`
+    //   on a class whether it declares opImplConv, opConv or both; under 1 it accepts either. So a
+    //   host on mode 1 makes this legal too.
+    //
+    // Both now have an opt-in Hint with a quick fix - as-hint-accessor-portability and
+    // as-hint-bool-conversion - and both are off by default, which is why they still appear here.
+    // That is the intended end state rather than an outstanding gap: the analyzer cannot see the
+    // host's engine setup, so it stays silent by default, offers the advice when asked, and in
+    // both cases the fix it offers was verified against the oracle to compile under BOTH settings
+    // of the property in question.
+    //
+    // The "with the opt-in hints on" line above is the measurement of that claim, and it is
+    // measured rather than asserted here on purpose: a count written into a comment is a count that
+    // goes stale, which this very block has already done once.
     for (const auto &name : falseNegativeFiles)
         std::cout << "      [missed] " << name << "\n";
 

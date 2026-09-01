@@ -301,6 +301,9 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportAccessorPortability', false) === true) {
         args.push('--report-accessor-portability');
     }
+    if (config.get<boolean>('diagnostics.reportBoolConversion', false) === true) {
+        args.push('--report-bool-conversion');
+    }
 
     // asEP_PROPERTY_ACCESSOR_MODE takes a number, not a boolean, so it is not one of
     // ENGINE_PROPERTIES above either. The test against 2 and 3 is a whitelist, not a
@@ -310,6 +313,10 @@ export function buildServerArgs(): string[] {
     const accessorMode = config.get<number>('engine.propertyAccessorMode', 2);
     if (accessorMode === 2 || accessorMode === 3) {
         args.push(`--engine-property=propertyAccessorMode=${accessorMode}`);
+    }
+    const boolConversionMode = config.get<number>('engine.boolConversionMode', 0);
+    if (boolConversionMode === 0 || boolConversionMode === 1) {
+        args.push(`--engine-property=boolConversionMode=${boolConversionMode}`);
     }
 
     // The host dialect. An enum rather than a boolean, so it is not one of ENGINE_PROPERTIES above

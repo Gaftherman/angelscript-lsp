@@ -1978,6 +1978,114 @@ namespace angel_lsp::analysis
             EmitAtNode(castNode, ctx, "as-err-invalid-cast", source.baseName, targetName);
         }
 
+        /**
+         * @brief The bool conversion operator a class declares, or nullptr when it declares none.
+         *
+         * Returns nullptr for a type whose declaration is not visible, which is the load-bearing
+         * half. A workspace's host types are registered in C++ and appear in no stub this analyzer
+         * can read; assuming such a type has no bool conversion would report every legal use of one.
+         * So the rule speaks only about classes it can actually see the members of.
+         *
+         * `opImplConv` is preferred over `opConv` when a class declares both, because that is the
+         * one the engine reaches for first and so the one the quick fix should name.
+         */
+        const std::string *BoolConversionOperator(const std::string &typeName, const SymbolTable &table)
+        {
+            if (typeName.empty())
+                return nullptr;
+
+            static const std::string implicitName = "opImplConv";
+            static const std::string explicitName = "opConv";
+
+            bool typeIsVisible = false;
+            bool hasImplicit = false;
+            bool hasExplicit = false;
+
+            table.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
+            {
+                for (const auto &sym : symbols)
+                {
+                    if (sym.type == SymbolType::Class && sym.name == typeName)
+                    {
+                        typeIsVisible = true;
+                    }
+
+                    if (sym.type != SymbolType::Function || sym.containerName != typeName)
+                        continue;
+
+                    if (!std::holds_alternative<FunctionSignature>(sym.signature))
+                        continue;
+
+                    // Only a bool-returning one converts to a condition. `int opConv()` is a
+                    // conversion to something else entirely.
+                    if (CleanBaseType(sym.GetFunction().returnType) != "bool")
+                        continue;
+
+                    if (sym.name == implicitName)
+                        hasImplicit = true;
+                    else if (sym.name == explicitName)
+                        hasExplicit = true;
+                }
+            });
+
+            if (!typeIsVisible)
+                return nullptr;
+
+            if (hasImplicit)
+                return &implicitName;
+            if (hasExplicit)
+                return &explicitName;
+
+            // A visible class with no bool conversion at all. The compiler rejects that too, but
+            // with a different message and for a different reason, and this rule is about the one
+            // case where an engine setting decides the answer.
+            return nullptr;
+        }
+
+        /**
+         * @brief The sub-expressions a condition actually evaluates for truth.
+         *
+         * `if (h)` is one operand; `if (h && other)` is two, and `if (!h)` is one behind a negation.
+         * Collecting them is what makes the rule see `doc_r06`'s `if (h && true)` - resolving the
+         * type of the whole condition there answers `bool`, because `&&` yields one, and the class
+         * that cannot convert sits underneath.
+         *
+         * Only the logical operators recurse. `a == b` also yields a bool but its operands are
+         * compared, not converted to bool, and the engine's rules for that are a different question.
+         */
+        void CollectBooleanOperands(TSNode expr, std::vector<TSNode> &operands, int depth = 0)
+        {
+            if (ts_node_is_null(expr) || depth > k_maxAstDepth)
+                return;
+
+            const std::string_view type = NodeType(expr);
+
+            if (type == "binary_expression")
+            {
+                const TSNode op = ts_node_child_by_field_name(expr, "operator", 8);
+                const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
+                if (opText == "&&" || opText == "and" || opText == "||" || opText == "or" ||
+                    opText == "^^" || opText == "xor")
+                {
+                    CollectBooleanOperands(ts_node_child_by_field_name(expr, "left", 4), operands, depth + 1);
+                    CollectBooleanOperands(ts_node_child_by_field_name(expr, "right", 5), operands, depth + 1);
+                    return;
+                }
+            }
+            else if (type == "unary_expression")
+            {
+                const TSNode op = ts_node_child_by_field_name(expr, "operator", 8);
+                const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
+                if (opText == "!" || opText == "not")
+                {
+                    CollectBooleanOperands(ts_node_child_by_field_name(expr, "operand", 7), operands, depth + 1);
+                    return;
+                }
+            }
+
+            operands.push_back(expr);
+        }
+
         void VisitNode(TSNode node, const TypeConversionCheckRequest &request, DiagnosticContext &ctx, int depth = 0)
                 {
             // Pathologically nested source would otherwise recurse until the stack gives out; see
@@ -2001,6 +2109,53 @@ namespace angel_lsp::analysis
                 }
                 return scope;
             };
+
+            // A class standing where a bool is expected.
+            //
+            // Measured against angelscript_oracle: under asEP_BOOL_CONVERSION_MODE 0, the engine's
+            // own default, `if (h)` on a class is rejected - "Expression must be of boolean type,
+            // instead found 'H&'" - whether the class declares opImplConv, opConv, or both. Under
+            // mode 1 both forms are accepted. So this is not a choice between two operators; it is
+            // a switch between never and either, and the SDK's own description understates it.
+            //
+            // A Hint and opt-in, not an error, because the analyzer cannot see the host's engine
+            // setup. A host running mode 1 makes this code legal, and an error there would be a
+            // false positive on working code - which is the one thing this project does not trade.
+            if (ctx.request.diagnostics && ctx.request.diagnostics->reportBoolConversion &&
+                ctx.request.BoolConversionMode() == 0 &&
+                (nodeType == "if_statement" || nodeType == "while_statement" || nodeType == "do_while_statement"))
+            {
+                // No `condition` field on any of the three - see BuiltQueries.h. The condition is
+                // the first named child of if/while and the second of do/while, where the body
+                // comes first.
+                const TSNode condition = ts_node_named_child(node, nodeType == "do_while_statement" ? 1 : 0);
+                if (!ts_node_is_null(condition))
+                {
+                    // Each operand the condition evaluates for truth, not the condition as a whole:
+                    // `if (h && true)` resolves to bool at the top because `&&` yields one, and the
+                    // class that cannot convert is underneath it.
+                    std::vector<TSNode> operands;
+                    CollectBooleanOperands(condition, operands);
+
+                    for (const TSNode &operand : operands)
+                    {
+                        const std::string operandType = CleanBaseType(ResolveExpressionType(
+                            operand, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
+
+                        // Silent unless fully visible. A type this analyzer cannot find the
+                        // declaration of is assumed engine-registered, and an engine-registered type
+                        // may convert to bool by a route no stub records.
+                        if (const std::string *conversion = BoolConversionOperator(operandType, ctx.request.symbolTable))
+                        {
+                            const TSPoint start = ts_node_start_point(operand);
+                            const TSPoint end = ts_node_end_point(operand);
+                            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                            "as-hint-bool-conversion", operandType, *conversion,
+                                            DiagnosticSeverity::Hint);
+                        }
+                    }
+                }
+            }
 
             // `foreach (auto value : container)` writes `auto` and nothing else, so without this
             // the loop variable reached every consumer typeless: no hover, no completion after

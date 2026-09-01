@@ -289,6 +289,7 @@ int main(int argc, char **argv)
     int allowUnsafeReferences = -1;
     int privatePropAsProtected = -1;
     int disallowGlobalVars = -1;
+    int boolConversionMode = -1;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -317,6 +318,10 @@ int main(int argc, char **argv)
             {
                 disallowGlobalVars = std::atoi(argv[i] + 23);
             }
+            else if (std::strncmp(argv[i], "--bool-conversion-mode=", 23) == 0)
+            {
+                boolConversionMode = std::atoi(argv[i] + 23);
+            }
             continue;
         }
         if (scriptPath == nullptr)
@@ -332,6 +337,7 @@ int main(int argc, char **argv)
                              "       [--allow-unsafe-references=<0|1>]\n"
                              "       [--private-prop-as-protected=<0|1>]\n"
                              "       [--disallow-global-vars=<0|1>]\n"
+                             "       [--bool-conversion-mode=<0|1>]\n"
                              "Any option left out keeps the engine's own default.\n");
         return 2;
     }
@@ -365,6 +371,11 @@ int main(int argc, char **argv)
     {
         engine->SetEngineProperty(asEP_DISALLOW_GLOBAL_VARS,
                                   static_cast<asPWORD>(disallowGlobalVars));
+    }
+    if (boolConversionMode >= 0)
+    {
+        engine->SetEngineProperty(asEP_BOOL_CONVERSION_MODE,
+                                  static_cast<asPWORD>(boolConversionMode));
     }
 
     // Order matters: the dictionary needs `string` and `array<string>` to already exist, and the

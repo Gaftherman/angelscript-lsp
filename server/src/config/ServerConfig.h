@@ -129,6 +129,20 @@ namespace angel_lsp::config
          * lenient here misses an error; being strict invents one. See PARITY-BACKLOG.md.
          */
         int propertyAccessorMode = 2;
+
+        /**
+         * @brief asEP_BOOL_CONVERSION_MODE: whether a class can stand where a bool is expected.
+         *
+         * Measured against angelscript_oracle, and the SDK documentation understates it: under mode
+         * 0, the engine's own default, `if (h)` on a class is rejected - "Expression must be of
+         * boolean type, instead found 'H&'" - whether the class declares opImplConv, opConv, or
+         * both. Under mode 1 both forms are accepted. So this is not a choice between two operators,
+         * it is a switch between "never" and "either".
+         *
+         * Defaults to 0 to match the engine. A host that sets 1 must say so here, or the analyzer
+         * would report legal code.
+         */
+        int boolConversionMode = 0;
     };
 
     /**
@@ -177,6 +191,16 @@ namespace angel_lsp::config
          * per accessor for a decision it already made.
          */
         bool reportAccessorPortability = false;
+
+        /**
+         * @brief Hint on a class used where a bool is expected (default: off).
+         *
+         * Only meaningful when engine.boolConversionMode is 0, where the compiler rejects it. It is
+         * a hint rather than an error because the analyzer cannot see the host's engine setup: a
+         * host running mode 1 makes the same code legal, and reporting it as an error there would
+         * be a false positive on working code.
+         */
+        bool reportBoolConversion = false;
     };
 
     /**

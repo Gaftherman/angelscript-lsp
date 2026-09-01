@@ -211,6 +211,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-initializer-list-not-supported"] = "Initialization lists cannot be used with '{}'.";
         m_messages["as-hint-list-pattern-unknown"] = "No list pattern is declared for '{}', so the contents of this list are not checked. Add a /// @listpattern tag above its declaration in your .as.predefined, copied from the type's asBEHAVE_LIST_FACTORY registration - for example {{repeat T}}.";
         m_messages["as-hint-accessor-portability"] = "Accessor for property '{}' has no `property` keyword. It is a property under asEP_PROPERTY_ACCESSOR_MODE 2 but not under mode 3, the engine's own default. Adding the keyword is accepted under both.";
+        m_messages["as-hint-bool-conversion"] = "'{}' is a class, and under asEP_BOOL_CONVERSION_MODE 0 - the engine's own default - a class may not stand where a bool is expected, even one declaring '{}'. Call it explicitly, which compiles under both modes, or set angelscript.engine.boolConversionMode to 1 if your host does.";
         m_messages["as-err-initializer-list-expected"] = "Expected a list enclosed by {{ }} to match pattern.";
         m_messages["as-err-initializer-list-too-few"] = "Not enough values to match pattern.";
         m_messages["as-err-initializer-list-too-many"] = "Too many values to match pattern.";
@@ -353,6 +354,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-initializer-list-not-supported"] = "No se pueden usar listas de inicialización con '{}'.";
             m_messages["as-hint-list-pattern-unknown"] = "No hay un patrón de lista declarado para '{}', así que el contenido de esta lista no se verifica. Añade una etiqueta /// @listpattern sobre su declaración en tu .as.predefined, copiada del registro asBEHAVE_LIST_FACTORY del tipo - por ejemplo {{repeat T}}.";
             m_messages["as-hint-accessor-portability"] = "El accesor de la propiedad '{}' no lleva la palabra clave `property`. Es una propiedad bajo asEP_PROPERTY_ACCESSOR_MODE 2 pero no bajo el modo 3, el predeterminado del propio motor. Añadir la palabra clave se acepta en ambos.";
+            m_messages["as-hint-bool-conversion"] = "'{}' es una clase, y bajo asEP_BOOL_CONVERSION_MODE 0 - el predeterminado del propio motor - una clase no puede ir donde se espera un bool, ni siquiera declarando '{}'. Llámalo explícitamente, lo que compila en ambos modos, o pon angelscript.engine.boolConversionMode en 1 si tu host lo hace.";
             m_messages["as-err-initializer-list-expected"] = "Se esperaba una lista entre {{ }} para coincidir con el patrón.";
             m_messages["as-err-initializer-list-too-few"] = "No hay suficientes valores para coincidir con el patrón.";
             m_messages["as-err-initializer-list-too-many"] = "Demasiados valores para coincidir con el patrón.";

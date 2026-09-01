@@ -307,6 +307,11 @@
           "default": false,
           "markdownDescription": "Hint on a `get_`/`set_` accessor written without the `property` keyword. Such an accessor is a property under `asEP_PROPERTY_ACCESSOR_MODE` 2, this server's default, but not under mode 3, which is the engine's own. Adding the keyword is accepted under both, so the quick fix cannot break a working build. Off by default."
         },
+        "angelscript.diagnostics.reportBoolConversion": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Hint when a class is used where a `bool` is expected, such as `if (h)`. Under `asEP_BOOL_CONVERSION_MODE` 0, the engine's default, this is a compile error even when the class declares `opImplConv`. A quick fix calls the conversion operator explicitly, which compiles under both modes. Off by default, and silent entirely when `angelscript.engine.boolConversionMode` is 1."
+        },
         "angelscript.engine.allowUnsafeReferences": {
           "type": "boolean",
           "default": false,
@@ -334,6 +339,16 @@
           ],
           "default": 2,
           "markdownDescription": "How `get_X()` / `set_X(v)` become the virtual property `X`, matching the host's `SetEngineProperty(asEP_PROPERTY_ACCESSOR_MODE, ...)`.\n\n`2` — any accessor counts. `3` — only one carrying the `property` keyword does, and `c.X` without it is an error the engine reports as \"'X' is not a member of 'C'\".\n\nThe engine's own default is `3`; this server's is `2`, because being lenient here misses an error while being strict invents one for every host that sets `2`. Set it to `3` if yours does not."
+        },
+        "angelscript.engine.boolConversionMode": {
+          "type": "number",
+          "enum": [ 0, 1 ],
+          "enumDescriptions": [
+            "A class is never usable where a bool is expected.",
+            "A class with opImplConv or opConv may be used as a condition."
+          ],
+          "default": 0,
+          "markdownDescription": "How a class may be used where a `bool` is expected, matching the host's `SetEngineProperty(asEP_BOOL_CONVERSION_MODE, ...)`.\n\n`0` — never; `if (h)` on a class is a compile error even when the class declares `opImplConv`. `1` — a class declaring `opImplConv` or `opConv` may be used as a condition.\n\n`0` is the engine's own default and this server's. Set it to `1` if your host sets it, or the accompanying hint will describe a restriction you do not have."
         },
         "angelscript.engine.profile": {
           "type": "string",

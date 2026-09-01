@@ -81,6 +81,15 @@ namespace angel_lsp::config
                 }
                 return false;
             }
+            if (name == "boolConversionMode")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.boolConversionMode = raw == "1" ? 1 : 0;
+                    return true;
+                }
+                return false;
+            }
 
             if (!IsBoolLiteral(raw))
             {
@@ -186,6 +195,7 @@ namespace angel_lsp::config
                   << "                                          a host that registers types in C++ and declares none of\n"
                   << "                                          them - or better, name its --engine-profile.\n"
                   << "  --report-accessor-portability           Hint on accessors without the 'property' keyword\n"
+                  << "  --report-bool-conversion                Hint on a class used where a bool is expected\n"
                   << "  --format-brace-style=<allman|kr>        Where a block's opening brace goes. Default allman.\n"
                   << "                                          A list or a lambda body keeps its brace on the line\n"
                   << "                                          either way - that is correctness, not style.\n"
@@ -588,6 +598,15 @@ namespace angel_lsp::config
             else if (key == "--no-report-accessor-portability")
             {
                 config.diagnostics.reportAccessorPortability =
+                    inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--report-bool-conversion")
+            {
+                config.diagnostics.reportBoolConversion = getBoolValue(true);
+            }
+            else if (key == "--no-report-bool-conversion")
+            {
+                config.diagnostics.reportBoolConversion =
                     inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
             else if (key == "--engine-property" || key == "--engine-prop")
