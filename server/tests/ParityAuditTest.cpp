@@ -103,6 +103,10 @@ namespace
         fs::path path;
         bool realAccepts = false;
         std::vector<angel_lsp::analysis::Diagnostic> ourErrors;
+
+        // Everything below Error. Only the false-negative side reads these - see the comment where
+        // they are split.
+        std::vector<angel_lsp::analysis::Diagnostic> ourWarnings;
     };
 
     /**
@@ -337,10 +341,26 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         for (const auto &diagnostic : analyzer.Analyze(request))
             ours.push_back(diagnostic);
 
+        // Asymmetric on purpose, and the asymmetry is the point.
+        //
+        // The false-POSITIVE direction counts errors only, because that is what the project's
+        // invariant is about: legal code must never be reported as an error. A warning on legal
+        // code is a judgement call the analyzer is allowed to make.
+        //
+        // The false-NEGATIVE direction asks a different question - did we say anything at all
+        // about a file the compiler rejects - and there a warning is saying something. Counting
+        // errors only made this blind to two codes that are deliberately emitted at Warning
+        // severity (as-err-undeclared-identifier, as-err-null-non-handle, both hedged because a
+        // host type the stub does not declare is invisible to this analyzer). So
+        // doc_r01_super_method.as was scored as a miss while the user was in fact getting a
+        // squiggle on `super`. Worse than the miscount: a rule quietly downgraded to Warning would
+        // have been reclassified as an acceptable gap instead of failing anything.
         for (const auto &diagnostic : ours)
         {
             if (diagnostic.severity == DiagnosticSeverity::Error)
                 current.ourErrors.push_back(diagnostic);
+            else
+                current.ourWarnings.push_back(diagnostic);
         }
 
         if (request.tree)
@@ -353,7 +373,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
             else
                 falsePositives.push_back(std::move(current));
         }
-        else if (current.ourErrors.empty())
+        else if (current.ourErrors.empty() && current.ourWarnings.empty())
         {
             ++falseNegatives;
             falseNegativeFiles.push_back(current.path.filename().string());
@@ -393,12 +413,28 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     // - but this list is the only place a genuinely *missing rule* would show up, so it is worth
     // being able to read rather than merely tally.
     //
-    // Every one of the twelve on the current snippet corpus was checked and none is a missing rule.
-    // They split two ways: scripts naming a host type the stub does not declare ("Identifier
-    // 'EHandle' is not a data type", "Missing definition of 'Vector3'"), where staying silent is the
-    // deliberate policy; and scripts where asharness's own mixin-instantiation transform injects
-    // synthetic code (_AutoMixinInstantiator_N) and then rejects it, which is an artefact of the
-    // oracle rather than anything about the script.
+    // This list has to be read, not just counted, and the reading has to be redone when it changes
+    // - an earlier version of this comment described twelve entries and causes that no longer
+    // match the files below it, which is exactly how a genuine missing rule would slip past.
+    //
+    // Two causes have been traced and are deliberate: scripts naming a host type the stub does not
+    // declare ("Identifier 'EHandle' is not a data type"), where staying silent is the policy; and
+    // scripts where asharness's own mixin-instantiation transform injects synthetic code
+    // (_AutoMixinInstantiator_N) and then rejects it, an artefact of the oracle rather than the
+    // script.
+    //
+    // The two that remain are not the same kind of thing, and collapsing them into one number is
+    // what this list exists to prevent:
+    //
+    //   doc_r07_accessor_without_kw.as is NOT a gap. The oracle runs asEP_PROPERTY_ACCESSOR_MODE at
+    //   the engine's own default of 3, where an accessor without the `property` keyword is an
+    //   error; this server defaults to 2, where it is legal. Both are right about their own
+    //   configuration. Reporting it would be a false positive for every host that sets 2 - see
+    //   EngineProperties::propertyAccessorMode for why the default differs deliberately.
+    //
+    //   doc_r06_opimplconv_bool.as IS a gap. `class H { bool opImplConv() const {...} }` used as
+    //   `if (h && true)` is rejected by the compiler - "No conversion from 'H&' to 'bool'
+    //   available" - and no rule here says so. It is the one genuinely missing rule on this corpus.
     for (const auto &name : falseNegativeFiles)
         std::cout << "      [missed] " << name << "\n";
 
