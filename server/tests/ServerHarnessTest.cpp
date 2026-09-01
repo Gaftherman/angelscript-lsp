@@ -2168,3 +2168,173 @@ TEST_CASE("Server - executeCommand runs the rescan and refuses anything else")
     CHECK(unknown.find("\"error\"") != std::string::npos);
     CHECK(unknown.find("notARealCommand") != std::string::npos);
 }
+
+
+// =====================================================================================
+// The last four ClientToServer messages.
+//
+// Three of them do real work; the fourth, $/cancelRequest, deliberately does none, and the reason
+// is measured rather than asserted - see the handler.
+// =====================================================================================
+
+TEST_CASE("Server - Announces moniker and the virtual-document scheme, but not inline completion")
+{
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(1);
+    INFO(reply);
+
+    CHECK(reply.find("\"monikerProvider\":true") != std::string::npos);
+    CHECK(reply.find("angelscript-predefined") != std::string::npos);
+
+    // Registered but NOT announced, and that pairing is the point: the server answers the request
+    // if a client sends it anyway, while telling no client it has ghost text to offer.
+    CHECK(reply.find("inlineCompletionProvider") == std::string::npos);
+}
+
+TEST_CASE("Server - A moniker names the symbol under the cursor")
+{
+    const std::string source =
+        "class Entity\n"
+        "{\n"
+        "    void Think() { }\n"
+        "}\n"
+        "void main() { Entity e; e.Think(); }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    // On `Think` at the call site.
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/moniker","params":)"
+                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},)"
+                R"("position":{"line":4,"character":26}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"scheme\":\"angelscript\"") != std::string::npos);
+    CHECK(reply.find("Entity::Think") != std::string::npos);
+
+    // Project rather than Global: nothing here can promise this identifier is unique across every
+    // AngelScript project, and claiming Global would have an indexer merge unrelated symbols.
+    CHECK(reply.find("\"unique\":\"project\"") != std::string::npos);
+}
+
+TEST_CASE("Server - A moniker on empty space answers null rather than inventing one")
+{
+    const std::string source = "void main() { }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/moniker","params":)"
+                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},)"
+                R"("position":{"line":0,"character":13}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") == std::string::npos);
+    CHECK(reply.find("\"scheme\"") == std::string::npos);
+}
+
+TEST_CASE("Server - inlineCompletion answers empty rather than failing")
+{
+    const std::string source = "void main() { }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/inlineCompletion","params":)"
+                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},)"
+                R"("position":{"line":0,"character":13},)"
+                R"("context":{"triggerKind":1}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") == std::string::npos);
+}
+
+TEST_CASE("Server - textDocumentContent refuses a scheme it does not serve")
+{
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/textDocumentContent","params":{"uri":"file:///etc/passwd"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") != std::string::npos);
+}
+
+TEST_CASE("Server - textDocumentContent refuses a stub it never loaded")
+{
+    // The guard that keeps this from becoming a file server: only a stub this server actually
+    // loaded is readable, however the URI is spelled.
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/textDocumentContent","params":{"uri":"angelscript-predefined:C:/nowhere/nothing.as.predefined"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") != std::string::npos);
+    CHECK(reply.find("No predefined stub is loaded") != std::string::npos);
+}
+
+TEST_CASE("Server - $/cancelRequest is consumed rather than dropped")
+{
+    // It does nothing, and the handler says why: with synchronous dispatch the cancel is always
+    // read after the request it names has finished. Registered so the notification is consumed.
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":42}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    CHECK_NOTHROW(RunScript(serverConfig, stream));
+}
