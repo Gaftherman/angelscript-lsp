@@ -5,9 +5,10 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1256 with zero unexplained false positives across six corpora, so nothing
+The suite here passes at 1369 with zero unexplained false positives across the corpora, so nothing
 on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
-to cover.
+to cover. The count in this sentence has gone stale once already; if it disagrees with what
+`angel_lsp_tests` prints, the test run is right and this line is not.
 
 ## The rule this file enforces
 
@@ -788,6 +789,71 @@ treats as unacceptable.
   missing quote cannot silence the rest of the file, while a `"""` heredoc spans lines. `case
   Some::` still completes - it ends in `::`, which is the qualifier context and not a finished
   label.
+
+- **Pull diagnostics.** `textDocument/diagnostic` and `workspace/diagnostic`, announced alongside
+  the push notifications rather than instead of them, so one server serves a client that pulls and
+  one that does not. Answered from a cache the analysis thread fills, never by running the analyzer
+  on the message loop: symbol collection replaces whole-document state and the analysis thread is
+  already doing that on its own schedule. A document the analyzer has not reached is answered with
+  `ServerCancelled` and `retriggerRequest`, never with an empty report - an empty report is a
+  positive claim that the file is clean.
+- **Six quick fixes bound to their diagnostics.** Of 142 live codes exactly one had a fix attached.
+  Now: "did you mean" for an undefined identifier and for an unresolved type (different candidate
+  sets - a function cannot stand where a type goes), `@` removed from a handle on a primitive, the
+  interface generator bound to the diagnostic it fixes, a broken `#include` pointed at the file that
+  moved, and a `funcdef` generated from the function a type position named. The include and funcdef
+  fixes share the bounded edit distance and its length-scaled threshold; the funcdef generator emits
+  each parameter's `rawText`, because `typeName` drops `&in` and the oracle rejects a funcdef whose
+  reference qualifier does not match.
+- **Every engine property in the brief.** Twelve, of which eleven gate a rule:
+  `USE_CHARACTER_LITERALS` (`int c = 'x'` is an error by default - `'x'` is a one-character
+  *string*), `ALLOW_MULTILINE_STRINGS`, `FOREACH_SUPPORT` (on by the engine default, and the
+  accessor must answer true with no configuration or every `foreach` in every workspace is
+  reported), `DISALLOW_EMPTY_LIST_ELEMENTS`, `ALTER_SYNTAX_NAMED_ARGS` (error / warning / silent
+  across its three modes), `DISALLOW_VALUE_ASSIGN_FOR_REF`, `BOOL_CONVERSION_MODE`,
+  `DISABLE_INTEGER_DIVISION` (changes no verdict, only a value - `float f = 1/2` is 0.0 by default
+  and 0.5 with the property, which is worth an opt-in hint), plus the four that were already read.
+  `HEREDOC_TRIM_MODE` is the twelfth and gates nothing: eight oracle probes across both heredoc
+  shapes and all three settings compile identically, because it changes the string's content and
+  nothing in the source says which content was wanted.
+- **Three opt-in portability hints with fixes that compile either way.** Accessor without the
+  `property` keyword, a class used where a bool is expected, and a function name in a type position.
+  Each is off by default because the analyzer cannot see the host's engine setup, and in each case
+  the fix was verified against the oracle to be accepted under *both* settings of the property in
+  question - which is what makes applying one unable to break a build that works today. Not on
+  interface methods: AngelScript's parser refuses `property` there outright, so hinting would be
+  advice whose only fix does not compile.
+- **The parity audit was blind to warnings.** It counted Error severity only, and two codes are
+  deliberately Warning, so five files the user does get a squiggle on were tallied as missed. Worse
+  than the miscount: a rule quietly downgraded to Warning would have been reclassified as an
+  acceptable gap instead of failing anything. The split is asymmetric now - false positives still
+  count errors only, false negatives count anything said at all - and the audit runs each script
+  under both the shipping defaults and the opt-in hints, printing both counts, so neither number
+  can go stale in a comment.
+- **Fifteen LSP messages that were simply absent.** An audit of every ClientToServer message the
+  framework declares against the handlers registered found 25 unanswered. Now answered:
+  `didCreateFiles`, `workDoneProgress/cancel` (the scan already polled a stop flag; what was missing
+  was the notification and the `cancellable` flag, which was false), `$/setTrace`, the three
+  `resolve` round-trips, `rangesFormatting`, `willSave`, `willSaveWaitUntil` (behind
+  `angelscript.format.onSave`, off by default - the editor has its own format-on-save and a server
+  that reformats regardless overrides a choice made elsewhere; autosave and focus-out never format
+  whatever the setting says), `executeCommand` with one command, `moniker` at Project uniqueness,
+  `textDocumentContent` serving the predefined stubs read-only, and `inlineCompletion` registered
+  but deliberately not announced.
+- **`$/cancelRequest`, closed by measurement rather than by code.** Every handler runs on the
+  synchronous dispatch path, so the message loop finishes one message before reading the next and a
+  cancel for request N is always read after N completed. Moving the expensive handlers onto the
+  thread pool was the obvious next step; measured first, on the 1,061-file corpus the worst
+  workspace-scope operation - a full walk of all 50,126 symbols matching everything - takes 2.5 to
+  3.2 ms. There is nothing to cancel, and moving those handlers off the message loop would put
+  `m_symbolTable` and `m_openDocuments` under concurrent access to save three milliseconds. The one
+  long operation, the workspace scan, is cancellable and always was.
+- **The extension had a test harness and no tests.** `package.json` declared `"test": "vscode-test"`,
+  `.vscode-test.mjs` pointed at `out/test/**/*.test.js`, no such file had ever been written and CI
+  never invoked it - zero tests reporting success, the same false green the corpus-audit workflow
+  exists to prevent on the server side. Thirteen tests over `buildServerArgs`, run in CI under
+  `xvfb-run`, against a fixture workspace: without a folder open the relative-path assertion compared
+  two empty lists and passed without testing anything.
 
 ---
 
