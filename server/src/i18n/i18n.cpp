@@ -213,6 +213,7 @@ namespace angel_lsp::i18n
         m_messages["as-hint-accessor-portability"] = "Accessor for property '{}' has no `property` keyword. It is a property under asEP_PROPERTY_ACCESSOR_MODE 2 but not under mode 3, the engine's own default. Adding the keyword is accepted under both.";
         m_messages["as-hint-bool-conversion"] = "'{}' is a class, and under asEP_BOOL_CONVERSION_MODE 0 - the engine's own default - a class may not stand where a bool is expected, even one declaring '{}'. Call it explicitly, which compiles under both modes, or set angelscript.engine.boolConversionMode to 1 if your host does.";
         m_messages["as-hint-funcdef-missing"] = "'{}' is a function, not a type. A function handle needs a funcdef naming its signature; the compiler reports such a name as not being a data type.";
+        m_messages["as-err-multiline-string"] = "A plain \"...\" string may not span lines. The engine rejects it unless the host sets asEP_ALLOW_MULTILINE_STRINGS; use a \"\"\"heredoc\"\"\", which spans lines under any setting.";
         m_messages["as-err-initializer-list-expected"] = "Expected a list enclosed by {{ }} to match pattern.";
         m_messages["as-err-initializer-list-too-few"] = "Not enough values to match pattern.";
         m_messages["as-err-initializer-list-too-many"] = "Too many values to match pattern.";
@@ -357,6 +358,7 @@ namespace angel_lsp::i18n
             m_messages["as-hint-accessor-portability"] = "El accesor de la propiedad '{}' no lleva la palabra clave `property`. Es una propiedad bajo asEP_PROPERTY_ACCESSOR_MODE 2 pero no bajo el modo 3, el predeterminado del propio motor. Añadir la palabra clave se acepta en ambos.";
             m_messages["as-hint-bool-conversion"] = "'{}' es una clase, y bajo asEP_BOOL_CONVERSION_MODE 0 - el predeterminado del propio motor - una clase no puede ir donde se espera un bool, ni siquiera declarando '{}'. Llámalo explícitamente, lo que compila en ambos modos, o pon angelscript.engine.boolConversionMode en 1 si tu host lo hace.";
             m_messages["as-hint-funcdef-missing"] = "'{}' es una función, no un tipo. Un handle de función necesita un funcdef que nombre su firma; el compilador reporta tal nombre como que no es un tipo de datos.";
+            m_messages["as-err-multiline-string"] = "Una cadena \"...\" normal no puede abarcar varias líneas. El motor la rechaza salvo que el host active asEP_ALLOW_MULTILINE_STRINGS; usa un \"\"\"heredoc\"\"\", que abarca líneas con cualquier configuración.";
             m_messages["as-err-initializer-list-expected"] = "Se esperaba una lista entre {{ }} para coincidir con el patrón.";
             m_messages["as-err-initializer-list-too-few"] = "No hay suficientes valores para coincidir con el patrón.";
             m_messages["as-err-initializer-list-too-many"] = "Demasiados valores para coincidir con el patrón.";

@@ -345,6 +345,11 @@
           "default": 2,
           "markdownDescription": "How `get_X()` / `set_X(v)` become the virtual property `X`, matching the host's `SetEngineProperty(asEP_PROPERTY_ACCESSOR_MODE, ...)`.\n\n`2` — any accessor counts. `3` — only one carrying the `property` keyword does, and `c.X` without it is an error the engine reports as \"'X' is not a member of 'C'\".\n\nThe engine's own default is `3`; this server's is `2`, because being lenient here misses an error while being strict invents one for every host that sets `2`. Set it to `3` if yours does not."
         },
+        "angelscript.engine.allowMultilineStrings": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Whether a plain `\"...\"` string may span lines, matching the host's `SetEngineProperty(asEP_ALLOW_MULTILINE_STRINGS, ...)`.\n\nOff in the engine and off here: such a string is rejected with \"Multiline strings are not allowed in this application\". A `\"\"\"heredoc\"\"\"` spans lines under either setting. Turn this on only if your host does, or the server will report code your engine accepts."
+        },
         "angelscript.engine.boolConversionMode": {
           "type": "number",
           "enum": [ 0, 1 ],

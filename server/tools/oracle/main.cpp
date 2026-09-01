@@ -290,6 +290,13 @@ int main(int argc, char **argv)
     int privatePropAsProtected = -1;
     int disallowGlobalVars = -1;
     int boolConversionMode = -1;
+    int useCharacterLiterals = -1;
+    int allowMultilineStrings = -1;
+    int disallowValueAssignForRef = -1;
+    int alterSyntaxNamedArgs = -1;
+    int disableIntegerDivision = -1;
+    int disallowEmptyListElements = -1;
+    int foreachSupport = -1;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -322,6 +329,34 @@ int main(int argc, char **argv)
             {
                 boolConversionMode = std::atoi(argv[i] + 23);
             }
+            else if (std::strncmp(argv[i], "--use-character-literals=", 25) == 0)
+            {
+                useCharacterLiterals = std::atoi(argv[i] + 25);
+            }
+            else if (std::strncmp(argv[i], "--allow-multiline-strings=", 26) == 0)
+            {
+                allowMultilineStrings = std::atoi(argv[i] + 26);
+            }
+            else if (std::strncmp(argv[i], "--disallow-value-assign-for-ref=", 32) == 0)
+            {
+                disallowValueAssignForRef = std::atoi(argv[i] + 32);
+            }
+            else if (std::strncmp(argv[i], "--alter-syntax-named-args=", 26) == 0)
+            {
+                alterSyntaxNamedArgs = std::atoi(argv[i] + 26);
+            }
+            else if (std::strncmp(argv[i], "--disable-integer-division=", 27) == 0)
+            {
+                disableIntegerDivision = std::atoi(argv[i] + 27);
+            }
+            else if (std::strncmp(argv[i], "--disallow-empty-list-elements=", 31) == 0)
+            {
+                disallowEmptyListElements = std::atoi(argv[i] + 31);
+            }
+            else if (std::strncmp(argv[i], "--foreach-support=", 18) == 0)
+            {
+                foreachSupport = std::atoi(argv[i] + 18);
+            }
             continue;
         }
         if (scriptPath == nullptr)
@@ -338,6 +373,13 @@ int main(int argc, char **argv)
                              "       [--private-prop-as-protected=<0|1>]\n"
                              "       [--disallow-global-vars=<0|1>]\n"
                              "       [--bool-conversion-mode=<0|1>]\n"
+                             "       [--use-character-literals=<0|1>]\n"
+                             "       [--allow-multiline-strings=<0|1>]\n"
+                             "       [--disallow-value-assign-for-ref=<0|1>]\n"
+                             "       [--alter-syntax-named-args=<0|1|2>]\n"
+                             "       [--disable-integer-division=<0|1>]\n"
+                             "       [--disallow-empty-list-elements=<0|1>]\n"
+                             "       [--foreach-support=<0|1>]\n"
                              "Any option left out keeps the engine's own default.\n");
         return 2;
     }
@@ -376,6 +418,41 @@ int main(int argc, char **argv)
     {
         engine->SetEngineProperty(asEP_BOOL_CONVERSION_MODE,
                                   static_cast<asPWORD>(boolConversionMode));
+    }
+    if (useCharacterLiterals >= 0)
+    {
+        engine->SetEngineProperty(asEP_USE_CHARACTER_LITERALS,
+                                  static_cast<asPWORD>(useCharacterLiterals));
+    }
+    if (allowMultilineStrings >= 0)
+    {
+        engine->SetEngineProperty(asEP_ALLOW_MULTILINE_STRINGS,
+                                  static_cast<asPWORD>(allowMultilineStrings));
+    }
+    if (disallowValueAssignForRef >= 0)
+    {
+        engine->SetEngineProperty(asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE,
+                                  static_cast<asPWORD>(disallowValueAssignForRef));
+    }
+    if (alterSyntaxNamedArgs >= 0)
+    {
+        engine->SetEngineProperty(asEP_ALTER_SYNTAX_NAMED_ARGS,
+                                  static_cast<asPWORD>(alterSyntaxNamedArgs));
+    }
+    if (disableIntegerDivision >= 0)
+    {
+        engine->SetEngineProperty(asEP_DISABLE_INTEGER_DIVISION,
+                                  static_cast<asPWORD>(disableIntegerDivision));
+    }
+    if (disallowEmptyListElements >= 0)
+    {
+        engine->SetEngineProperty(asEP_DISALLOW_EMPTY_LIST_ELEMENTS,
+                                  static_cast<asPWORD>(disallowEmptyListElements));
+    }
+    if (foreachSupport >= 0)
+    {
+        engine->SetEngineProperty(asEP_FOREACH_SUPPORT,
+                                  static_cast<asPWORD>(foreachSupport));
     }
 
     // Order matters: the dictionary needs `string` and `array<string>` to already exist, and the

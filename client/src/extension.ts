@@ -317,6 +317,12 @@ export function buildServerArgs(): string[] {
     if (accessorMode === 2 || accessorMode === 3) {
         args.push(`--engine-property=propertyAccessorMode=${accessorMode}`);
     }
+    // A boolean engine property, so it rides the same --engine-property channel as the numeric
+    // ones rather than getting a flag of its own.
+    if (config.get<boolean>('engine.allowMultilineStrings', false) === true) {
+        args.push('--engine-property=allowMultilineStrings=1');
+    }
+
     const boolConversionMode = config.get<number>('engine.boolConversionMode', 0);
     if (boolConversionMode === 0 || boolConversionMode === 1) {
         args.push(`--engine-property=boolConversionMode=${boolConversionMode}`);

@@ -143,6 +143,20 @@ namespace angel_lsp::config
          * would report legal code.
          */
         int boolConversionMode = 0;
+
+        /**
+         * @brief asEP_ALLOW_MULTILINE_STRINGS: whether a plain "..." may span lines.
+         *
+         * Off in the engine and off here. A `"..."` carrying a raw newline is rejected with
+         * "Multiline strings are not allowed in this application" - verified against
+         * angelscript_oracle - while a `"""heredoc"""` spans lines under any setting.
+         *
+         * Reported by default rather than opt-in, and the corpus is why: a scanner that tracks
+         * comments, escapes and heredocs found zero true multiline plain strings across all 1,061
+         * files. Nothing legal is at risk, so silence would only cost the user the diagnostic.
+         * A host that sets the property turns this off and the rule goes quiet.
+         */
+        bool allowMultilineStrings = false;
     };
 
     /**

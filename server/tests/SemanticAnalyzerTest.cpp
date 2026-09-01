@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "helpers/CorpusDirectory.h"
+#include "helpers/RuleCorpusAudit.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SymbolCollector.h"
@@ -29,7 +30,8 @@ namespace
      *         caller-owned since SemanticAnalysisRequest only holds a reference/pointer to them. */
     std::vector<Diagnostic> AnalyzeSource(const std::string &sourceCode, SymbolTable &table,
                                            const angel_lsp::i18n::I18n &i18n, const std::string &fileUri = "file:///test.as",
-                                           const angel_lsp::config::DiagnosticsConfig *diagnosticsConfig = nullptr)
+                                           const angel_lsp::config::DiagnosticsConfig *diagnosticsConfig = nullptr,
+                                           const angel_lsp::config::EngineProperties *engineProperties = nullptr)
     {
         AngelScriptParser symbolParser;
         SymbolCollector symbolCollector(nullptr);
@@ -40,6 +42,7 @@ namespace
 
         SemanticAnalysisRequest req{table, fileUri, "", &i18n};
         req.diagnostics = diagnosticsConfig;
+        req.engineProperties = engineProperties;
         req.scopeRoot = scopeCollector.CollectScopes(sourceCode, scopeParser);
 
         // The server always analyses with the source text and the parsed tree in hand
@@ -1215,4 +1218,120 @@ TEST_CASE("SemanticAnalyzer - A real funcdef of the same name draws no hint")
 
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
                        [](const Diagnostic &d) { return d.code == "as-hint-funcdef-missing"; }));
+}
+
+
+// =====================================================================================
+// A plain "..." string that spans lines.
+//
+// The tree-sitter grammar accepts one - its character class admits a newline - so nothing else in
+// this server notices. The engine does not: "Multiline strings are not allowed in this
+// application" unless asEP_ALLOW_MULTILINE_STRINGS is set, and it is off by default. Verified
+// against angelscript_oracle, which grew --allow-multiline-strings for this.
+//
+// Reported by default rather than opt-in, which is unusual here, and the corpus is the reason: a
+// scanner that tracks comments, escapes and heredocs found ZERO true multiline plain strings across
+// all 1,061 files. Nothing legal is at risk.
+// =====================================================================================
+
+TEST_CASE("SemanticAnalyzer - Reports a plain string that spans lines")
+{
+    const std::string code =
+        "void main() { string s = \"Line one\nLine two\"; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    auto diagnostics = AnalyzeSource(code, table, i18n);
+
+    CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
+                      [](const Diagnostic &d) { return d.code == "as-err-multiline-string"; }));
+}
+
+TEST_CASE("SemanticAnalyzer - A heredoc may span lines under any setting")
+{
+    // The whole point of the delimiter check. Both node types are `string_literal` in the grammar,
+    // so without it every heredoc in the workspace would be reported.
+    const std::string code =
+        "void main() { string s = \"\"\"Line one\nLine two\"\"\"; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    auto diagnostics = AnalyzeSource(code, table, i18n);
+
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-err-multiline-string"; }));
+}
+
+TEST_CASE("SemanticAnalyzer - A single-line string is left alone")
+{
+    const std::string code =
+        "void main() { string s = \"Just one line\"; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    auto diagnostics = AnalyzeSource(code, table, i18n);
+
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-err-multiline-string"; }));
+}
+
+TEST_CASE("SemanticAnalyzer - Silent when the host allows multiline strings")
+{
+    // The setting exists so the rule cannot be wrong: a host that sets the property compiles this,
+    // and reporting it there would be a false positive on working code.
+    const std::string code =
+        "void main() { string s = \"Line one\nLine two\"; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    angel_lsp::config::EngineProperties engineProperties;
+    engineProperties.allowMultilineStrings = true;
+
+    auto diagnostics = AnalyzeSource(code, table, i18n, "file:///test.as", nullptr, &engineProperties);
+
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic &d) { return d.code == "as-err-multiline-string"; }));
+}
+
+TEST_CASE("SemanticAnalyzer - The multiline report points at the opening quote")
+{
+    // Anchored to the quote rather than the whole literal: a string running away over twenty lines
+    // would otherwise underline all twenty, and the defect is the quote that was never closed.
+    const std::string code =
+        "void main() { string s = \"Line one\nLine two\"; }\n";
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+    auto diagnostics = AnalyzeSource(code, table, i18n);
+
+    const auto found = std::find_if(diagnostics.begin(), diagnostics.end(),
+                                    [](const Diagnostic &d) { return d.code == "as-err-multiline-string"; });
+    REQUIRE(found != diagnostics.end());
+
+    CHECK(found->range.start.line == 0);
+    CHECK(found->range.start.character == 25);
+    CHECK(found->range.end.line == 0);
+    CHECK(found->range.end.character == 26);
+}
+
+// The measurement behind reporting multiline strings by default rather than opt-in.
+// Skipped by design - it reads the 1,061-file corpus:
+//   angel_lsp_tests.exe --no-skip --test-case="*Multiline String Corpus Audit*"
+TEST_CASE("SemanticAnalyzer - Multiline String Corpus Audit" * doctest::skip(true))
+{
+    if (!angel_lsp::test::CorpusIsAvailable())
+    {
+        MESSAGE(angel_lsp::test::CorpusMissingMessage());
+        return;
+    }
+
+    const auto interesting = [](const std::string &code) { return code == "as-err-multiline-string"; };
+    const auto result = angel_lsp::test::RunCorpusAudit(interesting, 10, nullptr);
+
+    MESSAGE("Multiline-string corpus audit: files=" << result.filesAnalysed
+            << " findings=" << result.Total());
+    for (const auto &hit : result.hits)
+    {
+        MESSAGE("  " << hit.fileName << ":" << hit.line << " " << hit.message);
+    }
 }

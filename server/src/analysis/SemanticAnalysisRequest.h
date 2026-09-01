@@ -198,6 +198,17 @@ namespace angel_lsp::analysis
         }
 
         /**
+         * @brief True when the host built its engine with asEP_ALLOW_MULTILINE_STRINGS.
+         *
+         * False with no engine properties at all, matching the engine's own default: a plain
+         * "..." spanning lines is rejected unless the host asked for it.
+         */
+        bool AllowsMultilineStrings() const
+        {
+            return engineProperties && engineProperties->allowMultilineStrings;
+        }
+
+        /**
          * @brief True when the host built its engine with asEP_DISALLOW_GLOBAL_VARS.
          */
         bool DisallowsGlobalVars() const

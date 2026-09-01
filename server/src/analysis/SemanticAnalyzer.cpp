@@ -151,6 +151,7 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckDefiniteAssignment(assignRequest, ctx);
+            CheckMultilineStrings(ts_tree_root_node(request.tree), ctx);
         }
 
         // Needs the tree, not just the symbol table: an initializer or a cast is an expression, and
@@ -201,6 +202,53 @@ namespace angel_lsp::analysis
         }
 
         return diagnostics;
+    }
+
+    void SemanticAnalyzer::CheckMultilineStrings(TSNode node, DiagnosticContext &ctx, int depth) const
+    {
+        if (ts_node_is_null(node) || depth > k_maxAstDepth)
+        {
+            return;
+        }
+
+        if (ctx.request.AllowsMultilineStrings())
+        {
+            return;
+        }
+
+        if (std::string_view(ts_node_type(node)) == "string_literal")
+        {
+            const TSPoint start = ts_node_start_point(node);
+            const TSPoint end = ts_node_end_point(node);
+
+            if (end.row > start.row)
+            {
+                // A heredoc spans lines under every setting; only the plain quote form is governed
+                // by asEP_ALLOW_MULTILINE_STRINGS. The grammar gives both the same node type, so
+                // the opening delimiter is what tells them apart.
+                const uint32_t from = ts_node_start_byte(node);
+                const bool isHeredoc = from + 3 <= ctx.request.sourceCode.size() &&
+                                       ctx.request.sourceCode.compare(from, 3, "\"\"\"") == 0;
+
+                if (!isHeredoc)
+                {
+                    // Anchored to the opening quote rather than the whole literal: a string running
+                    // away over twenty lines would otherwise underline all twenty, and the defect is
+                    // at the quote that was never closed.
+                    ctx.EmitAtRange(start.row, start.column, start.row, start.column + 1,
+                                    "as-err-multiline-string", DiagnosticSeverity::Error);
+                }
+            }
+
+            // Nothing inside a string literal is worth walking.
+            return;
+        }
+
+        const uint32_t count = ts_node_child_count(node);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            CheckMultilineStrings(ts_node_child(node, i), ctx, depth + 1);
+        }
     }
 
     void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable &symbolTable, DiagnosticContext &ctx) const

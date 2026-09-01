@@ -91,6 +91,16 @@ namespace angel_lsp::config
                 return false;
             }
 
+            if (name == "allowMultilineStrings")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.allowMultilineStrings = raw == "1";
+                    return true;
+                }
+                return false;
+            }
+
             if (!IsBoolLiteral(raw))
             {
                 return false;

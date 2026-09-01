@@ -86,6 +86,17 @@ namespace angel_lsp::analysis
         void CheckDeclarationRules(const SymbolTable &symbolTable, DiagnosticContext &ctx) const;
 
         /**
+         * @brief Reports a plain "..." that spans lines, unless the host allows multiline strings.
+         *
+         * The grammar accepts one - its character class admits a newline - so nothing else in this
+         * server notices. The engine does: "Multiline strings are not allowed in this application"
+         * unless asEP_ALLOW_MULTILINE_STRINGS is set, which it is not by default.
+         *
+         * A `"""heredoc"""` spans lines under any setting and is left alone.
+         */
+        void CheckMultilineStrings(TSNode node, DiagnosticContext &ctx, int depth = 0) const;
+
+        /**
          * @brief Same rule as CheckNullAssignedToNonHandle, applied to function-body locals -
          *        ScopeTree::LocalDefinition entries of kind Variable in an isFunctionScope-nested
          *        scope (same ancestor-walk pattern as CheckUnusedVariables), using the
