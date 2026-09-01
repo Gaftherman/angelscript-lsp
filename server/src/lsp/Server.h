@@ -511,6 +511,42 @@ namespace angel_lsp
         lsp::requests::Workspace_Diagnostic::Result HandleRequestsWorkspace_Diagnostic(lsp::requests::Workspace_Diagnostic::Params &&params);
 
         /**
+         * @brief Answers `documentLink/resolve` by returning the link unchanged.
+         *
+         * Document links are resolved eagerly in `textDocument/documentLink` with their target URIs
+         * and ranges fully populated. There is nothing left to compute; this handler exists so a
+         * client that insists on the resolve round-trip gets a valid answer rather than MethodNotFound.
+         */
+        lsp::requests::DocumentLink_Resolve::Result HandleRequestsDocumentLink_Resolve(lsp::requests::DocumentLink_Resolve::Params &&params);
+
+        /**
+         * @brief Answers `inlayHint/resolve` by returning the hint unchanged.
+         *
+         * Inlay hints are computed complete with all labels, tooltips and parts during the
+         * initial `textDocument/inlayHint` request. This handler returns the hint as-is so
+         * clients that send a resolve request receive a valid response instead of MethodNotFound.
+         */
+        lsp::requests::InlayHint_Resolve::Result HandleRequestsInlayHint_Resolve(lsp::requests::InlayHint_Resolve::Params &&params);
+
+        /**
+         * @brief Answers `workspaceSymbol/resolve` by returning the symbol unchanged.
+         *
+         * Workspace symbols already carry their full location and container name when collected
+         * for `workspace/symbol`. Returning the symbol unchanged ensures clients requesting
+         * symbol resolution get a valid response instead of MethodNotFound.
+         */
+        lsp::requests::WorkspaceSymbol_Resolve::Result HandleRequestsWorkspaceSymbol_Resolve(lsp::requests::WorkspaceSymbol_Resolve::Params &&params);
+
+        /**
+         * @brief Answers `textDocument/rangesFormatting` by formatting each requested range.
+         *
+         * Clients supporting LSP 3.18 format multiple disparate selection ranges in a single
+         * round-trip instead of serialising N requests. Range formatting operations are executed
+         * across each range and the resulting edits are merged and encoded into the client's coordinate space.
+         */
+        lsp::requests::TextDocument_RangesFormatting::Result HandleRequestsTextDocument_RangesFormatting(lsp::requests::TextDocument_RangesFormatting::Params &&params);
+
+        /**
          * @brief Full text of an indexed document, or nullptr when the server holds none.
          *
          * Needed by every position conversion: translating a Tree-sitter byte column into the

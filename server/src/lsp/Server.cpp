@@ -438,7 +438,9 @@ namespace angel_lsp
 
         if (m_config.features.enableWorkspaceSymbols)
         {
-            result.capabilities.workspaceSymbolProvider = true;
+            lsp::WorkspaceSymbolOptions wsOpts;
+            wsOpts.resolveProvider = true;
+            result.capabilities.workspaceSymbolProvider = wsOpts;
         }
 
         if (m_config.features.enableReferences)
@@ -465,7 +467,9 @@ namespace angel_lsp
 
         if (m_config.features.enableInlayHints)
         {
-            result.capabilities.inlayHintProvider = true;
+            lsp::InlayHintOptions inlayOpts;
+            inlayOpts.resolveProvider = true;
+            result.capabilities.inlayHintProvider = inlayOpts;
         }
 
         if (m_config.features.enableCodeAction)
@@ -484,7 +488,9 @@ namespace angel_lsp
         if (m_config.features.enableFormatting)
         {
             result.capabilities.documentFormattingProvider = true;
-            result.capabilities.documentRangeFormattingProvider = true;
+            lsp::DocumentRangeFormattingOptions rangeOpts;
+            rangeOpts.rangesSupport = true;
+            result.capabilities.documentRangeFormattingProvider = rangeOpts;
         }
 
         if (m_config.features.enableOnTypeFormatting)
@@ -498,7 +504,7 @@ namespace angel_lsp
         if (m_config.features.enableDocumentLink)
         {
             lsp::DocumentLinkOptions linkOpts;
-            linkOpts.resolveProvider = false;
+            linkOpts.resolveProvider = true;
             result.capabilities.documentLinkProvider = linkOpts;
         }
 
@@ -2564,6 +2570,83 @@ namespace angel_lsp
         return report;
     }
 
+    lsp::requests::DocumentLink_Resolve::Result Server::HandleRequestsDocumentLink_Resolve(lsp::requests::DocumentLink_Resolve::Params &&params)
+    {
+        if (!m_config.features.enableDocumentLink)
+        {
+            return params;
+        }
+
+        // Document links are resolved eagerly during textDocument/documentLink, so the link
+        // arrives already resolved and there is nothing left to compute. This handler exists
+        // so a client that insists on the resolve round-trip gets a valid answer rather than
+        // MethodNotFound.
+        return std::move(params);
+    }
+
+    lsp::requests::InlayHint_Resolve::Result Server::HandleRequestsInlayHint_Resolve(lsp::requests::InlayHint_Resolve::Params &&params)
+    {
+        if (!m_config.features.enableInlayHints)
+        {
+            return params;
+        }
+
+        // Inlay hints are produced complete in textDocument/inlayHint, with all labels,
+        // tooltips, and locations already computed. This handler returns the hint unchanged so
+        // clients performing a resolve round-trip get a valid response instead of MethodNotFound.
+        return std::move(params);
+    }
+
+    lsp::requests::WorkspaceSymbol_Resolve::Result Server::HandleRequestsWorkspaceSymbol_Resolve(lsp::requests::WorkspaceSymbol_Resolve::Params &&params)
+    {
+        if (!m_config.features.enableWorkspaceSymbols)
+        {
+            return params;
+        }
+
+        // Workspace symbols are indexed and returned with their full container and location
+        // information in workspace/symbol. This handler returns the symbol unchanged so
+        // clients resolving workspace symbols receive a valid response instead of MethodNotFound.
+        return std::move(params);
+    }
+
+    lsp::requests::TextDocument_RangesFormatting::Result Server::HandleRequestsTextDocument_RangesFormatting(lsp::requests::TextDocument_RangesFormatting::Params &&params)
+    {
+        if (!m_config.features.enableFormatting)
+        {
+            return lsp::Null{};
+        }
+        std::string uriStr = DocumentKey(params.textDocument.uri.toString());
+        auto docIt = m_openDocuments.find(uriStr);
+        if (docIt == m_openDocuments.end())
+        {
+            return lsp::Null{};
+        }
+        TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+
+        std::vector<lsp::TextEdit> allEdits;
+        for (const auto &range : params.ranges)
+        {
+            features::RangeFormattingRequest rfr{
+                uriStr,
+                docIt->second,
+                tree,
+                codec::Decode(docIt->second, m_positionEncoding, range),
+                params.options,
+                CurrentBraceStyle()
+            };
+            auto edits = features::FormatRange(rfr);
+            if (edits.has_value())
+            {
+                allEdits.insert(allEdits.end(),
+                                std::make_move_iterator(edits->begin()),
+                                std::make_move_iterator(edits->end()));
+            }
+        }
+        EncodeIn(docIt->second, allEdits);
+        return allEdits;
+    }
+
     void Server::InitHandles()
     {
         m_messageHandler->add<lsp::requests::Initialize>(
@@ -3209,6 +3292,12 @@ namespace angel_lsp
                 return lsp::Array<lsp::SymbolInformation>{};
             });
 
+        m_messageHandler->add<lsp::requests::WorkspaceSymbol_Resolve>(
+            [this](lsp::requests::WorkspaceSymbol_Resolve::Params &&req) -> lsp::requests::WorkspaceSymbol_Resolve::Result
+            {
+                return this->HandleRequestsWorkspaceSymbol_Resolve(std::move(req));
+            });
+
         m_messageHandler->add<lsp::requests::TextDocument_References>(
             [this](lsp::requests::TextDocument_References::Params &&req) -> lsp::requests::TextDocument_References::Result
             {
@@ -3371,6 +3460,12 @@ namespace angel_lsp
                 return lsp::Null{};
             });
 
+        m_messageHandler->add<lsp::requests::InlayHint_Resolve>(
+            [this](lsp::requests::InlayHint_Resolve::Params &&req) -> lsp::requests::InlayHint_Resolve::Result
+            {
+                return this->HandleRequestsInlayHint_Resolve(std::move(req));
+            });
+
         m_messageHandler->add<lsp::requests::TextDocument_CodeAction>(
             [this](lsp::requests::TextDocument_CodeAction::Params &&req) -> lsp::requests::TextDocument_CodeAction::Result
             {
@@ -3484,6 +3579,12 @@ namespace angel_lsp
                 return lsp::Null{};
             });
 
+        m_messageHandler->add<lsp::requests::DocumentLink_Resolve>(
+            [this](lsp::requests::DocumentLink_Resolve::Params &&req) -> lsp::requests::DocumentLink_Resolve::Result
+            {
+                return this->HandleRequestsDocumentLink_Resolve(std::move(req));
+            });
+
         m_messageHandler->add<lsp::requests::TextDocument_RangeFormatting>(
             [this](lsp::requests::TextDocument_RangeFormatting::Params &&req) -> lsp::requests::TextDocument_RangeFormatting::Result
             {
@@ -3507,6 +3608,12 @@ namespace angel_lsp
                     return edits.value();
                 }
                 return lsp::Null{};
+            });
+
+        m_messageHandler->add<lsp::requests::TextDocument_RangesFormatting>(
+            [this](lsp::requests::TextDocument_RangesFormatting::Params &&req) -> lsp::requests::TextDocument_RangesFormatting::Result
+            {
+                return this->HandleRequestsTextDocument_RangesFormatting(std::move(req));
             });
 
         m_messageHandler->add<lsp::requests::TextDocument_CodeLens>(

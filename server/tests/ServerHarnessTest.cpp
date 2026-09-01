@@ -1839,3 +1839,158 @@ TEST_CASE("Server - A created file nothing includes is not indexed")
 
     CHECK(stream.ResponseFor(2).find("NobodyAsksForThis") == std::string::npos);
 }
+
+
+// =====================================================================================
+// The three resolve round-trips, and multi-range formatting.
+//
+// This server produces document links, inlay hints and workspace symbols complete - nothing is
+// deferred - so the resolve handlers hand back what they were given. They exist because a client
+// that insists on the round-trip otherwise gets MethodNotFound for a capability it was told about,
+// and "already complete" is a better answer than an error.
+// =====================================================================================
+
+TEST_CASE("Server - Announces the three resolve providers it now answers")
+{
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(1);
+    INFO(reply);
+
+    // documentLinkProvider announced resolveProvider:false while nothing answered the request,
+    // which was the honest pairing. All three say true now.
+    CHECK(reply.find("\"documentLinkProvider\":{\"resolveProvider\":true}") != std::string::npos);
+    CHECK(reply.find("\"inlayHintProvider\":{\"resolveProvider\":true}") != std::string::npos);
+    CHECK(reply.find("\"workspaceSymbolProvider\":{\"resolveProvider\":true}") != std::string::npos);
+}
+
+TEST_CASE("Server - documentLink/resolve answers rather than failing")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("helper.as", "void Helped() { }\n");
+
+    const std::string source = "#include \"helper.as\"\nvoid main() { }\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"documentLink/resolve","params":)"
+                R"({"range":{"start":{"line":0,"character":10},"end":{"line":0,"character":20}},)"
+                R"("target":")" + fixture.Uri("helper.as") + R"("}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") == std::string::npos);
+    CHECK(reply.find("helper.as") != std::string::npos);
+}
+
+TEST_CASE("Server - inlayHint/resolve answers rather than failing")
+{
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"inlayHint/resolve","params":)"
+                R"({"position":{"line":0,"character":0},"label":"count:"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") == std::string::npos);
+    CHECK(reply.find("count:") != std::string::npos);
+}
+
+TEST_CASE("Server - workspaceSymbol/resolve answers rather than failing")
+{
+    WorkspaceFixture fixture;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspaceSymbol/resolve","params":)"
+                R"({"name":"AlreadyComplete","kind":12,"location":{"uri":")" + fixture.Uri("main.as") +
+                R"(","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}}}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") == std::string::npos);
+    CHECK(reply.find("AlreadyComplete") != std::string::npos);
+}
+
+TEST_CASE("Server - rangesFormatting formats every range it is given")
+{
+    const std::string source =
+        "void  a( ) { int   x=1; }\n"
+        "void  b( ) { int   y=2; }\n"
+        "void  c( ) { int   z=3; }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+
+    // The first and third lines, skipping the middle - the shape rangesFormatting exists for, and
+    // the one a single range cannot express.
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/rangesFormatting","params":)"
+                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},)"
+                R"("ranges":[{"start":{"line":0,"character":0},"end":{"line":0,"character":25}},)"
+                R"({"start":{"line":2,"character":0},"end":{"line":2,"character":25}}],)"
+                R"("options":{"tabSize":4,"insertSpaces":true}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") == std::string::npos);
+    CHECK(reply.find("newText") != std::string::npos);
+}
+
+TEST_CASE("Server - rangesFormatting with no ranges is an empty edit, not an error")
+{
+    const std::string source = "void a() { }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/rangesFormatting","params":)"
+                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"ranges":[],)"
+                R"("options":{"tabSize":4,"insertSpaces":true}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO(reply);
+    CHECK(reply.find("\"error\"") == std::string::npos);
+}
