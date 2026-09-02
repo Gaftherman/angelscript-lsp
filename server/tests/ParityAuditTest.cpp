@@ -172,15 +172,18 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     }
 
     // Defaults to the sibling checkout layout; override for a different one.
+    //
+    // The root is only ever a *fallback*: for the scripts when PARITY_SCRIPT_DIR is unset, and for
+    // the stub when PARITY_PREDEFINED is unset. Its absence is therefore not on its own a reason to
+    // skip, and treating it as one is how this audit stopped running. It returned here - before
+    // reading either override - so the CI job that sets both and deliberately has no AS-Harness
+    // checkout passed green without auditing a single script, and the CHECK_MESSAGE at the end of
+    // this test, the one gate that says our verdicts match the compiler's, never executed at all.
     std::string harnessRoot = EnvVar("ASHARNESS_ROOT");
     if (harnessRoot.empty())
         harnessRoot = (fs::path(ANGELSCRIPT_CORPUS_DIR) / ".." / ".." / "AS-Harness").string();
 
-    if (!fs::exists(harnessRoot))
-    {
-        MESSAGE("AS-Harness root not found - parity audit skipped.");
-        return;
-    }
+    const bool haveHarnessRoot = fs::exists(harnessRoot);
 
     // PARITY_SCRIPT_DIR points the audit at any directory of .as files instead of the harness's
     // own. That is what lets the same machinery be run over the snippets extracted from this
@@ -189,13 +192,25 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     std::vector<fs::path> scripts;
     const std::string overrideDir = EnvVar("PARITY_SCRIPT_DIR");
 
-    if (!overrideDir.empty() && fs::exists(overrideDir))
+    if (!overrideDir.empty())
     {
+        // Set but missing is a misconfiguration, not a reason to quietly audit something else. It
+        // used to fall through to the harness corpus, which meant a typo in the CI variable
+        // measured a different set of scripts than the job claimed to.
+        REQUIRE_MESSAGE(fs::exists(overrideDir),
+                        "PARITY_SCRIPT_DIR is set but names a directory that does not exist: "
+                            << overrideDir);
+
         for (const auto &entry : fs::directory_iterator(overrideDir))
         {
             if (entry.is_regular_file() && entry.path().extension() == ".as")
                 scripts.push_back(entry.path());
         }
+    }
+    else if (!haveHarnessRoot)
+    {
+        MESSAGE("Neither PARITY_SCRIPT_DIR nor an AS-Harness root - parity audit skipped.");
+        return;
     }
     else
     {

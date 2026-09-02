@@ -131,7 +131,20 @@ jobs:
           ASHARNESS_EXE: ${{ github.workspace }}/server/build/angelscript_oracle
           PARITY_PREDEFINED: ${{ github.workspace }}/server/tests/fixtures/sdk-addons.as.predefined
           PARITY_SCRIPT_DIR: ${{ github.workspace }}/server/tests/parity
-        run: ./build/angel_lsp_tests --no-skip --test-case="*Parity*"
+        # The audit skips itself when it cannot find a corpus, and for a long while it did exactly
+        # that here - silently, with this job green. Requiring its own summary line in the output is
+        # what turns a skip back into a failure, and it costs one grep.
+        run: |
+          set -o pipefail
+          ./build/angel_lsp_tests --no-skip --test-case="*Parity*" 2>&1 | tee parity.log
+          if ! grep -q "AngelScript parity audit (" parity.log; then
+            echo "::error::The parity audit skipped itself - no summary line in its output."
+            exit 1
+          fi
+          if grep -q "AngelScript parity audit (0 scripts)" parity.log; then
+            echo "::error::The parity audit ran but found no scripts to audit."
+            exit 1
+          fi
 
   package-extension:
     name: Package VS Code extension
