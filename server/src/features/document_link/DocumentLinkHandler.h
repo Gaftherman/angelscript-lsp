@@ -2,6 +2,7 @@
 
 #include "analysis/Diagnostics.h"
 #include "i18n/i18n.h"
+#include "utils/PreprocessorRegions.h"
 
 #include <lsp/types.h>
 
@@ -37,6 +38,13 @@ namespace angel_lsp::features
          * workspace. See IncludeResolver::IsWithinRoots.
          */
         std::vector<std::string> allowedRoots;
+
+        /**
+         * @brief Lines the preprocessor removes, so a directive inside one is not a directive.
+         *
+         * Empty means nothing is excluded, which is what every caller that does not care gets.
+         */
+        std::vector<utils::ExcludedLineRange> excludedLineRanges;
     };
 
     using DocumentLinkResult = std::vector<lsp::DocumentLink>;

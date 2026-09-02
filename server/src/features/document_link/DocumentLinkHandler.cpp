@@ -49,6 +49,9 @@ namespace angel_lsp::features
 
     std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest &request)
     {
+        // Deliberately not filtered by the excluded ranges, unlike the diagnostics below. A link is
+        // navigation, not a claim: the file named inside a dead `#if` exists and a reader following
+        // the directive wants to open it. What would be wrong is telling them it is missing.
         const auto directives = utils::IncludeResolver::ExtractIncludes(request.sourceCode);
         if (directives.empty())
             return std::nullopt;
@@ -91,7 +94,8 @@ namespace angel_lsp::features
     {
         std::vector<analysis::Diagnostic> diagnostics;
 
-        const auto directives = utils::IncludeResolver::ExtractIncludes(request.sourceCode);
+        const auto directives =
+            utils::IncludeResolver::ExtractIncludes(request.sourceCode, request.excludedLineRanges);
         if (directives.empty())
             return diagnostics;
 

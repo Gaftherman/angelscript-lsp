@@ -2179,6 +2179,12 @@ namespace angel_lsp
         const auto searchDirectories = SearchDirectories();
 
         features::DocumentLinkRequest request{ uriStr, text, *searchDirectories, m_i18n.get(), IncludeAllowedRoots() };
+
+        // An `#include` inside a dead `#if` is never opened by the compiler, so reporting the file
+        // as missing is a warning about a directive that does not exist. Measured: a missing file
+        // included from inside `#if UNDEFINED` compiles, and the same line outside does not.
+        request.excludedLineRanges = ExcludedLineRanges(text);
+
         auto includeDiagnostics = features::GetUnresolvedIncludeDiagnostics(request);
         diagnostics.insert(diagnostics.end(), includeDiagnostics.begin(), includeDiagnostics.end());
     }

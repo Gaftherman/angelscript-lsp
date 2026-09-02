@@ -1,5 +1,7 @@
 #pragma once
 
+#include "utils/PreprocessorRegions.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -35,6 +37,23 @@ namespace angel_lsp::utils
          * @return A vector of extracted IncludeDirective structs with rawPath, line, and isAngled populated.
          */
         static std::vector<IncludeDirective> ExtractIncludes(std::string_view sourceCode);
+
+        /**
+         * @brief The same, minus every directive the preprocessor removes before compilation.
+         *
+         * An `#include` inside a dead `#if` is not an include. CScriptBuilder blanks the whole
+         * region in its first pass and only looks for `#include` in its second, so the file is
+         * never opened - measured: a missing file included from inside `#if UNDEFINED` compiles
+         * (exit 0), and the identical directive one line outside does not (exit 1).
+         *
+         * Reporting one of those as not found is a warning about text the compiler never read.
+         *
+         * @param excludedLines Ranges from utils::FindExcludedLineRanges. Empty behaves exactly
+         *        like the overload above.
+         */
+        static std::vector<IncludeDirective> ExtractIncludes(
+            std::string_view sourceCode,
+            const std::vector<ExcludedLineRange> &excludedLines);
 
         /**
          * @brief Canonicalizes a path to the single spelling the rest of the server compares against.

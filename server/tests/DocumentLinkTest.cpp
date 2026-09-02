@@ -222,3 +222,30 @@ TEST_CASE("GetUnresolvedIncludeDiagnostics - a search directory rescues an other
     features::DocumentLinkRequest with{uri, source, withShared, nullptr};
     CHECK(features::GetUnresolvedIncludeDiagnostics(with).empty());
 }
+
+TEST_CASE("DocumentLink - A missing include inside a dead #if is not reported")
+{
+    // Measured through the oracle, and it is the whole reason this filter exists: a missing file
+    // included from inside `#if UNDEFINED` compiles (exit 0), because CScriptBuilder blanks the
+    // region in its first pass and only looks for `#include` in its second. The identical
+    // directive one line further down is rejected (exit 1).
+    const std::string source =
+        "#if NEVER_DEFINED\n"
+        "#include \"there_is_no_such_file.as\"\n"
+        "#endif\n"
+        "#include \"there_is_no_such_file.as\"\n"
+        "void main() { }\n";
+
+    const std::vector<std::string> searchDirectories;
+
+    features::DocumentLinkRequest request{
+        "file:///workspace/main.as", source, searchDirectories, nullptr, { "/workspace" } };
+    request.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(source);
+
+    const auto diagnostics = features::GetUnresolvedIncludeDiagnostics(request);
+
+    // Exactly one, and it is the live one on line 3 - not the identical text on line 1.
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics[0].range.start.line == 3);
+    CHECK(diagnostics[0].code == "as-warn-include-not-found");
+}

@@ -101,6 +101,19 @@ namespace angel_lsp::utils
         return false;
     }
 
+    std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(
+        std::string_view sourceCode,
+        const std::vector<ExcludedLineRange> &excludedLines)
+    {
+        std::vector<IncludeDirective> kept;
+        for (auto &directive : ExtractIncludes(sourceCode))
+        {
+            if (!IsLineExcluded(excludedLines, static_cast<uint32_t>(directive.line)))
+                kept.push_back(std::move(directive));
+        }
+        return kept;
+    }
+
     std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view sourceCode)
     {
         std::vector<IncludeDirective> directives;
