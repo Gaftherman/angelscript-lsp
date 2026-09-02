@@ -840,6 +840,37 @@ namespace angel_lsp
         }
         profilesToLoad.push_back(kind);
 
+        // Anything claimed under a profile URI that is no longer wanted has to go first.
+        //
+        // Without this a profile change only ever added: didChangeConfiguration sets shouldRescan,
+        // the rescan reaches this function, and ClaimPredefinedFile refuses the URIs it has already
+        // seen while nothing releases the one it should forget. Measured before the fix - moving
+        // from svencoop to urho3d left `Vector`, which only SvenCoop declares, still resolving.
+        {
+            std::vector<std::string> wanted;
+            wanted.reserve(profilesToLoad.size());
+            for (const auto pKind : profilesToLoad)
+                wanted.push_back(angel_lsp::analysis::GetProfileSyntheticUri(pKind));
+
+            std::lock_guard<std::mutex> lock(m_predefinedMutex);
+
+            // Collected before erasing: UnloadPredefinedUri mutates the set being read.
+            std::vector<std::string> stale;
+            for (const auto &loaded : m_predefinedUris)
+            {
+                if (!loaded.starts_with(angel_lsp::analysis::k_profileUriPrefix))
+                    continue;
+                if (std::find(wanted.begin(), wanted.end(), loaded) == wanted.end())
+                    stale.push_back(loaded);
+            }
+
+            for (const auto &uri : stale)
+            {
+                UnloadPredefinedUri(uri);
+                m_logger->LogInfo(fmt::format("Unloaded built-in engine profile: {}", uri));
+            }
+        }
+
         for (auto pKind : profilesToLoad)
         {
             if (stopToken.stop_requested())
@@ -914,6 +945,32 @@ namespace angel_lsp
         }
     }
 
+    bool Server::UnloadPredefinedUri(std::string uriStr)
+    {
+        if (!m_predefinedUris.contains(uriStr))
+        {
+            return false;
+        }
+
+        m_symbolTable.ClearDocumentSymbols(uriStr);
+        m_scopeIndex.ClearDocument(uriStr);
+        m_callGraph.ClearDocument(uriStr);
+        m_predefinedUris.erase(uriStr);
+
+        // Keyed by path, so the reverse lookup is a scan. It is over the number of stubs a
+        // workspace has, which is single digits.
+        for (auto it = m_predefinedUriByPath.begin(); it != m_predefinedUriByPath.end(); ++it)
+        {
+            if (it->second == uriStr)
+            {
+                m_predefinedUriByPath.erase(it);
+                break;
+            }
+        }
+
+        return true;
+    }
+
     bool Server::ClaimPredefinedFile(const std::string &uriStr, bool forceReload)
     {
         const std::string path = CanonicalPathFromUri(uriStr);
@@ -936,12 +993,10 @@ namespace angel_lsp
 
             // Same file, different spelling. The previous copy has to go before the new one is
             // collected, or every declaration in the stub would exist twice in the symbol table.
-            m_symbolTable.ClearDocumentSymbols(owner->second);
-            m_scopeIndex.ClearDocument(owner->second);
-            m_callGraph.ClearDocument(owner->second);
-            m_predefinedUris.erase(owner->second);
+            const std::string previous = owner->second;
+            UnloadPredefinedUri(previous);
 
-            m_logger->LogInfo(fmt::format("Predefined file re-indexed under {} (was {})", uriStr, owner->second));
+            m_logger->LogInfo(fmt::format("Predefined file re-indexed under {} (was {})", uriStr, previous));
         }
 
         m_predefinedUriByPath[path] = uriStr;
@@ -1179,11 +1234,7 @@ namespace angel_lsp
                     std::lock_guard<std::mutex> lock(m_predefinedMutex);
                     if (const auto owner = m_predefinedUriByPath.find(path); owner != m_predefinedUriByPath.end())
                     {
-                        m_symbolTable.ClearDocumentSymbols(owner->second);
-                        m_scopeIndex.ClearDocument(owner->second);
-                        m_callGraph.ClearDocument(owner->second);
-                        m_predefinedUris.erase(owner->second);
-                        m_predefinedUriByPath.erase(owner);
+                        UnloadPredefinedUri(owner->second);
 
                         // A deleted stub takes its `#define`s with it, so every `#if` that was live
                         // because of one goes back to being excluded. That is a change to what the

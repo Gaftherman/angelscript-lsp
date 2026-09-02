@@ -504,6 +504,26 @@ namespace angel_lsp
          * @pre m_predefinedMutex must be held by the caller for the whole claim-and-collect span.
          */
         bool ClaimPredefinedFile(const std::string &uriStr, bool forceReload = false);
+
+        /**
+         * @brief Removes everything one predefined document contributed to the index.
+         *
+         * There was no way to unload a stub at all, and three separate places wanted one: the
+         * re-spelling branch of ClaimPredefinedFile, the file-deleted branch of
+         * didChangeWatchedFiles, and switching engine profile. The first two had a copy each and
+         * the third had nothing, which is why leaving a profile left its symbols behind - a rescan
+         * only ever adds, because ClaimPredefinedFile refuses a URI it has already seen.
+         *
+         * @param uriStr The document to forget, as it was indexed. **By value on purpose**: this
+         *        erases from m_predefinedUris and m_predefinedUriByPath, and the obvious thing to
+         *        pass is a reference into one of them. Doing that dangles mid-call - it did, and
+         *        the symptom was an unload that reported success on an empty URI while the real
+         *        entry stayed. A copy makes the hazard unreachable rather than something to
+         *        remember.
+         * @return True when something was actually unloaded.
+         * @note The caller must hold m_predefinedMutex.
+         */
+        bool UnloadPredefinedUri(std::string uriStr);
         void PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics);
 
         /**

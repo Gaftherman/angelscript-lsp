@@ -2479,3 +2479,72 @@ TEST_CASE("Server - A #define in a script is reported, and the same one in a stu
     // here whose `#define` is legitimate, and it sits on line 0 of its own document.
     CHECK(frames.find("engine.as.predefined") == std::string::npos);
 }
+
+// =====================================================================================
+// Switching engine profile has to unload the profile that was left.
+//
+// The profiles load as synthetic documents - `builtin:///profiles/<name>.as.predefined` - claimed
+// through the same ClaimPredefinedFile path as a stub on disk. didChangeConfiguration notices the
+// profile changed and sets shouldRescan, but a rescan only ever *adds*: ClaimPredefinedFile refuses
+// a URI it has already seen, and nothing releases the one that is no longer wanted.
+//
+// `Vector` is declared only by the SvenCoop profile, so a script naming it after a move to Urho3D
+// should stop resolving. Still resolving means the old profile was never unloaded.
+// =====================================================================================
+
+TEST_CASE("Server - Switching engine profile forgets the profile that was left")
+{
+    const std::string source = "void main() { Vector v; }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle, size_t times)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            const std::string output = stream.Output();
+            size_t count = 0;
+            for (size_t at = output.find(needle); at != std::string::npos;
+                 at = output.find(needle, at + needle.size()))
+            {
+                ++count;
+            }
+            if (count >= times)
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // The first scan loads the SvenCoop profile named in the config at the bottom.
+    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\"", 1); });
+
+    // Move to a profile that has never heard of Vector.
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+                R"({"settings":{"angelscript":{"engineProfile":"urho3d"}}}})");
+
+    // The rescan runs its own progress cycle, so wait for a second one to finish.
+    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\"", 2); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { waitFor(stream, "publishDiagnostics", 1); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "svencoop";
+    RunScript(serverConfig, stream);
+
+    const std::string frames = PublishedFrames(stream.Output());
+    INFO(frames);
+
+    // Published at all - otherwise the assertion below would pass on a server that said nothing.
+    REQUIRE(stream.Output().find("publishDiagnostics") != std::string::npos);
+
+    CHECK(Published(stream.Output(), "as-err-unresolved-type"));
+}

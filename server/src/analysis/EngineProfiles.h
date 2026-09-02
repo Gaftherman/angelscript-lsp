@@ -52,6 +52,15 @@ namespace angel_lsp::analysis
      * @param kind The engine profile kind.
      * @return Synthetic document URI string (e.g. "builtin:///profiles/standard.as.predefined").
      */
+    /**
+     * @brief Scheme and path every built-in profile's synthetic document URI starts with.
+     *
+     * Exported so a caller can tell a profile apart from a stub on disk without parsing the URI:
+     * the two are claimed through the same path, and unloading a profile that is no longer
+     * selected has to leave the workspace's own stubs alone.
+     */
+    inline constexpr std::string_view k_profileUriPrefix = "builtin:///profiles/";
+
     std::string GetProfileSyntheticUri(EngineProfileKind kind);
 
     /**

@@ -734,7 +734,7 @@ OOTPContext g_OOTP;
 
     std::string GetProfileSyntheticUri(EngineProfileKind kind)
     {
-        return "builtin:///profiles/" + std::string(EngineProfileKindToString(kind)) + ".as.predefined";
+        return std::string(k_profileUriPrefix) + std::string(EngineProfileKindToString(kind)) + ".as.predefined";
     }
 
     EngineProfileKind DetectEngineProfileFromWorkspace(const std::vector<std::string> &fileNamesOrSamples)
