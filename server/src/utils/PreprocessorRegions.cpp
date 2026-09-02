@@ -26,6 +26,16 @@ namespace angel_lsp::utils
             bool takenAlready = false;  ///< True once some branch of this `#if` has been live.
         };
 
+        /** @brief One `#name argument` found at the start of a line. */
+        struct DirectiveHit
+        {
+            uint32_t line = 0;
+            uint32_t startColumn = 0;  ///< Byte column of the `#`.
+            uint32_t endColumn = 0;    ///< One past the last character of the name.
+            std::string_view name;
+            std::string_view argument;
+        };
+
         /**
          * @brief Walks a document and reports every directive that starts a line.
          *
@@ -36,9 +46,9 @@ namespace angel_lsp::utils
          * exactly this walk, and a second copy of it would drift from this one the first time
          * either learned about a new kind of literal.
          *
-         * @param fn Called as fn(line, name, argument) for each `#name argument`, where argument is
-         *        the identifier that follows the name, empty when there is none. Both are views
-         *        into @p sourceCode.
+         * @param fn Called with one DirectiveHit per `#name argument`, where argument is the
+         *        identifier that follows the name, empty when there is none. Both string views
+         *        point into @p sourceCode.
          * @return The 0-based number of the last line scanned, for a directive left unclosed.
          */
         template <typename Fn>
@@ -47,6 +57,7 @@ namespace angel_lsp::utils
             const size_t n = sourceCode.size();
             size_t i = 0;
             uint32_t currentLine = 0;
+            size_t lineStart = 0;
             bool atLineStart = true;
 
             while (i < n)
@@ -58,15 +69,17 @@ namespace angel_lsp::utils
                     if (i + 1 < n && sourceCode[i + 1] == '\n')
                         ++i;
                     ++currentLine;
-                    atLineStart = true;
                     ++i;
+                    lineStart = i;
+                    atLineStart = true;
                     continue;
                 }
                 if (c == '\n')
                 {
                     ++currentLine;
-                    atLineStart = true;
                     ++i;
+                    lineStart = i;
+                    atLineStart = true;
                     continue;
                 }
                 if (c == ' ' || c == '\t')
@@ -90,6 +103,7 @@ namespace angel_lsp::utils
                         if (sourceCode[i] == '\n')
                         {
                             ++currentLine;
+                            lineStart = i + 1;
                             atLineStart = true;
                         }
                         else if (sourceCode[i] == '*' && i + 1 < n && sourceCode[i + 1] == '/')
@@ -126,7 +140,9 @@ namespace angel_lsp::utils
 
                 if (c == '#' && atLineStart)
                 {
-                    const uint32_t directiveLine = currentLine;
+                    DirectiveHit hit;
+                    hit.line = currentLine;
+                    hit.startColumn = static_cast<uint32_t>(i - lineStart);
                     ++i;
 
                     while (i < n && (sourceCode[i] == ' ' || sourceCode[i] == '\t'))
@@ -135,7 +151,8 @@ namespace angel_lsp::utils
                     const size_t nameStart = i;
                     while (i < n && IsIdentifierChar(sourceCode[i]))
                         ++i;
-                    const std::string_view name = sourceCode.substr(nameStart, i - nameStart);
+                    hit.name = sourceCode.substr(nameStart, i - nameStart);
+                    hit.endColumn = static_cast<uint32_t>(i - lineStart);
 
                     while (i < n && (sourceCode[i] == ' ' || sourceCode[i] == '\t'))
                         ++i;
@@ -143,9 +160,9 @@ namespace angel_lsp::utils
                     const size_t argStart = i;
                     while (i < n && IsIdentifierChar(sourceCode[i]))
                         ++i;
-                    const std::string_view argument = sourceCode.substr(argStart, i - argStart);
+                    hit.argument = sourceCode.substr(argStart, i - argStart);
 
-                    fn(directiveLine, name, argument);
+                    fn(hit);
 
                     while (i < n && sourceCode[i] != '\n' && sourceCode[i] != '\r')
                         ++i;
@@ -160,12 +177,14 @@ namespace angel_lsp::utils
         }
     }
 
-    std::vector<ExcludedLineRange> FindExcludedLineRanges(
+    PreprocessorScan ScanPreprocessor(
         std::string_view sourceCode,
         const ankerl::unordered_dense::set<std::string> &definedWords,
-        const PreprocessorFeatures &features)
+        const PreprocessorFeatures &features,
+        bool reportPragma)
     {
-        std::vector<ExcludedLineRange> ranges;
+        PreprocessorScan scan;
+        std::vector<ExcludedLineRange> &ranges = scan.excluded;
 
         std::vector<OpenDirective> stack;
 
@@ -201,8 +220,23 @@ namespace angel_lsp::utils
 
         const uint32_t lastLine = ForEachDirective(
             sourceCode,
-            [&](uint32_t directiveLine, std::string_view directive, std::string_view word) {
+            [&](const DirectiveHit &hit) {
+                const uint32_t directiveLine = hit.line;
+                const std::string_view directive = hit.name;
+                const std::string_view word = hit.argument;
+
                 const bool atExcludedTop = !stack.empty() && stack.back().excluded;
+
+                // Anything inside a block that is going away is going away with it, whatever it is.
+                // Measured: `#define` and `#pragma` inside an excluded `#if` both compile, because
+                // the add-on blanks the whole region in its first pass and only looks for pragmas,
+                // includes and metadata in its second.
+                const bool reaches = !atExcludedTop && excludedNesting == 0;
+
+                const auto reportUnsupported = [&]() {
+                    scan.unsupported.push_back(UnsupportedDirective{
+                        hit.line, hit.startColumn, hit.endColumn, std::string(hit.name) });
+                };
 
                 const bool opensRegion =
                     directive == "if" ||
@@ -243,6 +277,27 @@ namespace angel_lsp::utils
                     }
                     localWords.insert(std::string(word));
                 }
+                else if (reaches && !features.elseSupport && directive == "else")
+                {
+                    reportUnsupported();
+                }
+                else if (reaches && !features.elifSupport && directive == "elif")
+                {
+                    reportUnsupported();
+                }
+                else if (reaches && !features.ifdefSupport &&
+                         (directive == "ifdef" || directive == "ifndef"))
+                {
+                    reportUnsupported();
+                }
+                else if (reaches && !features.defineInScripts && directive == "define")
+                {
+                    reportUnsupported();
+                }
+                else if (reaches && reportPragma && directive == "pragma")
+                {
+                    reportUnsupported();
+                }
                 else if ((features.elseSupport && directive == "else") ||
                          (features.elifSupport && directive == "elif"))
                 {
@@ -273,6 +328,12 @@ namespace angel_lsp::utils
                         stack.pop_back();
                         closeBranch(open, directiveLine);
                     }
+                    else
+                    {
+                        // Nothing to close. The add-on only blanks an `#endif` that closes an `#if`
+                        // it opened, so this one stays in the source and the compiler rejects it.
+                        reportUnsupported();
+                    }
                 }
             });
 
@@ -283,18 +344,25 @@ namespace angel_lsp::utils
                 ranges.push_back(ExcludedLineRange{ open.branchStart, lastLine });
         }
 
-        return ranges;
+        return scan;
+    }
+
+    std::vector<ExcludedLineRange> FindExcludedLineRanges(
+        std::string_view sourceCode,
+        const ankerl::unordered_dense::set<std::string> &definedWords,
+        const PreprocessorFeatures &features)
+    {
+        return ScanPreprocessor(sourceCode, definedWords, features).excluded;
     }
 
     std::vector<std::string> ScanDefinedWords(std::string_view sourceCode)
     {
         std::vector<std::string> words;
 
-        ForEachDirective(sourceCode,
-                         [&](uint32_t, std::string_view directive, std::string_view word) {
-                             if (directive == "define" && !word.empty())
-                                 words.emplace_back(word);
-                         });
+        ForEachDirective(sourceCode, [&](const DirectiveHit &hit) {
+            if (hit.name == "define" && !hit.argument.empty())
+                words.emplace_back(hit.argument);
+        });
 
         return words;
     }

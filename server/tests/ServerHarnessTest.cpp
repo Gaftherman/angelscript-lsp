@@ -2428,3 +2428,54 @@ TEST_CASE("Server - Without that #define the same block is excluded and says not
     CHECK_FALSE(Published(output, "as-err-undefined-identifier"));
     CHECK(frames.find("\"as-err-") == std::string::npos);
 }
+
+TEST_CASE("Server - A #define in a script is reported, and the same one in a stub is not")
+{
+    // The pair matters more than either half: `#define` is a syntax error in a .as and this
+    // server's own syntax in a .as.predefined, so a rule that could not tell them apart would
+    // either miss the error or tell the user off for configuring the server as documented.
+    WorkspaceFixture fixture;
+    fixture.Write("engine.as.predefined", "#define FOO\n");
+
+    const std::string source = "#define LOCAL\nvoid main() { }\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("\"kind\":\"end\""))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    });
+
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("publishDiagnostics"))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string frames = PublishedFrames(stream.Output());
+    INFO(frames);
+
+    CHECK(Published(stream.Output(), "as-warn-unsupported-directive"));
+
+    // And it is the script's line that was reported, not the stub's. The stub is the only file
+    // here whose `#define` is legitimate, and it sits on line 0 of its own document.
+    CHECK(frames.find("engine.as.predefined") == std::string::npos);
+}

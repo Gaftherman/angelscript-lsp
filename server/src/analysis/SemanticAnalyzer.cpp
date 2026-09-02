@@ -192,6 +192,20 @@ namespace angel_lsp::analysis
                                                               request.scopeRoot.get() }, ctx);
         }
 
+        // Directives the add-on does not recognise. A Warning rather than an Error even though the
+        // compiler rejects every one of them: a host is free to have patched its copy of
+        // scriptbuilder.cpp without telling this server, and the zero-false-positives rule is about
+        // errors. Each one is silent as soon as its switch is on.
+        for (const auto &directive : request.unsupportedDirectives)
+        {
+            DiagnosticContext ctx{request, diagnostics, m_logger};
+            ctx.EmitAtRange(directive.line, directive.startColumn,
+                            directive.line, directive.endColumn,
+                            "as-warn-unsupported-directive", directive.name,
+                            directive.name == "pragma" ? request.pragmaSeverity
+                                                       : DiagnosticSeverity::Warning);
+        }
+
         // Nothing inside an excluded `#if` block is real code - CScriptBuilder blanks it out before
         // the compiler ever sees it - so a diagnostic there describes text that does not exist.
         // Filtered here, at the single exit, rather than in each rule.

@@ -403,3 +403,133 @@ TEST_CASE("Preprocessor - A branch boundary inside a nested dead block belongs t
     CHECK(IsLineExcluded(ranges, 4));
     CHECK_FALSE(IsLineExcluded(ranges, 7));
 }
+
+// =====================================================================================
+// Directives the compiler will choke on.
+//
+// Every case below was measured against the real compiler through server/tools/oracle, which is
+// what decides where the line falls: a `#define` inside an excluded `#if` compiles (exit 0) and the
+// same `#define` one line outside does not (exit 1). Reporting the first would be a diagnostic
+// about text that does not exist, which is the thing this whole file exists to prevent.
+// =====================================================================================
+
+namespace
+{
+    /** @brief The directive names reported for a document, in source order. */
+    std::vector<std::string> UnsupportedNames(
+        const std::string &source,
+        const ankerl::unordered_dense::set<std::string> &defined = {},
+        const PreprocessorFeatures &features = {},
+        bool reportPragma = false)
+    {
+        std::vector<std::string> names;
+        for (const auto &d : ScanPreprocessor(source, defined, features, reportPragma).unsupported)
+            names.push_back(d.name);
+        return names;
+    }
+}
+
+TEST_CASE("Preprocessor - The directives the stock add-on leaves for the compiler are reported")
+{
+    // Each of these exits 1 through the oracle on its own.
+    CHECK(UnsupportedNames("#define FOO\n") == std::vector<std::string>{ "define" });
+    CHECK(UnsupportedNames("#ifdef FOO\nvoid a() {}\n#endif\n") ==
+          std::vector<std::string>{ "ifdef", "endif" });
+    CHECK(UnsupportedNames("#ifndef FOO\n#endif\n") == std::vector<std::string>{ "ifndef", "endif" });
+    CHECK(UnsupportedNames("#else\nvoid main() {}\n") == std::vector<std::string>{ "else" });
+    CHECK(UnsupportedNames("#endif\nvoid main() {}\n") == std::vector<std::string>{ "endif" });
+}
+
+TEST_CASE("Preprocessor - Nothing is reported for a directive the preprocessor already deleted")
+{
+    // The measurement that draws this line: `#if FOO / #define BAR / #endif` with FOO undefined
+    // exits 0. The add-on blanks the whole region in its first pass and only looks for pragmas,
+    // includes and metadata in its second, so the `#define` is gone before anything examines it.
+    CHECK(UnsupportedNames("#if FOO\n#define BAR\n#endif\n").empty());
+    CHECK(UnsupportedNames("#if FOO\n#pragma anything\n#endif\n", {}, {}, /*reportPragma=*/true).empty());
+}
+
+TEST_CASE("Preprocessor - An #ifdef inside a dead block does not nest, so the second #endif is loose")
+{
+    // Not the answer that reads naturally, and it took the oracle to settle it. ExcludeCode counts
+    // exactly two tokens while it skips forward - "if" and "endif" - so an `#ifdef` inside the dead
+    // region does not deepen anything, and the FIRST `#endif` closes the outer `#if`. The second
+    // one then closes nothing and is left in the source.
+    //
+    // The real compiler agrees down to the position: it reports an unexpected token at line 4,
+    // column 1, which is that second `#endif`.
+    const auto scan = ScanPreprocessor("#if FOO\n#ifdef BAR\n#endif\n#endif\nvoid main() {}\n");
+
+    REQUIRE(scan.unsupported.size() == 1);
+    CHECK(scan.unsupported[0].name == "endif");
+    CHECK(scan.unsupported[0].line == 3);
+    CHECK(scan.unsupported[0].startColumn == 0);
+}
+
+TEST_CASE("Preprocessor - A live #if does not protect what is inside it")
+{
+    // The other half of the same measurement, and the one that needed the oracle's new --define
+    // flag to reach at all: with FOO defined the block survives, so the `#define` inside it reaches
+    // the compiler and the file is rejected.
+    const std::string source = "#if FOO\n#define BAR\n#endif\n";
+
+    CHECK(UnsupportedNames(source, Defined({ "FOO" })) == std::vector<std::string>{ "define" });
+}
+
+TEST_CASE("Preprocessor - A directive goes quiet as soon as its switch is on")
+{
+    PreprocessorFeatures features;
+    features.elseSupport = true;
+    features.elifSupport = true;
+    features.ifdefSupport = true;
+    features.defineInScripts = true;
+
+    const std::string source =
+        "#define FOO\n"
+        "#ifdef FOO\n"
+        "void a() {}\n"
+        "#elif BAR\n"
+        "void b() {}\n"
+        "#else\n"
+        "void c() {}\n"
+        "#endif\n";
+
+    CHECK(UnsupportedNames(source, {}, features).empty());
+}
+
+TEST_CASE("Preprocessor - #pragma is reported only when the caller asks")
+{
+    // The stock add-on rejects every pragma: with no callback registered it substitutes a failure
+    // for the callback's answer and fails the whole section. But a host that registered one accepts
+    // anything, and that is the common case, so the caller decides.
+    const std::string source = "#pragma whatever\nvoid main() {}\n";
+
+    CHECK(UnsupportedNames(source).empty());
+    CHECK(UnsupportedNames(source, {}, {}, /*reportPragma=*/true) == std::vector<std::string>{ "pragma" });
+}
+
+TEST_CASE("Preprocessor - A matched #endif is not an orphan")
+{
+    CHECK(UnsupportedNames("#if FOO\n#endif\n").empty());
+    CHECK(UnsupportedNames("#if FOO\n#endif\n", Defined({ "FOO" })).empty());
+
+    // Nested, and both closed.
+    CHECK(UnsupportedNames("#if A\n#if B\n#endif\n#endif\n", Defined({ "A", "B" })).empty());
+}
+
+TEST_CASE("Preprocessor - A reported directive points at the directive itself")
+{
+    const auto scan = ScanPreprocessor("void main() {}\n    #define FOO\n");
+
+    REQUIRE(scan.unsupported.size() == 1);
+    CHECK(scan.unsupported[0].line == 1);
+    CHECK(scan.unsupported[0].startColumn == 4);   // the '#', past the indentation
+    CHECK(scan.unsupported[0].endColumn == 11);    // one past the 'e' of "define"
+}
+
+TEST_CASE("Preprocessor - A directive written inside a comment or a string is not one")
+{
+    CHECK(UnsupportedNames("// #define FOO\n").empty());
+    CHECK(UnsupportedNames("/*\n#define FOO\n*/\n").empty());
+    CHECK(UnsupportedNames("string s = \"#define FOO\";\n").empty());
+}

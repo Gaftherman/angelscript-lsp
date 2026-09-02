@@ -69,6 +69,26 @@ namespace angel_lsp::analysis
         std::vector<utils::ExcludedLineRange> excludedLineRanges;
 
         /**
+         * @brief Directives the preprocessor leaves in the source for the compiler to choke on.
+         *
+         * Populated from the same pass as excludedLineRanges, because the two answers depend on
+         * each other: a `#define` inside an excluded block compiles fine and one line outside it
+         * does not. Left empty for a predefined stub, where `#define` is this server's own syntax
+         * and never reaches AngelScript at all.
+         */
+        std::vector<utils::UnsupportedDirective> unsupportedDirectives;
+
+        /**
+         * @brief Severity for an unsupported `#pragma`. Every other directive is a Warning.
+         *
+         * Its own knob because a pragma is the one case where the stock behaviour and the safe
+         * behaviour disagree: the add-on rejects every pragma when no callback is registered, but
+         * a host that registered one accepts anything, so this defaults to saying nothing at all
+         * and the user chooses hint or error. See ServerConfig::PragmaMode.
+         */
+        DiagnosticSeverity pragmaSeverity = DiagnosticSeverity::Warning;
+
+        /**
          * @brief Member and enum-member index for the declaration rules, built on first use.
          *
          * Mutable and lazy because most passes never ask for it. The build itself lives on the

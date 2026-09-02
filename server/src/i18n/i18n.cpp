@@ -126,6 +126,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-funcdef-not-handle"] = "Variables or parameters of funcdef type '{}' must be declared as handles ('{}@').";
         m_messages["as-err-duplicate-param"] = "Duplicate parameter name '{}' in function '{}'.";
         m_messages["as-warn-shadow-global"] = "Parameter '{}' shadows a global variable of the same name.";
+        m_messages["as-warn-unsupported-directive"] = "CScriptBuilder does not recognise '#{}', so it is left in the source and the compiler rejects it. If the host patched its copy of the add-on to support it, say so with the matching angelscript.preprocessor setting.";
         m_messages["as-warn-include-not-found"] = "Included file '{}' was not found.";
         m_messages["as-err-circular-inherit"] = "Circular inheritance detected: '{}' inherits from itself.";
         m_messages["as-err-const-out-param"] = "Parameter '{}' cannot be both 'const' and '&out'.";
@@ -277,6 +278,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-funcdef-not-handle"] = "Variables o parámetros de tipo funcdef '{}' deben declararse como handle ('{}@').";
             m_messages["as-err-duplicate-param"] = "Nombre de parámetro '{}' duplicado en la función '{}'.";
             m_messages["as-warn-shadow-global"] = "El parámetro '{}' oculta una variable global con el mismo nombre.";
+            m_messages["as-warn-unsupported-directive"] = "CScriptBuilder no reconoce '#{}', así que se queda en el código y el compilador lo rechaza. Si el host parcheó su copia del add-on para soportarlo, indícalo con la opción angelscript.preprocessor correspondiente.";
             m_messages["as-warn-include-not-found"] = "No se encontró el archivo incluido '{}'.";
             m_messages["as-err-circular-inherit"] = "Herencia circular detectada: '{}' hereda de sí misma.";
             m_messages["as-err-const-out-param"] = "El parámetro '{}' no puede ser 'const' y '&out' al mismo tiempo.";

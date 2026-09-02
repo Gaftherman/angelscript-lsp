@@ -89,6 +89,45 @@ namespace angel_lsp::utils
         const PreprocessorFeatures &features = {});
 
     /**
+     * @brief A directive the compiler will choke on, at a place where it will actually reach it.
+     *
+     * Only reported for text the preprocessor leaves behind. A `#define` inside an excluded `#if`
+     * is blanked with the rest of the block and compiles fine - measured, exit 0 - so it is not one
+     * of these; the same `#define` one line outside is a syntax error.
+     */
+    struct UnsupportedDirective
+    {
+        uint32_t line = 0;
+        uint32_t startColumn = 0;  ///< Byte column of the `#`.
+        uint32_t endColumn = 0;    ///< One past the last character of the directive name.
+        std::string name;          ///< "else", "elif", "ifdef", "ifndef", "define", "pragma", "endif".
+    };
+
+    /** @brief Everything one pass over a document's directives has to say about it. */
+    struct PreprocessorScan
+    {
+        std::vector<ExcludedLineRange> excluded;
+        std::vector<UnsupportedDirective> unsupported;
+    };
+
+    /**
+     * @brief One pass yielding both the excluded ranges and the directives that will not compile.
+     *
+     * The two cannot be computed independently: whether a `#else` is an error depends on whether
+     * the block around it survives, which is what the exclusion pass is working out.
+     *
+     * @param reportPragma Whether a surviving `#pragma` counts as unsupported. A stock host rejects
+     *        every one - with no callback registered the add-on substitutes a failure and fails the
+     *        whole section - but a host that registered a callback accepts anything, and the caller
+     *        is the one that knows which it is.
+     */
+    PreprocessorScan ScanPreprocessor(
+        std::string_view sourceCode,
+        const ankerl::unordered_dense::set<std::string> &definedWords = {},
+        const PreprocessorFeatures &features = {},
+        bool reportPragma = false);
+
+    /**
      * @brief True when a line falls inside any excluded range.
      * @note Linear in the number of ranges, which is the count of `#if` directives in one file -
      *       small enough that an index would cost more than it saves.

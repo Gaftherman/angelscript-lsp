@@ -1623,7 +1623,24 @@ namespace angel_lsp
         request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
         request.sourceCode = text;
         request.tree = tree;
-        request.excludedLineRanges = ExcludedLineRanges(text);
+        // One pass for both halves: whether a directive is an error depends on whether the block
+        // around it survives, which is what the exclusion half is working out.
+        auto scan = angel_lsp::utils::ScanPreprocessor(
+            text, *DefinedWords(), m_config.preprocessor,
+            m_config.pragmaMode != config::ServerConfig::PragmaMode::Accept);
+
+        request.excludedLineRanges = std::move(scan.excluded);
+
+        // A stub is never compiled by AngelScript, so its `#define` lines are this server's own
+        // syntax rather than something the compiler will reject. Reporting them would be telling
+        // the user off for using the feature exactly as intended.
+        if (!angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+            request.unsupportedDirectives = std::move(scan.unsupported);
+
+        request.pragmaSeverity = m_config.pragmaMode == config::ServerConfig::PragmaMode::Error
+                                     ? angel_lsp::analysis::DiagnosticSeverity::Error
+                                     : angel_lsp::analysis::DiagnosticSeverity::Hint;
+
         return request;
     }
 
