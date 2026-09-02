@@ -63,6 +63,7 @@ namespace angel_lsp::diagnostics::codes
     // three - "Implicit conversion changed sign of value", "Value is too large for data type" and
     // "Implicit conversion of value is not exact" - fire only on constant expressions and need a
     // constant folder to answer. See TypeConversionChecker.cpp's numeric-warning section.
+    inline constexpr std::string_view AccessorDisabled = "as-hint-accessor-disabled";
     inline constexpr std::string_view UnsupportedDirective = "as-warn-unsupported-directive";
     inline constexpr std::string_view SignedUnsignedMismatch = "as-warn-signed-unsigned-mismatch";
     inline constexpr std::string_view FloatTruncation = "as-warn-float-truncation";

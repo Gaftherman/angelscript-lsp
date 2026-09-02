@@ -284,6 +284,23 @@ namespace angel_lsp::config
         bool reportAccessorPortability = false;
 
         /**
+         * @brief Hint where a script accessor is used as a property but the host disabled those.
+         *
+         * asEP_PROPERTY_ACCESSOR_MODE 0 turns property accessors off and 1 keeps only the ones the
+         * application registered in C++; under either, `c.X` backed by a script `get_X`/`set_X` is
+         * rejected. Measured across all four modes, with the `property` keyword and without.
+         *
+         * A hint rather than an error even though the compiler rejects it, and off by default even
+         * though the setting it depends on is explicit: the analyzer is being told what the host
+         * does, and a host told wrong would otherwise get errors on code that builds for it. The
+         * failure mode of being lenient is a missed diagnostic; of being strict, an invented one.
+         *
+         * Only meaningful when engine.propertyAccessorMode is 0 or 1. It says nothing under 2 or 3,
+         * where a script accessor really can be a property.
+         */
+        bool reportAccessorDisabled = false;
+
+        /**
          * @brief Hint on a class used where a bool is expected (default: off).
          *
          * Only meaningful when engine.boolConversionMode is 0, where the compiler rejects it. It is

@@ -206,6 +206,26 @@ namespace angel_lsp::analysis
         }
 
         /**
+         * @brief False when the host disabled script-defined property accessors entirely.
+         *
+         * asEP_PROPERTY_ACCESSOR_MODE 0 turns accessors off, and 1 keeps only the ones the
+         * application registered in C++ - as_compiler.cpp:14077 skips a candidate with
+         * `if (ep.propertyAccessorMode == 1 && f->funcType == asFUNC_SCRIPT) continue;`. Under
+         * either, `c.X` backed by a script `get_X`/`set_X` is rejected, with the `property` keyword
+         * and without it. Measured across all four modes, both spellings.
+         *
+         * True when nothing is configured, which keeps the default behaviour: resolution still
+         * treats an accessor as a property, and the disagreement is reported as an opt-in hint
+         * rather than by making the member vanish. A host whose configuration here is wrong would
+         * otherwise see errors on code that compiles for it, which is the asymmetry the
+         * zero-false-positives rule exists to prevent.
+         */
+        bool ScriptAccessorsAreProperties() const
+        {
+            return !engineProperties || engineProperties->propertyAccessorMode >= 2;
+        }
+
+        /**
          * @brief asEP_BOOL_CONVERSION_MODE: 0 when a class may never stand where a bool is expected.
          *
          * Answers 0 with no engine properties at all, which is both the engine's own default and

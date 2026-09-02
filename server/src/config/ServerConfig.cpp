@@ -719,6 +719,10 @@ namespace angel_lsp::config
             {
                 config.diagnostics.reportAccessorPortability = getBoolValue(true);
             }
+            else if (key == "--report-accessor-disabled")
+            {
+                config.diagnostics.reportAccessorDisabled = getBoolValue(true);
+            }
             else if (key == "--no-report-accessor-portability")
             {
                 config.diagnostics.reportAccessorPortability =

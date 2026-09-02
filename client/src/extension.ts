@@ -342,6 +342,9 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportAccessorPortability', false) === true) {
         args.push('--report-accessor-portability');
     }
+    if (config.get<boolean>('diagnostics.reportAccessorDisabled', false) === true) {
+        args.push('--report-accessor-disabled');
+    }
     if (config.get<boolean>('diagnostics.reportBoolConversion', false) === true) {
         args.push('--report-bool-conversion');
     }

@@ -987,3 +987,120 @@ TEST_CASE("AccessChecker - A member access on an array reaches the array's membe
         arrayDeclaration +
         "void main() { array<Item> items; items.noSuchMethod(); }\n"), "as-err-member-not-found"));
 }
+
+// =====================================================================================
+// asEP_PROPERTY_ACCESSOR_MODE 0 and 1: the host turned script property accessors off.
+//
+// Measured across all four modes, with the `property` keyword and without: under 0 and 1 a `c.X`
+// backed by a script `get_X`/`set_X` is rejected either way, because the compiler skips script
+// functions outright (as_compiler.cpp:14003 and :14077). Under 2 both spellings compile; under 3
+// only the one carrying the keyword.
+//
+// Reported as an opt-in hint rather than by refusing to resolve the member. The analyzer is being
+// told what the host does, and a host told wrong would otherwise get errors on code that builds
+// for it: being lenient misses a diagnostic, being strict invents one, and only the second is a
+// false positive.
+// =====================================================================================
+
+namespace
+{
+    std::vector<Diagnostic> AnalyzeWithAccessorMode(const std::string &code, int mode, bool hintEnabled)
+    {
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        LocalScopeCollector scopes(nullptr);
+        SymbolTable table;
+        static angel_lsp::i18n::I18n i18n;
+
+        const std::string fileUri = "file:///accessor-mode.as";
+        auto diagnostics = collector.CollectSymbols(fileUri, code, parser, table, &i18n);
+
+        angel_lsp::config::EngineProperties engine;
+        engine.propertyAccessorMode = mode;
+
+        angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+        diagnosticsConfig.reportAccessorDisabled = hintEnabled;
+
+        SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
+        request.engineProperties = &engine;
+        request.diagnostics = &diagnosticsConfig;
+        request.scopeRoot = scopes.CollectScopes(code, parser);
+        request.sourceCode = code;
+        request.tree = parser.Parse(code);
+
+        SemanticAnalyzer analyzer(nullptr);
+        auto semDiags = analyzer.Analyze(request);
+        diagnostics.insert(diagnostics.end(), semDiags.begin(), semDiags.end());
+
+        if (request.tree)
+        {
+            ts_tree_delete(const_cast<TSTree *>(request.tree));
+        }
+        return diagnostics;
+    }
+
+    bool HintsAccessorDisabled(const std::string &code, int mode, bool hintEnabled = true)
+    {
+        return HasCode(AnalyzeWithAccessorMode(code, mode, hintEnabled), "as-hint-accessor-disabled");
+    }
+
+    const std::string k_scriptAccessorUse =
+        "class C\n"
+        "{\n"
+        "    int m;\n"
+        "    int get_X() const { return m; }\n"
+        "    void set_X(int v) { m = v; }\n"
+        "}\n"
+        "void main() { C c; c.X = 3; }\n";
+}
+
+TEST_CASE("AccessChecker - A property accessor the host disabled is hinted about")
+{
+    CHECK(HintsAccessorDisabled(k_scriptAccessorUse, 0));
+    CHECK(HintsAccessorDisabled(k_scriptAccessorUse, 1));
+
+    // And it stays a hint. Making it an error is the change this design exists to avoid.
+    for (const auto &diagnostic : AnalyzeWithAccessorMode(k_scriptAccessorUse, 0, true))
+    {
+        if (diagnostic.code == "as-hint-accessor-disabled")
+            CHECK(diagnostic.severity == DiagnosticSeverity::Hint);
+    }
+}
+
+TEST_CASE("AccessChecker - Nothing is said where the host really does have accessors")
+{
+    CHECK_FALSE(HintsAccessorDisabled(k_scriptAccessorUse, 2));
+    CHECK_FALSE(HintsAccessorDisabled(k_scriptAccessorUse, 3));
+}
+
+TEST_CASE("AccessChecker - The accessor hint is off unless asked for")
+{
+    CHECK_FALSE(HintsAccessorDisabled(k_scriptAccessorUse, 0, /*hintEnabled=*/false));
+    CHECK_FALSE(HintsAccessorDisabled(k_scriptAccessorUse, 1, /*hintEnabled=*/false));
+}
+
+TEST_CASE("AccessChecker - Resolution is unchanged under the disabled modes")
+{
+    // The member still resolves; only the hint is new. Refusing to resolve it would turn this into
+    // "'X' is not a member of 'C'" - an error on code that compiles for any host whose accessor
+    // mode was configured wrong here.
+    CHECK_FALSE(HasCode(AnalyzeWithAccessorMode(k_scriptAccessorUse, 0, true),
+                        "as-err-member-not-found"));
+    CHECK_FALSE(HasCode(AnalyzeWithAccessorMode(k_scriptAccessorUse, 1, true),
+                        "as-err-member-not-found"));
+}
+
+TEST_CASE("AccessChecker - A real member is not an accessor, whatever the mode")
+{
+    // The hint keys on how the name resolved, not on the mode alone: a declared field reaches its
+    // own declaration and has nothing to do with asEP_PROPERTY_ACCESSOR_MODE.
+    const std::string source =
+        "class C\n"
+        "{\n"
+        "    int X;\n"
+        "}\n"
+        "void main() { C c; c.X = 3; }\n";
+
+    CHECK_FALSE(HintsAccessorDisabled(source, 0));
+    CHECK_FALSE(HintsAccessorDisabled(source, 1));
+}

@@ -93,6 +93,17 @@ namespace angel_lsp::analysis
             bool decided = false;   ///< True if an access restriction (private/protected) was found.
             AccessModifier access = AccessModifier::Public;
             std::string declaringClass;
+
+            /**
+             * @brief True when the name resolved through a `get_`/`set_` pair, not a real member.
+             *
+             * Recorded because whether that pair *is* a property is the host's decision, not the
+             * script's: under asEP_PROPERTY_ACCESSOR_MODE 0 and 1 a script accessor is not one, and
+             * `c.X` does not compile. Resolution deliberately still succeeds there - see
+             * SemanticAnalysisRequest::ScriptAccessorsAreProperties - and this is what lets the
+             * disagreement be reported as a hint instead of by making the member disappear.
+             */
+            bool viaAccessor = false;
         };
 
         /**
@@ -157,6 +168,7 @@ namespace angel_lsp::analysis
                         {
                             if (AccessorStandsForProperty(sym, accessorKeywordRequired))
                             {
+                                result.viaAccessor = true;
                                 candidates.push_back(sym);
                             }
                         }
@@ -182,6 +194,7 @@ namespace angel_lsp::analysis
                             if (IsSameType(sym.containerName, owner) &&
                                 AccessorStandsForProperty(sym, accessorKeywordRequired))
                             {
+                                result.viaAccessor = true;
                                 candidates.push_back(sym);
                             }
                         }
@@ -190,6 +203,7 @@ namespace angel_lsp::analysis
                             if (IsSameType(sym.containerName, owner) &&
                                 AccessorStandsForProperty(sym, accessorKeywordRequired))
                             {
+                                result.viaAccessor = true;
                                 candidates.push_back(sym);
                             }
                         }
@@ -303,6 +317,19 @@ namespace angel_lsp::analysis
                 ctx.EmitAtRange(start.row, start.column, end.row, end.column,
                                 "as-err-member-not-found", objectType, memberName);
                 return;
+            }
+
+            // The host disabled script property accessors, and this name only exists as one. The
+            // compiler rejects it; the analyzer says so as an opt-in hint rather than by refusing
+            // to resolve the member, so a host whose configuration here is wrong sees nothing new.
+            if (member.viaAccessor && !ctx.request.ScriptAccessorsAreProperties() &&
+                ctx.request.diagnostics && ctx.request.diagnostics->reportAccessorDisabled)
+            {
+                const TSPoint hintStart = ts_node_start_point(memberNode);
+                const TSPoint hintEnd = ts_node_end_point(memberNode);
+                ctx.EmitAtRange(hintStart.row, hintStart.column, hintEnd.row, hintEnd.column,
+                                "as-hint-accessor-disabled", objectType, memberName,
+                                DiagnosticSeverity::Hint);
             }
 
             if (!member.decided)

@@ -316,6 +316,11 @@
           "default": false,
           "markdownDescription": "Hint on a `get_`/`set_` accessor written without the `property` keyword. Such an accessor is a property under `asEP_PROPERTY_ACCESSOR_MODE` 2, this server's default, but not under mode 3, which is the engine's own. Adding the keyword is accepted under both, so the quick fix cannot break a working build. Off by default."
         },
+        "angelscript.diagnostics.reportAccessorDisabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Hint where a script property accessor is used as a property but the host disabled those (`angelscript.engine.propertyAccessorMode` 0 or 1).\n\nUnder either mode the compiler skips script-defined accessors entirely, so `c.X` backed by a script `get_X`/`set_X` is rejected \u2014 with the `property` keyword and without it. A hint rather than an error, and off by default, because the analyzer is being told what the host does: a host told wrong would otherwise see errors on code that builds for it. Says nothing under modes 2 and 3."
+        },
         "angelscript.diagnostics.reportBoolConversion": {
           "type": "boolean",
           "default": false,
