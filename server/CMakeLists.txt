@@ -149,6 +149,11 @@ if(TEST_SOURCES)
     target_compile_definitions(angel_lsp_tests PRIVATE
         ANGELSCRIPT_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../angelscript"
         ANGELSCRIPT_PARITY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/parity"
+
+        # The repository root, so the stub sweep can find every predefined file that ships with the
+        # project *and* any a developer has dropped in their own checkout. The server reads those
+        # the moment the workspace is opened; nothing was checking they parse.
+        ANGELSCRIPT_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/.."
     )
     if(MSVC)
         target_compile_options(angel_lsp_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8> $<$<COMPILE_LANGUAGE:CXX>:/FS> $<$<COMPILE_LANGUAGE:CXX>:/wd5285>)
