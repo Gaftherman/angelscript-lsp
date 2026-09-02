@@ -1,6 +1,7 @@
 #include "Server.h"
 #include "utils/Utils.h"
 #include "utils/PreprocessorRegions.h"
+#include "utils/WorkspaceScan.h"
 #include "utils/Constants.h"
 #include "lsp/PositionCodec.h"
 #include "features/hover/HoverHandler.h"
@@ -763,47 +764,25 @@ namespace angel_lsp
 
         try
         {
+            std::vector<std::string> rootPaths;
+            rootPaths.reserve(workspaceRoots.size());
             for (const auto &workspaceRoot : workspaceRoots)
+                rootPaths.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
+
+            const bool completed = angel_lsp::utils::ForEachWorkspaceFile(
+                rootPaths, m_config.exclude,
+                [&stopToken]() { return stopToken.stop_requested(); },
+                [&](const std::filesystem::directory_entry &entry) {
+                    if (angel_lsp::utils::IsPredefinedFile(entry.path().string(), m_config.info.predefinedFileExtension))
+                        ParserPredefined(entry.path().string(), backgroundParser);
+                });
+
+            // The only caller with something to close out on a cancel, which is why the walker
+            // reports whether it finished rather than swallowing the distinction.
+            if (!completed)
             {
-                if (stopToken.stop_requested())
-                    return;
-
-                // skip_permission_denied, matching WorkspaceIncludeGraph::Build. Without it a
-                // single unreadable directory anywhere under a workspace root threw, and the catch
-                // below abandoned the whole predefined-stub scan - so one permission-protected
-                // folder silently cost the user every stub in the workspace.
-                std::error_code scanError;
-                std::filesystem::recursive_directory_iterator scan(
-                    angel_lsp::utils::UriToPath(workspaceRoot),
-                    std::filesystem::directory_options::skip_permission_denied,
-                    scanError);
-                const std::filesystem::recursive_directory_iterator scanEnd;
-                for (; scan != scanEnd; ++scan)
-                {
-                    if (stopToken.stop_requested())
-                    {
-                        EndWorkspaceProgress("Cancelled");
-                        return;
-                    }
-
-                    const auto &entry = *scan;
-
-                    // Pruned, not filtered: disable_recursion_pending stops the walk from entering
-                    // the directory at all, where a filter would still visit every file inside it.
-                    std::error_code dirError;
-                    if (entry.is_directory(dirError) &&
-                        angel_lsp::utils::IsExcludedDirectory(entry.path().generic_string(), m_config.exclude))
-                    {
-                        scan.disable_recursion_pending();
-                        continue;
-                    }
-
-                    if (entry.exists() && entry.is_regular_file())
-                    {
-                        if (angel_lsp::utils::IsPredefinedFile(entry.path().string(), m_config.info.predefinedFileExtension))
-                            ParserPredefined(entry.path().string(), backgroundParser);
-                    }
-                }
+                EndWorkspaceProgress("Cancelled");
+                return;
             }
         }
         catch (const std::exception &e)
@@ -833,44 +812,23 @@ namespace angel_lsp
 
         if (kind == angel_lsp::analysis::EngineProfileKind::Auto)
         {
-            std::vector<std::string> fileNames;
+            std::vector<std::string> rootPaths;
             for (const auto &workspaceRoot : WorkspaceRoots())
-            {
-                if (stopToken.stop_requested())
-                    return;
+                rootPaths.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
 
-                const std::string rootPath = angel_lsp::utils::UriToPath(workspaceRoot);
-                std::error_code ec;
+            std::vector<std::string> fileNames;
+            const bool completed = angel_lsp::utils::ForEachWorkspaceFile(
+                rootPaths, m_config.exclude,
+                [&stopToken]() { return stopToken.stop_requested(); },
+                [&fileNames](const std::filesystem::directory_entry &entry) {
+                    fileNames.push_back(entry.path().filename().string());
+                });
 
-                // skip_permission_denied and a stop check per entry, matching every other scan in
-                // this file. This was the one walk with neither: an unreadable directory ended it
-                // early with no profile detected, and because RestartWorkspaceScan joins this thread
-                // from the message loop, a large tree here was the one place that join could
-                // actually be felt as a pause.
-                std::filesystem::recursive_directory_iterator scan(
-                    rootPath, std::filesystem::directory_options::skip_permission_denied, ec);
-                const std::filesystem::recursive_directory_iterator scanEnd;
-                for (; scan != scanEnd; ++scan)
-                {
-                    if (stopToken.stop_requested())
-                        return;
-
-                    const auto &entry = *scan;
-
-                    std::error_code dirError;
-                    if (entry.is_directory(dirError) &&
-                        angel_lsp::utils::IsExcludedDirectory(entry.path().generic_string(), m_config.exclude))
-                    {
-                        scan.disable_recursion_pending();
-                        continue;
-                    }
-
-                    if (entry.is_regular_file())
-                    {
-                        fileNames.push_back(entry.path().filename().string());
-                    }
-                }
-            }
+            // A cancelled scan must not detect a profile from the files it happened to reach
+            // first: RestartWorkspaceScan joins this thread from the message loop, so a partial
+            // answer here would be loaded and then immediately have to be undone.
+            if (!completed)
+                return;
             kind = angel_lsp::analysis::DetectEngineProfileFromWorkspace(fileNames);
         }
 

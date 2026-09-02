@@ -1,4 +1,5 @@
 #include "utils/WorkspaceIncludeGraph.h"
+#include "utils/WorkspaceScan.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -97,40 +98,12 @@ namespace angel_lsp::utils
         ankerl::unordered_dense::map<std::string, std::vector<std::string>> includes;
         ankerl::unordered_dense::map<std::string, std::vector<std::string>> includedBy;
 
-        for (const auto &root : workspaceRoots)
-        {
-            if (shouldStop && shouldStop())
-                return;
-
-            std::error_code ec;
-            std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec);
-            if (ec)
-                continue;
-
-            const std::filesystem::recursive_directory_iterator end;
-            for (; it != end; ++it)
-            {
-                if (shouldStop && shouldStop())
-                    return;
-
-                const auto &entry = *it;
-
-                // Pruned, not filtered. This walk already had an extension filter, and a filter
-                // still descends into a build tree to reject every file in it one at a time.
-                std::error_code dirError;
-                if (entry.is_directory(dirError) &&
-                    IsExcludedDirectory(entry.path().generic_string(), excludeGlobs))
-                {
-                    it.disable_recursion_pending();
-                    continue;
-                }
-
-                if (!entry.is_regular_file(ec) || ec)
-                    continue;
-
+        const bool completed = ForEachWorkspaceFile(
+            workspaceRoots, excludeGlobs, shouldStop,
+            [&](const std::filesystem::directory_entry &entry) {
                 const std::string path = IncludeResolver::NormalizePath(entry.path());
                 if (!scriptExtension.empty() && !std::string_view(path).ends_with(scriptExtension))
-                    continue;
+                    return;
 
                 std::vector<std::string> targets = ResolveDirectives(path, read(path), searchDirectories, allowedRoots);
 
@@ -138,8 +111,13 @@ namespace angel_lsp::utils
                     includedBy[target].push_back(path);
 
                 includes[path] = std::move(targets);
-            }
-        }
+            });
+
+        // A cancelled walk leaves the existing graph alone rather than swapping in whatever half
+        // of it was reached. Publishing a partial graph would make every file the walk had not got
+        // to yet look as though it included nothing.
+        if (!completed)
+            return;
 
         std::unique_lock<std::shared_mutex> lock(m_mutex);
         m_includes = std::move(includes);
