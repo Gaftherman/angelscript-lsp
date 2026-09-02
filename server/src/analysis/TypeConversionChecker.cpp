@@ -2113,22 +2113,62 @@ namespace angel_lsp::analysis
             // A class standing where a bool is expected.
             //
             // Measured against angelscript_oracle: under asEP_BOOL_CONVERSION_MODE 0, the engine's
-            // own default, `if (h)` on a class is rejected - "Expression must be of boolean type,
-            // instead found 'H&'" - whether the class declares opImplConv, opConv, or both. Under
-            // mode 1 both forms are accepted. So this is not a choice between two operators; it is
-            // a switch between never and either, and the SDK's own description understates it.
+            // own default, `if (h)` on a script class is rejected - "Expression must be of boolean
+            // type, instead found 'H&'" - whether the class declares opImplConv, opConv, or both.
+            // Under mode 1 both forms are accepted.
+            //
+            // Narrower than it first looks, and the earlier wording here claimed more than was
+            // measured. The SDK's own comment says mode 0 still lets a **value type** convert via
+            // opImplConv, and every probe behind this rule used a script class - which in
+            // AngelScript is a reference type, so they measured the reference half only.
+            //
+            // It does not change what this rule does, because it cannot: the only annotation a stub
+            // can carry is @listpattern, so nothing in a predefined file says "this type is a value
+            // type". A registered value type with opImplConv would therefore be hinted about on
+            // legal code. Acceptable only because this is a Hint and off by default; if it ever
+            // becomes anything louder, a @valuetype marker has to exist first.
             //
             // A Hint and opt-in, not an error, because the analyzer cannot see the host's engine
             // setup. A host running mode 1 makes this code legal, and an error there would be a
             // false positive on working code - which is the one thing this project does not trade.
             if (ctx.request.diagnostics && ctx.request.diagnostics->reportBoolConversion &&
                 ctx.request.BoolConversionMode() == 0 &&
-                (nodeType == "if_statement" || nodeType == "while_statement" || nodeType == "do_while_statement"))
+                (nodeType == "if_statement" || nodeType == "while_statement" ||
+                 nodeType == "do_while_statement" || nodeType == "for_statement" ||
+                 nodeType == "ternary_expression"))
             {
-                // No `condition` field on any of the three - see BuiltQueries.h. The condition is
-                // the first named child of if/while and the second of do/while, where the body
-                // comes first.
-                const TSNode condition = ts_node_named_child(node, nodeType == "do_while_statement" ? 1 : 0);
+                // `for` and the ternary were missing, and they are not a guess either: `for (; c; )`
+                // and `c ? 1 : 2` on a class declaring opImplConv are both rejected under mode 0
+                // and both accepted under mode 1, exactly as `if` and `while` are. Five probes,
+                // each run under both settings.
+                //
+                // Two shapes of node, two ways to reach the condition. `for` and the ternary name
+                // the field; if/while/do do not - see BuiltQueries.h - so there the condition is
+                // the first named child, or the second for do/while, where the body comes first.
+                TSNode condition{};
+                if (nodeType == "for_statement" || nodeType == "ternary_expression")
+                {
+                    condition = ts_node_child_by_field_name(node, "condition", 9);
+
+                    // `for`'s condition field holds an *expression_statement*, not the expression -
+                    // grammar.js declares it as `choice($.expression_statement, ";")`, the `;` being
+                    // the empty `for (;;)`. Handing the wrapper straight to CollectBooleanOperands
+                    // found nothing and the rule stayed silent on every `for` in every file, which
+                    // is exactly how it looked when the field name was simply wrong.
+                    if (!ts_node_is_null(condition) &&
+                        std::string_view(ts_node_type(condition)) == "expression_statement")
+                    {
+                        condition = ts_node_named_child(condition, 0);
+                    }
+
+                    if (ts_node_is_null(condition) && nodeType == "ternary_expression")
+                        condition = ts_node_named_child(node, 0);
+                }
+                else
+                {
+                    condition = ts_node_named_child(node, nodeType == "do_while_statement" ? 1 : 0);
+                }
+
                 if (!ts_node_is_null(condition))
                 {
                     // Each operand the condition evaluates for truth, not the condition as a whole:

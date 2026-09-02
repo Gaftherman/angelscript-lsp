@@ -2185,3 +2185,35 @@ TEST_CASE("TypeConversion - A comparison's operands are not condition conversion
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
                        [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
 }
+
+TEST_CASE("TypeConversion - The for header and the ternary are conditions too")
+{
+    // Both were outside the rule, and both belong in it. Measured under both settings of the
+    // property: `for (; h; )` and `h ? 1 : 2` on a class declaring opImplConv are rejected under
+    // mode 0 and accepted under mode 1, which is exactly what `if` and `while` do.
+    const std::string preamble = "class H { bool opImplConv() const { return true; } }\n";
+
+    const auto hinted = [](const std::vector<Diagnostic> &diagnostics)
+    {
+        return std::any_of(diagnostics.begin(), diagnostics.end(),
+                           [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; });
+    };
+
+    SUBCASE("the for condition")
+    {
+        CHECK(hinted(AnalyzeForBoolConversion(preamble + "void main() { H h; for (; h; ) {} }\n")));
+    }
+
+    SUBCASE("the ternary condition")
+    {
+        CHECK(hinted(AnalyzeForBoolConversion(preamble + "void main() { H h; int x = h ? 1 : 2; }\n")));
+    }
+
+    SUBCASE("and neither says anything under mode 1, where the engine accepts them")
+    {
+        CHECK_FALSE(hinted(AnalyzeForBoolConversion(
+            preamble + "void main() { H h; for (; h; ) {} }\n", /*enabled=*/true, /*mode=*/1)));
+        CHECK_FALSE(hinted(AnalyzeForBoolConversion(
+            preamble + "void main() { H h; int x = h ? 1 : 2; }\n", /*enabled=*/true, /*mode=*/1)));
+    }
+}

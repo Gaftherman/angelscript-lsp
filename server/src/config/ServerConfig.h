@@ -135,11 +135,17 @@ namespace angel_lsp::config
         /**
          * @brief asEP_BOOL_CONVERSION_MODE: whether a class can stand where a bool is expected.
          *
-         * Measured against angelscript_oracle, and the SDK documentation understates it: under mode
-         * 0, the engine's own default, `if (h)` on a class is rejected - "Expression must be of
-         * boolean type, instead found 'H&'" - whether the class declares opImplConv, opConv, or
-         * both. Under mode 1 both forms are accepted. So this is not a choice between two operators,
-         * it is a switch between "never" and "either".
+         * Measured against angelscript_oracle: under mode 0, the engine's own default, `if (h)` on
+         * a *script class* is rejected - "Expression must be of boolean type, instead found 'H&'" -
+         * whether the class declares opImplConv, opConv, or both. Under mode 1 both forms are
+         * accepted.
+         *
+         * The claim that used to sit here, that mode 0 means "never", was broader than the
+         * measurement. Every probe used a script class, which in AngelScript is a reference type,
+         * and the SDK's own comment says mode 0 still allows a **value type** to convert through
+         * opImplConv. So it is "never for reference types, opImplConv only for value types" against
+         * "either operator, either kind" - and the rule behind it cannot tell the two apart,
+         * because no predefined stub can declare a type to be a value type.
          *
          * Defaults to 0 to match the engine. A host that sets 1 must say so here, or the analyzer
          * would report legal code.
