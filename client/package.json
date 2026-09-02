@@ -128,6 +128,15 @@
           "default": [],
           "markdownDescription": "Custom directory search paths for resolving included script files (`#include \"path.as\"`)."
         },
+        "angelscript.define": {
+          "type": "array",
+          "scope": "resource",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Words `#if` treats as defined, matching the words the host application passes to `CScriptBuilder::DefineWord`. A `#if WORD` whose word is not listed here is excluded from compilation, exactly as it is by the real preprocessor, and no diagnostics are reported inside it. A predefined stub can declare the same words with `#define WORD`, which is usually the better place for them: the stub already describes the host's engine setup and travels with it."
+        },
         "angelscript.predefinedFiles": {
           "type": "array",
           "scope": "resource",

@@ -135,3 +135,68 @@ TEST_CASE("Preprocessor - No directives means nothing is excluded")
     CHECK(FindExcludedLineRanges("void main() {}\n").empty());
     CHECK(FindExcludedLineRanges("").empty());
 }
+
+// =====================================================================================
+// `#define` extraction from predefined stubs.
+// =====================================================================================
+
+TEST_CASE("Preprocessor - ScanDefinedWords extracts define directives from stubs")
+{
+    // A single define directive extracts its identifier.
+    CHECK(ScanDefinedWords("#define FOO\n") == std::vector<std::string>{ "FOO" });
+
+    // Multiple directives are returned in their order of appearance.
+    CHECK(ScanDefinedWords("#define FIRST\n#define SECOND\n#define THIRD\n") ==
+          std::vector<std::string>{ "FIRST", "SECOND", "THIRD" });
+
+    // Leading indentation and spaces between hash and directive name are accepted.
+    CHECK(ScanDefinedWords("  \t # \t define   INDENTED\n") == std::vector<std::string>{ "INDENTED" });
+
+    // Directives within single-line comments are ignored.
+    CHECK(ScanDefinedWords("// #define IN_LINE_COMMENT\n").empty());
+
+    // Directives within block comments are ignored.
+    CHECK(ScanDefinedWords("/*\n#define IN_BLOCK_COMMENT\n*/\n").empty());
+
+    // Directives within string literals are ignored.
+    CHECK(ScanDefinedWords("string s = \"#define IN_STRING\";\n").empty());
+
+    // A define directive without an identifier yields nothing.
+    CHECK(ScanDefinedWords("#define\n#define   \n").empty());
+
+    // Duplicate defines are preserved in appearance order so caller set insertion is explicit.
+    CHECK(ScanDefinedWords("#define DUP\n#define DUP\n") == std::vector<std::string>{ "DUP", "DUP" });
+
+    // A document containing no directives returns an empty vector.
+    CHECK(ScanDefinedWords("class Foo { void Bar(); }\n").empty());
+    CHECK(ScanDefinedWords("").empty());
+
+    // Directives with names other than define are ignored.
+    CHECK(ScanDefinedWords("#defineX FOO\n").empty());
+}
+
+TEST_CASE("Preprocessor - Defined words from stub control exclusion in FindExcludedLineRanges")
+{
+    const std::string stubWithFoo = "#define FOO\n";
+    const std::string stubWithoutFoo = "// No defines here\n";
+
+    const std::string source =
+        "#if FOO\n"
+        "void inside() {}\n"
+        "#endif\n";
+
+    const auto wordsFrom = [](std::string_view stub)
+    {
+        const auto words = ScanDefinedWords(stub);
+        return ankerl::unordered_dense::set<std::string>(words.begin(), words.end());
+    };
+
+    // When the stub defines FOO, the #if FOO block is preserved and no range is excluded.
+    CHECK(FindExcludedLineRanges(source, wordsFrom(stubWithFoo)).empty());
+
+    // When the stub does not define FOO, the whole #if FOO block is excluded.
+    const auto excluded = FindExcludedLineRanges(source, wordsFrom(stubWithoutFoo));
+    REQUIRE_FALSE(excluded.empty());
+    CHECK(IsLineExcluded(excluded, 1));
+}
+

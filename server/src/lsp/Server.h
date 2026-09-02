@@ -59,6 +59,17 @@ namespace angel_lsp
         std::shared_ptr<const std::vector<std::string>> m_searchDirectories;
         std::string m_engineProfile;
 
+        // The words `#if` treats as defined, from all three sources at once: the --define flag, the
+        // angelscript.define setting, and `#define` in every loaded predefined stub. The stubs are
+        // what make this mutable - they reload while the analysis thread is reading, so it gets the
+        // same shared_ptr snapshot treatment as m_searchDirectories rather than being read off
+        // m_config, which is what the old comment on ExcludedLineRanges assumed it could do.
+        std::shared_ptr<const ankerl::unordered_dense::set<std::string>> m_definedWords;
+
+        // Contributions keyed by the stub that made them, so reloading one stub replaces its own
+        // words without disturbing another's. The empty key holds the flag and setting words.
+        ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_definedWordsBySource;
+
         /**
          * @brief Whether a block's opening brace goes on the statement line (K&R) or its own.
          *
@@ -271,10 +282,23 @@ namespace angel_lsp
         /**
          * @brief Line ranges of `#if` blocks the preprocessor drops, for the configured defines.
          *
-         * See utils/PreprocessorRegions.h. m_config.definedWords is written once at startup, so
-         * this is safe to call from the analysis thread.
+         * See utils/PreprocessorRegions.h. Safe to call from the analysis thread: it reads the
+         * defined words through DefinedWords(), which hands back an immutable snapshot.
          */
         std::vector<angel_lsp::utils::ExcludedLineRange> ExcludedLineRanges(const std::string &text) const;
+
+        /** @brief Snapshot of the words `#if` treats as defined. Safe to call from any thread. */
+        std::shared_ptr<const ankerl::unordered_dense::set<std::string>> DefinedWords() const;
+
+        /**
+         * @brief Records one source's `#define` contributions and rebuilds the snapshot.
+         *
+         * @param source Key identifying the contributor - a stub's path, or "" for the flag and
+         *        the client setting. Passing an empty @p words removes that source's contribution.
+         * @return True when the resulting set differs from the previous one, which is the signal
+         *         that every open document's excluded ranges have changed and it needs reanalysis.
+         */
+        bool SetDefinedWordsFrom(const std::string &source, std::vector<std::string> words);
 
         /**
          * @brief Directories an `#include` in this workspace is permitted to resolve into.

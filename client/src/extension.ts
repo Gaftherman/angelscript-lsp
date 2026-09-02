@@ -239,6 +239,16 @@ export function buildServerArgs(): string[] {
         }
     }
 
+    // Words `#if` treats as defined, matching what the host passes to CScriptBuilder::DefineWord.
+    // The server had this as a CLI flag only and nothing here emitted it, so every workspace ran
+    // with an empty set - and an empty set means every `#if` block in every file is excluded, and
+    // its diagnostics silently suppressed. A stub can also declare these with `#define`.
+    for (const entry of config.get<string[]>('define', [])) {
+        if (entry.trim().length > 0) {
+            args.push(`--define=${entry.trim()}`);
+        }
+    }
+
     // Predefined stubs, loaded by path. Note this is NOT the same as predefinedExtension below:
     // the extension is a suffix used while scanning the workspace, these are specific files, and
     // the two used to be conflated - a configured path was passed as the suffix, which silently

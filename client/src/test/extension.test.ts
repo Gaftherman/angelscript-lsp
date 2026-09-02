@@ -48,6 +48,22 @@ suite('buildServerArgs', () => {
         assert.deepStrictEqual(valuesOf(args, '--exclude='), ['**/build/**']);
     });
 
+    test('defined words reach the server as one --define each', async () => {
+        // The server has had --define since the preprocessor landed, and nothing here emitted it,
+        // so every VS Code workspace ran with an empty set of defined words. An empty set means
+        // every `#if` block in every file is treated as excluded and its diagnostics suppressed -
+        // silently, with no way for a user to notice.
+        const args = await withSetting('define', ['SERVER', 'DEBUG'], buildServerArgs);
+        assert.deepStrictEqual(valuesOf(args, '--define='), ['SERVER', 'DEBUG']);
+    });
+
+    test('a blank defined word is dropped, and the rest are trimmed', async () => {
+        // `#if ` followed by nothing is not a directive the preprocessor recognises, so an empty
+        // entry could only ever define a word no script can name.
+        const args = await withSetting('define', ['  ', ' PADDED '], buildServerArgs);
+        assert.deepStrictEqual(valuesOf(args, '--define='), ['PADDED']);
+    });
+
     test('an absolute search directory is passed through unchanged', async () => {
         const absolute = process.platform === 'win32' ? 'C:\\scripts\\shared' : '/scripts/shared';
         const args = await withSetting('searchDirectories', [absolute], buildServerArgs);

@@ -2338,3 +2338,93 @@ TEST_CASE("Server - $/cancelRequest is consumed rather than dropped")
     config::ServerConfig serverConfig;
     CHECK_NOTHROW(RunScript(serverConfig, stream));
 }
+
+// =====================================================================================
+// `#define` in a predefined stub, driving what the preprocessor keeps.
+//
+// The two cases are the same document under two stubs, and they have to be read as a pair: the
+// second alone would pass against a server that had crashed before publishing anything, so it
+// asserts that diagnostics were published *and* that none of them came from inside the `#if`.
+// =====================================================================================
+
+namespace
+{
+    /** @brief Runs one `#if FOO` document under a stub and returns everything the server said. */
+    std::string RunUnderStub(const std::string &stubText)
+    {
+        WorkspaceFixture fixture;
+        fixture.Write("engine.as.predefined", stubText);
+
+        const std::string source =
+            "#if FOO\n"
+            "void Main()\n"
+            "{\n"
+            "    UndefinedThingy();\n"
+            "}\n"
+            "#endif\n";
+        fixture.Write("main.as", source);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+        // The stub is read by the workspace scan, so opening the document before the scan reports
+        // "end" would analyse it against a server that has not seen the `#define` yet - and the
+        // test would then be measuring the race rather than the feature.
+        stream.PushAction([&stream]()
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("\"kind\":\"end\""))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        });
+
+        stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+
+        // And analysis runs on its own thread, so shutting down straight after didOpen would end
+        // the session before anything was published. Both of these tests passed that way once -
+        // the one expecting silence passed because there was silence about everything.
+        stream.PushAction([&stream]()
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("publishDiagnostics"))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        });
+
+        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        RunScript(serverConfig, stream);
+
+        return stream.Output();
+    }
+}
+
+TEST_CASE("Server - A stub's #define makes the #if block it names live")
+{
+    const std::string output = RunUnderStub("#define FOO\n");
+    INFO(PublishedFrames(output));
+
+    CHECK(Published(output, "as-err-undefined-identifier"));
+}
+
+TEST_CASE("Server - Without that #define the same block is excluded and says nothing")
+{
+    const std::string output = RunUnderStub("// This stub defines no words at all.\n");
+
+    // Published at all - otherwise the silence below proves nothing.
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    const std::string frames = PublishedFrames(output);
+    INFO(frames);
+
+    CHECK_FALSE(Published(output, "as-err-undefined-identifier"));
+    CHECK(frames.find("\"as-err-") == std::string::npos);
+}

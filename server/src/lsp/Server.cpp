@@ -116,6 +116,11 @@ namespace angel_lsp
         // three goes through the accessors below; m_config's own copies are not read again.
         m_searchDirectories = std::make_shared<const std::vector<std::string>>(m_config.searchDirectories);
         m_engineProfile = m_config.engineProfile;
+
+        // Seeded empty so DefinedWords() never hands back a null snapshot, then filled from the
+        // flag and the client setting. Stubs add theirs as they load.
+        m_definedWords = std::make_shared<const ankerl::unordered_dense::set<std::string>>();
+        SetDefinedWordsFrom(std::string(), m_config.definedWords);
         m_formatBraceStyleKR.store(BraceStyleIsKR(m_config.format.braceStyle), std::memory_order_relaxed);
 
         BuildDiagnosticSeverityOverrides();
@@ -206,12 +211,37 @@ namespace angel_lsp
         // Built per call rather than cached: it is one linear scan of the document, next to nothing
         // beside the parse and analysis it accompanies, and caching it would mean invalidating it on
         // every edit for no measurable gain.
-        ankerl::unordered_dense::set<std::string> defined;
-        defined.reserve(m_config.definedWords.size());
-        for (const auto &word : m_config.definedWords)
-            defined.insert(word);
+        return angel_lsp::utils::FindExcludedLineRanges(text, *DefinedWords());
+    }
 
-        return angel_lsp::utils::FindExcludedLineRanges(text, defined);
+    std::shared_ptr<const ankerl::unordered_dense::set<std::string>> Server::DefinedWords() const
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+        return m_definedWords;
+    }
+
+    bool Server::SetDefinedWordsFrom(const std::string &source, std::vector<std::string> words)
+    {
+        auto merged = std::make_shared<ankerl::unordered_dense::set<std::string>>();
+
+        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+
+        if (words.empty())
+            m_definedWordsBySource.erase(source);
+        else
+            m_definedWordsBySource[source] = std::move(words);
+
+        for (const auto &[_, contributed] : m_definedWordsBySource)
+        {
+            for (const auto &word : contributed)
+                merged->insert(word);
+        }
+
+        if (m_definedWords && *m_definedWords == *merged)
+            return false;
+
+        m_definedWords = std::move(merged);
+        return true;
     }
 
     void Server::Run()
@@ -990,6 +1020,20 @@ namespace angel_lsp
         m_callGraph.ClearDocument(uri);
         m_scopeIndex.SetScopeTree(uri, m_localScopeCollector->CollectScopes(content, parser));
 
+        // `#define FOO` in a stub means "the host calls builder.DefineWord(\"FOO\")" - the stub is
+        // this server's description of the host's engine setup and is never compiled by AngelScript
+        // itself, so it is the one place the word can be written down. See PreprocessorRegions.h.
+        //
+        // Keyed by path so reloading one stub replaces only its own words.
+        //
+        // Recording only: reanalysis is the caller's business. This runs under m_predefinedMutex,
+        // and ReanalyseOpenDocuments walks m_openDocuments and schedules work, so calling it from
+        // here would hold a lock across the whole fan-out. The watched-file path already sets
+        // graphChanged and reanalyses once for the whole batch, which is also the right count when
+        // a workspace holds several stubs.
+        if (SetDefinedWordsFrom(filePath, angel_lsp::utils::ScanDefinedWords(content)))
+            m_logger->LogInfo(fmt::format("Defined words changed after loading: {}", filePath));
+
         m_logger->LogInfo(fmt::format("Loaded predefined file: {}", filePath));
     }
 
@@ -1182,6 +1226,16 @@ namespace angel_lsp
                         m_callGraph.ClearDocument(owner->second);
                         m_predefinedUris.erase(owner->second);
                         m_predefinedUriByPath.erase(owner);
+
+                        // A deleted stub takes its `#define`s with it, so every `#if` that was live
+                        // because of one goes back to being excluded. That is a change to what the
+                        // compiler would see in every open document, not just to this file, so it
+                        // joins the fan-out at the end of this function - which a deleted stub did
+                        // not do at all before: the branch above `continue`d without ever setting
+                        // graphChanged, so removing a stub left its symbols gone and every open
+                        // document still diagnosed against them until the next keystroke.
+                        SetDefinedWordsFrom(path, {});
+                        graphChanged = true;
                     }
                 }
                 else
