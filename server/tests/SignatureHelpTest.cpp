@@ -124,3 +124,51 @@ TEST_CASE("SignatureHelpHandler - Outside Function Call Returns Nullopt")
     auto sig = env.SigHelpAt(0, 15);
     CHECK(!sig.has_value());
 }
+
+// =====================================================================================
+// Member calls on an array.
+//
+// Characterisation first, because the answer here was not what reading the code suggested. This
+// file's own CleanBaseType shadows analysis::CleanBaseType and is weaker - it strips `@`, `&` and a
+// leading `const` and stops there - so `array<Foo>` and `Foo[]` reached the hierarchy lookup with
+// their brackets still on. Neither spelling is a key in the symbol table: a template class is
+// registered under its bare name, so `array<Foo>::insertLast` is stored as `array::insertLast`.
+// =====================================================================================
+
+TEST_CASE("SignatureHelpHandler - A member call on an array resolves to the template's member")
+{
+    std::string code =
+        "class array<T> { void insertLast(const T&in value); }\n"
+        "class Foo {}\n"
+        "void main() {\n"
+        "    array<Foo> items;\n"
+        "    items.insertLast();\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto help = env.SigHelpAt(4, 21);
+
+    REQUIRE(help.has_value());
+    REQUIRE_FALSE(help->signatures.empty());
+    CHECK(help->signatures[0].label.find("insertLast") != std::string::npos);
+}
+
+TEST_CASE("SignatureHelpHandler - The bracket spelling of an array resolves the same way")
+{
+    // `Foo[]` and `array<Foo>` are the same type written two ways, so a member call on one has to
+    // find what a member call on the other finds.
+    std::string code =
+        "class array<T> { void insertLast(const T&in value); }\n"
+        "class Foo {}\n"
+        "void main() {\n"
+        "    Foo[] items;\n"
+        "    items.insertLast();\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto help = env.SigHelpAt(4, 21);
+
+    REQUIRE(help.has_value());
+    REQUIRE_FALSE(help->signatures.empty());
+    CHECK(help->signatures[0].label.find("insertLast") != std::string::npos);
+}

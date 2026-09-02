@@ -1,4 +1,5 @@
 #include "features/signature_help/SignatureHelpHandler.h"
+#include "analysis/SemanticHelpers.h"
 #include <sstream>
 #include <vector>
 #include <algorithm>
@@ -8,23 +9,6 @@ namespace angel_lsp::features
 {
     namespace
     {
-
-        std::string CleanBaseType(std::string typeName)
-        {
-            while (!typeName.empty() && (typeName.back() == '@' || typeName.back() == '&' || typeName.back() == ' '))
-            {
-                typeName.pop_back();
-            }
-            if (typeName.starts_with("const "))
-            {
-                typeName = typeName.substr(6);
-            }
-            while (!typeName.empty() && typeName.back() == ' ')
-            {
-                typeName.pop_back();
-            }
-            return typeName;
-        }
 
         /**
          * @brief Recursively collects the class and interface inheritance hierarchy for a type.
@@ -38,7 +22,15 @@ namespace angel_lsp::features
             std::unordered_set<std::string> visited;
             std::vector<std::string> queue;
 
-            std::string rootType = CleanBaseType(initialTypeName);
+            // MemberOwnerType, not CleanBaseType - the same choice AccessChecker records at its
+            // own call site. A `.` on an array reaches the ARRAY's members, and CleanBaseType
+            // answers the ELEMENT type: it reduces `array<Item>` to `Item`. This file used to
+            // define its own weaker CleanBaseType that shadowed the analysis:: one and stripped
+            // neither `[]` nor `array<>`, so `array<Item>` arrived here with its brackets on and
+            // matched nothing at all - a template class is registered under its bare name, so the
+            // key is `array::insertLast`. Signature help on any array member call returned no
+            // signatures at all, in either spelling of the type.
+            std::string rootType = analysis::MemberOwnerType(initialTypeName);
             if (rootType.empty())
             {
                 return hierarchy;
@@ -61,7 +53,7 @@ namespace angel_lsp::features
                         const auto &cls = sym.GetClass();
                         for (const auto &base : cls.bases)
                         {
-                            std::string cleanBase = CleanBaseType(base);
+                            std::string cleanBase = analysis::MemberOwnerType(base);
                             if (!cleanBase.empty() && visited.insert(cleanBase).second)
                             {
                                 queue.push_back(cleanBase);
@@ -73,7 +65,7 @@ namespace angel_lsp::features
                         const auto &iface = sym.GetInterface();
                         for (const auto &base : iface.inheritedInterfaces)
                         {
-                            std::string cleanBase = CleanBaseType(base);
+                            std::string cleanBase = analysis::MemberOwnerType(base);
                             if (!cleanBase.empty() && visited.insert(cleanBase).second)
                             {
                                 queue.push_back(cleanBase);
@@ -412,7 +404,7 @@ namespace angel_lsp::features
                             const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, objText);
                             if (def && !def->typeName.empty())
                             {
-                                receiverTypeName = CleanBaseType(def->typeName);
+                                receiverTypeName = analysis::MemberOwnerType(def->typeName);
                             }
                         }
                     }
@@ -428,7 +420,7 @@ namespace angel_lsp::features
                             const auto &var = sym.GetVariable();
                             if (!var.typeName.empty())
                             {
-                                receiverTypeName = CleanBaseType(var.typeName);
+                                receiverTypeName = analysis::MemberOwnerType(var.typeName);
                                 break;
                             }
                         }
