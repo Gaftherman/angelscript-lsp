@@ -286,6 +286,8 @@ namespace angel_lsp::config
                   << "  --file-ext=<string>                     Set script file extension (default: .as)\n"
                   << "  --predefined-ext=<string>               Set predefined symbols file extension (default: .as.predefined)\n"
                   << "  --predefined-file=<path>                Load a predefined stub by path, even outside the workspace (repeatable)\n"
+                  << "  --predefined-active=<path>              Select the single predefined stub workspace scan will\n"
+                  << "                                          load (leaving it empty loads all discovered stubs)\n"
                   << "  --exclude=<glob>                        Directory glob the workspace scans do not descend\n"
                   << "                                          into (repeatable). ?, * within a segment and **\n"
                   << "                                          across segments. The first one given replaces the\n"
@@ -684,6 +686,14 @@ namespace angel_lsp::config
                 if (getStringValue(val) && !val.empty())
                 {
                     config.predefinedFiles.push_back(std::string(val));
+                }
+            }
+            else if (key == "--predefined-active")
+            {
+                std::string_view val;
+                if (getStringValue(val) && !val.empty())
+                {
+                    config.activePredefined = std::string(val);
                 }
             }
             else if (key == "--format-brace-style" || key == "--brace-style")

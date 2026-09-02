@@ -609,7 +609,8 @@ namespace angel_lsp
         result.capabilities.workspace = workspaceOpts;
 
         lsp::ExecuteCommandOptions cmdOpts;
-        cmdOpts.commands = lsp::Array<lsp::String>{ "angelscript.rescanWorkspace" };
+        cmdOpts.commands = lsp::Array<lsp::String>{ "angelscript.rescanWorkspace",
+                                                    "angelscript.listPredefinedStubs" };
         result.capabilities.executeCommandProvider = cmdOpts;
 
         return result;
@@ -769,12 +770,31 @@ namespace angel_lsp
             for (const auto &workspaceRoot : workspaceRoots)
                 rootPaths.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
 
+            // Compared as canonical paths, never as text. The setting arrives with whatever
+            // spelling the client used and the walk produces the filesystem's own - different case,
+            // different separators, a percent-encoded drive letter. This project already carries
+            // m_clientUriByKey because that difference bit it once.
+            const std::string activePath =
+                m_config.activePredefined.empty()
+                    ? std::string()
+                    : angel_lsp::utils::IncludeResolver::NormalizePath(m_config.activePredefined);
+
+            std::vector<std::string> discovered;
+
             const bool completed = angel_lsp::utils::ForEachWorkspaceFile(
                 rootPaths, m_config.exclude,
                 [&stopToken]() { return stopToken.stop_requested(); },
                 [&](const std::filesystem::directory_entry &entry) {
-                    if (angel_lsp::utils::IsPredefinedFile(entry.path().string(), m_config.info.predefinedFileExtension))
-                        ParserPredefined(entry.path().string(), backgroundParser);
+                    if (!angel_lsp::utils::IsPredefinedFile(entry.path().string(), m_config.info.predefinedFileExtension))
+                        return;
+
+                    const std::string path = angel_lsp::utils::IncludeResolver::NormalizePath(entry.path());
+                    discovered.push_back(path);
+
+                    if (!activePath.empty() && !PathsAreSameFile(path, activePath))
+                        return;
+
+                    ParserPredefined(entry.path().string(), backgroundParser);
                 });
 
             // The only caller with something to close out on a cancel, which is why the walker
@@ -784,6 +804,13 @@ namespace angel_lsp
                 EndWorkspaceProgress("Cancelled");
                 return;
             }
+
+            {
+                std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+                m_discoveredPredefined = discovered;
+            }
+
+            ReportPredefinedSelection(discovered, activePath);
         }
         catch (const std::exception &e)
         {
@@ -945,6 +972,73 @@ namespace angel_lsp
         }
     }
 
+    bool Server::PathsAreSameFile(const std::string &a, const std::string &b)
+    {
+#if defined(_WIN32)
+        // The same file has many spellings here, differing only in case, and the one the client
+        // sends is not the one the directory walk produced. IsWithinRoots already compares this way
+        // for the same reason.
+        return a.size() == b.size() &&
+               std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+                   return std::tolower(static_cast<unsigned char>(x)) ==
+                          std::tolower(static_cast<unsigned char>(y));
+               });
+#else
+        return a == b;
+#endif
+    }
+
+    void Server::ReportPredefinedSelection(const std::vector<std::string> &discovered,
+                                           const std::string &activePath)
+    {
+        const auto tell = [this](lsp::MessageType type, const std::string &text) {
+            lsp::notifications::Window_ShowMessage::Params params;
+            params.type = type;
+            params.message = text;
+            m_messageHandler->sendNotification<lsp::notifications::Window_ShowMessage>(std::move(params));
+        };
+
+        if (!activePath.empty())
+        {
+            const bool found = std::any_of(discovered.begin(), discovered.end(),
+                                           [&activePath](const std::string &path) {
+                                               return PathsAreSameFile(path, activePath);
+                                           });
+
+            // A selection the scan never saw is a mistyped path, and silence about it costs the
+            // user every host type in the workspace with nothing on screen to say why. Loud on
+            // purpose: this is the one case where saying nothing is worse than being wrong.
+            if (!found)
+            {
+                tell(lsp::MessageType::Error,
+                     fmt::format("AngelScript: the selected predefined stub was not found in the "
+                                 "workspace: {}. No host types will resolve until it is corrected.",
+                                 m_config.activePredefined));
+            }
+            return;
+        }
+
+        // No selection and more than one stub is the merge this setting exists to avoid. It stays
+        // the default and it stays legal - but the user should hear it from the server rather than
+        // discover it as a symbol that resolves twice.
+        if (discovered.size() > 1)
+        {
+            std::string list;
+            for (const auto &path : discovered)
+            {
+                if (!list.empty())
+                    list += ", ";
+                list += std::filesystem::path(path).filename().string();
+            }
+
+            tell(lsp::MessageType::Warning,
+                 fmt::format("AngelScript: {} predefined stubs found and all are loaded together "
+                             "({}). Declarations they share will resolve more than once. Set "
+                             "angelscript.predefined.active to use one of them.",
+                             discovered.size(), list));
+        }
+    }
+
     bool Server::UnloadPredefinedUri(std::string uriStr)
     {
         if (!m_predefinedUris.contains(uriStr))
@@ -1090,6 +1184,26 @@ namespace angel_lsp
                 if (wantsKR != m_formatBraceStyleKR.exchange(wantsKR, std::memory_order_relaxed))
                 {
                     m_logger->LogInfo(fmt::format("Format brace style changed to '{}'", styleVal->string()));
+                }
+            }
+        }
+
+        // The stub selection rides the same rescan the engine profile does. With a working unload
+        // path the rescan is enough: the stub that stops being active is dropped and the new one
+        // collected, without restarting the server.
+        if (const auto *predefinedVal = section->find("predefined"); predefinedVal && predefinedVal->isObject())
+        {
+            if (const auto *activeVal = predefinedVal->object().find("active");
+                activeVal && activeVal->isString())
+            {
+                if (activeVal->string() != m_config.activePredefined)
+                {
+                    m_config.activePredefined = activeVal->string();
+                    m_logger->LogInfo(fmt::format("Active predefined stub changed to '{}'; rescanning",
+                                                  m_config.activePredefined.empty()
+                                                      ? std::string("<all>")
+                                                      : m_config.activePredefined));
+                    shouldRescan = true;
                 }
             }
         }
@@ -2798,6 +2912,32 @@ namespace angel_lsp
         {
             RestartWorkspaceScan();
             return lsp::Null{};
+        }
+
+        if (params.command == "angelscript.listPredefinedStubs")
+        {
+            // The client's stub picker asks for this rather than scanning itself. Whether a file
+            // is a stub is this server's rule, and it is not a rule the client can guess: a file
+            // named exactly `as.predefined` counts, and so does any name ending in the configured
+            // suffix. One answer, one place.
+            lsp::json::Object answer;
+            lsp::json::Array paths;
+
+            {
+                std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+                for (const auto &path : m_discoveredPredefined)
+                {
+                    // The Value constructor takes its string by rvalue, so the copy is explicit.
+                    paths.push_back(lsp::json::Value(std::string(path)));
+                }
+            }
+
+            answer["stubs"] = std::move(paths);
+            answer["active"] = m_config.activePredefined.empty()
+                                   ? std::string()
+                                   : angel_lsp::utils::IncludeResolver::NormalizePath(m_config.activePredefined);
+
+            return lsp::json::Value(std::move(answer));
         }
 
         throw lsp::RequestError(lsp::MessageError::InvalidParams, "Unknown command: " + params.command);

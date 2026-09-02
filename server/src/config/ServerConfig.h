@@ -493,6 +493,26 @@ namespace angel_lsp::config
         std::vector<std::string> predefinedFiles;
 
         /**
+         * @brief Predefined stub file to exclusively load during the workspace scan.
+         *
+         * When empty, the server preserves its default behaviour of ingesting every predefined
+         * stub discovered during the workspace walk. Setting this designates a single stub path as
+         * the only one the workspace scan will load.
+         *
+         * This does not affect stubs explicitly listed in predefinedFiles: listing them there is an
+         * intentional opt-in and they continue to load unconditionally. Nor does it affect the
+         * built-in engine profile, which continues to load as the baseline. A host stub describes
+         * the host API rather than the standard library; without the engine profile, fundamental
+         * types such as string, array, and dictionary would be missing.
+         *
+         * This exists because all ingested stubs currently merge into a single symbol table where
+         * deduplication is performed only by canonical file path. If two distinct stub files in the
+         * workspace declare `string`, both land in the symbol table and symbol resolution is left
+         * with two identical candidate declarations.
+         */
+        std::string activePredefined;
+
+        /**
          * @brief Built-in predefined engine profile identifier (e.g. standard, svencoop, urho3d, openxray, ootp, none, auto).
          */
         std::string engineProfile = "none";

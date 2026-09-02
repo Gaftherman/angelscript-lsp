@@ -1366,3 +1366,46 @@ TEST_CASE("ServerConfig - Defined words arrive from --define")
     CHECK(config.definedWords[0] == "SERVER");
     CHECK(config.definedWords[1] == "DEBUG");
 }
+
+// Directing the server to a specific active predefined stub isolates the target host environment,
+// ensuring engine symbols resolve against this exact file rather than an arbitrary stub.
+TEST_CASE("ServerConfig - Active predefined file path is set via --predefined-active")
+{
+    ArgvHelper args{ "angel_lsp", "--predefined-active=C:/hosts/engine.as.predefined" };
+    const ServerConfig config = FromArgs(args.argc(), args.data());
+
+    CHECK(config.activePredefined == "C:/hosts/engine.as.predefined");
+}
+
+// Backward compatibility depends on this remaining empty by default; any non-empty default
+// would restrict stub loading and break existing workspaces that rely on scanning and merging all stubs.
+TEST_CASE("ServerConfig - Active predefined file is empty by default")
+{
+    ArgvHelper args{ "angel_lsp" };
+    const ServerConfig config = FromArgs(args.argc(), args.data());
+
+    CHECK(config.activePredefined.empty());
+}
+
+// Unlike cumulative stub lists (--predefined-file), the active stub designates a single chosen host profile;
+// multiple occurrences must overwrite the previous value without accumulating into predefinedFiles.
+TEST_CASE("ServerConfig - Last --predefined-active wins and does not accumulate into predefinedFiles")
+{
+    ArgvHelper args{ "angel_lsp",
+                     "--predefined-active=C:/hosts/first.as.predefined",
+                     "--predefined-active=C:/hosts/second.as.predefined" };
+    const ServerConfig config = FromArgs(args.argc(), args.data());
+
+    CHECK(config.activePredefined == "C:/hosts/second.as.predefined");
+    CHECK(config.predefinedFiles.empty());
+}
+
+// Build tools and wrapper scripts may pass an empty flag value when unconfigured; treating it as a no-op
+// preserves default stub scanning behavior instead of registering an invalid path.
+TEST_CASE("ServerConfig - Empty --predefined-active value is ignored")
+{
+    ArgvHelper args{ "angel_lsp", "--predefined-active=" };
+    const ServerConfig config = FromArgs(args.argc(), args.data());
+
+    CHECK(config.activePredefined.empty());
+}

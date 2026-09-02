@@ -524,6 +524,44 @@ namespace angel_lsp
          * @note The caller must hold m_predefinedMutex.
          */
         bool UnloadPredefinedUri(std::string uriStr);
+
+        /**
+         * @brief True when two already-normalised paths name the same file.
+         *
+         * Case-insensitive on Windows, where the same file has many spellings and the one the
+         * client sends need not match the one the directory walk produced. Everywhere else an
+         * exact comparison, because everywhere else the case is part of the name.
+         */
+        static bool PathsAreSameFile(const std::string &a, const std::string &b);
+
+        /**
+         * @brief Tells the user which stub is in force, once per scan.
+         *
+         * Two things are worth saying and neither was being said. A selection naming a file the
+         * scan never saw is a typo, and staying silent about it costs the user every host type in
+         * the workspace with nothing on screen to explain why. And several stubs with no selection
+         * is the merge that this setting exists to avoid - legal, and the default, but the user
+         * should know it is happening rather than discover it as a symbol resolving twice.
+         *
+         * @param discovered Canonical paths of every stub the walk found, in walk order.
+         * @param activePath The canonical selection, or empty when there is none.
+         */
+        void ReportPredefinedSelection(const std::vector<std::string> &discovered,
+                                       const std::string &activePath);
+
+        /**
+         * @brief Canonical paths of every predefined stub the last workspace scan found.
+         *
+         * Kept so angelscript.listPredefinedStubs can answer from the message loop without walking
+         * the filesystem again - and, more importantly, so the client never has to know what counts
+         * as a stub. IsPredefinedFile matches `as.predefined` by name and `.as.predefined` by
+         * suffix; a second copy of that rule in TypeScript would drift from this one exactly as the
+         * three directory walks drifted from each other.
+         *
+         * Written by the workspace thread and read by the message loop, so it lives under the
+         * runtime-config mutex with the rest of that traffic.
+         */
+        std::vector<std::string> m_discoveredPredefined;
         void PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics);
 
         /**

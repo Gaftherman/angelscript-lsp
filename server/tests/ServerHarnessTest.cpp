@@ -2548,3 +2548,169 @@ TEST_CASE("Server - Switching engine profile forgets the profile that was left")
 
     CHECK(Published(stream.Output(), "as-err-unresolved-type"));
 }
+
+// =====================================================================================
+// One active stub, the rest ignored.
+//
+// The three cases are a set and only mean something together: with a selection the other stub's
+// declarations must be gone, without one they must both be there, and the engine profile has to
+// survive either way. Testing only the first would pass against a server that had simply stopped
+// loading stubs at all.
+// =====================================================================================
+
+namespace
+{
+    /** @brief A workspace with two stubs, each declaring a type the other does not. */
+    struct TwoStubFixture
+    {
+        WorkspaceFixture fixture;
+
+        TwoStubFixture()
+        {
+            fixture.Write("host_a.as.predefined", "class TypeFromA { void Poke(); }\n");
+            fixture.Write("host_b.as.predefined", "class TypeFromB { void Poke(); }\n");
+        }
+
+        std::string Stub(const char *name) const { return (fixture.dir / name).generic_string(); }
+    };
+
+    /** @brief Runs one document against this workspace and returns everything the server said. */
+    std::string RunWithActiveStub(const TwoStubFixture &two,
+                                  const std::string &source,
+                                  const std::string &activeStub)
+    {
+        const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains(needle))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        };
+
+        two.fixture.Write("main.as", source);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
+
+        stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
+        stream.PushAction([&]() { waitFor(stream, "publishDiagnostics"); });
+        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        serverConfig.activePredefined = activeStub;
+
+        // Not the default "none". The analyzer stays silent about a type it cannot see the world
+        // of, so with an empty symbol table every one of these assertions would pass by vacuity.
+        serverConfig.engineProfile = "standard";
+
+        RunScript(serverConfig, stream);
+        return stream.Output();
+    }
+}
+
+TEST_CASE("Server - An active stub is the only one the workspace scan loads")
+{
+    TwoStubFixture two;
+
+    const std::string output = RunWithActiveStub(
+        two, "void main() { TypeFromB b; }\n", two.Stub("host_a.as.predefined"));
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    // B was not selected, so nothing it declares exists.
+    CHECK(Published(output, "as-err-unresolved-type"));
+}
+
+TEST_CASE("Server - The active stub itself still resolves")
+{
+    // The other half of the same run. Without this, a server that loaded no stub at all would pass
+    // the test above.
+    TwoStubFixture two;
+
+    const std::string output = RunWithActiveStub(
+        two, "void main() { TypeFromA a; }\n", two.Stub("host_a.as.predefined"));
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK_FALSE(Published(output, "as-err-unresolved-type"));
+}
+
+TEST_CASE("Server - With no selection both stubs load, as they always did")
+{
+    // The default has to stay what it was: every workspace that today merges several stubs on
+    // purpose keeps working, and choosing one is opt-in.
+    TwoStubFixture two;
+
+    const std::string output = RunWithActiveStub(
+        two, "void main() { TypeFromA a; TypeFromB b; }\n", /*activeStub=*/"");
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK_FALSE(Published(output, "as-err-unresolved-type"));
+
+    // And the user is told, because two stubs merged is the thing the setting exists to avoid.
+    CHECK(output.find("predefined stubs found and all are loaded together") != std::string::npos);
+}
+
+TEST_CASE("Server - The engine profile survives a stub selection")
+{
+    // A host stub describes the host's API, not the standard library. If selecting one dropped the
+    // profile as well, every workspace that chose a stub would lose `array` and `string`.
+    TwoStubFixture two;
+
+    const std::string output = RunWithActiveStub(
+        two, "void main() { array<int> xs; }\n", two.Stub("host_a.as.predefined"));
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK_FALSE(Published(output, "as-err-unresolved-type"));
+}
+
+TEST_CASE("Server - A selection naming a file that is not there is reported, loudly")
+{
+    // The failure this prevents is silent: a mistyped path would load no stub, every host type
+    // would stop resolving, and nothing on screen would say why.
+    TwoStubFixture two;
+
+    const std::string output = RunWithActiveStub(
+        two, "void main() { }\n", two.Stub("host_that_does_not_exist.as.predefined"));
+
+    CHECK(output.find("selected predefined stub was not found") != std::string::npos);
+}
+
+TEST_CASE("Server - The selection matches the file, not the spelling of its path")
+{
+    // The setting arrives with whatever spelling the client used and the walk produces the
+    // filesystem's own. On Windows those differ in case for the same file, and this project
+    // already carries m_clientUriByKey because that difference bit it once. Comparing the two as
+    // text would silently select nothing, which looks exactly like a mistyped path.
+    TwoStubFixture two;
+
+    std::string shouted = two.Stub("host_a.as.predefined");
+    for (char &c : shouted)
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+    const std::string output = RunWithActiveStub(two, "void main() { TypeFromA a; }\n", shouted);
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+#if defined(_WIN32)
+    // Same file, louder spelling: it resolves, and nothing complains about a missing selection.
+    CHECK_FALSE(Published(output, "as-err-unresolved-type"));
+    CHECK(output.find("selected predefined stub was not found") == std::string::npos);
+#else
+    // Elsewhere the case is part of the name, so this really is a different file and saying so is
+    // the correct answer.
+    CHECK(output.find("selected predefined stub was not found") != std::string::npos);
+#endif
+}
