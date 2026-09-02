@@ -57,6 +57,11 @@
         "command": "angelscript.restartServer",
         "title": "Restart Server",
         "category": "AngelScript"
+      },
+      {
+        "command": "angelscript.selectPredefined",
+        "title": "Select Predefined Stub",
+        "category": "AngelScript"
       }
     ],
     "grammars": [
@@ -136,6 +141,12 @@
           },
           "default": [],
           "markdownDescription": "Words `#if` treats as defined, matching the words the host application passes to `CScriptBuilder::DefineWord`. A `#if WORD` whose word is not listed here is excluded from compilation, exactly as it is by the real preprocessor, and no diagnostics are reported inside it. A predefined stub can declare the same words with `#define WORD`, which is usually the better place for them: the stub already describes the host's engine setup and travels with it."
+        },
+        "angelscript.predefined.active": {
+          "type": "string",
+          "scope": "resource",
+          "default": "",
+          "markdownDescription": "Selects the single predefined stub loaded by the workspace scan. When empty (the default), all stubs discovered by the workspace scan are loaded and merged. Does not affect `#angelscript.predefinedFiles`, which continue to load always, nor the engine profile (`#angelscript.engine.profile`), which continues to load as the baseline API.\n\nThe \"AngelScript: Select Predefined Stub\" command populates this setting for you."
         },
         "angelscript.predefinedFiles": {
           "type": "array",

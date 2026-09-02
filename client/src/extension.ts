@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
-    StatusBarAlignment, StatusBarItem, ThemeColor
+    StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri
 } from 'vscode';
 import {
     LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler, ErrorAction, CloseAction
@@ -19,6 +19,9 @@ const SHOW_LOG_COMMAND = 'angelscript.showServerLog';
 /** @brief Command that stops the running server and starts a fresh one with current settings. */
 const RESTART_COMMAND = 'angelscript.restartServer';
 
+/** @brief Command that prompts the user to select an active predefined API stub or merge all. */
+const SELECT_PREDEFINED_COMMAND = 'angelscript.selectPredefined';
+
 /** @brief Wording of the button on every failure notification. */
 const SHOW_LOG_ACTION = 'Show Log';
 
@@ -32,6 +35,16 @@ const MAX_SILENT_RESTARTS = 4;
 
 /** @brief Server exits absorbed so far, reset on every successful start. */
 let unexpectedExits = 0;
+
+/**
+ * @brief The command line the running server was launched with.
+ *
+ * Kept so a configuration change can be told apart from one that changes nothing the server reads.
+ * Comparing the arguments is exact and needs no list of "settings that matter" to keep in step with
+ * package.json - a list like that goes stale the first time somebody adds a setting and forgets it,
+ * and the symptom is a control that silently does nothing.
+ */
+let runningServerArgs: string[] = [];
 
 /**
  * @brief Reports the server's state where the user can see it without opening a panel.
@@ -257,6 +270,16 @@ export function buildServerArgs(): string[] {
         }
     }
 
+    // The one stub the workspace scan should load, when the user has chosen one. Needed on the
+    // command line so a server starting fresh honours the choice; a server already running is told
+    // through didChangeConfiguration instead, which is why the restart watcher ignores this flag.
+    const activeStub = config.get<string>('predefined.active', '').trim();
+    if (activeStub.length > 0) {
+        for (const resolved of resolveAgainstWorkspace(activeStub)) {
+            args.push(`--predefined-active=${resolved}`);
+        }
+    }
+
     // Words `#if` treats as defined, matching what the host passes to CScriptBuilder::DefineWord.
     // The server had this as a CLI flag only and nothing here emitted it, so every workspace ran
     // with an empty set - and an empty set means every `#if` block in every file is excluded, and
@@ -464,6 +487,7 @@ async function startClient(context: ExtensionContext): Promise<void> {
     setStatus('starting', 'Starting the AngelScript language server.');
 
     const serverArgs = buildServerArgs();
+    runningServerArgs = serverArgs;
     lspOutputChannel.appendLine(`Server Arguments: ${serverArgs.join(" ") || "(none)"}`);
 
     const serverOptions: ServerOptions = {
@@ -536,6 +560,7 @@ async function startClient(context: ExtensionContext): Promise<void> {
     }
 }
 
+
 /**
  * @brief Activates the AngelScript Language Client extension interface handlers.
  * @param context The extension context provided by VS Code.
@@ -550,6 +575,9 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(
         commands.registerCommand(RESTART_COMMAND, () => restartClient(context, 'Restart requested from the command palette.')));
 
+    context.subscriptions.push(
+        commands.registerCommand(SELECT_PREDEFINED_COMMAND, () => selectPredefinedStub()));
+
     statusBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 100);
     statusBarItem.command = SHOW_LOG_COMMAND;
     context.subscriptions.push(statusBarItem);
@@ -562,6 +590,24 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(
         workspace.onDidChangeConfiguration(async event => {
             if (!event.affectsConfiguration('angelscript')) {
+                return;
+            }
+
+            // A setting only needs a restart if it changes what the server was launched with.
+            // `predefined.active` is the exception that proves it: it *is* on the command line, so
+            // a fresh server gets it, but the running one is told through didChangeConfiguration
+            // and reloads on its own. Restarting for it would tear down and redo the whole
+            // workspace scan to reach the state the server had already reached.
+            const withoutActiveStub = (args: string[]) =>
+                args.filter(arg => !arg.startsWith('--predefined-active='));
+
+            const next = buildServerArgs();
+            const unchanged =
+                withoutActiveStub(next).join('\u0000') === withoutActiveStub(runningServerArgs).join('\u0000');
+
+            runningServerArgs = next;
+
+            if (unchanged) {
                 return;
             }
 
@@ -597,7 +643,83 @@ async function restartClient(context: ExtensionContext, reason: string): Promise
     await startClient(context);
 }
 
-/**7
+/**
+ * @brief Prompts the user to pick an active predefined API stub or merge all discovered stubs.
+ *
+ * The server dynamically hot-reloads the chosen stub without requiring a client restart.
+ * Querying the server for discovered stubs keeps the extension agnostic to workspace scan internals.
+ */
+async function selectPredefinedStub(): Promise<void> {
+    if (!client) {
+        void window.showWarningMessage('The AngelScript language server is not running.');
+        return;
+    }
+
+    interface PredefinedStubsResult {
+        stubs: string[];
+        active: string;
+    }
+
+    let result: PredefinedStubsResult;
+    try {
+        result = await client.sendRequest<PredefinedStubsResult>(
+            'workspace/executeCommand',
+            { command: 'angelscript.listPredefinedStubs' }
+        );
+    } catch {
+        void window.showWarningMessage('The AngelScript language server is not running.');
+        return;
+    }
+
+    if (!result || !Array.isArray(result.stubs)) {
+        return;
+    }
+
+    interface StubQuickPickItem extends QuickPickItem {
+        stubPath: string;
+    }
+
+    const items: StubQuickPickItem[] = [
+        {
+            label: 'All stubs (merged)',
+            description: 'Default behavior. Loads all discovered stubs; shared declarations will resolve more than once.',
+            stubPath: ''
+        }
+    ];
+
+    const activeNorm = path.normalize(result.active ?? '');
+
+    for (const stubPath of result.stubs) {
+        const fileName = path.basename(stubPath);
+        const isActive = activeNorm.length > 0 &&
+            (stubPath === result.active || path.normalize(stubPath).toLowerCase() === activeNorm.toLowerCase());
+        const label = isActive ? `$(check) ${fileName}` : fileName;
+
+        let description = stubPath;
+        const folder = workspace.getWorkspaceFolder(Uri.file(stubPath));
+        if (folder) {
+            description = path.relative(folder.uri.fsPath, stubPath);
+        }
+
+        items.push({
+            label,
+            description,
+            stubPath
+        });
+    }
+
+    const chosen = await window.showQuickPick(items, {
+        placeHolder: 'Select the predefined stub that describes the host application API'
+    });
+
+    if (!chosen) {
+        return;
+    }
+
+    await workspace.getConfiguration('angelscript').update('predefined.active', chosen.stubPath, ConfigurationTarget.Workspace);
+}
+
+/**
  * @brief Deactivates the Language Client session pipeline.
  * @return Promise token indicating completion of client teardown routines.
  */

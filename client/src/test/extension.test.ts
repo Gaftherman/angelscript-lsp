@@ -141,6 +141,28 @@ suite('buildServerArgs', () => {
         const args = buildServerArgs();
         assert.ok(args.some(arg => arg.startsWith('--locale=')), `expected a locale in ${args.join(' ')}`);
     });
+
+    test('the active stub reaches the server as --predefined-active', async () => {
+        // Needed on the command line even though the running server is told through
+        // didChangeConfiguration: a server starting fresh has never seen that notification, and
+        // without the flag it would merge every stub in the workspace on the first scan.
+        const absolute = process.platform === 'win32' ? 'C:\hosts\engine.as.predefined' : '/hosts/engine.as.predefined';
+        const args = await withSetting('predefined.active', absolute, buildServerArgs);
+        assert.deepStrictEqual(valuesOf(args, '--predefined-active='), [absolute]);
+    });
+
+    test('no active stub means no flag at all', async () => {
+        // Empty is the default and it has to stay indistinguishable from never having set it, or
+        // every workspace that merges stubs on purpose would change behaviour.
+        const args = await withSetting('predefined.active', '', buildServerArgs);
+        assert.deepStrictEqual(valuesOf(args, '--predefined-active='), []);
+    });
+
+    test('a blank active stub is dropped rather than passed as an empty path', async () => {
+        const args = await withSetting('predefined.active', '   ', buildServerArgs);
+        assert.deepStrictEqual(valuesOf(args, '--predefined-active='), []);
+    });
+
 });
 
 suite('activation', () => {
@@ -156,5 +178,11 @@ suite('activation', () => {
                   'angelscript.restartServer was declared in package.json but never registered');
         assert.ok(registered.includes('angelscript.showServerLog'),
                   'angelscript.showServerLog was declared in package.json but never registered');
+
+        // Declared in package.json's contributes.commands, so a command palette entry exists
+        // whether or not anything registered it. One that is declared and not registered fails
+        // when the user picks it, which is the worst place to find out.
+        assert.ok(registered.includes('angelscript.selectPredefined'),
+                  'angelscript.selectPredefined was declared in package.json but never registered');
     });
 });
