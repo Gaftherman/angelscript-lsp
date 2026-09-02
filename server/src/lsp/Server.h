@@ -31,6 +31,7 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <optional>
 #include <condition_variable>
 
 namespace angel_lsp
@@ -635,6 +636,34 @@ namespace angel_lsp
          *          looking at. PublishDiagnostics translates it back through m_clientUriByKey.
          */
         static std::string DocumentKey(const std::string &uriStr);
+
+        /**
+         * @brief The three things nearly every document request starts by working out.
+         *
+         * `text` points into m_openDocuments and is valid only while the message loop owns it,
+         * which is the whole lifetime of a synchronous handler. `tree` is null for a document that
+         * has not been parsed yet, which every caller already had to tolerate.
+         */
+        struct OpenDocument
+        {
+            std::string uri;
+            const std::string *text = nullptr;
+            TSTree *tree = nullptr;
+        };
+
+        /**
+         * @brief Resolves an incoming document URI to the open document behind it.
+         *
+         * Twenty-eight handlers opened with the same eight lines: canonicalise the URI, look it up
+         * in m_openDocuments, answer null when it is not there, then fetch the tree. Written once
+         * so a change to any of those four steps - a new encoding rule, a cancellation check - is
+         * one edit rather than twenty-eight.
+         *
+         * @return The document, or nullopt when nothing by that URI is open. A request naming a
+         *         document nobody opened is answered with null rather than an error: the client is
+         *         allowed to race a close against a request it already sent.
+         */
+        std::optional<OpenDocument> LookupOpenDocument(const std::string &uriStr);
 
         void HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Workspace_DidRenameFiles::Params &&params);
 

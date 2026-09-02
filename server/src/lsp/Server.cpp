@@ -2677,22 +2677,18 @@ namespace angel_lsp
         {
             return lsp::Null{};
         }
-        std::string uriStr = DocumentKey(params.textDocument.uri.toString());
-        auto docIt = m_openDocuments.find(uriStr);
-        if (docIt == m_openDocuments.end())
-        {
+        const auto doc = LookupOpenDocument(params.textDocument.uri.toString());
+        if (!doc)
             return lsp::Null{};
-        }
-        TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
         std::vector<lsp::TextEdit> allEdits;
         for (const auto &range : params.ranges)
         {
             features::RangeFormattingRequest rfr{
-                uriStr,
-                docIt->second,
-                tree,
-                codec::Decode(docIt->second, m_positionEncoding, range),
+                doc->uri,
+                *doc->text,
+                doc->tree,
+                codec::Decode(*doc->text, m_positionEncoding, range),
                 params.options,
                 CurrentBraceStyle()
             };
@@ -2704,7 +2700,7 @@ namespace angel_lsp
                                 std::make_move_iterator(edits->end()));
             }
         }
-        EncodeIn(docIt->second, allEdits);
+        EncodeIn(*doc->text, allEdits);
         return allEdits;
     }
 
@@ -2725,24 +2721,20 @@ namespace angel_lsp
             return lsp::Array<lsp::TextEdit>{};
         }
 
-        std::string uriStr = DocumentKey(params.textDocument.uri.toString());
-        auto docIt = m_openDocuments.find(uriStr);
-        if (docIt == m_openDocuments.end())
-        {
+        const auto doc = LookupOpenDocument(params.textDocument.uri.toString());
+        if (!doc)
             return lsp::Array<lsp::TextEdit>{};
-        }
 
-        TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
         lsp::FormattingOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        features::FormattingRequest fr{ uriStr, docIt->second, tree, options, CurrentBraceStyle() };
+        features::FormattingRequest fr{ doc->uri, *doc->text, doc->tree, options, CurrentBraceStyle() };
         auto edits = features::FormatDocument(fr);
         if (edits.has_value())
         {
-            EncodeIn(docIt->second, edits.value());
+            EncodeIn(*doc->text, edits.value());
             return edits.value();
         }
 
@@ -2758,6 +2750,20 @@ namespace angel_lsp
         }
 
         throw lsp::RequestError(lsp::MessageError::InvalidParams, "Unknown command: " + params.command);
+    }
+
+    std::optional<Server::OpenDocument> Server::LookupOpenDocument(const std::string &uriStr)
+    {
+        const std::string key = DocumentKey(uriStr);
+
+        const auto docIt = m_openDocuments.find(key);
+        if (docIt == m_openDocuments.end())
+            return std::nullopt;
+
+        const auto treeIt = m_documentTrees.find(key);
+
+        return OpenDocument{ key, &docIt->second,
+                             treeIt == m_documentTrees.end() ? nullptr : treeIt->second };
     }
 
     void Server::InitHandles()
@@ -2883,21 +2889,17 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
                 features::HoverRequest hr{
-                    uriStr,
-                    docIt->second,
-                    tree,
+                    doc->uri,
+                    *doc->text,
+                    doc->tree,
                     m_symbolTable,
                     m_scopeIndex,
-                    codec::Decode(docIt->second, m_positionEncoding, req.position),
+                    codec::Decode(*doc->text, m_positionEncoding, req.position),
                     // A symbol's documentation comment lives above its declaration, which is
                     // usually in another file. The same reader CompletionItem/resolve is given.
                     [this](const std::string &uri) { return FindDocumentText(uri); }
@@ -2905,7 +2907,7 @@ namespace angel_lsp
                 auto hover = features::GetHover(hr);
                 if (hover.has_value())
                 {
-                    EncodeIn(docIt->second, hover.value());
+                    EncodeIn(*doc->text, hover.value());
                     return hover.value();
                 }
                 return lsp::Null{};
@@ -2918,15 +2920,11 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::DefinitionRequest dr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                features::DefinitionRequest dr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position) };
                 auto defs = features::GetDefinition(dr);
                 if (defs.has_value() && !defs->empty())
                 {
@@ -2948,16 +2946,12 @@ namespace angel_lsp
                     return lsp::Null{};
                 }
 
-                const std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                const auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
 
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
-                features::DefinitionRequest dr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex,
-                                                codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                features::DefinitionRequest dr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex,
+                                                codec::Decode(*doc->text, m_positionEncoding, req.position) };
 
                 const auto defs = features::GetDefinition(dr);
                 if (!defs.has_value() || defs->empty())
@@ -3099,15 +3093,11 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::DefinitionRequest dr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                features::DefinitionRequest dr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position) };
                 auto defs = features::GetDefinition(dr);
                 if (defs.has_value() && !defs->empty())
                 {
@@ -3124,15 +3114,11 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::ImplementationRequest ir{ uriStr, docIt->second, tree, m_symbolTable, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                features::ImplementationRequest ir{ doc->uri, *doc->text, doc->tree, m_symbolTable, codec::Decode(*doc->text, m_positionEncoding, req.position) };
                 auto impls = features::GetImplementations(ir);
                 if (impls.has_value() && !impls->empty())
                 {
@@ -3149,15 +3135,11 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::CallHierarchyPrepareRequest pr{ uriStr, docIt->second, tree, m_symbolTable, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                features::CallHierarchyPrepareRequest pr{ doc->uri, *doc->text, doc->tree, m_symbolTable, codec::Decode(*doc->text, m_positionEncoding, req.position) };
                 auto items = features::PrepareCallHierarchy(pr);
                 if (!items.has_value() || items->empty())
                 {
@@ -3226,15 +3208,11 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::TypeHierarchyPrepareRequest pr{ uriStr, docIt->second, tree, m_symbolTable, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                features::TypeHierarchyPrepareRequest pr{ doc->uri, *doc->text, doc->tree, m_symbolTable, codec::Decode(*doc->text, m_positionEncoding, req.position) };
                 auto items = features::PrepareTypeHierarchy(pr);
                 if (!items.has_value() || items->empty())
                 {
@@ -3296,17 +3274,14 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
 
-                auto scopeRoot = m_scopeIndex.GetRoot(uriStr);
+                auto scopeRoot = m_scopeIndex.GetRoot(doc->uri);
                 features::LinkedEditingRangeRequest lr{
-                    docIt->second, scopeRoot.get(),
-                    codec::Decode(docIt->second, m_positionEncoding, req.position)
+                    *doc->text, scopeRoot.get(),
+                    codec::Decode(*doc->text, m_positionEncoding, req.position)
                 };
 
                 auto ranges = features::GetLinkedEditingRanges(lr);
@@ -3316,7 +3291,7 @@ namespace angel_lsp
                 }
                 for (auto &range : ranges->ranges)
                 {
-                    codec::Encode(docIt->second, m_positionEncoding, range);
+                    codec::Encode(*doc->text, m_positionEncoding, range);
                 }
                 return ranges.value();
             });
@@ -3328,22 +3303,18 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
                 std::vector<lsp::Position> positions;
                 positions.reserve(req.positions.size());
                 for (const auto &position : req.positions)
                 {
-                    positions.push_back(codec::Decode(docIt->second, m_positionEncoding, position));
+                    positions.push_back(codec::Decode(*doc->text, m_positionEncoding, position));
                 }
 
-                features::SelectionRangeRequest sr{ docIt->second, tree, positions };
+                features::SelectionRangeRequest sr{ *doc->text, doc->tree, positions };
                 auto ranges = features::GetSelectionRanges(sr);
                 if (ranges.empty())
                 {
@@ -3356,7 +3327,7 @@ namespace angel_lsp
                 {
                     for (lsp::SelectionRange *link = &chain; link != nullptr; link = link->parent.get())
                     {
-                        codec::Encode(docIt->second, m_positionEncoding, link->range);
+                        codec::Encode(*doc->text, m_positionEncoding, link->range);
                     }
                 }
                 return ranges;
@@ -3369,15 +3340,11 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::DefinitionRequest dr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                features::DefinitionRequest dr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position) };
                 auto defs = features::GetTypeDefinition(dr);
                 if (defs.has_value() && !defs->empty())
                 {
@@ -3394,15 +3361,11 @@ namespace angel_lsp
                 {
                     return lsp::Array<lsp::CompletionItem>{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Array<lsp::CompletionItem>{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::CompletionRequest cr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, codec::Decode(docIt->second, m_positionEncoding, req.position), &m_config, m_snippetSupport };
+                features::CompletionRequest cr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position), &m_config, m_snippetSupport };
                 return features::GetCompletion(cr);
             });
 
@@ -3429,14 +3392,11 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
 
-                return ComputeAndCacheSemanticTokens(uriStr, docIt->second);
+                return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
             });
 
         m_messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Full_Delta>(
@@ -3446,14 +3406,11 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
 
-                const auto cached = m_semanticTokensCache.find(uriStr);
+                const auto cached = m_semanticTokensCache.find(doc->uri);
                 const bool canDiff = cached != m_semanticTokensCache.end() &&
                                      cached->second.resultId == req.previousResultId;
 
@@ -3462,11 +3419,11 @@ namespace angel_lsp
                 // stream, which the protocol allows in place of a delta.
                 if (!canDiff)
                 {
-                    return ComputeAndCacheSemanticTokens(uriStr, docIt->second);
+                    return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
                 }
 
                 const std::vector<lsp::uint> previous = cached->second.data;
-                lsp::SemanticTokens tokens = ComputeAndCacheSemanticTokens(uriStr, docIt->second);
+                lsp::SemanticTokens tokens = ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
 
                 lsp::SemanticTokensDelta delta;
                 delta.resultId = tokens.resultId;
@@ -3481,22 +3438,18 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::SemanticTokensRequest sr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex.GetRoot(uriStr) };
+                features::SemanticTokensRequest sr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex.GetRoot(doc->uri) };
                 // Decoded on the way in for the same reason the payload is encoded on the way out:
                 // the handler works in Tree-sitter byte columns, the client speaks the negotiated
                 // encoding, and a non-ASCII character earlier in the line makes them disagree.
-                sr.range = codec::Decode(docIt->second, m_positionEncoding, req.range);
+                sr.range = codec::Decode(*doc->text, m_positionEncoding, req.range);
 
                 lsp::SemanticTokens tokens = features::GetSemanticTokens(sr);
-                codec::EncodeSemanticTokens(docIt->second, m_positionEncoding, tokens.data);
+                codec::EncodeSemanticTokens(*doc->text, m_positionEncoding, tokens.data);
                 return tokens;
             });
 
@@ -3507,15 +3460,11 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::SignatureHelpRequest sr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex, codec::Decode(docIt->second, m_positionEncoding, req.position) };
+                features::SignatureHelpRequest sr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position) };
                 auto sig = features::GetSignatureHelp(sr);
                 if (sig.has_value())
                 {
@@ -3531,19 +3480,15 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::DocumentSymbolRequest dr{ uriStr, docIt->second, tree, m_symbolTable };
+                features::DocumentSymbolRequest dr{ doc->uri, *doc->text, doc->tree, m_symbolTable };
                 auto symbols = features::GetDocumentSymbols(dr);
                 if (symbols.has_value())
                 {
-                    EncodeIn(docIt->second, symbols.value());
+                    EncodeIn(*doc->text, symbols.value());
                     return symbols.value();
                 }
                 return lsp::Null{};
@@ -3579,15 +3524,11 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::ReferencesRequest rr{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.position), req.context.includeDeclaration, m_symbolTable, m_scopeIndex };
+                features::ReferencesRequest rr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.position), req.context.includeDeclaration, m_symbolTable, m_scopeIndex };
                 auto refs = features::GetReferences(rr);
                 if (refs.has_value())
                 {
@@ -3604,13 +3545,9 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
                 std::unordered_set<std::string> predefinedUris;
                 {
@@ -3618,11 +3555,11 @@ namespace angel_lsp
                     predefinedUris.insert(m_predefinedUris.begin(), m_predefinedUris.end());
                 }
 
-                features::PrepareRenameRequest pr{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.position), m_symbolTable, m_scopeIndex, predefinedUris };
+                features::PrepareRenameRequest pr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.position), m_symbolTable, m_scopeIndex, predefinedUris };
                 auto prep = features::PrepareRename(pr);
                 if (prep.has_value())
                 {
-                    EncodeIn(docIt->second, prep.value());
+                    EncodeIn(*doc->text, prep.value());
                     return prep.value();
                 }
                 return lsp::Null{};
@@ -3635,13 +3572,9 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
                 std::unordered_set<std::string> predefinedUris;
                 {
@@ -3649,7 +3582,7 @@ namespace angel_lsp
                     predefinedUris.insert(m_predefinedUris.begin(), m_predefinedUris.end());
                 }
 
-                features::RenameRequest rr{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.position), req.newName, m_symbolTable, m_scopeIndex, predefinedUris };
+                features::RenameRequest rr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.position), req.newName, m_symbolTable, m_scopeIndex, predefinedUris };
                 auto edit = features::Rename(rr);
                 if (edit.has_value())
                 {
@@ -3666,19 +3599,15 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::DocumentHighlightRequest hr{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.position), m_symbolTable, m_scopeIndex };
+                features::DocumentHighlightRequest hr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.position), m_symbolTable, m_scopeIndex };
                 auto highlights = features::GetDocumentHighlights(hr);
                 if (highlights.has_value() && !highlights->empty())
                 {
-                    EncodeIn(docIt->second, highlights.value());
+                    EncodeIn(*doc->text, highlights.value());
                     return highlights.value();
                 }
                 return lsp::Null{};
@@ -3691,19 +3620,15 @@ namespace angel_lsp
                 {
                     return lsp::Array<lsp::FoldingRange>{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Array<lsp::FoldingRange>{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::FoldingRangeRequest fr{ uriStr, docIt->second, tree };
+                features::FoldingRangeRequest fr{ doc->uri, *doc->text, doc->tree };
                 auto ranges = features::GetFoldingRanges(fr);
                 if (ranges.has_value())
                 {
-                    EncodeIn(docIt->second, ranges.value());
+                    EncodeIn(*doc->text, ranges.value());
                     return ranges.value();
                 }
                 return lsp::Array<lsp::FoldingRange>{};
@@ -3716,19 +3641,15 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::InlayHintRequest ihr{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.range), m_symbolTable, m_scopeIndex };
+                features::InlayHintRequest ihr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.range), m_symbolTable, m_scopeIndex };
                 auto hints = features::GetInlayHints(ihr);
                 if (hints.has_value())
                 {
-                    EncodeIn(docIt->second, hints.value());
+                    EncodeIn(*doc->text, hints.value());
                     return hints.value();
                 }
                 return lsp::Null{};
@@ -3747,13 +3668,9 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
                 // The context's diagnostics carry ranges too, and they arrive in the client's
                 // encoding exactly as req.range does. Decoding the one and not the other left the
@@ -3762,9 +3679,9 @@ namespace angel_lsp
                 // is ASCII. Decoded here so the handler sees one system throughout.
                 lsp::CodeActionContext context = req.context;
                 for (auto &diag : context.diagnostics)
-                    diag.range = codec::Decode(docIt->second, m_positionEncoding, diag.range);
+                    diag.range = codec::Decode(*doc->text, m_positionEncoding, diag.range);
 
-                features::CodeActionRequest car{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.range), context, m_symbolTable, m_scopeIndex };
+                features::CodeActionRequest car{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.range), context, m_symbolTable, m_scopeIndex };
                 auto actions = features::GetCodeActions(car);
                 if (actions.has_value())
                 {
@@ -3808,19 +3725,15 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::FormattingRequest fr{ uriStr, docIt->second, tree, req.options, CurrentBraceStyle() };
+                features::FormattingRequest fr{ doc->uri, *doc->text, doc->tree, req.options, CurrentBraceStyle() };
                 auto edits = features::FormatDocument(fr);
                 if (edits.has_value())
                 {
-                    EncodeIn(docIt->second, edits.value());
+                    EncodeIn(*doc->text, edits.value());
                     return edits.value();
                 }
                 return lsp::Null{};
@@ -3833,21 +3746,18 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
 
                 // Named so the handle outlives dlr, which holds the vector by reference.
                 const auto searchDirectories = SearchDirectories();
 
-                features::DocumentLinkRequest dlr{ uriStr, docIt->second, *searchDirectories, m_i18n.get(), IncludeAllowedRoots() };
+                features::DocumentLinkRequest dlr{ doc->uri, *doc->text, *searchDirectories, m_i18n.get(), IncludeAllowedRoots() };
                 auto links = features::GetDocumentLinks(dlr);
                 if (links.has_value())
                 {
-                    EncodeIn(docIt->second, links.value());
+                    EncodeIn(*doc->text, links.value());
                     return links.value();
                 }
                 return lsp::Null{};
@@ -3866,19 +3776,15 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::RangeFormattingRequest rfr{ uriStr, docIt->second, tree, codec::Decode(docIt->second, m_positionEncoding, req.range), req.options, CurrentBraceStyle() };
+                features::RangeFormattingRequest rfr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.range), req.options, CurrentBraceStyle() };
                 auto edits = features::FormatRange(rfr);
                 if (edits.has_value())
                 {
-                    EncodeIn(docIt->second, edits.value());
+                    EncodeIn(*doc->text, edits.value());
                     return edits.value();
                 }
                 return lsp::Null{};
@@ -3909,19 +3815,15 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
-                features::CodeLensRequest clr{ uriStr, docIt->second, tree, m_symbolTable, m_scopeIndex };
+                features::CodeLensRequest clr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex };
                 auto lenses = features::GetCodeLenses(clr);
                 if (lenses.has_value())
                 {
-                    EncodeIn(docIt->second, lenses.value());
+                    EncodeIn(*doc->text, lenses.value());
                     return lenses.value();
                 }
                 return lsp::Null{};
@@ -3947,19 +3849,15 @@ namespace angel_lsp
                 {
                     return lsp::Null{};
                 }
-                std::string uriStr = DocumentKey(req.textDocument.uri.toString());
-                auto docIt = m_openDocuments.find(uriStr);
-                if (docIt == m_openDocuments.end())
-                {
+                const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+                if (!doc)
                     return lsp::Null{};
-                }
-                TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
                 features::OnTypeFormattingRequest otfr{
-                    uriStr,
-                    docIt->second,
-                    tree,
-                    codec::Decode(docIt->second, m_positionEncoding, req.position),
+                    doc->uri,
+                    *doc->text,
+                    doc->tree,
+                    codec::Decode(*doc->text, m_positionEncoding, req.position),
                     req.ch,
                     req.options,
                     CurrentBraceStyle()
@@ -3967,7 +3865,7 @@ namespace angel_lsp
                 auto edits = features::FormatOnType(otfr);
                 if (edits.has_value())
                 {
-                    EncodeIn(docIt->second, edits.value());
+                    EncodeIn(*doc->text, edits.value());
                     return edits.value();
                 }
                 return lsp::Null{};
