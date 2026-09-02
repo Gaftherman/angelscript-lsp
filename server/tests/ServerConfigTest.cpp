@@ -1285,16 +1285,84 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config.engine.propertyAccessorMode == 2);
         }
 
-        SUBCASE("An accessor mode the analyzer cannot act on is dropped")
+        SUBCASE("The app-registered-only mode is a mode like any other")
         {
-            // 0 (disabled) and 1 (app-registered accessors only) do not change what a script
-            // declaration means, which is all this analyzer reads. Landing on 2 or 3 by rounding
-            // would be a guess.
+            // This subcase used to assert the opposite, on a comment saying 0 (disabled) and 1
+            // (app-registered accessors only) do not change what a script declaration means. They
+            // do. Measured: under both, `c.X` backed by a script `get_X`/`set_X` is rejected, with
+            // the `property` keyword and without it, because the compiler skips script functions
+            // outright - as_compiler.cpp:14003 and :14077, the second commented "Ignore script
+            // functions, if the application has disabled script defined property accessors".
+            //
+            // While they were dropped here, a host running either had no way to state its
+            // configuration at all, so the last value it set was silently replaced by another.
             ArgvHelper args{"angel_lsp",
                             "--engine-property=propertyAccessorMode=3",
                             "--engine-property=propertyAccessorMode=1"};
             ServerConfig config = FromArgs(args.argc(), args.data());
-            CHECK(config.engine.propertyAccessorMode == 3);
+            CHECK(config.engine.propertyAccessorMode == 1);
         }
     }
+}
+
+TEST_CASE("ServerConfig - Every property accessor mode the engine has can be stated")
+{
+    // 0 and 1 used to be rejected, on a comment claiming neither changed what a script declaration
+    // means. Measured false: under both, `c.X` backed by a script `get_X` is rejected with the
+    // `property` keyword and without it, because the compiler skips script functions entirely. A
+    // host running either had no way to say so.
+    for (const char *mode : { "0", "1", "2", "3" })
+    {
+        const std::string flag = std::string("--engine-property=propertyAccessorMode=") + mode;
+        ArgvHelper args{ "angel_lsp", flag.c_str() };
+        const ServerConfig config = FromArgs(args.argc(), args.data());
+
+        INFO("mode " << mode);
+        CHECK(config.engine.propertyAccessorMode == mode[0] - '0');
+    }
+}
+
+TEST_CASE("ServerConfig - A property accessor mode the engine does not have is dropped")
+{
+    // Left at the default rather than guessed at: a typo that silently picked a dialect would be
+    // far harder to notice than one that changes nothing.
+    ArgvHelper args{ "angel_lsp", "--engine-property=propertyAccessorMode=7" };
+    const ServerConfig config = FromArgs(args.argc(), args.data());
+
+    CHECK(config.engine.propertyAccessorMode == 2);
+}
+
+TEST_CASE("ServerConfig - Preprocessor features are off unless asked for")
+{
+    {
+        ArgvHelper args{ "angel_lsp" };
+        const ServerConfig config = FromArgs(args.argc(), args.data());
+
+        CHECK_FALSE(config.preprocessor.elseSupport);
+        CHECK_FALSE(config.preprocessor.elifSupport);
+        CHECK_FALSE(config.preprocessor.ifdefSupport);
+        CHECK_FALSE(config.preprocessor.defineInScripts);
+        CHECK(config.pragmaMode == ServerConfig::PragmaMode::Accept);
+    }
+
+    {
+        ArgvHelper args{ "angel_lsp",
+                         "--preprocessor-feature=elseSupport=true",
+                         "--preprocessor-feature=pragmaMode=error" };
+        const ServerConfig config = FromArgs(args.argc(), args.data());
+
+        CHECK(config.preprocessor.elseSupport);
+        CHECK_FALSE(config.preprocessor.elifSupport);
+        CHECK(config.pragmaMode == ServerConfig::PragmaMode::Error);
+    }
+}
+
+TEST_CASE("ServerConfig - Defined words arrive from --define")
+{
+    ArgvHelper args{ "angel_lsp", "--define=SERVER", "--define=DEBUG" };
+    const ServerConfig config = FromArgs(args.argc(), args.data());
+
+    REQUIRE(config.definedWords.size() == 2);
+    CHECK(config.definedWords[0] == "SERVER");
+    CHECK(config.definedWords[1] == "DEBUG");
 }

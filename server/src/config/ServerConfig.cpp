@@ -105,11 +105,17 @@ namespace angel_lsp::config
             if (name == "propertyAccessorMode")
             {
                 // 0 disabled, 1 app-registered only, 2 app and script, 3 (the engine's default)
-                // app and script but only where the `property` keyword is present. Only 2 and 3
-                // differ for a script analyzer, so anything else is dropped rather than guessed at.
-                if (raw == "2" || raw == "3")
+                // app and script but only where the `property` keyword is present.
+                //
+                // All four are accepted. 0 and 1 used to be rejected here, on the grounds that
+                // neither changes what a script declaration means - which is false, and measured
+                // to be false: under both, `c.X` backed by a script `get_X` is rejected with or
+                // without the `property` keyword, because the compiler skips script functions
+                // entirely (as_compiler.cpp:14003 and :14077). A host in either mode could not
+                // even state its configuration.
+                if (raw == "0" || raw == "1" || raw == "2" || raw == "3")
                 {
-                    engine.propertyAccessorMode = raw == "2" ? 2 : 3;
+                    engine.propertyAccessorMode = raw[0] - '0';
                     return true;
                 }
                 return false;

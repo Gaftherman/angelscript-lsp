@@ -117,12 +117,21 @@ namespace angel_lsp::config
          *
          * Decides when `get_X()` / `set_X(v)` become the virtual property `X`:
          *
+         *   0  never - the application disabled property accessors outright
+         *   1  only accessors the application registered in C++; script ones are skipped
          *   2  always, whether or not the declaration carries the `property` keyword
          *   3  only where it does - the engine's own default
          *
-         * The engine values 0 (disabled) and 1 (app-registered accessors only) are not modelled:
-         * neither changes what a *script* declaration means, which is the only thing this analyzer
-         * reads.
+         * 0 and 1 used to be documented here as not worth modelling, on the grounds that neither
+         * changed what a *script* declaration means. That was wrong, and the SDK says so in its own
+         * words: as_compiler.cpp:14077 skips a candidate with `if (ep.propertyAccessorMode == 1 &&
+         * f->funcType == asFUNC_SCRIPT) continue;`, commented "Ignore script functions, if the
+         * application has disabled script defined property accessors". Measured to match: under
+         * both 0 and 1 a `c.X` backed by a script `get_X`/`set_X` is rejected, with the `property`
+         * keyword and without it.
+         *
+         * Worse than the wrong comment was what followed from it: the parser accepted only 2 and 3,
+         * so a host running 0 or 1 had no way to state its configuration at all.
          *
          * This server defaults to 2, not to the engine's 3, and the difference is deliberate. Under
          * 3 a `c.V` whose accessor lacks the keyword is an error the compiler does report, so
