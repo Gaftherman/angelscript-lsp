@@ -82,6 +82,15 @@ namespace
     // `print` is not an SDK add-on - the SDK leaves output to the host - but scripts in the corpora
     // call it, so the oracle provides it and the stub declares it. Registering nothing would make
     // every such script fail for a reason that has nothing to do with the analyzer.
+    /**
+     * @brief A pragma callback that accepts anything, standing in for a host that registered one.
+     *
+     * There is no "correct" pragma vocabulary to model: the add-on hands the text to the host and
+     * asks yes or no. The only two answers an analyzer can be asked to match are "the host takes
+     * every pragma" and "the host registered nothing", and the second is already the default.
+     */
+    int AcceptAnyPragma(const std::string &, CScriptBuilder &, void *) { return 0; }
+
     void ScriptPrint(const std::string &line) { std::fputs(line.c_str(), stdout); }
     void ScriptPrintLine(const std::string &line) { std::printf("%s\n", line.c_str()); }
 
@@ -299,6 +308,19 @@ int main(int argc, char **argv)
     int foreachSupport = -1;
     int heredocTrimMode = -1;
 
+    // Not engine properties - these two describe how the *host* set up CScriptBuilder, which is the
+    // other half of what a script is compiled against and was not askable here at all.
+    //
+    // `#if WORD` only excludes a block when WORD is undefined, and nothing could define one, so the
+    // taken branch of every `#if` in the corpora had never been measured - only the dropped one.
+    //
+    // `#pragma` is stricter than it looks: scriptbuilder.cpp:533 calls the pragma callback, and with
+    // no callback registered substitutes -1, which fails the whole section. So a host that
+    // registered one and a host that did not disagree about every script containing a pragma, and
+    // only one of those two answers was reachable.
+    std::vector<std::string> defines;
+    bool acceptPragmas = false;
+
     for (int i = 1; i < argc; ++i)
     {
         // Unknown flags are ignored rather than rejected: the parity harness passes the same
@@ -362,6 +384,15 @@ int main(int argc, char **argv)
             {
                 heredocTrimMode = std::atoi(argv[i] + 20);
             }
+            else if (std::strncmp(argv[i], "--define=", 9) == 0)
+            {
+                // Repeatable, one word per occurrence, mirroring CScriptBuilder::DefineWord.
+                defines.emplace_back(argv[i] + 9);
+            }
+            else if (std::strncmp(argv[i], "--pragma=", 9) == 0)
+            {
+                acceptPragmas = std::strcmp(argv[i] + 9, "accept") == 0;
+            }
             continue;
         }
         if (scriptPath == nullptr)
@@ -386,7 +417,9 @@ int main(int argc, char **argv)
                              "       [--disallow-empty-list-elements=<0|1>]\n"
                              "       [--foreach-support=<0|1>]\n"
                              "       [--heredoc-trim-mode=<0|1|2>]\n"
-                             "Any option left out keeps the engine's own default.\n");
+                             "       [--define=<WORD>]... [--pragma=<accept|reject>]\n"
+                             "Any option left out keeps the engine's own default; --pragma defaults\n"
+                             "to reject, which is what a host that registers no callback gets.\n");
         return 2;
     }
 
@@ -500,6 +533,14 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    // Both have to be set before the section is added: DefineWord feeds the `#if` pass and the
+    // pragma callback is consulted during it.
+    for (const std::string &word : defines)
+        builder.DefineWord(word.c_str());
+
+    if (acceptPragmas)
+        builder.SetPragmaCallback(AcceptAnyPragma, nullptr);
+
     bool readOk = false;
     const std::string source = ReadWholeFile(scriptPath, readOk);
     if (!readOk)
@@ -513,12 +554,34 @@ int main(int argc, char **argv)
     result = builder.AddSectionFromMemory(scriptPath, WithMixinProbes(source).c_str());
     if (result < 0)
     {
-        // A file the builder cannot read is not a rejected script; say so distinctly so the harness
-        // does not score it as a disagreement.
+        // The builder failing is not always an unreadable file, and conflating the two hid a whole
+        // class of script from the audit. `#pragma` is the case that matters: with no pragma
+        // callback the add-on writes "Invalid #pragma directive" and fails the section
+        // (scriptbuilder.cpp:533-539). That is a *rejection* - the compiler will not build this
+        // script - but it exited 2 here, and the parity harness reads 2 as "could not be measured"
+        // and skips the file. Every script containing a pragma was silently outside the audit.
+        //
+        // The message callback is the discriminator: if the engine said anything about an error,
+        // the script was judged and rejected. Only a genuinely unreadable section is still a 2.
         if (asJson)
         {
             PrintJson();
         }
+
+        if (g_sawError)
+        {
+            if (!asJson)
+            {
+                for (const Message &m : g_messages)
+                {
+                    std::fprintf(stderr, "%s (%d, %d): %s\n", m.type.c_str(), m.row, m.col,
+                                 m.text.c_str());
+                }
+            }
+            engine->ShutDownAndRelease();
+            return 1;
+        }
+
         std::fprintf(stderr, "angelscript_oracle: could not read '%s'\n", scriptPath);
         engine->ShutDownAndRelease();
         return 2;
