@@ -2,12 +2,14 @@
 
 #include "analysis/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
-#include "utils/LspLogger.h"
 
 #include <tree_sitter/api.h>
 #include <memory>
 #include <string>
 #include <vector>
+
+// Forward-declared to keep lexical scope analysis free of protocol message headers from LspLogger.h.
+namespace angel_lsp::utils { class LspLogger; }
 
 namespace angel_lsp::analysis
 {

@@ -1,4 +1,5 @@
 #include "AngelScriptParser.h"
+#include "utils/LspLogger.h"
 
 #include <spdlog/fmt/fmt.h>
 

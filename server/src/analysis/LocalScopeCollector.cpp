@@ -3,6 +3,7 @@
 #include "analysis/TypeExtraction.h"
 #include "parser/queries/BuiltQueries.h"
 #include "utils/Constants.h"
+#include "utils/LspLogger.h"
 #include "spdlog/fmt/fmt.h"
 
 #include <algorithm>

@@ -5,13 +5,15 @@
 #include "analysis/Diagnostics.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
-#include "utils/LspLogger.h"
 
 #include "config/ServerConfig.h"
 #include <tree_sitter/api.h>
 #include <cstdint>
 #include <cstring>
 #include <string_view>
+
+// Forward-declared to ensure AST symbol extraction remains in Layer 2 without pulling protocol definitions.
+namespace angel_lsp::utils { class LspLogger; }
 
 namespace angel_lsp::analysis
 {

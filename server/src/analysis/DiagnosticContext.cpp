@@ -1,4 +1,5 @@
 #include "analysis/DiagnosticContext.h"
+#include "utils/LspLogger.h"
 #include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp::analysis

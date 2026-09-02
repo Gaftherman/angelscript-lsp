@@ -1,10 +1,11 @@
 #pragma once
 
-#include "utils/LspLogger.h"
-
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
+
+// Forward-declared so the tree-sitter parser abstraction can compile without the LSP protocol library.
+namespace angel_lsp::utils { class LspLogger; }
 
 namespace angel_lsp::parser
 {

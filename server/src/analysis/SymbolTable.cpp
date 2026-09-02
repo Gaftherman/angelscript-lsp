@@ -1,5 +1,6 @@
 #include "SymbolTable.h"
 #include "analysis/rules/RuleIndex.h"
+#include "utils/LspLogger.h"
 #include "spdlog/fmt/fmt.h"
 
 #include <algorithm>

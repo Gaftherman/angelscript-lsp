@@ -1,7 +1,5 @@
 #pragma once
 
-#include "utils/LspLogger.h"
-
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -12,6 +10,9 @@
 #include <ankerl/unordered_dense.h>
 
 #include <variant>
+
+// Forward-declared rather than included: avoids pulling <lsp/messages.h> into every TU that touches symbols.
+namespace angel_lsp::utils { class LspLogger; }
 
 namespace angel_lsp::analysis
 {

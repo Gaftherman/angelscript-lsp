@@ -3,12 +3,14 @@
 #include "analysis/Diagnostics.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/SemanticAnalysisRequest.h"
-#include "utils/LspLogger.h"
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
+
+// Forward-declared so diagnostic collection does not transitively depend on the LSP protocol library.
+namespace angel_lsp::utils { class LspLogger; }
 
 namespace angel_lsp::analysis
 {

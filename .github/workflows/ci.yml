@@ -116,6 +116,13 @@ jobs:
         working-directory: server
         run: python scripts/check-diagnostic-codes.py
 
+      # One #include is all it takes to put the whole protocol library back into every translation
+      # unit in analysis/, and nothing else would say so: the build stays green and the coupling is
+      # invisible until someone reads the transitive include tree by hand.
+      - name: Audit layer includes
+        working-directory: server
+        run: python scripts/check-layer-includes.py
+
       - name: Configure CMake with the oracle
         run: cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release -DANGELLSP_BUILD_ORACLE=ON
 

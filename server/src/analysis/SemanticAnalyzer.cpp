@@ -17,6 +17,7 @@
 #include "analysis/rules/TypeRules.h"
 #include "analysis/rules/VariableRules.h"
 #include "spdlog/fmt/fmt.h"
+#include "utils/LspLogger.h"
 
 namespace angel_lsp::analysis
 {

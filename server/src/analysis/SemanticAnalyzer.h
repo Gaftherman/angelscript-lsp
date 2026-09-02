@@ -4,10 +4,12 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticAnalysisRequest.h"
-#include "utils/LspLogger.h"
 #include <ankerl/unordered_dense.h>
 #include <string>
 #include <vector>
+
+// Forward-declared so semantic analysis stays decoupled from <lsp/messages.h> pulled by LspLogger.
+namespace angel_lsp::utils { class LspLogger; }
 
 namespace angel_lsp::analysis
 {

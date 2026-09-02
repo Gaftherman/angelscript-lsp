@@ -3,6 +3,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
+#include "utils/LspLogger.h"
 
 #include <cstring>
 #include <cctype>
