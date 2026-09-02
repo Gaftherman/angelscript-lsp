@@ -211,7 +211,7 @@ namespace angel_lsp
         // Built per call rather than cached: it is one linear scan of the document, next to nothing
         // beside the parse and analysis it accompanies, and caching it would mean invalidating it on
         // every edit for no measurable gain.
-        return angel_lsp::utils::FindExcludedLineRanges(text, *DefinedWords());
+        return angel_lsp::utils::FindExcludedLineRanges(text, *DefinedWords(), m_config.preprocessor);
     }
 
     std::shared_ptr<const ankerl::unordered_dense::set<std::string>> Server::DefinedWords() const

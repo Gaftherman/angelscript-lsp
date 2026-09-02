@@ -22,6 +22,33 @@ namespace angel_lsp::utils
     };
 
     /**
+     * @brief Preprocessor extensions a host has added to CScriptBuilder, all off by default.
+     *
+     * None of these exist in the stock add-on - each was measured against the real compiler and
+     * each is a syntax error or a swallowed line there, which is why every one of them defaults to
+     * false and why the defaults reproduce today's behaviour byte for byte.
+     *
+     * They exist because patching scriptbuilder.cpp is common: it is a sample add-on shipped in the
+     * SDK's source tree, hosts copy it into their own tree, and `#else` is the first thing they add.
+     * An analyzer that cannot be told about that has to choose between reporting nothing inside
+     * every conditional or reporting errors on code the compiler never sees, and both are wrong.
+     */
+    struct PreprocessorFeatures
+    {
+        /// `#else` opens the complementary branch instead of being swallowed by the dead block.
+        bool elseSupport = false;
+
+        /// `#elif <word>` opens another branch. Implies the `#else` branch model.
+        bool elifSupport = false;
+
+        /// `#ifdef` / `#ifndef` open a region, the second with the condition negated.
+        bool ifdefSupport = false;
+
+        /// `#define <word>` inside a script defines the word from that line on.
+        bool defineInScripts = false;
+    };
+
+    /**
      * @brief Lines removed by `#if` / `#endif`, mirroring CScriptBuilder's preprocessor.
      *
      * AngelScript has no preprocessor of its own; `#if` is handled by the CScriptBuilder add-on,
@@ -51,11 +78,15 @@ namespace angel_lsp::utils
      * @param sourceCode Document text.
      * @param definedWords Words the host has defined. Empty - the default - means every `#if` block
      *        is excluded, which is exactly what an unconfigured CScriptBuilder does.
+     * @param features Extensions the host added to its copy of the add-on. All off by default, in
+     *        which case only `#if` and `#endif` are directives and everything between a dead `#if`
+     *        and its `#endif` goes, `#else` included.
      * @return Excluded ranges in source order, non-overlapping.
      */
     std::vector<ExcludedLineRange> FindExcludedLineRanges(
         std::string_view sourceCode,
-        const ankerl::unordered_dense::set<std::string> &definedWords = {});
+        const ankerl::unordered_dense::set<std::string> &definedWords = {},
+        const PreprocessorFeatures &features = {});
 
     /**
      * @brief True when a line falls inside any excluded range.

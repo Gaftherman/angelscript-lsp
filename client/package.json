@@ -331,6 +331,36 @@
           "default": false,
           "markdownDescription": "Hint on `1 / 2`, which truncates to 0 under the engine's default. Off by default because a codebase that means integer division writes exactly this."
         },
+        "angelscript.preprocessor.elseSupport": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Set this if the host patched its copy of `scriptbuilder.cpp` to understand `#else`.\n\nThe add-on shipped with the SDK does not. Measured against the real compiler: in `#if FOO / a / #else / b / #endif` with `FOO` undefined, the `#else` branch does **not** become the taken one — it is blanked along with the rest of the block, because `#else` is not a directive and the exclusion runs to the `#endif` regardless. With this off, that is exactly what this server assumes."
+        },
+        "angelscript.preprocessor.elifSupport": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Set this if the host patched its copy of `scriptbuilder.cpp` to understand `#elif`.\n\nNot in the stock add-on. With it on, the first branch whose word is defined is the live one and every other branch is excluded."
+        },
+        "angelscript.preprocessor.ifdefSupport": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Set this if the host patched its copy of `scriptbuilder.cpp` to understand `#ifdef` and `#ifndef`.\n\nNot in the stock add-on, where either one is left in the source and the compiler reports `Unexpected token`."
+        },
+        "angelscript.preprocessor.defineInScripts": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Set this if the host patched its copy of `scriptbuilder.cpp` so `#define WORD` in a script defines a word.\n\nNot in the stock add-on, where `DefineWord` is a C++ call the host makes and a `#define` written in a script is a syntax error. To declare the words the host itself defines, use `#angelscript.define` or a `#define` line in a predefined stub, which are not affected by this setting."
+        },
+        "angelscript.preprocessor.pragmaMode": {
+          "type": "string",
+          "enum": [
+            "accept",
+            "hint",
+            "error"
+          ],
+          "default": "accept",
+          "markdownDescription": "What to report for a `#pragma`.\n\nThe stock add-on rejects every one: with no pragma callback registered it substitutes a failure for the callback's answer, writes `Invalid #pragma directive` and fails the whole section. The default here is nevertheless `accept`, because a host that registers a callback is the common case and reporting an error by default would put a squiggle on a pragma that builds fine. Choose `error` for a host that really registered nothing, or `hint` if you are not sure."
+        },
         "angelscript.engine.allowUnsafeReferences": {
           "type": "boolean",
           "default": false,

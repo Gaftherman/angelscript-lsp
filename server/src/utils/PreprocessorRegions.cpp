@@ -12,11 +12,18 @@ namespace angel_lsp::utils
             return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
         }
 
-        /** @brief One `#if <word>` that has been opened and is waiting for its `#endif`. */
+        /**
+         * @brief One `#if <word>` that has been opened and is waiting for its `#endif`.
+         *
+         * With no host extensions enabled there is exactly one branch, so `branchStart` is the
+         * `#if` line and `takenAlready` never changes - which is what makes the stock path fall out
+         * of the same code rather than needing its own.
+         */
         struct OpenDirective
         {
-            uint32_t line = 0;
-            bool excluded = false;  ///< True when the word was not defined, so the body is dropped.
+            uint32_t branchStart = 0;   ///< Line of the directive that opened the current branch.
+            bool excluded = false;      ///< True when the current branch is the dropped one.
+            bool takenAlready = false;  ///< True once some branch of this `#if` has been live.
         };
 
         /**
@@ -155,7 +162,8 @@ namespace angel_lsp::utils
 
     std::vector<ExcludedLineRange> FindExcludedLineRanges(
         std::string_view sourceCode,
-        const ankerl::unordered_dense::set<std::string> &definedWords)
+        const ankerl::unordered_dense::set<std::string> &definedWords,
+        const PreprocessorFeatures &features)
     {
         std::vector<ExcludedLineRange> ranges;
 
@@ -166,12 +174,41 @@ namespace angel_lsp::utils
         // `#endif` of the outer directive is the one that closes it.
         int excludedNesting = 0;
 
+        // Only ever written when features.defineInScripts is on. A `#define` in a script is a
+        // syntax error to the stock add-on, so without that switch this stays a view of the
+        // caller's set and a `#define` line means nothing here.
+        ankerl::unordered_dense::set<std::string> localWords;
+        bool usingLocalWords = false;
+
+        const auto isDefined = [&](std::string_view word) {
+            const std::string key(word);
+            return usingLocalWords ? localWords.contains(key) : definedWords.contains(key);
+        };
+
+        // Closes the branch that was open and opens the next one at the same line. `#endif` uses it
+        // too, with nothing following, which is why the dead-range bookkeeping lives in one place.
+        const auto closeBranch = [&](OpenDirective &open, uint32_t boundaryLine) {
+            if (open.excluded)
+            {
+                // Inclusive of both directive lines: CScriptBuilder blanks those too.
+                ranges.push_back(ExcludedLineRange{ open.branchStart, boundaryLine });
+            }
+            else
+            {
+                open.takenAlready = true;
+            }
+        };
+
         const uint32_t lastLine = ForEachDirective(
             sourceCode,
             [&](uint32_t directiveLine, std::string_view directive, std::string_view word) {
                 const bool atExcludedTop = !stack.empty() && stack.back().excluded;
 
-                if (directive == "if")
+                const bool opensRegion =
+                    directive == "if" ||
+                    (features.ifdefSupport && (directive == "ifdef" || directive == "ifndef"));
+
+                if (opensRegion)
                 {
                     if (atExcludedTop)
                     {
@@ -185,11 +222,44 @@ namespace angel_lsp::utils
                     }
                     else
                     {
+                        const bool defined = isDefined(word);
+                        const bool live = directive == "ifndef" ? !defined : defined;
+
                         OpenDirective open;
-                        open.line = directiveLine;
-                        open.excluded = !definedWords.contains(std::string(word));
+                        open.branchStart = directiveLine;
+                        open.excluded = !live;
                         stack.push_back(open);
                     }
+                }
+                else if (features.defineInScripts && directive == "define" && !word.empty() &&
+                         !atExcludedTop && excludedNesting == 0)
+                {
+                    // Copied lazily, and only once: most documents have no `#define` at all, and
+                    // the ones that do should not pay for a set copy per directive.
+                    if (!usingLocalWords)
+                    {
+                        localWords = definedWords;
+                        usingLocalWords = true;
+                    }
+                    localWords.insert(std::string(word));
+                }
+                else if ((features.elseSupport && directive == "else") ||
+                         (features.elifSupport && directive == "elif"))
+                {
+                    // A branch boundary inside a nested dead region is part of that region, not of
+                    // the directive this one belongs to.
+                    if (excludedNesting > 0 || stack.empty())
+                        return;
+
+                    OpenDirective &open = stack.back();
+                    closeBranch(open, directiveLine);
+
+                    // `#else` is unconditional; `#elif` still has to be true. Either way a branch
+                    // after one that was already taken is dead - that is the whole of the rule.
+                    const bool conditionHolds = directive == "else" || (!word.empty() && isDefined(word));
+
+                    open.branchStart = directiveLine;
+                    open.excluded = open.takenAlready || !conditionHolds;
                 }
                 else if (directive == "endif")
                 {
@@ -199,14 +269,9 @@ namespace angel_lsp::utils
                     }
                     else if (!stack.empty())
                     {
-                        const OpenDirective open = stack.back();
+                        OpenDirective open = stack.back();
                         stack.pop_back();
-
-                        if (open.excluded)
-                        {
-                            // Inclusive of both directive lines: CScriptBuilder blanks those too.
-                            ranges.push_back(ExcludedLineRange{ open.line, directiveLine });
-                        }
+                        closeBranch(open, directiveLine);
                     }
                 }
             });
@@ -215,7 +280,7 @@ namespace angel_lsp::utils
         for (const auto &open : stack)
         {
             if (open.excluded)
-                ranges.push_back(ExcludedLineRange{ open.line, lastLine });
+                ranges.push_back(ExcludedLineRange{ open.branchStart, lastLine });
         }
 
         return ranges;

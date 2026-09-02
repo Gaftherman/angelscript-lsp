@@ -42,6 +42,16 @@ for (const key of declared) {
         continue;
     }
 
+    // `preprocessor.X` booleans go through PREPROCESSOR_FEATURES the same way; pragmaMode is an
+    // enum with its own line and falls through to the general case below.
+    if (name.startsWith('preprocessor.')) {
+        const feature = name.slice('preprocessor.'.length);
+        if (!source.includes(`'${feature}'`) && !source.includes(`preprocessor.${feature}`)) {
+            problems.push(`${key} is never read by buildServerArgs`);
+        }
+        continue;
+    }
+
     // Everything else is read by its own `config.get(...)` call.
     if (!source.includes(`'${name}'`)) {
         problems.push(`${key} is never read by buildServerArgs`);

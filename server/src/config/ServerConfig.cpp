@@ -67,6 +67,39 @@ namespace angel_lsp::config
          *        one. Most are, and read true/false; asEP_PROPERTY_ACCESSOR_MODE is an integer, and
          *        flattening it to a bool would have made this option lie about the engine's own
          *        vocabulary in exactly the place that vocabulary is the point. */
+        /**
+         * @brief Applies one `--preprocessor-feature=<name>=<value>` pair.
+         *
+         * Deliberately not folded into ApplyEngineProperty: an engine property is an asEP_* value
+         * the SDK interprets, while these describe a source file the host may have patched. Sharing
+         * the name space would suggest the SDK knows about `#else`, and it does not.
+         *
+         * @return False for an unknown name or an unparsable value, so a typo is not silently on.
+         */
+        bool ApplyPreprocessorFeature(ServerConfig &config, std::string_view name, std::string_view raw)
+        {
+            if (name == "pragmaMode")
+            {
+                if (raw == "accept") { config.pragmaMode = ServerConfig::PragmaMode::Accept; return true; }
+                if (raw == "hint")   { config.pragmaMode = ServerConfig::PragmaMode::Hint;   return true; }
+                if (raw == "error")  { config.pragmaMode = ServerConfig::PragmaMode::Error;  return true; }
+                return false;
+            }
+
+            if (!IsBoolLiteral(raw))
+            {
+                return false;
+            }
+            const bool value = ParseBoolValue(raw, true);
+
+            if (name == "elseSupport")     { config.preprocessor.elseSupport = value;     return true; }
+            if (name == "elifSupport")     { config.preprocessor.elifSupport = value;     return true; }
+            if (name == "ifdefSupport")    { config.preprocessor.ifdefSupport = value;    return true; }
+            if (name == "defineInScripts") { config.preprocessor.defineInScripts = value; return true; }
+
+            return false;
+        }
+
         bool ApplyEngineProperty(EngineProperties &engine, std::string_view name, std::string_view raw)
         {
             if (name == "propertyAccessorMode")
@@ -257,6 +290,12 @@ namespace angel_lsp::config
                   << "                                          (repeatable). A list factory is registered in C++\n"
                   << "                                          and no predefined stub can express it, so a host\n"
                   << "                                          that registers its own has to say so here.\n"
+                  << "  --preprocessor-feature=<name>=<value>   Preprocessor extensions the host added to its own copy\n"
+                  << "                                          of CScriptBuilder. None exist in the stock add-on, so\n"
+                  << "                                          all default off and the defaults match it exactly:\n"
+                  << "                                            elseSupport, elifSupport, ifdefSupport,\n"
+                  << "                                            defineInScripts   (booleans)\n"
+                  << "                                            pragmaMode=accept|hint|error (default: accept)\n"
                   << "  --diagnostic-severity=<code>=<severity> Override one diagnostic's severity: error|warning|information|hint (repeatable)\n"
                   << "  --no-report-unknown-types               Stop reporting a parameter or return type that resolves\n"
                   << "                                          to nothing. On by default: an unreported one surfaces as\n"
@@ -721,6 +760,23 @@ namespace angel_lsp::config
                     if (!name.empty())
                     {
                         ApplyEngineProperty(config.engine, name, raw);
+                    }
+                }
+            }
+            else if (key == "--preprocessor-feature" || key == "--preproc")
+            {
+                // Same "<name>=<value>" shape as --engine-property, and for the same reason: the
+                // outer split consumed only the first '=', so the pair arrives intact.
+                std::string_view val;
+                if (getStringValue(val))
+                {
+                    const size_t sep = val.find('=');
+                    const std::string_view name = val.substr(0, sep == std::string_view::npos ? val.size() : sep);
+                    const std::string_view raw = sep == std::string_view::npos
+                                                 ? std::string_view("true") : val.substr(sep + 1);
+                    if (!name.empty())
+                    {
+                        ApplyPreprocessorFeature(config, name, raw);
                     }
                 }
             }

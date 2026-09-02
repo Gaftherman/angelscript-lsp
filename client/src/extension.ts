@@ -205,6 +205,24 @@ const ENGINE_PROPERTIES: ReadonlyArray<string> = [
 ];
 
 /**
+ * @brief `angelscript.preprocessor.*` switches, in the order the server's --preprocessor-feature
+ *        expects.
+ *
+ * Not engine properties: an engine property is an asEP_* value the SDK interprets, while these
+ * describe scriptbuilder.cpp, which is a sample add-on hosts routinely copy into their own tree
+ * and patch. `#else` is the first thing they add, and it does not exist in the stock file - a
+ * `#else` there is swallowed by the dead block it sits in, measured against the real compiler.
+ *
+ * All default off, so a stock host pays nothing on the command line and sees no change at all.
+ */
+const PREPROCESSOR_FEATURES: ReadonlyArray<string> = [
+    'elseSupport',
+    'elifSupport',
+    'ifdefSupport',
+    'defineInScripts'
+];
+
+/**
  * @brief Expands a possibly relative path into the absolute forms to pass to the server.
  *
  * The server's working directory is not the project root, so a relative entry only means anything
@@ -300,6 +318,19 @@ export function buildServerArgs(): string[] {
         if (config.get<boolean>(`engine.${property}`, false) === true) {
             args.push(`--engine-property=${property}=true`);
         }
+    }
+
+    for (const feature of PREPROCESSOR_FEATURES) {
+        if (config.get<boolean>(`preprocessor.${feature}`, false) === true) {
+            args.push(`--preprocessor-feature=${feature}=true`);
+        }
+    }
+
+    // Three-valued rather than a boolean, so it does not ride the loop above. Accept is the
+    // default and costs nothing to leave alone.
+    const pragmaMode = config.get<string>('preprocessor.pragmaMode', 'accept');
+    if (pragmaMode !== 'accept') {
+        args.push(`--preprocessor-feature=pragmaMode=${pragmaMode}`);
     }
 
     // Opt-in diagnostics. Not a feature switch and not an engine option: a rule that is right for

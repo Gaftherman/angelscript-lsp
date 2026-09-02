@@ -1,5 +1,7 @@
 #pragma once
 
+#include "utils/PreprocessorRegions.h"
+
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -380,6 +382,37 @@ namespace angel_lsp::config
         Info info;
         TypeConfig types;
         EngineProperties engine;
+
+        /**
+         * @brief Preprocessor extensions the host added to its copy of CScriptBuilder.
+         *
+         * Separate from EngineProperties on purpose: those are asEP_* values passed to
+         * SetEngineProperty and the SDK decides what they mean, while these describe a source file
+         * the host is free to have patched. Every one is off by default and the defaults reproduce
+         * the stock add-on exactly - see utils/PreprocessorRegions.h for what each measured.
+         */
+        angel_lsp::utils::PreprocessorFeatures preprocessor;
+
+        /**
+         * @brief What to say about a `#pragma`, which the stock add-on rejects outright.
+         *
+         * Measured: with no pragma callback registered, scriptbuilder.cpp:533 substitutes -1 for
+         * the callback result, writes "Invalid #pragma directive" and fails the whole section. So
+         * on a stock host every `#pragma` is a build failure.
+         *
+         * The default here is Accept anyway, and the reason is the zero-false-positives rule rather
+         * than fidelity: a host that registers a callback is the common case, and defaulting to
+         * Error would put a red squiggle on a pragma that builds fine for most of the people who
+         * write one. Error is available for a host that really registered nothing.
+         */
+        enum class PragmaMode
+        {
+            Accept,  ///< Say nothing. The default.
+            Hint,    ///< A hint, for a host that is not sure it registered a callback.
+            Error    ///< The stock add-on's own answer: no callback, so no pragma compiles.
+        };
+
+        PragmaMode pragmaMode = PragmaMode::Accept;
         DiagnosticsConfig diagnostics;
         FormatConfig format;
         std::vector<std::string> searchDirectories;
