@@ -2,6 +2,7 @@
 
 #include "analysis/SymbolTable.h"
 #include "analysis/ScopeTree.h"
+#include "utils/PreprocessorRegions.h"
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <tree_sitter/api.h>
@@ -49,6 +50,15 @@ namespace angel_lsp::features
          * request field rather than post-processing.
          */
         std::optional<lsp::Range> range;
+
+        /**
+         * @brief Line ranges removed by the preprocessor (#if blocks whose condition is false).
+         *
+         * The compiler never sees code inside these lines, and the server already silences every
+         * diagnostic there. Painting them as comments is the other half of that same truth: the
+         * reader can tell at a glance that the compiler will never visit this code either.
+         */
+        std::vector<angel_lsp::utils::ExcludedLineRange> excludedLineRanges;
     };
 
     /**

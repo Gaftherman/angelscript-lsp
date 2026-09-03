@@ -571,3 +571,27 @@ TEST_CASE("Preprocessor - A well-formed block says nothing either way")
     CHECK(ScanPreprocessor(source, defined).unsupported.empty());
     CHECK(ScanPreprocessor(source, {}).unsupported.empty());
 }
+
+TEST_CASE("Preprocessor - The smoke file reports each directive mistake exactly once")
+{
+    // From a real report: the unsupported-directive warning appeared twice. The `#endif` misreport
+    // fixed alongside this is the likeliest cause - a malformed `#if` produced one complaint about
+    // the `#if`'s own line and a second about the `#endif` it had orphaned - so this pins the count
+    // rather than leaving it to memory.
+    const std::string bothShapes =
+        "#if SERVER_BUILD\n"
+        "void OnServerStart() { }\n"
+        "#endif\n"
+        "#if\n"
+        "int stray = 1;\n"
+        "#endif\n";
+
+    ankerl::unordered_dense::set<std::string> defined;
+    defined.insert("SERVER_BUILD");
+
+    const auto scan = ScanPreprocessor(bothShapes, defined);
+
+    REQUIRE(scan.unsupported.size() == 1);
+    CHECK(scan.unsupported[0].name == "if");
+    CHECK(scan.unsupported[0].line == 3);
+}

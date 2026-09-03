@@ -6,6 +6,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <array>
 #include <string>
 #include <utility>
 #include <vector>
@@ -421,4 +422,126 @@ TEST_CASE("SemanticTokensHandler - Template brackets get their own token type")
 
     // And the genuine shift on the next line is still an operator.
     CHECK(operatorTokensOnShift > 0);
+}
+
+// =====================================================================================
+// Dead preprocessor blocks are painted as comments.
+//
+// The server already stays silent inside an excluded `#if`, which is half the truth: the compiler
+// never sees that code. The other half is that it looked exactly like live code, so a reader had no
+// way to tell the difference and would wonder why nothing there was ever reported.
+// =====================================================================================
+
+namespace
+{
+    /** @brief The (line, startChar, length, tokenType) of every token, decoded from the payload. */
+    std::vector<std::array<uint32_t, 4>> DecodeTokens(const std::vector<lsp::uint> &data)
+    {
+        std::vector<std::array<uint32_t, 4>> out;
+        uint32_t line = 0;
+        uint32_t character = 0;
+
+        for (size_t i = 0; i + 4 < data.size(); i += 5)
+        {
+            const uint32_t deltaLine = data[i];
+            const uint32_t deltaStart = data[i + 1];
+
+            line += deltaLine;
+            character = (deltaLine == 0) ? character + deltaStart : deltaStart;
+            out.push_back({ line, character, data[i + 2], data[i + 3] });
+        }
+        return out;
+    }
+
+    /** @brief Index of "comment" in the legend, found by name so a reordering cannot silently pass. */
+    uint32_t CommentTokenType()
+    {
+        const auto &types = GetSemanticTokensLegend().tokenTypes;
+        for (uint32_t i = 0; i < types.size(); ++i)
+        {
+            if (types[i] == "comment")
+                return i;
+        }
+        return UINT32_MAX;
+    }
+}
+
+TEST_CASE("SemanticTokensHandler - An excluded #if block is emitted as comment tokens")
+{
+    const std::string code =
+        "int live = 1;\n"        // 0
+        "#if NOT_DEFINED\n"      // 1
+        "int dead = 2;\n"        // 2
+        "#endif\n"               // 3
+        "int alsoLive = 3;\n";   // 4
+
+    AngelScriptParser parser;
+    TSTree *tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolTable table;
+    SemanticTokensRequest req{ "file:///dead.as", code, tree, table };
+    req.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(code);
+
+    // Precondition: the block really is excluded, or the rest of this proves nothing.
+    REQUIRE_FALSE(req.excludedLineRanges.empty());
+
+    const auto tokens = DecodeTokens(GetSemanticTokens(req).data);
+    const uint32_t comment = CommentTokenType();
+    REQUIRE(comment != UINT32_MAX);
+
+    const auto onLine = [&tokens](uint32_t line)
+    {
+        std::vector<std::array<uint32_t, 4>> found;
+        for (const auto &t : tokens)
+        {
+            if (t[0] == line)
+                found.push_back(t);
+        }
+        return found;
+    };
+
+    // Every excluded line - the directives included, because CScriptBuilder blanks those too - is
+    // one comment token spanning the whole line.
+    for (const uint32_t dead : { 1u, 2u, 3u })
+    {
+        CAPTURE(dead);
+        const auto found = onLine(dead);
+        REQUIRE(found.size() == 1);
+        CHECK(found[0][1] == 0);                  // starts at the beginning of the line
+        CHECK(found[0][3] == comment);
+    }
+
+    // And the live lines are untouched: whatever they had, none of it became a comment.
+    for (const uint32_t alive : { 0u, 4u })
+    {
+        CAPTURE(alive);
+        const auto found = onLine(alive);
+        CHECK_FALSE(found.empty());
+        for (const auto &t : found)
+            CHECK(t[3] != comment);
+    }
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("SemanticTokensHandler - With nothing excluded the payload is unchanged")
+{
+    // The guard on the feature: a document with no dead block must not gain a single token.
+    const std::string code = "int a = 1;\nvoid main() { }\n";
+
+    AngelScriptParser parser;
+    TSTree *tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolTable table;
+
+    SemanticTokensRequest without{ "file:///plain.as", code, tree, table };
+    SemanticTokensRequest with{ "file:///plain.as", code, tree, table };
+    with.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(code);
+
+    CHECK(with.excludedLineRanges.empty());
+    CHECK(GetSemanticTokens(without).data == GetSemanticTokens(with).data);
+
+    ts_tree_delete(tree);
 }

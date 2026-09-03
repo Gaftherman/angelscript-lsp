@@ -488,6 +488,42 @@ namespace angel_lsp::features
 
         ts_query_cursor_delete(cursor);
 
+        if (!request.excludedLineRanges.empty())
+        {
+            // Drop any token lying on an excluded line before adding the full-line comment tokens.
+            // If left in place, surviving syntax tokens would compete with the comment token at
+            // the same position, and the outcome would depend on sort and deduplication order.
+            std::erase_if(rawTokens, [&request](const RawToken &tok)
+            {
+                return angel_lsp::utils::IsLineExcluded(request.excludedLineRanges, tok.line);
+            });
+
+            // Emit a full-line comment token for every excluded line so the editor dims dead
+            // preprocessor blocks. The `#if` and `#endif` lines themselves are part of the
+            // excluded range (CScriptBuilder strips them too) and are painted grey as well.
+            for (const auto &range : request.excludedLineRanges)
+            {
+                for (uint32_t line = range.startLine; line <= range.endLine; ++line)
+                {
+                    if (line < sourceLines.size())
+                    {
+                        const uint32_t lineLength = static_cast<uint32_t>(sourceLines[line].size());
+                        if (lineLength > 0)
+                        {
+                            rawTokens.push_back(RawToken{
+                                line,
+                                0,
+                                lineLength,
+                                Type_Comment,
+                                0,
+                                100
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         if (rawTokens.empty())
         {
             return lsp::SemanticTokens{};

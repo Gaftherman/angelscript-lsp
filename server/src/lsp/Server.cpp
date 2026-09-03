@@ -1261,6 +1261,7 @@ namespace angel_lsp
         TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
         features::SemanticTokensRequest request{ uriStr, text, tree, m_symbolTable, m_scopeIndex.GetRoot(uriStr) };
+        request.excludedLineRanges = ExcludedLineRanges(text);
         lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
         codec::EncodeSemanticTokens(text, m_positionEncoding, tokens.data);
 
@@ -3647,6 +3648,7 @@ namespace angel_lsp
                     return lsp::Null{};
 
                 features::SemanticTokensRequest sr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex.GetRoot(doc->uri) };
+                sr.excludedLineRanges = ExcludedLineRanges(*doc->text);
                 // Decoded on the way in for the same reason the payload is encoded on the way out:
                 // the handler works in Tree-sitter byte columns, the client speaks the negotiated
                 // encoding, and a non-ASCII character earlier in the line makes them disagree.
