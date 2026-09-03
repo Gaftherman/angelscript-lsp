@@ -104,10 +104,68 @@ jobs:
             server/build/angel_lsp
           if-no-files-found: error
 
+  # The only quality gate this workflow originally had was ctest, but the parity audit against
+  # the real AngelScript compiler is marked doctest::skip(true) so that normal test runs do not
+  # execute it. Without this gate, a release could be published with broken language parity
+  # undetected. This replicates the parity audit performed by ci.yml on every push, ensuring the
+  # check gates the release at the moment when it matters most.
+  parity-gate:
+    name: Parity gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Cheap, and it catches a class of drift nothing else does: a diagnostic message left behind
+      # by a rule that no longer fires, or a rule emitting a code the message table has no entry for.
+      - name: Audit diagnostic codes
+        working-directory: server
+        run: python scripts/check-diagnostic-codes.py
+
+      # One #include is all it takes to put the whole protocol library back into every translation
+      # unit in analysis/, and nothing else would say so: the build stays green and the coupling is
+      # invisible until someone reads the transitive include tree by hand.
+      - name: Audit layer includes
+        working-directory: server
+        run: python scripts/check-layer-includes.py
+
+      - name: Configure CMake with the oracle
+        run: cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release -DANGELLSP_BUILD_ORACLE=ON
+
+      - name: Build the oracle and the test suite
+        run: cmake --build server/build --config Release --target angelscript_oracle angel_lsp_tests -j 4
+
+      - name: Run the parity audit
+        working-directory: server
+        env:
+          # The oracle and the stub are a pair - sdk-addons.as.predefined describes exactly what
+          # tools/oracle/main.cpp registers. Running against any other stub reports the mismatch
+          # rather than anything about the analyzer.
+          ASHARNESS_EXE: ${{ github.workspace }}/server/build/angelscript_oracle
+          PARITY_PREDEFINED: ${{ github.workspace }}/server/tests/fixtures/sdk-addons.as.predefined
+          PARITY_SCRIPT_DIR: ${{ github.workspace }}/server/tests/parity
+        # The audit skips itself when it cannot find a corpus, and for a long while it did exactly
+        # that here - silently, with this job green. Requiring its own summary line in the output is
+        # what turns a skip back into a failure, and it costs one grep.
+        run: |
+          set -o pipefail
+          ./build/angel_lsp_tests --no-skip --test-case="*Parity*" 2>&1 | tee parity.log
+          if ! grep -q "AngelScript parity audit (" parity.log; then
+            echo "::error::The parity audit skipped itself - no summary line in its output."
+            exit 1
+          fi
+          if grep -q "AngelScript parity audit (0 scripts)" parity.log; then
+            echo "::error::The parity audit ran but found no scripts to audit."
+            exit 1
+          fi
+
   publish:
     name: Package and publish release
     runs-on: ubuntu-latest
-    needs: build-server
+    needs: [build-server, parity-gate]
 
     steps:
       - name: Checkout Repository

@@ -29,6 +29,44 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
 - **Workspace Predefined Loader (`as.predefined`)**: Native Tree-Sitter parsing of host application declarations (`as.predefined` or `.as` files).
 - **Diagnostic Localization (`i18n`)**: Multi-language diagnostic error reporting supporting English (`en-US`) and Spanish (`es-ES`).
 - **Protected JSON-RPC Stream**: Internal server logging routes strictly to `stderr` (`spdlog::stderr_color_mt`) and `window/logMessage` notifications, ensuring `stdout` is 100% clean for VS Code JSON-RPC streams.
+- **Configurable Preprocessor**: `#if`/`#endif` matching `CScriptBuilder` exactly, with `#else`, `#elif`, `#ifdef` and in-script `#define` available as opt-in switches for hosts that patched the add-on. Words come from `--define`, from the `angelscript.define` setting, or from a `#define` line in a predefined stub.
+- **Active Predefined Stub**: One active predefined stub per workspace, chosen from a picker, with every other discovered stub ignored. The engine profile still loads underneath.
+- **Engine Profiles**: standard, svencoop, urho3d, openxray, ootp, plus automatic detection.
+
+---
+
+## Language Surface Verified Against the Compiler
+
+Every construct listed below was measured directly against the reference AngelScript compiler through `server/tools/oracle`, and each has a dedicated verification script in `server/tests/parity`. Rather than an aspirational promise, this list represents an empirical measurement that a test breaks if it ceases to hold true.
+
+### Numeric literals
+- Base prefixes: `0b1010`, `0o755`, `0d1024`, `0xFF00AA`
+- Digit separators in every base: `1'000'000`, `0xDEAD'BEEF`, `0b1100'0011`*
+- Leading-dot floats: `.30f`, `.5`, `.001`
+- Scientific notation: `1.5e-3f`, `.2e+5`
+
+### Operators
+- Exponentiation `**` and `**=`
+- Arithmetic right shift `>>>` and `>>>=`
+- Logical xor, both spellings: `^^` and `xor`
+- Keyword operators `and`, `or`, `not`
+- Bitwise xor `^` and `^=`
+- Handle identity `is` and `!is`
+- The ternary `? :`
+
+### Declarations and expressions
+- Virtual properties in block form: `int Health { get const {...} set {...} }`
+- Virtual properties through the `property` keyword: `int get_Health() const property`
+- Lambdas whose parameter types are deduced from the target funcdef
+- C++-style direct construction: `const Color red(1.0f, 0.0f, 0.0f);`
+- Unscoped enum values
+
+### Lexical edge cases
+- `!isFlag` tokenises as `!` followed by an identifier, not as `!is` followed by `Flag`
+- `property` and `super` used as ordinary identifiers, because they are contextual keywords
+- A UTF-8 byte order mark at the start of a file
+
+\* *Digit separators require the updated grammar (the LSP pins `tree-sitter-angelscript` by commit); until that pin is bumped, they are recorded as documented gaps in the parity audit.*
 
 ---
 
@@ -247,9 +285,13 @@ The `angel_lsp` executable accepts command-line arguments to enable or disable i
 | `--enable-predefined-loader[=true\|false]` | Enable or disable background predefined symbols loader. | `true` |
 | `--disable-predefined-loader` | Explicitly disable predefined symbols loader. | - |
 | `--search-dir=<path>` | Add directory search path for `#include` resolution. | - |
+| `--define=<WORD>` | Treat WORD as defined for `#if`. Mirrors `CScriptBuilder::DefineWord`. Repeatable. | - |
+| `--preprocessor-feature=<name>=<value>` | Preprocessor extensions the host added to its own copy of CScriptBuilder. Names: `elseSupport`, `elifSupport`, `ifdefSupport`, `defineInScripts` (booleans) and `pragmaMode` (`accept`, `hint`, `error`). All off by default. Repeatable. | - |
 | `--predefined-file=<path>` | Load a predefined stub by path, even from outside the workspace. Repeatable. | - |
+| `--predefined-active=<path>` | Load only this predefined stub during the workspace scan. Empty loads every stub found, which is the historical behaviour. | - |
 | `--diagnostic-severity=<code>=<severity>` | Override one diagnostic's severity: `error`, `warning`, `information` or `hint`. Repeatable. | - |
-| `--engine-property=<name>=<bool>` | Describe how the host built its engine — see below. Repeatable. | - |
+| `--engine-property=<name>=<value>` | Describe how the host built its engine — see below. Repeatable. | - |
+| `--report-accessor-disabled` | Hint where a script property accessor is used but the host disabled those (`propertyAccessorMode` 0 or 1). | off |
 | `--locale=<string>` | Set diagnostic language/locale. Any BCP 47 spelling works — only the primary subtag selects the table, so `es`, `es-ES` and `es-419` are equivalent. Unknown languages fall back to English. | `en` |
 | `--file-ext=<string>` | Set AngelScript script file extension. | `.as` |
 | `--predefined-ext=<string>` | Set predefined host API symbols file extension. | `.as.predefined` |
@@ -334,13 +376,14 @@ name is inert rather than an error.
 | `allowUnsafeReferences` | `false` | With it off, `&` on a parameter means `&inout` and only an object type that supports handles may use it, so `void f(int &x)` is reported. With it on, it is not. |
 | `privatePropAsProtected` | `false` | A `private` member follows the `protected` rule, so a derived class may reach it. |
 | `disallowGlobalVars` | `false` | Every global variable declaration becomes a compile error, and is reported as one. |
+| `propertyAccessorMode` | `3` (server: `2`) | Decides when `get_`/`set_` methods become virtual properties across four values: `0` (property accessors disabled outright), `1` (only accessors the application registered in C++; script ones are skipped), `2` (any `get_`/`set_` method is a property, with or without the `property` keyword), and `3` (only those carrying the `property` keyword; the engine's own default). This server uses `2` by default on purpose, not `3`: under `3` it would invent a diagnostic for every workspace whose host uses `2`, and falling short loses an error while over-reporting invents one. |
 
 ```bash
 # A host that built its engine with unsafe references and isolated script state
 angel_lsp --engine-property=allowUnsafeReferences=true --engine-property=disallowGlobalVars=true
 ```
 
-In VS Code the same three live under `angelscript.engine.*`.
+In VS Code these live under `angelscript.engine.*`.
 
 ### Example Usage
 
