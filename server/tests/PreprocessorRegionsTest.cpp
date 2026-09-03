@@ -533,3 +533,41 @@ TEST_CASE("Preprocessor - A directive written inside a comment or a string is no
     CHECK(UnsupportedNames("/*\n#define FOO\n*/\n").empty());
     CHECK(UnsupportedNames("string s = \"#define FOO\";\n").empty());
 }
+
+TEST_CASE("Preprocessor - A malformed #if is reported at the #if, not at its orphaned #endif")
+{
+    // `#if` needs an identifier after it; CScriptBuilder overwrites nothing without one, so the
+    // `#if` reaches the compiler and is rejected. This used to say nothing about the `#if` and
+    // complain about the `#endif` two lines below instead - a real consequence, but the wrong line
+    // and the wrong directive to put in front of a reader.
+    const auto scan = ScanPreprocessor("#if\nint x = 1;\n#endif\n");
+
+    REQUIRE(scan.unsupported.size() == 1);
+    CHECK(scan.unsupported[0].name == "if");
+    CHECK(scan.unsupported[0].line == 0);
+
+    // And it excludes nothing: a malformed directive must not take the rest of the file with it.
+    CHECK(scan.excluded.empty());
+}
+
+TEST_CASE("Preprocessor - A genuinely orphaned #endif is still reported")
+{
+    // The suppression above is scoped to the `#endif` that a malformed `#if` failed to open. An
+    // `#endif` with nothing before it at all is a mistake of its own and keeps its diagnostic.
+    const auto scan = ScanPreprocessor("#endif\nvoid main() { }\n");
+
+    REQUIRE(scan.unsupported.size() == 1);
+    CHECK(scan.unsupported[0].name == "endif");
+    CHECK(scan.unsupported[0].line == 0);
+}
+
+TEST_CASE("Preprocessor - A well-formed block says nothing either way")
+{
+    const std::string source = "#if SERVER_BUILD\nint x = 1;\n#endif\n";
+
+    ankerl::unordered_dense::set<std::string> defined;
+    defined.insert("SERVER_BUILD");
+
+    CHECK(ScanPreprocessor(source, defined).unsupported.empty());
+    CHECK(ScanPreprocessor(source, {}).unsupported.empty());
+}

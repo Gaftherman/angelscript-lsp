@@ -199,6 +199,10 @@ namespace angel_lsp::utils
         ankerl::unordered_dense::set<std::string> localWords;
         bool usingLocalWords = false;
 
+        // True between a malformed `#if` and the `#endif` it failed to open, so the second is not
+        // reported as a mistake of its own.
+        bool sawMalformedIf = false;
+
         const auto isDefined = [&](std::string_view word) {
             const std::string key(word);
             return usingLocalWords ? localWords.contains(key) : definedWords.contains(key);
@@ -251,8 +255,17 @@ namespace angel_lsp::utils
                     }
                     else if (word.empty())
                     {
-                        // `#if` with no identifier is not a directive CScriptBuilder recognises, so
-                        // it excludes nothing and does not open a region either.
+                        // `#if` with no identifier is not a directive CScriptBuilder recognises: it
+                        // needs `asTC_IDENTIFIER` after the keyword, and without one it overwrites
+                        // nothing, so the `#if` reaches the compiler and is rejected.
+                        //
+                        // Reported here, on the `#if` itself. It used to be silent, and the reader
+                        // was told about the `#endif` two lines below instead - which is a real
+                        // consequence, that `#endif` really is orphaned now, but it points at the
+                        // wrong line and names the wrong directive. The malformed `#if` is the
+                        // defect; the loose `#endif` is a symptom of it.
+                        reportUnsupported();
+                        sawMalformedIf = true;
                     }
                     else
                     {
@@ -327,6 +340,13 @@ namespace angel_lsp::utils
                         OpenDirective open = stack.back();
                         stack.pop_back();
                         closeBranch(open, directiveLine);
+                    }
+                    else if (sawMalformedIf)
+                    {
+                        // Orphaned only because a malformed `#if` above never opened anything. That
+                        // has already been reported at the line the reader has to fix; saying it
+                        // again here would be two complaints about one mistake.
+                        sawMalformedIf = false;
                     }
                     else
                     {
