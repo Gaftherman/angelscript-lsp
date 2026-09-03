@@ -48,6 +48,11 @@ server/build/
 # times faster here than in Debug - eighty seconds against twenty minutes - which is the
 # difference between running them and not.
 server/build-release/
+# One per architecture, written by the Linux containers in docker/. Separate from the trees above
+# because the same checkout is mounted from Windows: a Linux build writing into build-release would
+# leave MSVC objects and GCC objects in one directory and corrupt both.
+server/build-docker-x64/
+server/build-docker-x86/
 server/.cache/
 client/node_modules/
 client/out/

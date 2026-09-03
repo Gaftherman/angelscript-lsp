@@ -1112,9 +1112,16 @@ TEST_CASE("Server - Two spellings of one URI are one document")
 
     INFO("plain:   " << plain);
     INFO("encoded: " << encoded);
-    // The test is only worth anything if the two spellings really do differ. On a path with no
-    // drive letter they would not, and this would pass without proving a thing.
-    REQUIRE(plain != encoded);
+
+    // The two spellings only differ where there is a drive letter to encode. Elsewhere they are the
+    // same string and there is nothing to test - so this skips rather than asserting, which is what
+    // it used to do: a hard REQUIRE here failed the suite on Linux for a case that cannot arise
+    // there. Found by running the suite in a container, which is the whole point of having one.
+    if (plain == encoded)
+    {
+        MESSAGE("No drive letter in this path, so the two spellings cannot differ - skipped.");
+        return;
+    }
 
     // Opened one way and asked about the other. Keyed raw, the request would find no document and
     // the answer would be empty.
@@ -1144,7 +1151,15 @@ TEST_CASE("Server - Diagnostics come back under the spelling the client sent")
 
     std::string encoded = fixture.Uri("broken.as");
     const size_t colon = encoded.find(":/", std::string("file:///").size());
-    REQUIRE(colon != std::string::npos);
+
+    // Same reason as the test above: there is no drive colon to percent-encode on a path that has
+    // no drive letter, so there is no second spelling and nothing to check. Skipped, not failed.
+    if (colon == std::string::npos)
+    {
+        MESSAGE("No drive letter in this path, so there is no second spelling - skipped.");
+        return;
+    }
+
     encoded.replace(colon, 1, "%3A");
 
     test::ScriptedStream stream;

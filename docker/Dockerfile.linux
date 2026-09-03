@@ -1,0 +1,52 @@
+# ==============================================================================
+# Why this Dockerfile exists:
+#
+# Continuous Integration already builds and tests across six platforms, but that
+# verification only runs after pushing commits to the remote repository. Waiting
+# for remote CI cycles to discover that AngelScript parity is broken on Linux
+# creates a feedback loop of several minutes when it could and should be local.
+#
+# This Dockerfile provides self-contained local Linux environments for both
+# 64-bit (x64) and 32-bit (x86) architectures, catching platform-specific
+# regressions (such as pointer size assumptions or calling convention differences)
+# directly at the developer's workstation.
+#
+# Windows does not require containerization because primary development happens
+# natively on Windows. macOS cannot be containerized here because Apple's software
+# license permits running macOS exclusively on Apple hardware; CI runners remain
+# the sole legitimate mechanism for macOS validation.
+# ==============================================================================
+
+FROM debian:bookworm-slim
+
+ARG TARGET_ARCH=x64
+ENV TARGET_ARCH=${TARGET_ARCH}
+
+# Toolchain dependencies:
+# - CMake (>= 3.20; Debian Bookworm provides 3.25+)
+# - C++20 compiler: g++ 12+ (Debian Bookworm default is GCC 12)
+# - git: required by CMake FetchContent during configuration and build
+# - python3 & python-is-python3: required for diagnostic codes and layer include checks
+# - ca-certificates: required for secure git HTTPS cloning
+# - gcc-multilib / g++-multilib: required only when targeting 32-bit x86
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        python3 \
+        python-is-python3 \
+        ca-certificates \
+    && if [ "$TARGET_ARCH" = "x86" ]; then \
+        apt-get install -y --no-install-recommends gcc-multilib g++-multilib; \
+    fi \
+    && rm -rf /var/lib/apt/lists/*
+
+# The source repository is mounted as a volume into /workspace at container runtime
+# rather than baked into the image at build time. Rebuilding a multi-gigabyte
+# container image for every single code edit is what causes developers to abandon
+# containerized tools. Keeping the image strictly toolchain-focused ensures instant
+# container startup and continuous, frictionless local iteration.
+WORKDIR /workspace
+
+ENTRYPOINT ["/bin/bash", "/workspace/docker/run-parity.sh"]

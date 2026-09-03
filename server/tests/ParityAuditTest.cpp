@@ -136,25 +136,16 @@ namespace
               "utils/PreprocessorRegions.h - and the two error_handler diagnostics it produced are "
               "gone, which is why the count here dropped from 12 to 10." },
 
-            // The single quote is a digit separator in every base - `1'000'000`, `0xDEAD'BEEF`,
-            // `0b1100'0011` - and the real compiler accepts all three, measured. The grammar did
-            // not know, so each was reported as a syntax error: legal code marked broken, which
-            // these invariants forbid.
+            // The digit separator - `1'000'000`, `0xDEAD'BEEF`, `0b1100'0011` - sat here for one
+            // pin. The grammar did not know the single quote can separate digits, so all three were
+            // syntax errors on code the compiler accepts; tree-sitter-angelscript 23cb160 fixed it
+            // and cmake/TreeSitter.cmake now names that commit, so the entries came out. They are
+            // doc_p104 through doc_p106 and they pass on their own now.
             //
-            // Fixed in tree-sitter-angelscript (commit 23cb160, 189 corpus parses green) and
-            // verified there directly: all three now parse with no ERROR node, and `'x'` is still
-            // a string. The three entries below stay only until cmake/TreeSitter.cmake pins that
-            // commit, which needs it pushed first. This audit removes a gap that stops
-            // reproducing, so they will fail here the moment the pin lands - which is the reminder.
-            { "doc_p104_digit_separator_decimal.as",
-              "Digit separator `1'000'000`. Fixed in the grammar; awaiting the GIT_TAG bump in "
-              "cmake/TreeSitter.cmake." },
-            { "doc_p105_digit_separator_hex.as",
-              "Digit separator `0xDEAD'BEEF`. Fixed in the grammar; awaiting the GIT_TAG bump in "
-              "cmake/TreeSitter.cmake." },
-            { "doc_p106_digit_separator_binary.as",
-              "Digit separator `0b1100'0011`. Fixed in the grammar; awaiting the GIT_TAG bump in "
-              "cmake/TreeSitter.cmake." },
+            // Worth recording how they left, because the mechanism nearly failed: the check that
+            // forces a closed gap out of this list used to return early whenever PARITY_SCRIPT_DIR
+            // was set, which is how CI runs this audit. The reminder was unreachable in exactly the
+            // configuration that matters, and the three entries would have stayed green forever.
 
             // optional.as used to sit here for exactly the reason json.as still does: as.predefined
             // declares optional<T>::opAssign but no constructor, so the declaration behind
@@ -547,13 +538,25 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
                   "for a reason not recorded in KnownGaps().");
 
     // The other direction: a documented gap that no longer reproduces has been fixed, and leaving
-    // its entry in place would let a future regression hide behind it. Only meaningful against the
-    // harness's own corpus - an overridden directory need not contain those files at all.
-    if (!overrideDir.empty())
-        return;
-
+    // its entry in place would let a future regression hide behind it.
+    //
+    // This used to return early whenever PARITY_SCRIPT_DIR was set, on the grounds that an
+    // overridden directory need not contain the harness's files at all. True, but it is also how CI
+    // runs this audit - so the check never ran anywhere, and three entries added for a grammar fix
+    // stayed green after the fix landed. The reminder that was supposed to force their removal was
+    // itself unreachable.
+    //
+    // Scoped per gap instead of per run: a gap naming a file this corpus does not contain is simply
+    // not evaluated, and one whose file WAS audited has to still be failing or the entry is stale.
     for (const auto &gap : KnownGaps())
     {
+        const bool wasAudited = std::any_of(scripts.begin(), scripts.end(),
+                                            [&gap](const fs::path &script) {
+                                                return script.filename().string() == gap.fileName;
+                                            });
+        if (!wasAudited)
+            continue;
+
         const bool stillFailing = std::any_of(explained.begin(), explained.end(),
                                               [&gap](const std::string &name) { return name == gap.fileName; });
 
