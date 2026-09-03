@@ -2714,18 +2714,32 @@ TEST_CASE("Server - The selection matches the file, not the spelling of its path
     for (char &c : shouted)
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
+    // Whether the shouted path is the same file is the filesystem's business, not the platform's,
+    // and this test used to decide it with `#if defined(_WIN32)`. That is wrong on macOS, whose
+    // default filesystem is case-insensitive: weakly_canonical resolves the upper-cased path back
+    // to the real on-disk spelling, the selection succeeds, and the test failed expecting a
+    // complaint that correctly never came. Windows and macOS agree here; Linux does not. So ask
+    // the filesystem instead of guessing from the operating system.
+    std::error_code ec;
+    const bool caseInsensitive = std::filesystem::exists(std::filesystem::path(shouted), ec) && !ec;
+
     const std::string output = RunWithActiveStub(two, "void main() { TypeFromA a; }\n", shouted);
 
     INFO(PublishedFrames(output));
+    INFO("case-insensitive filesystem: " << caseInsensitive);
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
 
-#if defined(_WIN32)
-    // Same file, louder spelling: it resolves, and nothing complains about a missing selection.
-    CHECK_FALSE(Published(output, "as-err-unresolved-type"));
-    CHECK(output.find("selected predefined stub was not found") == std::string::npos);
-#else
-    // Elsewhere the case is part of the name, so this really is a different file and saying so is
-    // the correct answer.
-    CHECK(output.find("selected predefined stub was not found") != std::string::npos);
-#endif
+    if (caseInsensitive)
+    {
+        // Same file, louder spelling: it resolves, and nothing complains about a missing selection.
+        CHECK_FALSE(Published(output, "as-err-unresolved-type"));
+        CHECK(output.find("selected predefined stub was not found") == std::string::npos);
+    }
+    else
+    {
+        // Here the case really is part of the name, so this is a different file and saying so is
+        // the correct answer - which is the half that matters most: a selection naming a file the
+        // scan never saw must be loud, or every host type stops resolving with nothing to explain it.
+        CHECK(output.find("selected predefined stub was not found") != std::string::npos);
+    }
 }
