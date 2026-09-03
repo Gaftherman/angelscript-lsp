@@ -136,6 +136,26 @@ namespace
               "utils/PreprocessorRegions.h - and the two error_handler diagnostics it produced are "
               "gone, which is why the count here dropped from 12 to 10." },
 
+            // The single quote is a digit separator in every base - `1'000'000`, `0xDEAD'BEEF`,
+            // `0b1100'0011` - and the real compiler accepts all three, measured. The grammar did
+            // not know, so each was reported as a syntax error: legal code marked broken, which
+            // these invariants forbid.
+            //
+            // Fixed in tree-sitter-angelscript (commit 23cb160, 189 corpus parses green) and
+            // verified there directly: all three now parse with no ERROR node, and `'x'` is still
+            // a string. The three entries below stay only until cmake/TreeSitter.cmake pins that
+            // commit, which needs it pushed first. This audit removes a gap that stops
+            // reproducing, so they will fail here the moment the pin lands - which is the reminder.
+            { "doc_p104_digit_separator_decimal.as",
+              "Digit separator `1'000'000`. Fixed in the grammar; awaiting the GIT_TAG bump in "
+              "cmake/TreeSitter.cmake." },
+            { "doc_p105_digit_separator_hex.as",
+              "Digit separator `0xDEAD'BEEF`. Fixed in the grammar; awaiting the GIT_TAG bump in "
+              "cmake/TreeSitter.cmake." },
+            { "doc_p106_digit_separator_binary.as",
+              "Digit separator `0b1100'0011`. Fixed in the grammar; awaiting the GIT_TAG bump in "
+              "cmake/TreeSitter.cmake." },
+
             // optional.as used to sit here for exactly the reason json.as still does: as.predefined
             // declares optional<T>::opAssign but no constructor, so the declaration behind
             // `optional<string> o(...)` was invisible and the construction was reported. That was
