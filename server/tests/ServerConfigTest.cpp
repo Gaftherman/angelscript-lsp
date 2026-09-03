@@ -58,7 +58,10 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config1.features.enableCodeAction == true);
             CHECK(config1.features.enableFormatting == true);
             CHECK(config1.info.name == "AngelScript Language Server");
-            CHECK(config1.info.version == "1.0.0");
+            // Against the macro, not a literal: the version comes from client/package.json now,
+            // and a test hardcoding it would be the third place to forget when it changes.
+            CHECK(config1.info.version == ANGELLSP_VERSION);
+            CHECK_FALSE(config1.info.version.empty());
             CHECK(config1.info.fileExtension == ".as");
             CHECK(config1.info.predefinedFileExtension == ".as.predefined");
             CHECK(config1.info.locale == "en");

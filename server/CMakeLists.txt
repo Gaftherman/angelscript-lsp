@@ -1,6 +1,35 @@
 cmake_minimum_required(VERSION 3.14)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.14)
-project(AngelLSP VERSION 1.0)
+
+# One version, read from the manifest that actually publishes it.
+#
+# The server hardcoded its own string and the extension carried another, with nothing tying them
+# together: the server said 1.0.0 while client/package.json said 0.1.0. A release tagged from one
+# would have shipped a .vsix declaring the other - `vsce package` reads package.json and VS Code
+# shows what the .vsix declares, while `angel_lsp --version` printed something else entirely.
+#
+# A check that the two agree would have caught that drift. Reading one from the other makes the
+# drift unrepresentable, which is better. The manifest wins because it is the file that reaches
+# users. Parsed with a regex rather than string(JSON) so this keeps working on CMake 3.14; the
+# manifest is ours and its shape is not going to surprise us.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../client/package.json" ANGELLSP_MANIFEST)
+string(REGEX MATCH "\"version\"[ \t]*:[ \t]*\"([^\"]+)\"" ANGELLSP_VERSION_MATCH "${ANGELLSP_MANIFEST}")
+set(ANGELLSP_VERSION "${CMAKE_MATCH_1}")
+
+if(NOT ANGELLSP_VERSION)
+    message(FATAL_ERROR
+        "Could not read \"version\" from client/package.json. The server takes its version from the "
+        "extension manifest so the two can never disagree, and building the server without the "
+        "client tree beside it is not a supported configuration.")
+endif()
+
+# project() takes only the numeric part, so a pre-release suffix like 0.1.0-rc.1 does not break the
+# configure. The server still reports the full string, suffix and all.
+string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" ANGELLSP_VERSION_NUMERIC "${ANGELLSP_VERSION}")
+
+message(STATUS "AngelLSP version: ${ANGELLSP_VERSION} (from client/package.json)")
+
+project(AngelLSP VERSION ${ANGELLSP_VERSION_NUMERIC})
 
 # Require C++20
 set(CMAKE_CXX_STANDARD 20)
@@ -101,6 +130,10 @@ if(MSVC)
     target_compile_options(angel_lsp_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
 endif()
 target_compile_options(angel_lsp_core PRIVATE ${ANGELLSP_WARNING_FLAGS})
+
+# PUBLIC so the executable and the test suite report the same version the manifest declares. There
+# is no default: a missing definition should fail to compile rather than quietly ship a wrong one.
+target_compile_definitions(angel_lsp_core PUBLIC ANGELLSP_VERSION="${ANGELLSP_VERSION}")
 
 # ==============================================================================
 # 3. MAIN EXECUTABLE (LSP Server)

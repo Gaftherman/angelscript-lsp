@@ -227,7 +227,10 @@ namespace angel_lsp::config
 
     void PrintHelp()
     {
-        std::cout << "AngelScript Language Server (AngelLSP) v1.0.0\n"
+        // ANGELLSP_VERSION, not a literal. This line and the one in PrintVersion were the third and
+        // fourth copies of the version in this repository, and they had already drifted from the
+        // manifest that ships to users.
+        std::cout << "AngelScript Language Server (AngelLSP) v" ANGELLSP_VERSION "\n"
                   << "Usage: angel_lsp [options]\n\n"
                   << "Feature Flags:\n"
                   << "  --enable-hover[=true|false]             Enable/disable hover tooltips (default: true)\n"
@@ -327,7 +330,7 @@ namespace angel_lsp::config
 
     void PrintVersion()
     {
-        std::cout << "AngelScript Language Server (AngelLSP) version 1.0.0\n";
+        std::cout << "AngelScript Language Server (AngelLSP) version " ANGELLSP_VERSION "\n";
     }
 
     ServerConfig FromArgs(int argc, char **argv)

@@ -48,7 +48,18 @@ namespace angel_lsp::config
     struct Info
     {
         std::string name = "AngelScript Language Server";
-        std::string version = "1.0.0";
+        /**
+         * @brief Version reported by --version and in the LSP handshake.
+         *
+         * Defined by CMake from client/package.json, which is the file that actually reaches users
+         * through the .vsix. It used to be a literal here, and it had already drifted: this said
+         * 1.0.0 while the manifest said 0.1.0, so a release would have been tagged as one and
+         * installed as the other.
+         *
+         * No fallback on purpose. A build that cannot see the manifest should fail to compile
+         * rather than silently report a version nobody chose.
+         */
+        std::string version = ANGELLSP_VERSION;
         std::string fileExtension = ".as";
         std::string predefinedFileExtension = ".as.predefined";
         std::string locale = "en";
