@@ -2743,3 +2743,61 @@ TEST_CASE("Server - The selection matches the file, not the spelling of its path
         CHECK(output.find("selected predefined stub was not found") != std::string::npos);
     }
 }
+
+TEST_CASE("Server - A pull answer is never about text the analyzer has not seen")
+{
+    // The bug this pins, reported from real use: typing the `;` that completes a statement left the
+    // "missing ';'" error on screen until another keystroke. The editor renders push and pull as
+    // two separate diagnostic collections, so the corrected push answer and the stale pull answer
+    // sat side by side and only the second looked wrong.
+    //
+    // The cache stored what had been computed but not what it had been computed FROM, so the
+    // handler could tell it had an answer and not whether that answer was still about this text.
+    // After the first analysis it served the previous one forever.
+    const std::string broken = "void main() { float f }\n";
+    const std::string fixed   = "void main() { float f; }\n";
+
+    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains(needle))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", broken);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), broken));
+
+    // Let the broken text be analysed, so the cache holds a real answer to go stale.
+    stream.PushAction([&]() { waitFor(stream, "as-syntax-error"); });
+
+    // The fix arrives, and the client pulls immediately - before the debounced analysis can run.
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"(","version":2},"contentChanges":[{"text":")" +
+                JsonEscape(fixed) + R"("}]}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string pulled = stream.ResponseFor(2);
+    INFO(pulled);
+
+    // Either the analyzer had already caught up and the answer is clean, or it had not and the
+    // server said so. What it must never do is hand back the previous document's findings.
+    const bool refused = pulled.find("\"code\":-32802") != std::string::npos ||
+                         pulled.find("retriggerRequest") != std::string::npos;
+    const bool clean = pulled.find("as-syntax-error") == std::string::npos;
+
+    CHECK((refused || clean));
+}

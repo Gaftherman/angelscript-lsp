@@ -160,6 +160,23 @@ namespace angel_lsp
         {
             std::string resultId;
             std::vector<lsp::Diagnostic> items;
+
+            /**
+             * @brief Hash of the document text these diagnostics were computed from.
+             *
+             * Without it the pull handler could tell "I have an answer for this document" but not
+             * "I have a *current* one", and it served whatever was last computed however old. The
+             * effect was visible and confusing: finishing a statement with `;` left the missing-`;`
+             * error on screen, because the pull answer still described the text from before the
+             * keystroke while the push notification - a separate diagnostic collection in the
+             * editor - already showed the file was fine. Typing anything else appeared to "fix" it,
+             * which is the shape of a staleness bug rather than an analysis one.
+             *
+             * A hash rather than the text: one per open document, and the worst a collision can do
+             * is serve one stale report, which is the behaviour being fixed rather than a new
+             * failure.
+             */
+            size_t textHash = 0;
         };
 
         // Written by the analysis thread through PublishDiagnostics, read by the message loop

@@ -2705,6 +2705,7 @@ namespace angel_lsp
             DiagnosticsSnapshot snapshot;
             snapshot.resultId = std::to_string(++m_diagnosticsRevision);
             snapshot.items = params.diagnostics;
+            snapshot.textHash = std::hash<std::string>{}(text);
             m_diagnosticsCache[uriStr] = std::move(snapshot);
         }
 
@@ -2721,9 +2722,19 @@ namespace angel_lsp
 
         const std::string uriStr = DocumentKey(params.textDocument.uri.toString());
 
+        // The cached answer is only usable while it still describes the text the client is asking
+        // about. This used to check only that an entry existed, which is true from the first
+        // analysis onward, so every later pull was answered from whatever had been computed before
+        // the edit in hand. The editor renders push and pull as two separate collections, so the
+        // stale pull answer sat beside the correct push one and only cleared on the next keystroke.
+        const std::string *current = FindDocumentText(uriStr);
+        const size_t currentHash = current ? std::hash<std::string>{}(*current) : 0;
+
+        if (current)
         {
             std::lock_guard<std::mutex> lock(m_diagnosticsCacheMutex);
-            if (const auto it = m_diagnosticsCache.find(uriStr); it != m_diagnosticsCache.end())
+            if (const auto it = m_diagnosticsCache.find(uriStr);
+                it != m_diagnosticsCache.end() && it->second.textHash == currentHash)
             {
                 if (params.previousResultId.has_value() && *params.previousResultId == it->second.resultId)
                 {
@@ -2739,9 +2750,11 @@ namespace angel_lsp
             }
         }
 
-        // Nothing analysed yet. Queue it and tell the client to ask again rather than answering
-        // with an empty report - an empty report says "this file is clean", which is a claim this
-        // server is in no position to make about a document it has not looked at.
+        // Nothing analysed yet, or nothing analysed for *this* text. Queue it and tell the client to
+        // ask again rather than answering with an empty report - an empty report says "this file is
+        // clean", which is a claim this server is in no position to make about a document it has not
+        // looked at - and rather than answering with the previous one, which says something worse:
+        // that a mistake the user has already corrected is still there.
         if (const std::string *text = FindDocumentText(uriStr))
             ScheduleAnalysis(uriStr, *text);
 
