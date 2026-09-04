@@ -1063,24 +1063,28 @@ namespace angel_lsp
 
         // Merging is what the user asked for here, so this is not a complaint - but the cost is
         // real and invisible from the editor, so it is still said once per scan.
+        // Logged rather than shown. This used to be a notification telling the user to go and run
+        // a command by name, which is the version that did not work: the message is only useful if
+        // it can offer the choice, and only a client with a picker can do that. The client asks for
+        // the stub list after the scan and raises its own notification, with a button on it.
         if (mergeAll)
         {
-            tell(lsp::MessageType::Info,
-                 fmt::format("AngelScript: {} predefined stubs loaded together ({}). Declarations "
-                             "they share will resolve more than once.",
-                             discovered.size(), list));
+            m_logger->LogInfo(
+                fmt::format("AngelScript: {} predefined stubs loaded together ({}). Declarations "
+                            "they share will resolve more than once.",
+                            discovered.size(), list));
             return;
         }
 
-        // One stub is in force and the rest were passed over. This used to be a warning about a
-        // merge nobody asked for; now the server has already made the safe choice and only has to
-        // say which, and how to change it.
-        tell(lsp::MessageType::Info,
-             fmt::format("AngelScript: using {} of {} predefined stubs found ({}). Run "
-                         "\"AngelScript: Select Predefined Stub\" to choose another, or set "
-                         "angelscript.predefined.active to \"all\" to load them together.",
-                         std::filesystem::path(autoSelected).filename().string(),
-                         discovered.size(), list));
+        // One stub is in force and the rest were passed over. The safe choice is already made, so
+        // this only records which - the offer to change it belongs where there is something to
+        // click.
+        m_logger->LogInfo(
+            fmt::format("AngelScript: using {} of {} predefined stubs found ({}). Set "
+                        "angelscript.predefined.active to choose another, or to \"all\" to load "
+                        "them together.",
+                        std::filesystem::path(autoSelected).filename().string(),
+                        discovered.size(), list));
     }
 
     bool Server::UnloadPredefinedUri(std::string uriStr)

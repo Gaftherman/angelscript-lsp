@@ -2928,3 +2928,96 @@ TEST_CASE("Server - An edit reaches the client while a polling editor keeps aski
     INFO(lastPoll);
     CHECK(lastPoll.find("\"result\"") != std::string::npos);
 }
+
+// =====================================================================================
+// The command the stub picker is built on.
+//
+// `angelscript.listPredefinedStubs` is how the client learns which stubs exist without duplicating
+// this server's rule for what counts as one - and it had no test at all, which is exactly the shape
+// of thing that can be broken for a whole release without anything failing. The picker showing
+// nothing and the picker not opening look identical from the outside.
+// =====================================================================================
+
+TEST_CASE("Server - Answers the stub listing the picker is built on")
+{
+    TwoStubFixture two;
+    two.fixture.Write("main.as", "void main() { }\n");
+
+    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains(needle))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // One message between `initialized` and the wait, so the wait runs after initialized has been
+    // handled and the scan it starts exists - see ScriptedStream::PushAction.
+    stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), "void main() { }\n"));
+    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string answer = stream.ResponseFor(2);
+    INFO(answer);
+
+    REQUIRE(answer.find("\"error\"") == std::string::npos);
+    CHECK(answer.find("host_a.as.predefined") != std::string::npos);
+    CHECK(answer.find("host_b.as.predefined") != std::string::npos);
+
+    // And it names the one actually in force, so the picker can tick it. With nothing configured
+    // that is the one the scan chose, not the empty string the setting still holds.
+    CHECK(answer.find("\"active\"") != std::string::npos);
+    const size_t active = answer.find("\"active\"");
+    REQUIRE(active != std::string::npos);
+    CHECK(answer.find("host_a.as.predefined", active) != std::string::npos);
+}
+
+TEST_CASE("Server - The listing reports a merge as one")
+{
+    TwoStubFixture two;
+    two.fixture.Write("main.as", "void main() { }\n");
+
+    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains(needle))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), "void main() { }\n"));
+    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.activePredefined = "all";
+    RunScript(serverConfig, stream);
+
+    const std::string answer = stream.ResponseFor(2);
+    INFO(answer);
+
+    // Nothing is "the active one" while everything is loaded, and the picker needs to be able to
+    // tell that apart from having no answer yet.
+    CHECK(answer.find("\"merging\":true") != std::string::npos);
+}

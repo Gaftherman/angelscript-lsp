@@ -15,6 +15,8 @@
   "Chooses which host API description the workspace uses.": "Elige qué descripción de la API del host usa el espacio de trabajo.",
   "AngelScript language server": "Servidor de lenguaje AngelScript",
   "Restarting the AngelScript language server.": "Reiniciando el servidor de lenguaje AngelScript.",
+  "Select stub": "Elegir stub",
+  "AngelScript found {0} predefined stubs and is using {1}.": "AngelScript encontró {0} stubs predefinidos y está usando {1}.",
   "The AngelScript language server is not running.": "El servidor de lenguaje AngelScript no está en ejecución.",
   "Automatic": "Automático",
   "Default. The workspace scan loads the first stub it finds, in path order.": "Por defecto. El barrido del espacio de trabajo carga el primer stub que encuentra, en orden de ruta.",

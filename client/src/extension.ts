@@ -583,6 +583,9 @@ async function startClient(context: ExtensionContext): Promise<void> {
         await client.start();
         unexpectedExits = 0;
         setStatus('running', l10n.t('The AngelScript language server is running.'));
+
+        // Not awaited: it waits out a workspace scan, and nothing else here depends on it.
+        void offerStubChoice();
         client.onNotification("angelscript/debug", (params: { message: string }) => {
             lspOutputChannel.appendLine(`[AST Debug] ${params.message}`);
         });
@@ -784,6 +787,67 @@ async function performRestart(context: ExtensionContext, reason: string): Promis
     await startClient(context);
 }
 
+/** @brief What `angelscript.listPredefinedStubs` answers. */
+interface PredefinedStubsResult {
+    stubs: string[];
+    /** The stub actually loaded - chosen, or picked by the scan. Empty while merging. */
+    active: string;
+    /** True when every discovered stub is being loaded together. */
+    merging?: boolean;
+}
+
+/**
+ * @brief Offers the picker when the workspace holds more than one stub and none was chosen.
+ *
+ * The server used to raise this itself, as a notification naming a command for the user to go and
+ * find in the palette - which is the version that did not work. A message whose whole purpose is to
+ * offer a choice has to be able to offer it, and only a client with a picker can.
+ */
+async function offerStubChoice(): Promise<void> {
+    if (workspace.getConfiguration('angelscript').get<string>('predefined.active', '').trim().length > 0) {
+        // Already answered. Asking again every time the server starts would be nagging.
+        return;
+    }
+
+    // The list exists only once the workspace scan has produced it, and there is nothing in the
+    // protocol a client can wait on for that. A few tries a second apart rather than one guessed
+    // delay: it costs a single request when the answer is ready immediately, and it gives up rather
+    // than polling a workspace that simply has no stubs in it.
+    for (let attempt = 0; attempt < 10; attempt++) {
+        if (!client || client.state !== State.Running) {
+            return;
+        }
+
+        let result: PredefinedStubsResult | undefined;
+        try {
+            result = await client.sendRequest<PredefinedStubsResult>(
+                'workspace/executeCommand', { command: 'angelscript.listPredefinedStubs' });
+        } catch {
+            return;
+        }
+
+        if (result && Array.isArray(result.stubs) && result.stubs.length > 0) {
+            if (result.stubs.length < 2) {
+                // Nothing to choose between.
+                return;
+            }
+
+            const action = l10n.t('Select stub');
+            const picked = await window.showInformationMessage(
+                l10n.t('AngelScript found {0} predefined stubs and is using {1}.',
+                       result.stubs.length, path.basename(result.active ?? '')),
+                action);
+
+            if (picked === action) {
+                await selectPredefinedStub();
+            }
+            return;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+}
+
 /**
  * @brief Prompts the user to pick an active predefined API stub or merge all discovered stubs.
  *
@@ -794,14 +858,6 @@ async function selectPredefinedStub(): Promise<void> {
     if (!client) {
         void window.showWarningMessage(l10n.t('The AngelScript language server is not running.'));
         return;
-    }
-
-    interface PredefinedStubsResult {
-        stubs: string[];
-        /** The stub actually loaded - chosen, or picked by the scan. Empty while merging. */
-        active: string;
-        /** True when every discovered stub is being loaded together. */
-        merging?: boolean;
     }
 
     let result: PredefinedStubsResult;

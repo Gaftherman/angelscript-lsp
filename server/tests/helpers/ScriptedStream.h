@@ -42,6 +42,14 @@ namespace angel_lsp::test
          * between two Push() calls would run before the first message is ever read. Anything that
          * models the world changing mid-session - a file being deleted on disk between two
          * notifications - has to be scheduled here instead.
+         *
+         * It fires when the reader has *consumed* the bytes, which is before the framework has
+         * dispatched the message they encode. So an action pushed straight after `initialized`
+         * runs before initialized's handler does - before the workspace scan it starts even
+         * exists - and an action there that waits for that scan waits for something that has not
+         * begun. Push one more message first: the action then runs after the message before it was
+         * handled. Every wait-for-the-scan test in this suite is written that way, and one written
+         * the other way waits out its whole timeout and then measures a race.
          */
         void PushAction(std::function<void()> action)
         {
