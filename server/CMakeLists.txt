@@ -29,6 +29,13 @@ string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" ANGELLSP_VERSION_NUMERIC "${ANGELLSP_VE
 
 message(STATUS "AngelLSP version: ${ANGELLSP_VERSION} (from client/package.json)")
 
+# Read at configure time, so without this an incremental build after a version bump keeps compiling
+# the old number in - which is exactly when it matters, because a version bump is the last thing
+# that happens before a release is tagged. Measured: bumping to 0.2.0 and rebuilding still printed
+# 0.1.0 from --version.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${CMAKE_CURRENT_SOURCE_DIR}/../client/package.json")
+
 project(AngelLSP VERSION ${ANGELLSP_VERSION_NUMERIC})
 
 # Require C++20

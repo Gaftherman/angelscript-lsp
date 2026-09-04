@@ -2,7 +2,7 @@
   "name": "angelscript-lsp",
   "displayName": "%configuration.title%",
   "description": "%extension.description%",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "Gaftherman",
   "license": "MIT",
   "engines": {
