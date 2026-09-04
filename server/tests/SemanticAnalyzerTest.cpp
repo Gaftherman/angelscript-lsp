@@ -64,13 +64,13 @@ namespace
         return diagnostics;
     }
 
-    /** @brief True if diagnostics contains an as-err-undeclared-identifier flagging exactly name. */
+    /** @brief True if diagnostics contains an as-warn-undeclared-identifier flagging exactly name. */
     bool HasUndefinedIdentifierDiagnostic(const std::vector<Diagnostic> &diagnostics, const std::string &name)
     {
         std::string quoted = "'" + name + "'";
         for (const auto &diag : diagnostics)
         {
-            if (diag.code == "as-err-undeclared-identifier" && diag.message.find(quoted) != std::string::npos)
+            if (diag.code == "as-warn-undeclared-identifier" && diag.message.find(quoted) != std::string::npos)
                 return true;
         }
         return false;
@@ -113,7 +113,7 @@ namespace
         return false;
     }
 
-    /** @brief Extracts the single-quoted identifier name out of an as-err-undeclared-identifier message. */
+    /** @brief Extracts the single-quoted identifier name out of an as-warn-undeclared-identifier message. */
     std::string ExtractFlaggedName(const std::string &message)
     {
         size_t open = message.find('\'');
@@ -158,7 +158,7 @@ void Foo()
 
     for (const auto &diag : diagnostics)
     {
-        if (diag.code == "as-err-undeclared-identifier")
+        if (diag.code == "as-warn-undeclared-identifier")
             CHECK(diag.severity == DiagnosticSeverity::Warning);
     }
 }
@@ -669,7 +669,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Across All angel
         bool sampledThisFile = false;
         for (const auto &diag : diagnostics)
         {
-            if (diag.code != "as-err-undeclared-identifier")
+            if (diag.code != "as-warn-undeclared-identifier")
                 continue;
 
             ++totalFlagged;
@@ -938,7 +938,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
 
             for (const auto &diag : diagnostics)
             {
-                if (diag.code != "as-err-undeclared-identifier")
+                if (diag.code != "as-warn-undeclared-identifier")
                     continue;
 
                 ++totalFlagged;

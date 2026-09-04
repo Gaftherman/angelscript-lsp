@@ -112,7 +112,7 @@ namespace angel_lsp::analysis
          * @brief True when this identifier is part of a type annotation (datatype, template_type_list,
          *        base_class_list, etc.). Type resolution diagnostics are handled by type checking
          *        passes (as-err-unresolved-type) rather than value identifier resolution
-         *        (as-err-undeclared-identifier).
+         *        (as-warn-undeclared-identifier).
          */
         bool isTypeSpecifier = false;
     };

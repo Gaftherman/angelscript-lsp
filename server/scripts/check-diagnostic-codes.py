@@ -67,6 +67,35 @@ def referenced_codes() -> set:
     return referenced
 
 
+def severity_mismatches() -> list:
+    """Emit sites where an `as-err-` code is produced at a severity that is not Error.
+
+    The prefix is the promise the user reads: `as-err-` in the Problems panel next to a yellow
+    squiggle is the code contradicting itself. A rule that has to hedge is a warning and should say
+    so in its name - which is what happened to as-warn-undeclared-identifier.
+
+    A statement naming both severities is not a mismatch: `named-argument-syntax` is an Error unless
+    the engine's own alterSyntaxNamedArgs mode says the compiler only warns, and that conditional is
+    the rule being right rather than sloppy.
+    """
+    err_code = re.compile(r'"(as-err-[a-z0-9-]+)"')
+    severity = re.compile(r'DiagnosticSeverity::(\w+)')
+
+    found = []
+    for path in list((SERVER / 'src').rglob('*.cpp')) + list((SERVER / 'src').rglob('*.h')):
+        if path in (I18N, CODES_HEADER):
+            continue
+        for statement in path.read_text(encoding='utf-8', errors='replace').split(';'):
+            codes = err_code.findall(statement)
+            severities = set(severity.findall(statement))
+            if not codes or not severities or 'Error' in severities:
+                continue
+            for code in codes:
+                found.append((code, path.name, sorted(severities)[0]))
+
+    return found
+
+
 def main() -> int:
     declared = declared_codes()
     referenced = referenced_codes()
@@ -97,6 +126,16 @@ def main() -> int:
         for code in resurrected:
             print(f'  - {code}', file=sys.stderr)
         print('  Remove them from DELIBERATELY_NEVER_EMITTED and from i18n.cpp\'s header block.',
+              file=sys.stderr)
+
+    mismatched = severity_mismatches()
+    if mismatched:
+        problems = True
+        print('\nThese are named as errors but are emitted at another severity:', file=sys.stderr)
+        for code, where, sev in mismatched:
+            print(f'  - {code} in {where} at {sev}', file=sys.stderr)
+        print('  A rule that has to hedge belongs under an as-warn- name. A rule that is certain'
+              '\n  should say Error. Renaming means the i18n table and every test naming the code.',
               file=sys.stderr)
 
     if undeclared:

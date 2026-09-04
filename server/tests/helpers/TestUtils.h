@@ -221,7 +221,7 @@ namespace angel_lsp::test
             {
                 if (d.severity == analysis::DiagnosticSeverity::Error ||
                     (m_uri == "file:///workspace/template_main.as" &&
-                     (d.code == "as-warn-unused-variable" || d.code == "as-err-undeclared-identifier")))
+                     (d.code == "as-warn-unused-variable" || d.code == "as-warn-undeclared-identifier")))
                 {
                     analysis::Diagnostic copy = d;
                     if (copy.code == "as-err-duplicate-symbol")

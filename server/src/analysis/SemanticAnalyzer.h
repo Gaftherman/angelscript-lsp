@@ -35,7 +35,7 @@ namespace angel_lsp::analysis
         /**
          * @brief Recursively checks every LocalReference in scope and its descendants against the
          *        local scope chain (ResolveInScope) and knownGlobalNames, emitting
-         *        as-err-undeclared-identifier for anything that resolves to neither. Skips
+         *        as-warn-undeclared-identifier for anything that resolves to neither. Skips
          *        references flagged isMemberAccess (see ScopeTree.h) - those need type-aware
          *        member lookup this pass doesn't do, and would otherwise flood every "obj.member"
          *        access in the document with false positives.

@@ -2601,7 +2601,7 @@ TEST_SUITE("AngelScript_Template_Symbol_Resolution") {
         bool hasUnusedVariableWarn = false;
 
         for (const auto& diag : diagnostics) {
-            if (diag.code == "as-err-undeclared-identifier" || diag.code == "as-err-unresolved-type") {
+            if (diag.code == "as-warn-undeclared-identifier" || diag.code == "as-err-unresolved-type") {
                 hasUndeclaredIdentifier = true;
             }
             if (diag.code == "as-warn-unused-variable") {

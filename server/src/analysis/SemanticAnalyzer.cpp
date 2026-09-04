@@ -632,7 +632,7 @@ namespace angel_lsp::analysis
             }
 
             ctx.EmitAtRange(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter,
-                             "as-err-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
+                             "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
         }
 
         for (const auto &child : scope->children)
@@ -757,7 +757,7 @@ namespace angel_lsp::analysis
                     if (!IsUnconditionallyNonNullablePrimitive(varSig.typeKind))
                         continue;
 
-                    ctx.Emit(sym, "as-err-null-non-handle", varSig.typeName, DiagnosticSeverity::Warning);
+                    ctx.Emit(sym, "as-err-null-non-handle", varSig.typeName, DiagnosticSeverity::Error);
                 }
             });
     }
@@ -798,7 +798,7 @@ namespace angel_lsp::analysis
                     continue;
 
                 ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
-                                 "as-err-null-non-handle", def.typeName, DiagnosticSeverity::Warning);
+                                 "as-err-null-non-handle", def.typeName, DiagnosticSeverity::Error);
             }
         }
 

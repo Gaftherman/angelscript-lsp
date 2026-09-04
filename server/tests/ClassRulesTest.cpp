@@ -345,7 +345,7 @@ TEST_CASE("ClassRules - A template parameter is not an undeclared identifier")
     // fired on the real engine stub before the parameters were collected.
     CHECK_FALSE(HasCode(AnalyzeClassSnippet("class array<T> { void insertLast(const T &in v); }\n",
                                             "file:///engine.as.predefined"),
-                        "as-err-undeclared-identifier"));
+                        "as-warn-undeclared-identifier"));
 }
 
 TEST_CASE("ClassRules - An ordinary class is not reported as a template")

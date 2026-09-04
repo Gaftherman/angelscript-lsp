@@ -199,7 +199,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-parameter-not-instantiable"] = "Parameter type can't be '{}', because the type cannot be instantiated.";
         m_messages["as-err-return-not-instantiable"] = "Return type can't be '{}', because the type cannot be instantiated.";
         m_messages["as-err-mixin-not-a-type"] = "Mixin '{}' cannot be used as a data type.";
-        m_messages["as-err-undeclared-identifier"] = "Undeclared identifier '{}'.";
+        m_messages["as-warn-undeclared-identifier"] = "Undeclared identifier '{}'.";
         m_messages["as-warn-unused-variable"] = "Local variable '{}' is never used.";
         m_messages["as-warn-signed-unsigned-mismatch"] = "Signed/Unsigned mismatch: '{}' is compared with '{}'. Half of one range has no counterpart in the other, so the conversion wraps.";
         m_messages["as-warn-float-truncation"] = "Float value truncated in implicit conversion to integer: '{}' becomes '{}'. The fractional part is discarded.";
@@ -352,7 +352,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-parameter-not-instantiable"] = "El tipo de parámetro no puede ser '{}', porque ese tipo no se puede instanciar.";
             m_messages["as-err-return-not-instantiable"] = "El tipo de retorno no puede ser '{}', porque ese tipo no se puede instanciar.";
             m_messages["as-err-mixin-not-a-type"] = "El mixin '{}' no puede ser usado como un tipo de dato.";
-            m_messages["as-err-undeclared-identifier"] = "Identificador no declarado '{}'.";
+            m_messages["as-warn-undeclared-identifier"] = "Identificador no declarado '{}'.";
             m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";
             m_messages["as-warn-signed-unsigned-mismatch"] = "Discrepancia con/sin signo: se compara '{}' con '{}'. La mitad de un rango no tiene equivalente en el otro, así que la conversión da la vuelta.";
             m_messages["as-warn-float-truncation"] = "Valor flotante truncado en la conversión implícita a entero: '{}' pasa a '{}'. La parte fraccionaria se descarta.";

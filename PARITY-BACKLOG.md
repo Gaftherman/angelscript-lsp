@@ -530,7 +530,7 @@ treats as unacceptable.
   convertible. `doc_r10`.
 - **A bare accessor name inside a method.** `class C { int get_Up() const property { … } void T()
   { int v = Up; } }` compiles, and no symbol is ever named `Up` - the member is `C::get_Up` - so
-  every use of a virtual property from inside its own class drew `as-err-undeclared-identifier`.
+  every use of a virtual property from inside its own class drew `as-warn-undeclared-identifier`.
   `RuleIndex` now records the property name behind each `get_`/`set_` member, in two sets so the
   reader can pick by accessor mode. `doc_p03`, `doc_r07`.
 - **`case Red:` on an enum member.** Enum members were collected as ordinary `Variable` symbols and

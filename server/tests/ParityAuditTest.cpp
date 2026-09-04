@@ -401,9 +401,9 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         //
         // The false-NEGATIVE direction asks a different question - did we say anything at all
         // about a file the compiler rejects - and there a warning is saying something. Counting
-        // errors only made this blind to two codes that are deliberately emitted at Warning
-        // severity (as-err-undeclared-identifier, as-err-null-non-handle, both hedged because a
-        // host type the stub does not declare is invisible to this analyzer). So
+        // errors only made this blind to a code deliberately emitted at Warning severity
+        // (as-warn-undeclared-identifier, hedged because a host global the stub does not declare is
+        // invisible to this analyzer - which is also why it is spelled as-warn and not as-err). So
         // doc_r01_super_method.as was scored as a miss while the user was in fact getting a
         // squiggle on `super`. Worse than the miscount: a rule quietly downgraded to Warning would
         // have been reclassified as an acceptable gap instead of failing anything.
