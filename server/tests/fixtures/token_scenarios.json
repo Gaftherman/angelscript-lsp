@@ -58,15 +58,13 @@
           "line": 7,
           "character": 11,
           "text": "health",
-          "type": "property",
-          "gap": "A field read inside a method colours as `variable`; the scope tree has no reference entry for it, so the pass that turns a use into a property never sees it."
+          "type": "property"
         },
         {
           "line": 12,
           "character": 11,
           "text": "maxHealth",
-          "type": "property",
-          "gap": "Same as `health` above."
+          "type": "property"
         }
       ]
     },
@@ -97,8 +95,7 @@
           "line": 6,
           "character": 4,
           "text": "execute",
-          "type": "method",
-          "gap": "A method called without a receiver from inside its own class colours as `function`: there is no receiver to resolve it through, and the bare name is not a symbol-table key - methods are keyed as Class::name."
+          "type": "method"
         },
         {
           "line": 13,
@@ -172,15 +169,13 @@
           "line": 2,
           "character": 9,
           "text": "first",
-          "type": "parameter",
-          "gap": "A parameter at its own declaration colours as `variable`. The grammar captures it as a plain variable and the declaration walk does not yet reach the parameter list."
+          "type": "parameter"
         },
         {
           "line": 2,
           "character": 17,
           "text": "second",
-          "type": "parameter",
-          "gap": "Same as `first`."
+          "type": "parameter"
         },
         {
           "line": 5,
@@ -192,8 +187,7 @@
           "line": 7,
           "character": 9,
           "text": "factor",
-          "type": "parameter",
-          "gap": "Same as `first`."
+          "type": "parameter"
         }
       ]
     },
@@ -267,15 +261,13 @@
           "line": 8,
           "character": 12,
           "text": "State",
-          "type": "enum",
-          "gap": "The qualifier in `State::Idle` colours as `namespace`. It is a scope qualifier and the handler treats every one of them alike; an enum qualifier could be told apart."
+          "type": "enum"
         },
         {
           "line": 8,
           "character": 19,
           "text": "Idle",
-          "type": "enumMember",
-          "gap": "An enum member used qualified colours as `variable`."
+          "type": "enumMember"
         }
       ]
     },
@@ -294,8 +286,7 @@
           "line": 2,
           "character": 7,
           "text": "drive",
-          "type": "method",
-          "gap": "A method declared in an interface body colours as `function`. The declaration walk recognises a class body and not yet an interface one."
+          "type": "method"
         },
         {
           "line": 5,
@@ -553,8 +544,7 @@
           "line": 6,
           "character": 16,
           "text": "limit",
-          "type": "property",
-          "gap": "A member reached through `this.` produces no token at all, so it is left uncoloured."
+          "type": "property"
         },
         {
           "line": 11,
@@ -566,8 +556,7 @@
           "line": 12,
           "character": 20,
           "text": "limit",
-          "type": "property",
-          "gap": "Same as line 6."
+          "type": "property"
         },
         {
           "line": 12,

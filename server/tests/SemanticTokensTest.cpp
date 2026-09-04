@@ -2,6 +2,7 @@
 
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "analysis/SymbolCollector.h"
+#include "analysis/LocalScopeCollector.h"
 #include "analysis/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
 
@@ -717,7 +718,13 @@ TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes 
         SymbolTable table;
         collector.CollectSymbols("file:///tokens.as", scenario.source, parser, table);
 
-        SemanticTokensRequest request{ "file:///tokens.as", scenario.source, tree, table };
+        // And the scope tree, which is what tells a *use* of a parameter apart from a use of a
+        // local. The server passes it; leaving it out here made three parameter uses look like a
+        // server defect when the omission was this test's.
+        LocalScopeCollector scopeCollector{ nullptr };
+        std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(scenario.source, parser);
+
+        SemanticTokensRequest request{ "file:///tokens.as", scenario.source, tree, table, scopeRoot };
         const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
         for (const TokenExpectation &expected : scenario.expect)
@@ -769,3 +776,4 @@ TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes 
 
     MESSAGE("semantic tokens: " << met << " expectations met, " << gaps << " known gaps");
 }
+

@@ -1,5 +1,6 @@
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "parser/queries/BuiltQueries.h"
+#include "analysis/rules/RuleIndex.h"
 #include <algorithm>
 #include <cstring>
 #include <ankerl/unordered_dense.h>
@@ -216,13 +217,30 @@ namespace angel_lsp::features
                 {
                     return false;
                 }
-                return ts_node_eq(nameChild, node);
+                if (ts_node_eq(nameChild, node))
+                {
+                    return true;
+                }
+                uint32_t nameStart = ts_node_start_byte(nameChild);
+                uint32_t nameEnd = ts_node_end_byte(nameChild);
+                uint32_t nodeStart = ts_node_start_byte(node);
+                uint32_t nodeEnd = ts_node_end_byte(node);
+                if (nameStart == nameEnd || nodeStart == nodeEnd)
+                {
+                    return false;
+                }
+                return (nameStart <= nodeStart && nodeEnd <= nameEnd) ||
+                       (nodeStart <= nameStart && nameEnd <= nodeEnd);
             };
 
             TSNode directParent = ts_node_parent(node);
+            if (ts_node_is_null(directParent))
+            {
+                return tokenType;
+            }
             TSNode curr = directParent;
 
-            for (int level = 0; level < 6 && !ts_node_is_null(curr); ++level, curr = ts_node_parent(curr))
+            for (int level = 0; level < 8 && !ts_node_is_null(curr); ++level, curr = ts_node_parent(curr))
             {
                 std::string_view currType = ts_node_type(curr);
 
@@ -231,11 +249,23 @@ namespace angel_lsp::features
                     return tokenType;
                 }
 
-                if (currType == "parameter" || currType == "parameter_list")
+                // A parameter at its declaration site: the identifier is the "name" field of a `parameter` node.
+                // Does not touch parameters inside active expression blocks (handled by local resolution).
+                if (currType == "parameter")
                 {
-                    if (ts_node_eq(directParent, curr) || isNodeName(curr))
+                    if (isNodeName(curr) || ts_node_eq(directParent, curr))
                     {
                         return Type_Parameter;
+                    }
+                }
+
+                // A method declared inside an interface body: the identifier is the "name" field of an
+                // `interface_method` node. Does not touch free functions or class methods (handled separately).
+                if (currType == "interface_method")
+                {
+                    if (isNodeName(curr) || ts_node_eq(directParent, curr))
+                    {
+                        return Type_Method;
                     }
                 }
 
@@ -535,10 +565,10 @@ namespace angel_lsp::features
 
             tokenType = RefineDeclarationTokenType(node, tokenType);
 
-            // Upgrade coarse token types using the workspace symbol table when the symbol kind is
-            // unambiguous. If the lookup finds symbols of differing kinds, leave the type coarse
-            // rather than guessing.
-            if (tokenType == Type_Type || tokenType == Type_Variable || tokenType == Type_Function)
+            // Upgrade coarse token types using the syntax context and workspace symbol table when
+            // unambiguous. If lookups are ambiguous or unresolved, leave the type coarse rather
+            // than guessing.
+            if (tokenType == Type_Type || tokenType == Type_Variable || tokenType == Type_Function || tokenType == Type_Namespace)
             {
                 const uint32_t startByte = ts_node_start_byte(node);
                 const uint32_t endByte = ts_node_end_byte(node);
@@ -547,41 +577,181 @@ namespace angel_lsp::features
                     const std::string tokenText = request.sourceCode.substr(startByte, endByte - startByte);
                     if (!tokenText.empty())
                     {
-                        const std::vector<analysis::Symbol> symbols = request.symbolTable.FindSymbols(tokenText);
-                        if (!symbols.empty())
+                        // Qualified enum access such as `State::Idle`. The qualifier emits Type_Namespace
+                        // and the member emits Type_Variable. When the left-hand qualifier resolves exclusively
+                        // to enum symbols, upgrade the qualifier to Type_Enum and the member to Type_EnumMember.
+                        // Deliberately leaves non-enum qualifiers (such as namespace or class scopes) untouched.
+                        if (tokenType == Type_Namespace || tokenType == Type_Variable || tokenType == Type_Type)
                         {
-                            const analysis::SymbolType agreedType = symbols.front().type;
-                            bool allSymbolsMatch = true;
-                            for (const analysis::Symbol &symbol : symbols)
+                            TSNode scopedNode = TSNode{};
+                            TSNode anc = ts_node_parent(node);
+                            for (int level = 0; level < 8 && !ts_node_is_null(anc); ++level, anc = ts_node_parent(anc))
                             {
-                                if (symbol.type != agreedType)
+                                if (std::string_view(ts_node_type(anc)) == "scoped_identifier")
                                 {
-                                    allSymbolsMatch = false;
+                                    scopedNode = anc;
                                     break;
                                 }
                             }
 
-                            if (allSymbolsMatch)
+                            if (!ts_node_is_null(scopedNode))
                             {
-                                if (agreedType == analysis::SymbolType::Class && tokenType == Type_Type)
+                                uint32_t namedCount = ts_node_named_child_count(scopedNode);
+                                TSNode leftNode = TSNode{};
+                                TSNode rightNode = TSNode{};
+                                if (namedCount >= 2)
                                 {
-                                    tokenType = Type_Class;
+                                    leftNode = ts_node_named_child(scopedNode, 0);
+                                    rightNode = ts_node_named_child(scopedNode, namedCount - 1);
                                 }
-                                else if (agreedType == analysis::SymbolType::Interface && tokenType == Type_Type)
+                                else
                                 {
-                                    tokenType = Type_Interface;
+                                    uint32_t allCount = ts_node_child_count(scopedNode);
+                                    if (allCount >= 2)
+                                    {
+                                        leftNode = ts_node_child(scopedNode, 0);
+                                        rightNode = ts_node_child(scopedNode, allCount - 1);
+                                    }
                                 }
-                                else if (agreedType == analysis::SymbolType::Enum && tokenType == Type_Type)
+
+                                if (!ts_node_is_null(leftNode) && !ts_node_is_null(rightNode))
                                 {
-                                    tokenType = Type_Enum;
+                                    uint32_t leftStart = ts_node_start_byte(leftNode);
+                                    uint32_t leftEnd = ts_node_end_byte(leftNode);
+                                    if (leftStart < leftEnd && leftEnd <= request.sourceCode.size())
+                                    {
+                                        std::string leftText(request.sourceCode.substr(leftStart, leftEnd - leftStart));
+                                        const std::vector<analysis::Symbol> leftSymbols = request.symbolTable.FindSymbols(leftText);
+                                        if (!leftSymbols.empty())
+                                        {
+                                            bool allEnum = true;
+                                            for (const analysis::Symbol &sym : leftSymbols)
+                                            {
+                                                if (sym.type != analysis::SymbolType::Enum)
+                                                {
+                                                    allEnum = false;
+                                                    break;
+                                                }
+                                            }
+
+                                            if (allEnum)
+                                            {
+                                                if (ts_node_eq(node, leftNode) || (startByte == leftStart && endByte == leftEnd))
+                                                {
+                                                    tokenType = Type_Enum;
+                                                }
+                                                else
+                                                {
+                                                    uint32_t rightStart = ts_node_start_byte(rightNode);
+                                                    uint32_t rightEnd = ts_node_end_byte(rightNode);
+                                                    if (ts_node_eq(node, rightNode) || (startByte == rightStart && endByte == rightEnd))
+                                                    {
+                                                        tokenType = Type_EnumMember;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
-                                else if (agreedType == analysis::SymbolType::Function && tokenType == Type_Function && !symbols.front().containerName.empty())
+                            }
+                        }
+
+                        // Bare read or call of a member of the enclosing class inside one of its methods.
+                        // The syntax tree treats these as bare variables or functions; we check whether
+                        // `ClassName::member` exists in the class's member keys via the rule index.
+                        // Deliberately does nothing if the identifier does not match an enclosing class member.
+                        if (tokenType == Type_Variable || tokenType == Type_Function)
+                        {
+                            TSNode classDecl = TSNode{};
+                            TSNode anc = ts_node_parent(node);
+                            for (int level = 0; level < 8 && !ts_node_is_null(anc); ++level, anc = ts_node_parent(anc))
+                            {
+                                if (std::string_view(ts_node_type(anc)) == "class_declaration")
                                 {
-                                    tokenType = Type_Method;
+                                    classDecl = anc;
+                                    break;
                                 }
-                                else if (agreedType == analysis::SymbolType::Variable && tokenType == Type_Variable && !symbols.front().containerName.empty())
+                            }
+
+                            if (!ts_node_is_null(classDecl))
+                            {
+                                TSNode classNameNode = ts_node_child_by_field_name(classDecl, "name", 4);
+                                if (!ts_node_is_null(classNameNode))
                                 {
-                                    tokenType = Type_Property;
+                                    uint32_t cStart = ts_node_start_byte(classNameNode);
+                                    uint32_t cEnd = ts_node_end_byte(classNameNode);
+                                    if (cStart < cEnd && cEnd <= request.sourceCode.size())
+                                    {
+                                        std::string className(request.sourceCode.substr(cStart, cEnd - cStart));
+                                        std::string qualifiedKey = className + "::" + tokenText;
+                                        if (const auto ruleIndex = request.symbolTable.GetRuleIndex())
+                                        {
+                                            const auto &typeMembers = ruleIndex->Members(className);
+                                            bool isMember = false;
+                                            for (const auto &mKey : typeMembers.memberKeys)
+                                            {
+                                                if (mKey == qualifiedKey)
+                                                {
+                                                    isMember = true;
+                                                    break;
+                                                }
+                                            }
+
+                                            if (isMember)
+                                            {
+                                                if (tokenType == Type_Variable)
+                                                {
+                                                    tokenType = Type_Property;
+                                                }
+                                                else if (tokenType == Type_Function)
+                                                {
+                                                    tokenType = Type_Method;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (tokenType == Type_Type || tokenType == Type_Variable || tokenType == Type_Function)
+                        {
+                            const std::vector<analysis::Symbol> symbols = request.symbolTable.FindSymbols(tokenText);
+                            if (!symbols.empty())
+                            {
+                                const analysis::SymbolType agreedType = symbols.front().type;
+                                bool allSymbolsMatch = true;
+                                for (const analysis::Symbol &symbol : symbols)
+                                {
+                                    if (symbol.type != agreedType)
+                                    {
+                                        allSymbolsMatch = false;
+                                        break;
+                                    }
+                                }
+
+                                if (allSymbolsMatch)
+                                {
+                                    if (agreedType == analysis::SymbolType::Class && tokenType == Type_Type)
+                                    {
+                                        tokenType = Type_Class;
+                                    }
+                                    else if (agreedType == analysis::SymbolType::Interface && tokenType == Type_Type)
+                                    {
+                                        tokenType = Type_Interface;
+                                    }
+                                    else if (agreedType == analysis::SymbolType::Enum && tokenType == Type_Type)
+                                    {
+                                        tokenType = Type_Enum;
+                                    }
+                                    else if (agreedType == analysis::SymbolType::Function && tokenType == Type_Function && !symbols.front().containerName.empty())
+                                    {
+                                        tokenType = Type_Method;
+                                    }
+                                    else if (agreedType == analysis::SymbolType::Variable && tokenType == Type_Variable && !symbols.front().containerName.empty())
+                                    {
+                                        tokenType = Type_Property;
+                                    }
                                 }
                             }
                         }
@@ -653,6 +823,81 @@ namespace angel_lsp::features
         }
 
         ts_query_cursor_delete(cursor);
+
+        // Additional pass for `this.` member expressions.
+        // The highlights query does not capture member identifiers accessed via `this.`, leaving
+        // them uncoloured. Any member accessed via `this` is a property of the enclosing instance.
+        // We walk the syntax tree for `member_expression` nodes whose "object" is `this` and whose
+        // "member" is an identifier, emitting a Type_Property token with priority 3 if no token
+        // already starts at that position. Deliberately leaves non-`this` member expressions alone.
+        ankerl::unordered_dense::set<uint64_t> existingTokenStarts;
+        existingTokenStarts.reserve(rawTokens.size());
+        for (const auto &tok : rawTokens)
+        {
+            existingTokenStarts.insert(PositionKey(tok.line, tok.startChar));
+        }
+
+        std::vector<TSNode> memberWalkStack;
+        memberWalkStack.push_back(ts_tree_root_node(request.tree));
+        while (!memberWalkStack.empty())
+        {
+            TSNode currNode = memberWalkStack.back();
+            memberWalkStack.pop_back();
+
+            if (ts_node_is_null(currNode))
+            {
+                continue;
+            }
+
+            if (std::string_view(ts_node_type(currNode)) == "member_expression")
+            {
+                TSNode objectNode = ts_node_child_by_field_name(currNode, "object", 6);
+                TSNode memberNode = ts_node_child_by_field_name(currNode, "member", 6);
+                if (!ts_node_is_null(objectNode) && !ts_node_is_null(memberNode))
+                {
+                    uint32_t objStart = ts_node_start_byte(objectNode);
+                    uint32_t objEnd = ts_node_end_byte(objectNode);
+                    if (objStart < objEnd && objEnd <= request.sourceCode.size())
+                    {
+                        std::string_view objText(request.sourceCode.data() + objStart, objEnd - objStart);
+                        if (objText == "this")
+                        {
+                            if (std::string_view(ts_node_type(memberNode)) == "identifier")
+                            {
+                                TSPoint mStart = ts_node_start_point(memberNode);
+                                TSPoint mEnd = ts_node_end_point(memberNode);
+                                uint64_t posKey = PositionKey(mStart.row, mStart.column);
+                                if (!existingTokenStarts.contains(posKey))
+                                {
+                                    if (mStart.row == mEnd.row && mEnd.column > mStart.column)
+                                    {
+                                        rawTokens.push_back(RawToken{
+                                            mStart.row,
+                                            mStart.column,
+                                            mEnd.column - mStart.column,
+                                            Type_Property,
+                                            0,
+                                            3
+                                        });
+                                        existingTokenStarts.insert(posKey);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            uint32_t childCount = ts_node_child_count(currNode);
+            for (uint32_t i = 0; i < childCount; ++i)
+            {
+                TSNode child = ts_node_child(currNode, i);
+                if (!ts_node_is_null(child))
+                {
+                    memberWalkStack.push_back(child);
+                }
+            }
+        }
 
         if (!request.excludedLineRanges.empty())
         {
