@@ -9,7 +9,7 @@
 // Declaring a setting the server never hears is worse than not having it: the UI promises a control
 // that does nothing. This runs as part of `npm run pretest`, which CI already invokes.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -58,6 +58,61 @@ for (const key of declared) {
     }
 }
 
+// Every `%key%` in the manifest has to exist in package.nls.json, and every translation has to
+// carry the same key set. VS Code does not complain about a placeholder it cannot resolve: it shows
+// the raw `%config.features.hover.description%` to the user, in the settings UI, forever. A missing
+// key in a translation is quieter still - that entry silently falls back to English, so half a
+// settings page ends up bilingual with nothing to say why.
+const nlsProblems = [];
+const placeholders = new Set();
+
+for (const match of JSON.stringify(manifest).matchAll(/"%([^%"]+)%"/g)) {
+    placeholders.add(match[1]);
+}
+
+const base = JSON.parse(readFileSync(join(clientDir, 'package.nls.json'), 'utf8'));
+
+for (const key of placeholders) {
+    if (!(key in base)) {
+        nlsProblems.push(`package.json uses %${key}% but package.nls.json does not define it`);
+    }
+}
+
+for (const key of Object.keys(base)) {
+    if (!placeholders.has(key)) {
+        nlsProblems.push(`package.nls.json defines ${key} but nothing in package.json uses it`);
+    }
+}
+
+for (const entry of readdirSync(clientDir)) {
+    const locale = /^package\.nls\.([\w-]+)\.json$/.exec(entry);
+    if (locale === null) {
+        continue;
+    }
+
+    const translated = JSON.parse(readFileSync(join(clientDir, entry), 'utf8'));
+    for (const key of Object.keys(base)) {
+        if (!(key in translated)) {
+            nlsProblems.push(`${entry} is missing ${key}`);
+        }
+    }
+    for (const key of Object.keys(translated)) {
+        if (!(key in base)) {
+            nlsProblems.push(`${entry} defines ${key}, which package.nls.json does not`);
+        }
+    }
+}
+
+if (nlsProblems.length > 0) {
+    console.error('Localisation keys are out of step:');
+    for (const problem of nlsProblems) {
+        console.error(`  - ${problem}`);
+    }
+    console.error('\nA placeholder with no key is shown to the user verbatim; a key missing from a');
+    console.error('translation falls back to English without saying so.');
+    process.exit(1);
+}
+
 if (problems.length > 0) {
     console.error('Settings declared in package.json but not passed to the server:');
     for (const problem of problems) {
@@ -69,4 +124,5 @@ if (problems.length > 0) {
     process.exit(1);
 }
 
-console.log(`All ${declared.length} declared settings reach the server.`);
+console.log(`All ${declared.length} declared settings reach the server, and `
+    + `${placeholders.size} localisation keys line up across every translation.`);

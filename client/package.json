@@ -1,7 +1,7 @@
 {
   "name": "angelscript-lsp",
-  "displayName": "AngelScript Language Server",
-  "description": "Language support for AngelScript: hover, go to definition, completion, semantic highlighting, diagnostics, formatting and refactoring, powered by a native C++ Tree-sitter engine.",
+  "displayName": "%configuration.title%",
+  "description": "%extension.description%",
   "version": "0.1.0",
   "publisher": "Gaftherman",
   "license": "MIT",
@@ -33,7 +33,7 @@
       {
         "id": "angelscript",
         "aliases": [
-          "AngelScript",
+          "%command.showServerLog.category%",
           "angelscript"
         ],
         "extensions": [
@@ -50,17 +50,17 @@
     "commands": [
       {
         "command": "angelscript.showServerLog",
-        "title": "Show Server Log",
-        "category": "AngelScript"
+        "title": "%command.showServerLog.title%",
+        "category": "%command.restartServer.category%"
       },
       {
         "command": "angelscript.restartServer",
-        "title": "Restart Server",
-        "category": "AngelScript"
+        "title": "%command.restartServer.title%",
+        "category": "%command.selectPredefined.category%"
       },
       {
         "command": "angelscript.selectPredefined",
-        "title": "Select Predefined Stub",
+        "title": "%command.selectPredefined.title%",
         "category": "AngelScript"
       }
     ],
@@ -122,7 +122,7 @@
             "**/build/**",
             "**/node_modules/**"
           ],
-          "markdownDescription": "Directory globs the workspace scans do not descend into. Supports `?`, `*` within a path segment and `**` across segments. Setting this replaces the defaults rather than adding to them."
+          "markdownDescription": "%config.exclude.description%"
         },
         "angelscript.searchDirectories": {
           "type": "array",
@@ -131,7 +131,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Custom directory search paths for resolving included script files (`#include \"path.as\"`)."
+          "markdownDescription": "%config.searchDirectories.description%"
         },
         "angelscript.define": {
           "type": "array",
@@ -140,13 +140,13 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Words `#if` treats as defined, matching the words the host application passes to `CScriptBuilder::DefineWord`. A `#if WORD` whose word is not listed here is excluded from compilation, exactly as it is by the real preprocessor, and no diagnostics are reported inside it. A predefined stub can declare the same words with `#define WORD`, which is usually the better place for them: the stub already describes the host's engine setup and travels with it."
+          "markdownDescription": "%config.define.description%"
         },
         "angelscript.predefined.active": {
           "type": "string",
           "scope": "resource",
           "default": "",
-          "markdownDescription": "Selects the single predefined stub loaded by the workspace scan.\n\nWhen empty (the default) the scan loads the first stub it finds in path order and ignores the rest, and says which one it chose. Set it to `all` to load every discovered stub together, which is what a workspace with two stubs used to do by default - shared declarations then resolve more than once.\n\nDoes not affect `#angelscript.predefinedFiles`, which continue to load always, nor the engine profile (`#angelscript.engine.profile`), which continues to load as the baseline API.\n\nThe \"AngelScript: Select Predefined Stub\" command populates this setting for you."
+          "markdownDescription": "%config.predefined.active.description%"
         },
         "angelscript.predefinedFiles": {
           "type": "array",
@@ -155,19 +155,19 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Predefined stub files declaring the host application's API, loaded by path. Absolute paths are used as-is, so the stub can live outside the workspace (e.g. `C:/Games/svencoop/as.predefined`); relative paths are resolved against each workspace folder. Files inside the workspace whose name ends with `#angelscript.predefinedExtension` are picked up automatically and need no entry here."
+          "markdownDescription": "%config.predefinedFiles.description%"
         },
         "angelscript.predefinedExtension": {
           "type": "string",
           "scope": "resource",
           "default": ".as.predefined",
-          "markdownDescription": "Filename suffix that marks a file found in the workspace as a predefined stub. This is a suffix, not a path - use `#angelscript.predefinedFiles` to load a specific file."
+          "markdownDescription": "%config.predefinedExtension.description%"
         },
         "angelscript.fileExtension": {
           "type": "string",
           "scope": "resource",
           "default": ".as",
-          "markdownDescription": "Filename suffix of AngelScript source files, used when scanning the workspace to build the `#include` graph."
+          "markdownDescription": "%config.fileExtension.description%"
         },
         "angelscript.arrayLikeTypes": {
           "type": "array",
@@ -175,7 +175,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Names of template types whose initializer list is a plain repeat of their element type, the way `array<T>`'s is. The engine's default array type is always included.\n\nThis is shorthand. The general mechanism is a `/// @listpattern {repeat T}` tag on the class in your `.as.predefined` stub, copied from the type's own `asBEHAVE_LIST_FACTORY` registration — that also expresses patterns this setting cannot, such as `dictionary`'s `{repeat {string, ?}}`. Use this setting when you cannot edit the stub.\n\nEither way it has to be stated rather than detected: `array<T>` and `optional<T>` are declared identically in a stub, and the compiler accepts `array<int> a = {1};` while rejecting `optional<int> o = {1};`."
+          "markdownDescription": "%config.arrayLikeTypes.description%"
         },
         "angelscript.diagnosticSeverity": {
           "type": "object",
@@ -190,182 +190,182 @@
               "hint"
             ]
           },
-          "markdownDescription": "Overrides the severity of individual diagnostics, keyed by diagnostic code. Example: `{ \"as-warn-unused-variable\": \"hint\" }`."
+          "markdownDescription": "%config.diagnosticSeverity.description%"
         },
         "angelscript.features.hover": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Show type and documentation tooltips on hover."
+          "markdownDescription": "%config.features.hover.description%"
         },
         "angelscript.features.definition": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Enable Go to Definition and Go to Type Definition."
+          "markdownDescription": "%config.features.definition.description%"
         },
         "angelscript.features.completion": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Enable auto-completion suggestions."
+          "markdownDescription": "%config.features.completion.description%"
         },
         "angelscript.features.semanticTokens": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Enable semantic syntax highlighting."
+          "markdownDescription": "%config.features.semanticTokens.description%"
         },
         "angelscript.features.signatureHelp": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Show parameter hints while typing a call."
+          "markdownDescription": "%config.features.signatureHelp.description%"
         },
         "angelscript.features.predefinedLoader": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Load predefined stub files describing the host application's API."
+          "markdownDescription": "%config.features.predefinedLoader.description%"
         },
         "angelscript.features.documentSymbols": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Populate the Outline view and breadcrumbs."
+          "markdownDescription": "%config.features.documentSymbols.description%"
         },
         "angelscript.features.workspaceSymbols": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Enable workspace-wide symbol search (Ctrl+T)."
+          "markdownDescription": "%config.features.workspaceSymbols.description%"
         },
         "angelscript.features.references": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Enable Find All References."
+          "markdownDescription": "%config.features.references.description%"
         },
         "angelscript.features.rename": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Enable symbol rename."
+          "markdownDescription": "%config.features.rename.description%"
         },
         "angelscript.features.documentHighlight": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Highlight other occurrences of the symbol under the cursor."
+          "markdownDescription": "%config.features.documentHighlight.description%"
         },
         "angelscript.features.foldingRange": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Provide code folding regions."
+          "markdownDescription": "%config.features.foldingRange.description%"
         },
         "angelscript.features.inlayHints": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Show inline parameter-name and deduced-type hints."
+          "markdownDescription": "%config.features.inlayHints.description%"
         },
         "angelscript.features.codeAction": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Offer quick fixes and refactorings."
+          "markdownDescription": "%config.features.codeAction.description%"
         },
         "angelscript.features.formatting": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Enable document and range formatting."
+          "markdownDescription": "%config.features.formatting.description%"
         },
         "angelscript.features.documentLink": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Turn `#include` directives into clickable links."
+          "markdownDescription": "%config.features.documentLink.description%"
         },
         "angelscript.features.implementation": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Go to Implementation: from an interface or a base class to the types that answer to it, and from a method to the ones that implement or override it."
+          "markdownDescription": "%config.features.implementation.description%"
         },
         "angelscript.features.selectionRange": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Expand selection: grow the selection one syntactic step at a time."
+          "markdownDescription": "%config.features.selectionRange.description%"
         },
         "angelscript.features.callHierarchy": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Call hierarchy: who calls this function, and what it calls in turn."
+          "markdownDescription": "%config.features.callHierarchy.description%"
         },
         "angelscript.features.typeHierarchy": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Type hierarchy: the bases a class or interface declares, and the types that declare it as theirs."
+          "markdownDescription": "%config.features.typeHierarchy.description%"
         },
         "angelscript.features.linkedEditing": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Linked editing: retype a local variable or a parameter and its uses together, live. Offered only for names a lexical scope keeps inside one file - anything at file scope goes through Rename instead, which looks across documents."
+          "markdownDescription": "%config.features.linkedEditing.description%"
         },
         "angelscript.features.codeLens": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Show actionable code lenses (references, implementations) inline above declarations."
+          "markdownDescription": "%config.features.codeLens.description%"
         },
         "angelscript.features.onTypeFormatting": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Automatically format code on typing specific trigger characters (semicolon, closing brace, newline)."
+          "markdownDescription": "%config.features.onTypeFormatting.description%"
         },
         "angelscript.features.pullDiagnostics": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Answer `textDocument/diagnostic` and `workspace/diagnostic` (LSP 3.17). The editor asks for diagnostics instead of waiting to be told. Push notifications are sent either way, so turning this off loses nothing a client that does not pull was using."
+          "markdownDescription": "%config.features.pullDiagnostics.description%"
         },
         "angelscript.features.typeConversionChecks": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Report conversions with no constructor, `opConv`/`opImplConv` or `opCast`/`opImplCast` to back them."
+          "markdownDescription": "%config.features.typeConversionChecks.description%"
         },
         "angelscript.diagnostics.reportUnknownTypes": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Report a parameter or return type that resolves to no declaration.\n\n`void f(TypoTypeName x)` is a compile error — the engine answers \"Identifier 'TypoTypeName' is not a data type in namespace 'TEST' or parent\" — and left unreported it surfaces as silence at every call site instead, because a call whose parameter types are unknown cannot be checked either.\n\nIt is also, from the server's side, indistinguishable from a legitimate engine-registered type. Measured on 1061 Sven Co-op scripts with the matching engine profile loaded: 1581 findings with this off, 3850 with it on. Turn it off if your host registers types in C++ and declares none of them — or better, set `angelscript.engine.profile`."
+          "markdownDescription": "%config.diagnostics.reportUnknownTypes.description%"
         },
         "angelscript.diagnostics.reportAccessorPortability": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Hint on a `get_`/`set_` accessor written without the `property` keyword. Such an accessor is a property under `asEP_PROPERTY_ACCESSOR_MODE` 2, this server's default, but not under mode 3, which is the engine's own. Adding the keyword is accepted under both, so the quick fix cannot break a working build - which is why this one is on by default."
+          "markdownDescription": "%config.diagnostics.reportAccessorPortability.description%"
         },
         "angelscript.diagnostics.reportAccessorDisabled": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Hint where a script property accessor is used as a property but the host disabled those (`angelscript.engine.propertyAccessorMode` 0 or 1).\n\nUnder either mode the compiler skips script-defined accessors entirely, so `c.X` backed by a script `get_X`/`set_X` is rejected \u2014 with the `property` keyword and without it. A hint rather than an error, and off by default, because the analyzer is being told what the host does: a host told wrong would otherwise see errors on code that builds for it. Says nothing under modes 2 and 3."
+          "markdownDescription": "%config.diagnostics.reportAccessorDisabled.description%"
         },
         "angelscript.diagnostics.reportBoolConversion": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Hint when a class is used where a `bool` is expected, such as `if (h)`. Under `asEP_BOOL_CONVERSION_MODE` 0, the engine's default, this is a compile error even when the class declares `opImplConv`. A quick fix calls the conversion operator explicitly, which compiles under both modes. Off by default, and silent entirely when `angelscript.engine.boolConversionMode` is 1."
+          "markdownDescription": "%config.diagnostics.reportBoolConversion.description%"
         },
         "angelscript.diagnostics.reportMissingFuncdef": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Hint when a type position names a function rather than a type, such as `Foo@ h` where `Foo` is a function. A function handle needs a `funcdef` to name its signature, and a quick fix declares one from the function's own parameters and return type. Off by default, since the name could belong to a host type this analyzer cannot see."
+          "markdownDescription": "%config.diagnostics.reportMissingFuncdef.description%"
         },
         "angelscript.diagnostics.reportIntegerDivision": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Hint on `1 / 2`, which truncates to 0 under the engine's default. Off by default because a codebase that means integer division writes exactly this."
+          "markdownDescription": "%config.diagnostics.reportIntegerDivision.description%"
         },
         "angelscript.preprocessor.elseSupport": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Set this if the host patched its copy of `scriptbuilder.cpp` to understand `#else`.\n\nThe add-on shipped with the SDK does not. Measured against the real compiler: in `#if FOO / a / #else / b / #endif` with `FOO` undefined, the `#else` branch does **not** become the taken one — it is blanked along with the rest of the block, because `#else` is not a directive and the exclusion runs to the `#endif` regardless. With this off, that is exactly what this server assumes."
+          "markdownDescription": "%config.preprocessor.elseSupport.description%"
         },
         "angelscript.preprocessor.elifSupport": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Set this if the host patched its copy of `scriptbuilder.cpp` to understand `#elif`.\n\nNot in the stock add-on. With it on, the first branch whose word is defined is the live one and every other branch is excluded."
+          "markdownDescription": "%config.preprocessor.elifSupport.description%"
         },
         "angelscript.preprocessor.ifdefSupport": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Set this if the host patched its copy of `scriptbuilder.cpp` to understand `#ifdef` and `#ifndef`.\n\nNot in the stock add-on, where either one is left in the source and the compiler reports `Unexpected token`."
+          "markdownDescription": "%config.preprocessor.ifdefSupport.description%"
         },
         "angelscript.preprocessor.defineInScripts": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Set this if the host patched its copy of `scriptbuilder.cpp` so `#define WORD` in a script defines a word.\n\nNot in the stock add-on, where `DefineWord` is a C++ call the host makes and a `#define` written in a script is a syntax error. To declare the words the host itself defines, use `#angelscript.define` or a `#define` line in a predefined stub, which are not affected by this setting."
+          "markdownDescription": "%config.preprocessor.defineInScripts.description%"
         },
         "angelscript.preprocessor.pragmaMode": {
           "type": "string",
@@ -375,22 +375,22 @@
             "error"
           ],
           "default": "accept",
-          "markdownDescription": "What to report for a `#pragma`.\n\nThe stock add-on rejects every one: with no pragma callback registered it substitutes a failure for the callback's answer, writes `Invalid #pragma directive` and fails the whole section. The default here is nevertheless `accept`, because a host that registers a callback is the common case and reporting an error by default would put a squiggle on a pragma that builds fine. Choose `error` for a host that really registered nothing, or `hint` if you are not sure."
+          "markdownDescription": "%config.preprocessor.pragmaMode.description%"
         },
         "angelscript.engine.allowUnsafeReferences": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Set this if the host calls `SetEngineProperty(asEP_ALLOW_UNSAFE_REFERENCES, true)`.\n\nWith it off — the engine's default — `&` on a parameter means `&inout` and only an object type that supports handles may use it, so `void f(int &x)` is an error. With it on, primitives may be passed by reference and the diagnostic is not reported."
+          "markdownDescription": "%config.engine.allowUnsafeReferences.description%"
         },
         "angelscript.engine.privatePropAsProtected": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Set this if the host calls `SetEngineProperty(asEP_PRIVATE_PROP_AS_PROTECTED, true)`.\n\nA `private` member then follows the `protected` rule, so a derived class may reach it and the access is no longer reported."
+          "markdownDescription": "%config.engine.privatePropAsProtected.description%"
         },
         "angelscript.engine.disallowGlobalVars": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Set this if the host calls `SetEngineProperty(asEP_DISALLOW_GLOBAL_VARS, true)`.\n\nEvery global variable declaration is then a compile error — the engine answers \"Global variables have been disabled by the application\" — and is reported as one."
+          "markdownDescription": "%config.engine.disallowGlobalVars.description%"
         },
         "angelscript.engine.propertyAccessorMode": {
           "type": "number",
@@ -399,41 +399,41 @@
             3
           ],
           "enumDescriptions": [
-            "Any get_X()/set_X(v) member is the property X.",
-            "Only an accessor declared with the `property` keyword is."
+            "%config.engine.propertyAccessorMode.enum.0%",
+            "%config.engine.propertyAccessorMode.enum.1%"
           ],
           "default": 2,
-          "markdownDescription": "How `get_X()` / `set_X(v)` become the virtual property `X`, matching the host's `SetEngineProperty(asEP_PROPERTY_ACCESSOR_MODE, ...)`.\n\n`2` — any accessor counts. `3` — only one carrying the `property` keyword does, and `c.X` without it is an error the engine reports as \"'X' is not a member of 'C'\".\n\nThe engine's own default is `3`; this server's is `2`, because being lenient here misses an error while being strict invents one for every host that sets `2`. Set it to `3` if yours does not."
+          "markdownDescription": "%config.engine.propertyAccessorMode.description%"
         },
         "angelscript.engine.allowMultilineStrings": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Whether a plain `\"...\"` string may span lines, matching the host's `SetEngineProperty(asEP_ALLOW_MULTILINE_STRINGS, ...)`.\n\nOff in the engine and off here: such a string is rejected with \"Multiline strings are not allowed in this application\". A `\"\"\"heredoc\"\"\"` spans lines under either setting. Turn this on only if your host does, or the server will report code your engine accepts."
+          "markdownDescription": "%config.engine.allowMultilineStrings.description%"
         },
         "angelscript.engine.boolConversionMode": {
           "type": "number",
           "enum": [ 0, 1 ],
           "enumDescriptions": [
-            "A class is never usable where a bool is expected.",
-            "A class with opImplConv or opConv may be used as a condition."
+            "%config.engine.boolConversionMode.enum.0%",
+            "%config.engine.boolConversionMode.enum.1%"
           ],
           "default": 0,
-          "markdownDescription": "How a class may be used where a `bool` is expected, matching the host's `SetEngineProperty(asEP_BOOL_CONVERSION_MODE, ...)`.\n\n`0` — never; `if (h)` on a class is a compile error even when the class declares `opImplConv`. `1` — a class declaring `opImplConv` or `opConv` may be used as a condition.\n\n`0` is the engine's own default and this server's. Set it to `1` if your host sets it, or the accompanying hint will describe a restriction you do not have."
+          "markdownDescription": "%config.engine.boolConversionMode.description%"
         },
         "angelscript.engine.useCharacterLiterals": {
           "type": "number",
           "enum": [ 0, 1 ],
           "enumDescriptions": [
-            "A one-character string, the engine's default, so int c = 'x' is a compile error.",
-            "An integer character code, so the same line compiles."
+            "%config.engine.useCharacterLiterals.enum.0%",
+            "%config.engine.useCharacterLiterals.enum.1%"
           ],
           "default": 0,
-          "markdownDescription": "How `'x'` is read, matching asEP_USE_CHARACTER_LITERALS. `0` — a one-character string, the engine's default, so `int c = 'x'` is a compile error. `1` — an integer character code, so the same line compiles."
+          "markdownDescription": "%config.engine.useCharacterLiterals.description%"
         },
         "angelscript.engine.disallowValueAssignForRef": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE. When the host sets it, `a = b` on a reference type is an error and `@a = @b` is required."
+          "markdownDescription": "%config.engine.disallowValueAssignForRef.description%"
         },
         "angelscript.engine.alterSyntaxNamedArgs": {
           "type": "number",
@@ -443,27 +443,27 @@
             2
           ],
           "enumDescriptions": [
-            "Only name: value, the engine's default, and name = value is an error.",
-            "name = value accepted with a warning.",
-            "Accepted silently."
+            "%config.engine.alterSyntaxNamedArgs.enum.0%",
+            "%config.engine.alterSyntaxNamedArgs.enum.1%",
+            "%config.engine.alterSyntaxNamedArgs.enum.2%"
           ],
           "default": 0,
-          "markdownDescription": "asEP_ALTER_SYNTAX_NAMED_ARGS. `0` — only `name: value`, the engine's default, and `name = value` is an error. `1` — `name = value` accepted with a warning. `2` — accepted silently."
+          "markdownDescription": "%config.engine.alterSyntaxNamedArgs.description%"
         },
         "angelscript.engine.disableIntegerDivision": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "asEP_DISABLE_INTEGER_DIVISION. When the host sets it, `/` on two integers yields a float, so `1 / 2` is 0.5 rather than 0."
+          "markdownDescription": "%config.engine.disableIntegerDivision.description%"
         },
         "angelscript.engine.disallowEmptyListElements": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "asEP_DISALLOW_EMPTY_LIST_ELEMENTS. When the host sets it, a hole in an initializer list such as `{1, , 3}` is an error."
+          "markdownDescription": "%config.engine.disallowEmptyListElements.description%"
         },
         "angelscript.engine.foreachSupport": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "asEP_FOREACH_SUPPORT. ON by the engine's own default; turn it off only if your host disables `foreach`, otherwise every `foreach` loop is reported."
+          "markdownDescription": "%config.engine.foreachSupport.description%"
         },
         "angelscript.engine.profile": {
           "type": "string",
@@ -477,12 +477,12 @@
             "auto"
           ],
           "default": "standard",
-          "markdownDescription": "Built-in AngelScript engine profile to automatically load predefined API stubs and rules (e.g. `svencoop`, `urho3d`, `standard`, `auto`)."
+          "markdownDescription": "%config.engine.profile.description%"
         },
         "angelscript.format.onSave": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Format the whole document when you save it manually.\n\nOff by default: your editor already has `editor.formatOnSave`, and a language server that reformats every save regardless would override that choice silently. Autosave and focus-change saves never format, whatever this is set to - rewriting a file while you are still typing in it is not on offer."
+          "markdownDescription": "%config.format.onSave.description%"
         },
         "angelscript.format.braceStyle": {
           "type": "string",
@@ -491,11 +491,11 @@
             "kr"
           ],
           "enumDescriptions": [
-            "The opening brace of a block goes on its own line, aligned with the statement that owns it.",
-            "The opening brace of a block goes at the end of the statement line, and else sits beside the brace that closed the if."
+            "%config.format.braceStyle.enum.0%",
+            "%config.format.braceStyle.enum.1%"
           ],
           "default": "allman",
-          "description": "Where a block's opening brace goes. An initializer list and a lambda body keep their brace on the line under either style."
+          "description": "%config.format.braceStyle.description%"
         }
       }
     }
