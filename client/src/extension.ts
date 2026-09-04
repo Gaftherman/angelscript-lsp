@@ -6,7 +6,8 @@ import {
     StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri
 } from 'vscode';
 import {
-    LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler, ErrorAction, CloseAction
+    LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler, ErrorAction, CloseAction,
+    State, DidChangeConfigurationNotification
 } from 'vscode-languageclient/node';
 
 let client: LanguageClient;
@@ -35,6 +36,18 @@ const MAX_SILENT_RESTARTS = 4;
 
 /** @brief Server exits absorbed so far, reset on every successful start. */
 let unexpectedExits = 0;
+
+/**
+ * @brief Restarts run one at a time, in the order they were asked for.
+ *
+ * Toggling three settings in the settings UI fires three configuration events in a row, and each
+ * used to start its own stop-then-start against the same `client` variable. The second stop raced
+ * the first start, and the loser reported "Starting server failed".
+ */
+let restartChain: Promise<void> = Promise.resolve();
+
+/** @brief True while a restart has been asked for and has not begun yet. */
+let restartPending = false;
 
 /**
  * @brief The command line the running server was launched with.
@@ -274,7 +287,11 @@ export function buildServerArgs(): string[] {
     // command line so a server starting fresh honours the choice; a server already running is told
     // through didChangeConfiguration instead, which is why the restart watcher ignores this flag.
     const activeStub = config.get<string>('predefined.active', '').trim();
-    if (activeStub.length > 0) {
+    if (activeStub.toLowerCase() === 'all') {
+        // Not a filename to resolve: it asks the server to load every stub it finds, which is what
+        // it used to do whenever nothing was selected.
+        args.push('--predefined-active=all');
+    } else if (activeStub.length > 0) {
         for (const resolved of resolveAgainstWorkspace(activeStub)) {
             args.push(`--predefined-active=${resolved}`);
         }
@@ -524,8 +541,13 @@ async function startClient(context: ExtensionContext): Promise<void> {
 
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: 'file', language: 'angelscript' }],
+        // No `configurationSection` here on purpose. It installs a second configuration listener
+        // inside the LanguageClient, and that one fired against a client this extension was already
+        // restarting for the same event - which surfaced as "Sending notification
+        // workspace/didChangeConfiguration failed / Error: Starting server failed" on every toggle
+        // in the settings UI. There is one listener now, below, and it decides between telling the
+        // running server and replacing it.
         synchronize: {
-            configurationSection: 'angelscript',
             // Without this the server only ever learns about files the user opened: a branch
             // switch, a pull, or a generated script would leave every stale symbol in the index.
             // angelscript.exclude does NOT apply here: createFileSystemWatcher takes a single
@@ -608,12 +630,63 @@ export async function activate(context: ExtensionContext) {
             runningServerArgs = next;
 
             if (unchanged) {
+                // Nothing on the command line moved, so the running server can be told rather than
+                // replaced. This is the path every hot-reloadable setting takes: the active stub,
+                // the engine profile, the search directories, the brace style.
+                await pushConfiguration();
                 return;
             }
 
             await restartClient(context, 'Configuration changed; restarting the language server.');
         })
     );
+}
+
+/**
+ * @brief Hands the running server the current `angelscript` settings section.
+ *
+ * Sent only while the client is actually running: a notification to one that is starting or
+ * stopping makes the language client try to start it, which is the failure this replaced.
+ */
+async function pushConfiguration(): Promise<void> {
+    const running = client;
+    if (!running || running.state !== State.Running) {
+        return;
+    }
+
+    try {
+        await running.sendNotification(DidChangeConfigurationNotification.type, {
+            settings: { angelscript: workspace.getConfiguration().get('angelscript') ?? {} }
+        });
+    } catch (error) {
+        lspOutputChannel.appendLine(
+            `Could not hand the server its new configuration: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/**
+ * @brief Queues a restart behind any restart already running or waiting.
+ *
+ * A request made while one is already waiting is folded into it rather than queued: every restart
+ * reads the configuration as it starts, so the one already waiting will carry this change too.
+ *
+ * @param context The extension execution context.
+ * @param reason Written to the log, so a restart is never a silent gap in it.
+ */
+function restartClient(context: ExtensionContext, reason: string): Promise<void> {
+    if (restartPending) {
+        lspOutputChannel.appendLine(`${reason} (folded into the restart already queued)`);
+        return restartChain;
+    }
+
+    restartPending = true;
+    restartChain = restartChain.catch(() => { /* a failed restart must not block the next one */ })
+        .then(async () => {
+            restartPending = false;
+            await performRestart(context, reason);
+        });
+
+    return restartChain;
 }
 
 /**
@@ -627,7 +700,7 @@ export async function activate(context: ExtensionContext) {
  * @param context The extension execution context.
  * @param reason Written to the log, so a restart is never a silent gap in it.
  */
-async function restartClient(context: ExtensionContext, reason: string): Promise<void> {
+async function performRestart(context: ExtensionContext, reason: string): Promise<void> {
     lspOutputChannel.appendLine(reason);
     setStatus('starting', 'AngelScript: restarting the language server');
 
@@ -657,7 +730,10 @@ async function selectPredefinedStub(): Promise<void> {
 
     interface PredefinedStubsResult {
         stubs: string[];
+        /** The stub actually loaded - chosen, or picked by the scan. Empty while merging. */
         active: string;
+        /** True when every discovered stub is being loaded together. */
+        merging?: boolean;
     }
 
     let result: PredefinedStubsResult;
@@ -681,8 +757,8 @@ async function selectPredefinedStub(): Promise<void> {
 
     const items: StubQuickPickItem[] = [
         {
-            label: 'All stubs (merged)',
-            description: 'Default behavior. Loads all discovered stubs; shared declarations will resolve more than once.',
+            label: result.merging === true || (result.active ?? '').length > 0 ? 'Automatic' : '$(check) Automatic',
+            description: 'Default. The workspace scan loads the first stub it finds, in path order.',
             stubPath: ''
         }
     ];
@@ -707,6 +783,12 @@ async function selectPredefinedStub(): Promise<void> {
             stubPath
         });
     }
+
+    items.push({
+        label: result.merging === true ? '$(check) All stubs (merged)' : 'All stubs (merged)',
+        description: 'Loads every discovered stub. Declarations they share will resolve more than once.',
+        stubPath: 'all'
+    });
 
     const chosen = await window.showQuickPick(items, {
         placeHolder: 'Select the predefined stub that describes the host application API'
