@@ -269,6 +269,91 @@ namespace angel_lsp::analysis
         diagnostics.push_back(std::move(diag));
     }
 
+    namespace
+    {
+        /**
+         * @brief The column of `typeName` on `line`, searching from `fromColumn`.
+         *
+         * Returns the source line's own npos when the line is past the end of the document or the
+         * name is not on it - a declaration split across lines, or a type spelled differently from
+         * the base name the rule is complaining about.
+         */
+        size_t ColumnOfTypeName(std::string_view sourceCode, uint32_t line, uint32_t fromColumn,
+                                std::string_view typeName)
+        {
+            if (typeName.empty())
+                return std::string_view::npos;
+
+            size_t at = 0;
+            for (uint32_t skipped = 0; skipped < line; ++skipped)
+            {
+                at = sourceCode.find('\n', at);
+                if (at == std::string_view::npos)
+                    return std::string_view::npos;
+                ++at;
+            }
+
+            size_t lineEnd = sourceCode.find('\n', at);
+            if (lineEnd == std::string_view::npos)
+                lineEnd = sourceCode.size();
+
+            const std::string_view text = sourceCode.substr(at, lineEnd - at);
+            if (fromColumn >= text.size())
+                return std::string_view::npos;
+
+            const size_t found = text.find(typeName, fromColumn);
+            if (found == std::string_view::npos)
+                return std::string_view::npos;
+
+            // A name has to stand alone: `Foo` inside `FooBar` is a different type, and underlining
+            // the first three characters of it would be worse than underlining the declaration.
+            const bool leftClear = found == 0 ||
+                                   (!std::isalnum(static_cast<unsigned char>(text[found - 1])) &&
+                                    text[found - 1] != '_');
+            const size_t after = found + typeName.size();
+            const bool rightClear = after >= text.size() ||
+                                    (!std::isalnum(static_cast<unsigned char>(text[after])) &&
+                                     text[after] != '_');
+
+            return (leftClear && rightClear) ? found : std::string_view::npos;
+        }
+    }
+
+    void DiagnosticContext::EmitAtTypeName(const Symbol &sym, std::string_view code,
+                                           std::string_view typeName, DiagnosticSeverity severity) const
+    {
+        const size_t column = ColumnOfTypeName(request.sourceCode, sym.fullRange.startLine,
+                                               sym.fullRange.startCharacter, typeName);
+
+        if (column == std::string_view::npos)
+        {
+            Emit(sym, code, typeName, severity);
+            return;
+        }
+
+        EmitAtRange(sym.fullRange.startLine, static_cast<uint32_t>(column),
+                    sym.fullRange.startLine, static_cast<uint32_t>(column + typeName.size()),
+                    code, typeName, severity);
+    }
+
+    void DiagnosticContext::EmitAtTypeName(const ParameterInformation &param, const Symbol &parentSym,
+                                           std::string_view code, std::string_view typeName,
+                                           DiagnosticSeverity severity) const
+    {
+        const size_t column = ColumnOfTypeName(request.sourceCode, param.startLine,
+                                               param.startCharacter, typeName);
+
+        if (column == std::string_view::npos)
+        {
+            Emit(param, parentSym, code, typeName, severity);
+            return;
+        }
+
+        EmitAtRange(param.startLine, static_cast<uint32_t>(column),
+                    param.startLine, static_cast<uint32_t>(column + typeName.size()),
+                    code, typeName, severity);
+    }
+
     void DiagnosticContext::EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, DiagnosticSeverity severity) const
     {
         Diagnostic diag;

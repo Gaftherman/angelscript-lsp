@@ -4068,3 +4068,235 @@ TEST_CASE("Server - What it says while the code is still being written")
 
     MESSAGE("half-written code: " << stepsChecked << " steps checked");
 }
+
+// =====================================================================================
+// Where the squiggle sits.
+//
+// Every other test here asks whether a problem is reported. None asks where. A diagnostic that
+// points at the whole line, or at the token after the mistake, is useless even when its message is
+// right - the reader has to find the defect themselves, which is the work the tool was for.
+//
+// The expectations name the TEXT the range must span rather than four numbers, so they read as what
+// a reader should see underlined and cannot drift into asserting an off-by-one nobody notices.
+// =====================================================================================
+
+namespace
+{
+    struct RangeExpectation
+    {
+        std::string code;
+        std::string covers;
+        uint32_t line = 0;
+    };
+
+    struct RangeScenario
+    {
+        std::string name;
+        std::string why;
+        std::string source;
+        std::vector<RangeExpectation> expect;
+    };
+
+    std::vector<RangeScenario> LoadRangeScenarios()
+    {
+        const std::filesystem::path path =
+            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "range_scenarios.json";
+
+        std::ifstream file(path, std::ios::binary);
+        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        lsp::json::Value parsed = lsp::json::parse(text);
+        REQUIRE(parsed.isObject());
+
+        const auto *list = parsed.object().find("scenarios");
+        REQUIRE(list != nullptr);
+        REQUIRE(list->isArray());
+
+        std::vector<RangeScenario> scenarios;
+        for (const auto &entry : list->array())
+        {
+            const lsp::json::Object &fields = entry.object();
+
+            RangeScenario scenario;
+            scenario.name = fields.find("name")->string();
+            scenario.why = fields.find("why")->string();
+            scenario.source = fields.find("source")->string();
+
+            for (const auto &item : fields.find("expect")->array())
+            {
+                const lsp::json::Object &expectFields = item.object();
+
+                RangeExpectation expectation;
+                expectation.code = expectFields.find("code")->string();
+                expectation.covers = expectFields.find("covers")->string();
+                expectation.line = static_cast<uint32_t>(expectFields.find("line")->number());
+                scenario.expect.push_back(std::move(expectation));
+            }
+
+            scenarios.push_back(std::move(scenario));
+        }
+
+        return scenarios;
+    }
+
+    struct PublishedDiagnostic
+    {
+        std::string code;
+        uint32_t startLine = 0;
+        uint32_t startCharacter = 0;
+        uint32_t endLine = 0;
+        uint32_t endCharacter = 0;
+    };
+
+    /** @brief The diagnostics inside one publishDiagnostics frame, parsed rather than grepped. */
+    std::vector<PublishedDiagnostic> ParsePublished(const std::string &frame)
+    {
+        std::vector<PublishedDiagnostic> parsed;
+        if (frame.empty())
+            return parsed;
+
+        lsp::json::Value message = lsp::json::parse(frame);
+        if (!message.isObject())
+            return parsed;
+
+        const auto *params = message.object().find("params");
+        if (params == nullptr || !params->isObject())
+            return parsed;
+
+        const auto *list = params->object().find("diagnostics");
+        if (list == nullptr || !list->isArray())
+            return parsed;
+
+        for (const auto &entry : list->array())
+        {
+            const lsp::json::Object &fields = entry.object();
+
+            PublishedDiagnostic diagnostic;
+            if (const auto *code = fields.find("code"); code && code->isString())
+                diagnostic.code = code->string();
+
+            const auto *range = fields.find("range");
+            if (range == nullptr || !range->isObject())
+                continue;
+
+            const auto *start = range->object().find("start");
+            const auto *end = range->object().find("end");
+            if (start == nullptr || end == nullptr)
+                continue;
+
+            diagnostic.startLine = static_cast<uint32_t>(start->object().find("line")->number());
+            diagnostic.startCharacter = static_cast<uint32_t>(start->object().find("character")->number());
+            diagnostic.endLine = static_cast<uint32_t>(end->object().find("line")->number());
+            diagnostic.endCharacter = static_cast<uint32_t>(end->object().find("character")->number());
+
+            parsed.push_back(std::move(diagnostic));
+        }
+
+        return parsed;
+    }
+
+    /** @brief The source text a range spans, or empty when the range does not fit the document. */
+    std::string TextInRange(const std::string &source, const PublishedDiagnostic &diagnostic)
+    {
+        std::vector<size_t> lineStarts{ 0 };
+        for (size_t at = 0; at < source.size(); ++at)
+        {
+            if (source[at] == '\n')
+                lineStarts.push_back(at + 1);
+        }
+
+        if (diagnostic.startLine >= lineStarts.size() || diagnostic.endLine >= lineStarts.size())
+            return {};
+
+        const size_t from = lineStarts[diagnostic.startLine] + diagnostic.startCharacter;
+        const size_t to = lineStarts[diagnostic.endLine] + diagnostic.endCharacter;
+
+        if (from > to || to > source.size())
+            return {};
+
+        return source.substr(from, to - from);
+    }
+}
+
+TEST_CASE("Server - A diagnostic underlines the text it is about")
+{
+    const std::vector<RangeScenario> scenarios = LoadRangeScenarios();
+    REQUIRE_FALSE(scenarios.empty());
+
+    size_t checked = 0;
+
+    for (const RangeScenario &scenario : scenarios)
+    {
+        CAPTURE(scenario.name);
+        INFO(scenario.why);
+
+        WorkspaceFixture fixture;
+        fixture.Write("main.as", scenario.source);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeMessage(fixture.RootUri()));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        stream.Push(DidOpenMessage(fixture.Uri("main.as"), scenario.source));
+        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        RunScript(serverConfig, stream);
+
+        const std::string frame = LastPublishedFor(stream.Output(), "main.as");
+        INFO("published: " << frame);
+        REQUIRE_FALSE(frame.empty());
+
+        const auto diagnostics = ParsePublished(frame);
+
+        for (const RangeExpectation &expectation : scenario.expect)
+        {
+            CAPTURE(expectation.code);
+            CAPTURE(expectation.line);
+            INFO("should underline: '" << expectation.covers << "'");
+
+            // Any diagnostic of that code on that line may be the one meant: two unused locals
+            // declared together sit on one line, and which of them comes first in the payload is
+            // not something an expectation should have to know. The underline is what identifies
+            // it, so the match is on the underline.
+            std::vector<std::string> underlinedHere;
+            bool matched = false;
+
+            for (const PublishedDiagnostic &diagnostic : diagnostics)
+            {
+                if (diagnostic.code != expectation.code || diagnostic.startLine != expectation.line)
+                    continue;
+
+                const std::string underlined = TextInRange(scenario.source, diagnostic);
+                underlinedHere.push_back(underlined);
+
+                if (underlined == expectation.covers)
+                {
+                    matched = true;
+                    break;
+                }
+            }
+
+            if (underlinedHere.empty())
+            {
+                FAIL_CHECK("no " << expectation.code << " reported on line " << expectation.line);
+                continue;
+            }
+
+            std::string actually;
+            for (const std::string &text : underlinedHere)
+            {
+                if (!actually.empty())
+                    actually += "', '";
+                actually += text;
+            }
+
+            INFO("actually underlined: '" << actually << "'");
+            CHECK(matched);
+
+            ++checked;
+        }
+    }
+
+    MESSAGE("diagnostic ranges: " << checked << " underlines checked");
+}

@@ -217,7 +217,11 @@ namespace angel_lsp::analysis::rules
                 !IsKnownType(sig.returnBaseTypeName, ctx))
             {
                 ctx.LogRule("CheckReturnType", "as-err-unresolved-type", sym);
-                ctx.Emit(sym, "as-err-unresolved-type", sig.returnBaseTypeName);
+
+                // On the type, not over the whole signature: `MissingType getThing() { ... }`
+                // underlined the declaration and left the reader to find which part of it was
+                // being complained about.
+                ctx.EmitAtTypeName(sym, "as-err-unresolved-type", sig.returnBaseTypeName);
             }
 
             // NOT IMPLEMENTED: as-err-invalid-reference-return.
@@ -640,7 +644,9 @@ namespace angel_lsp::analysis::rules
             if (judgeParameterType && !param.baseTypeName.empty() && !IsKnownType(param.baseTypeName, ctx))
             {
                 ctx.LogParam("ValidateParameters", "as-err-unresolved-type", param, sym);
-                ctx.Emit(param, sym, "as-err-unresolved-type", param.baseTypeName);
+
+                // On the type, not over `BadType param` - the name beside it is not what is wrong.
+                ctx.EmitAtTypeName(param, sym, "as-err-unresolved-type", param.baseTypeName);
             }
 
             if (param.name.empty())

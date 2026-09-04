@@ -1,0 +1,165 @@
+{
+  "scenarios": [
+    {
+      "name": "unused-local-variable",
+      "why": "Highlighting the entire declaration or other variables misleads the developer about which variable is unreferenced.",
+      "source": "void test()\n{\n    int used = 1;\n    int unused = 2;\n    used++;\n}",
+      "expect": [
+        {
+          "code": "as-warn-unused-variable",
+          "covers": "unused",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "name": "multiple-unused-locals-same-line",
+      "why": "Highlighting the full line fails to identify which individual variables in the comma-separated list are unused.",
+      "source": "void test()\n{\n    int a, b;\n}",
+      "expect": [
+        {
+          "code": "as-warn-unused-variable",
+          "covers": "a",
+          "line": 2
+        },
+        {
+          "code": "as-warn-unused-variable",
+          "covers": "b",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "name": "unknown-type-variable-declaration",
+      "why": "Highlighting the variable name or the full statement obscures that the type specifier itself is unresolved.",
+      "source": "void test()\n{\n    UnknownType item;\n}",
+      "expect": [
+        {
+          "code": "as-err-unresolved-type",
+          "covers": "UnknownType",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "name": "unknown-type-parameter",
+      "why": "Highlighting the parameter name or function signature conceals that the parameter type is unrecognized.",
+      "source": "void process(BadType param)\n{\n}",
+      "expect": [
+        {
+          "code": "as-err-unresolved-type",
+          "covers": "BadType",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "name": "unknown-type-return-type",
+      "why": "Highlighting the function name or whole signature obscures that only the return type is unresolved.",
+      "source": "MissingType getThing()\n{\n}",
+      "expect": [
+        {
+          "code": "as-err-unresolved-type",
+          "covers": "MissingType",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "name": "duplicate-local-declaration",
+      "why": "Highlighting the original declaration or the whole line conceals which statement constitutes the invalid duplicate.",
+      "source": "void test()\n{\n    int x = 1;\n    int x = 2;\n}",
+      "expect": [
+        {
+          "code": "as-err-duplicate-symbol",
+          "covers": "x",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "name": "local-duplicates-parameter",
+      "why": "Highlighting the parameter incorrectly blames the valid parameter definition rather than the colliding local variable.",
+      "source": "void test(int val)\n{\n    int val = 0;\n}",
+      "expect": [
+        {
+          "code": "as-err-duplicate-symbol",
+          "covers": "val",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "name": "bare-return-in-non-void-function",
+      "why": "Highlighting the function signature forces the reader to manually search for which return statement lacks a value.",
+      "source": "int compute()\n{\n    return;\n}",
+      "expect": [
+        {
+          "code": "as-err-return-value-required",
+          "covers": "return;",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "name": "return-value-in-constructor",
+      "why": "Highlighting the constructor declaration rather than the return statement obscures where the illegal return value is located.",
+      "source": "class Foo\n{\n    Foo()\n    {\n        return 5;\n    }\n}",
+      "expect": [
+        {
+          "code": "as-err-void-return-value",
+          "covers": "return 5;",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "name": "null-assigned-to-primitive",
+      "why": "The variable declaration itself is valid while null cannot be assigned to non-handles, so the diagnostic blames null.",
+      "source": "void test()\n{\n    int x = null;\n}",
+      "expect": [
+        {
+          "code": "as-err-null-non-handle",
+          "covers": "x",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "name": "not-all-paths-return",
+      "why": "Highlighting the function body or closing brace provides poor visual clarity compared to flagging the function name directly.",
+      "source": "int check(bool flag)\n{\n    if (flag)\n    {\n        return 1;\n    }\n}",
+      "expect": [
+        {
+          "code": "as-err-not-all-paths-return",
+          "covers": "check",
+          "line": 0
+        }
+      ]
+    },
+    {
+      "name": "undeclared-identifier-expression",
+      "why": "Highlighting the entire assignment or line obscures exactly which identifier was not found.",
+      "source": "void test()\n{\n    int x = 1;\n    x = missingVar + 2;\n}",
+      "expect": [
+        {
+          "code": "as-warn-undeclared-identifier",
+          "covers": "missingVar",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "name": "undeclared-function-call",
+      "why": "Highlighting parentheses or call arguments implies a syntax or argument error rather than an unknown callee name.",
+      "source": "void test()\n{\n    doThing();\n}",
+      "expect": [
+        {
+          "code": "as-err-undefined-identifier",
+          "covers": "doThing",
+          "line": 2
+        }
+      ]
+    }
+  ]
+}
