@@ -15,6 +15,7 @@
   "Chooses which host API description the workspace uses.": "Chooses which host API description the workspace uses.",
   "AngelScript language server": "AngelScript language server",
   "Restarting the AngelScript language server.": "Restarting the AngelScript language server.",
+  "all stubs": "all stubs",
   "Select stub": "Select stub",
   "AngelScript found {0} predefined stubs and is using {1}.": "AngelScript found {0} predefined stubs and is using {1}.",
   "The AngelScript language server is not running.": "The AngelScript language server is not running.",

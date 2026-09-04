@@ -46,6 +46,15 @@ const MAX_SILENT_RESTARTS = 4;
 let unexpectedExits = 0;
 
 /**
+ * @brief Name of the predefined stub in force, shown in the status bar.
+ *
+ * The bar is where a user looks for this - it is where Live Share, the language mode and the line
+ * ending all live - and it is the only surface that is still there after the notification about it
+ * has been dismissed. Empty means the server has not said yet, or every stub is merged.
+ */
+let activeStubLabel = '';
+
+/**
  * @brief Restarts run one at a time, in the order they were asked for.
  *
  * Toggling three settings in the settings UI fires three configuration events in a row, and each
@@ -74,13 +83,22 @@ let runningServerArgs: string[] = [];
  * looked identical from the editor, because the only difference was a line in an output channel
  * nobody has open. Every state here is clickable and reveals that channel.
  */
+let lastStatus: { state: 'starting' | 'running' | 'failed'; tooltip: string } | undefined;
+
 function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): void {
+    lastStatus = { state, tooltip };
+
     if (!statusBarItem) {
         return;
     }
 
     const label = { starting: '$(sync~spin) AngelScript', running: '$(check) AngelScript', failed: '$(error) AngelScript' };
-    statusBarItem.text = label[state];
+
+    // The stub only rides along on the healthy state: on a failure the bar has something more
+    // urgent to say, and while starting there is no answer yet.
+    statusBarItem.text = state === 'running' && activeStubLabel.length > 0
+        ? `${label[state]}: ${activeStubLabel}`
+        : label[state];
     statusBarItem.tooltip = `${tooltip}\n${l10n.t('Click for the log, a restart, or the stub picker.')}`;
     statusBarItem.backgroundColor = state === 'failed'
         ? new ThemeColor('statusBarItem.errorBackground')
@@ -797,6 +815,40 @@ interface PredefinedStubsResult {
 }
 
 /**
+ * @brief Reads the stub in force from the server and puts its name in the status bar.
+ *
+ * @param stubs Optionally the answer already in hand, so the caller that just asked does not ask
+ *        twice.
+ */
+async function refreshStubStatus(stubs?: PredefinedStubsResult): Promise<void> {
+    let result = stubs;
+
+    if (result === undefined) {
+        if (!client || client.state !== State.Running) {
+            return;
+        }
+        try {
+            result = await client.sendRequest<PredefinedStubsResult>(
+                'workspace/executeCommand', { command: 'angelscript.listPredefinedStubs' });
+        } catch {
+            return;
+        }
+    }
+
+    if (result?.merging === true) {
+        activeStubLabel = l10n.t('all stubs');
+    } else if (result && typeof result.active === 'string' && result.active.length > 0) {
+        activeStubLabel = path.basename(result.active);
+    } else {
+        activeStubLabel = '';
+    }
+
+    if (lastStatus) {
+        setStatus(lastStatus.state, lastStatus.tooltip);
+    }
+}
+
+/**
  * @brief Offers the picker when the workspace holds more than one stub and none was chosen.
  *
  * The server used to raise this itself, as a notification naming a command for the user to go and
@@ -805,7 +857,9 @@ interface PredefinedStubsResult {
  */
 async function offerStubChoice(): Promise<void> {
     if (workspace.getConfiguration('angelscript').get<string>('predefined.active', '').trim().length > 0) {
-        // Already answered. Asking again every time the server starts would be nagging.
+        // Already answered - asking again on every server start would be nagging. The bar still has
+        // to catch up, and it is the way back to the picker once this notification is gone.
+        void refreshStubStatus();
         return;
     }
 
@@ -827,8 +881,11 @@ async function offerStubChoice(): Promise<void> {
         }
 
         if (result && Array.isArray(result.stubs) && result.stubs.length > 0) {
+            // Whatever else happens, the bar can name it now.
+            await refreshStubStatus(result);
+
             if (result.stubs.length < 2) {
-                // Nothing to choose between.
+                // Nothing to choose between, but the bar still says which one it is.
                 return;
             }
 
@@ -927,6 +984,11 @@ async function selectPredefinedStub(): Promise<void> {
     }
 
     await workspace.getConfiguration('angelscript').update('predefined.active', chosen.stubPath, ConfigurationTarget.Workspace);
+
+    // The server reloads on its own, and the bar has to follow. Not awaited on the rescan, because
+    // there is nothing to wait on: this reads what the server has now and will be right on the next
+    // read if the scan is still running.
+    void refreshStubStatus();
 }
 
 /**
