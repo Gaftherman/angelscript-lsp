@@ -1,0 +1,382 @@
+{
+  "scenarios": [
+    {
+      "name": "dead-if-block",
+      "why": "Ensures symbols inside inactive preprocessor blocks are not tokenized while active code after endif is properly classified.",
+      "source": "#if SOME_UNDEFINED\nclass DeadClass\n{\n    void deadMethod() {}\n};\n#endif\nclass LiveClass\n{\n    void liveMethod() {}\n};\nLiveClass liveInstance;",
+      "expect": [
+        {
+          "line": 6,
+          "character": 6,
+          "text": "LiveClass",
+          "type": "class"
+        },
+        {
+          "line": 8,
+          "character": 9,
+          "text": "liveMethod",
+          "type": "method"
+        },
+        {
+          "line": 10,
+          "character": 0,
+          "text": "LiveClass",
+          "type": "class"
+        },
+        {
+          "line": 10,
+          "character": 10,
+          "text": "liveInstance",
+          "type": "variable"
+        }
+      ]
+    },
+    {
+      "name": "if-else-arms",
+      "why": "Ensures semantic tokens are emitted for the active branch of a conditional and subsequent functions without bleed from inactive branches.",
+      "source": "#if X\nvoid inactiveFunc() {}\n#else\nvoid activeFunc() {}\n#endif\nvoid trailingFunc()\n{\n    activeFunc();\n}",
+      "expect": [
+        {
+          "line": 3,
+          "character": 5,
+          "text": "activeFunc",
+          "type": "function"
+        },
+        {
+          "line": 5,
+          "character": 5,
+          "text": "trailingFunc",
+          "type": "function"
+        },
+        {
+          "line": 7,
+          "character": 4,
+          "text": "activeFunc",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "name": "funcdef-declaration",
+      "why": "Ensures a funcdef declaration classifies the defined signature name as a type rather than a function name.",
+      "source": "funcdef int Callback(float value);",
+      "expect": [
+        {
+          "line": 0,
+          "character": 8,
+          "text": "int",
+          "type": "keyword"
+        },
+        {
+          "line": 0,
+          "character": 12,
+          "text": "Callback",
+          "type": "type"
+        },
+        {
+          "line": 0,
+          "character": 21,
+          "text": "float",
+          "type": "keyword"
+        },
+        {
+          "line": 0,
+          "character": 27,
+          "text": "value",
+          "type": "parameter"
+        }
+      ]
+    },
+    {
+      "name": "funcdef-handle",
+      "why": "Ensures a variable typed with a funcdef is colored as a variable and the assigned target as a function.",
+      "source": "funcdef void Callback();\nvoid onAction() {}\nvoid init()\n{\n    Callback@ handler = @onAction;\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 13,
+          "text": "Callback",
+          "type": "type"
+        },
+        {
+          "line": 1,
+          "character": 5,
+          "text": "onAction",
+          "type": "function"
+        },
+        {
+          "line": 4,
+          "character": 4,
+          "text": "Callback",
+          "type": "type"
+        },
+        {
+          "line": 4,
+          "character": 14,
+          "text": "handler",
+          "type": "variable"
+        },
+        {
+          "line": 4,
+          "character": 25,
+          "text": "onAction",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "name": "typedef-and-use",
+      "why": "Ensures typedef aliases are recognized as types at declaration and when used to declare variables.",
+      "source": "typedef float Real;\nvoid calculate()\n{\n    Real speed;\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 8,
+          "text": "float",
+          "type": "keyword"
+        },
+        {
+          "line": 0,
+          "character": 14,
+          "text": "Real",
+          "type": "type"
+        },
+        {
+          "line": 1,
+          "character": 5,
+          "text": "calculate",
+          "type": "function"
+        },
+        {
+          "line": 3,
+          "character": 4,
+          "text": "Real",
+          "type": "type"
+        },
+        {
+          "line": 3,
+          "character": 9,
+          "text": "speed",
+          "type": "variable"
+        }
+      ]
+    },
+    {
+      "name": "anonymous-function",
+      "why": "Ensures parameters and enclosed identifiers within an anonymous function body are correctly scoped and colored.",
+      "source": "funcdef int Transformer(int x);\nint multiplier = 2;\nvoid run()\n{\n    Transformer@ fn = function(int val) { return val * multiplier; };\n}",
+      "expect": [
+        {
+          "line": 4,
+          "character": 4,
+          "text": "Transformer",
+          "type": "type"
+        },
+        {
+          "line": 4,
+          "character": 17,
+          "text": "fn",
+          "type": "variable"
+        },
+        {
+          "line": 4,
+          "character": 35,
+          "text": "val",
+          "type": "parameter"
+        },
+        {
+          "line": 4,
+          "character": 49,
+          "text": "val",
+          "type": "parameter"
+        },
+        {
+          "line": 4,
+          "character": 55,
+          "text": "multiplier",
+          "type": "variable"
+        }
+      ]
+    },
+    {
+      "name": "anonymous-function-local",
+      "why": "Ensures local variables declared inside an anonymous function body are colored as variables.",
+      "source": "funcdef int Producer();\nvoid test()\n{\n    Producer@ fn = function() {\n        int localVal = 42;\n        return localVal;\n    };\n}",
+      "expect": [
+        {
+          "line": 3,
+          "character": 4,
+          "text": "Producer",
+          "type": "type"
+        },
+        {
+          "line": 3,
+          "character": 14,
+          "text": "fn",
+          "type": "variable"
+        },
+        {
+          "line": 4,
+          "character": 12,
+          "text": "localVal",
+          "type": "variable"
+        },
+        {
+          "line": 5,
+          "character": 15,
+          "text": "localVal",
+          "type": "variable"
+        }
+      ]
+    },
+    {
+      "name": "array-template",
+      "why": "Ensures template type syntax correctly distinguishes container type, type argument, and declared variable.",
+      "source": "array<int> nums;",
+      "expect": [
+        {
+          "line": 0,
+          "character": 0,
+          "text": "array",
+          "type": "type"
+        },
+        {
+          "line": 0,
+          "character": 6,
+          "text": "int",
+          "type": "keyword"
+        },
+        {
+          "line": 0,
+          "character": 11,
+          "text": "nums",
+          "type": "variable"
+        }
+      ]
+    },
+    {
+      "name": "array-initializer",
+      "why": "Ensures number literals inside array initializer lists are tokenized as numbers rather than operators or syntax errors.",
+      "source": "array<int> nums = {1, 2, 3};",
+      "expect": [
+        {
+          "line": 0,
+          "character": 11,
+          "text": "nums",
+          "type": "variable"
+        },
+        {
+          "line": 0,
+          "character": 19,
+          "text": "1",
+          "type": "number"
+        },
+        {
+          "line": 0,
+          "character": 22,
+          "text": "2",
+          "type": "number"
+        },
+        {
+          "line": 0,
+          "character": 25,
+          "text": "3",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "nested-template",
+      "why": "Ensures nested template brackets are not misparsed as shift operators and all type components are tokenized.",
+      "source": "array<array<int>> grid;",
+      "expect": [
+        {
+          "line": 0,
+          "character": 0,
+          "text": "array",
+          "type": "type"
+        },
+        {
+          "line": 0,
+          "character": 6,
+          "text": "array",
+          "type": "type"
+        },
+        {
+          "line": 0,
+          "character": 12,
+          "text": "int",
+          "type": "keyword"
+        },
+        {
+          "line": 0,
+          "character": 18,
+          "text": "grid",
+          "type": "variable"
+        }
+      ]
+    },
+    {
+      "name": "array-of-class",
+      "why": "Ensures a declared user class used as a template argument is correctly classified as a class.",
+      "source": "class ThatClass {}\narray<ThatClass> items;",
+      "expect": [
+        {
+          "line": 0,
+          "character": 6,
+          "text": "ThatClass",
+          "type": "class"
+        },
+        {
+          "line": 1,
+          "character": 6,
+          "text": "ThatClass",
+          "type": "class"
+        },
+        {
+          "line": 1,
+          "character": 17,
+          "text": "items",
+          "type": "variable"
+        }
+      ]
+    },
+    {
+      "name": "cast-expression",
+      "why": "Ensures the type argument inside a cast expression is recognized as a class reference rather than an operator or expression.",
+      "source": "class SomeClass {}\nvoid test(ref@ handle)\n{\n    SomeClass@ obj = cast<SomeClass>(handle);\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 6,
+          "text": "SomeClass",
+          "type": "class"
+        },
+        {
+          "line": 3,
+          "character": 4,
+          "text": "SomeClass",
+          "type": "class"
+        },
+        {
+          "line": 3,
+          "character": 15,
+          "text": "obj",
+          "type": "variable"
+        },
+        {
+          "line": 3,
+          "character": 26,
+          "text": "SomeClass",
+          "type": "class"
+        },
+        {
+          "line": 3,
+          "character": 37,
+          "text": "handle",
+          "type": "parameter"
+        }
+      ]
+    }
+  ]
+}

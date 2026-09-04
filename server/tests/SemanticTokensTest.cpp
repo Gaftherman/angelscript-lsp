@@ -591,10 +591,9 @@ namespace
         std::vector<TokenExpectation> expect;
     };
 
-    std::vector<TokenScenario> LoadTokenScenarios()
+    std::vector<TokenScenario> LoadTokenScenarios(const std::string &fileName)
     {
-        const std::filesystem::path path =
-            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "token_scenarios.json";
+        const std::filesystem::path path = std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / fileName;
 
         std::ifstream file(path, std::ios::binary);
         REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
@@ -697,7 +696,15 @@ namespace
 
 TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes from")
 {
-    const std::vector<TokenScenario> scenarios = LoadTokenScenarios();
+    // Two corpora, run as one. The first covers the everyday shapes - a class, a method, a
+    // parameter, a literal. The second reaches the grammar that one does not: a `#if` block the
+    // preprocessor drops, funcdefs and typedefs, `array<array<int>>`, an anonymous function, a
+    // cast. They are separate files because they were generated separately and measured
+    // separately; they are one loop because every assertion about a colour is the same assertion.
+    std::vector<TokenScenario> scenarios = LoadTokenScenarios("token_scenarios.json");
+    const std::vector<TokenScenario> grammar = LoadTokenScenarios("token_grammar_scenarios.json");
+    scenarios.insert(scenarios.end(), grammar.begin(), grammar.end());
+
     REQUIRE_FALSE(scenarios.empty());
 
     size_t met = 0;

@@ -888,6 +888,45 @@ namespace angel_lsp::features
                 }
             }
 
+            // An anonymous function's parameters, at their declaration, are not captured either:
+            // `function(int val) { ... }` left `val` uncoloured while the same name in the body
+            // came out as a parameter, so one half of it was painted and the other was not.
+            //
+            // Walked here rather than refined above for the same reason as `this.` - there is no
+            // token to refine. `lambda_parameter_list` repeats its "name" field once per parameter,
+            // so child_by_field_name would only ever answer for the first: the children are
+            // iterated instead.
+            if (std::string_view(ts_node_type(currNode)) == "lambda_parameter_list")
+            {
+                const uint32_t namedCount = ts_node_named_child_count(currNode);
+                for (uint32_t i = 0; i < namedCount; ++i)
+                {
+                    TSNode child = ts_node_named_child(currNode, i);
+                    if (ts_node_is_null(child) || std::string_view(ts_node_type(child)) != "identifier")
+                    {
+                        continue;
+                    }
+
+                    TSPoint start = ts_node_start_point(child);
+                    TSPoint end = ts_node_end_point(child);
+                    const uint64_t posKey = PositionKey(start.row, start.column);
+
+                    if (!existingTokenStarts.contains(posKey) && start.row == end.row &&
+                        end.column > start.column)
+                    {
+                        rawTokens.push_back(RawToken{
+                            start.row,
+                            start.column,
+                            end.column - start.column,
+                            Type_Parameter,
+                            Mod_Declaration,
+                            3
+                        });
+                        existingTokenStarts.insert(posKey);
+                    }
+                }
+            }
+
             uint32_t childCount = ts_node_child_count(currNode);
             for (uint32_t i = 0; i < childCount; ++i)
             {
