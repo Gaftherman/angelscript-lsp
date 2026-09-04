@@ -2657,10 +2657,11 @@ TEST_CASE("Server - The active stub itself still resolves")
     CHECK_FALSE(Published(output, "as-err-unresolved-type"));
 }
 
-TEST_CASE("Server - With no selection both stubs load, as they always did")
+TEST_CASE("Server - With no selection the scan picks one stub rather than merging them")
 {
-    // The default has to stay what it was: every workspace that today merges several stubs on
-    // purpose keeps working, and choosing one is opt-in.
+    // The default used to load every stub it found and warn about the duplicate declarations that
+    // followed - a default that was wrong and said so. Now the safe choice is made first: the first
+    // stub in path order, so the same one on every machine, and the user is told which.
     TwoStubFixture two;
 
     const std::string output = RunWithActiveStub(
@@ -2669,10 +2670,69 @@ TEST_CASE("Server - With no selection both stubs load, as they always did")
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
 
-    CHECK_FALSE(Published(output, "as-err-unresolved-type"));
+    // host_a sorts first, so its type resolves and host_b's does not.
+    CHECK(Published(output, "as-err-unresolved-type"));
+    CHECK(PublishedFrames(output).find("TypeFromB") != std::string::npos);
+    CHECK(PublishedFrames(output).find("TypeFromA") == std::string::npos);
 
-    // And the user is told, because two stubs merged is the thing the setting exists to avoid.
-    CHECK(output.find("predefined stubs found and all are loaded together") != std::string::npos);
+    // Said once, naming the winner and the way out. Not a warning any more: nothing went wrong.
+    CHECK(output.find("using host_a.as.predefined of 2 predefined stubs found") != std::string::npos);
+}
+
+TEST_CASE("Server - Asking for all of them brings the merge back")
+{
+    // The old default, now something a workspace has to ask for. A host whose API is split across
+    // two stubs needs exactly this, and it has to stay reachable.
+    TwoStubFixture two;
+
+    const std::string output = RunWithActiveStub(
+        two, "void main() { TypeFromA a; TypeFromB b; }\n", /*activeStub=*/"all");
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK_FALSE(Published(output, "as-err-unresolved-type"));
+    CHECK(output.find("2 predefined stubs loaded together") != std::string::npos);
+}
+
+TEST_CASE("Server - A lone stub is loaded without a word about it")
+{
+    // Nothing to choose between is nothing to say. The message above exists to explain a choice the
+    // server made; a workspace with one stub was never in doubt.
+    WorkspaceFixture fixture;
+    fixture.Write("only.as.predefined", "class TypeFromA { }\n");
+    fixture.Write("main.as", "void main() { TypeFromA a; }\n");
+
+    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains(needle))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // The scan has to have finished before the document is opened, or the stub is simply not loaded
+    // yet and this would be measuring the race rather than the rule.
+    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), "void main() { TypeFromA a; }\n"));
+    stream.PushAction([&]() { waitFor(stream, "publishDiagnostics"); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    const std::string output = RunScript(serverConfig, stream);
+
+    INFO(PublishedFrames(output));
+    CHECK_FALSE(Published(output, "as-err-unresolved-type"));
+    CHECK(output.find("predefined stubs found") == std::string::npos);
+    CHECK(output.find("predefined stubs loaded together") == std::string::npos);
 }
 
 TEST_CASE("Server - The engine profile survives a stub selection")

@@ -573,7 +573,9 @@ namespace angel_lsp
          * @param activePath The canonical selection, or empty when there is none.
          */
         void ReportPredefinedSelection(const std::vector<std::string> &discovered,
-                                       const std::string &activePath);
+                                       const std::string &activePath,
+                                       const std::string &autoSelected,
+                                       bool mergeAll);
 
         /**
          * @brief Canonical paths of every predefined stub the last workspace scan found.
@@ -588,6 +590,11 @@ namespace angel_lsp
          * runtime-config mutex with the rest of that traffic.
          */
         std::vector<std::string> m_discoveredPredefined;
+
+        // The stub actually in force: the chosen one, or the one the scan picked when nothing was
+        // chosen. Empty while every discovered stub is being merged, which is what the picker shows
+        // as "all". Guarded by m_runtimeConfigMutex, like the list above it.
+        std::string m_effectivePredefined;
         void PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics);
 
         /**

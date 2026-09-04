@@ -774,8 +774,14 @@ namespace angel_lsp
             // spelling the client used and the walk produces the filesystem's own - different case,
             // different separators, a percent-encoded drive letter. This project already carries
             // m_clientUriByKey because that difference bit it once.
+            // "all" is a request, not a path: it asks for the old behaviour of loading every stub
+            // the walk finds. Spelled out rather than left as the empty default because merging two
+            // stubs that both declare `string` resolves that name twice, and a user who wants that
+            // should have said so.
+            const bool mergeAll = m_config.activePredefined == "all";
+
             const std::string activePath =
-                m_config.activePredefined.empty()
+                (m_config.activePredefined.empty() || mergeAll)
                     ? std::string()
                     : angel_lsp::utils::IncludeResolver::NormalizePath(m_config.activePredefined);
 
@@ -791,10 +797,18 @@ namespace angel_lsp
                     const std::string path = angel_lsp::utils::IncludeResolver::NormalizePath(entry.path());
                     discovered.push_back(path);
 
-                    if (!activePath.empty() && !PathsAreSameFile(path, activePath))
+                    if (!activePath.empty())
+                    {
+                        if (PathsAreSameFile(path, activePath))
+                            ParserPredefined(entry.path().string(), backgroundParser);
                         return;
+                    }
 
-                    ParserPredefined(entry.path().string(), backgroundParser);
+                    if (mergeAll)
+                        ParserPredefined(entry.path().string(), backgroundParser);
+
+                    // Neither chosen nor merging: nothing is loaded here, because which stub wins
+                    // cannot be decided until the walk has seen all of them.
                 });
 
             // The only caller with something to close out on a cancel, which is why the walker
@@ -805,12 +819,25 @@ namespace angel_lsp
                 return;
             }
 
+            // Sorted so the pick below is the same on every machine and every run. Directory
+            // iteration order is not specified, and a stub that wins on one developer's disk and
+            // loses on another's is the worst possible version of this feature.
+            std::sort(discovered.begin(), discovered.end());
+
+            std::string autoSelected;
+            if (activePath.empty() && !mergeAll && !discovered.empty())
+            {
+                autoSelected = discovered.front();
+                ParserPredefined(autoSelected, backgroundParser);
+            }
+
             {
                 std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
                 m_discoveredPredefined = discovered;
+                m_effectivePredefined = autoSelected.empty() ? activePath : autoSelected;
             }
 
-            ReportPredefinedSelection(discovered, activePath);
+            ReportPredefinedSelection(discovered, activePath, autoSelected, mergeAll);
         }
         catch (const std::exception &e)
         {
@@ -989,7 +1016,9 @@ namespace angel_lsp
     }
 
     void Server::ReportPredefinedSelection(const std::vector<std::string> &discovered,
-                                           const std::string &activePath)
+                                           const std::string &activePath,
+                                           const std::string &autoSelected,
+                                           bool mergeAll)
     {
         const auto tell = [this](lsp::MessageType type, const std::string &text) {
             lsp::notifications::Window_ShowMessage::Params params;
@@ -1018,25 +1047,40 @@ namespace angel_lsp
             return;
         }
 
-        // No selection and more than one stub is the merge this setting exists to avoid. It stays
-        // the default and it stays legal - but the user should hear it from the server rather than
-        // discover it as a symbol that resolves twice.
-        if (discovered.size() > 1)
+        if (discovered.size() <= 1)
         {
-            std::string list;
-            for (const auto &path : discovered)
-            {
-                if (!list.empty())
-                    list += ", ";
-                list += std::filesystem::path(path).filename().string();
-            }
-
-            tell(lsp::MessageType::Warning,
-                 fmt::format("AngelScript: {} predefined stubs found and all are loaded together "
-                             "({}). Declarations they share will resolve more than once. Set "
-                             "angelscript.predefined.active to use one of them.",
-                             discovered.size(), list));
+            // Nothing to choose between, so nothing to say.
+            return;
         }
+
+        std::string list;
+        for (const auto &path : discovered)
+        {
+            if (!list.empty())
+                list += ", ";
+            list += std::filesystem::path(path).filename().string();
+        }
+
+        // Merging is what the user asked for here, so this is not a complaint - but the cost is
+        // real and invisible from the editor, so it is still said once per scan.
+        if (mergeAll)
+        {
+            tell(lsp::MessageType::Info,
+                 fmt::format("AngelScript: {} predefined stubs loaded together ({}). Declarations "
+                             "they share will resolve more than once.",
+                             discovered.size(), list));
+            return;
+        }
+
+        // One stub is in force and the rest were passed over. This used to be a warning about a
+        // merge nobody asked for; now the server has already made the safe choice and only has to
+        // say which, and how to change it.
+        tell(lsp::MessageType::Info,
+             fmt::format("AngelScript: using {} of {} predefined stubs found ({}). Run "
+                         "\"AngelScript: Select Predefined Stub\" to choose another, or set "
+                         "angelscript.predefined.active to \"all\" to load them together.",
+                         std::filesystem::path(autoSelected).filename().string(),
+                         discovered.size(), list));
     }
 
     bool Server::UnloadPredefinedUri(std::string uriStr)
@@ -2975,6 +3019,8 @@ namespace angel_lsp
             lsp::json::Object answer;
             lsp::json::Array paths;
 
+            std::string effective;
+
             {
                 std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
                 for (const auto &path : m_discoveredPredefined)
@@ -2982,12 +3028,16 @@ namespace angel_lsp
                     // The Value constructor takes its string by rvalue, so the copy is explicit.
                     paths.push_back(lsp::json::Value(std::string(path)));
                 }
+                effective = m_effectivePredefined;
             }
 
             answer["stubs"] = std::move(paths);
-            answer["active"] = m_config.activePredefined.empty()
-                                   ? std::string()
-                                   : angel_lsp::utils::IncludeResolver::NormalizePath(m_config.activePredefined);
+
+            // What is loaded, not what was configured. With nothing configured the scan picks one,
+            // and a picker showing "none selected" next to a workspace that plainly has host types
+            // would be telling the user something untrue.
+            answer["active"] = std::move(effective);
+            answer["merging"] = m_config.activePredefined == "all";
 
             return lsp::json::Value(std::move(answer));
         }
