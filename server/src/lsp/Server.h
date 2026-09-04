@@ -561,6 +561,20 @@ namespace angel_lsp
         static bool PathsAreSameFile(const std::string &a, const std::string &b);
 
         /**
+         * @brief True when this stub's declarations may enter the workspace symbol table.
+         *
+         * The workspace scan honours the selection; opening a stub in the editor did not, and
+         * didOpen/didChange/didSave each loaded whatever file was in front of them. So selecting
+         * host_a and then opening host_b put host_b's types back in the table, where they resolved
+         * happily - which is the opposite of what selecting one stub is for, and invisible, because
+         * the symptom is a name that *works*.
+         *
+         * Empty means nothing has been decided: the scan has not finished, or every stub is being
+         * merged. Both are "load it".
+         */
+        bool PredefinedStubContributes(const std::string &uriStr) const;
+
+        /**
          * @brief Tells the user which stub is in force, once per scan.
          *
          * Two things are worth saying and neither was being said. A selection naming a file the

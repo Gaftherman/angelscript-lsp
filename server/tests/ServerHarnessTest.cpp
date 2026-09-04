@@ -3083,3 +3083,94 @@ TEST_CASE("Server - A client that does not pull is still sent its diagnostics")
 
     CHECK(Published(stream.Output(), "as-warn-unused-variable"));
 }
+
+// =====================================================================================
+// Opening a stub is not the same as selecting it.
+//
+// The workspace scan honours the selection; the three document handlers did not, and each loaded
+// whatever stub was put in front of it. So selecting host_a and then opening host_b in the editor
+// put host_b's types straight back into the table, where they resolved happily - the opposite of
+// what selecting one stub is for, and invisible, because the symptom is a name that *works*.
+// Reported from real use: "aunque hayas seleccionado el stub igual sigue contando las entidades
+// del otro as.predefined y no las marca como error".
+// =====================================================================================
+
+TEST_CASE("Server - Opening the stub that was not selected does not load it")
+{
+    TwoStubFixture two;
+    const std::string source = "void main() { TypeFromB b; }\n";
+    two.fixture.Write("main.as", source);
+
+    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains(needle))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // A message between initialized and the wait, so the wait runs after the scan exists - see
+    // ScriptedStream::PushAction.
+    stream.Push(DidOpenMessage(two.fixture.Uri("host_b.as.predefined"),
+                               "class TypeFromB { void Poke(); }\n"));
+    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
+
+    // Opened again after the scan has chosen, which is the order a user reaches this in: the
+    // notification names host_a, they go and look at host_b.
+    stream.Push(DidOpenMessage(two.fixture.Uri("host_b.as.predefined"),
+                               "class TypeFromB { void Poke(); }\n"));
+    stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { waitFor(stream, "publishDiagnostics"); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    INFO(PublishedFrames(stream.Output()));
+
+    // host_a is the one the scan picked, so TypeFromB is a type this workspace does not have.
+    CHECK(Published(stream.Output(), "as-err-unresolved-type"));
+}
+
+TEST_CASE("Server - Opening the stub that was selected keeps it loaded")
+{
+    // The other half. A rule that kept every opened stub out of the table would be just as wrong.
+    TwoStubFixture two;
+    const std::string source = "void main() { TypeFromA a; }\n";
+    two.fixture.Write("main.as", source);
+
+    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains(needle))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(two.fixture.Uri("host_a.as.predefined"),
+                               "class TypeFromA { void Poke(); }\n"));
+    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
+
+    stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { waitFor(stream, "publishDiagnostics"); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    INFO(PublishedFrames(stream.Output()));
+    CHECK_FALSE(Published(stream.Output(), "as-err-unresolved-type"));
+}

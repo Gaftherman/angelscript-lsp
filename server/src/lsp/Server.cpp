@@ -1117,6 +1117,31 @@ namespace angel_lsp
         return true;
     }
 
+    bool Server::PredefinedStubContributes(const std::string &uriStr) const
+    {
+        std::string effective;
+        {
+            std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+            effective = m_effectivePredefined;
+        }
+
+        if (effective.empty())
+        {
+            return true;
+        }
+
+        // Already loaded, whatever it is: a stub named in angelscript.predefinedFiles loads
+        // regardless of the selection, and one the scan claimed is the selection. Opening either in
+        // the editor must not take it back out.
+        if (m_predefinedUris.contains(uriStr))
+        {
+            return true;
+        }
+
+        const std::string path = CanonicalPathFromUri(uriStr);
+        return !path.empty() && PathsAreSameFile(path, effective);
+    }
+
     bool Server::ClaimPredefinedFile(const std::string &uriStr, bool forceReload)
     {
         const std::string path = CanonicalPathFromUri(uriStr);
@@ -1919,9 +1944,13 @@ namespace angel_lsp
             std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                ClaimPredefinedFile(uriStr);
 
-                diagnostics = ReplaceSymbolsFromTree(uriStr, text, savedTree);
+                if (PredefinedStubContributes(uriStr))
+                {
+                    ClaimPredefinedFile(uriStr);
+                    diagnostics = ReplaceSymbolsFromTree(uriStr, text, savedTree);
+                }
+
                 m_scopeIndex.ClearDocument(uriStr);
                 m_callGraph.ClearDocument(uriStr);
             }
@@ -1984,7 +2013,7 @@ namespace angel_lsp
             std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                if (ClaimPredefinedFile(uriStr))
+                if (PredefinedStubContributes(uriStr) && ClaimPredefinedFile(uriStr))
                 {
                     diagnostics = ReplaceSymbolsFromTree(uriStr, text, tree);
                     m_scopeIndex.ClearDocument(uriStr);
@@ -2123,7 +2152,13 @@ namespace angel_lsp
             m_symbolTable.ClearDocumentSymbols(uriStr);
             m_scopeIndex.ClearDocument(uriStr);
             m_callGraph.ClearDocument(uriStr);
-            ReplaceSymbolsFromTree(uriStr, buffer, newTree);
+
+            // Typing in a stub that is not the active one must not put it back in the table; the
+            // clear above is still right, because whatever was there is now the wrong revision of a
+            // file that should not be contributing at all.
+            if (PredefinedStubContributes(uriStr))
+                ReplaceSymbolsFromTree(uriStr, buffer, newTree);
+
             if (newTree)
             {
                 m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(newTree), buffer));
