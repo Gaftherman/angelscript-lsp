@@ -209,8 +209,9 @@ jobs:
 
       # Packaged, not published: releasing is a deliberate act, and this only proves the extension
       # is in a publishable state on every commit.
-      # Dependencies are deliberately bundled: the client is compiled by plain tsc with no bundler,
-      # so vscode-languageclient has to travel inside the .vsix or the extension fails to activate.
+      # `vsce package` runs vscode:prepublish, which type-checks with tsc and then bundles with
+      # esbuild into dist/. vscode-languageclient is inside that bundle, which is why it is a dev
+      # dependency and why node_modules does not travel in the .vsix.
       - name: Package Extension
         working-directory: client
         run: npx --yes @vscode/vsce package --out angelscript-lsp.vsix

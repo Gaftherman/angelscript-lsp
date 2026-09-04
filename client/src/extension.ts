@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
-    StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri
+    StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n
 } from 'vscode';
 import {
     LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler, ErrorAction, CloseAction,
@@ -23,8 +23,16 @@ const RESTART_COMMAND = 'angelscript.restartServer';
 /** @brief Command that prompts the user to select an active predefined API stub or merge all. */
 const SELECT_PREDEFINED_COMMAND = 'angelscript.selectPredefined';
 
-/** @brief Wording of the button on every failure notification. */
-const SHOW_LOG_ACTION = 'Show Log';
+/** @brief Command that opens the status bar menu: the log, a restart, and the stub picker. */
+const STATUS_MENU_COMMAND = 'angelscript.statusMenu';
+
+/**
+ * @brief Wording of the button on every failure notification.
+ *
+ * Localised at the point of use rather than here: l10n.t() reads the bundle for the editor's
+ * display language, and at module load there is nothing to read it against yet.
+ */
+const showLogAction = () => l10n.t('Show Log');
 
 /**
  * @brief How many unexpected server exits are absorbed before the user is told and it stays down.
@@ -73,7 +81,7 @@ function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): v
 
     const label = { starting: '$(sync~spin) AngelScript', running: '$(check) AngelScript', failed: '$(error) AngelScript' };
     statusBarItem.text = label[state];
-    statusBarItem.tooltip = `${tooltip}\nClick to open the server log.`;
+    statusBarItem.tooltip = `${tooltip}\n${l10n.t('Click for the log, a restart, or the stub picker.')}`;
     statusBarItem.backgroundColor = state === 'failed'
         ? new ThemeColor('statusBarItem.errorBackground')
         : undefined;
@@ -94,8 +102,9 @@ function reportFailure(summary: string, detail?: string): void {
 
     setStatus('failed', summary);
 
-    void window.showErrorMessage(`AngelScript: ${summary}`, SHOW_LOG_ACTION).then(choice => {
-        if (choice === SHOW_LOG_ACTION) {
+    const action = showLogAction();
+    void window.showErrorMessage(`AngelScript: ${summary}`, action).then(choice => {
+        if (choice === action) {
             lspOutputChannel.show(true);
         }
     });
@@ -496,12 +505,13 @@ async function startClient(context: ExtensionContext): Promise<void> {
     // source checkout has not been built - and letting it arrive as a bare ENOENT threw that away.
     if (!server.found) {
         reportFailure(
-            `no language server binary for ${os.platform()}-${os.arch()}. Editor features are unavailable.`,
+            l10n.t('no language server binary for {0}. Editor features are unavailable.',
+                   `${os.platform()}-${os.arch()}`),
             `Looked in:\n  ${server.searched.join('\n  ')}`);
         return;
     }
 
-    setStatus('starting', 'Starting the AngelScript language server.');
+    setStatus('starting', l10n.t('Starting the AngelScript language server.'));
 
     const serverArgs = buildServerArgs();
     runningServerArgs = serverArgs;
@@ -519,7 +529,7 @@ async function startClient(context: ExtensionContext): Promise<void> {
         error: (error, _message, count) => {
             if (count !== undefined && count > 3) {
                 reportFailure(
-                    'the language server connection keeps failing, so it has been shut down.',
+                    l10n.t('the language server connection keeps failing, so it has been shut down.'),
                     error.message);
                 return { action: ErrorAction.Shutdown, handled: true };
             }
@@ -530,7 +540,8 @@ async function startClient(context: ExtensionContext): Promise<void> {
             unexpectedExits++;
             if (unexpectedExits > MAX_SILENT_RESTARTS) {
                 reportFailure(
-                    `the language server stopped ${unexpectedExits} times and will not be restarted again.`);
+                    l10n.t('the language server stopped {0} times and will not be restarted again.',
+                           unexpectedExits));
                 return { action: CloseAction.DoNotRestart, handled: true };
             }
             lspOutputChannel.appendLine(
@@ -571,13 +582,13 @@ async function startClient(context: ExtensionContext): Promise<void> {
     try {
         await client.start();
         unexpectedExits = 0;
-        setStatus('running', 'The AngelScript language server is running.');
+        setStatus('running', l10n.t('The AngelScript language server is running.'));
         client.onNotification("angelscript/debug", (params: { message: string }) => {
             lspOutputChannel.appendLine(`[AST Debug] ${params.message}`);
         });
     } catch (error) {
         reportFailure(
-            'the language server failed to start. Editor features are unavailable.',
+            l10n.t('the language server failed to start. Editor features are unavailable.'),
             `Failed to start Language Client: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
     }
 }
@@ -600,11 +611,30 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(
         commands.registerCommand(SELECT_PREDEFINED_COMMAND, () => selectPredefinedStub()));
 
+    context.subscriptions.push(
+        commands.registerCommand(STATUS_MENU_COMMAND, () => showStatusMenu(context)));
+
     statusBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 100);
-    statusBarItem.command = SHOW_LOG_COMMAND;
+    statusBarItem.command = STATUS_MENU_COMMAND;
     context.subscriptions.push(statusBarItem);
 
-    await startClient(context);
+    // Deliberately not awaited. Everything this extension contributes to the UI - the commands,
+    // the status bar item, the output channel - is registered above and ready now; what follows is
+    // spawning a process and waiting out a protocol handshake, and holding activate() open for it
+    // put this extension near 1.6s in VS Code's activation report for work the user was not waiting
+    // on. Failures still reach them: startClient reports every one itself, through reportFailure.
+    //
+    // Safe to leave running because the parts activate() still needs from it are set before its
+    // first await: resolveServerBinary and buildServerArgs are synchronous, so runningServerArgs
+    // holds the real command line by the time the listener below can read it.
+    void startClient(context).catch(error => {
+        // startClient reports its own failures; this catches the ones it cannot, so an unexpected
+        // throw becomes a line the user can act on rather than an unhandled rejection in a log
+        // they will never open.
+        reportFailure(
+            l10n.t('the language server failed to start. Editor features are unavailable.'),
+            error instanceof Error ? error.stack ?? error.message : String(error));
+    });
 
     // Settings that become command-line arguments cannot take effect in a running server, so the
     // client is rebuilt instead. Without this the user has to reload the whole window for a
@@ -640,6 +670,44 @@ export async function activate(context: ExtensionContext) {
             await restartClient(context, 'Configuration changed; restarting the language server.');
         })
     );
+}
+
+/**
+ * @brief The menu behind the status bar item.
+ *
+ * The item used to run one command - reveal the log - and everything else this extension does was
+ * reachable only by knowing its name in the command palette. Restarting the server and choosing a
+ * stub are the two things a user actually needs when something looks wrong, so they are one click
+ * from the thing that told them something was wrong.
+ */
+async function showStatusMenu(context: ExtensionContext): Promise<void> {
+    interface ActionItem extends QuickPickItem {
+        run: () => void | Promise<void>;
+    }
+
+    const actions: ActionItem[] = [
+        {
+            label: '$(output) ' + l10n.t('Show Server Log'),
+            description: l10n.t('Everything the server has reported this session.'),
+            run: () => lspOutputChannel.show(true)
+        },
+        {
+            label: '$(debug-restart) ' + l10n.t('Restart Server'),
+            description: l10n.t('Stops the language server and starts a fresh one.'),
+            run: () => restartClient(context, 'Restart requested from the status bar.')
+        },
+        {
+            label: '$(library) ' + l10n.t('Select Predefined Stub'),
+            description: l10n.t('Chooses which host API description the workspace uses.'),
+            run: () => selectPredefinedStub()
+        }
+    ];
+
+    const chosen = await window.showQuickPick(actions, {
+        placeHolder: l10n.t('AngelScript language server')
+    });
+
+    await chosen?.run();
 }
 
 /**
@@ -702,7 +770,7 @@ function restartClient(context: ExtensionContext, reason: string): Promise<void>
  */
 async function performRestart(context: ExtensionContext, reason: string): Promise<void> {
     lspOutputChannel.appendLine(reason);
-    setStatus('starting', 'AngelScript: restarting the language server');
+    setStatus('starting', l10n.t('Restarting the AngelScript language server.'));
 
     try {
         await client?.stop();
@@ -724,7 +792,7 @@ async function performRestart(context: ExtensionContext, reason: string): Promis
  */
 async function selectPredefinedStub(): Promise<void> {
     if (!client) {
-        void window.showWarningMessage('The AngelScript language server is not running.');
+        void window.showWarningMessage(l10n.t('The AngelScript language server is not running.'));
         return;
     }
 
@@ -743,7 +811,7 @@ async function selectPredefinedStub(): Promise<void> {
             { command: 'angelscript.listPredefinedStubs' }
         );
     } catch {
-        void window.showWarningMessage('The AngelScript language server is not running.');
+        void window.showWarningMessage(l10n.t('The AngelScript language server is not running.'));
         return;
     }
 
@@ -757,8 +825,10 @@ async function selectPredefinedStub(): Promise<void> {
 
     const items: StubQuickPickItem[] = [
         {
-            label: result.merging === true || (result.active ?? '').length > 0 ? 'Automatic' : '$(check) Automatic',
-            description: 'Default. The workspace scan loads the first stub it finds, in path order.',
+            label: result.merging === true || (result.active ?? '').length > 0
+                ? l10n.t('Automatic')
+                : `$(check) ${l10n.t('Automatic')}`,
+            description: l10n.t('Default. The workspace scan loads the first stub it finds, in path order.'),
             stubPath: ''
         }
     ];
@@ -785,13 +855,15 @@ async function selectPredefinedStub(): Promise<void> {
     }
 
     items.push({
-        label: result.merging === true ? '$(check) All stubs (merged)' : 'All stubs (merged)',
-        description: 'Loads every discovered stub. Declarations they share will resolve more than once.',
+        label: result.merging === true
+            ? `$(check) ${l10n.t('All stubs (merged)')}`
+            : l10n.t('All stubs (merged)'),
+        description: l10n.t('Loads every discovered stub. Declarations they share will resolve more than once.'),
         stubPath: 'all'
     });
 
     const chosen = await window.showQuickPick(items, {
-        placeHolder: 'Select the predefined stub that describes the host application API'
+        placeHolder: l10n.t('Select the predefined stub that describes the host application API')
     });
 
     if (!chosen) {

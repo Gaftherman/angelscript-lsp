@@ -27,7 +27,8 @@
   "bugs": {
     "url": "https://github.com/Gaftherman/angelscript-lsp/issues"
   },
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
   "contributes": {
     "languages": [
       {
@@ -412,7 +413,10 @@
         },
         "angelscript.engine.boolConversionMode": {
           "type": "number",
-          "enum": [ 0, 1 ],
+          "enum": [
+            0,
+            1
+          ],
           "enumDescriptions": [
             "%config.engine.boolConversionMode.enum.0%",
             "%config.engine.boolConversionMode.enum.1%"
@@ -422,7 +426,10 @@
         },
         "angelscript.engine.useCharacterLiterals": {
           "type": "number",
-          "enum": [ 0, 1 ],
+          "enum": [
+            0,
+            1
+          ],
           "enumDescriptions": [
             "%config.engine.useCharacterLiterals.enum.0%",
             "%config.engine.useCharacterLiterals.enum.1%"
@@ -501,10 +508,11 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run bundle",
     "compile": "tsc -p ./",
+    "bundle": "node esbuild.mjs",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint && npm run check-settings",
+    "pretest": "npm run compile && npm run bundle && npm run lint && npm run check-settings",
     "lint": "eslint src",
     "test": "vscode-test",
     "check-settings": "node scripts/check-settings-wired.mjs"
@@ -515,11 +523,11 @@
     "@types/vscode": "^1.120.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.3",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.1"
-  },
-  "dependencies": {
+    "typescript-eslint": "^8.56.1",
     "vscode-languageclient": "^9.0.1"
-  }
+  },
+  "dependencies": {}
 }

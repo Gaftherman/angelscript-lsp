@@ -56,6 +56,7 @@ server/build-docker-x86/
 server/.cache/
 client/node_modules/
 client/out/
+client/dist/
 client/.vscode/tasks.log
 client/.vscode-test/
 angelscript/

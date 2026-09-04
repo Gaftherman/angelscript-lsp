@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 const clientDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const manifest = JSON.parse(readFileSync(join(clientDir, 'package.json'), 'utf8'));
-const source = readFileSync(join(clientDir, 'src', 'extension.ts'), 'utf8');
+const extensionSource = readFileSync(join(clientDir, 'src', 'extension.ts'), 'utf8');
 
 const declared = Object.keys(manifest.contributes?.configuration?.properties ?? {});
 const problems = [];
@@ -27,7 +27,7 @@ for (const key of declared) {
     // `features.X` is wired through the FEATURE_FLAGS table, keyed by the bare X.
     if (name.startsWith('features.')) {
         const feature = name.slice('features.'.length);
-        if (!new RegExp(`['"]${feature}['"]\\s*,`).test(source)) {
+        if (!new RegExp(`['"]${feature}['"]\\s*,`).test(extensionSource)) {
             problems.push(`${key} has no entry in FEATURE_FLAGS`);
         }
         continue;
@@ -36,7 +36,7 @@ for (const key of declared) {
     // `engine.X` booleans go through ENGINE_PROPERTIES; `engine.profile` is an enum with its own line.
     if (name.startsWith('engine.')) {
         const property = name.slice('engine.'.length);
-        if (!source.includes(`'${property}'`) && !source.includes(`engine.${property}`)) {
+        if (!extensionSource.includes(`'${property}'`) && !extensionSource.includes(`engine.${property}`)) {
             problems.push(`${key} is never read by buildServerArgs`);
         }
         continue;
@@ -46,14 +46,14 @@ for (const key of declared) {
     // enum with its own line and falls through to the general case below.
     if (name.startsWith('preprocessor.')) {
         const feature = name.slice('preprocessor.'.length);
-        if (!source.includes(`'${feature}'`) && !source.includes(`preprocessor.${feature}`)) {
+        if (!extensionSource.includes(`'${feature}'`) && !extensionSource.includes(`preprocessor.${feature}`)) {
             problems.push(`${key} is never read by buildServerArgs`);
         }
         continue;
     }
 
     // Everything else is read by its own `config.get(...)` call.
-    if (!source.includes(`'${name}'`)) {
+    if (!extensionSource.includes(`'${name}'`)) {
         problems.push(`${key} is never read by buildServerArgs`);
     }
 }
@@ -103,6 +103,35 @@ for (const entry of readdirSync(clientDir)) {
     }
 }
 
+// The same rule for strings the extension shows at runtime. VS Code keys those on the English
+// source string itself, so a translation whose key does not match the source character for
+// character silently shows English - and nothing anywhere says which of the two drifted.
+const runtimeStrings = new Set();
+for (const match of extensionSource.matchAll(/l10n\.t\(\s*'((?:[^'\\]|\\.)*)'/g)) {
+    runtimeStrings.add(match[1].replace(/\\'/g, "'"));
+}
+
+if (runtimeStrings.size > 0) {
+    const l10nDir = join(clientDir, 'l10n');
+    for (const entry of readdirSync(l10nDir)) {
+        if (!entry.startsWith('bundle.l10n.') || !entry.endsWith('.json')) {
+            continue;
+        }
+
+        const bundle = JSON.parse(readFileSync(join(l10nDir, entry), 'utf8'));
+        for (const text of runtimeStrings) {
+            if (!(text in bundle)) {
+                nlsProblems.push(`l10n/${entry} has no entry for "${text}"`);
+            }
+        }
+        for (const key of Object.keys(bundle)) {
+            if (!runtimeStrings.has(key)) {
+                nlsProblems.push(`l10n/${entry} translates "${key}", which no l10n.t() call passes`);
+            }
+        }
+    }
+}
+
 if (nlsProblems.length > 0) {
     console.error('Localisation keys are out of step:');
     for (const problem of nlsProblems) {
@@ -125,4 +154,5 @@ if (problems.length > 0) {
 }
 
 console.log(`All ${declared.length} declared settings reach the server, and `
-    + `${placeholders.size} localisation keys line up across every translation.`);
+    + `${placeholders.size} manifest and ${runtimeStrings.size} runtime strings line up `
+    + `across every translation.`);

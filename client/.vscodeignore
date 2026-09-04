@@ -1,6 +1,13 @@
 .vscode/**
 .vscode-test/**
 src/**
+esbuild.mjs
+scripts/**
+
+# `main` points at dist/, which is the whole extension in one file. out/ is tsc's output: it exists
+# for type checking and for the integration tests, and shipping it would put a second, unused copy
+# of every module in the .vsix - the copy whose 126 file opens this bundle exists to avoid.
+out/**
 .gitignore
 .yarnrc
 vsc-extension-quickstart.md
