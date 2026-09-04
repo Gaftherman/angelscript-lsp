@@ -3837,3 +3837,234 @@ TEST_CASE("Server - Reports an empty region list when nothing is dropped")
     REQUIRE(output.find("angelscript/inactiveRegions") != std::string::npos);
     CHECK(output.find("\"regions\":[]") != std::string::npos);
 }
+
+// =====================================================================================
+// What the server says while the code is still broken.
+//
+// The typing scenarios above check the document once, when the typing stops. A user does not live
+// there: most of the time what is on screen is half a statement, an unclosed brace, a type that
+// does not exist yet. This checks the server after EVERY step, so what it says mid-sentence is
+// pinned rather than assumed - including the message text, which is the part the user actually
+// reads.
+//
+// A scenario may carry a `predefined` stub, written into the workspace before the server starts.
+// That is the real shape of the thing: host types exist, and a name that would be undeclared in a
+// bare workspace resolves in a real one.
+// =====================================================================================
+
+namespace
+{
+    struct BrokenStep
+    {
+        std::string typed;
+        uint32_t line = 0;
+        uint32_t character = 0;
+        std::vector<std::string> expectPresent;
+        std::vector<std::string> expectAbsent;
+        std::string message;
+    };
+
+    struct BrokenScenario
+    {
+        std::string name;
+        std::string why;
+        std::string initial;
+        std::string predefined;   ///< Empty when the scenario needs no host stub.
+        std::vector<BrokenStep> steps;
+    };
+
+    std::vector<BrokenScenario> LoadBrokenScenarios()
+    {
+        const std::filesystem::path path =
+            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "typing_broken_scenarios.json";
+
+        std::ifstream file(path, std::ios::binary);
+        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        lsp::json::Value parsed = lsp::json::parse(text);
+        REQUIRE(parsed.isObject());
+
+        const auto *list = parsed.object().find("scenarios");
+        REQUIRE(list != nullptr);
+        REQUIRE(list->isArray());
+
+        std::vector<BrokenScenario> scenarios;
+        for (const auto &entry : list->array())
+        {
+            const lsp::json::Object &fields = entry.object();
+
+            BrokenScenario scenario;
+            scenario.name = fields.find("name")->string();
+            scenario.why = fields.find("why")->string();
+            scenario.initial = fields.find("initial")->string();
+
+            if (const auto *stub = fields.find("predefined"); stub && stub->isString())
+                scenario.predefined = stub->string();
+
+            for (const auto &item : fields.find("steps")->array())
+            {
+                const lsp::json::Object &stepFields = item.object();
+
+                BrokenStep step;
+                step.typed = stepFields.find("type")->string();
+                step.line = static_cast<uint32_t>(stepFields.find("line")->number());
+                step.character = static_cast<uint32_t>(stepFields.find("character")->number());
+
+                for (const auto &code : stepFields.find("expectPresent")->array())
+                    step.expectPresent.push_back(code.string());
+                for (const auto &code : stepFields.find("expectAbsent")->array())
+                    step.expectAbsent.push_back(code.string());
+
+                if (const auto *message = stepFields.find("message"); message && message->isString())
+                    step.message = message->string();
+
+                scenario.steps.push_back(std::move(step));
+            }
+
+            scenarios.push_back(std::move(scenario));
+        }
+
+        return scenarios;
+    }
+}
+
+TEST_CASE("Server - What it says while the code is still being written")
+{
+    const std::vector<BrokenScenario> scenarios = LoadBrokenScenarios();
+    REQUIRE_FALSE(scenarios.empty());
+
+    size_t stepsChecked = 0;
+
+    for (const BrokenScenario &scenario : scenarios)
+    {
+        CAPTURE(scenario.name);
+        INFO(scenario.why);
+
+        WorkspaceFixture fixture;
+        if (!scenario.predefined.empty())
+            fixture.Write("host.as.predefined", scenario.predefined);
+        fixture.Write("main.as", scenario.initial);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+        // A message between initialized and the wait, so the wait runs after the scan that loads
+        // the stub has started - see ScriptedStream::PushAction.
+        stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
+                    R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+        stream.PushAction([&]()
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("\"kind\":\"end\""))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        });
+
+        stream.Push(DidOpenMessage(fixture.Uri("main.as"), scenario.initial));
+
+        // One slot per step, filled by the action that runs once that step's keystrokes have been
+        // handled. Reserved up front: the lambdas capture a pointer into it.
+        std::vector<std::string> published(scenario.steps.size());
+
+        int version = 2;
+        int requestId = 2000;
+
+        for (size_t index = 0; index < scenario.steps.size(); ++index)
+        {
+            const BrokenStep &step = scenario.steps[index];
+
+            uint32_t line = step.line;
+            uint32_t character = step.character;
+
+            for (const char typed : step.typed)
+            {
+                stream.Push(TypeCharMessage(fixture.Uri("main.as"), version++, line, character, typed));
+
+                if (typed == '\n')
+                {
+                    ++line;
+                    character = 0;
+                }
+                else
+                {
+                    ++character;
+                }
+            }
+
+            // The filler that makes the wait below run after the last keystroke was handled, not
+            // merely read.
+            stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(requestId++) +
+                        R"(,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
+                        fixture.Uri("main.as") + R"("}}})");
+
+            stream.PushAction([&stream, &published, index, &fixture]()
+            {
+                // Analysis is debounced, so this waits for the stream to go quiet rather than for a
+                // fixed delay - the same reasoning as the typing test above.
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+                size_t lastSize = 0;
+                auto quietSince = std::chrono::steady_clock::now();
+
+                while (std::chrono::steady_clock::now() < deadline)
+                {
+                    const size_t size = stream.Output().size();
+                    if (size != lastSize)
+                    {
+                        lastSize = size;
+                        quietSince = std::chrono::steady_clock::now();
+                    }
+                    else if (std::chrono::steady_clock::now() - quietSince > std::chrono::milliseconds(400))
+                    {
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                }
+
+                published[index] = LastPublishedFor(stream.Output(), "main.as");
+            });
+        }
+
+        stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        RunScript(serverConfig, stream);
+
+        for (size_t index = 0; index < scenario.steps.size(); ++index)
+        {
+            const BrokenStep &step = scenario.steps[index];
+
+            CAPTURE(index);
+            CAPTURE(step.typed);
+            INFO("published: " << published[index]);
+
+            REQUIRE_FALSE(published[index].empty());
+
+            for (const std::string &code : step.expectPresent)
+            {
+                INFO("expected present: " << code);
+                CHECK(published[index].find("\"" + code + "\"") != std::string::npos);
+            }
+
+            for (const std::string &code : step.expectAbsent)
+            {
+                INFO("expected absent: " << code);
+                CHECK(published[index].find("\"" + code + "\"") == std::string::npos);
+            }
+
+            if (!step.message.empty())
+            {
+                INFO("expected message to contain: " << step.message);
+                CHECK(published[index].find(step.message) != std::string::npos);
+            }
+
+            ++stepsChecked;
+        }
+    }
+
+    MESSAGE("half-written code: " << stepsChecked << " steps checked");
+}

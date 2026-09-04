@@ -1,0 +1,502 @@
+{
+  "scenarios": [
+    {
+      "name": "var-decl-progressive",
+      "why": "Catches syntax errors while typing variable type, identifier, and initializer progressively.",
+      "initial": "void main()\n{\n    \n}",
+      "steps": [
+        {
+          "type": "int ",
+          "line": 2,
+          "character": 4,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [],
+          "message": "Syntax error"
+        },
+        {
+          "type": "val ",
+          "line": 2,
+          "character": 8,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": []
+        },
+        {
+          "type": "= 1;",
+          "line": 2,
+          "character": 12,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-syntax-error"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "func-sig-body-progressive",
+      "why": "Verifies diagnostics as a new function header, parameter list, and body are typed sequentially.",
+      "initial": "// Math helpers\n",
+      "steps": [
+        {
+          "type": "int add(",
+          "line": 1,
+          "character": 0,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [],
+          "message": "Syntax error"
+        },
+        {
+          "type": "int a, int b) {",
+          "line": 1,
+          "character": 8,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": []
+        },
+        {
+          "type": " return a + b; }",
+          "line": 1,
+          "character": 23,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-syntax-error"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unbalanced-if-parenthesis",
+      "why": "Checks that an unclosed condition paren produces a syntax error until matched.",
+      "initial": "void check(int x)\n{\n    \n}",
+      "steps": [
+        {
+          "type": "if (",
+          "line": 2,
+          "character": 4,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [],
+          "message": "Syntax error"
+        },
+        {
+          "type": "x > 0",
+          "line": 2,
+          "character": 8,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": []
+        },
+        {
+          "type": ") return;",
+          "line": 2,
+          "character": 13,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-syntax-error"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unclosed-scope-brace",
+      "why": "Ensures missing closing brace is caught as syntax error until closed.",
+      "initial": "void run()\n{\n    \n}",
+      "steps": [
+        {
+          "type": "{",
+          "line": 2,
+          "character": 4,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [],
+          "message": "Syntax error: missing '}'"
+        },
+        {
+          "type": " int a = 1;",
+          "line": 2,
+          "character": 5,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": []
+        },
+        {
+          "type": " }",
+          "line": 2,
+          "character": 16,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-syntax-error"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unclosed-class-body",
+      "why": "Confirms class body syntax errors remain reported across multiple intermediate edits until closed.",
+      "initial": "// Game entity\n",
+      "steps": [
+        {
+          "type": "class Player {",
+          "line": 1,
+          "character": 0,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [],
+          "message": "Syntax error: missing '}'"
+        },
+        {
+          "type": " int score;",
+          "line": 1,
+          "character": 14,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": []
+        },
+        {
+          "type": " };",
+          "line": 1,
+          "character": 25,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-syntax-error"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unresolved-type-before-declaration",
+      "why": "Verifies as-err-unresolved-type triggers when referencing an unknown type and clears once declared.",
+      "initial": "\nvoid test()\n{\n    \n}",
+      "steps": [
+        {
+          "type": "Point ",
+          "line": 3,
+          "character": 4,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": []
+        },
+        {
+          "type": "pt;",
+          "line": 3,
+          "character": 10,
+          "expectPresent": [
+            "as-err-unresolved-type"
+          ],
+          "expectAbsent": [
+            "as-syntax-error"
+          ],
+          "message": "Point"
+        },
+        {
+          "type": "class Point {}",
+          "line": 0,
+          "character": 0,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-err-unresolved-type",
+            "as-syntax-error"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "return-value-missing-then-provided",
+      "why": "Catches return-value-required when return statement lacks expression in a non-void function.",
+      "initial": "int getValue()\n{\n    \n}",
+      "steps": [
+        {
+          "type": "return",
+          "line": 2,
+          "character": 4,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": []
+        },
+        {
+          "type": ";",
+          "line": 2,
+          "character": 10,
+          "expectPresent": [
+            "as-err-return-value-required"
+          ],
+          "expectAbsent": [
+            "as-syntax-error"
+          ],
+          "message": "return"
+        },
+        {
+          "type": " 42",
+          "line": 2,
+          "character": 10,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-err-return-value-required",
+            "as-syntax-error"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "duplicate-symbol-shadowing",
+      "why": "Detects duplicate symbol error when declaring a local variable matching a parameter name.",
+      "initial": "void process(int total)\n{\n    \n}",
+      "steps": [
+        {
+          "type": "int tot",
+          "line": 2,
+          "character": 4,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [
+            "as-err-duplicate-symbol"
+          ]
+        },
+        {
+          "type": "al = 0;",
+          "line": 2,
+          "character": 11,
+          "expectPresent": [
+            "as-err-duplicate-symbol"
+          ],
+          "expectAbsent": [
+            "as-syntax-error"
+          ],
+          "message": "total"
+        }
+      ]
+    },
+    {
+      "name": "undeclared-function-call-resolved",
+      "why": "Flags call to undeclared function until the function is defined above the caller.",
+      "initial": "// Utilities\n\nvoid main()\n{\n    \n}",
+      "steps": [
+        {
+          "type": "calc(",
+          "line": 4,
+          "character": 4,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": []
+        },
+        {
+          "type": ");",
+          "line": 4,
+          "character": 9,
+          "expectPresent": [
+            "as-err-undefined-identifier"
+          ],
+          "expectAbsent": [
+            "as-syntax-error"
+          ],
+          "message": "calc"
+        },
+        {
+          "type": "void calc() {}",
+          "line": 1,
+          "character": 0,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-err-undefined-identifier",
+            "as-syntax-error"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nonsense-tokens-persistent-error",
+      "why": "Ensures parser recovers gracefully and retains syntax errors when arbitrary nonsense tokens are typed.",
+      "initial": "void test()\n{\n    \n}",
+      "steps": [
+        {
+          "type": "!@#$%",
+          "line": 2,
+          "character": 4,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [],
+          "message": "Syntax error"
+        },
+        {
+          "type": " ^&*(",
+          "line": 2,
+          "character": 9,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": []
+        },
+        {
+          "type": " )))",
+          "line": 2,
+          "character": 14,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": []
+        }
+      ]
+    },
+    {
+      "name": "host-type-while-typing",
+      "why": "Ensures half-typed host type names report unresolved type errors until fully spelled out.",
+      "predefined": "class CBaseEntity\n{\n    void Spawn();\n    int get_Health() const property;\n    void set_Health(int v) property;\n}\nclass CBasePlayer : CBaseEntity\n{\n    void Kill();\n}\nfuncdef void ThinkFunc();\nint g_Gravity;",
+      "initial": "void main()\n{\n    \n}",
+      "steps": [
+        {
+          "type": "CBase ent;",
+          "line": 2,
+          "character": 4,
+          "expectPresent": [
+            "as-err-unresolved-type"
+          ],
+          "expectAbsent": [
+            "as-syntax-error"
+          ],
+          "message": "Unknown type 'CBase'."
+        },
+        {
+          "type": "Entity",
+          "line": 2,
+          "character": 9,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-err-unresolved-type",
+            "as-syntax-error"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "host-property-accessor",
+      "why": "Ensures property getters and setters declared in host stubs are recognized without undeclared identifier errors.",
+      "predefined": "class CBaseEntity\n{\n    void Spawn();\n    int get_Health() const property;\n    void set_Health(int v) property;\n}\nclass CBasePlayer : CBaseEntity\n{\n    void Kill();\n}\nfuncdef void ThinkFunc();\nint g_Gravity;",
+      "initial": "void update(CBaseEntity@ e)\n{\n    \n}",
+      "steps": [
+        {
+          "type": "e.",
+          "line": 2,
+          "character": 4,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [],
+          "message": "Syntax error"
+        },
+        {
+          "type": "Health ",
+          "line": 2,
+          "character": 6,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [
+            "as-err-undefined-identifier"
+          ]
+        },
+        {
+          "type": "= 5;",
+          "line": 2,
+          "character": 13,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-syntax-error",
+            "as-err-undefined-identifier",
+            "as-err-unresolved-type"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "host-type-typo",
+      "why": "Verifies that misspelled host types remain flagged as unresolved types across edits.",
+      "predefined": "class CBaseEntity\n{\n    void Spawn();\n    int get_Health() const property;\n    void set_Health(int v) property;\n}\nclass CBasePlayer : CBaseEntity\n{\n    void Kill();\n}\nfuncdef void ThinkFunc();\nint g_Gravity;",
+      "initial": "void main()\n{\n    \n}",
+      "steps": [
+        {
+          "type": "CBaseEnty ent;",
+          "line": 2,
+          "character": 4,
+          "expectPresent": [
+            "as-err-unresolved-type"
+          ],
+          "expectAbsent": [
+            "as-syntax-error"
+          ],
+          "message": "Unknown type 'CBaseEnty'."
+        },
+        {
+          "type": "i",
+          "line": 2,
+          "character": 12,
+          "expectPresent": [
+            "as-err-unresolved-type"
+          ],
+          "expectAbsent": [
+            "as-syntax-error"
+          ],
+          "message": "Unknown type 'CBaseEntiy'."
+        }
+      ]
+    },
+    {
+      "name": "host-funcdef-handle",
+      "why": "Confirms assigning an anonymous function to a host funcdef handle validates cleanly.",
+      "predefined": "class CBaseEntity\n{\n    void Spawn();\n    int get_Health() const property;\n    void set_Health(int v) property;\n}\nclass CBasePlayer : CBaseEntity\n{\n    void Kill();\n}\nfuncdef void ThinkFunc();\nint g_Gravity;",
+      "initial": "void main()\n{\n    \n}",
+      "steps": [
+        {
+          "type": "ThinkFunc@ fn = ",
+          "line": 2,
+          "character": 4,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [
+            "as-err-unresolved-type"
+          ],
+          "message": "Syntax error"
+        },
+        {
+          "type": "function() {",
+          "line": 2,
+          "character": 20,
+          "expectPresent": [
+            "as-syntax-error"
+          ],
+          "expectAbsent": [
+            "as-err-unresolved-type"
+          ],
+          "message": "Syntax error"
+        },
+        {
+          "type": " };",
+          "line": 2,
+          "character": 32,
+          "expectPresent": [],
+          "expectAbsent": [
+            "as-syntax-error",
+            "as-err-unresolved-type"
+          ]
+        }
+      ]
+    }
+  ]
+}
