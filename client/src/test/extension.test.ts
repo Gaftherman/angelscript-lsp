@@ -146,7 +146,13 @@ suite('buildServerArgs', () => {
         // Needed on the command line even though the running server is told through
         // didChangeConfiguration: a server starting fresh has never seen that notification, and
         // without the flag it would merge every stub in the workspace on the first scan.
-        const absolute = process.platform === 'win32' ? 'C:\hosts\engine.as.predefined' : '/hosts/engine.as.predefined';
+        // Backslashes doubled: in a single-quoted TypeScript string `\h` is just `h`, so the
+        // unescaped spelling this used to carry collapsed to `C:hostsengine.as.predefined` - a
+        // drive-relative path that resolveAgainstWorkspace then rewrote, which is why this test
+        // only ever failed on Windows and CI, running on Linux, never took the branch.
+        const absolute = process.platform === 'win32'
+            ? 'C:\\hosts\\engine.as.predefined'
+            : '/hosts/engine.as.predefined';
         const args = await withSetting('predefined.active', absolute, buildServerArgs);
         assert.deepStrictEqual(valuesOf(args, '--predefined-active='), [absolute]);
     });
