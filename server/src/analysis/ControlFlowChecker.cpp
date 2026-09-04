@@ -114,6 +114,28 @@ namespace angel_lsp::analysis
          * honest reading, and the loops whose condition is literally true answer "yes" because they
          * have no normal exit at all.
          */
+        /**
+         * @brief True for a return type that null cannot convert to.
+         *
+         * The primitives, by name. Deliberately not "anything that is not a handle": a value type
+         * the host registered may accept null through a conversion this analyzer never sees, and
+         * inventing an error there costs more than missing one.
+         */
+        bool IsNonNullablePrimitiveName(std::string_view typeName)
+        {
+            static constexpr std::string_view k_primitives[] = {
+                "bool", "int", "int8", "int16", "int32", "int64",
+                "uint", "uint8", "uint16", "uint32", "uint64", "float", "double"
+            };
+
+            for (const std::string_view primitive : k_primitives)
+            {
+                if (typeName == primitive)
+                    return true;
+            }
+            return false;
+        }
+
         bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
         {
             const std::string_view type = NodeType(node);
@@ -176,14 +198,21 @@ namespace angel_lsp::analysis
                 return hasDefault && allReturn;
             }
 
-            if (type == "while_statement")
+            // No loop counts, whatever its condition says. This used to reason that `while (true)`
+            // has no normal exit and so ends the function - true of the program, and not the rule
+            // the compiler applies. Measured, all three:
+            //
+            //     int f() { while (true) { return 1; } }        Not all paths return a value
+            //     int f() { for (;;) { return 1; } }            Not all paths return a value
+            //     int f() { do { return 1; } while (true); }    Not all paths return a value
+            //
+            // Its analysis is structural: a loop body may run zero times as far as it is concerned,
+            // so a return inside one is not a return on every path. Believing otherwise cost three
+            // errors the compiler gives and this analyzer did not.
+            if (type == "while_statement" || type == "do_while_statement" || type == "for_statement" ||
+                type == "foreach_statement")
             {
-                // `while (true)` has no normal exit, so whatever follows it is unreachable. The
-                // condition has to be the literal itself, not merely text reading "true": gating on
-                // the node type keeps an identifier that happens to be named `true` out of it.
-                TSNode condition = ts_node_named_child(node, 0);
-                return NodeType(condition) == node_types::BooleanLiteral &&
-                       Trim(NodeText(condition, sourceCode)) == "true";
+                return false;
             }
 
             if (type == "try_statement")
@@ -208,19 +237,6 @@ namespace angel_lsp::analysis
                     }
                 }
                 return true;
-            }
-
-            if (type == "do_while_statement")
-            {
-                return DefinitelyReturns(ts_node_child_by_field_name(node, "body", k_bodyFieldLength), sourceCode);
-            }
-
-            if (type == "for_statement")
-            {
-                // `for (;;)` - the condition slot holds only the semicolon.
-                const std::string_view condition =
-                    Trim(NodeText(ts_node_child_by_field_name(node, "condition", k_conditionFieldLength), sourceCode));
-                return condition.empty() || condition == ";";
             }
 
             return false;
@@ -357,6 +373,16 @@ namespace angel_lsp::analysis
              */
             std::string requiredReturn;
             std::string functionName;
+
+            /**
+             * @brief True for a function the grammar gives no return type: a constructor or a
+             *        destructor.
+             *
+             * Both return void, and `return 42;` in one is "Can't return value when return type is
+             * 'void'" - measured. as-err-void-return-value covers the same mistake in a function
+             * that spells `void` out, and it reads the return type node, so it never fired here.
+             */
+            bool implicitVoid = false;
         };
 
         /**
@@ -466,6 +492,29 @@ namespace angel_lsp::analysis
                 EmitAtNode(node, ctx, "as-err-return-value-required", state.functionName);
             }
 
+            // The constructor half of the same rule. Reported here rather than in
+            // TypeConversionChecker because that one asks the return type node what is required,
+            // and a constructor has none - so the one function in the language that can only
+            // return void was the one nothing checked.
+            if (type == "return_statement" && state.implicitVoid && ts_node_named_child_count(node) > 0)
+            {
+                EmitAtNode(node, ctx, "as-err-void-return-value");
+            }
+
+            // `int f() { return null; }` - "No conversion from '<null handle>' to 'int' available."
+            // as-err-null-non-handle says exactly this about a variable and had nothing to say
+            // about a return. Restricted to the primitives, and to a return type carrying no `@`,
+            // so a class or a handle - where null may well be legal, and where the host may have
+            // registered a conversion this analyzer cannot see - is left alone.
+            if (type == "return_statement" && !state.requiredReturn.empty() &&
+                state.requiredReturn.find('@') == std::string::npos &&
+                IsNonNullablePrimitiveName(state.requiredReturn) &&
+                ts_node_named_child_count(node) == 1 &&
+                NodeType(ts_node_named_child(node, 0)) == node_types::NullLiteral)
+            {
+                EmitAtNode(node, ctx, "as-err-null-non-handle", state.requiredReturn);
+            }
+
             if (type == "func_declaration" || type == "lambda_expression")
             {
                 // A nested function opens its own flow: a loop enclosing the declaration does not
@@ -512,6 +561,7 @@ namespace angel_lsp::analysis
                 // does nothing, which is the same silence the rule above keeps.
                 state.requiredReturn = requiredReturn;
                 state.functionName = reportedName;
+                state.implicitVoid = ts_node_is_null(returnType) && type != node_types::LambdaExpression;
             }
             else if (type == "while_statement" || type == "for_statement" ||
                      type == "foreach_statement" || type == "do_while_statement")

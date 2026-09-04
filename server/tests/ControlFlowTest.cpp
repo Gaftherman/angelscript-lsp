@@ -298,8 +298,17 @@ TEST_CASE("ControlFlow - A constructor is not judged")
     CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
 }
 
-TEST_CASE("ControlFlow - A loop with no normal exit ends the function")
+TEST_CASE("ControlFlow - A loop is not a return, whatever its condition says")
 {
+    // This asserted the opposite until it was measured. `while (true)` really does have no normal
+    // exit, and the compiler does not care: its analysis is structural, a loop body may run zero
+    // times as far as it is concerned, and all three of these are rejected -
+    //
+    //     int f() { while (true) { return 1; } }        Not all paths return a value
+    //     int f() { for (;;) { return 1; } }            Not all paths return a value
+    //     int f() { do { return 1; } while (true); }    Not all paths return a value
+    //
+    // - so believing otherwise cost three errors the compiler gives and this analyzer did not.
     const std::string code =
         "int Spin()\n"
         "{\n"
@@ -307,16 +316,29 @@ TEST_CASE("ControlFlow - A loop with no normal exit ends the function")
         "    {\n"
         "        return 1;\n"
         "    }\n"
-        "}\n"
-        "int Forever()\n"
-        "{\n"
-        "    for (;;)\n"
-        "    {\n"
-        "        return 1;\n"
-        "    }\n"
         "}\n";
 
-    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+    CHECK(HasCode(AnalyzeFlowSnippet("int Forever() { for (;;) { return 1; } }\n"),
+                  "as-err-not-all-paths-return"));
+    CHECK(HasCode(AnalyzeFlowSnippet("int D() { do { return 1; } while (true); }\n"),
+                  "as-err-not-all-paths-return"));
+
+    // And a return after the loop is what makes any of them compile.
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("int Spin() { while (true) { break; } return 1; }\n"),
+                        "as-err-not-all-paths-return"));
+}
+
+TEST_CASE("ControlFlow - A constructor cannot return a value")
+{
+    // The one function in the language that can only return void was the one nothing checked:
+    // as-err-void-return-value reads the return type node, and a constructor has none.
+    CHECK(HasCode(AnalyzeFlowSnippet("class Widget { Widget() { return 42; } }\n"),
+                  "as-err-void-return-value"));
+
+    // A bare return in one is ordinary.
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("class Widget { Widget() { return; } }\n"),
+                        "as-err-void-return-value"));
 }
 
 TEST_CASE("ControlFlow - A switch with a default where every clause returns is accepted")
