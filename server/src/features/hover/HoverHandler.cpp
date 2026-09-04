@@ -349,6 +349,38 @@ namespace angel_lsp::features
         }
     }
 
+    namespace
+    {
+        /**
+         * @brief The local definition whose own name spans this position.
+         *
+         * Null when the cursor is on a use rather than on a declaration, which is the ordinary case
+         * and the one ResolveInScope answers. The ranges compared here are the name's, not the whole
+         * declaration's, so a position inside one can only ever be that name.
+         */
+        const analysis::LocalDefinition *DefinitionAtPosition(const analysis::Scope *scope,
+                                                              const lsp::Position &position)
+        {
+            for (const analysis::Scope *current = scope; current != nullptr; current = current->parent)
+            {
+                for (const analysis::LocalDefinition &def : current->definitions)
+                {
+                    const bool afterStart =
+                        position.line > def.startLine ||
+                        (position.line == def.startLine && position.character >= def.startCharacter);
+                    const bool beforeEnd =
+                        position.line < def.endLine ||
+                        (position.line == def.endLine && position.character <= def.endCharacter);
+
+                    if (afterStart && beforeEnd)
+                        return &def;
+                }
+            }
+
+            return nullptr;
+        }
+    }
+
     std::optional<lsp::Hover> GetHover(const HoverRequest &request)
     {
         if (!request.tree || request.sourceCode.empty())
@@ -546,7 +578,14 @@ namespace angel_lsp::features
             const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
             if (scope)
             {
-                const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, nodeText);
+                // The cursor may be *on* a declaration rather than on a use of one, and those need
+                // different answers the moment a name is declared twice - which is the state a
+                // document is in while the second one is being typed. ResolveInScope answers by
+                // name and returns the first match in the chain, so hovering the `float count` a
+                // user has just finished typing described the `int count` three lines above it.
+                const analysis::LocalDefinition *def = DefinitionAtPosition(scope, request.position);
+                if (!def)
+                    def = analysis::ResolveInScope(scope, nodeText);
                 if (def && (def->kind == analysis::LocalDefinitionKind::Parameter ||
                             def->kind == analysis::LocalDefinitionKind::Variable))
                 {
