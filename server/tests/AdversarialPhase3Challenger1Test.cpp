@@ -417,13 +417,20 @@ TEST_CASE("Adversarial Phase 3 - All 15 Primitive Types Tokenized as Type_Keywor
         CHECK((it->tokenMod & (1 << 9)) == 0);
     }
 
-    // Verify user-defined class CustomClass on line 16 is Type_Type (1) and NOT Type_Keyword (15)
+    // Verify user-defined class CustomClass on line 16 is a type of its own and NOT Type_Keyword
+    // (15), which is what this test exists to prove: a primitive is a keyword, a user type is not.
+    //
+    // It used to require Type_Type (1) exactly. That was the value the handler happened to produce,
+    // not the point being made - the token now carries Type_Class (2), because the handler resolves
+    // the name against the symbol table and a class colours as a class. Editor themes give those two
+    // different colours, so the narrower answer is the better one.
     auto itUser = std::find_if(decoded.begin(), decoded.end(),
         [](const DecodedSemToken &t) {
             return t.line == 16 && t.startCol == 0 && t.length == 11;
         });
     REQUIRE(itUser != decoded.end());
-    CHECK(itUser->tokenType == 1); // Type_Type
+    CHECK(itUser->tokenType == 2); // Type_Class
+    CHECK(itUser->tokenType != 15); // and never Type_Keyword
 }
 
 TEST_CASE("Adversarial Phase 3 - Primitive Types in Signatures, Casts, and Modifiers")

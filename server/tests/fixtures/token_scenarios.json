@@ -1,0 +1,581 @@
+{
+  "scenarios": [
+    {
+      "name": "class-declaration",
+      "why": "Ensures class names at the point of declaration are tokenized as class.",
+      "source": "class Player\n{\n}\n\nclass Enemy\n{\n}\n\nclass Weapon\n{\n}\n\nclass Shield\n{\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 6,
+          "text": "Player",
+          "type": "class"
+        },
+        {
+          "line": 4,
+          "character": 6,
+          "text": "Enemy",
+          "type": "class"
+        },
+        {
+          "line": 8,
+          "character": 6,
+          "text": "Weapon",
+          "type": "class"
+        },
+        {
+          "line": 12,
+          "character": 6,
+          "text": "Shield",
+          "type": "class"
+        }
+      ]
+    },
+    {
+      "name": "class-member-property",
+      "why": "Ensures class member variables are tokenized as property both at declaration and when accessed within methods.",
+      "source": "class Player\n{\n  int health;\n  int maxHealth;\n\n  int getHealth()\n  {\n    return health;\n  }\n\n  int getMaxHealth()\n  {\n    return maxHealth;\n  }\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 6,
+          "text": "Player",
+          "type": "class"
+        },
+        {
+          "line": 2,
+          "character": 6,
+          "text": "health",
+          "type": "property"
+        },
+        {
+          "line": 3,
+          "character": 6,
+          "text": "maxHealth",
+          "type": "property"
+        },
+        {
+          "line": 7,
+          "character": 11,
+          "text": "health",
+          "type": "property",
+          "gap": "A field read inside a method colours as `variable`; the scope tree has no reference entry for it, so the pass that turns a use into a property never sees it."
+        },
+        {
+          "line": 12,
+          "character": 11,
+          "text": "maxHealth",
+          "type": "property",
+          "gap": "Same as `health` above."
+        }
+      ]
+    },
+    {
+      "name": "class-method-call",
+      "why": "Ensures methods declared inside classes and their call sites are tokenized as method.",
+      "source": "class Worker\n{\n  void execute() {}\n\n  void start()\n  {\n    execute();\n  }\n}\n\nvoid run()\n{\n  Worker w;\n  w.execute();\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 6,
+          "text": "Worker",
+          "type": "class"
+        },
+        {
+          "line": 2,
+          "character": 7,
+          "text": "execute",
+          "type": "method"
+        },
+        {
+          "line": 4,
+          "character": 7,
+          "text": "start",
+          "type": "method"
+        },
+        {
+          "line": 6,
+          "character": 4,
+          "text": "execute",
+          "type": "method",
+          "gap": "A method called without a receiver from inside its own class colours as `function`: there is no receiver to resolve it through, and the bare name is not a symbol-table key - methods are keyed as Class::name."
+        },
+        {
+          "line": 13,
+          "character": 4,
+          "text": "execute",
+          "type": "method"
+        }
+      ]
+    },
+    {
+      "name": "free-function-call",
+      "why": "Ensures free functions are tokenized as function at declaration and at call sites from other functions.",
+      "source": "void helper()\n{\n}\n\nvoid compute()\n{\n  helper();\n}\n\nvoid caller()\n{\n  helper();\n  compute();\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 5,
+          "text": "helper",
+          "type": "function"
+        },
+        {
+          "line": 4,
+          "character": 5,
+          "text": "compute",
+          "type": "function"
+        },
+        {
+          "line": 6,
+          "character": 2,
+          "text": "helper",
+          "type": "function"
+        },
+        {
+          "line": 9,
+          "character": 5,
+          "text": "caller",
+          "type": "function"
+        },
+        {
+          "line": 11,
+          "character": 2,
+          "text": "helper",
+          "type": "function"
+        },
+        {
+          "line": 12,
+          "character": 2,
+          "text": "compute",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "name": "function-parameter",
+      "why": "Ensures function parameters are tokenized as parameter at declaration and within function bodies.",
+      "source": "int add(int first, int second)\n{\n  return first + second;\n}\n\nfloat scale(float factor)\n{\n  return factor;\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 12,
+          "text": "first",
+          "type": "parameter"
+        },
+        {
+          "line": 0,
+          "character": 23,
+          "text": "second",
+          "type": "parameter"
+        },
+        {
+          "line": 2,
+          "character": 9,
+          "text": "first",
+          "type": "parameter",
+          "gap": "A parameter at its own declaration colours as `variable`. The grammar captures it as a plain variable and the declaration walk does not yet reach the parameter list."
+        },
+        {
+          "line": 2,
+          "character": 17,
+          "text": "second",
+          "type": "parameter",
+          "gap": "Same as `first`."
+        },
+        {
+          "line": 5,
+          "character": 18,
+          "text": "factor",
+          "type": "parameter"
+        },
+        {
+          "line": 7,
+          "character": 9,
+          "text": "factor",
+          "type": "parameter",
+          "gap": "Same as `first`."
+        }
+      ]
+    },
+    {
+      "name": "local-variable",
+      "why": "Ensures local variables are tokenized as variable at definition and subsequent use sites.",
+      "source": "void calculate()\n{\n  int total = 10;\n  int step = 2;\n  total = total + step;\n}",
+      "expect": [
+        {
+          "line": 2,
+          "character": 6,
+          "text": "total",
+          "type": "variable"
+        },
+        {
+          "line": 3,
+          "character": 6,
+          "text": "step",
+          "type": "variable"
+        },
+        {
+          "line": 4,
+          "character": 2,
+          "text": "total",
+          "type": "variable"
+        },
+        {
+          "line": 4,
+          "character": 10,
+          "text": "total",
+          "type": "variable"
+        },
+        {
+          "line": 4,
+          "character": 18,
+          "text": "step",
+          "type": "variable"
+        }
+      ]
+    },
+    {
+      "name": "enum-declaration-and-member",
+      "why": "Ensures enum types and their enumerators are tokenized as enum and enumMember at declaration and usage.",
+      "source": "enum State\n{\n  Idle,\n  Running\n}\n\nvoid test()\n{\n  State s = State::Idle;\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 5,
+          "text": "State",
+          "type": "enum"
+        },
+        {
+          "line": 2,
+          "character": 2,
+          "text": "Idle",
+          "type": "enumMember"
+        },
+        {
+          "line": 3,
+          "character": 2,
+          "text": "Running",
+          "type": "enumMember"
+        },
+        {
+          "line": 8,
+          "character": 2,
+          "text": "State",
+          "type": "enum"
+        },
+        {
+          "line": 8,
+          "character": 12,
+          "text": "State",
+          "type": "enum",
+          "gap": "The qualifier in `State::Idle` colours as `namespace`. It is a scope qualifier and the handler treats every one of them alike; an enum qualifier could be told apart."
+        },
+        {
+          "line": 8,
+          "character": 19,
+          "text": "Idle",
+          "type": "enumMember",
+          "gap": "An enum member used qualified colours as `variable`."
+        }
+      ]
+    },
+    {
+      "name": "interface-and-implementation",
+      "why": "Ensures interface types colour as interface and implementing classes colour as class.",
+      "source": "interface Drivable\n{\n  void drive();\n}\n\nclass Car : Drivable\n{\n  void drive()\n  {\n  }\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 10,
+          "text": "Drivable",
+          "type": "interface"
+        },
+        {
+          "line": 2,
+          "character": 7,
+          "text": "drive",
+          "type": "method",
+          "gap": "A method declared in an interface body colours as `function`. The declaration walk recognises a class body and not yet an interface one."
+        },
+        {
+          "line": 5,
+          "character": 6,
+          "text": "Car",
+          "type": "class"
+        },
+        {
+          "line": 5,
+          "character": 12,
+          "text": "Drivable",
+          "type": "interface"
+        },
+        {
+          "line": 7,
+          "character": 7,
+          "text": "drive",
+          "type": "method"
+        }
+      ]
+    },
+    {
+      "name": "namespace-qualified-use",
+      "why": "Ensures namespace declarations and scope qualifiers are tokenized as namespace.",
+      "source": "namespace Engine\n{\n  void start() {}\n  void stop() {}\n}\n\nvoid run()\n{\n  Engine::start();\n  Engine::stop();\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 10,
+          "text": "Engine",
+          "type": "namespace"
+        },
+        {
+          "line": 2,
+          "character": 7,
+          "text": "start",
+          "type": "function"
+        },
+        {
+          "line": 8,
+          "character": 2,
+          "text": "Engine",
+          "type": "namespace"
+        },
+        {
+          "line": 8,
+          "character": 10,
+          "text": "start",
+          "type": "function"
+        },
+        {
+          "line": 9,
+          "character": 2,
+          "text": "Engine",
+          "type": "namespace"
+        },
+        {
+          "line": 9,
+          "character": 10,
+          "text": "stop",
+          "type": "function"
+        }
+      ]
+    },
+    {
+      "name": "literals-and-comments",
+      "why": "Ensures numbers, boolean keywords, and standalone comments are tokenized as number, keyword, and comment.",
+      "source": "// A standalone comment\nvoid test()\n{\n  int count = 42;\n  float speed = 3.14;\n  bool flag = true;\n  bool active = false;\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 0,
+          "text": "// A standalone comment",
+          "type": "comment"
+        },
+        {
+          "line": 3,
+          "character": 14,
+          "text": "42",
+          "type": "number"
+        },
+        {
+          "line": 4,
+          "character": 16,
+          "text": "3.14",
+          "type": "number"
+        },
+        {
+          "line": 5,
+          "character": 14,
+          "text": "true",
+          "type": "keyword"
+        },
+        {
+          "line": 6,
+          "character": 16,
+          "text": "false",
+          "type": "keyword"
+        }
+      ]
+    },
+    {
+      "name": "control-flow-keywords",
+      "why": "Ensures control-flow statements if, while, and return are tokenized as keyword.",
+      "source": "int loop(int n)\n{\n  while (n > 0)\n  {\n    if (n == 1)\n    {\n      return n;\n    }\n    else\n    {\n      return 0;\n    }\n  }\n  return 0;\n}",
+      "expect": [
+        {
+          "line": 2,
+          "character": 2,
+          "text": "while",
+          "type": "keyword"
+        },
+        {
+          "line": 4,
+          "character": 4,
+          "text": "if",
+          "type": "keyword"
+        },
+        {
+          "line": 6,
+          "character": 6,
+          "text": "return",
+          "type": "keyword"
+        },
+        {
+          "line": 8,
+          "character": 4,
+          "text": "else",
+          "type": "keyword"
+        },
+        {
+          "line": 10,
+          "character": 6,
+          "text": "return",
+          "type": "keyword"
+        },
+        {
+          "line": 13,
+          "character": 2,
+          "text": "return",
+          "type": "keyword"
+        }
+      ]
+    },
+    {
+      "name": "funcdef-and-handle-variable",
+      "why": "Ensures funcdef type declarations colour as type and handle variables of funcdef type colour as variable.",
+      "source": "funcdef void Callback(int state);\nfuncdef bool Predicate(float value);\n\nvoid setup()\n{\n  Callback@ handler;\n  Predicate@ filter;\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 13,
+          "text": "Callback",
+          "type": "type"
+        },
+        {
+          "line": 1,
+          "character": 13,
+          "text": "Predicate",
+          "type": "type"
+        },
+        {
+          "line": 5,
+          "character": 2,
+          "text": "Callback",
+          "type": "type"
+        },
+        {
+          "line": 5,
+          "character": 12,
+          "text": "handler",
+          "type": "variable"
+        },
+        {
+          "line": 6,
+          "character": 2,
+          "text": "Predicate",
+          "type": "type"
+        },
+        {
+          "line": 6,
+          "character": 13,
+          "text": "filter",
+          "type": "variable"
+        }
+      ]
+    },
+    {
+      "name": "class-as-variable-type",
+      "why": "Ensures class names used as local variable types are tokenized as class.",
+      "source": "class Particle\n{\n}\n\nclass Emitter\n{\n}\n\nvoid init()\n{\n  Particle primary;\n  Particle secondary;\n  Emitter emitter;\n}",
+      "expect": [
+        {
+          "line": 10,
+          "character": 2,
+          "text": "Particle",
+          "type": "class"
+        },
+        {
+          "line": 10,
+          "character": 11,
+          "text": "primary",
+          "type": "variable"
+        },
+        {
+          "line": 11,
+          "character": 2,
+          "text": "Particle",
+          "type": "class"
+        },
+        {
+          "line": 11,
+          "character": 11,
+          "text": "secondary",
+          "type": "variable"
+        },
+        {
+          "line": 12,
+          "character": 2,
+          "text": "Emitter",
+          "type": "class"
+        },
+        {
+          "line": 12,
+          "character": 10,
+          "text": "emitter",
+          "type": "variable"
+        }
+      ]
+    },
+    {
+      "name": "const-local-and-this-property",
+      "why": "Ensures class fields accessed via this are tokenized as property and const locals as variable.",
+      "source": "class Config\n{\n  int limit;\n\n  int getLimit() const\n  {\n    return this.limit;\n  }\n\n  void update()\n  {\n    const int step = 5;\n    int next = this.limit + step;\n  }\n}",
+      "expect": [
+        {
+          "line": 0,
+          "character": 6,
+          "text": "Config",
+          "type": "class"
+        },
+        {
+          "line": 2,
+          "character": 6,
+          "text": "limit",
+          "type": "property"
+        },
+        {
+          "line": 4,
+          "character": 6,
+          "text": "getLimit",
+          "type": "method"
+        },
+        {
+          "line": 6,
+          "character": 16,
+          "text": "limit",
+          "type": "property",
+          "gap": "A member reached through `this.` produces no token at all, so it is left uncoloured."
+        },
+        {
+          "line": 11,
+          "character": 14,
+          "text": "step",
+          "type": "variable"
+        },
+        {
+          "line": 12,
+          "character": 20,
+          "text": "limit",
+          "type": "property",
+          "gap": "Same as line 6."
+        },
+        {
+          "line": 12,
+          "character": 28,
+          "text": "step",
+          "type": "variable"
+        }
+      ]
+    }
+  ]
+}

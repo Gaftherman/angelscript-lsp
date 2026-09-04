@@ -186,6 +186,116 @@ namespace angel_lsp::features
 
             return false;
         }
+
+        /**
+         * @brief Upgrades coarse token types for identifier declarations from syntax tree position.
+         *
+         * A declaration has no reference to resolve, which is why the scope-tree pass cannot answer
+         * for it. Walking up from the token's node through its syntax tree parents recognizes methods,
+         * parameters, properties, and enum members at their declaration site.
+         */
+        [[nodiscard]] inline uint32_t RefineDeclarationTokenType(TSNode node, uint32_t tokenType) noexcept
+        {
+            if (tokenType != Type_Variable && tokenType != Type_Function)
+            {
+                return tokenType;
+            }
+            if (ts_node_is_null(node))
+            {
+                return tokenType;
+            }
+
+            auto isNodeName = [node](TSNode parent) noexcept -> bool
+            {
+                if (ts_node_is_null(parent))
+                {
+                    return false;
+                }
+                TSNode nameChild = ts_node_child_by_field_name(parent, "name", 4);
+                if (ts_node_is_null(nameChild))
+                {
+                    return false;
+                }
+                return ts_node_eq(nameChild, node);
+            };
+
+            TSNode directParent = ts_node_parent(node);
+            TSNode curr = directParent;
+
+            for (int level = 0; level < 6 && !ts_node_is_null(curr); ++level, curr = ts_node_parent(curr))
+            {
+                std::string_view currType = ts_node_type(curr);
+
+                if (currType == "statement_block" || currType == "lambda_expression")
+                {
+                    return tokenType;
+                }
+
+                if (currType == "parameter" || currType == "parameter_list")
+                {
+                    if (ts_node_eq(directParent, curr) || isNodeName(curr))
+                    {
+                        return Type_Parameter;
+                    }
+                }
+
+                if (currType == "func_declaration")
+                {
+                    if (isNodeName(curr))
+                    {
+                        for (TSNode anc = ts_node_parent(curr); !ts_node_is_null(anc); anc = ts_node_parent(anc))
+                        {
+                            std::string_view ancType = ts_node_type(anc);
+                            if (ancType == "class_body" || ancType == "interface_body")
+                            {
+                                return Type_Method;
+                            }
+                        }
+                        return tokenType;
+                    }
+                }
+
+                if (currType == "variable_declaration" || currType == "declaration")
+                {
+                    for (TSNode anc = ts_node_parent(curr); !ts_node_is_null(anc); anc = ts_node_parent(anc))
+                    {
+                        std::string_view ancType = ts_node_type(anc);
+                        if (ancType == "statement_block" || ancType == "func_declaration")
+                        {
+                            break;
+                        }
+                        if (ancType == "class_body")
+                        {
+                            return Type_Property;
+                        }
+                    }
+                }
+
+                if (currType.find("enum") != std::string_view::npos)
+                {
+                    bool isEnumOwnName = false;
+                    for (TSNode anc = curr; !ts_node_is_null(anc); anc = ts_node_parent(anc))
+                    {
+                        std::string_view ancType = ts_node_type(anc);
+                        if (ancType == "enum_declaration")
+                        {
+                            if (isNodeName(anc))
+                            {
+                                isEnumOwnName = true;
+                            }
+                            break;
+                        }
+                    }
+                    if (!isEnumOwnName)
+                    {
+                        return Type_EnumMember;
+                    }
+                    return tokenType;
+                }
+            }
+
+            return tokenType;
+        }
     }
 
     const lsp::SemanticTokensLegend &GetSemanticTokensLegend()
@@ -419,6 +529,62 @@ namespace angel_lsp::features
                         case analysis::LocalDefinitionKind::Type: tokenType = Type_Type; break;
                         case analysis::LocalDefinitionKind::Constant: tokenType = Type_EnumMember; break;
                         default: break;
+                    }
+                }
+            }
+
+            tokenType = RefineDeclarationTokenType(node, tokenType);
+
+            // Upgrade coarse token types using the workspace symbol table when the symbol kind is
+            // unambiguous. If the lookup finds symbols of differing kinds, leave the type coarse
+            // rather than guessing.
+            if (tokenType == Type_Type || tokenType == Type_Variable || tokenType == Type_Function)
+            {
+                const uint32_t startByte = ts_node_start_byte(node);
+                const uint32_t endByte = ts_node_end_byte(node);
+                if (startByte < endByte && endByte <= request.sourceCode.size())
+                {
+                    const std::string tokenText = request.sourceCode.substr(startByte, endByte - startByte);
+                    if (!tokenText.empty())
+                    {
+                        const std::vector<analysis::Symbol> symbols = request.symbolTable.FindSymbols(tokenText);
+                        if (!symbols.empty())
+                        {
+                            const analysis::SymbolType agreedType = symbols.front().type;
+                            bool allSymbolsMatch = true;
+                            for (const analysis::Symbol &symbol : symbols)
+                            {
+                                if (symbol.type != agreedType)
+                                {
+                                    allSymbolsMatch = false;
+                                    break;
+                                }
+                            }
+
+                            if (allSymbolsMatch)
+                            {
+                                if (agreedType == analysis::SymbolType::Class && tokenType == Type_Type)
+                                {
+                                    tokenType = Type_Class;
+                                }
+                                else if (agreedType == analysis::SymbolType::Interface && tokenType == Type_Type)
+                                {
+                                    tokenType = Type_Interface;
+                                }
+                                else if (agreedType == analysis::SymbolType::Enum && tokenType == Type_Type)
+                                {
+                                    tokenType = Type_Enum;
+                                }
+                                else if (agreedType == analysis::SymbolType::Function && tokenType == Type_Function && !symbols.front().containerName.empty())
+                                {
+                                    tokenType = Type_Method;
+                                }
+                                else if (agreedType == analysis::SymbolType::Variable && tokenType == Type_Variable && !symbols.front().containerName.empty())
+                                {
+                                    tokenType = Type_Property;
+                                }
+                            }
+                        }
                     }
                 }
             }

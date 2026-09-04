@@ -7,6 +7,9 @@
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
+#include <fstream>
+#include <lsp/json/json.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -544,4 +547,225 @@ TEST_CASE("SemanticTokensHandler - With nothing excluded the payload is unchange
     CHECK(GetSemanticTokens(without).data == GetSemanticTokens(with).data);
 
     ts_tree_delete(tree);
+}
+
+// =====================================================================================
+// What colour each name comes out.
+//
+// The existing tests here check that the legend is populated, that the delta encoding is
+// well-formed, and that *some* token of a few kinds exists. None of them checks that a particular
+// name gets a particular type - which is the whole of what a user sees. A class coloured as a
+// variable, or a parameter coloured as a local, is invisible to every assertion in this file.
+//
+// The scenarios live in tests/fixtures/token_scenarios.json and name a position, the text that must
+// be there, and the type it must carry. The text is checked too, so an expectation whose position
+// drifted fails as a bad expectation rather than as a server defect.
+// =====================================================================================
+
+namespace
+{
+    struct TokenExpectation
+    {
+        uint32_t line = 0;
+        uint32_t character = 0;
+        std::string text;
+        std::string type;
+
+        /**
+         * @brief Why this one is still wrong, when it is.
+         *
+         * Empty for an expectation the server meets. A non-empty reason is a colour that is
+         * measurably wrong today and understood - the same bookkeeping the parity audit keeps for
+         * the compiler, and for the same reason: a gap nobody wrote down is a gap nobody fixes, and
+         * one that fails the build is a gap somebody deletes.
+         */
+        std::string gap;
+    };
+
+    struct TokenScenario
+    {
+        std::string name;
+        std::string why;
+        std::string source;
+        std::vector<TokenExpectation> expect;
+    };
+
+    std::vector<TokenScenario> LoadTokenScenarios()
+    {
+        const std::filesystem::path path =
+            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "token_scenarios.json";
+
+        std::ifstream file(path, std::ios::binary);
+        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        lsp::json::Value parsed = lsp::json::parse(text);
+        REQUIRE(parsed.isObject());
+
+        const auto *list = parsed.object().find("scenarios");
+        REQUIRE(list != nullptr);
+        REQUIRE(list->isArray());
+
+        std::vector<TokenScenario> scenarios;
+        for (const auto &entry : list->array())
+        {
+            const lsp::json::Object &fields = entry.object();
+
+            TokenScenario scenario;
+            scenario.name = fields.find("name")->string();
+            scenario.why = fields.find("why")->string();
+            scenario.source = fields.find("source")->string();
+
+            for (const auto &item : fields.find("expect")->array())
+            {
+                const lsp::json::Object &expectation = item.object();
+                TokenExpectation expected;
+                expected.line = static_cast<uint32_t>(expectation.find("line")->number());
+                expected.character = static_cast<uint32_t>(expectation.find("character")->number());
+                expected.text = expectation.find("text")->string();
+                expected.type = expectation.find("type")->string();
+
+                if (const auto *gap = expectation.find("gap"); gap && gap->isString())
+                    expected.gap = gap->string();
+
+                scenario.expect.push_back(std::move(expected));
+            }
+
+            scenarios.push_back(std::move(scenario));
+        }
+
+        return scenarios;
+    }
+
+    /** @brief One token, with its position resolved out of the protocol's delta encoding. */
+    struct AbsoluteToken
+    {
+        uint32_t line = 0;
+        uint32_t character = 0;
+        uint32_t length = 0;
+        std::string type;
+    };
+
+    std::vector<AbsoluteToken> DecodeAbsoluteTokens(const std::vector<unsigned> &data)
+    {
+        const auto &legend = GetSemanticTokensLegend();
+
+        std::vector<AbsoluteToken> tokens;
+        uint32_t line = 0;
+        uint32_t character = 0;
+
+        for (size_t i = 0; i + 4 < data.size(); i += 5)
+        {
+            const uint32_t deltaLine = data[i];
+            const uint32_t deltaStart = data[i + 1];
+
+            line += deltaLine;
+            character = deltaLine == 0 ? character + deltaStart : deltaStart;
+
+            AbsoluteToken token;
+            token.line = line;
+            token.character = character;
+            token.length = data[i + 2];
+            token.type = data[i + 3] < legend.tokenTypes.size() ? legend.tokenTypes[data[i + 3]]
+                                                                : std::string("<out of legend>");
+            tokens.push_back(token);
+        }
+
+        return tokens;
+    }
+
+    /** @brief The source text at a position, so a drifted expectation is reported as its own fault. */
+    std::string TextAt(const std::string &source, uint32_t line, uint32_t character, size_t length)
+    {
+        size_t at = 0;
+        for (uint32_t skipped = 0; skipped < line; ++skipped)
+        {
+            at = source.find('\n', at);
+            if (at == std::string::npos)
+                return {};
+            ++at;
+        }
+
+        at += character;
+        if (at >= source.size())
+            return {};
+
+        return source.substr(at, length);
+    }
+}
+
+TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes from")
+{
+    const std::vector<TokenScenario> scenarios = LoadTokenScenarios();
+    REQUIRE_FALSE(scenarios.empty());
+
+    size_t met = 0;
+    size_t gaps = 0;
+
+    for (const TokenScenario &scenario : scenarios)
+    {
+        CAPTURE(scenario.name);
+        INFO(scenario.why);
+
+        AngelScriptParser parser;
+        TSTree *tree = parser.Parse(scenario.source);
+        REQUIRE(tree != nullptr);
+
+        // With an empty table a class is just an identifier, so the symbols have to be collected
+        // first - which is what the server does before asking for tokens.
+        SymbolCollector collector{ nullptr };
+        SymbolTable table;
+        collector.CollectSymbols("file:///tokens.as", scenario.source, parser, table);
+
+        SemanticTokensRequest request{ "file:///tokens.as", scenario.source, tree, table };
+        const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+        for (const TokenExpectation &expected : scenario.expect)
+        {
+            CAPTURE(expected.text);
+            CAPTURE(expected.line);
+            CAPTURE(expected.character);
+
+            // The expectation has to point at what it says it does, or a failure below would blame
+            // the server for a position someone counted wrong.
+            const std::string actualText = TextAt(scenario.source, expected.line, expected.character,
+                                                  expected.text.size());
+            CHECK(actualText == expected.text);
+
+            const auto found = std::find_if(tokens.begin(), tokens.end(),
+                                            [&expected](const AbsoluteToken &token) {
+                                                return token.line == expected.line &&
+                                                       token.character == expected.character;
+                                            });
+
+            const bool matched = found != tokens.end() && found->type == expected.type;
+
+            if (!expected.gap.empty())
+            {
+                // A gap that has been fixed has to stop being called one, or this file starts
+                // excusing work that is already done.
+                CHECK_MESSAGE(!matched,
+                              "'" << expected.text << "' in " << scenario.name
+                                  << " is marked as a known gap but now carries " << expected.type
+                                  << " - remove the gap from token_scenarios.json");
+                ++gaps;
+                continue;
+            }
+
+            if (found == tokens.end())
+            {
+                FAIL_CHECK("no token starts at " << expected.line << ":" << expected.character
+                                                 << " for '" << expected.text << "'");
+                continue;
+            }
+
+            INFO("expected " << expected.type << ", got " << found->type);
+            CHECK(found->type == expected.type);
+            ++met;
+        }
+
+        ts_tree_delete(tree);
+    }
+
+    MESSAGE("semantic tokens: " << met << " expectations met, " << gaps << " known gaps");
 }
