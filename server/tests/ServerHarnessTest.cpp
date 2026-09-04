@@ -3484,3 +3484,291 @@ TEST_CASE("Server - A message a typed diagnostic carries is the one the user rea
     // And no diagnostic reaches the client as a bare code with no message.
     CHECK(published.find("\"message\":\"as-") == std::string::npos);
 }
+
+// =====================================================================================
+// Two files, one module, one namespace reopened in both.
+//
+// AngelScript compiles a module out of several sections, and a name declared twice across two of
+// them is a redeclaration - measured, `namespace NS { void worker() {} }` in a file and in the file
+// it includes is "A function with the same name and parameters already exists". Two files that
+// never reach each other are two modules and may each declare it, which is why the rule reads the
+// include closure rather than the workspace.
+//
+// The cases were generated, then measured: each was handed to the compiler as a directory, so the
+// accept/reject beside each one is the compiler's answer and not a guess. The three that accept are
+// the reason this is not a workspace-wide rule.
+// =====================================================================================
+
+namespace
+{
+    struct ModuleCase
+    {
+        std::string name;
+        std::string why;
+        std::string compiler;
+        std::string main;
+        std::string other;
+        std::vector<std::string> expectPresent;
+        std::vector<std::string> expectAbsent;
+    };
+
+    std::vector<ModuleCase> LoadModuleCases()
+    {
+        const std::filesystem::path path =
+            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "module_cases.json";
+
+        std::ifstream file(path, std::ios::binary);
+        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        lsp::json::Value parsed = lsp::json::parse(text);
+        REQUIRE(parsed.isObject());
+
+        const auto *list = parsed.object().find("cases");
+        REQUIRE(list != nullptr);
+        REQUIRE(list->isArray());
+
+        std::vector<ModuleCase> cases;
+        for (const auto &entry : list->array())
+        {
+            const lsp::json::Object &fields = entry.object();
+
+            ModuleCase moduleCase;
+            moduleCase.name = fields.find("name")->string();
+            moduleCase.why = fields.find("why")->string();
+            moduleCase.compiler = fields.find("compiler")->string();
+            moduleCase.main = fields.find("main")->string();
+            moduleCase.other = fields.find("other")->string();
+
+            for (const auto &code : fields.find("expectPresent")->array())
+                moduleCase.expectPresent.push_back(code.string());
+            for (const auto &code : fields.find("expectAbsent")->array())
+                moduleCase.expectAbsent.push_back(code.string());
+
+            cases.push_back(std::move(moduleCase));
+        }
+
+        return cases;
+    }
+}
+
+TEST_CASE("Server - A namespace reopened in two files of one module")
+{
+    const std::vector<ModuleCase> cases = LoadModuleCases();
+    REQUIRE_FALSE(cases.empty());
+
+    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains(needle))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    for (const ModuleCase &moduleCase : cases)
+    {
+        CAPTURE(moduleCase.name);
+        INFO(moduleCase.why);
+        INFO("the compiler " << moduleCase.compiler << "s this");
+
+        WorkspaceFixture fixture;
+        fixture.Write("other.as", moduleCase.other);
+        fixture.Write("main.as", moduleCase.main);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+        // A message between initialized and the wait, so the wait runs after the scan exists - see
+        // ScriptedStream::PushAction. The include graph is what makes the module decidable, and it
+        // is built by that scan, so opening the document before it finishes would measure a
+        // workspace with no modules in it.
+        stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
+                    R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+        stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
+
+        stream.Push(DidOpenMessage(fixture.Uri("main.as"), moduleCase.main));
+        stream.PushAction([&]() { waitFor(stream, "publishDiagnostics"); });
+        stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        RunScript(serverConfig, stream);
+
+        const std::string published = LastPublishedFor(stream.Output(), "main.as");
+        INFO("published: " << published);
+        REQUIRE_FALSE(published.empty());
+
+        for (const std::string &code : moduleCase.expectPresent)
+        {
+            INFO("expected present: " << code);
+            CHECK(published.find("\"" + code + "\"") != std::string::npos);
+        }
+
+        for (const std::string &code : moduleCase.expectAbsent)
+        {
+            INFO("expected absent: " << code);
+            CHECK(published.find("\"" + code + "\"") == std::string::npos);
+        }
+    }
+}
+
+TEST_CASE("Server - A header included by many files is not a redeclaration")
+{
+    // The hazard the cross-file rule had to be built around, and the reason ValidateDuplicates used
+    // to skip every foreign file outright: a shared header is indexed once and then reached from
+    // every file in the module. Seeing its declarations from twenty different documents is what an
+    // #include looks like from the inside - not twenty redeclarations.
+    //
+    // Twenty files rather than two, because the bug this guards against would grow with the count:
+    // a rule comparing every pair would report here and nowhere else.
+    WorkspaceFixture fixture;
+    fixture.Write("common.as",
+                  "namespace Core\n"
+                  "{\n"
+                  "    class Entity { int id; }\n"
+                  "    int Helper(int v) { return v + 1; }\n"
+                  "}\n"
+                  "class GlobalThing { float x; }\n"
+                  "int GlobalHelper() { return 7; }\n");
+
+    std::vector<std::string> users;
+    for (int i = 1; i <= 20; ++i)
+    {
+        const std::string name = "user" + std::to_string(i) + ".as";
+        const std::string source =
+            "#include \"common.as\"\n"
+            "void Use" + std::to_string(i) + "()\n"
+            "{\n"
+            "    Core::Entity e;\n"
+            "    e.id = Core::Helper(" + std::to_string(i) + ");\n"
+            "    GlobalThing g;\n"
+            "    g.x = float(GlobalHelper());\n"
+            "}\n";
+
+        fixture.Write(name, source);
+        users.push_back(source);
+    }
+
+    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains(needle))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // A message between initialized and the wait - see ScriptedStream::PushAction. The include
+    // graph is what makes a module decidable and the scan is what builds it.
+    stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
+
+    for (size_t i = 0; i < users.size(); ++i)
+    {
+        stream.Push(DidOpenMessage(fixture.Uri("user" + std::to_string(i + 1) + ".as"), users[i]));
+    }
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(PublishedFrames(output));
+
+    CHECK_FALSE(Published(output, "as-err-duplicate-symbol"));
+    CHECK_FALSE(Published(output, "as-err-name-conflict"));
+
+    // And the header really was reached, or the check above would pass for the wrong reason.
+    CHECK_FALSE(Published(output, "as-warn-include-not-found"));
+}
+
+// =====================================================================================
+// The stub in force is deleted from disk.
+//
+// Unloading it was already handled: its symbols go, and every open document is re-diagnosed. What
+// was missing is the other half - with nothing configured, *which* stub is loaded is a choice the
+// workspace scan made, and deleting that file unmakes it. Nothing re-made it, so a workspace with
+// two stubs, one of them deleted, ended up with no host types at all while the other one was still
+// sitting there.
+// =====================================================================================
+
+TEST_CASE("Server - Deleting the stub in force hands the workspace to the next one")
+{
+    TwoStubFixture two;
+    const std::string source = "void main() { TypeFromB b; }\n";
+    two.fixture.Write("main.as", source);
+
+    const auto waitForCount = [](test::ScriptedStream &stream, const std::string &needle, size_t times)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            const std::string output = stream.Output();
+            size_t count = 0;
+            for (size_t at = output.find(needle); at != std::string::npos;
+                 at = output.find(needle, at + needle.size()))
+            {
+                ++count;
+            }
+            if (count >= times)
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    };
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // A message between initialized and the wait - see ScriptedStream::PushAction.
+    stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.PushAction([&]() { waitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    // host_a sorts first, so it is the one the scan chose and TypeFromB does not exist yet.
+    stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { waitForCount(stream, "publishDiagnostics", 1); });
+
+    // And now the chosen one is gone.
+    stream.PushAction([dir = two.fixture.dir]()
+    {
+        std::filesystem::remove(dir / "host_a.as.predefined");
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[)"
+                R"({"uri":")" + two.fixture.Uri("host_a.as.predefined") + R"(","type":3}]}})");
+
+    // A message between the notification and the wait, so the wait runs after the deletion has been
+    // *handled* rather than merely read - see ScriptedStream::PushAction.
+    stream.Push(R"({"jsonrpc":"2.0","id":1001,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+
+    // The replacement is chosen on the message loop and the open documents are refreshed against
+    // it, so a second publish is how the server says it has caught up.
+    stream.PushAction([&]() { waitForCount(stream, "publishDiagnostics", 2); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "main.as");
+    INFO("last published: " << published);
+    INFO("everything: " << PublishedFrames(stream.Output()));
+    REQUIRE_FALSE(published.empty());
+
+    // host_b took over, so the type it declares resolves now. Before this, deleting host_a left the
+    // workspace with nothing at all.
+    CHECK(published.find("as-err-unresolved-type") == std::string::npos);
+}

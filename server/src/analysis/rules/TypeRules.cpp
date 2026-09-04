@@ -1,5 +1,6 @@
 #include "analysis/rules/TypeRules.h"
 #include "analysis/SemanticHelpers.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -322,6 +323,7 @@ namespace angel_lsp::analysis::rules
         // other. The same name legitimately appears once per file across a module - that is what
         // an #include of a shared header looks like once every member file has been indexed.
         std::vector<const Symbol *> local;
+        std::vector<const Symbol *> moduleMates;
         for (const auto &sym : symbols)
         {
             // CallReference entries are not declarations at all: SymbolCollector records them for
@@ -341,29 +343,63 @@ namespace angel_lsp::analysis::rules
             {
                 continue;
             }
-            if (sym.fileUri != ctx.request.fileUri)
-            {
-                continue;
-            }
             if (IsDestructorDeclaration(sym, ctx) || ctx.request.GetRuleIndex().enumMemberNames.contains(sym.name))
             {
                 continue;
             }
-            local.push_back(&sym);
+
+            if (sym.fileUri == ctx.request.fileUri)
+            {
+                local.push_back(&sym);
+                continue;
+            }
+
+            // A declaration in another file of the SAME module is a redeclaration; one in another
+            // module is not. Skipping every foreign file unconditionally - which is what this did -
+            // is right for the case the comment above names, a shared header indexed once per
+            // module, and wrong for the one a user hits: the same namespace reopened in two files
+            // that reach each other, where the compiler says "A function with the same name and
+            // parameters already exists" and this said nothing at all.
+            //
+            // Stubs are left out on purpose. An as.predefined describes what the host registered in
+            // C++, and a script declaring the same signature is a different question from two
+            // script sections colliding - not one this rule is the place to answer.
+            if (!ctx.request.moduleFileUris.empty() &&
+                ctx.request.moduleFileUris.contains(sym.fileUri) &&
+                !IsFromPredefinedStub(sym, ctx) &&
+                !utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
+            {
+                moduleMates.push_back(&sym);
+            }
         }
 
-        if (local.size() < 2)
+        // At least one declaration here to report on, and at least two in total to be a duplicate
+        // of anything.
+        if (local.empty() || local.size() + moduleMates.size() < 2)
         {
             return;
         }
 
-        for (size_t i = 1; i < local.size(); ++i)
+        // The module's other files first, so every pair the loop forms has the later index on this
+        // document - which is where the diagnostic has to land.
+        std::vector<const Symbol *> candidates = moduleMates;
+        candidates.insert(candidates.end(), local.begin(), local.end());
+
+        for (size_t i = 1; i < candidates.size(); ++i)
         {
-            const Symbol &other = *local[i];
+            const Symbol &other = *candidates[i];
+
+            // Two declarations that both live elsewhere are that file's business; this document
+            // publishes diagnostics for itself only, and a range in another file would be nonsense
+            // here.
+            if (other.fileUri != ctx.request.fileUri)
+            {
+                continue;
+            }
 
             for (size_t j = 0; j < i; ++j)
             {
-                const Symbol &first = *local[j];
+                const Symbol &first = *candidates[j];
 
                 // The same declaration reached twice through different index paths is not a
                 // redeclaration; only distinct source positions are.

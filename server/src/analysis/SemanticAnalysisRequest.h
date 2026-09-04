@@ -30,6 +30,21 @@ namespace angel_lsp::analysis
         const SymbolTable &symbolTable;
         std::string fileUri;
         std::string predefinedFileExtension;
+
+        /**
+         * @brief Every file in the same module as this one, this one included, keyed as URIs.
+         *
+         * AngelScript compiles a module out of several sections, and a name declared twice across
+         * two of them is a redeclaration: `namespace S { void F() {} }` in two files that reach each
+         * other through an #include is "A function with the same name and parameters already
+         * exists" - measured. Two files that do NOT reach each other are separate modules and may
+         * each declare it, which is why this is the include closure and not the workspace.
+         *
+         * Empty means the caller had no include graph to consult - a unit test, or a document
+         * analysed before the graph was built - and the rule that reads it stays silent, which is
+         * the policy everywhere else the world is only partly visible.
+         */
+        ankerl::unordered_dense::set<std::string> moduleFileUris;
         const i18n::I18n *i18n = nullptr;
         const config::TypeConfig *typeConfig = nullptr;
         const ankerl::unordered_dense::map<std::string, DiagnosticSeverity> *severityOverrides = nullptr;

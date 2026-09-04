@@ -1404,6 +1404,11 @@ namespace angel_lsp
         angel_lsp::parser::AngelScriptParser watchedParser(m_logger.get());
         bool graphChanged = false;
 
+        // Set when the stub that was in force is the one that just disappeared. See the delete
+        // branch below: with nothing configured, which stub is loaded is a choice the scan made,
+        // and a deleted file unmakes it.
+        bool stubSelectionInvalidated = false;
+
         for (const auto &event : params.changes)
         {
             const std::string uriStr = DocumentKey(event.uri.toString());
@@ -1419,10 +1424,29 @@ namespace angel_lsp
 
             const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
 
+
             if (event.type == lsp::FileChangeType::Deleted)
             {
                 if (isPredefined)
                 {
+                    // Whether the stub that just vanished was the one in force. With nothing
+                    // configured the scan picks the first stub it finds, and that choice has just
+                    // been invalidated - so the scan has to run again and pick another. Without
+                    // this a workspace with two stubs, one of them deleted, ends up with no host
+                    // types at all while the other one is still sitting there on disk.
+                    {
+                        // Both sides normalised the same way before comparing. The event's path
+                        // comes back from CanonicalPathFromUri and the selection from
+                        // IncludeResolver::NormalizePath, and on Windows those disagree about the
+                        // separator - so a plain comparison of the two never matched and this flag
+                        // was never set.
+                        const std::string deletedPath = angel_lsp::utils::IncludeResolver::NormalizePath(path);
+
+                        std::lock_guard<std::mutex> configLock(m_runtimeConfigMutex);
+                        if (!m_effectivePredefined.empty() && PathsAreSameFile(deletedPath, m_effectivePredefined))
+                            stubSelectionInvalidated = true;
+                    }
+
                     std::lock_guard<std::mutex> lock(m_predefinedMutex);
                     if (const auto owner = m_predefinedUriByPath.find(path); owner != m_predefinedUriByPath.end())
                     {
@@ -1490,6 +1514,49 @@ namespace angel_lsp
                 m_closureDocuments.erase(indexedUri);
                 IndexClosureFile(path, watchedParser);
             }
+        }
+
+        if (stubSelectionInvalidated)
+        {
+            // Which stub is loaded, with nothing configured, is a choice the workspace scan made -
+            // the first it found in path order - and deleting that file unmakes it. Nothing re-made
+            // it, so a workspace with two stubs, one of them deleted, was left with no host types
+            // at all while the other one was still sitting there.
+            //
+            // Chosen here rather than by restarting the scan: a rescan would load it on the
+            // workspace thread and leave every open document judged against the old table until the
+            // next keystroke, which is the staleness this project has already been bitten by. One
+            // file parsed on the message loop costs less and finishes before the refresh below.
+            std::string replacement;
+            {
+                std::lock_guard<std::mutex> configLock(m_runtimeConfigMutex);
+
+                std::erase_if(m_discoveredPredefined, [this](const std::string &candidate) {
+                    return PathsAreSameFile(candidate, m_effectivePredefined);
+                });
+
+                if (!m_discoveredPredefined.empty())
+                    replacement = m_discoveredPredefined.front();
+
+                m_effectivePredefined = replacement;
+            }
+
+            if (!replacement.empty())
+            {
+                m_logger->LogInfo(fmt::format(
+                    "The predefined stub in force was deleted; using {} instead",
+                    std::filesystem::path(replacement).filename().string()));
+
+                // Not under m_predefinedMutex: ParserPredefined takes it itself, as every other
+                // caller in this handler relies on.
+                ParserPredefined(replacement, watchedParser);
+            }
+            else
+            {
+                m_logger->LogInfo("The predefined stub in force was deleted, and no other was found");
+            }
+
+            graphChanged = true;
         }
 
         if (!graphChanged)
@@ -1818,6 +1885,27 @@ namespace angel_lsp
 
         request.typeConfig = &m_config.types;
         request.engineProperties = &m_config.engine;
+
+        // Which files this one shares a module with. The closure is what makes a cross-file
+        // redeclaration decidable: two files that never reach each other are two modules, and are
+        // each allowed to declare the same thing.
+        if (const std::string ownPath = CanonicalPathFromUri(uriStr); !ownPath.empty())
+        {
+            request.moduleFileUris.insert(uriStr);
+
+            for (const auto &path : m_includeGraph.GetModuleClosure(ownPath))
+            {
+                if (path == ownPath)
+                    continue;
+
+                // Under the spelling the file was actually indexed with, when there is one: an open
+                // document is indexed under the client's URI, and a synthesised one would match no
+                // symbol in the table.
+                const auto indexed = m_indexedUriByPath.find(path);
+                request.moduleFileUris.insert(indexed != m_indexedUriByPath.end() ? indexed->second
+                                                                                 : UriFromPath(path));
+            }
+        }
         request.diagnostics = &m_config.diagnostics;
         request.severityOverrides = m_diagnosticSeverities.empty() ? nullptr : &m_diagnosticSeverities;
         request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;

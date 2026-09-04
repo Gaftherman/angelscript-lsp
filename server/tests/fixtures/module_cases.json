@@ -1,0 +1,73 @@
+{
+  "cases": [
+    {
+      "name": "same-signature-in-two-files",
+      "why": "The same namespace reopened in two files of one module, declaring the same function twice.",
+      "compiler": "reject",
+      "main": "#include \"other.as\"\n\nnamespace NS {\n    void worker() {}\n}\n",
+      "other": "namespace NS {\n    void worker() {}\n}\n",
+      "expectPresent": [
+        "as-err-duplicate-symbol"
+      ],
+      "expectAbsent": []
+    },
+    {
+      "name": "overload-across-two-files",
+      "why": "The same name with different parameters across the two files is an overload, and legal.",
+      "compiler": "accept",
+      "main": "#include \"other.as\"\n\nnamespace MathUtil {\n    float compute(float x) { return x * 2.0f; }\n}\n\nvoid main() {\n    int a = MathUtil::compute(5);\n    float b = MathUtil::compute(5.0f);\n}\n",
+      "other": "namespace MathUtil {\n    int compute(int x) { return x * 2; }\n}\n",
+      "expectPresent": [],
+      "expectAbsent": [
+        "as-err-duplicate-symbol",
+        "as-err-name-conflict"
+      ]
+    },
+    {
+      "name": "same-class-in-two-files",
+      "why": "A class declared under the same namespace in both files.",
+      "compiler": "reject",
+      "main": "#include \"other.as\"\n\nnamespace NS {\n    class Packet {\n        float timestamp;\n    }\n}\n",
+      "other": "namespace NS {\n    class Packet {\n        int id;\n    }\n}\n",
+      "expectPresent": [
+        "as-err-duplicate-symbol"
+      ],
+      "expectAbsent": []
+    },
+    {
+      "name": "distinct-members-in-two-files",
+      "why": "Reopening a namespace to add different members is ordinary AngelScript.",
+      "compiler": "accept",
+      "main": "#include \"other.as\"\n\nnamespace Shared {\n    int getBeta() { return 20; }\n}\n\nvoid main() {\n    int total = Shared::getAlpha() + Shared::getBeta();\n}\n",
+      "other": "namespace Shared {\n    int getAlpha() { return 10; }\n}\n",
+      "expectPresent": [],
+      "expectAbsent": [
+        "as-err-duplicate-symbol",
+        "as-err-name-conflict"
+      ]
+    },
+    {
+      "name": "nested-namespace-reopened",
+      "why": "A nested namespace reopened across files, each file adding its own member.",
+      "compiler": "accept",
+      "main": "#include \"other.as\"\n\nnamespace Outer {\n    namespace Inner {\n        int generate() {\n            return seed() + 1;\n        }\n    }\n}\n\nvoid main() {\n    Outer::Inner::generate();\n}\n",
+      "other": "namespace Outer {\n    namespace Inner {\n        int seed() { return 42; }\n    }\n}\n",
+      "expectPresent": [],
+      "expectAbsent": [
+        "as-err-duplicate-symbol",
+        "as-err-name-conflict"
+      ]
+    },
+    {
+      "name": "unqualified-use-across-files",
+      "why": "A namespaced name used without its qualifier from the other file - reported as an error, which is what the compiler calls it.",
+      "compiler": "reject",
+      "main": "#include \"other.as\"\n\nvoid main() {\n    service();\n}\n",
+      "other": "namespace Core {\n    void service() {}\n}\n",
+      "expectPresent": [
+        "as-err-undefined-identifier"
+      ],
+      "expectAbsent": []
+    }
+  ]
+}
