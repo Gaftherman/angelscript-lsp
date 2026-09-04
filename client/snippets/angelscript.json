@@ -56,6 +56,16 @@
     ],
     "description": "Declare a new AngelScript enum"
   },
+  "Anonymous function": {
+    "prefix": "function",
+    "body": ["function(${1:params})", "{", "\t$0", "}"],
+    "description": "An anonymous function, assignable to a funcdef handle"
+  },
+  "Anonymous function assignment": {
+    "prefix": "funcanon",
+    "body": ["${1:CallbackType}@ ${2:handle} = function(${3:params})", "{", "\t$0", "};"],
+    "description": "Declare a funcdef handle and give it an anonymous function"
+  },
   "Funcdef callback": {
     "prefix": "funcdef",
     "body": [
