@@ -1,0 +1,269 @@
+{
+  "scenarios": [
+    {
+      "name": "complete-statement-clean",
+      "why": "Typing a complete variable declaration statement into an empty function body resolves cleanly without syntax errors.",
+      "initial": "void test()\n{\n    \n}",
+      "edits": [
+        {
+          "line": 2,
+          "character": 4,
+          "text": "int x = 42;"
+        }
+      ],
+      "expectPresent": [
+        "as-warn-unused-variable"
+      ],
+      "expectAbsent": [
+        "as-syntax-error"
+      ],
+      "hover": {
+        "line": 2,
+        "character": 8,
+        "contains": "int"
+      }
+    },
+    {
+      "name": "incomplete-statement-syntax-error",
+      "why": "Stopping input before the terminating semicolon leaves an incomplete statement that triggers a syntax error.",
+      "initial": "void test()\n{\n    \n}",
+      "edits": [
+        {
+          "line": 2,
+          "character": 4,
+          "text": "int x = 42"
+        }
+      ],
+      "expectPresent": [
+        "as-syntax-error"
+      ],
+      "expectAbsent": []
+    },
+    {
+      "name": "completed-statement-semicolon",
+      "why": "Completing the same variable declaration with a trailing semicolon resolves the pending syntax error.",
+      "initial": "void test()\n{\n    \n}",
+      "edits": [
+        {
+          "line": 2,
+          "character": 4,
+          "text": "int x = 42;"
+        }
+      ],
+      "expectPresent": [
+        "as-warn-unused-variable"
+      ],
+      "expectAbsent": [
+        "as-syntax-error"
+      ]
+    },
+    {
+      "name": "duplicate-variable-declaration",
+      "why": "Declaring an identifier that is already declared in the local function scope produces a duplicate symbol error.",
+      "initial": "void test()\n{\n    int count = 1;\n    \n}",
+      "edits": [
+        {
+          "line": 3,
+          "character": 4,
+          "text": "float count = 2.0f;"
+        }
+      ],
+      "expectPresent": [
+        "as-err-duplicate-symbol"
+      ],
+      "expectAbsent": [
+        "as-syntax-error"
+      ],
+      "hover": {
+        "line": 3,
+        "character": 10,
+        "contains": "float"
+      }
+    },
+    {
+      "name": "class-declaration-then-usage",
+      "why": "Declaring a class and subsequently declaring a variable of that class type ensures the type is recognized without unresolved-type errors.",
+      "initial": "void test()\n{\n    \n}",
+      "edits": [
+        {
+          "line": 0,
+          "character": 0,
+          "text": "class Player {}\n\n"
+        },
+        {
+          "line": 4,
+          "character": 4,
+          "text": "Player p;"
+        }
+      ],
+      "expectPresent": [
+        "as-warn-unused-variable"
+      ],
+      "expectAbsent": [
+        "as-err-unresolved-type",
+        "as-syntax-error"
+      ],
+      "hover": {
+        "line": 4,
+        "character": 4,
+        "contains": "Player"
+      }
+    },
+    {
+      "name": "unresolved-type-variable",
+      "why": "Declaring a local variable with a type name that has never been declared must report an unresolved type diagnostic.",
+      "initial": "void test()\n{\n    \n}",
+      "edits": [
+        {
+          "line": 2,
+          "character": 4,
+          "text": "Monster m;"
+        }
+      ],
+      "expectPresent": [
+        "as-err-unresolved-type"
+      ],
+      "expectAbsent": [
+        "as-syntax-error"
+      ]
+    },
+    {
+      "name": "missing-return-value",
+      "why": "Typing a bare return statement in a non-void function triggers a return-value-required diagnostic.",
+      "initial": "int compute()\n{\n    \n}",
+      "edits": [
+        {
+          "line": 2,
+          "character": 4,
+          "text": "return;"
+        }
+      ],
+      "expectPresent": [
+        "as-err-return-value-required"
+      ],
+      "expectAbsent": [
+        "as-syntax-error"
+      ]
+    },
+    {
+      "name": "completed-return-value",
+      "why": "Inserting a return value between return and semicolon clears the return-value-required error.",
+      "initial": "int compute()\n{\n    return;\n}",
+      "edits": [
+        {
+          "line": 2,
+          "character": 10,
+          "text": " 42"
+        }
+      ],
+      "expectPresent": [],
+      "expectAbsent": [
+        "as-err-return-value-required",
+        "as-syntax-error",
+        "as-err-not-all-paths-return"
+      ],
+      "hover": {
+        "line": 0,
+        "character": 4,
+        "contains": "int"
+      }
+    },
+    {
+      "name": "function-body-line-by-line-return",
+      "why": "Progressively typing the statements of a non-void function line-by-line clears not-all-paths-return once the return statement is typed.",
+      "initial": "int sum(int a, int b)\n{\n}",
+      "edits": [
+        {
+          "line": 1,
+          "character": 1,
+          "text": "\n    int result = a + b;"
+        },
+        {
+          "line": 2,
+          "character": 23,
+          "text": "\n    return result;"
+        }
+      ],
+      "expectPresent": [],
+      "expectAbsent": [
+        "as-err-not-all-paths-return",
+        "as-syntax-error",
+        "as-warn-unused-variable"
+      ]
+    },
+    {
+      "name": "class-body-method-declaration",
+      "why": "Adding a method declaration after an existing member field inside a class body parses and binds to the class cleanly.",
+      "initial": "class Account\n{\n    int balance;\n    \n}",
+      "edits": [
+        {
+          "line": 3,
+          "character": 4,
+          "text": "int getBalance() { return balance; }"
+        }
+      ],
+      "expectPresent": [],
+      "expectAbsent": [
+        "as-syntax-error",
+        "as-warn-undeclared-identifier",
+        "as-err-not-all-paths-return"
+      ],
+      "hover": {
+        "line": 3,
+        "character": 8,
+        "contains": "int"
+      }
+    },
+    {
+      "name": "identifier-extending-prefix",
+      "why": "Typing a prefix that matches an existing identifier and then extending it into a longer existing identifier keeps references resolving without undeclared-identifier errors.",
+      "initial": "int co = 1;\nint count = 2;\n\nint getValue()\n{\n    return ;\n}",
+      "edits": [
+        {
+          "line": 5,
+          "character": 11,
+          "text": "co"
+        },
+        {
+          "line": 5,
+          "character": 13,
+          "text": "unt"
+        }
+      ],
+      "expectPresent": [],
+      "expectAbsent": [
+        "as-warn-undeclared-identifier",
+        "as-syntax-error"
+      ],
+      "hover": {
+        "line": 5,
+        "character": 11,
+        "contains": "int"
+      }
+    },
+    {
+      "name": "multiline-block-variable-reference",
+      "why": "Typing multiple lines sequentially where subsequent lines reference variables declared in preceding lines resolves references without undeclared-identifier errors.",
+      "initial": "void process()\n{\n    \n}",
+      "edits": [
+        {
+          "line": 2,
+          "character": 4,
+          "text": "int total = 100;\n    "
+        },
+        {
+          "line": 3,
+          "character": 4,
+          "text": "int next = total + 1;"
+        }
+      ],
+      "expectPresent": [
+        "as-warn-unused-variable"
+      ],
+      "expectAbsent": [
+        "as-warn-undeclared-identifier",
+        "as-syntax-error"
+      ]
+    }
+  ]
+}

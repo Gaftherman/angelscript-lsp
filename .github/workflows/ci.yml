@@ -153,6 +153,21 @@ jobs:
             exit 1
           fi
 
+      # The typing scenarios replay a user typing one character at a time - one didChange per
+      # keystroke, each carrying a range - and check the diagnostics, their messages and the hover
+      # the server ends up with. They run inside the suite above too; this step exists to put the
+      # tally in the log where a reviewer can read it, and to fail loudly if the fixture ever goes
+      # missing rather than passing with nothing replayed. Same reasoning as the audit's grep.
+      - name: Replay the typing scenarios
+        working-directory: server
+        run: |
+          set -o pipefail
+          ./build/angel_lsp_tests --test-case="Server - Diagnostics and hover survive*,Server - A message a typed*" 2>&1 | tee typing.log
+          if ! grep -qE "test cases: +2 \| +2 passed" typing.log; then
+            echo "::error::The typing scenarios did not both run and pass."
+            exit 1
+          fi
+
   package-extension:
     name: Package VS Code extension
     runs-on: ubuntu-latest

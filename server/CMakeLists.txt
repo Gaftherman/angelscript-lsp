@@ -189,6 +189,7 @@ if(TEST_SOURCES)
     target_compile_definitions(angel_lsp_tests PRIVATE
         ANGELSCRIPT_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../angelscript"
         ANGELSCRIPT_PARITY_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/parity"
+        ANGELSCRIPT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
 
         # The repository root, so the stub sweep can find every predefined file that ships with the
         # project *and* any a developer has dropped in their own checkout. The server reads those

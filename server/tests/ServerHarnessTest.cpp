@@ -3174,3 +3174,313 @@ TEST_CASE("Server - Opening the stub that was selected keeps it loaded")
     INFO(PublishedFrames(stream.Output()));
     CHECK_FALSE(Published(stream.Output(), "as-err-unresolved-type"));
 }
+
+// =====================================================================================
+// Typing, one character at a time.
+//
+// Every other end-to-end test in this file hands the server a finished document. An editor never
+// does that: it sends one didChange per keystroke, each carrying a range rather than a whole
+// document, and the server has to keep its buffer, its tree and its byte offsets in step through
+// all of them. That path - ApplyIncrementalChange, ts_tree_edit, LspCharToByteColumn - had no test
+// at all, and the bugs it can produce are the ones that look like the analyzer being wrong about
+// code that is plainly fine.
+//
+// The scenarios live in tests/fixtures/typing_scenarios.json. They were generated, then replayed in
+// Python and handed to the compiler: the document each one ends at is measured, so an expectation
+// that disagrees with the compiler was caught before it got here.
+// =====================================================================================
+
+namespace
+{
+    /** \nbrief One typed character, as the editor sends it: a zero-width range and the text. */
+    std::string TypeCharMessage(const std::string &uri, int version,
+                                uint32_t line, uint32_t character, char typed)
+    {
+        const std::string position = R"({"line":)" + std::to_string(line) +
+                                     R"(,"character":)" + std::to_string(character) + R"(})";
+
+        return R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+               uri + R"(","version":)" + std::to_string(version) + R"(},"contentChanges":[{"range":{"start":)" +
+               position + R"(,"end":)" + position + R"(},"text":")" + JsonEscape(std::string(1, typed)) +
+               R"("}]}})";
+    }
+
+    struct TypingEdit
+    {
+        uint32_t line = 0;
+        uint32_t character = 0;
+        std::string text;
+    };
+
+    struct TypingScenario
+    {
+        std::string name;
+        std::string why;
+        std::string initial;
+        std::vector<TypingEdit> edits;
+        std::vector<std::string> expectPresent;
+        std::vector<std::string> expectAbsent;
+
+        bool hasHover = false;
+        uint32_t hoverLine = 0;
+        uint32_t hoverCharacter = 0;
+        std::string hoverContains;
+    };
+
+    std::vector<TypingScenario> LoadTypingScenarios()
+    {
+        const std::filesystem::path path =
+            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "typing_scenarios.json";
+
+        std::ifstream file(path, std::ios::binary);
+        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        lsp::json::Value parsed = lsp::json::parse(text);
+        REQUIRE(parsed.isObject());
+
+        const auto *list = parsed.object().find("scenarios");
+        REQUIRE(list != nullptr);
+        REQUIRE(list->isArray());
+
+        std::vector<TypingScenario> scenarios;
+        for (const auto &entry : list->array())
+        {
+            REQUIRE(entry.isObject());
+            const lsp::json::Object &fields = entry.object();
+
+            TypingScenario scenario;
+            scenario.name = fields.find("name")->string();
+            scenario.why = fields.find("why")->string();
+            scenario.initial = fields.find("initial")->string();
+
+            for (const auto &edit : fields.find("edits")->array())
+            {
+                const lsp::json::Object &editFields = edit.object();
+                TypingEdit typed;
+                typed.line = static_cast<uint32_t>(editFields.find("line")->number());
+                typed.character = static_cast<uint32_t>(editFields.find("character")->number());
+                typed.text = editFields.find("text")->string();
+                scenario.edits.push_back(std::move(typed));
+            }
+
+            for (const auto &code : fields.find("expectPresent")->array())
+                scenario.expectPresent.push_back(code.string());
+            for (const auto &code : fields.find("expectAbsent")->array())
+                scenario.expectAbsent.push_back(code.string());
+
+            if (const auto *hover = fields.find("hover"); hover && hover->isObject())
+            {
+                scenario.hasHover = true;
+                scenario.hoverLine = static_cast<uint32_t>(hover->object().find("line")->number());
+                scenario.hoverCharacter = static_cast<uint32_t>(hover->object().find("character")->number());
+                scenario.hoverContains = hover->object().find("contains")->string();
+            }
+
+            scenarios.push_back(std::move(scenario));
+        }
+
+        return scenarios;
+    }
+
+    /**
+     * \nbrief The body of the last publishDiagnostics frame naming this URI.
+     *
+     * The last, not any: typing produces one per analysis, and only the final one describes the
+     * document the assertions are about.
+     */
+    std::string LastPublishedFor(const std::string &output, const std::string &uriFragment)
+    {
+        std::string last;
+        size_t pos = 0;
+        while (pos < output.size())
+        {
+            const size_t headerStart = output.find("Content-Length:", pos);
+            if (headerStart == std::string::npos)
+                break;
+
+            const size_t bodyStart = output.find("\r\n\r\n", headerStart);
+            if (bodyStart == std::string::npos)
+                break;
+
+            const size_t contentStart = bodyStart + 4;
+            const size_t nextHeader = output.find("Content-Length:", contentStart);
+            const size_t bodyLength =
+                (nextHeader == std::string::npos) ? (output.size() - contentStart) : (nextHeader - contentStart);
+
+            const std::string frame = output.substr(contentStart, bodyLength);
+            if (frame.find("textDocument/publishDiagnostics") != std::string::npos &&
+                frame.find(uriFragment) != std::string::npos)
+            {
+                last = frame;
+            }
+
+            pos = contentStart + bodyLength;
+        }
+        return last;
+    }
+}
+
+TEST_CASE("Server - Diagnostics and hover survive being typed one character at a time")
+{
+    const std::vector<TypingScenario> scenarios = LoadTypingScenarios();
+    REQUIRE_FALSE(scenarios.empty());
+
+    for (const TypingScenario &scenario : scenarios)
+    {
+        CAPTURE(scenario.name);
+        INFO(scenario.why);
+
+        WorkspaceFixture fixture;
+        fixture.Write("main.as", scenario.initial);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeMessage(fixture.RootUri()));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        stream.Push(DidOpenMessage(fixture.Uri("main.as"), scenario.initial));
+
+        // One notification per character, each with the range the cursor was at - which is the
+        // whole point: a whole-document change would never exercise the incremental path.
+        int version = 2;
+        for (const TypingEdit &edit : scenario.edits)
+        {
+            uint32_t line = edit.line;
+            uint32_t character = edit.character;
+
+            for (const char typed : edit.text)
+            {
+                stream.Push(TypeCharMessage(fixture.Uri("main.as"), version++, line, character, typed));
+
+                if (typed == '\n')
+                {
+                    ++line;
+                    character = 0;
+                }
+                else
+                {
+                    ++character;
+                }
+            }
+        }
+
+        // Answered against the tree the keystrokes left behind, which is reparsed on the message
+        // loop and so is current the moment the last one is handled.
+        if (scenario.hasHover)
+        {
+            stream.Push(R"({"jsonrpc":"2.0","id":50,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
+                        fixture.Uri("main.as") + R"("},"position":{"line":)" + std::to_string(scenario.hoverLine) +
+                        R"(,"character":)" + std::to_string(scenario.hoverCharacter) + R"(}}})");
+        }
+        else
+        {
+            // A filler, so the wait below runs after the last keystroke has been *handled* rather
+            // than merely read - see ScriptedStream::PushAction.
+            stream.Push(R"({"jsonrpc":"2.0","id":50,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
+                        fixture.Uri("main.as") + R"("}}})");
+        }
+
+        // Analysis is debounced, so the last keystroke's diagnostics arrive after a quiet period.
+        // Waiting for the stream to go quiet rather than for a fixed delay: the debounce is 200ms
+        // and the analysis itself is not instant, and a fixed sleep would be either flaky or slow.
+        stream.PushAction([&stream]()
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            size_t lastSize = 0;
+            auto quietSince = std::chrono::steady_clock::now();
+
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                const size_t size = stream.Output().size();
+                if (size != lastSize)
+                {
+                    lastSize = size;
+                    quietSince = std::chrono::steady_clock::now();
+                }
+                else if (std::chrono::steady_clock::now() - quietSince > std::chrono::milliseconds(400))
+                {
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
+
+        stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        RunScript(serverConfig, stream);
+
+        const std::string published = LastPublishedFor(stream.Output(), "main.as");
+        INFO("published: " << published);
+        REQUIRE_FALSE(published.empty());
+
+        for (const std::string &code : scenario.expectPresent)
+        {
+            INFO("expected present: " << code);
+            CHECK(published.find("\"" + code + "\"") != std::string::npos);
+        }
+
+        for (const std::string &code : scenario.expectAbsent)
+        {
+            INFO("expected absent: " << code);
+            CHECK(published.find("\"" + code + "\"") == std::string::npos);
+        }
+
+        if (scenario.hasHover)
+        {
+            const std::string hover = stream.ResponseFor(50);
+            INFO("hover: " << hover);
+            CHECK(hover.find(scenario.hoverContains) != std::string::npos);
+        }
+    }
+}
+
+TEST_CASE("Server - A message a typed diagnostic carries is the one the user reads")
+{
+    // The codes are asserted everywhere; the sentence beside them almost nowhere. A code with a
+    // missing or malformed message reaches the user as a raw identifier, and every assertion on the
+    // code alone still passes.
+    WorkspaceFixture fixture;
+    const std::string initial = "void test()\n{\n    \n}\n";
+    fixture.Write("main.as", initial);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), initial));
+
+    const std::string typed = "int counter = 1;";
+    uint32_t character = 4;
+    int version = 2;
+    for (const char ch : typed)
+    {
+        stream.Push(TypeCharMessage(fixture.Uri("main.as"), version++, 2, character++, ch));
+    }
+
+    stream.Push(R"({"jsonrpc":"2.0","id":50,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
+
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("as-warn-unused-variable"))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "main.as");
+    INFO(published);
+
+    // The sentence, and the name of the variable inside it. Not the code.
+    CHECK(published.find("Local variable 'counter' is never used") != std::string::npos);
+
+    // And no diagnostic reaches the client as a bare code with no message.
+    CHECK(published.find("\"message\":\"as-") == std::string::npos);
+}
