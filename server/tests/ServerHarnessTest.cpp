@@ -2801,3 +2801,70 @@ TEST_CASE("Server - A pull answer is never about text the analyzer has not seen"
 
     CHECK((refused || clean));
 }
+
+// =====================================================================================
+// Typing has to reach the client without a save.
+//
+// The refusal above is only half an answer: it carries retriggerRequest, so the client asks again
+// straight away, and it queues the document so there is something to answer with. Queueing bumped
+// the analysis revision, and the revision is what the 200ms debounce watches - so an editor
+// polling faster than that pushed the deadline out on every ask and the analysis never ran. No
+// notification went out, no pull was ever answered, and nothing on screen changed while the user
+// typed. Saving looked like the cure because a save analyses on the message loop and never touches
+// that queue at all, which is exactly how it was reported: "the changes only appear when I save".
+//
+// Scripted the way the client behaves - one edit, then a run of pulls closer together than the
+// debounce - and asserted on what the user could actually see: the edit's own diagnostic published
+// while the polling was still going on, and a pull answered rather than deferred again.
+// =====================================================================================
+
+TEST_CASE("Server - An edit reaches the client while a polling editor keeps asking")
+{
+    const std::string opened = "void main() { }\n";
+    const std::string typed  = "void main() { int justTyped = 1; }\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", opened);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), opened));
+
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"(","version":2},"contentChanges":[{"text":")" +
+                JsonEscape(typed) + R"("}]}})");
+
+    // Twenty polls at 50ms: about a second of a client asking, every one of them well inside the
+    // quiet period the edit opened. The sleeps are the point of the test - consumed back to back
+    // the whole burst would land in the same instant and never reach the deadline it has to cross.
+    constexpr int k_firstPollId = 100;
+    constexpr int k_polls = 20;
+    for (int poll = 0; poll < k_polls; ++poll)
+    {
+        stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(k_firstPollId + poll) +
+                    R"(,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                    fixture.Uri("main.as") + R"("}}})");
+        stream.PushAction([]() { std::this_thread::sleep_for(std::chrono::milliseconds(50)); });
+    }
+
+    // Read before the shutdown: after it the analysis thread is stopped, and a transcript examined
+    // then would not say whether the diagnostic arrived while the user was typing or on the way out.
+    std::string framesWhilePolling;
+    stream.PushAction([&]() { framesWhilePolling = PublishedFrames(stream.Output()); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    // `justTyped` exists only in the buffer the edit created, so this code cannot have come from
+    // the file on disk or from the text that was opened.
+    INFO(framesWhilePolling);
+    CHECK(framesWhilePolling.find("as-warn-unused-variable") != std::string::npos);
+
+    // And the client was answered rather than told to ask again for the whole second.
+    const std::string lastPoll = stream.ResponseFor(k_firstPollId + k_polls - 1);
+    INFO(lastPoll);
+    CHECK(lastPoll.find("\"result\"") != std::string::npos);
+}

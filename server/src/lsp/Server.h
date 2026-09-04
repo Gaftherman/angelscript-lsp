@@ -201,6 +201,15 @@ namespace angel_lsp
         std::mutex m_analysisMutex;
         std::condition_variable m_analysisCv;
         ankerl::unordered_dense::map<std::string, std::string> m_pendingAnalysis;
+
+        // What the analysis thread took off the queue and is working on right now. Kept so a
+        // request to analyse text that is already being analysed can be recognised and dropped
+        // instead of queueing a second identical run behind the first.
+        //
+        // Written only by the analysis thread and only under m_analysisMutex; that thread then
+        // iterates it unlocked, which is safe because it is also the only writer.
+        ankerl::unordered_dense::map<std::string, std::string> m_analysisInFlight;
+
         uint64_t m_analysisRevision = 0;
         bool m_analysisStop = false;
 

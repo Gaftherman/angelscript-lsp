@@ -2214,7 +2214,38 @@ namespace angel_lsp
     {
         {
             std::lock_guard<std::mutex> lock(m_analysisMutex);
-            m_pendingAnalysis[uriStr] = text;
+
+            // Bumping the revision restarts the quiet period, and the revision means "new text
+            // arrived", not "somebody asked about this document". Those came apart once the pull
+            // handler learned to refuse an answer computed from text the client is no longer
+            // looking at: a pull that finds no answer for the text in hand schedules the document
+            // and tells the client to ask again, and the client asks again straight away. Every one
+            // of those asks used to push the deadline another 200ms out, so with an editor polling
+            // faster than that the analysis never ran at all - no push notification, no pull
+            // answer, nothing on screen changing while the user typed. Saving looked like the fix
+            // because a save analyses on the message loop and never touches this queue.
+            //
+            // So: only text that is actually new restarts the clock.
+            if (const auto running = m_analysisInFlight.find(uriStr);
+                running != m_analysisInFlight.end() && running->second == text)
+            {
+                // Already being analysed, with exactly these bytes. The answer is on its way.
+                return;
+            }
+
+            const auto [entry, inserted] = m_pendingAnalysis.try_emplace(uriStr, text);
+            if (!inserted)
+            {
+                if (entry->second == text)
+                {
+                    // Already queued and unchanged. The thread is awake and holds this text; a
+                    // second notify would only move the deadline.
+                    return;
+                }
+
+                entry->second = text;
+            }
+
             ++m_analysisRevision;
         }
 
@@ -2251,12 +2282,19 @@ namespace angel_lsp
                     break;
             }
 
-            ankerl::unordered_dense::map<std::string, std::string> batch;
-            batch.swap(m_pendingAnalysis);
+            // Swapped into a member rather than a local so ScheduleAnalysis can see it: a caller
+            // asking for text that is on this thread's bench right now is asking for work already
+            // under way, and queueing it again would analyse the same bytes twice for one edit.
+            m_analysisInFlight.swap(m_pendingAnalysis);
             lock.unlock();
 
-            for (const auto &[uriStr, text] : batch)
+            for (const auto &[uriStr, text] : m_analysisInFlight)
                 AnalyzeDocument(uriStr, text, parser);
+
+            {
+                std::lock_guard<std::mutex> doneLock(m_analysisMutex);
+                m_analysisInFlight.clear();
+            }
         }
     }
 
