@@ -347,6 +347,16 @@ namespace angel_lsp::analysis
         {
             uint32_t loopDepth = 0;
             uint32_t switchDepth = 0;
+
+            /**
+             * @brief What the enclosing function must return, and the name to say it under.
+             *
+             * Empty means there is nothing to check against - a constructor, or a lambda whose
+             * funcdef this analyzer cannot see - and the rule stays silent, which is the policy
+             * everywhere else the world is only partly visible.
+             */
+            std::string requiredReturn;
+            std::string functionName;
         };
 
         /**
@@ -440,6 +450,22 @@ namespace angel_lsp::analysis
                 CheckUnreachable(node, ctx);
             }
 
+            // A bare `return;` in a function that owes a value. Measured: the compiler answers
+            // "Must return a value" and rejects the file, and nothing here saw it -
+            // as-err-not-all-paths-return asks only whether a return is *reached*, so
+            // `float FS(float f) { return; }` passed every check this analyzer had.
+            //
+            // The opposite direction - a value returned from a void function - is
+            // as-err-void-return-value, in TypeConversionChecker, and stays there.
+            //
+            // Not an early return: a returned expression can contain a lambda with a body of its
+            // own, and that body still has to be walked.
+            if (type == "return_statement" && !state.requiredReturn.empty() &&
+                state.requiredReturn != "void" && ts_node_named_child_count(node) == 0)
+            {
+                EmitAtNode(node, ctx, "as-err-return-value-required", state.functionName);
+            }
+
             if (type == "func_declaration" || type == "lambda_expression")
             {
                 // A nested function opens its own flow: a loop enclosing the declaration does not
@@ -480,6 +506,12 @@ namespace angel_lsp::analysis
                     EmitAtNode(ts_node_is_null(name) ? node : name, ctx, "as-err-not-all-paths-return",
                                reportedName);
                 }
+
+                // Carried into the body, so every `return` inside it knows what it owes. A lambda
+                // whose funcdef target could not be resolved leaves this empty and the check below
+                // does nothing, which is the same silence the rule above keeps.
+                state.requiredReturn = requiredReturn;
+                state.functionName = reportedName;
             }
             else if (type == "while_statement" || type == "for_statement" ||
                      type == "foreach_statement" || type == "do_while_statement")

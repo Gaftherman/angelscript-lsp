@@ -190,6 +190,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-duplicate-case-value"] = "Duplicate case value '{}' in switch statement.";
         m_messages["as-err-default-must-be-last"] = "The default case must be the last one.";
         m_messages["as-err-not-all-paths-return"] = "Not all paths of '{}' return a value.";
+        m_messages["as-err-return-value-required"] = "'{}' must return a value.";
         m_messages["as-err-const-assignment"] = "Expression is not an l-value: '{}' is declared const.";
         m_messages["as-err-const-method-required"] = "No matching signatures to '{}::{}() const'. The object is const, so only a const method can be called on it.";
         m_messages["as-err-call-argument-count"] = "No matching signatures to '{}' taking {} argument(s).";
@@ -343,6 +344,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-duplicate-case-value"] = "Valor de 'case' duplicado ('{}') en la sentencia 'switch'.";
             m_messages["as-err-default-must-be-last"] = "El caso por defecto (default) debe ser el último.";
             m_messages["as-err-not-all-paths-return"] = "No todos los caminos de '{}' devuelven un valor.";
+            m_messages["as-err-return-value-required"] = "'{}' debe devolver un valor.";
             m_messages["as-err-const-assignment"] = "La expresión no es un l-value: '{}' está declarado const.";
             m_messages["as-err-const-method-required"] = "No hay firmas que coincidan con '{}::{}() const'. El objeto es const, así que solo se puede llamar a un método const.";
             m_messages["as-err-call-argument-count"] = "No hay firmas que coincidan con '{}' recibiendo {} argumento(s).";

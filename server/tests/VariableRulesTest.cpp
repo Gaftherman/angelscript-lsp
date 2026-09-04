@@ -477,3 +477,51 @@ TEST_CASE("VariableRules - A handle on a real primitive is still reported")
     CHECK(HasCode(AnalyzeVariableSnippet("void main() { int@ handleOnInt; }\n"),
                   "as-err-handle-on-primitive"));
 }
+
+// =====================================================================================
+// The same local name twice where the compiler counts one scope.
+//
+// Found by hand: the only thing this analyzer said about `float f; float f;` was that neither was
+// ever used. Every case below is measured against the compiler - see doc_r08 and doc_p12 in the
+// parity corpus, which pin the same rule from the other side.
+// =====================================================================================
+
+TEST_CASE("VariableRules - Reports a local declared twice in one scope")
+{
+    const std::string code =
+        "void F()\n"
+        "{\n"
+        "    float f;\n"
+        "    float f;\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-duplicate-symbol"));
+}
+
+TEST_CASE("VariableRules - Reports a local that repeats a parameter")
+{
+    // `void F(float f) { float f; }` is "'f' is already declared" to the compiler: parameters
+    // belong to the body. The scope tree puts them on the func_declaration scope and the body in
+    // its child, so this is the one nesting that is not a nesting.
+    CHECK(HasCode(AnalyzeVariableSnippet("void F(float f) { float f; }\n"), "as-err-duplicate-symbol"));
+    CHECK(HasCode(AnalyzeVariableSnippet("class C { void M(float f) { float f; } }\n"),
+                  "as-err-duplicate-symbol"));
+}
+
+TEST_CASE("VariableRules - A nested scope may shadow, and each loop owns its variable")
+{
+    // All three compile. A duplicate rule that could not tell a nested scope from a repeated one
+    // would report legal code, which is the one thing this project does not do.
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet("void F() { float f = 1; { float f = 2; f += 1; } f += 1; }\n"),
+                        "as-err-duplicate-symbol"));
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet("void F() { for (int i = 0; i < 2; i++) { } for (int i = 0; i < 2; i++) { } }\n"),
+                        "as-err-duplicate-symbol"));
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet("void F() { if (true) { int a = 1; } else { int a = 2; } }\n"),
+                        "as-err-duplicate-symbol"));
+}
+
+TEST_CASE("VariableRules - Two locals of the same type and different names are not a duplicate")
+{
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet("void F() { float a, b; a = b; }\n"),
+                        "as-err-duplicate-symbol"));
+}

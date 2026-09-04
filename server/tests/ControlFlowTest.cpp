@@ -586,3 +586,52 @@ TEST_CASE("ControlFlow - Control Flow Corpus Audit" * doctest::skip(true))
     CHECK(result.hits[0].code == "as-err-not-all-paths-return");
     CHECK(result.hits[0].fileName == "AngelScript_SC_Plugins_ChatTriggers.as");
 }
+
+// =====================================================================================
+// A `return;` in a function that owes a value.
+//
+// Measured: the compiler answers "Must return a value" and rejects the file. Nothing here saw it -
+// as-err-not-all-paths-return asks only whether a return is reached, and one is. Found by hand in
+// real use; see doc_r09 in the parity corpus.
+// =====================================================================================
+
+TEST_CASE("ControlFlow - A bare return in a function that owes a value")
+{
+    const std::string code =
+        "float FS(float f)\n"
+        "{\n"
+        "    return;\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-return-value-required"));
+}
+
+TEST_CASE("ControlFlow - A bare return is fine where nothing is owed")
+{
+    // void, and a constructor, which has no return type to check against at all.
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("void F() { return; }\n"), "as-err-return-value-required"));
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("class C { C() { return; } }\n"), "as-err-return-value-required"));
+}
+
+TEST_CASE("ControlFlow - A return that carries a value is not reported")
+{
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet("float FS(float f) { return f; }\n"), "as-err-return-value-required"));
+}
+
+TEST_CASE("ControlFlow - A bare return inside a lambda owes the funcdef's value")
+{
+    // The requirement comes from the funcdef the lambda is handed to, which is where
+    // as-err-not-all-paths-return already gets it from. Measured: the compiler answers
+    // "Must return a value" at the return inside the lambda body.
+    const std::string code =
+        "funcdef float SomeFuncDefName(float f);\n"
+        "void SomeFunction()\n"
+        "{\n"
+        "    SomeFuncDefName@ func = function(float f)\n"
+        "    {\n"
+        "        return;\n"
+        "    };\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-return-value-required"));
+}

@@ -42,6 +42,7 @@ namespace angel_lsp::diagnostics::codes
     inline constexpr std::string_view BreakOutsideLoop = "as-err-break-outside-loop";
     inline constexpr std::string_view ContinueOutsideLoop = "as-err-continue-outside-loop";
     inline constexpr std::string_view NotAllPathsReturn = "as-err-not-all-paths-return";
+    inline constexpr std::string_view ReturnValueRequired = "as-err-return-value-required";
     inline constexpr std::string_view InvalidCaseType = "as-err-invalid-case-type";
     inline constexpr std::string_view CaseNotConstant = "as-err-case-not-constant";
     inline constexpr std::string_view DuplicateCaseValue = "as-err-duplicate-case-value";

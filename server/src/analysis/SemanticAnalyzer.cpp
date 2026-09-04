@@ -830,6 +830,43 @@ namespace angel_lsp::analysis
 
         if (isFunctionNested)
         {
+            // AngelScript rejects a name declared twice in one scope, and counts a function's
+            // parameters as belonging to its body. Measured, all four:
+            //
+            //     void F(float f) { float f; }        'f' is already declared
+            //     void F() { float f; float f; }      'f' is already declared
+            //     void F() { float f; { float f; } }  accepted - the block is its own scope
+            //     void F() { for (int i..){} for (int i..){} }   accepted, same reason
+            //
+            // The scope tree puts parameters on the func_declaration scope and the body in its
+            // child, so the first of those is two Scopes here and one scope to the compiler. That
+            // is the only special case; every other nesting really is a nesting.
+            ankerl::unordered_dense::set<std::string> declaredHere;
+
+            if (scope->parent && scope->parent->isFunctionScope)
+            {
+                for (const auto &param : scope->parent->definitions)
+                {
+                    if (param.kind == LocalDefinitionKind::Parameter)
+                        declaredHere.insert(param.name);
+                }
+            }
+
+            for (const auto &def : scope->definitions)
+            {
+                if (def.kind != LocalDefinitionKind::Variable &&
+                    def.kind != LocalDefinitionKind::Parameter)
+                {
+                    continue;
+                }
+
+                if (!declaredHere.insert(def.name).second)
+                {
+                    ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                                    "as-err-duplicate-symbol", def.name);
+                }
+            }
+
             for (const auto &def : scope->definitions)
             {
                 if (def.kind == LocalDefinitionKind::Variable)
