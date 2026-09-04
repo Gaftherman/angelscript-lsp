@@ -3021,3 +3021,65 @@ TEST_CASE("Server - The listing reports a merge as one")
     // tell that apart from having no answer yet.
     CHECK(answer.find("\"merging\":true") != std::string::npos);
 }
+
+// =====================================================================================
+// Push and pull are alternatives, not layers.
+//
+// The server announces both, which is what lets it serve either kind of client. It also *sent*
+// both, and a client that pulls keeps each in its own collection - so every finding appeared twice
+// in the Problems panel and twice in a hover. Reported from real use, as "igual si hago hover
+// aparece ese duplicado de problemas".
+// =====================================================================================
+
+TEST_CASE("Server - A client that pulls diagnostics is not also sent them")
+{
+    WorkspaceFixture fixture;
+    const std::string source = "void main() { int unused = 1; }\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+                R"("processId":null,"rootUri":")" + fixture.RootUri() + R"(",)"
+                R"("capabilities":{"textDocument":{"diagnostic":{"dynamicRegistration":false}}},)"
+                R"("workspaceFolders":[{"uri":")" + fixture.RootUri() + R"(","name":"fixture"}]}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(output);
+
+    // Nothing pushed...
+    CHECK(output.find("textDocument/publishDiagnostics") == std::string::npos);
+
+    // ...and the pull answered, so the findings did reach the client - once.
+    const std::string pulled = stream.ResponseFor(2);
+    INFO(pulled);
+    CHECK(pulled.find("as-warn-unused-variable") != std::string::npos);
+}
+
+TEST_CASE("Server - A client that does not pull is still sent its diagnostics")
+{
+    // The other half, and the reason the check is on the client's capability rather than on the
+    // server's own: a client that never sends textDocument/diagnostic would otherwise be told
+    // nothing at all, forever.
+    WorkspaceFixture fixture;
+    const std::string source = "void main() { int unused = 1; }\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(Published(stream.Output(), "as-warn-unused-variable"));
+}

@@ -595,6 +595,16 @@ namespace angel_lsp
         // chosen. Empty while every discovered stub is being merged, which is what the picker shows
         // as "all". Guarded by m_runtimeConfigMutex, like the list above it.
         std::string m_effectivePredefined;
+
+        /**
+         * @brief True when the client asked for diagnostics with textDocument/diagnostic.
+         *
+         * The two delivery models are alternatives, not layers. A client that pulls also receives
+         * anything pushed, and VS Code keeps each in its own collection, so every diagnostic
+         * appeared twice - twice in the Problems panel, twice in a hover. Announcing both is right:
+         * it is what lets one server serve either kind of client. Sending both is not.
+         */
+        bool m_clientPullsDiagnostics = false;
         void PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics);
 
         /**

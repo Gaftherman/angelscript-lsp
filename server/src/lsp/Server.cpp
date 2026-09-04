@@ -355,6 +355,10 @@ namespace angel_lsp
             m_workDoneProgressSupport = params.capabilities.window->workDoneProgress.value();
         }
 
+        // Which of the two diagnostic models this client wants. See m_clientPullsDiagnostics.
+        m_clientPullsDiagnostics = params.capabilities.textDocument.has_value() &&
+                                   params.capabilities.textDocument->diagnostic.has_value();
+
         if (params.capabilities.textDocument.has_value() &&
             params.capabilities.textDocument->completion.has_value() &&
             params.capabilities.textDocument->completion->completionItem.has_value() &&
@@ -2794,6 +2798,14 @@ namespace angel_lsp
             snapshot.items = params.diagnostics;
             snapshot.textHash = std::hash<std::string>{}(text);
             m_diagnosticsCache[uriStr] = std::move(snapshot);
+        }
+
+        // Cached above whatever happens, because the pull handler answers out of that cache. The
+        // notification is what a pulling client must not also receive: it would land in a second
+        // collection beside the one it asked for, and the user would read every finding twice.
+        if (m_clientPullsDiagnostics)
+        {
+            return;
         }
 
         std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
