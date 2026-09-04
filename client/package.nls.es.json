@@ -77,5 +77,7 @@
   "command.restartServer.category": "AngelScript",
   "command.selectPredefined.title": "Seleccionar stub predefinido",
   "command.selectPredefined.category": "AngelScript",
-  "extension.description": "Soporte de lenguaje para AngelScript: información al pasar el cursor, ir a definición, autocompletado, resaltado semántico, diagnósticos, formateo y refactorización, impulsado por un motor nativo C++ de Tree-sitter."
+  "extension.description": "Soporte de lenguaje para AngelScript: información al pasar el cursor, ir a definición, autocompletado, resaltado semántico, diagnósticos, formateo y refactorización, impulsado por un motor nativo C++ de Tree-sitter.",
+  "config.dimInactiveRegions.description": "Atenúa el código dentro de un bloque `#if` que el preprocesador descarta, igual que la extensión de C++ atenúa sus regiones inactivas. Es una decoración, no un color: atenúa lo que haya producido el resaltado de sintaxis, corchetes incluidos, algo que un token semántico no puede hacer - el editor pinta `(`, `{` y `[` con su propia función de emparejado de corchetes.",
+  "config.inactiveRegionOpacity.description": "Cuánto se sigue viendo el código atenuado dentro de un bloque `#if` descartado. 1 es sin atenuar. Va con `#angelscript.dimInactiveRegions#`, que tiene que estar activo para que esto haga algo."
 }

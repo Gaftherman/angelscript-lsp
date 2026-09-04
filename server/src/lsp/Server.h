@@ -619,6 +619,19 @@ namespace angel_lsp
          * it is what lets one server serve either kind of client. Sending both is not.
          */
         bool m_clientPullsDiagnostics = false;
+
+        /**
+         * @brief Tells the client which line ranges the preprocessor drops, so it can dim them.
+         *
+         * A custom notification because LSP has none: `angelscript/inactiveRegions`, carrying the
+         * document URI and a list of `{startLine, endLine}`. It is what the C++ extension does with
+         * its own inactive regions, and for the reason this replaced painting them as comments -
+         * a semantic token cannot reach the editor's bracket-pair colouring, which paints `(`, `{`
+         * and `[` from its own feature and ignores both TextMate and semantic scopes. Dead code
+         * therefore kept rainbow brackets no matter what tokens were emitted for it. A decoration
+         * dims whatever is underneath, brackets included.
+         */
+        void PublishInactiveRegions(const std::string &uriStr, const std::string &text);
         void PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics);
 
         /**

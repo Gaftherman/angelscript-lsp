@@ -470,8 +470,19 @@ namespace
     }
 }
 
-TEST_CASE("SemanticTokensHandler - An excluded #if block is emitted as comment tokens")
+TEST_CASE("SemanticTokensHandler - An excluded #if block is left to the decoration")
 {
+    // This used to require one full-line comment token per dead line. That was the wrong
+    // instrument twice over. It could not reach the editor's bracket-pair colouring, which paints
+    // `(`, `{` and `[` from its own feature and consults neither TextMate nor semantic scopes - so
+    // dead code kept rainbow brackets whatever was emitted for it, which is how the defect was
+    // spotted. And where it did apply, it threw away the difference between a comment and code that
+    // simply is not compiled.
+    //
+    // The dimming is a decoration now: the server sends angelscript/inactiveRegions and the client
+    // dims the whole region, brackets included, which is what the C++ extension does. What this
+    // handler owes is silence - no semantic token on a dead line, so the syntax colours underneath
+    // show through and the decoration dims them.
     const std::string code =
         "int live = 1;\n"        // 0
         "#if NOT_DEFINED\n"      // 1
@@ -491,8 +502,6 @@ TEST_CASE("SemanticTokensHandler - An excluded #if block is emitted as comment t
     REQUIRE_FALSE(req.excludedLineRanges.empty());
 
     const auto tokens = DecodeTokens(GetSemanticTokens(req).data);
-    const uint32_t comment = CommentTokenType();
-    REQUIRE(comment != UINT32_MAX);
 
     const auto onLine = [&tokens](uint32_t line)
     {
@@ -505,25 +514,19 @@ TEST_CASE("SemanticTokensHandler - An excluded #if block is emitted as comment t
         return found;
     };
 
-    // Every excluded line - the directives included, because CScriptBuilder blanks those too - is
-    // one comment token spanning the whole line.
+    // Every excluded line - the directives included, because CScriptBuilder blanks those too -
+    // carries no semantic token at all.
     for (const uint32_t dead : { 1u, 2u, 3u })
     {
         CAPTURE(dead);
-        const auto found = onLine(dead);
-        REQUIRE(found.size() == 1);
-        CHECK(found[0][1] == 0);                  // starts at the beginning of the line
-        CHECK(found[0][3] == comment);
+        CHECK(onLine(dead).empty());
     }
 
-    // And the live lines are untouched: whatever they had, none of it became a comment.
+    // And the live lines still have theirs.
     for (const uint32_t alive : { 0u, 4u })
     {
         CAPTURE(alive);
-        const auto found = onLine(alive);
-        CHECK_FALSE(found.empty());
-        for (const auto &t : found)
-            CHECK(t[3] != comment);
+        CHECK_FALSE(onLine(alive).empty());
     }
 
     ts_tree_delete(tree);

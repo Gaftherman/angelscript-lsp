@@ -3,7 +3,8 @@ import * as os from 'os';
 import * as fs from 'fs';
 import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
-    StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n
+    StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n,
+    TextEditorDecorationType, Range, TextEditor
 } from 'vscode';
 import {
     LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler, ErrorAction, CloseAction,
@@ -53,6 +54,67 @@ let unexpectedExits = 0;
  * has been dismissed. Empty means the server has not said yet, or every stub is merged.
  */
 let activeStubLabel = '';
+
+/**
+ * @brief The line ranges the preprocessor drops, per document, as the server last reported them.
+ *
+ * Kept because a decoration is applied to an *editor*, and an editor for a document can appear
+ * after the notification that described it - opening the file in a second group, or coming back to
+ * a tab - at which point there is nothing to recompute from.
+ */
+const inactiveRegionsByUri = new Map<string, Range[]>();
+
+/** @brief The dimming itself. Rebuilt when the opacity setting changes, since it bakes the value in. */
+let inactiveDecoration: TextEditorDecorationType | undefined;
+
+/**
+ * @brief Dims the code inside a `#if` the preprocessor drops.
+ *
+ * A decoration rather than a semantic token, which is what this used to be. The editor's
+ * bracket-pair colouring paints `(`, `{` and `[` from its own feature and consults neither
+ * TextMate nor semantic scopes, so dead code kept rainbow brackets no matter what tokens the
+ * server emitted for it. A decoration sits over everything, brackets included - and it dims the
+ * syntax colours rather than replacing them, which is what the C++ extension does with its own
+ * inactive regions.
+ */
+function ensureInactiveDecoration(): TextEditorDecorationType | undefined {
+    const config = workspace.getConfiguration('angelscript');
+    if (config.get<boolean>('dimInactiveRegions', true) !== true) {
+        return undefined;
+    }
+
+    if (inactiveDecoration === undefined) {
+        const opacity = config.get<number>('inactiveRegionOpacity', 0.55);
+        inactiveDecoration = window.createTextEditorDecorationType({
+            // `!important` because a theme's own rules for the scopes underneath would otherwise
+            // win, and the point is to dim whatever those produced.
+            opacity: `${opacity} !important`,
+            isWholeLine: true
+        });
+    }
+
+    return inactiveDecoration;
+}
+
+/** @brief Applies - or clears - the dimming on one editor from what the server last said. */
+function applyInactiveRegions(editor: TextEditor): void {
+    const decoration = ensureInactiveDecoration();
+    if (decoration === undefined) {
+        return;
+    }
+
+    if (editor.document.languageId !== 'angelscript') {
+        return;
+    }
+
+    editor.setDecorations(decoration, inactiveRegionsByUri.get(editor.document.uri.toString()) ?? []);
+}
+
+/** @brief Throws the current decoration away, so the next apply builds one with the new opacity. */
+function resetInactiveDecoration(): void {
+    inactiveDecoration?.dispose();
+    inactiveDecoration = undefined;
+}
 
 /**
  * @brief Restarts run one at a time, in the order they were asked for.
@@ -607,6 +669,23 @@ async function startClient(context: ExtensionContext): Promise<void> {
         client.onNotification("angelscript/debug", (params: { message: string }) => {
             lspOutputChannel.appendLine(`[AST Debug] ${params.message}`);
         });
+
+        client.onNotification("angelscript/inactiveRegions",
+            (params: { uri: string; regions: { startLine: number; endLine: number }[] }) => {
+                // Stored under the document's own key rather than the server's spelling of the URI,
+                // so looking it up from an editor cannot miss on a percent-encoded drive letter.
+                const key = Uri.parse(params.uri).toString();
+                inactiveRegionsByUri.set(
+                    key,
+                    (params.regions ?? []).map(region =>
+                        new Range(region.startLine, 0, region.endLine, Number.MAX_SAFE_INTEGER)));
+
+                for (const editor of window.visibleTextEditors) {
+                    if (editor.document.uri.toString() === key) {
+                        applyInactiveRegions(editor);
+                    }
+                }
+            });
     } catch (error) {
         reportFailure(
             l10n.t('the language server failed to start. Editor features are unavailable.'),
@@ -634,6 +713,12 @@ export async function activate(context: ExtensionContext) {
 
     context.subscriptions.push(
         commands.registerCommand(STATUS_MENU_COMMAND, () => showStatusMenu(context)));
+
+    // An editor can appear after the notification that described its document - a second group, or
+    // a tab returned to - and there is nothing to recompute from at that point, so the last thing
+    // the server said is replayed onto it.
+    context.subscriptions.push(
+        window.onDidChangeVisibleTextEditors(editors => editors.forEach(applyInactiveRegions)));
 
     statusBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 100);
     statusBarItem.command = STATUS_MENU_COMMAND;
@@ -673,6 +758,14 @@ export async function activate(context: ExtensionContext) {
             // workspace scan to reach the state the server had already reached.
             const withoutActiveStub = (args: string[]) =>
                 args.filter(arg => !arg.startsWith('--predefined-active='));
+
+            // The decoration bakes the opacity in, so a change to either setting has to build a
+            // new one. Cheap, and it happens only when the user edits the setting.
+            if (event.affectsConfiguration('angelscript.inactiveRegionOpacity') ||
+                event.affectsConfiguration('angelscript.dimInactiveRegions')) {
+                resetInactiveDecoration();
+                window.visibleTextEditors.forEach(applyInactiveRegions);
+            }
 
             const next = buildServerArgs();
             const unchanged =

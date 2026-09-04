@@ -948,30 +948,17 @@ namespace angel_lsp::features
                 return angel_lsp::utils::IsLineExcluded(request.excludedLineRanges, tok.line);
             });
 
-            // Emit a full-line comment token for every excluded line so the editor dims dead
-            // preprocessor blocks. The `#if` and `#endif` lines themselves are part of the
-            // excluded range (CScriptBuilder strips them too) and are painted grey as well.
-            for (const auto &range : request.excludedLineRanges)
-            {
-                for (uint32_t line = range.startLine; line <= range.endLine; ++line)
-                {
-                    if (line < sourceLines.size())
-                    {
-                        const uint32_t lineLength = static_cast<uint32_t>(sourceLines[line].size());
-                        if (lineLength > 0)
-                        {
-                            rawTokens.push_back(RawToken{
-                                line,
-                                0,
-                                lineLength,
-                                Type_Comment,
-                                0,
-                                100
-                            });
-                        }
-                    }
-                }
-            }
+            // Nothing is emitted in their place. This used to paint every excluded line as one
+            // full-line comment token, which was the wrong instrument twice over: it could not
+            // reach the editor's bracket-pair colouring - a separate feature that paints `(`, `{`
+            // and `[` from neither TextMate nor semantic scopes, so dead code kept rainbow
+            // brackets - and where it did apply it threw away the distinction between a comment
+            // and code that merely is not compiled.
+            //
+            // The dimming is a decoration now, sent as angelscript/inactiveRegions and applied by
+            // the client over the whole region, which is how the C++ extension does it and the only
+            // way to dim brackets with it. Leaving these lines with no semantic tokens lets the
+            // syntax colours show through underneath, dimmed - again as C++ does.
         }
 
         if (rawTokens.empty())

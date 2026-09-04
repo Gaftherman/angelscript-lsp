@@ -3772,3 +3772,68 @@ TEST_CASE("Server - Deleting the stub in force hands the workspace to the next o
     // workspace with nothing at all.
     CHECK(published.find("as-err-unresolved-type") == std::string::npos);
 }
+
+// =====================================================================================
+// The lines the preprocessor drops, told to the client so it can dim them.
+//
+// This used to be done with semantic tokens - one full-line comment token per dead line - and it
+// could not work: the editor paints `(`, `{` and `[` from its own bracket-pair colouring, which
+// consults neither TextMate nor semantic scopes, so dead code kept rainbow brackets whatever was
+// emitted for it. A decoration sits over all of it. The notification is custom because LSP has
+// none, and it is what the C++ extension does with its own inactive regions.
+// =====================================================================================
+
+TEST_CASE("Server - Reports the lines a dropped #if takes with it")
+{
+    WorkspaceFixture fixture;
+    const std::string source =
+        "int live = 1;\n"
+        "#if NOT_DEFINED\n"
+        "int dead = 2;\n"
+        "#endif\n"
+        "int alsoLive = 3;\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(output);
+
+    REQUIRE(output.find("angelscript/inactiveRegions") != std::string::npos);
+
+    // Lines 1 to 3: the `#if`, the code it drops, and the `#endif` - CScriptBuilder blanks the
+    // directives too, so they are part of the region.
+    CHECK(output.find("\"startLine\":1") != std::string::npos);
+    CHECK(output.find("\"endLine\":3") != std::string::npos);
+}
+
+TEST_CASE("Server - Reports an empty region list when nothing is dropped")
+{
+    // Sent even when empty: that is how the client learns a block came back to life and its dimming
+    // has to go. Without it the grey would stay until the document was closed.
+    WorkspaceFixture fixture;
+    const std::string source = "int live = 1;\nint alsoLive = 2;\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(output);
+
+    REQUIRE(output.find("angelscript/inactiveRegions") != std::string::npos);
+    CHECK(output.find("\"regions\":[]") != std::string::npos);
+}

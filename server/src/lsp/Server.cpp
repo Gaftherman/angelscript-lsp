@@ -2893,6 +2893,35 @@ namespace angel_lsp
         return converted;
     }
 
+    void Server::PublishInactiveRegions(const std::string &uriStr, const std::string &text)
+    {
+        const auto excluded = ExcludedLineRanges(text);
+
+        lsp::json::Array regions;
+        for (const auto &range : excluded)
+        {
+            lsp::json::Object region;
+            region["startLine"] = static_cast<lsp::json::Integer>(range.startLine);
+            region["endLine"] = static_cast<lsp::json::Integer>(range.endLine);
+            regions.push_back(lsp::json::Value(std::move(region)));
+        }
+
+        // Sent even when empty: that is how the client learns a block came back to life and its
+        // dimming has to go. Without it the grey would stay until the document was closed.
+        lsp::json::Object params;
+
+        const auto clientUri = m_clientUriByKey.find(uriStr);
+        // The Value constructor takes its string by rvalue, so the copy is explicit - the same
+        // reason the stub listing spells it out.
+        params["uri"] = lsp::json::Value(
+            std::string(clientUri != m_clientUriByKey.end() ? clientUri->second : uriStr));
+        params["regions"] = std::move(regions);
+
+        std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
+        m_messageHandler->sendNotification("angelscript/inactiveRegions",
+                                           lsp::json::Value(std::move(params)));
+    }
+
     void Server::PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics)
     {
         lsp::notifications::TextDocument_PublishDiagnostics::Params params;
@@ -2910,6 +2939,10 @@ namespace angel_lsp
         params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
 
         params.diagnostics = ToProtocolDiagnostics(text, diagnostics);
+
+        // Which lines the preprocessor drops travels with the diagnostics, because it is computed
+        // from the same text and changes for the same reasons.
+        PublishInactiveRegions(uriStr, text);
 
         // Cached for the pull path before it goes out, under a fresh result id. The client echoes
         // that id back and is told `unchanged` while it still matches, so a file nobody edits costs
