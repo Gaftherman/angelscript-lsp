@@ -481,6 +481,83 @@ namespace angel_lsp::analysis
         return info;
     }
 
+    std::string PropertyNameFromAccessor(const Symbol &sym, bool keywordRequired)
+    {
+        if (!std::holds_alternative<FunctionSignature>(sym.signature))
+            return {};
+
+        if (keywordRequired && !sym.GetFunction().modifiers.isProperty)
+            return {};
+
+        for (const std::string_view prefix : { std::string_view("get_"), std::string_view("set_") })
+        {
+            if (sym.name.size() > prefix.size() && sym.name.compare(0, prefix.size(), prefix) == 0)
+                return sym.name.substr(prefix.size());
+        }
+
+        return {};
+    }
+
+    std::vector<Symbol> FindPropertyAccessors(const std::string &typeName,
+                                              const std::string &propertyName,
+                                              const SymbolTable &symbolTable,
+                                              bool keywordRequired)
+    {
+        std::vector<Symbol> accessors;
+        if (typeName.empty() || propertyName.empty())
+            return accessors;
+
+        // Getter first, and the whole hierarchy before moving on to the setter, so the type this
+        // reports comes from the getter whenever there is one.
+        for (const std::string_view prefix : { std::string_view("get_"), std::string_view("set_") })
+        {
+            for (const auto &owner : GetInheritedTypeHierarchy(typeName, symbolTable))
+            {
+                for (const auto &sym : symbolTable.FindSymbols(owner + "::" + std::string(prefix) + propertyName))
+                {
+                    if (!std::holds_alternative<FunctionSignature>(sym.signature))
+                        continue;
+                    if (keywordRequired && !sym.GetFunction().modifiers.isProperty)
+                        continue;
+
+                    accessors.push_back(sym);
+                }
+
+                // A derived class overriding the accessor answers for it; the base's copy would only
+                // be the same property said twice.
+                if (!accessors.empty())
+                    break;
+            }
+        }
+
+        return accessors;
+    }
+
+    std::string PropertyTypeFromAccessors(const std::vector<Symbol> &accessors)
+    {
+        for (const auto &sym : accessors)
+        {
+            if (!std::holds_alternative<FunctionSignature>(sym.signature))
+                continue;
+
+            const FunctionSignature &func = sym.GetFunction();
+            if (sym.name.compare(0, 4, "get_") == 0)
+                return func.returnType;
+        }
+
+        for (const auto &sym : accessors)
+        {
+            if (!std::holds_alternative<FunctionSignature>(sym.signature))
+                continue;
+
+            const FunctionSignature &func = sym.GetFunction();
+            if (sym.name.compare(0, 4, "set_") == 0 && !func.parameters.empty())
+                return func.parameters.front().typeName;
+        }
+
+        return {};
+    }
+
     std::vector<std::string> GetInheritedTypeHierarchy(const std::string &className, const SymbolTable &symbolTable)
     {
         std::vector<std::string> hierarchy;

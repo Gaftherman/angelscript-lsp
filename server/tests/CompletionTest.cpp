@@ -85,6 +85,18 @@ namespace
                                    lsp::Position{ line, character }, nullptr, snippetSupport };
             return GetCompletion(req);
         }
+
+        /** @brief The same, for a host whose asEP_PROPERTY_ACCESSOR_MODE is not this server's default. */
+        std::vector<lsp::CompletionItem> CompleteAtWithAccessorMode(uint32_t line, uint32_t character,
+                                                                    int accessorMode)
+        {
+            angel_lsp::config::ServerConfig config;
+            config.engine.propertyAccessorMode = accessorMode;
+
+            CompletionRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex,
+                                   lsp::Position{ line, character }, &config, false };
+            return GetCompletion(req);
+        }
     };
 
     bool HasItem(const std::vector<lsp::CompletionItem> &items, const std::string &label)
@@ -666,4 +678,102 @@ TEST_CASE("Completion - A case label still completes through a qualifier")
     TestEnvironment env(code);
     const auto items = env.CompleteAt(5, 15);
     CHECK(HasItem(items, "Idle"));
+}
+
+// =====================================================================================
+// A property spelled as two methods.
+//
+//     class HostEntityA { int get_Health() const property; void set_Health(int) property; }
+//     HostEntityA e;  e.Health = 100;
+//
+// Measured with angelscript_oracle: that compiles, both the read and the write. Nothing in the
+// symbol table is called `Health` - it holds two methods - so a completion list built from the
+// table alone offered `get_Health`, `set_Health` and `Spawn`, which is every spelling except the
+// one the user was reaching for and the compiler accepts.
+// =====================================================================================
+
+namespace
+{
+    const std::string k_accessorClass =
+        "class HostEntityA\n"
+        "{\n"
+        "    int m_health;\n"
+        "    void Spawn() { }\n"
+        "    int get_Health() const property { return m_health; }\n"
+        "    void set_Health(int v) property { m_health = v; }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    HostEntityA e;\n"
+        "    e.\n"
+        "}\n";
+
+    /** @brief The same class with the keyword left off, which mode 3 rejects and mode 2 accepts. */
+    const std::string k_accessorClassNoKeyword =
+        "class HostEntityA\n"
+        "{\n"
+        "    int m_health;\n"
+        "    void Spawn() { }\n"
+        "    int get_Health() const { return m_health; }\n"
+        "    void set_Health(int v) { m_health = v; }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    HostEntityA e;\n"
+        "    e.\n"
+        "}\n";
+}
+
+TEST_CASE("CompletionHandler - Accessors offer the property they stand for")
+{
+    TestEnvironment env(k_accessorClass);
+    auto items = env.CompleteAt(10, 6);
+
+    CHECK(HasItem(items, "Health"));
+
+    // The accessors stay: calling one explicitly is still legal, and hiding them would be this
+    // rule's own kind of mistake in the other direction.
+    CHECK(HasItem(items, "get_Health"));
+    CHECK(HasItem(items, "set_Health"));
+    CHECK(HasItem(items, "Spawn"));
+}
+
+TEST_CASE("CompletionHandler - The property carries the accessor's type")
+{
+    TestEnvironment env(k_accessorClass);
+    auto items = env.CompleteAt(10, 6);
+
+    const auto found = std::find_if(items.begin(), items.end(),
+                                    [](const lsp::CompletionItem &item) { return item.label == "Health"; });
+    REQUIRE(found != items.end());
+    CHECK(found->kind == lsp::CompletionItemKind::Property);
+    CHECK(found->detail.value_or("") == "int");
+}
+
+TEST_CASE("CompletionHandler - Under mode 3 the keyword decides")
+{
+    // asEP_PROPERTY_ACCESSOR_MODE 3 is the engine's own default: a method is an ordinary method
+    // until `property` is written. Measured both ways - see AccessChecker's AccessorStandsForProperty.
+    TestEnvironment withKeyword(k_accessorClass);
+    CHECK(HasItem(withKeyword.CompleteAtWithAccessorMode(10, 6, 3), "Health"));
+
+    TestEnvironment without(k_accessorClassNoKeyword);
+    CHECK_FALSE(HasItem(without.CompleteAtWithAccessorMode(10, 6, 3), "Health"));
+
+    // Under mode 2 the name alone is enough, keyword or no keyword.
+    TestEnvironment lenient(k_accessorClassNoKeyword);
+    CHECK(HasItem(lenient.CompleteAtWithAccessorMode(10, 6, 2), "Health"));
+}
+
+TEST_CASE("CompletionHandler - A host with accessors switched off is offered none")
+{
+    // Modes 0 and 1 leave script-defined accessors out of the language entirely, so `e.Health` is
+    // not something that compiles there and offering it would be inventing a member.
+    TestEnvironment env(k_accessorClass);
+
+    CHECK_FALSE(HasItem(env.CompleteAtWithAccessorMode(10, 6, 0), "Health"));
+    CHECK_FALSE(HasItem(env.CompleteAtWithAccessorMode(10, 6, 1), "Health"));
+
+    // The methods themselves are still members whatever the mode.
+    CHECK(HasItem(env.CompleteAtWithAccessorMode(10, 6, 1), "get_Health"));
 }

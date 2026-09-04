@@ -662,6 +662,14 @@ namespace angel_lsp::features
                 // completion on a class with three bases was four full-table scans per character.
                 const auto ruleIndex = request.symbolTable.GetRuleIndex();
 
+                // asEP_PROPERTY_ACCESSOR_MODE: 0 and 1 leave script-defined accessors out of the
+                // language entirely, 3 wants the `property` keyword written, and 2 - this server's
+                // default - takes the name alone. Read from the config the analyzer reads, so the
+                // completion list and the diagnostics cannot disagree about what a property is.
+                const int accessorMode = request.config ? request.config->engine.propertyAccessorMode : 2;
+                const bool accessorsAreProperties = accessorMode >= 2;
+                const bool accessorKeywordRequired = accessorMode == 3;
+
                 auto addMembersForType = [&](const std::string &typeName)
                 {
                     const auto &members = ruleIndex->Members(typeName);
@@ -701,6 +709,37 @@ namespace angel_lsp::features
                                 }
 
                                 AddItemIfNew(items, seenLabels, sym.name, kind, detail, "", sym.qualifiedName);
+
+                                // And `get_X`/`set_X` offer `X` as well. Nothing in the symbol table
+                                // is called `X` - it holds the two methods - so a list built from
+                                // the table alone offers every spelling except the one the user was
+                                // reaching for and the compiler accepts.
+                                if (!accessorsAreProperties)
+                                {
+                                    continue;
+                                }
+
+                                const std::string propertyName =
+                                    analysis::PropertyNameFromAccessor(sym, accessorKeywordRequired);
+                                if (propertyName.empty())
+                                {
+                                    continue;
+                                }
+
+                                std::string propertyType = analysis::PropertyTypeFromAccessors(
+                                    analysis::FindPropertyAccessors(typeName, propertyName,
+                                                                    request.symbolTable,
+                                                                    accessorKeywordRequired));
+                                if (!templateArgs.empty())
+                                {
+                                    propertyType = analysis::SubstituteTypeParam(propertyType, "T", templateArgs[0]);
+                                }
+
+                                // Resolved against the accessor, so the doc comment written on the
+                                // getter is the one the user reads on the property.
+                                AddItemIfNew(items, seenLabels, propertyName,
+                                             lsp::CompletionItemKind::Property, propertyType,
+                                             "", sym.qualifiedName);
                             }
                         }
                     }

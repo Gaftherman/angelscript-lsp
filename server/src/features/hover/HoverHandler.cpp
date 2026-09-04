@@ -474,12 +474,39 @@ namespace angel_lsp::features
                     }
                 }
 
+                // `e.Health` where the class declares `get_Health`/`set_Health` and nothing called
+                // `Health`. The compiler derives the property from the accessors - measured, it
+                // accepts both the read and the write - so hovering the one spelling that compiles
+                // has to find something, or the editor denies what the build accepts.
+                std::string accessorPropertyType;
+                if (memberSymbols.empty())
+                {
+                    const int accessorMode =
+                        request.config ? request.config->engine.propertyAccessorMode : 2;
+
+                    // Modes 0 and 1 leave script-defined accessors out of the language, so there is
+                    // no property to describe.
+                    if (accessorMode >= 2)
+                    {
+                        memberSymbols = analysis::FindPropertyAccessors(
+                            receiverTypeName, nodeText, request.symbolTable, accessorMode == 3);
+                        accessorPropertyType = analysis::PropertyTypeFromAccessors(memberSymbols);
+                    }
+                }
+
                 if (!memberSymbols.empty())
                 {
                     RemoveDuplicateSymbols(memberSymbols);
 
                     std::ostringstream oss;
                     oss << "```angelscript\n";
+
+                    // Named first, because the accessors below are the implementation of it and the
+                    // reader asked about the property.
+                    if (!accessorPropertyType.empty())
+                    {
+                        oss << "(property) " << accessorPropertyType << " " << nodeText << "\n";
+                    }
                     for (size_t i = 0; i < memberSymbols.size(); ++i)
                     {
                         if (i > 0)

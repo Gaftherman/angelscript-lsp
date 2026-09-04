@@ -335,6 +335,42 @@ namespace angel_lsp::analysis
     std::vector<std::string> GetInheritedTypeHierarchy(const std::string &className, const SymbolTable &symbolTable);
 
     /**
+     * @brief The `get_X`/`set_X` methods, anywhere in a type's hierarchy, that stand for `X`.
+     *
+     * `class E { int get_Health() const property; void set_Health(int) property; }` gives `e.Health`
+     * its meaning: measured, the compiler accepts both the read and the write. Nothing about that is
+     * visible in the symbol table, which holds two methods and no member called `Health`, so every
+     * feature that answers a question about `e.Health` has to derive it - and each one that forgot
+     * left the user with a member the compiler accepts and the editor denies.
+     *
+     * @param keywordRequired asEP_PROPERTY_ACCESSOR_MODE 3, where a method is only a property once
+     *        `property` is written. Under mode 2 the name alone is enough. Ask
+     *        SemanticAnalysisRequest::RequiresAccessorKeyword, or the engine config, rather than
+     *        deciding locally - a setting honoured in some places and not others is worse than one
+     *        honoured nowhere.
+     * @return The accessors found, getter first when both exist; empty when `X` is not a property.
+     */
+    std::vector<Symbol> FindPropertyAccessors(const std::string &typeName,
+                                              const std::string &propertyName,
+                                              const SymbolTable &symbolTable,
+                                              bool keywordRequired);
+
+    /**
+     * @brief The type a property backed by these accessors carries.
+     *
+     * The getter's return type, or the setter's parameter when there is no getter - a write-only
+     * property is legal and its type is the one it takes.
+     */
+    std::string PropertyTypeFromAccessors(const std::vector<Symbol> &accessors);
+
+    /**
+     * @brief The property name behind an accessor method, or empty when it is an ordinary method.
+     *
+     * @param keywordRequired As above.
+     */
+    std::string PropertyNameFromAccessor(const Symbol &sym, bool keywordRequired);
+
+    /**
      * @brief True when every ancestor of a type, and every base each of them names, is in the table.
      *
      * The precondition for any rule that reasons about what a hierarchy contains. A base this

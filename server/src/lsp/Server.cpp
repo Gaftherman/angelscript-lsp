@@ -3195,7 +3195,8 @@ namespace angel_lsp
                     codec::Decode(*doc->text, m_positionEncoding, req.position),
                     // A symbol's documentation comment lives above its declaration, which is
                     // usually in another file. The same reader CompletionItem/resolve is given.
-                    [this](const std::string &uri) { return FindDocumentText(uri); }
+                    [this](const std::string &uri) { return FindDocumentText(uri); },
+                    &m_config
                 };
                 auto hover = features::GetHover(hr);
                 if (hover.has_value())

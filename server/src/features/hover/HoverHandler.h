@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/SymbolTable.h"
+#include "config/ServerConfig.h"
 #include "analysis/ScopeTree.h"
 #include <lsp/messages.h>
 #include <lsp/types.h>
@@ -37,6 +38,15 @@ namespace angel_lsp::features
          * place in Server.cpp.
          */
         std::function<const std::string *(const std::string &)> readDocument;
+
+        /**
+         * @brief The server's configuration, for the engine properties that change what is legal.
+         *
+         * asEP_PROPERTY_ACCESSOR_MODE above all: whether `get_X` is the property `X` is the host's
+         * setting, not a fact about the source, and a hover that decided it locally would disagree
+         * with the diagnostics on the same line.
+         */
+        const config::ServerConfig *config = nullptr;
     };
 
     /**

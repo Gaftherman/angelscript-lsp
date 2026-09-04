@@ -577,3 +577,37 @@ TEST_CASE("HoverHandler - Bracket and template arrays hover identically")
     CHECK(std::get<lsp::MarkupContent>(bracketHover->contents).value ==
           std::get<lsp::MarkupContent>(templateHover->contents).value);
 }
+
+// =====================================================================================
+// Hovering a property that the class spells as two methods. Same case as the completion tests:
+// `e.Health` compiles, and the symbol table holds `get_Health` and `set_Health` and nothing named
+// `Health`, so the lookup found nothing and the hover said nothing about a name the build accepts.
+// =====================================================================================
+
+TEST_CASE("HoverHandler - A property backed by accessors is described")
+{
+    const std::string code =
+        "class HostEntityA\n"
+        "{\n"
+        "    int m_health;\n"
+        "    int get_Health() const property { return m_health; }\n"
+        "    void set_Health(int v) property { m_health = v; }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    HostEntityA e;\n"
+        "    e.Health = 100;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hover = env.HoverAt(9, 8);
+
+    REQUIRE(hover.has_value());
+    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    const std::string &text = markup.value;
+    INFO(text);
+
+    // Named as the property it is, with the accessors below it as the implementation.
+    CHECK(text.find("(property) int Health") != std::string::npos);
+    CHECK(text.find("get_Health") != std::string::npos);
+}
