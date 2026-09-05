@@ -1989,6 +1989,29 @@ namespace angel_lsp::analysis
          * `opImplConv` is preferred over `opConv` when a class declares both, because that is the
          * one the engine reaches for first and so the one the quick fix should name.
          */
+        /**
+         * @brief True for a primitive that AngelScript will not convert to bool.
+         *
+         * By name, and only these: anything else - a class, an enum, a host type, a name that
+         * resolved to nothing - is left alone. `bool` itself is obviously not here, and neither is
+         * a handle, which is tested with `is`/`!is` rather than for truth.
+         */
+        bool IsNumericPrimitiveName(std::string_view typeName)
+        {
+            static constexpr std::string_view k_numeric[] = {
+                "int", "int8", "int16", "int32", "int64",
+                "uint", "uint8", "uint16", "uint32", "uint64",
+                "float", "double"
+            };
+
+            for (const std::string_view candidate : k_numeric)
+            {
+                if (typeName == candidate)
+                    return true;
+            }
+            return false;
+        }
+
         const std::string *BoolConversionOperator(const std::string &typeName, const SymbolTable &table)
         {
             if (typeName.empty())
@@ -2131,11 +2154,20 @@ namespace angel_lsp::analysis
             // A Hint and opt-in, not an error, because the analyzer cannot see the host's engine
             // setup. A host running mode 1 makes this code legal, and an error there would be a
             // false positive on working code - which is the one thing this project does not trade.
-            if (ctx.request.diagnostics && ctx.request.diagnostics->reportBoolConversion &&
-                ctx.request.BoolConversionMode() == 0 &&
-                (nodeType == "if_statement" || nodeType == "while_statement" ||
-                 nodeType == "do_while_statement" || nodeType == "for_statement" ||
-                 nodeType == "ternary_expression"))
+            // The condition is worth looking at whatever the settings say. Two rules read it: the
+            // opt-in hint about a class that would need an explicit conversion, and - always on -
+            // the plain fact that a number is not a condition. Measured, and mode-independent:
+            //
+            //     if (x) / while (x) / for (; x; ) / do while (x)   with an int or a float
+            //         Expression must be of boolean type, instead found 'int'
+            //     bool b = x;
+            //         Can't implicitly convert from 'int' to 'bool'.
+            //
+            // AngelScript has no numeric-to-bool conversion at all, so asEP_BOOL_CONVERSION_MODE -
+            // which decides whether a *class* may convert - does not reach this.
+            if (nodeType == "if_statement" || nodeType == "while_statement" ||
+                nodeType == "do_while_statement" || nodeType == "for_statement" ||
+                nodeType == "ternary_expression")
             {
                 // `for` and the ternary were missing, and they are not a guess either: `for (; c; )`
                 // and `c ? 1 : 2` on a class declaring opImplConv are both rejected under mode 0
@@ -2181,6 +2213,25 @@ namespace angel_lsp::analysis
                     {
                         const std::string operandType = CleanBaseType(ResolveExpressionType(
                             operand, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
+
+                        // A number where a bool belongs. Restricted to the primitives by name: a
+                        // type this analyzer cannot resolve, or one the host registered, is left
+                        // alone - the same policy the hint below keeps, and the reason this reports
+                        // `if (x)` on an int and says nothing about `if (SomeHostCall())`.
+                        if (IsNumericPrimitiveName(operandType))
+                        {
+                            const TSPoint start = ts_node_start_point(operand);
+                            const TSPoint end = ts_node_end_point(operand);
+                            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                            "as-err-condition-not-boolean", operandType);
+                            continue;
+                        }
+
+                        if (!ctx.request.diagnostics || !ctx.request.diagnostics->reportBoolConversion ||
+                            ctx.request.BoolConversionMode() != 0)
+                        {
+                            continue;
+                        }
 
                         // Silent unless fully visible. A type this analyzer cannot find the
                         // declaration of is assumed engine-registered, and an engine-registered type
