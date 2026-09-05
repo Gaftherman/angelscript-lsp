@@ -245,9 +245,9 @@ class any{
 	void store(?&in);
 	void store(const int64&in);
 	void store(const double&in);
-	bool retrieve(?&out);
-	bool retrieve(int64&out);
-	bool retrieve(double&out);
+	bool retrieve(?&out) const;
+	bool retrieve(int64&out) const;
+	bool retrieve(double&out) const;
 }
 
 
