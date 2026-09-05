@@ -863,6 +863,23 @@ namespace angel_lsp
         // didChangeConfiguration can rewrite the profile from the message loop mid-call.
         const std::string profileName = EngineProfile();
         auto kind = angel_lsp::analysis::ParseEngineProfileKind(profileName);
+
+        // A name nobody recognises loads Standard, which is a sensible fallback and a terrible
+        // silence: `svencop` gave the user a workspace with none of their host types and nothing on
+        // screen saying why the name was ignored. Same reasoning as the mistyped stub path below -
+        // this is a case where being quiet is worse than being wrong.
+        if (!profileName.empty() && !angel_lsp::analysis::IsKnownEngineProfileName(profileName))
+        {
+            lsp::notifications::Window_ShowMessage::Params params;
+            params.type = lsp::MessageType::Warning;
+            params.message = fmt::format(
+                "AngelScript: '{}' is not an engine profile this server knows, so the standard "
+                "profile was loaded instead. Known names: standard, svencoop, urho3d, openxray, "
+                "ootp, auto, none.",
+                profileName);
+            m_messageHandler->sendNotification<lsp::notifications::Window_ShowMessage>(std::move(params));
+        }
+
         if (kind == angel_lsp::analysis::EngineProfileKind::None)
         {
             return;

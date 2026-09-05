@@ -672,7 +672,33 @@ OOTPContext g_OOTP;
             return EngineProfileKind::Auto;
         }
 
+        // Unrecognised. Standard is the right thing to LOAD - a workspace with a typo in its
+        // profile name is better off with the standard library than with nothing - but the caller
+        // has to be able to say so, which is what IsKnownEngineProfileName is for. Returning
+        // Standard silently meant a mistyped `svencop` gave you a workspace with no host types and
+        // nothing on screen explaining why.
         return EngineProfileKind::Standard;
+    }
+
+    bool IsKnownEngineProfileName(std::string_view name)
+    {
+        const std::string lower = ToLowerString(name);
+        static constexpr std::string_view k_known[] = {
+            "none",
+            "standard", "std", "default",
+            "svencoop", "sven", "sven_coop", "svenco-op",
+            "urho3d", "urho", "atomic",
+            "openxray", "xray", "stalker",
+            "ootp", "ootpbaseball",
+            "auto", "detect",
+        };
+
+        for (const std::string_view candidate : k_known)
+        {
+            if (lower == candidate)
+                return true;
+        }
+        return false;
     }
 
     std::string_view EngineProfileKindToString(EngineProfileKind kind)
