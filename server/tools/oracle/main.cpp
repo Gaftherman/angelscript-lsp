@@ -41,6 +41,8 @@
 #include <datetime/datetime.h>
 #include <weakref/weakref.h>
 
+#include "DumpRegistry.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -278,6 +280,16 @@ namespace
 int main(int argc, char **argv)
 {
     const char *scriptPath = nullptr;
+
+    // Prints what this engine has registered, instead of compiling anything.
+    //
+    // The point is that a stub stops being a description of the engine and becomes a reading of it.
+    // Everything below already builds a real asIScriptEngine with the add-ons registered; the one
+    // thing it never did was ask what that produced. tests/fixtures/sdk-addons.as.predefined is
+    // maintained by hand through scripts/make-sdk-stub.py - a human model of a table that exists,
+    // and a model drifts without anything noticing, which is the failure this repository is
+    // organised against.
+    bool dumpRegistry = false;
     bool asJson = false;
 
     // Engine properties, so a script whose verdict depends on one can be asked about under each
@@ -328,7 +340,11 @@ int main(int argc, char **argv)
         // script.
         if (std::strncmp(argv[i], "--", 2) == 0)
         {
-            if (std::strcmp(argv[i], "--json") == 0)
+            if (std::strcmp(argv[i], "--dump-registry") == 0)
+            {
+                dumpRegistry = true;
+            }
+            else if (std::strcmp(argv[i], "--json") == 0)
             {
                 asJson = true;
             }
@@ -401,7 +417,8 @@ int main(int argc, char **argv)
         }
     }
 
-    if (scriptPath == nullptr)
+    // A dump has nothing to compile, so it is the one mode that does not need a script.
+    if (scriptPath == nullptr && !dumpRegistry)
     {
         std::fprintf(stderr, "usage: angelscript_oracle <script.as> [--json]\n"
                              "       [--property-accessor-mode=<0|1|2|3>]\n"
@@ -521,6 +538,16 @@ int main(int argc, char **argv)
                                    asFUNCTION(ScriptPrint), asCALL_CDECL);
     engine->RegisterGlobalFunction("void println(const string &in line)",
                                    asFUNCTION(ScriptPrintLine), asCALL_CDECL);
+
+    // Here, and not later: the registration table is complete the moment the add-ons are in, and
+    // nothing a module does adds to it. Dumping before CScriptBuilder runs also means a dump never
+    // depends on having a script that compiles.
+    if (dumpRegistry)
+    {
+        DumpRegistry(engine, stdout);
+        engine->ShutDownAndRelease();
+        return 0;
+    }
 
     // Built through CScriptBuilder rather than AddScriptSection, so `#include` and `#if` behave the
     // way they do for a real host - which is the same behaviour utils/PreprocessorRegions.h mirrors.
