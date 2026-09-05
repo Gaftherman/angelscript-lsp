@@ -141,6 +141,13 @@ jobs:
         working-directory: server
         run: python scripts/check-grammar-names.py
 
+      # The other half of the same question. check-grammar-names asks whether the names the code
+      # uses still resolve; this asks whether the checkout is the commit the pin names at all - a
+      # stale build tree compiles a grammar nobody chose, and nothing else notices.
+      - name: Audit the grammar pin
+        working-directory: server
+        run: python scripts/check-grammar-pin.py
+
       - name: Build the oracle and the test suite
         run: cmake --build server/build --config Release --target angelscript_oracle angel_lsp_tests -j 4
 
