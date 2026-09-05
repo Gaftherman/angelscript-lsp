@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <sstream>
 #include <regex>
+#include "parser/Keywords.h"
 
 namespace angel_lsp::features
 {
@@ -439,23 +440,22 @@ namespace angel_lsp::features
 
         const std::vector<std::string> &GetKeywords()
         {
-            static const std::vector<std::string> keywords = {
-                // Primitive Types
-                "void", "bool", "int", "int8", "int16", "int32", "int64",
-                "uint", "uint8", "uint16", "uint32", "uint64",
-                "float", "double", "string", "auto",
-                // Control Flow
-                "if", "else", "for", "foreach", "while", "do",
-                "switch", "case", "default", "break", "continue",
-                "return", "try", "catch",
-                // Declarations & Modifiers
-                "class", "interface", "enum", "funcdef", "typedef",
-                "namespace", "import", "from", "using", "mixin",
-                "const", "final", "abstract", "override", "explicit",
-                "private", "protected", "public", "shared", "external",
-                "property", "delete", "in", "out", "inout", "cast",
-                "null", "true", "false", "this", "super", "get", "set"
-            };
+            // Was a 63-word copy that left out `and`, `or`, `not`, `xor` and `is` - the word
+            // operators - so completion never offered them. Built from the language's own words
+            // now, plus `string`, which is not a keyword but is the type people reach for most and
+            // is worth offering next to the primitives.
+            static const std::vector<std::string> keywords = []
+            {
+                std::vector<std::string> all;
+                all.reserve(parser::keywords::k_reserved.size() +
+                            parser::keywords::k_contextual.size() + 1);
+                for (const std::string_view word : parser::keywords::k_reserved)
+                    all.emplace_back(word);
+                for (const std::string_view word : parser::keywords::k_contextual)
+                    all.emplace_back(word);
+                all.emplace_back("string");
+                return all;
+            }();
             return keywords;
         }
     }

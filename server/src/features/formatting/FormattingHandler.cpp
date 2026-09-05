@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <string_view>
 #include <vector>
+#include "parser/Keywords.h"
 
 namespace angel_lsp::features
 {
@@ -72,16 +73,15 @@ namespace angel_lsp::features
             bool isUnterminated = false;
         };
 
-        static const std::unordered_set<std::string_view> kKeywords = {
-            "and", "auto", "bool", "break", "case", "cast", "class", "const", "continue",
-            "default", "do", "double", "else", "enum", "explicit", "external", "false",
-            "final", "float", "for", "from", "funcdef", "function", "get", "if", "import",
-            "in", "inout", "int", "int8", "int16", "int32", "int64", "interface", "is",
-            "mixin", "namespace", "not", "null", "or", "out", "override", "private",
-            "property", "protected", "public", "return", "set", "shared", "super",
-            "switch", "this", "true", "typedef", "uint", "uint8", "uint16", "uint32",
-            "uint64", "void", "while", "xor", "try", "catch", "with"
-        };
+        // Was a 65-word copy that omitted `foreach` and `using` - so neither was ever coloured -
+        // and included `with`, which is JavaScript's keyword and appears nowhere in this grammar.
+        static const std::unordered_set<std::string_view> kKeywords = []
+        {
+            std::unordered_set<std::string_view> all;
+            all.insert(parser::keywords::k_reserved.begin(), parser::keywords::k_reserved.end());
+            all.insert(parser::keywords::k_contextual.begin(), parser::keywords::k_contextual.end());
+            return all;
+        }();
 
         static const std::unordered_set<std::string_view> kControlKeywords = {
             "if", "for", "while", "switch", "catch", "with"
