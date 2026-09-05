@@ -8,6 +8,7 @@
 #include <tree_sitter/api.h>
 #include "analysis/DiagnosticContext.h"
 #include "analysis/SymbolTable.h"
+#include "parser/Primitives.h"
 
 namespace angel_lsp::analysis
 {
@@ -97,11 +98,10 @@ namespace angel_lsp::analysis
      */
     [[nodiscard]] constexpr bool IsCorePrimitive(std::string_view typeName) noexcept
     {
-        return typeName == "void"   || typeName == "bool"   ||
-               typeName == "int"    || typeName == "int8"   || typeName == "int16"  || typeName == "int32"  || typeName == "int64" ||
-               typeName == "uint"   || typeName == "uint8"  || typeName == "uint16" || typeName == "uint32" || typeName == "uint64" ||
-               typeName == "float"  || typeName == "double" ||
-               typeName == "auto";
+        // `auto` is here and is not a primitive - it is not a type at all, but a stand-in for
+        // whatever the initializer produces. Callers that care about the difference test for it by
+        // name; see the handle-on-primitive rule in SemanticAnalyzer, which had to.
+        return parser::primitives::IsPrimitive(typeName) || typeName == "auto";
     }
 
     /**
@@ -113,16 +113,13 @@ namespace angel_lsp::analysis
      */
     [[nodiscard]] constexpr bool IsIntegerPrimitive(std::string_view typeName) noexcept
     {
-        return typeName == "int"  || typeName == "int8"  || typeName == "int16"  ||
-               typeName == "int32" || typeName == "int64" ||
-               typeName == "uint" || typeName == "uint8" || typeName == "uint16" ||
-               typeName == "uint32" || typeName == "uint64";
+        return parser::primitives::IsInteger(typeName);
     }
 
     /** @brief True for AngelScript's floating point primitives. */
     [[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
     {
-        return typeName == "float" || typeName == "double";
+        return parser::primitives::IsFloatingPoint(typeName);
     }
 
     /**

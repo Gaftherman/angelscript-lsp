@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <unordered_set>
+#include "parser/Primitives.h"
 
 namespace angel_lsp::utils
 {
@@ -95,12 +96,7 @@ namespace angel_lsp::utils
 
     bool IsPrimitiveType(const std::string &typeName)
     {
-        static const std::unordered_set<std::string> primitiveTypes = {
-            "int", "int8", "int16", "int32", "int64",
-            "uint", "uint8", "uint16", "uint32", "uint64",
-            "float", "double", "bool", "void"
-        };
-        return primitiveTypes.find(typeName) != primitiveTypes.end();
+        return parser::primitives::IsPrimitive(typeName);
     }
 
     namespace

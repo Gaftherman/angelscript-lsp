@@ -195,11 +195,21 @@ namespace angel_lsp::features
         /** @brief The primitive type names, for the contexts where only a type may be written. */
         const std::vector<std::string> &GetPrimitiveTypeNames()
         {
-            static const std::vector<std::string> primitives = {
-                "void", "bool", "int", "int8", "int16", "int32", "int64",
-                "uint", "uint8", "uint16", "uint32", "uint64",
-                "float", "double", "string", "array", "dictionary"
-            };
+            // The primitives, plus the three types the standard add-ons register. Those three are
+            // not primitives and are not in parser/Primitives.h for that reason; they are here
+            // because in a position where only a type may be written, they are what people reach
+            // for next.
+            static const std::vector<std::string> primitives = []
+            {
+                std::vector<std::string> all;
+                all.reserve(parser::primitives::k_all.size() + 3);
+                for (const std::string_view name : parser::primitives::k_all)
+                    all.emplace_back(name);
+                all.emplace_back("string");
+                all.emplace_back("array");
+                all.emplace_back("dictionary");
+                return all;
+            }();
             return primitives;
         }
 

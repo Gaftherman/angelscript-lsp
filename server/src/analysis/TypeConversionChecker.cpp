@@ -6,6 +6,7 @@
 #include <functional>
 #include <string_view>
 #include <vector>
+#include "parser/Primitives.h"
 
 namespace angel_lsp::analysis
 {
@@ -1998,18 +1999,7 @@ namespace angel_lsp::analysis
          */
         bool IsNumericPrimitiveName(std::string_view typeName)
         {
-            static constexpr std::string_view k_numeric[] = {
-                "int", "int8", "int16", "int32", "int64",
-                "uint", "uint8", "uint16", "uint32", "uint64",
-                "float", "double"
-            };
-
-            for (const std::string_view candidate : k_numeric)
-            {
-                if (typeName == candidate)
-                    return true;
-            }
-            return false;
+            return parser::primitives::IsNumeric(typeName);
         }
 
         /**
