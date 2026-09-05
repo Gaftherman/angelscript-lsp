@@ -238,12 +238,11 @@ namespace angel_lsp::analysis
                  parent = ts_node_parent(parent))
             {
                 const std::string_view type = NodeType(parent);
-                if (type == "lambda_expression" || type == "anonymous_function")
+                if (type == "lambda_expression")
                 {
                     return "";
                 }
-                if (type == "func_declaration" || type == "method_declaration" ||
-                    type == "function_definition")
+                if (type == "func_declaration")
                 {
                     TSNode returnType = ts_node_child_by_field_name(parent, "return_type", 11);
                     if (ts_node_is_null(returnType))

@@ -497,8 +497,6 @@ namespace angel_lsp::analysis
         // the '=' token and taking the next child.
         TSNode valueNode = ts_node_child_by_field_name(declaratorNode, "value", static_cast<uint32_t>(strlen("value")));
         if (ts_node_is_null(valueNode))
-            valueNode = ts_node_child_by_field_name(declaratorNode, "initializer", static_cast<uint32_t>(strlen("initializer")));
-        if (ts_node_is_null(valueNode))
         {
             uint32_t childCount = ts_node_child_count(declaratorNode);
             bool foundEq = false;

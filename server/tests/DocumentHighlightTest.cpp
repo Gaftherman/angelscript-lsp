@@ -441,3 +441,57 @@ TEST_CASE("DocumentHighlight - a local shadowing a field highlights only the loc
         CHECK(highlight.range.start.line >= 6);
     }
 }
+
+// =====================================================================================
+// The walk that finds the member expression a reference belongs to is bounded by a check for
+// `class_declaration || function_declaration`. This grammar has no node called
+// `function_declaration` - it is `func_declaration`, and `function_declaration` is the C grammar's
+// name - so half that boundary never held. Found by scripts/check-grammar-names.py.
+//
+// Whether it was ever observable is the question these cases answer, and the answer decides what
+// the fix has to be. A `member_expression` cannot enclose a function declaration, so climbing past
+// one only reaches the root; but a LAMBDA can sit inside one - `obj.Method(function() { ... })` -
+// and neither name in that check stops the walk there.
+// =====================================================================================
+
+TEST_CASE("DocumentHighlight - a name inside a lambda is not a member of the enclosing call")
+{
+    const std::string code = R"(
+class Holder
+{
+    int field;
+    void Each(Callback@ cb) {}
+}
+
+funcdef void Callback();
+
+void run()
+{
+    Holder h;
+    int field = 1;
+
+    h.Each(function()
+    {
+        field = 2;
+    });
+}
+)";
+
+    TestEnvironment env(code);
+
+    // The `field` written inside the lambda is the LOCAL - line 16, the assignment. It has nothing
+    // to do with Holder::field, and the only thing between it and `h.Each(...)` is the lambda.
+    const auto highlights = env.HighlightsAt(16, 8);
+    REQUIRE(highlights.has_value());
+
+    // The declaration on line 12 and the write on line 16: two, and only those. Picking up
+    // Holder::field on line 3 would mean the walk climbed out of the lambda and read the reference
+    // as a member of `h`.
+    for (const auto &highlight : *highlights)
+    {
+        INFO("highlight at line " << highlight.range.start.line);
+        CHECK(highlight.range.start.line != 3);
+    }
+
+    CHECK(highlights->size() == 2);
+}

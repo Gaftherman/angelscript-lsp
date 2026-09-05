@@ -156,9 +156,7 @@ namespace angel_lsp::features
             }
 
             std::string_view parentType = ts_node_type(parent);
-            if (parentType == "type_arguments" ||
-                parentType == "template_type" ||
-                parentType == "template_type_list" ||
+            if (parentType == "template_type_list" ||
                 parentType == "cast_expression" ||
                 parentType == "template_parameter_list")
             {
@@ -169,9 +167,7 @@ namespace angel_lsp::features
             if (!ts_node_is_null(grandParent))
             {
                 std::string_view grandParentType = ts_node_type(grandParent);
-                if (grandParentType == "type_arguments" ||
-                    grandParentType == "template_type" ||
-                    grandParentType == "template_type_list" ||
+                if (grandParentType == "template_type_list" ||
                     grandParentType == "cast_expression" ||
                     grandParentType == "template_parameter_list")
                 {
@@ -285,7 +281,7 @@ namespace angel_lsp::features
                     }
                 }
 
-                if (currType == "variable_declaration" || currType == "declaration")
+                if (currType == "variable_declaration")
                 {
                     for (TSNode anc = ts_node_parent(curr); !ts_node_is_null(anc); anc = ts_node_parent(anc))
                     {

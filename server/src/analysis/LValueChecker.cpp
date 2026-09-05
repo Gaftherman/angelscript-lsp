@@ -209,8 +209,7 @@ namespace angel_lsp::analysis
 
             // Literals are not lvalues
             if (nodeType == "number_literal" || nodeType == "string_literal" ||
-                nodeType == "boolean_literal" || nodeType == "null_literal" ||
-                nodeType == "character_literal")
+                nodeType == "boolean_literal" || nodeType == "null_literal")
             {
                 return false;
             }
@@ -234,7 +233,7 @@ namespace angel_lsp::analysis
             }
 
             // Member access, indexing, subscripts
-            if (nodeType == "member_expression" || nodeType == "index_expression" || nodeType == "subscript_expression")
+            if (nodeType == "member_expression" || nodeType == "index_expression")
             {
                 return true;
             }

@@ -126,6 +126,16 @@ jobs:
       - name: Configure CMake with the oracle
         run: cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release -DANGELLSP_BUILD_ORACLE=ON
 
+      # After the configure, unlike the two guards above, because it reads the grammar's own
+      # node-types.json and CMake is what fetches it. `nodeType == "function_definition"` compiles,
+      # runs, and is false forever - twenty names in this server were exactly that, taken from the
+      # C, C++ and JavaScript grammars. Nothing else notices: the parity audit reads a grammar gap
+      # as silence, because an unparseable construct costs a symbol rather than raising a
+      # diagnostic.
+      - name: Audit grammar names
+        working-directory: server
+        run: python scripts/check-grammar-names.py
+
       - name: Build the oracle and the test suite
         run: cmake --build server/build --config Release --target angelscript_oracle angel_lsp_tests -j 4
 

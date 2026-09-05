@@ -274,7 +274,7 @@ namespace angel_lsp::features
                 }
 
                 // Parameter declaration: void foo(int a)
-                if (pType == "parameter" || pType == "lambda_parameter")
+                if (pType == "parameter")
                 {
                     TSNode nameNode = ts_node_child_by_field_name(parent, "name", 4);
                     if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
@@ -998,7 +998,7 @@ namespace angel_lsp::features
                                         while (!ts_node_is_null(exprParent) && std::string_view(ts_node_type(exprParent)) != "member_expression")
                                         {
                                             if (std::string_view(ts_node_type(exprParent)) == "class_declaration" ||
-                                                std::string_view(ts_node_type(exprParent)) == "function_declaration")
+                                                std::string_view(ts_node_type(exprParent)) == "func_declaration")
                                             {
                                                 exprParent = TSNode{};
                                                 break;

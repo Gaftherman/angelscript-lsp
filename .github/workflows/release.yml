@@ -135,6 +135,12 @@ jobs:
       - name: Configure CMake with the oracle
         run: cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release -DANGELLSP_BUILD_ORACLE=ON
 
+      # After the configure, because it reads the grammar's own node-types.json and CMake is what
+      # fetches it. See the same step in ci.yml.
+      - name: Audit grammar names
+        working-directory: server
+        run: python scripts/check-grammar-names.py
+
       - name: Build the oracle and the test suite
         run: cmake --build server/build --config Release --target angelscript_oracle angel_lsp_tests -j 4
 

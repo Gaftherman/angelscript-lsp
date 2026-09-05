@@ -98,8 +98,6 @@ namespace angel_lsp::analysis
         TSSymbol m_symMixinDeclaration = 0;
         TSSymbol m_symSharedExternalModifier = 0;
         TSSymbol m_symVirtualProperty = 0;
-        TSSymbol m_symCompoundStatement = 0;
-        TSSymbol m_symBlock = 0;
         TSSymbol m_symBaseClassList = 0;
         TSSymbol m_symParameter = 0;
         TSSymbol m_symMemberExpression = 0;
@@ -113,7 +111,6 @@ namespace angel_lsp::analysis
         TSSymbol m_tokAt = 0;
         TSSymbol m_tokPrivate = 0;
         TSSymbol m_tokProtected = 0;
-        TSSymbol m_tokPublic = 0;
         TSSymbol m_tokShared = 0;
         TSSymbol m_tokMixin = 0;
         TSSymbol m_tokAbstract = 0;

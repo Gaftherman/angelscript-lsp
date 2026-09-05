@@ -451,7 +451,7 @@ namespace angel_lsp::analysis
                     return;
                 }
 
-                if (type == "variable_declaration" || type == "declaration_statement")
+                if (type == "variable_declaration")
                 {
                     TSNode typeNode = ts_node_child_by_field_name(node, "var_type", 8);
                     if (ts_node_is_null(typeNode))
@@ -485,10 +485,6 @@ namespace angel_lsp::analysis
 
                             std::string varName = NodeText(nameNode, m_request.sourceCode);
                             TSNode initNode = ts_node_child_by_field_name(child, "value", 5);
-                            if (ts_node_is_null(initNode))
-                            {
-                                initNode = ts_node_child_by_field_name(child, "initializer", 11);
-                            }
                             if (ts_node_is_null(initNode))
                             {
                                 uint32_t rawCount = ts_node_child_count(child);
