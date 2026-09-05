@@ -48,6 +48,8 @@ namespace angel_lsp::diagnostics::codes
     inline constexpr std::string_view CaseNotConstant = "as-err-case-not-constant";
     inline constexpr std::string_view DuplicateCaseValue = "as-err-duplicate-case-value";
     inline constexpr std::string_view DefaultMustBeLast = "as-err-default-must-be-last";
+    inline constexpr std::string_view IfEmptyStatement = "as-err-if-empty-statement";
+    inline constexpr std::string_view ElseEmptyStatement = "as-err-else-empty-statement";
 
     // Shared and Isolation Errors
     inline constexpr std::string_view SharedNotAllowedOnEntity = "as-err-shared-not-allowed-on-entity";

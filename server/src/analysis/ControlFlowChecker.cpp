@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <string>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -98,6 +99,50 @@ namespace angel_lsp::analysis
             const TSPoint start = ts_node_start_point(node);
             const TSPoint end = ts_node_end_point(node);
             ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg);
+        }
+
+        /**
+         * @brief `if (c);` and `else;` - a bare semicolon where the branch body belongs.
+         *
+         * AngelScript is stricter here than C++ and stricter than its own loops, which is the whole
+         * reason this is worth a rule. Measured, six probes:
+         *
+         *     if (c);          ERROR   If with empty statement
+         *     else;            ERROR   Else with empty statement
+         *     if (c) {}        accepted - an empty *block* is fine
+         *     while (c);       accepted
+         *     for (;;);        accepted
+         *     do; while (c);   accepted
+         *
+         * So it is `if` and `else` and nothing else. The mistake it catches is the one that started
+         * this: `if (cond); return true; else return false;` reads as a three-branch decision and is
+         * really an empty `if`, a `return` that always runs, and an `else` belonging to no `if`.
+         *
+         * Skipped inside a parse error, where a `;` in this position is as likely to be tree-sitter
+         * recovering as it is to be what somebody typed.
+         */
+        void CheckEmptyBranch(TSNode node, DiagnosticContext &ctx)
+        {
+            if (ts_node_has_error(node))
+            {
+                return;
+            }
+
+            const TSNode consequence = ts_node_child_by_field_name(node, "consequence", k_consequenceFieldLength);
+            if (!ts_node_is_null(consequence) && std::string_view(ts_node_type(consequence)) == ";")
+            {
+                const TSPoint start = ts_node_start_point(consequence);
+                const TSPoint end = ts_node_end_point(consequence);
+                ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-if-empty-statement");
+            }
+
+            const TSNode alternative = ts_node_child_by_field_name(node, "alternative", k_alternativeFieldLength);
+            if (!ts_node_is_null(alternative) && std::string_view(ts_node_type(alternative)) == ";")
+            {
+                const TSPoint start = ts_node_start_point(alternative);
+                const TSPoint end = ts_node_end_point(alternative);
+                ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-else-empty-statement");
+            }
         }
 
         // =====================================================================
@@ -268,6 +313,101 @@ namespace angel_lsp::analysis
             return false;
         }
 
+        /**
+         * @brief The number a case label stands for, when that can be known for certain.
+         *
+         * `enum E { A = 1, B = 1 }` gives two names to one number, and a switch dispatches on the
+         * number - so `case A:` and `case B:` are the same label twice and the compiler says so:
+         * "Duplicate switch case", measured. Comparing the labels as written never sees it.
+         *
+         * Narrow on purpose. Only a member whose value is written as a plain decimal integer is
+         * resolved; an implicit value (`enum E { A, B }` counts up from zero), an expression
+         * (`1 << 2`), or a hex literal returns nothing and the caller falls back to comparing the
+         * text. Getting this wrong in the other direction would mean reporting a duplicate that is
+         * not one, on code that compiles.
+         *
+         * Accepts both `A` and `E::A`; the qualifier is dropped before the lookup.
+         */
+        std::optional<long long> EnumeratorValue(std::string_view label, const SymbolTable &table)
+        {
+            // `meta_api::json::Type::Undefined` -> enum `Type`, member `Undefined`. The qualifier is
+            // not decoration: matching on the member name alone reported a duplicate in four real
+            // scripts, because some other enum in the same workspace happened to declare a member of
+            // the same name with a value that collided. Found by the corpus audit, on code that
+            // compiles.
+            std::string_view enumName;
+            if (const size_t sep = label.rfind("::"); sep != std::string_view::npos)
+            {
+                enumName = label.substr(0, sep);
+                label = label.substr(sep + 2);
+
+                if (const size_t outer = enumName.rfind("::"); outer != std::string_view::npos)
+                    enumName = enumName.substr(outer + 2);
+            }
+
+            if (label.empty())
+                return std::nullopt;
+
+            std::optional<long long> found;
+            size_t declaringEnums = 0;
+
+            table.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
+            {
+                for (const auto &sym : symbols)
+                {
+                    if (sym.type != SymbolType::Enum || !std::holds_alternative<EnumSignature>(sym.signature))
+                        continue;
+
+                    // Written with a qualifier: only the enum it names may answer.
+                    if (!enumName.empty() && sym.name != enumName)
+                        continue;
+
+                    for (const auto &member : sym.GetEnum().members)
+                    {
+                        if (member.name != label)
+                            continue;
+
+                        ++declaringEnums;
+
+                        // No value written means the compiler counts it up from the previous one.
+                        // Following that count is possible and is not done here: the value then
+                        // depends on every member before it, and a wrong number would mean claiming
+                        // a duplicate that is not one.
+                        if (member.value.empty())
+                            return;
+
+                        const std::string_view text(member.value);
+                        size_t index = 0;
+                        bool negative = false;
+                        if (text[index] == '-' || text[index] == '+')
+                        {
+                            negative = text[index] == '-';
+                            ++index;
+                        }
+                        if (index >= text.size())
+                            return;
+
+                        long long parsed = 0;
+                        for (; index < text.size(); ++index)
+                        {
+                            if (text[index] < '0' || text[index] > '9')
+                                return;
+                            parsed = parsed * 10 + (text[index] - '0');
+                        }
+
+                        found = negative ? -parsed : parsed;
+                    }
+                }
+            });
+
+            // Written without a qualifier and declared by more than one enum: which one this label
+            // means is the compiler's business and not knowable from here.
+            if (declaringEnums != 1)
+                return std::nullopt;
+
+            return found;
+        }
+
         void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext &ctx)
         {
             std::vector<std::string> seenValues;
@@ -380,13 +520,22 @@ namespace angel_lsp::analysis
                 std::string text(Trim(NodeText(value, sourceCode)));
                 if (!text.empty())
                 {
-                    if (std::find(seenValues.begin(), seenValues.end(), text) != seenValues.end())
+                    // Compared by the number where the number is knowable, by the text otherwise.
+                    // The key carries a marker so a label spelled `1` and a label named `A` that
+                    // happens to be 1 collide - which they do, in the compiler.
+                    std::string key = text;
+                    if (const auto resolved = EnumeratorValue(text, ctx.request.symbolTable))
+                        key = "#" + std::to_string(*resolved);
+                    else if (text.find_first_not_of("-+0123456789") == std::string::npos)
+                        key = "#" + std::to_string(std::stoll(text));
+
+                    if (std::find(seenValues.begin(), seenValues.end(), key) != seenValues.end())
                     {
                         EmitAtNode(value, ctx, "as-err-duplicate-case-value", text);
                     }
                     else
                     {
-                        seenValues.push_back(std::move(text));
+                        seenValues.push_back(std::move(key));
                     }
                 }
             }
@@ -614,6 +763,10 @@ namespace angel_lsp::analysis
             {
                 CheckSwitch(node, sourceCode, ctx);
                 ++state.switchDepth;
+            }
+            else if (type == "if_statement")
+            {
+                CheckEmptyBranch(node, ctx);
             }
 
             const uint32_t count = ts_node_named_child_count(node);

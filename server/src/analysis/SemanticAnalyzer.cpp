@@ -631,6 +631,14 @@ namespace angel_lsp::analysis
                     continue;
             }
 
+            // `else`, `catch`, `try` - a reserved keyword reaches this list only when tree-sitter
+            // recovered from a syntax error by reading a keyword as a name. The file is already
+            // reporting the syntax error; "Undeclared identifier 'else'" on top of it points at the
+            // wrong thing and reads like a second, unrelated problem. Measured on three recovery
+            // shapes: a dangling `else`, an `else` inside a loop body, and a `catch` with no `try`.
+            if (IsReservedKeyword(ref.name))
+                continue;
+
             ctx.EmitAtRange(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter,
                              "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
         }
@@ -865,6 +873,31 @@ namespace angel_lsp::analysis
                     ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
                                     "as-err-duplicate-symbol", def.name);
                 }
+
+                // `int int;` and `float float;`. The compiler answers "Expected '('" - it reads the
+                // keyword as a type and goes looking for the conversion `int(...)` - which reads
+                // like a parser complaint about punctuation and is really a rejection of a name
+                // that can never be a name. Measured, and this analyzer said only that the variable
+                // was never used.
+                //
+                // The same check already guards a class name and a typedef name; it was never asked
+                // about a variable. The list is the language's own keywords, so no host can register
+                // a type that makes one of them legal.
+                //
+                // Gated on the declared type being one this analyzer knows, and that gate is the
+                // whole reason the rule is safe. A keyword name never reaches the scope tree from
+                // code somebody wrote as a declaration - it reaches it from tree-sitter recovering
+                // out of a syntax error and reading two unrelated tokens as one. The corpus audit
+                // found exactly that, once in 1,061 scripts: a dangling `else return false;` parses
+                // as a variable `return` of type `else`, and the file was already reporting a syntax
+                // error and an unknown type `else` on the same line. Requiring a known type keeps
+                // `int int;` and drops the pile-on.
+                if (IsReservedKeyword(def.name) && def.kind == LocalDefinitionKind::Variable &&
+                    IsKnownType(CleanBaseType(def.typeName), ctx))
+                {
+                    ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                                    "as-err-reserved-keyword-name", def.name);
+                }
             }
 
             for (const auto &def : scope->definitions)
@@ -948,7 +981,12 @@ namespace angel_lsp::analysis
                                 }
                             }
                         }
-                        else if (!base.empty() && base != "auto" && !IsKnownType(base, ctx))
+                        // `Unknown type 'else'` - the other half of the recovery cascade the
+                        // undeclared-identifier rule already refuses to join. A keyword in a type
+                        // position means tree-sitter recovered from a syntax error, which the file
+                        // is already reporting.
+                        else if (!base.empty() && base != "auto" && !IsReservedKeyword(base) &&
+                                 !IsKnownType(base, ctx))
                         {
                             ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar,
                                             "as-err-unresolved-type", base, DiagnosticSeverity::Error);
