@@ -3289,6 +3289,50 @@ namespace
      * The last, not any: typing produces one per analysis, and only the final one describes the
      * document the assertions are about.
      */
+    /**
+     * @brief How many publishDiagnostics frames for one file the server has written so far.
+     *
+     * Exists because "the stream went quiet" is not the same statement as "the server finished".
+     * A step's analysis is debounced by 200ms and then has to run, so on a loaded machine the
+     * output is quiet for the simple reason that the work has not started - and a harness that
+     * reads at that moment gets the PREVIOUS step's diagnostics, which is a green test locally and
+     * a failure on CI. That is exactly what happened: Windows CI, four ctest jobs in parallel, and
+     * the assertion reported step 1's unbalanced-brace error against step 2's expectations.
+     *
+     * Counting publishes turns the wait into a statement about what arrived rather than about what
+     * did not.
+     */
+    size_t CountPublishedFor(const std::string &output, const std::string &uriFragment)
+    {
+        size_t count = 0;
+        size_t pos = 0;
+        while (pos < output.size())
+        {
+            const size_t headerStart = output.find("Content-Length:", pos);
+            if (headerStart == std::string::npos)
+                break;
+
+            const size_t bodyStart = output.find("\r\n\r\n", headerStart);
+            if (bodyStart == std::string::npos)
+                break;
+
+            const size_t contentStart = bodyStart + 4;
+            const size_t nextHeader = output.find("Content-Length:", contentStart);
+            const size_t bodyLength =
+                (nextHeader == std::string::npos) ? (output.size() - contentStart) : (nextHeader - contentStart);
+
+            const std::string frame = output.substr(contentStart, bodyLength);
+            if (frame.find("textDocument/publishDiagnostics") != std::string::npos &&
+                frame.find(uriFragment) != std::string::npos)
+            {
+                ++count;
+            }
+
+            pos = (nextHeader == std::string::npos) ? output.size() : nextHeader;
+        }
+        return count;
+    }
+
     std::string LastPublishedFor(const std::string &output, const std::string &uriFragment)
     {
         std::string last;
@@ -3971,6 +4015,10 @@ TEST_CASE("Server - What it says while the code is still being written")
         // handled. Reserved up front: the lambdas capture a pointer into it.
         std::vector<std::string> published(scenario.steps.size());
 
+        // Publishes for main.as seen before the current step's keystrokes. Carried across steps so
+        // each wait can tell a publish that answers THIS step from one left over from the last.
+        size_t publishesBefore = 0;
+
         int version = 2;
         int requestId = 2000;
 
@@ -4002,30 +4050,49 @@ TEST_CASE("Server - What it says while the code is still being written")
                         R"(,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
                         fixture.Uri("main.as") + R"("}}})");
 
-            stream.PushAction([&stream, &published, index, &fixture]()
+            stream.PushAction([&stream, &published, &publishesBefore, index, &fixture]()
             {
-                // Analysis is debounced, so this waits for the stream to go quiet rather than for a
-                // fixed delay - the same reasoning as the typing test above.
-                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+                // Two conditions, and the first one is the fix. Waiting only for the stream to go
+                // quiet reads "nothing has been written lately", which is true both when the server
+                // has finished and when its debounced analysis has not started - and on a loaded
+                // machine the second is what happens. Windows CI, four ctest jobs in parallel: this
+                // read step 1's diagnostics and checked them against step 2's expectations.
+                //
+                // So wait for a publish that did not exist before this keystroke, and only then for
+                // the stream to settle, which catches a later republish. The deadline is the
+                // backstop; reaching it means something is genuinely wrong rather than slow.
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
                 size_t lastSize = 0;
                 auto quietSince = std::chrono::steady_clock::now();
+                bool sawNewPublish = false;
 
                 while (std::chrono::steady_clock::now() < deadline)
                 {
-                    const size_t size = stream.Output().size();
+                    const std::string output = stream.Output();
+
+                    if (!sawNewPublish && CountPublishedFor(output, "main.as") > publishesBefore)
+                    {
+                        sawNewPublish = true;
+                        quietSince = std::chrono::steady_clock::now();
+                    }
+
+                    const size_t size = output.size();
                     if (size != lastSize)
                     {
                         lastSize = size;
                         quietSince = std::chrono::steady_clock::now();
                     }
-                    else if (std::chrono::steady_clock::now() - quietSince > std::chrono::milliseconds(400))
+                    else if (sawNewPublish &&
+                             std::chrono::steady_clock::now() - quietSince > std::chrono::milliseconds(400))
                     {
                         break;
                     }
+
                     std::this_thread::sleep_for(std::chrono::milliseconds(20));
                 }
 
                 published[index] = LastPublishedFor(stream.Output(), "main.as");
+                publishesBefore = CountPublishedFor(stream.Output(), "main.as");
             });
         }
 
