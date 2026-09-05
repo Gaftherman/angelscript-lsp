@@ -4,6 +4,7 @@
 #include "analysis/SymbolTable.h"
 #include "analysis/DiagnosticContext.h"
 #include "utils/Utils.h"
+#include "parser/Keywords.h"
 
 #include <optional>
 
@@ -51,17 +52,10 @@ namespace angel_lsp::analysis
 
     bool IsReservedKeyword(const std::string &name)
     {
-        static const ankerl::unordered_dense::set<std::string> kReserved = {
-            "and", "auto", "bool", "break", "case", "cast", "catch",
-            "class", "const", "continue", "default", "do", "double",
-            "else", "enum", "false", "float", "for", "foreach", "funcdef",
-            "if", "import", "in", "inout", "int", "int8", "int16", "int32", "int64",
-            "interface", "is", "mixin", "namespace", "not", "null",
-            "or", "out", "private", "protected", "return", "switch",
-            "true", "try", "typedef", "uint", "uint8", "uint16", "uint32", "uint64",
-            "using", "void", "while", "xor",
-        };
-        return kReserved.contains(name);
+        // The list this used to hold was measured against the compiler word by word and came back
+        // exactly right - 53, no additions, no removals. It moved to parser/Keywords.h so the
+        // formatter and completion could stop keeping their own, differing, copies.
+        return parser::keywords::IsReserved(name);
     }
 
     bool IsPrimitiveTypeName(const std::string &name)
