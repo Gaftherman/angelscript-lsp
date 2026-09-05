@@ -28,6 +28,16 @@ namespace angel_lsp::analysis
     EngineProfileKind ParseEngineProfileKind(std::string_view name);
 
     /**
+     * @brief Whether a profile name is one this server knows, under any of its spellings.
+     *
+     * ParseEngineProfileKind answers Standard for a name it does not recognise, which is the right
+     * profile to fall back to and the wrong thing to do silently: a typo produced a workspace with
+     * no host types and no explanation. The two are separate so the fallback stays and the caller
+     * can still tell the user.
+     */
+    bool IsKnownEngineProfileName(std::string_view name);
+
+    /**
      * @brief Converts an EngineProfileKind to its canonical string identifier.
      * @param kind The engine profile kind enum.
      * @return String view of the canonical name.

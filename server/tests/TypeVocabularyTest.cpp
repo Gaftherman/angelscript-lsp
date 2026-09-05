@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "analysis/SemanticHelpers.h"
+#include "analysis/EngineProfiles.h"
 #include "parser/Keywords.h"
 #include "parser/Primitives.h"
 
@@ -108,4 +109,42 @@ TEST_CASE("Vocabulary - a qualification does not hide a name")
 
     // Not a qualification: a single colon is left alone.
     CHECK(analysis::LastScopeSegment("a:b") == "a:b");
+}
+
+// =====================================================================================
+// Engine profile names.
+//
+// ParseEngineProfileKind answers Standard for a name it does not recognise. That is the right
+// profile to fall back to and was the wrong thing to do in silence: a mistyped `svencop` loaded the
+// standard library, none of the user's host types resolved, and nothing on screen connected the two.
+// The fallback stays; IsKnownEngineProfileName is what lets the caller say it happened.
+// =====================================================================================
+
+TEST_CASE("EngineProfiles - a misspelled profile name is recognisable as misspelled")
+{
+    using namespace angel_lsp::analysis;
+
+    // Every spelling the parser accepts must be known, or the warning fires on a valid name.
+    for (const std::string_view good : { "none", "standard", "std", "default",
+                                         "svencoop", "sven", "sven_coop", "svenco-op",
+                                         "urho3d", "urho", "atomic",
+                                         "openxray", "xray", "stalker",
+                                         "ootp", "ootpbaseball",
+                                         "auto", "detect" })
+    {
+        CAPTURE(good);
+        CHECK(IsKnownEngineProfileName(good));
+    }
+
+    // Case is not the user's problem: the parser lowercases, so this must too.
+    CHECK(IsKnownEngineProfileName("SvenCoop"));
+    CHECK(IsKnownEngineProfileName("STANDARD"));
+
+    // The typos that started this, and what the parser does with them.
+    for (const std::string_view bad : { "svencop", "urho4d", "sven coop", "openxray2", "" })
+    {
+        CAPTURE(bad);
+        CHECK_FALSE(IsKnownEngineProfileName(bad));
+        CHECK(ParseEngineProfileKind(bad) == EngineProfileKind::Standard);
+    }
 }
