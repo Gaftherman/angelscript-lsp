@@ -5,6 +5,7 @@
 #include <tuple>
 #include <unordered_set>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::features
 {
@@ -266,7 +267,7 @@ namespace angel_lsp::features
                 // Variable declaration: int x = 10;
                 if (pType == "variable_declarator")
                 {
-                    TSNode nameNode = ts_node_child_by_field_name(parent, "name", 4);
+                    TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
                     if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
                     {
                         return lsp::DocumentHighlightKind::Write;
@@ -276,7 +277,7 @@ namespace angel_lsp::features
                 // Parameter declaration: void foo(int a)
                 if (pType == "parameter")
                 {
-                    TSNode nameNode = ts_node_child_by_field_name(parent, "name", 4);
+                    TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
                     if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
                     {
                         return lsp::DocumentHighlightKind::Write;
@@ -286,7 +287,7 @@ namespace angel_lsp::features
                 // Foreach variable: foreach(auto item : list)
                 if (pType == "foreach_variable")
                 {
-                    TSNode nameNode = ts_node_child_by_field_name(parent, "name", 4);
+                    TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
                     if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
                     {
                         return lsp::DocumentHighlightKind::Write;
@@ -296,7 +297,7 @@ namespace angel_lsp::features
                 // Function / method / funcdef declaration name: void Foo()
                 if (pType == "func_declaration" || pType == "interface_method" || pType == "funcdef_declaration")
                 {
-                    TSNode nameNode = ts_node_child_by_field_name(parent, "name", 4);
+                    TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
                     if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
                     {
                         return lsp::DocumentHighlightKind::Text;
@@ -308,7 +309,7 @@ namespace angel_lsp::features
                     pType == "interface_declaration" || pType == "namespace_declaration" ||
                     pType == "enum_declaration" || pType == "typedef_declaration")
                 {
-                    TSNode nameNode = ts_node_child_by_field_name(parent, "name", 4);
+                    TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
                     if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
                     {
                         return lsp::DocumentHighlightKind::Text;
@@ -318,7 +319,7 @@ namespace angel_lsp::features
                 // Enum member: State_Idle
                 if (pType == "enum_member")
                 {
-                    TSNode nameNode = ts_node_child_by_field_name(parent, "name", 4);
+                    TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
                     if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
                     {
                         return lsp::DocumentHighlightKind::Text;
@@ -361,7 +362,7 @@ namespace angel_lsp::features
                 // 1. Postfix increment / decrement: x++ / x--
                 if (cType == "postfix_expression")
                 {
-                    TSNode operand = ts_node_child_by_field_name(cur, "operand", 7);
+                    TSNode operand = parser::GetChildByField(cur, parser::fields::Operand);
                     if (!ts_node_is_null(operand) && IsNodeContained(leaf, operand))
                     {
                         return lsp::DocumentHighlightKind::Write;
@@ -371,7 +372,7 @@ namespace angel_lsp::features
                 // 2. Unary prefix increment / decrement: ++x / --x
                 if (cType == "unary_expression")
                 {
-                    TSNode opNode = ts_node_child_by_field_name(cur, "operator", 8);
+                    TSNode opNode = parser::GetChildByField(cur, parser::fields::Operator);
                     if (!ts_node_is_null(opNode))
                     {
                         uint32_t opStart = ts_node_start_byte(opNode);
@@ -381,7 +382,7 @@ namespace angel_lsp::features
                             std::string opText = sourceCode.substr(opStart, opEnd - opStart);
                             if (opText == "++" || opText == "--")
                             {
-                                TSNode operand = ts_node_child_by_field_name(cur, "operand", 7);
+                                TSNode operand = parser::GetChildByField(cur, parser::fields::Operand);
                                 if (!ts_node_is_null(operand) && IsNodeContained(leaf, operand))
                                 {
                                     return lsp::DocumentHighlightKind::Write;
@@ -394,14 +395,14 @@ namespace angel_lsp::features
                 // 3. Assignment expression: left = right, left += right, etc.
                 if (cType == "assignment_expression")
                 {
-                    TSNode leftNode = ts_node_child_by_field_name(cur, "left", 4);
+                    TSNode leftNode = parser::GetChildByField(cur, parser::fields::Left);
                     if (!ts_node_is_null(leftNode) && IsNodeContained(leaf, leftNode))
                     {
                         // Check if LHS is a member expression: obj.field = value
                         if (std::string_view(ts_node_type(leftNode)) == "member_expression")
                         {
-                            TSNode objNode = ts_node_child_by_field_name(leftNode, "object", 6);
-                            TSNode memNode = ts_node_child_by_field_name(leftNode, "member", 6);
+                            TSNode objNode = parser::GetChildByField(leftNode, parser::fields::Object);
+                            TSNode memNode = parser::GetChildByField(leftNode, parser::fields::Member);
 
                             if (!ts_node_is_null(objNode) && IsNodeContained(leaf, objNode))
                             {
@@ -418,7 +419,7 @@ namespace angel_lsp::features
                         // Check if LHS is an index expression: arr[i] = value
                         if (std::string_view(ts_node_type(leftNode)) == "index_expression")
                         {
-                            TSNode objNode = ts_node_child_by_field_name(leftNode, "object", 6);
+                            TSNode objNode = parser::GetChildByField(leftNode, parser::fields::Object);
                             if (!ts_node_is_null(objNode) && IsNodeContained(leaf, objNode))
                             {
                                 // Array receiver is Read (reading handle to update element)
@@ -432,7 +433,7 @@ namespace angel_lsp::features
                     }
 
                     // If inside RHS, it is a Read
-                    TSNode rightNode = ts_node_child_by_field_name(cur, "right", 5);
+                    TSNode rightNode = parser::GetChildByField(cur, parser::fields::Right);
                     if (!ts_node_is_null(rightNode) && IsNodeContained(leaf, rightNode))
                     {
                         return lsp::DocumentHighlightKind::Read;
@@ -469,7 +470,7 @@ namespace angel_lsp::features
 
                         if (foundArg)
                         {
-                            TSNode funcNode = ts_node_child_by_field_name(callNode, "function", 8);
+                            TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
                             if (!ts_node_is_null(funcNode))
                             {
                                 uint32_t fStart = ts_node_start_byte(funcNode);
@@ -481,8 +482,8 @@ namespace angel_lsp::features
 
                                     if (std::string_view(ts_node_type(funcNode)) == "member_expression")
                                     {
-                                        TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
-                                        TSNode objNode = ts_node_child_by_field_name(funcNode, "object", 6);
+                                        TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+                                        TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
                                         if (!ts_node_is_null(memNode))
                                         {
                                             uint32_t mStart = ts_node_start_byte(memNode);
@@ -615,11 +616,11 @@ namespace angel_lsp::features
         bool isExplicitMemberAccess = false;
         if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "member_expression")
         {
-            TSNode memNode = ts_node_child_by_field_name(parent, "member", 6);
+            TSNode memNode = parser::GetChildByField(parent, parser::fields::Member);
             if (!ts_node_is_null(memNode) && (ts_node_eq(memNode, node) || ts_node_start_byte(memNode) == ts_node_start_byte(node)))
             {
                 isExplicitMemberAccess = true;
-                TSNode objectNode = ts_node_child_by_field_name(parent, "object", 6);
+                TSNode objectNode = parser::GetChildByField(parent, parser::fields::Object);
                 if (!ts_node_is_null(objectNode))
                 {
                     uint32_t objStart = ts_node_start_byte(objectNode);
@@ -1008,7 +1009,7 @@ namespace angel_lsp::features
 
                                         if (!ts_node_is_null(exprParent))
                                         {
-                                            TSNode objNode = ts_node_child_by_field_name(exprParent, "object", 6);
+                                            TSNode objNode = parser::GetChildByField(exprParent, parser::fields::Object);
                                             if (ts_node_is_null(objNode) && ts_node_named_child_count(exprParent) > 0)
                                             {
                                                 objNode = ts_node_named_child(exprParent, 0);

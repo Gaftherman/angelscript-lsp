@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <unordered_set>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::features
 {
@@ -84,7 +85,7 @@ namespace angel_lsp::features
             const InlayHintRequest &request,
             size_t numArgs)
         {
-            TSNode funcNode = ts_node_child_by_field_name(callNode, "function", 8);
+            TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
             if (ts_node_is_null(funcNode))
             {
                 uint32_t childCount = ts_node_child_count(callNode);
@@ -104,8 +105,8 @@ namespace angel_lsp::features
 
             if (funcType == "member_expression")
             {
-                TSNode objNode = ts_node_child_by_field_name(funcNode, "object", 6);
-                TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
+                TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+                TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
 
                 if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
                 {
@@ -417,7 +418,7 @@ namespace angel_lsp::features
 
             if (type == "functional_cast_expression")
             {
-                TSNode typeNode = ts_node_child_by_field_name(exprNode, "type", 4);
+                TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
                 if (!ts_node_is_null(typeNode))
                 {
                     return GetNodeText(typeNode, request.sourceCode);
@@ -426,7 +427,7 @@ namespace angel_lsp::features
 
             if (type == "cast_expression")
             {
-                TSNode typeNode = ts_node_child_by_field_name(exprNode, "type", 4);
+                TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
                 if (!ts_node_is_null(typeNode))
                 {
                     return GetNodeText(typeNode, request.sourceCode);
@@ -435,7 +436,7 @@ namespace angel_lsp::features
 
             if (type == "construct_call_expression")
             {
-                TSNode typeNode = ts_node_child_by_field_name(exprNode, "type", 4);
+                TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
                 if (!ts_node_is_null(typeNode))
                 {
                     std::string cType = GetNodeText(typeNode, request.sourceCode);
@@ -455,7 +456,7 @@ namespace angel_lsp::features
 
             if (type == "call_expression")
             {
-                TSNode funcNode = ts_node_child_by_field_name(exprNode, "function", 8);
+                TSNode funcNode = parser::GetChildByField(exprNode, parser::fields::Function);
                 if (ts_node_is_null(funcNode))
                 {
                     uint32_t childCount = ts_node_child_count(exprNode);
@@ -470,8 +471,8 @@ namespace angel_lsp::features
                     std::string_view fType = ts_node_type(funcNode);
                     if (fType == "member_expression")
                     {
-                        TSNode objNode = ts_node_child_by_field_name(funcNode, "object", 6);
-                        TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
+                        TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+                        TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
                         if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
                         {
                             std::string objText = GetNodeText(objNode, request.sourceCode);
@@ -555,8 +556,8 @@ namespace angel_lsp::features
 
             if (type == "member_expression")
             {
-                TSNode objNode = ts_node_child_by_field_name(exprNode, "object", 6);
-                TSNode memNode = ts_node_child_by_field_name(exprNode, "member", 6);
+                TSNode objNode = parser::GetChildByField(exprNode, parser::fields::Object);
+                TSNode memNode = parser::GetChildByField(exprNode, parser::fields::Member);
                 if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
                 {
                     std::string objText = GetNodeText(objNode, request.sourceCode);
@@ -624,7 +625,7 @@ namespace angel_lsp::features
 
             if (type == "binary_expression")
             {
-                TSNode opNode = ts_node_child_by_field_name(exprNode, "operator", 8);
+                TSNode opNode = parser::GetChildByField(exprNode, parser::fields::Operator);
                 std::string op = GetNodeText(opNode, request.sourceCode);
 
                 if (op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=" ||
@@ -634,8 +635,8 @@ namespace angel_lsp::features
                     return "bool";
                 }
 
-                TSNode left = ts_node_child_by_field_name(exprNode, "left", 4);
-                TSNode right = ts_node_child_by_field_name(exprNode, "right", 5);
+                TSNode left = parser::GetChildByField(exprNode, parser::fields::Left);
+                TSNode right = parser::GetChildByField(exprNode, parser::fields::Right);
                 std::string leftT = DeduceExpressionType(left, request);
                 std::string rightT = DeduceExpressionType(right, request);
 
@@ -651,9 +652,9 @@ namespace angel_lsp::features
 
             if (type == "unary_expression")
             {
-                TSNode opNode = ts_node_child_by_field_name(exprNode, "operator", 8);
+                TSNode opNode = parser::GetChildByField(exprNode, parser::fields::Operator);
                 std::string op = GetNodeText(opNode, request.sourceCode);
-                TSNode operand = ts_node_child_by_field_name(exprNode, "operand", 7);
+                TSNode operand = parser::GetChildByField(exprNode, parser::fields::Operand);
 
                 if (op == "!" || op == "not")
                 {
@@ -673,7 +674,7 @@ namespace angel_lsp::features
 
             if (type == "postfix_expression")
             {
-                TSNode operand = ts_node_child_by_field_name(exprNode, "operand", 7);
+                TSNode operand = parser::GetChildByField(exprNode, parser::fields::Operand);
                 return DeduceExpressionType(operand, request);
             }
 
@@ -703,7 +704,7 @@ namespace angel_lsp::features
             // 1. Process call_expression for parameter name hints
             if (nodeType == "call_expression")
             {
-                TSNode argListNode = ts_node_child_by_field_name(node, "arguments", 9);
+                TSNode argListNode = parser::GetChildByField(node, parser::fields::Arguments);
                 if (ts_node_is_null(argListNode))
                 {
                     uint32_t childCount = ts_node_child_count(node);
@@ -769,7 +770,7 @@ namespace angel_lsp::features
             // 2. Process variable_declaration for auto type deduction hints
             if (nodeType == "variable_declaration")
             {
-                TSNode varTypeNode = ts_node_child_by_field_name(node, "var_type", 8);
+                TSNode varTypeNode = parser::GetChildByField(node, parser::fields::VarType);
                 if (ts_node_is_null(varTypeNode))
                 {
                     uint32_t count = ts_node_child_count(node);
@@ -795,7 +796,7 @@ namespace angel_lsp::features
                             TSNode child = ts_node_child(node, i);
                             if (std::string_view(ts_node_type(child)) == "variable_declarator")
                             {
-                                TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
+                                TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
                                 if (ts_node_is_null(nameNode))
                                 {
                                     continue;
@@ -805,10 +806,10 @@ namespace angel_lsp::features
                                 // and "arguments" for a constructor call such as "Player p(1, 2)".
                                 // This used to be a manual child walk hunting for the "=" token,
                                 // which is what an unnamed initialiser forced.
-                                TSNode initExpr = ts_node_child_by_field_name(child, "value", 5);
+                                TSNode initExpr = parser::GetChildByField(child, parser::fields::Value);
                                 if (ts_node_is_null(initExpr))
                                 {
-                                    initExpr = ts_node_child_by_field_name(child, "arguments", 9);
+                                    initExpr = parser::GetChildByField(child, parser::fields::Arguments);
                                 }
 
 

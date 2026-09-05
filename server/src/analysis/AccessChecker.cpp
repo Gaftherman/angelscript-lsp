@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -267,8 +268,8 @@ namespace angel_lsp::analysis
         void CheckMemberExpression(TSNode node, const AccessCheckRequest &request,
                                    const Scope *scope, DiagnosticContext &ctx)
         {
-            TSNode objectNode = ts_node_child_by_field_name(node, "object", k_objectFieldLength);
-            TSNode memberNode = ts_node_child_by_field_name(node, "member", k_memberFieldLength);
+            TSNode objectNode = parser::GetChildByField(node, parser::fields::Object);
+            TSNode memberNode = parser::GetChildByField(node, parser::fields::Member);
             if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
             {
                 return;
@@ -392,7 +393,7 @@ namespace angel_lsp::analysis
             // Skip if this is the member field of a member_expression (e.g. the 'b' in 'a.b')
             if (parentType == "member_expression")
             {
-                TSNode memberField = ts_node_child_by_field_name(parent, "member", k_memberFieldLength);
+                TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
                 if (ts_node_eq(node, memberField))
                 {
                     return;
@@ -407,7 +408,7 @@ namespace angel_lsp::analysis
                 parentType == "typedef_declaration" || parentType == "funcdef_declaration" ||
                 parentType == "import_declaration" || parentType == "mixin_declaration")
             {
-                TSNode nameField = ts_node_child_by_field_name(parent, "name", 4);
+                TSNode nameField = parser::GetChildByField(parent, parser::fields::Name);
                 if (ts_node_eq(node, nameField))
                 {
                     return;

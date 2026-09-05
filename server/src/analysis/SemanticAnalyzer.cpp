@@ -18,6 +18,7 @@
 #include "analysis/rules/VariableRules.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -269,7 +270,7 @@ namespace angel_lsp::analysis
         // which reading was intended, and the declared type is what makes the two distinguishable.
         if (engineNodeType == "variable_declaration" && ctx.request.CharacterLiteralMode() == 0)
         {
-            const TSNode typeNode = ts_node_child_by_field_name(node, "var_type", 8);
+            const TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
             if (!ts_node_is_null(typeNode))
             {
                 const std::string declared = CleanBaseType(GetNodeText(typeNode, ctx.request.sourceCode));
@@ -282,7 +283,7 @@ namespace angel_lsp::analysis
                         if (std::string_view(ts_node_type(declarator)) != "variable_declarator")
                             continue;
 
-                        const TSNode value = ts_node_child_by_field_name(declarator, "value", 5);
+                        const TSNode value = parser::GetChildByField(declarator, parser::fields::Value);
                         if (ts_node_is_null(value) ||
                             std::string_view(ts_node_type(value)) != "string_literal")
                             continue;
@@ -316,11 +317,11 @@ namespace angel_lsp::analysis
             ctx.request.diagnostics && ctx.request.diagnostics->reportIntegerDivision &&
             !ctx.request.DisablesIntegerDivision())
         {
-            const TSNode op = ts_node_child_by_field_name(node, "operator", 8);
+            const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
             if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "/")
             {
-                const TSNode left = ts_node_child_by_field_name(node, "left", 4);
-                const TSNode right = ts_node_child_by_field_name(node, "right", 5);
+                const TSNode left = parser::GetChildByField(node, parser::fields::Left);
+                const TSNode right = parser::GetChildByField(node, parser::fields::Right);
 
                 // Integer LITERALS on both sides. Deliberately not variables: their types would have
                 // to be resolved, and a false hint here is noise on every division in the file.
@@ -369,7 +370,7 @@ namespace angel_lsp::analysis
                 // `scoped_identifier` as well as `identifier`, because the grammar wraps every bare
                 // identifier expression in one - matching only the inner node found nothing, which
                 // is how the first version of this rule silently never fired.
-                const TSNode target = ts_node_child_by_field_name(argument, "left", 4);
+                const TSNode target = parser::GetChildByField(argument, parser::fields::Left);
                 if (ts_node_is_null(target))
                     continue;
                 const std::string_view targetType = ts_node_type(target);
@@ -396,8 +397,8 @@ namespace angel_lsp::analysis
         // that turned it on.
         if (engineNodeType == "assignment_expression" && ctx.request.DisallowsValueAssignForRef())
         {
-            const TSNode op = ts_node_child_by_field_name(node, "operator", 8);
-            const TSNode target = ts_node_child_by_field_name(node, "left", 4);
+            const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
+            const TSNode target = parser::GetChildByField(node, parser::fields::Left);
 
             // Every compound operator is arithmetic on a value, so only a bare `=` is a candidate.
             if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "=" &&
@@ -411,7 +412,7 @@ namespace angel_lsp::analysis
                 bool isHandleAssignment = false;
                 if (std::string_view(ts_node_type(target)) == "unary_expression")
                 {
-                    const TSNode prefix = ts_node_child_by_field_name(target, "operator", 8);
+                    const TSNode prefix = parser::GetChildByField(target, parser::fields::Operator);
                     isHandleAssignment = !ts_node_is_null(prefix) &&
                                          std::string_view(ts_node_type(prefix)) == "@";
                 }

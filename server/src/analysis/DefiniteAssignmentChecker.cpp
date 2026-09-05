@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -133,7 +134,7 @@ namespace angel_lsp::analysis
                 m_trackedLocals.clear();
                 m_reportedReads.clear();
 
-                TSNode bodyNode = ts_node_child_by_field_name(funcNode, "body", 4);
+                TSNode bodyNode = parser::GetChildByField(funcNode, parser::fields::Body);
                 if (ts_node_is_null(bodyNode))
                 {
                     uint32_t count = ts_node_named_child_count(funcNode);
@@ -204,9 +205,9 @@ namespace angel_lsp::analysis
 
                 if (type == "assignment_expression")
                 {
-                    TSNode left = ts_node_child_by_field_name(node, "left", 4);
-                    TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
-                    TSNode right = ts_node_child_by_field_name(node, "right", 5);
+                    TSNode left = parser::GetChildByField(node, parser::fields::Left);
+                    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+                    TSNode right = parser::GetChildByField(node, parser::fields::Right);
                     std::string op = NodeText(opNode, m_request.sourceCode);
 
                     // Evaluate right-hand side reads first
@@ -233,8 +234,8 @@ namespace angel_lsp::analysis
 
                 if (type == "call_expression")
                 {
-                    TSNode funcNode = ts_node_child_by_field_name(node, "function", 8);
-                    TSNode argsNode = ts_node_child_by_field_name(node, "arguments", 9);
+                    TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
+                    TSNode argsNode = parser::GetChildByField(node, parser::fields::Arguments);
 
                     // Check callee expression reads
                     CheckExpressionReads(funcNode, state);
@@ -248,8 +249,8 @@ namespace angel_lsp::analysis
                     std::string_view funcType = ts_node_type(funcNode);
                     if (funcType == "member_expression")
                     {
-                        TSNode objNode = ts_node_child_by_field_name(funcNode, "object", 6);
-                        TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
+                        TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+                        TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
                         if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
                         {
                             // Resolved in the scope the call is written in, not at the root.
@@ -406,7 +407,7 @@ namespace angel_lsp::analysis
 
                 if (type == "member_expression")
                 {
-                    TSNode objNode = ts_node_child_by_field_name(node, "object", 6);
+                    TSNode objNode = parser::GetChildByField(node, parser::fields::Object);
                     CheckExpressionReads(objNode, state);
                     return;
                 }
@@ -453,10 +454,10 @@ namespace angel_lsp::analysis
 
                 if (type == "variable_declaration")
                 {
-                    TSNode typeNode = ts_node_child_by_field_name(node, "var_type", 8);
+                    TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
                     if (ts_node_is_null(typeNode))
                     {
-                        typeNode = ts_node_child_by_field_name(node, "type", 4);
+                        typeNode = parser::GetChildByField(node, parser::fields::Type);
                     }
 
                     bool isPrimitive = false;
@@ -473,7 +474,7 @@ namespace angel_lsp::analysis
                         std::string_view childType = ts_node_type(child);
                         if (childType == "variable_declarator")
                         {
-                            TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
+                            TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
                             if (ts_node_is_null(nameNode) && ts_node_named_child_count(child) > 0)
                             {
                                 nameNode = ts_node_named_child(child, 0);
@@ -484,7 +485,7 @@ namespace angel_lsp::analysis
                             }
 
                             std::string varName = NodeText(nameNode, m_request.sourceCode);
-                            TSNode initNode = ts_node_child_by_field_name(child, "value", 5);
+                            TSNode initNode = parser::GetChildByField(child, parser::fields::Value);
                             if (ts_node_is_null(initNode))
                             {
                                 uint32_t rawCount = ts_node_child_count(child);
@@ -535,8 +536,8 @@ namespace angel_lsp::analysis
                     // `if (dict.get(key, value) && value != 0)` shape, which then reported `value`
                     // in the body. Same story in `while_statement`, below.
                     TSNode cond = ts_node_named_child(node, 0);
-                    TSNode consequence = ts_node_child_by_field_name(node, "consequence", 11);
-                    TSNode alternative = ts_node_child_by_field_name(node, "alternative", 11);
+                    TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
+                    TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
 
                     CheckExpressionReads(cond, state);
 
@@ -572,7 +573,7 @@ namespace angel_lsp::analysis
                 {
                     // No `condition` field either - see the note in the if_statement branch.
                     TSNode cond = ts_node_named_child(node, 0);
-                    TSNode body = ts_node_child_by_field_name(node, "body", 4);
+                    TSNode body = parser::GetChildByField(node, parser::fields::Body);
 
                     CheckExpressionReads(cond, state);
 
@@ -598,7 +599,7 @@ namespace angel_lsp::analysis
 
                 if (type == "do_while_statement")
                 {
-                    TSNode body = ts_node_child_by_field_name(node, "body", 4);
+                    TSNode body = parser::GetChildByField(node, parser::fields::Body);
                     // No `condition` field here either; `body` is one, so the condition is the
                     // second named child. See the note in the if_statement branch.
                     TSNode cond = ts_node_named_child(node, 1);
@@ -615,10 +616,10 @@ namespace angel_lsp::analysis
                     // never analysed at all and `for (i = 0; i < n; i++)` reported the `i` in the
                     // condition as a read of an uninitialised variable. The header is where `i` is
                     // initialised.
-                    TSNode init = ts_node_child_by_field_name(node, "init", 4);
-                    TSNode cond = ts_node_child_by_field_name(node, "condition", 9);
-                    TSNode step = ts_node_child_by_field_name(node, "update", 6);
-                    TSNode body = ts_node_child_by_field_name(node, "body", 4);
+                    TSNode init = parser::GetChildByField(node, parser::fields::Init);
+                    TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
+                    TSNode step = parser::GetChildByField(node, parser::fields::Update);
+                    TSNode body = parser::GetChildByField(node, parser::fields::Body);
 
                     if (!ts_node_is_null(init))
                     {

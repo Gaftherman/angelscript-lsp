@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -519,8 +520,8 @@ namespace angel_lsp::analysis
 
         void CheckCall(TSNode node, const CallCheckRequest &request, const Scope *scope, DiagnosticContext &ctx)
         {
-            TSNode callee = ts_node_child_by_field_name(node, "function", k_functionFieldLength);
-            TSNode arguments = ts_node_child_by_field_name(node, "arguments", k_argumentsFieldLength);
+            TSNode callee = parser::GetChildByField(node, parser::fields::Function);
+            TSNode arguments = parser::GetChildByField(node, parser::fields::Arguments);
             if (ts_node_is_null(callee) || ts_node_is_null(arguments))
             {
                 return;
@@ -541,8 +542,8 @@ namespace angel_lsp::analysis
 
             if (calleeType == "member_expression")
             {
-                TSNode objectNode = ts_node_child_by_field_name(callee, "object", k_objectFieldLength);
-                TSNode memberNode = ts_node_child_by_field_name(callee, "member", k_memberFieldLength);
+                TSNode objectNode = parser::GetChildByField(callee, parser::fields::Object);
+                TSNode memberNode = parser::GetChildByField(callee, parser::fields::Member);
                 if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
                 {
                     return;
@@ -941,7 +942,7 @@ namespace angel_lsp::analysis
                                     // expression and reported the argument as unassignable.
                                     if (aType == "unary_expression" && aText.starts_with("@"))
                                     {
-                                        TSNode operand = ts_node_child_by_field_name(argNode, "operand", 7);
+                                        TSNode operand = parser::GetChildByField(argNode, parser::fields::Operand);
                                         if (!ts_node_is_null(operand))
                                         {
                                             argNode = operand;
@@ -1000,10 +1001,10 @@ namespace angel_lsp::analysis
             const CallCheckRequest &request,
             DiagnosticContext &ctx)
         {
-            TSNode varTypeNode = ts_node_child_by_field_name(varDeclNode, "var_type", 8);
+            TSNode varTypeNode = parser::GetChildByField(varDeclNode, parser::fields::VarType);
             if (ts_node_is_null(varTypeNode))
             {
-                varTypeNode = ts_node_child_by_field_name(varDeclNode, "type", 4);
+                varTypeNode = parser::GetChildByField(varDeclNode, parser::fields::Type);
             }
             if (ts_node_is_null(varTypeNode))
             {
@@ -1058,7 +1059,7 @@ namespace angel_lsp::analysis
                     continue;
                 }
 
-                TSNode argListNode = ts_node_child_by_field_name(declarator, "arguments", 9);
+                TSNode argListNode = parser::GetChildByField(declarator, parser::fields::Arguments);
                 if (ts_node_is_null(argListNode))
                 {
                     continue;

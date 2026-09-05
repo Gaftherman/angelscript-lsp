@@ -4,6 +4,7 @@
 #include <cctype>
 #include <string>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -49,7 +50,7 @@ namespace angel_lsp::analysis
 
             if (type == "call_expression")
             {
-                TSNode funcNode = ts_node_child_by_field_name(node, "function", 8);
+                TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
                 if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
                 {
                     funcNode = ts_node_child(node, 0);

@@ -9,6 +9,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -244,10 +245,10 @@ namespace angel_lsp::analysis
                 }
                 if (type == "func_declaration")
                 {
-                    TSNode returnType = ts_node_child_by_field_name(parent, "return_type", 11);
+                    TSNode returnType = parser::GetChildByField(parent, parser::fields::ReturnType);
                     if (ts_node_is_null(returnType))
                     {
-                        returnType = ts_node_child_by_field_name(parent, "type", k_typeFieldLength);
+                        returnType = parser::GetChildByField(parent, parser::fields::Type);
                     }
                     return ts_node_is_null(returnType) ? std::string()
                                                        : GetNodeText(returnType, sourceCode);
@@ -616,8 +617,8 @@ namespace angel_lsp::analysis
             {
                 // `array<int> = {1, 2}` - AngelScript's anonymous object. The target type is
                 // written at the list, so nothing has to be inferred to check it.
-                TSNode typeNode = ts_node_child_by_field_name(node, "type", k_typeFieldLength);
-                TSNode valueNode = ts_node_child_by_field_name(node, "value", k_valueFieldLength);
+                TSNode typeNode = parser::GetChildByField(node, parser::fields::Type);
+                TSNode valueNode = parser::GetChildByField(node, parser::fields::Value);
                 if (!ts_node_is_null(typeNode) && !ts_node_is_null(valueNode))
                 {
                     ValidateList(valueNode, GetNodeText(typeNode, request.sourceCode), ctx,
@@ -626,15 +627,15 @@ namespace angel_lsp::analysis
             }
             else if (nodeType == "assignment_expression")
             {
-                TSNode value = ts_node_child_by_field_name(node, "right", 5);
+                TSNode value = parser::GetChildByField(node, parser::fields::Right);
                 if (!ts_node_is_null(value) && NodeType(value) == "initializer_list")
                 {
                     // Plain `=` only. A compound assignment takes no list at all - the compiler
                     // answers `a += {1};` with "Illegal operation on 'int[]&'" - and that is a
                     // verdict about the operator, not about the list, so it is left to say
                     // nothing rather than blamed on the shape.
-                    TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
-                    TSNode target = ts_node_child_by_field_name(node, "left", 4);
+                    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+                    TSNode target = parser::GetChildByField(node, parser::fields::Left);
                     if (!ts_node_is_null(opNode) && !ts_node_is_null(target) &&
                         GetNodeText(opNode, request.sourceCode) == "=")
                     {
@@ -669,10 +670,10 @@ namespace angel_lsp::analysis
             }
             else if (nodeType == "variable_declaration")
             {
-                TSNode typeNode = ts_node_child_by_field_name(node, "var_type", k_varTypeFieldLength);
+                TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
                 if (ts_node_is_null(typeNode))
                 {
-                    typeNode = ts_node_child_by_field_name(node, "type", k_typeFieldLength);
+                    typeNode = parser::GetChildByField(node, parser::fields::Type);
                 }
 
                 if (!ts_node_is_null(typeNode))
@@ -692,7 +693,7 @@ namespace angel_lsp::analysis
                             continue;
                         }
 
-                        TSNode valueNode = ts_node_child_by_field_name(declarator, "value", k_valueFieldLength);
+                        TSNode valueNode = parser::GetChildByField(declarator, parser::fields::Value);
                         if (!ts_node_is_null(valueNode) && NodeType(valueNode) == "initializer_list")
                         {
                             ValidateList(valueNode, declaredType, ctx, elementsAt(valueNode),

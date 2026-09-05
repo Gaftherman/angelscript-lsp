@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string_view>
+#include "parser/GrammarNames.h"
 
 // Forward-declared to ensure AST symbol extraction remains in Layer 2 without pulling protocol definitions.
 namespace angel_lsp::utils { class LspLogger; }
@@ -68,7 +69,7 @@ namespace angel_lsp::analysis
         /** @brief Returns the child of node bound to fieldName, or a null TSNode if absent. */
         static TSNode GetChildByFieldName(TSNode node, const char *fieldName)
         {
-            return ts_node_child_by_field_name(node, fieldName, static_cast<uint32_t>(std::strlen(fieldName)));
+            return parser::GetChildByField(node, fieldName);
         }
 
     private:

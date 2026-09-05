@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -47,7 +48,7 @@ namespace angel_lsp::analysis
         void CheckCallLValue(TSNode callNode, const LValueCheckRequest &request,
                              const Scope *scope, DiagnosticContext &ctx)
         {
-            TSNode funcNode = ts_node_child_by_field_name(callNode, "function", 8);
+            TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
             if (ts_node_is_null(funcNode) && ts_node_child_count(callNode) > 0)
             {
                 funcNode = ts_node_child(callNode, 0);
@@ -62,8 +63,8 @@ namespace angel_lsp::analysis
 
             if (funcNodeType == "member_expression")
             {
-                TSNode objNode = ts_node_child_by_field_name(funcNode, "object", 6);
-                TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
+                TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+                TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
                 if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
                 {
                     std::string objType = ResolveExpressionType(
@@ -193,8 +194,8 @@ namespace angel_lsp::analysis
             // Ternary expression (e.g. cond ? a : b)
             if (nodeType == "ternary_expression")
             {
-                TSNode consequence = ts_node_child_by_field_name(node, "consequence", 11);
-                TSNode alternative = ts_node_child_by_field_name(node, "alternative", 11);
+                TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
+                TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
                 if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
                 {
                     if (ts_node_named_child_count(node) >= 3)
@@ -217,10 +218,10 @@ namespace angel_lsp::analysis
             // Unary expression: only @handle is lvalue
             if (nodeType == "unary_expression")
             {
-                TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
+                TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
                 if (!ts_node_is_null(opNode) && NodeText(opNode, request.sourceCode) == "@")
                 {
-                    TSNode operand = ts_node_child_by_field_name(node, "operand", 7);
+                    TSNode operand = parser::GetChildByField(node, parser::fields::Operand);
                     return IsAssignableLValueNode(operand, scope, request, table, depth + 1);
                 }
                 return false;
@@ -282,7 +283,7 @@ namespace angel_lsp::analysis
         void CheckAssignmentTarget(TSNode node, const LValueCheckRequest &request,
                                    const Scope *scope, DiagnosticContext &ctx)
         {
-            TSNode target = ts_node_child_by_field_name(node, "left", 4);
+            TSNode target = parser::GetChildByField(node, parser::fields::Left);
             if (ts_node_is_null(target))
             {
                 return;

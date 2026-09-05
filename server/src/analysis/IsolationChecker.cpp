@@ -7,6 +7,7 @@
 #include "utils/Utils.h"
 #include <string_view>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -210,7 +211,7 @@ namespace angel_lsp::analysis
 
                 if (nodeType == "class_declaration")
                 {
-                    TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
+                    TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
                     std::string className = GetNodeText(nameNode, request.sourceCode);
                     bool classShared = NodeHasModifierToken(node, "shared", request.sourceCode);
                     if (!classShared && !className.empty())
@@ -249,7 +250,7 @@ namespace angel_lsp::analysis
                     bool funcShared = inSharedContext || NodeHasModifierToken(node, "shared", request.sourceCode);
                     if (!funcShared)
                     {
-                        TSNode nameNode = ts_node_child_by_field_name(node, "name", 4);
+                        TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
                         std::string funcName = GetNodeText(nameNode, request.sourceCode);
                         if (!funcName.empty())
                         {
@@ -318,7 +319,7 @@ namespace angel_lsp::analysis
                     // 2. Check direct function calls (e.g. NonSharedFunction())
                     if (nodeType == "call_expression")
                     {
-                        TSNode funcNode = ts_node_child_by_field_name(node, "function", 8);
+                        TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
                         if (ts_node_is_null(funcNode))
                         {
                             funcNode = ts_node_child(node, 0);
@@ -378,7 +379,7 @@ namespace angel_lsp::analysis
                             std::string_view pType = ts_node_type(p);
                             if (pType == "call_expression")
                             {
-                                TSNode fn = ts_node_child_by_field_name(p, "function", 8);
+                                TSNode fn = parser::GetChildByField(p, parser::fields::Function);
                                 if (ts_node_is_null(fn)) fn = ts_node_child(p, 0);
                                 if (!ts_node_is_null(fn) && (fn.id == node.id || ts_node_parent(node).id == fn.id))
                                 {
@@ -393,7 +394,7 @@ namespace angel_lsp::analysis
                             }
                             if (pType == "variable_declarator")
                             {
-                                TSNode val = ts_node_child_by_field_name(p, "value", 5);
+                                TSNode val = parser::GetChildByField(p, parser::fields::Value);
                                 if (ts_node_is_null(val) || ts_node_start_byte(node) < ts_node_start_byte(val))
                                 {
                                     isDeclName = true;
@@ -403,7 +404,7 @@ namespace angel_lsp::analysis
                             if (pType == "func_declaration" ||
                                 pType == "class_declaration" || pType == "parameter" || pType == "enum_member")
                             {
-                                TSNode nameNode = ts_node_child_by_field_name(p, "name", 4);
+                                TSNode nameNode = parser::GetChildByField(p, parser::fields::Name);
                                 if (!ts_node_is_null(nameNode) && (nameNode.id == node.id || ts_node_start_byte(node) == ts_node_start_byte(nameNode)))
                                 {
                                     isDeclName = true;
@@ -412,7 +413,7 @@ namespace angel_lsp::analysis
                             }
                             if (pType == "member_expression")
                             {
-                                TSNode propNode = ts_node_child_by_field_name(p, "member", 6);
+                                TSNode propNode = parser::GetChildByField(p, parser::fields::Member);
                                 if (!ts_node_is_null(propNode) && propNode.id == node.id)
                                 {
                                     isMemberProp = true;

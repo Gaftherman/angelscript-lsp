@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <string_view>
 #include <utility>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::features
 {
@@ -146,7 +147,7 @@ namespace angel_lsp::features
                 return "";
             }
 
-            const std::string name = NodeText(ts_node_child_by_field_name(owner, "name", k_nameFieldLength), sourceCode);
+            const std::string name = NodeText(parser::GetChildByField(owner, parser::fields::Name), sourceCode);
             if (name.empty())
             {
                 return "";

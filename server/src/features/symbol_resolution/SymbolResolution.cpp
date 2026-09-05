@@ -9,6 +9,7 @@
 #include <tuple>
 #include <unordered_set>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 // Moved here verbatim from RenameHandler.cpp, where find-references had a second copy of
 // the same ~780 lines. See SymbolResolution.h for why that mattered and what pins it.
@@ -247,11 +248,11 @@ namespace angel_lsp::features::resolution
         bool isExplicitMemberAccess = false;
         if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "member_expression")
         {
-            TSNode memNode = ts_node_child_by_field_name(parent, "member", 6);
+            TSNode memNode = parser::GetChildByField(parent, parser::fields::Member);
             if (!ts_node_is_null(memNode) && (ts_node_eq(memNode, outNode) || ts_node_start_byte(memNode) == ts_node_start_byte(outNode)))
             {
                 isExplicitMemberAccess = true;
-                TSNode objectNode = ts_node_child_by_field_name(parent, "object", 6);
+                TSNode objectNode = parser::GetChildByField(parent, parser::fields::Object);
                 if (!ts_node_is_null(objectNode))
                 {
                     uint32_t objStart = ts_node_start_byte(objectNode);
@@ -631,7 +632,7 @@ namespace angel_lsp::features::resolution
                                         TSNode exprParent = ts_node_parent(refNode);
                                         if (!ts_node_is_null(exprParent) && std::string_view(ts_node_type(exprParent)) == "member_expression")
                                         {
-                                            TSNode objNode = ts_node_child_by_field_name(exprParent, "object", 6);
+                                            TSNode objNode = parser::GetChildByField(exprParent, parser::fields::Object);
                                             if (!ts_node_is_null(objNode))
                                             {
                                                 uint32_t oStart = ts_node_start_byte(objNode);
