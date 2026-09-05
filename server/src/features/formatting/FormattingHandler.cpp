@@ -863,6 +863,22 @@ namespace angel_lsp::features
                 return true;
             }
 
+            // Last guard, and the only one here that is not about style: two tokens that would
+            // re-read as one token must never be written next to each other. `A = 1 B = 2` came
+            // back as `A = 1B = 2` - a number welded to an identifier, four tokens turned into
+            // three, in a file the formatter had been handed to tidy.
+            //
+            // The rule above covers an identifier followed by a word; a number followed by one
+            // fell through to `return false`. That input is a syntax error, which is exactly when
+            // it matters: the formatter runs on whatever is in the editor, including half-typed
+            // code, and losing a character there is not a formatting choice.
+            if ((prev.type == TokenType::Number || prev.type == TokenType::StringLiteral) &&
+                (curr.type == TokenType::Identifier || curr.type == TokenType::Number ||
+                 curr.type == TokenType::StringLiteral))
+            {
+                return true;
+            }
+
             return false;
         }
 
