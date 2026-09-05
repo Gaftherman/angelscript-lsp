@@ -39,6 +39,22 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
 
 Every construct listed below was measured directly against the reference AngelScript compiler through `server/tools/oracle`, and each has a dedicated verification script in `server/tests/parity`. Rather than an aspirational promise, this list represents an empirical measurement that a test breaks if it ceases to hold true.
 
+The audit's current standing, from `server/tests/ParityAuditTest.cpp` run against the oracle:
+
+| | |
+| :--- | ---: |
+| Scripts in the parity corpus | **213** |
+| Agree, both accept | 114 |
+| Agree, both reject | 96 |
+| **Unexplained false positives** | **0** |
+| False negatives, each with its reason recorded | 3 |
+
+Zero is the only acceptable number in that fourth row: reporting an error on code the compiler
+accepts is the one failure this project treats as fatal. The three false negatives are deliberate
+and named in the audit's output - `doc_r06` (a class converting to bool through `opImplConv`, which
+a host engine setting can make legal), `doc_r07` (an accessor without the `property` keyword) and
+`doc_r13` (a base handle returned where a derived one is declared).
+
 ### Numeric literals
 - Base prefixes: `0b1010`, `0o755`, `0d1024`, `0xFF00AA`
 - Digit separators in every base: `1'000'000`, `0xDEAD'BEEF`, `0b1100'0011`*
@@ -160,7 +176,7 @@ server/build/angel_lsp_tests
 
 ### The corpus audits
 
-Nineteen test cases walk `angelscript/` — roughly 1,061 files of real, working third-party
+Twenty-two test cases walk `angelscript/` — roughly 1,061 files of real, working third-party
 AngelScript — and ask the one question this project treats as fatal: **does any rule report code
 that compiles?** The unit suite cannot answer it, because it only ever asks whether a rule fires on
 a snippet written to make it fire.
@@ -231,6 +247,35 @@ prints a notice until the `CORPUS_REPO` repository variable names a repository h
 | `ConstCheckerTest.cpp` | Layer 2 Const correctness at the use site: assigning to a const, and calling a non-const method through a const object. |
 | `AccessCheckerTest.cpp` | Layer 2 Access control on member use: `private` per class, `protected` through a derived object, and the engine options that move the boundary. |
 | `ServerConfigTest.cpp` | Layer 1/4 CLI argument parsing, boolean feature flag toggles, option syntax (`--flag=value` / `--flag value`), and robustness. |
+| `GrammarNamesTest.cpp` | Layer 1 Every node type and field constant in `parser/GrammarNames.h` still resolves against the loaded tree-sitter language, so a grammar pin bump fails with a name in it rather than silently making rules stop matching. Includes the check that the check can fail. |
+| `TypeVocabularyTest.cpp` | Layer 1/2 What the consolidated keyword, primitive and type-name helpers answer: reserved words against contextual ones, the primitive subsets, `::` qualification, and the two different empty-argument policies of the template argument splitter. |
+| `ParityAuditTest.cpp` | Layer 2 The opt-in audit that compiles every script in `server/tests/parity` with the real AngelScript compiler and compares its verdict against this analyzer's. Fails on a single unexplained false positive. |
+| `FormatterCorpusTest.cpp` | Layer 3 Formatting every parity script under both brace styles must lose no token and settle in one pass - the guard that caught a number and an identifier being welded into one. |
+| `PredefinedStubAuditTest.cpp` | Layer 2 Every `as.predefined` in the checkout parses and analyses clean, so a stub cannot ship reporting errors about itself. |
+| `DefiniteAssignmentTest.cpp` | Layer 2 Reading a local before it is written, across branches, loops and early returns. |
+| `CodeActionTest.cpp` | Layer 3 Quick fixes and refactors: the edits they produce, the ranges they claim, and the positions where they must offer nothing. |
+| `RefactoringTest.cpp` | Layer 3 Extract-method and its adversarial cases - captured variables, member access, loops with internal control flow. |
+| `FormattingTest.cpp` | Layer 3 Spacing, indentation and brace placement in both styles, including the template-bracket and unary-operator cases the token stream cannot decide alone. |
+| `InitializerListTest.cpp` | Layer 2 Initializer lists against a type's `@listpattern`, including nesting, repeats and the holes the engine allows. |
+| `PositionEncodingTest.cpp` | Layer 1/4 UTF-8 and UTF-16 position arithmetic, which decides whether a range lands where the user's cursor is on any line holding a non-ASCII character. |
+| `PreprocessorRegionsTest.cpp` | Layer 1 `#if` / `#ifdef` / `#else` region tracking and the inactive ranges the client dims. |
+| `WorkspaceIncludeGraphTest.cpp` | Layer 2 The include closure across files: what a change invalidates, and cycles. |
+| `SemanticTokenKindTest.cpp` | Layer 3 The token kind each name is coloured with, resolved through the symbol table rather than guessed from syntax. |
+| `ExpressionTypeTest.cpp` | Layer 2 The type an expression resolves to, which every conversion, access and call rule is built on. |
+| `OverloadResolutionTest.cpp` | Layer 2 Choosing between overloads by argument type, including the conversions that make two candidates ambiguous. |
+| `LValueCheckerTest.cpp` | Layer 2 What may appear on the left of an assignment. |
+| `DocumentHighlightTest.cpp` | Layer 3 Read and write classification of a name's occurrences, lexical shadowing, and the boundaries the search must not cross. |
+| `InlayHintTest.cpp` | Layer 3 Parameter-name and deduced-type hints, and the positions that must show none. |
+| `FoldingRangeTest.cpp` | Layer 3 Folding for blocks, comments, `#region` markers and preprocessor branches. |
+| `DocumentLinkTest.cpp` | Layer 3 `#include` paths as clickable links, resolved against the search directories. |
+| `CodeLensTest.cpp` | Layer 3 The lenses offered above a declaration and what they resolve to. |
+| `PredefinedFixtureTest.cpp` | Layer 2 Stub loading: multiple stubs, a selected one, a deleted one, and the engine profile that survives a selection. |
+| `WorkspaceScanTest.cpp` | Layer 4 The workspace walk: what it indexes, what it excludes, and what a rescan replaces. |
+| `WorkspaceStubSweepTest.cpp` | Layer 4 The sweep that finds every stub in a workspace, by suffix and by name. |
+| `RenameReferencesParityTest.cpp` | Layer 3 Rename and find-references must agree on the same set of occurrences; a difference between them is a rename that misses one. |
+| `DeepNestingTest.cpp` | Layer 2 Deeply nested constructs against the traversal depth caps, so a pathological file degrades rather than crashes. |
+| `SemanticHelpersTest.cpp` | Layer 2 The shared type-name helpers in isolation. |
+| `AdversarialMilestone1Test.cpp`, `AdversarialSemanticsM1Test.cpp`, `AdversarialFeaturesTest.cpp`, `AdversarialChallenger1Test.cpp`, `AdversarialPhase3FeaturesTest.cpp`, `AdversarialPhase3Challenger1Test.cpp`, `AdversarialRefactoringPhase2Test.cpp`, `AdversarialRefactoringM2ChallengerTest.cpp` | Layer 2/3 Cases written to break the analyzer rather than to demonstrate it - malformed input, hostile nesting, and the shapes each milestone's rules were most likely to get wrong. |
 
 ---
 
