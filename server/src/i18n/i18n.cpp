@@ -141,6 +141,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-default-param-order"] = "All subsequent parameters after the first default value must also have default values in function '{}'.";
         m_messages["as-err-inout-on-primitive"] = "Only object types that support object references can use &inout ('{}').";
         m_messages["as-err-global-variable-access-modifier"] = "Global or namespace variable '{}' cannot have access modifiers (private/protected).";
+        m_messages["as-err-enum-scope-required"] = "'{}' needs its enum's scope on this host, which builds its engine with asEP_REQUIRE_ENUM_SCOPE.";
         m_messages["as-err-global-vars-disallowed"] = "Global variable '{}' is not allowed: global variables have been disabled by the application.";
         m_messages["as-err-void-reference"] = "Type 'void' cannot be a reference.";
         m_messages["as-err-property-accessor-missing-body"] = "Property accessor '{}' must be implemented.";
@@ -298,6 +299,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-default-param-order"] = "Todos los parámetros subsiguientes después del primer valor por defecto deben tener valores por defecto en la función '{}'.";
             m_messages["as-err-inout-on-primitive"] = "Solo los tipos de objeto que admiten referencias pueden usar &inout ('{}').";
             m_messages["as-err-global-variable-access-modifier"] = "La variable global o de namespace '{}' no puede tener modificadores de acceso (private/protected).";
+            m_messages["as-err-enum-scope-required"] = "'{}' necesita el ámbito de su enum en este host, que construye su motor con asEP_REQUIRE_ENUM_SCOPE.";
             m_messages["as-err-global-vars-disallowed"] = "La variable global '{}' no está permitida: la aplicación ha deshabilitado las variables globales.";
             m_messages["as-err-void-reference"] = "El tipo 'void' no puede ser una referencia.";
             m_messages["as-err-property-accessor-missing-body"] = "El accesor de propiedad '{}' debe tener una implementación.";

@@ -487,6 +487,21 @@ namespace angel_lsp::analysis::rules
                     }
                 }
 
+                // asEP_IGNORE_DUPLICATE_SHARED_INTF. A host that sets it accepts the same shared
+                // interface declared twice, and this rule was reporting it as an error - a false
+                // positive on code that compiles, found by measuring the property rather than by
+                // any test.
+                //
+                // Narrow, because the measurement is: a duplicate PLAIN interface is rejected under
+                // both settings, and only `shared` on both declarations is what the property
+                // forgives. Two probes, both directions.
+                if (ctx.request.IgnoresDuplicateSharedInterface() &&
+                    first.type == SymbolType::Interface && other.type == SymbolType::Interface &&
+                    first.GetInterface().modifiers.isShared && other.GetInterface().modifiers.isShared)
+                {
+                    continue;
+                }
+
                 ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
                 ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
                                 other.selectionRange.endLine, other.selectionRange.endCharacter,

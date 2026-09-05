@@ -318,6 +318,73 @@ namespace angel_lsp::analysis
         }
 
         /**
+         * @brief What the host's engine does with a warning: 0 drop, 1 emit, 2 promote to error.
+         *
+         * asEP_COMPILER_WARNINGS, and the only engine property that moves a severity rather than
+         * deciding whether something compiles. Measured on a script producing "Signed/Unsigned
+         * mismatch": at 0 the compiler says nothing, at 1 it warns, at 2 the same line is an error
+         * and the build fails.
+         *
+         * Read in one place - DiagnosticContext::Append - because it applies to every warning this
+         * analyzer produces rather than to any one rule.
+         */
+        int CompilerWarningMode() const
+        {
+            return engineProperties ? engineProperties->compilerWarnings : 1;
+        }
+
+        /**
+         * @brief True when the host built its engine with asEP_REQUIRE_ENUM_SCOPE.
+         *
+         * With it on an unqualified enumerator stops resolving: `enum E { Alpha = 1 } int v = Alpha;`
+         * compiles with it off and answers "No matching symbol 'Alpha'" with it on. The engine's
+         * default is off, which is why this answers false with no properties set.
+         */
+        bool RequiresEnumScope() const
+        {
+            return engineProperties && engineProperties->requireEnumScope;
+        }
+
+        /**
+         * @brief True when the engine implements a default constructor for every class (default: true).
+         *
+         * With it OFF, a class declaring only a non-default constructor can no longer be
+         * default-constructed: `class C { C(int a) {} } C c;` answers "No default constructor for
+         * object of type 'C'."
+         *
+         * The engine's default is OFF, which was measured rather than assumed - and assuming the
+         * opposite is exactly what went wrong first time round. Running the oracle with no flag at
+         * all gives the same verdict as running it with the property set to 0, so unset answers
+         * false here and the analyzer matches a host that configures nothing.
+         */
+        bool AlwaysImplementsDefaultConstruct() const
+        {
+            return engineProperties && engineProperties->alwaysImplDefaultConstruct;
+        }
+
+        /**
+         * @brief True when the host built its engine with asEP_ALLOW_UNICODE_IDENTIFIERS.
+         *
+         * With it off a non-ASCII identifier is a parse error - an accented `arbol` answers
+         * "Expected '('". The engine's default is off.
+         */
+        bool AllowsUnicodeIdentifiers() const
+        {
+            return engineProperties && engineProperties->allowUnicodeIdentifiers;
+        }
+
+        /**
+         * @brief True when the host built its engine with asEP_IGNORE_DUPLICATE_SHARED_INTF.
+         *
+         * Declaring the same shared interface twice answers "Name conflict. 'I' is an interface."
+         * with it off, and compiles with it on. The engine's default is off.
+         */
+        bool IgnoresDuplicateSharedInterface() const
+        {
+            return engineProperties && engineProperties->ignoreDuplicateSharedIntf;
+        }
+
+        /**
          * @brief True when the host built its engine with asEP_DISALLOW_GLOBAL_VARS.
          */
         bool DisallowsGlobalVars() const

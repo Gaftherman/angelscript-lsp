@@ -1682,3 +1682,89 @@ TEST_CASE("EngineDialect - a type this analyzer cannot see is left alone")
 
     CHECK_FALSE(Emitted(AnalyzeWithEngine(code, engine), "as-err-value-assign-for-ref"));
 }
+
+// =====================================================================================
+// asEP_COMPILER_WARNINGS, the one engine property that moves a severity rather than deciding
+// whether something compiles.
+//
+// Measured against the real compiler on a script producing "Signed/Unsigned mismatch": at 0 the
+// compiler says nothing at all, at 1 it warns, and at 2 the same line is an error and the build
+// fails. A host that builds its engine at 2 has no warnings - it has errors - and an analyzer that
+// keeps calling them warnings is describing a different compiler.
+//
+// Applied in DiagnosticContext::Append rather than in any rule, because it applies to every warning
+// this analyzer produces. The three cases below are the whole contract.
+// =====================================================================================
+
+TEST_CASE("EngineProperties - the warning mode moves every warning at once")
+{
+    const std::string source = "void t()\n{\n    int unused = 1;\n}\n";
+
+    angel_lsp::i18n::I18n i18n;
+
+    const auto analyseAt = [&](int mode)
+    {
+        angel_lsp::config::EngineProperties properties;
+        properties.compilerWarnings = mode;
+
+        SymbolTable table;
+        return AnalyzeSource(source, table, i18n, "file:///warnmode.as", nullptr, &properties);
+    };
+
+    SUBCASE("0 suppresses warnings entirely")
+    {
+        for (const Diagnostic &d : analyseAt(0))
+        {
+            CAPTURE(d.code);
+            CHECK(d.severity != DiagnosticSeverity::Warning);
+        }
+    }
+
+    SUBCASE("1 leaves them as warnings, which is the engine's default")
+    {
+        bool sawWarning = false;
+        for (const Diagnostic &d : analyseAt(1))
+        {
+            if (d.code == "as-warn-unused-variable")
+            {
+                sawWarning = true;
+                CHECK(d.severity == DiagnosticSeverity::Warning);
+            }
+        }
+        CHECK(sawWarning);
+    }
+
+    SUBCASE("2 promotes them to errors")
+    {
+        bool sawPromoted = false;
+        for (const Diagnostic &d : analyseAt(2))
+        {
+            if (d.code == "as-warn-unused-variable")
+            {
+                sawPromoted = true;
+                CHECK(d.severity == DiagnosticSeverity::Error);
+            }
+        }
+        CHECK(sawPromoted);
+    }
+
+    // An error is not the engine's to suppress: asEP_COMPILER_WARNINGS decides what happens to a
+    // warning, not whether the compiler still refuses the file. Mode 0 must not swallow one.
+    SUBCASE("an error survives mode 0")
+    {
+        const std::string bad = "void t()\n{\n    int int;\n}\n";
+        angel_lsp::config::EngineProperties properties;
+        properties.compilerWarnings = 0;
+
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(bad, table, i18n, "file:///warnerr.as", nullptr, &properties);
+
+        bool sawError = false;
+        for (const Diagnostic &d : diagnostics)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+                sawError = true;
+        }
+        CHECK(sawError);
+    }
+}

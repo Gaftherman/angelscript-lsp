@@ -170,6 +170,7 @@ namespace angel_lsp::analysis::rules
                         break;
                 }
             }
+
         }
 
         /** @brief Rules about the modifiers a declaration carries where it sits. */

@@ -608,7 +608,46 @@ namespace angel_lsp::analysis
             if (isInsideMixin)
                 continue;
 
-            if (ResolveInScope(scope, ref.name) != nullptr)
+            const LocalDefinition *resolved = ResolveInScope(scope, ref.name);
+
+            // asEP_REQUIRE_ENUM_SCOPE, checked before the resolution is acted on, because an
+            // enumerator DOES resolve from the scope tree - LOCALS_QUERY captures `enum_member` as
+            // a definition - and continuing on that is what made the first attempt at this rule
+            // never run.
+            //
+            // The kind is what separates the two cases, and it is the whole rule: an enumerator
+            // arrives as Constant, a local as Variable. `int Alpha = 5;` shadowing an enumerator is
+            // accepted by the engine - measured - and resolves to a Variable, so it is left alone.
+            //
+            // Also required: the reference must be inside a function, which drops the enumerator's
+            // own declaration at global scope, and must not sit at a definition's own position,
+            // because LocalReference does not distinguish a declaration from a use.
+            if (ctx.request.RequiresEnumScope() &&
+                resolved != nullptr && resolved->kind == LocalDefinitionKind::Constant &&
+                ctx.request.GetRuleIndex().enumMemberNames.contains(ref.name))
+            {
+                bool insideFunction = false;
+                for (const Scope *current = scope; current != nullptr; current = current->parent)
+                {
+                    if (current->isFunctionScope)
+                    {
+                        insideFunction = true;
+                        break;
+                    }
+                }
+
+                const bool isOwnDeclaration = resolved->startLine == ref.startLine &&
+                                              resolved->startCharacter == ref.startCharacter;
+
+                if (insideFunction && !isOwnDeclaration)
+                {
+                    ctx.EmitAtRange(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter,
+                                    "as-err-enum-scope-required", ref.name);
+                    continue;
+                }
+            }
+
+            if (resolved != nullptr)
                 continue;
 
             if (knownGlobalNames.contains(ref.name))
@@ -899,6 +938,7 @@ namespace angel_lsp::analysis
                     ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
                                     "as-err-reserved-keyword-name", def.name);
                 }
+
             }
 
             for (const auto &def : scope->definitions)

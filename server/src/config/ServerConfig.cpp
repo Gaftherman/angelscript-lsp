@@ -200,6 +200,56 @@ namespace angel_lsp::config
                 return false;
             }
 
+            if (name == "requireEnumScope" || name == "require-enum-scope")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.requireEnumScope = raw == "1";
+                    return true;
+                }
+                return false;
+            }
+
+            if (name == "alwaysImplDefaultConstruct" || name == "always-impl-default-construct")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.alwaysImplDefaultConstruct = raw == "1";
+                    return true;
+                }
+                return false;
+            }
+
+            if (name == "allowUnicodeIdentifiers" || name == "allow-unicode-identifiers")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.allowUnicodeIdentifiers = raw == "1";
+                    return true;
+                }
+                return false;
+            }
+
+            if (name == "ignoreDuplicateSharedIntf" || name == "ignore-duplicate-shared-intf")
+            {
+                if (raw == "0" || raw == "1")
+                {
+                    engine.ignoreDuplicateSharedIntf = raw == "1";
+                    return true;
+                }
+                return false;
+            }
+
+            if (name == "compilerWarnings" || name == "compiler-warnings")
+            {
+                if (raw == "0" || raw == "1" || raw == "2")
+                {
+                    engine.compilerWarnings = raw == "2" ? 2 : (raw == "1" ? 1 : 0);
+                    return true;
+                }
+                return false;
+            }
+
             if (!IsBoolLiteral(raw))
             {
                 return false;
@@ -767,6 +817,46 @@ namespace angel_lsp::config
             {
                 config.diagnostics.reportIntegerDivision =
                     inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--require-enum-scope")
+            {
+                std::string_view val;
+                if (getStringValue(val) && (val == "0" || val == "1"))
+                {
+                    config.engine.requireEnumScope = val == "1";
+                }
+            }
+            else if (key == "--always-impl-default-construct")
+            {
+                std::string_view val;
+                if (getStringValue(val) && (val == "0" || val == "1"))
+                {
+                    config.engine.alwaysImplDefaultConstruct = val == "1";
+                }
+            }
+            else if (key == "--allow-unicode-identifiers")
+            {
+                std::string_view val;
+                if (getStringValue(val) && (val == "0" || val == "1"))
+                {
+                    config.engine.allowUnicodeIdentifiers = val == "1";
+                }
+            }
+            else if (key == "--ignore-duplicate-shared-intf")
+            {
+                std::string_view val;
+                if (getStringValue(val) && (val == "0" || val == "1"))
+                {
+                    config.engine.ignoreDuplicateSharedIntf = val == "1";
+                }
+            }
+            else if (key == "--compiler-warnings")
+            {
+                std::string_view val;
+                if (getStringValue(val) && (val == "0" || val == "1" || val == "2"))
+                {
+                    config.engine.compilerWarnings = val == "2" ? 2 : (val == "1" ? 1 : 0);
+                }
             }
             else if (key == "--engine-property" || key == "--engine-prop")
             {
