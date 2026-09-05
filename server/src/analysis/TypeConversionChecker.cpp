@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 #include "parser/Primitives.h"
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -745,7 +746,7 @@ namespace angel_lsp::analysis
                                             const DiagnosticContext &ctx,
                                             std::string_view sourceCode)
         {
-            TSNode callee = ts_node_child_by_field_name(node, "function", k_functionFieldLength);
+            TSNode callee = parser::GetChildByField(node, parser::fields::Function);
             if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
             {
                 callee = ts_node_child(node, 0);
@@ -833,13 +834,13 @@ namespace angel_lsp::analysis
             if (nodeType == "unary_expression")
             {
                 const std::string op = NodeText(
-                    ts_node_child_by_field_name(node, "operator", k_operatorFieldLength), sourceCode);
+                    parser::GetChildByField(node, parser::fields::Operator), sourceCode);
                 if (op == "!" || op == "not")
                 {
                     return ExpressionType{ "bool", true, false };
                 }
                 return ResolveValueType(
-                    ts_node_child_by_field_name(node, "operand", k_operandFieldLength), scope, ctx, sourceCode, depth + 1);
+                    parser::GetChildByField(node, parser::fields::Operand), scope, ctx, sourceCode, depth + 1);
             }
 
             if (nodeType == "identifier" || nodeType == "scoped_identifier")
@@ -855,7 +856,7 @@ namespace angel_lsp::analysis
             if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
             {
                 const std::string typeText = CleanBaseType(
-                    NodeText(ts_node_child_by_field_name(node, "type", k_typeFieldLength), sourceCode));
+                    NodeText(parser::GetChildByField(node, parser::fields::Type), sourceCode));
                 return typeText.empty() ? ExpressionType{} : ExpressionType{ typeText, true, false };
             }
 
@@ -886,8 +887,8 @@ namespace angel_lsp::analysis
             std::string_view nt = NodeType(exprNode);
             if (nt == "member_expression")
             {
-                TSNode objNode = ts_node_child_by_field_name(exprNode, "object", 6);
-                TSNode memNode = ts_node_child_by_field_name(exprNode, "member", 6);
+                TSNode objNode = parser::GetChildByField(exprNode, parser::fields::Object);
+                TSNode memNode = parser::GetChildByField(exprNode, parser::fields::Member);
                 if (ts_node_is_null(objNode) && ts_node_named_child_count(exprNode) > 0)
                 {
                     objNode = ts_node_named_child(exprNode, 0);
@@ -1145,14 +1146,14 @@ namespace angel_lsp::analysis
                                            DiagnosticContext &ctx,
                                            std::string_view sourceCode)
         {
-            TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
+            TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
             if (ts_node_is_null(opNode) || !IsComparisonOperator(NodeText(opNode, sourceCode)))
             {
                 return;
             }
 
-            TSNode left = ts_node_child_by_field_name(node, "left", 4);
-            TSNode right = ts_node_child_by_field_name(node, "right", 5);
+            TSNode left = parser::GetChildByField(node, parser::fields::Left);
+            TSNode right = parser::GetChildByField(node, parser::fields::Right);
             if (ts_node_is_null(left) || ts_node_is_null(right))
             {
                 return;
@@ -1320,7 +1321,7 @@ namespace angel_lsp::analysis
                               DiagnosticContext &ctx,
                               std::string_view sourceCode)
         {
-            TSNode valueNode = ts_node_child_by_field_name(declaratorNode, "value", k_valueFieldLength);
+            TSNode valueNode = parser::GetChildByField(declaratorNode, parser::fields::Value);
             if (ts_node_is_null(valueNode) || NodeType(valueNode) == "initializer_list")
             {
                 return;
@@ -1628,7 +1629,7 @@ namespace angel_lsp::analysis
                 }
             }
 
-            TSNode nameNode = ts_node_child_by_field_name(declaratorNode, "name", 4);
+            TSNode nameNode = parser::GetChildByField(declaratorNode, parser::fields::Name);
             TSNode targetNode = ts_node_is_null(nameNode) ? declaratorNode : nameNode;
 
             if (zeroArgDeleted)
@@ -1759,10 +1760,10 @@ namespace angel_lsp::analysis
             TSNode actualVal = valueNode;
             if (std::string_view(NodeType(valueNode)) == "unary_expression")
             {
-                TSNode op = ts_node_child_by_field_name(valueNode, "operator", 8);
+                TSNode op = parser::GetChildByField(valueNode, parser::fields::Operator);
                 if (!ts_node_is_null(op) && NodeText(op, sourceCode) == "@")
                 {
-                    TSNode operand = ts_node_child_by_field_name(valueNode, "operand", 7);
+                    TSNode operand = parser::GetChildByField(valueNode, parser::fields::Operand);
                     if (!ts_node_is_null(operand))
                     {
                         actualVal = operand;
@@ -1775,7 +1776,7 @@ namespace angel_lsp::analysis
             {
                 // A lambda has no symbol to look up, so the name search below would find nothing
                 // and return in silence - which is what it did before this branch existed.
-                TSNode listNode = ts_node_child_by_field_name(actualVal, "parameters", 10);
+                TSNode listNode = parser::GetChildByField(actualVal, parser::fields::Parameters);
                 if (ts_node_is_null(listNode))
                 {
                     return;
@@ -1854,20 +1855,20 @@ namespace angel_lsp::analysis
                 return;
             }
 
-            TSNode classNameNode = ts_node_child_by_field_name(parent, "name", 4);
+            TSNode classNameNode = parser::GetChildByField(parent, parser::fields::Name);
             if (ts_node_is_null(classNameNode))
             {
                 return;
             }
             std::string className = NodeText(classNameNode, sourceCode);
 
-            TSNode funcNameNode = ts_node_child_by_field_name(funcNode, "name", 4);
+            TSNode funcNameNode = parser::GetChildByField(funcNode, parser::fields::Name);
             if (ts_node_is_null(funcNameNode) || NodeText(funcNameNode, sourceCode) != className)
             {
                 return;
             }
 
-            TSNode bodyNode = ts_node_child_by_field_name(funcNode, "body", 4);
+            TSNode bodyNode = parser::GetChildByField(funcNode, parser::fields::Body);
             if (ts_node_is_null(bodyNode))
             {
                 return;
@@ -1891,10 +1892,10 @@ namespace angel_lsp::analysis
                 std::string_view exprType = ts_node_type(expr);
                 if (exprType == node_types::CallExpression || exprType == "construct_call_expression")
                 {
-                    TSNode callee = ts_node_child_by_field_name(expr, "function", k_functionFieldLength);
+                    TSNode callee = parser::GetChildByField(expr, parser::fields::Function);
                     if (ts_node_is_null(callee))
                     {
-                        callee = ts_node_child_by_field_name(expr, "type", k_typeFieldLength);
+                        callee = parser::GetChildByField(expr, parser::fields::Type);
                     }
                     if (ts_node_is_null(callee) && ts_node_child_count(expr) > 0)
                     {
@@ -1915,9 +1916,9 @@ namespace angel_lsp::analysis
                        std::string_view sourceCode)
         {
             const std::string targetName = CleanBaseType(
-                NodeText(ts_node_child_by_field_name(castNode, "type", k_typeFieldLength), sourceCode));
+                NodeText(parser::GetChildByField(castNode, parser::fields::Type), sourceCode));
 
-            TSNode valueNode = ts_node_child_by_field_name(castNode, "value", k_valueFieldLength);
+            TSNode valueNode = parser::GetChildByField(castNode, parser::fields::Value);
             if (ts_node_is_null(valueNode) || targetName.empty())
             {
                 return;
@@ -2120,23 +2121,23 @@ namespace angel_lsp::analysis
 
             if (type == "binary_expression")
             {
-                const TSNode op = ts_node_child_by_field_name(expr, "operator", 8);
+                const TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
                 const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
                 if (opText == "&&" || opText == "and" || opText == "||" || opText == "or" ||
                     opText == "^^" || opText == "xor")
                 {
-                    CollectBooleanOperands(ts_node_child_by_field_name(expr, "left", 4), operands, depth + 1);
-                    CollectBooleanOperands(ts_node_child_by_field_name(expr, "right", 5), operands, depth + 1);
+                    CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Left), operands, depth + 1);
+                    CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Right), operands, depth + 1);
                     return;
                 }
             }
             else if (type == "unary_expression")
             {
-                const TSNode op = ts_node_child_by_field_name(expr, "operator", 8);
+                const TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
                 const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
                 if (opText == "!" || opText == "not")
                 {
-                    CollectBooleanOperands(ts_node_child_by_field_name(expr, "operand", 7), operands, depth + 1);
+                    CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Operand), operands, depth + 1);
                     return;
                 }
             }
@@ -2215,7 +2216,7 @@ namespace angel_lsp::analysis
                 TSNode condition{};
                 if (nodeType == "for_statement" || nodeType == "ternary_expression")
                 {
-                    condition = ts_node_child_by_field_name(node, "condition", 9);
+                    condition = parser::GetChildByField(node, parser::fields::Condition);
 
                     // `for`'s condition field holds an *expression_statement*, not the expression -
                     // grammar.js declares it as `choice($.expression_statement, ";")`, the `;` being
@@ -2308,7 +2309,7 @@ namespace angel_lsp::analysis
             // for why mutableScopeRoot is what makes touching the scope tree sound.
             if (nodeType == "foreach_statement")
             {
-                TSNode collection = ts_node_child_by_field_name(node, "collection", 10);
+                TSNode collection = parser::GetChildByField(node, parser::fields::Collection);
                 if (!ts_node_is_null(collection))
                 {
                     const std::string containerType = ResolveExpressionType(
@@ -2342,7 +2343,7 @@ namespace angel_lsp::analysis
                                 continue;
                             }
 
-                            TSNode nameNode = ts_node_child_by_field_name(child, "name", k_nameFieldLength);
+                            TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
                             const std::string valueType = ForeachValueType(containerType, variableIndex, ctx);
                             ++variableIndex;
 
@@ -2370,10 +2371,10 @@ namespace angel_lsp::analysis
 
             if (nodeType == "variable_declaration")
             {
-                TSNode typeNode = ts_node_child_by_field_name(node, "var_type", k_varTypeFieldLength);
+                TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
                 if (ts_node_is_null(typeNode))
                 {
-                    typeNode = ts_node_child_by_field_name(node, "type", k_typeFieldLength);
+                    typeNode = parser::GetChildByField(node, parser::fields::Type);
                 }
 
                 std::string rawType = CleanBaseType(NodeText(typeNode, request.sourceCode));
@@ -2387,10 +2388,10 @@ namespace angel_lsp::analysis
                             continue;
                         }
 
-                        TSNode nameNode = ts_node_child_by_field_name(child, "name", k_nameFieldLength);
+                        TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
                         std::string varName = NodeText(nameNode, request.sourceCode);
 
-                        TSNode valueNode = ts_node_child_by_field_name(child, "value", k_valueFieldLength);
+                        TSNode valueNode = parser::GetChildByField(child, parser::fields::Value);
                         if (ts_node_is_null(valueNode))
                         {
                             uint32_t childCount = ts_node_child_count(child);
@@ -2482,7 +2483,7 @@ namespace angel_lsp::analysis
                             {
                                 continue;
                             }
-                            TSNode valNode = ts_node_child_by_field_name(child, "value", k_valueFieldLength);
+                            TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
                             CheckFuncdefAssignment(child, funcdefSym->GetFuncdef(), valNode, scopeAt(), ctx, request.sourceCode);
                         }
                     }
@@ -2508,8 +2509,8 @@ namespace angel_lsp::analysis
                                 }
                                 else
                                 {
-                                    TSNode argsNode = ts_node_child_by_field_name(child, "arguments", k_argsFieldLength);
-                                    TSNode valNode = ts_node_child_by_field_name(child, "value", k_valueFieldLength);
+                                    TSNode argsNode = parser::GetChildByField(child, parser::fields::Arguments);
+                                    TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
                                     if (ts_node_is_null(argsNode) && ts_node_is_null(valNode))
                                     {
                                         CheckDefaultConstructor(child, declared.baseName, ctx);
@@ -2531,9 +2532,9 @@ namespace angel_lsp::analysis
             }
             else if (nodeType == "assignment_expression")
             {
-                TSNode left = ts_node_child_by_field_name(node, "left", 4);
-                TSNode right = ts_node_child_by_field_name(node, "right", 5);
-                TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
+                TSNode left = parser::GetChildByField(node, parser::fields::Left);
+                TSNode right = parser::GetChildByField(node, parser::fields::Right);
+                TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
                 std::string opText = NodeText(opNode, request.sourceCode);
                 if (!ts_node_is_null(left) && !ts_node_is_null(right))
                 {
@@ -2541,7 +2542,7 @@ namespace angel_lsp::analysis
                     std::string_view leftNodeType = NodeType(left);
                     if (leftNodeType == "index_expression")
                     {
-                        TSNode arrayNode = ts_node_child_by_field_name(left, "object", 6);
+                        TSNode arrayNode = parser::GetChildByField(left, parser::fields::Object);
                         if (ts_node_is_null(arrayNode) && ts_node_named_child_count(left) > 0)
                         {
                             arrayNode = ts_node_named_child(left, 0);
@@ -2592,11 +2593,11 @@ namespace angel_lsp::analysis
                     TSNode actualRight = right;
                     if (std::string_view(NodeType(left)) == "unary_expression")
                     {
-                        TSNode op = ts_node_child_by_field_name(left, "operator", 8);
+                        TSNode op = parser::GetChildByField(left, parser::fields::Operator);
                         if (!ts_node_is_null(op) && NodeText(op, request.sourceCode) == "@")
                         {
                             isHandleAssignment = true;
-                            TSNode operand = ts_node_child_by_field_name(left, "operand", 7);
+                            TSNode operand = parser::GetChildByField(left, parser::fields::Operand);
                             if (!ts_node_is_null(operand))
                             {
                                 actualLeft = operand;
@@ -2605,10 +2606,10 @@ namespace angel_lsp::analysis
                     }
                     if (std::string_view(NodeType(right)) == "unary_expression")
                     {
-                        TSNode op = ts_node_child_by_field_name(right, "operator", 8);
+                        TSNode op = parser::GetChildByField(right, parser::fields::Operator);
                         if (!ts_node_is_null(op) && NodeText(op, request.sourceCode) == "@")
                         {
-                            TSNode operand = ts_node_child_by_field_name(right, "operand", 7);
+                            TSNode operand = parser::GetChildByField(right, parser::fields::Operand);
                             if (!ts_node_is_null(operand))
                             {
                                 actualRight = operand;
@@ -2685,12 +2686,12 @@ namespace angel_lsp::analysis
             }
             else if (nodeType == "unary_expression" || nodeType == "postfix_expression")
             {
-                TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
+                TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
                 std::string opText = NodeText(opNode, request.sourceCode);
                 std::string nodeText = NodeText(node, request.sourceCode);
                 if (opText == "++" || opText == "--" || nodeText.find("++") != std::string::npos || nodeText.find("--") != std::string::npos)
                 {
-                    TSNode argNode = ts_node_child_by_field_name(node, "operand", 7);
+                    TSNode argNode = parser::GetChildByField(node, parser::fields::Operand);
                     if (ts_node_is_null(argNode))
                     {
                         uint32_t count = ts_node_named_child_count(node);
@@ -2732,7 +2733,7 @@ namespace angel_lsp::analysis
                     std::string_view pType = ts_node_type(parent);
                     if (pType == "assignment_expression")
                     {
-                        TSNode leftChild = ts_node_child_by_field_name(parent, "left", 4);
+                        TSNode leftChild = parser::GetChildByField(parent, parser::fields::Left);
                         if (ts_node_eq(leftChild, node))
                         {
                             isLhsAssignment = true;
@@ -2755,7 +2756,7 @@ namespace angel_lsp::analysis
             else if (nodeType == "if_statement" || nodeType == "while_statement" ||
                      nodeType == "for_statement" || nodeType == "do_while_statement")
             {
-                TSNode condNode = ts_node_child_by_field_name(node, "condition", 9);
+                TSNode condNode = parser::GetChildByField(node, parser::fields::Condition);
                 if (ts_node_is_null(condNode))
                 {
                     uint32_t count = ts_node_named_child_count(node);
@@ -2862,14 +2863,14 @@ namespace angel_lsp::analysis
                         }
                         if (pType == "func_declaration")
                         {
-                            TSNode retTypeNode = ts_node_child_by_field_name(parent, "return_type", 11);
+                            TSNode retTypeNode = parser::GetChildByField(parent, parser::fields::ReturnType);
                             if (ts_node_is_null(retTypeNode))
                             {
-                                retTypeNode = ts_node_child_by_field_name(parent, "type", 4);
+                                retTypeNode = parser::GetChildByField(parent, parser::fields::Type);
                             }
                             if (!ts_node_is_null(retTypeNode))
                             {
-                                TSNode nameNode = ts_node_child_by_field_name(parent, "name", 4);
+                                TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
                                 uint32_t headEnd = ts_node_is_null(nameNode) ? ts_node_end_byte(retTypeNode) : ts_node_start_byte(nameNode);
                                 uint32_t headStart = ts_node_start_byte(parent);
                                 std::string headText = (headEnd > headStart && headEnd <= request.sourceCode.size())
@@ -2935,10 +2936,10 @@ namespace angel_lsp::analysis
             }
             else if (nodeType == node_types::CallExpression || nodeType == "construct_call_expression")
             {
-                TSNode callee = ts_node_child_by_field_name(node, "type", 4);
+                TSNode callee = parser::GetChildByField(node, parser::fields::Type);
                 if (ts_node_is_null(callee))
                 {
-                    callee = ts_node_child_by_field_name(node, "function", k_functionFieldLength);
+                    callee = parser::GetChildByField(node, parser::fields::Function);
                 }
                 if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
                 {
@@ -2958,7 +2959,7 @@ namespace angel_lsp::analysis
                 // to a last-segment scan across the whole table: without the guard, a class that
                 // shares its bare name with some namespace's funcdef would take this branch and
                 // lose its CheckConstruction below.
-                TSNode argsNode = ts_node_child_by_field_name(node, "arguments", k_argsFieldLength);
+                TSNode argsNode = parser::GetChildByField(node, parser::fields::Arguments);
                 TSNode soleArgument = {};
                 if (!ts_node_is_null(argsNode) && ts_node_named_child_count(argsNode) == 1)
                 {
@@ -2988,7 +2989,7 @@ namespace angel_lsp::analysis
                     const DeclaredType target = ReadDeclaredType(callee, ctx, request.sourceCode);
                     if (target.usable && !target.isHandle && IsSameType(calleeName, target.baseName))
                     {
-                        CheckConstruction(ts_node_child_by_field_name(node, "arguments", k_argsFieldLength),
+                        CheckConstruction(parser::GetChildByField(node, parser::fields::Arguments),
                                           target.baseName, scopeAt(), ctx, request.sourceCode);
                     }
                 }

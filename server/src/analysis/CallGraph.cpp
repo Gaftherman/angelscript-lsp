@@ -3,6 +3,7 @@
 
 #include <string>
 #include <utility>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -47,7 +48,7 @@ namespace angel_lsp::analysis
         /** @brief The node naming what a call reaches, or a null node when it names nothing stable. */
         TSNode CalleeNameNode(TSNode callNode)
         {
-            TSNode callee = ts_node_child_by_field_name(callNode, "function", k_functionFieldLength);
+            TSNode callee = parser::GetChildByField(callNode, parser::fields::Function);
             if (ts_node_is_null(callee))
             {
                 return TSNode{};
@@ -57,7 +58,7 @@ namespace angel_lsp::analysis
 
             if (calleeType == "member_expression")
             {
-                return ts_node_child_by_field_name(callee, "member", k_memberFieldLength);
+                return parser::GetChildByField(callee, parser::fields::Member);
             }
 
             if (calleeType == "scoped_identifier")
@@ -116,7 +117,7 @@ namespace angel_lsp::analysis
             if (nodeType == "class_declaration" || nodeType == "interface_declaration" ||
                 nodeType == "mixin_declaration" || nodeType == "namespace_declaration")
             {
-                const std::string name = NodeText(ts_node_child_by_field_name(node, "name", k_nameFieldLength), sourceCode);
+                const std::string name = NodeText(parser::GetChildByField(node, parser::fields::Name), sourceCode);
                 if (!name.empty())
                 {
                     rebuilt = containerPath.empty() ? name : containerPath + "::" + name;
@@ -125,7 +126,7 @@ namespace angel_lsp::analysis
             }
             else if (nodeType == "func_declaration")
             {
-                const std::string name = NodeText(ts_node_child_by_field_name(node, "name", k_nameFieldLength), sourceCode);
+                const std::string name = NodeText(parser::GetChildByField(node, parser::fields::Name), sourceCode);
                 if (!name.empty())
                 {
                     rebuilt = containerPath.empty() ? name : containerPath + "::" + name;

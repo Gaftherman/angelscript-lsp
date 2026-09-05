@@ -6,6 +6,7 @@
 #include <ankerl/unordered_dense.h>
 #include <string_view>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 extern "C" const TSLanguage *tree_sitter_angelscript();
 
@@ -208,7 +209,7 @@ namespace angel_lsp::features
                 {
                     return false;
                 }
-                TSNode nameChild = ts_node_child_by_field_name(parent, "name", 4);
+                TSNode nameChild = parser::GetChildByField(parent, parser::fields::Name);
                 if (ts_node_is_null(nameChild))
                 {
                     return false;
@@ -671,7 +672,7 @@ namespace angel_lsp::features
 
                             if (!ts_node_is_null(classDecl))
                             {
-                                TSNode classNameNode = ts_node_child_by_field_name(classDecl, "name", 4);
+                                TSNode classNameNode = parser::GetChildByField(classDecl, parser::fields::Name);
                                 if (!ts_node_is_null(classNameNode))
                                 {
                                     uint32_t cStart = ts_node_start_byte(classNameNode);
@@ -847,8 +848,8 @@ namespace angel_lsp::features
 
             if (std::string_view(ts_node_type(currNode)) == "member_expression")
             {
-                TSNode objectNode = ts_node_child_by_field_name(currNode, "object", 6);
-                TSNode memberNode = ts_node_child_by_field_name(currNode, "member", 6);
+                TSNode objectNode = parser::GetChildByField(currNode, parser::fields::Object);
+                TSNode memberNode = parser::GetChildByField(currNode, parser::fields::Member);
                 if (!ts_node_is_null(objectNode) && !ts_node_is_null(memberNode))
                 {
                     uint32_t objStart = ts_node_start_byte(objectNode);

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include "parser/GrammarNames.h"
 
 extern "C" const TSLanguage *tree_sitter_angelscript();
 
@@ -266,7 +267,7 @@ namespace angel_lsp::analysis
                 OpenScope openScope{scopePtr, endByte};
                 if (scopeNodeSymbol == m_symFuncDeclaration)
                 {
-                    TSNode ownNameNode = ts_node_child_by_field_name(capture.node, "name", static_cast<uint32_t>(strlen("name")));
+                    TSNode ownNameNode = parser::GetChildByField(capture.node, parser::fields::Name);
                     if (!ts_node_is_null(ownNameNode))
                     {
                         openScope.ownNameStartByte = ts_node_start_byte(ownNameNode);
@@ -345,7 +346,7 @@ namespace angel_lsp::analysis
                     {
                         // The grammar always names this field; positional fallbacks used to stand in for
                         // it here and would mis-identify the member in anything but the simplest access.
-                        TSNode memberField = ts_node_child_by_field_name(parent, "member", static_cast<uint32_t>(strlen("member")));
+                        TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
                         ref.isMemberAccess = ts_node_eq(memberField, capture.node) ||
                             (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(capture.node));
                     }
@@ -429,7 +430,7 @@ namespace angel_lsp::analysis
         // the most common object in any function body.
         if (ts_node_symbol(declaratorNode) == m_symParameter)
         {
-            TSNode paramTypeNode = ts_node_child_by_field_name(declaratorNode, "param_type", static_cast<uint32_t>(strlen("param_type")));
+            TSNode paramTypeNode = parser::GetChildByField(declaratorNode, parser::fields::ParamType);
             if (!ts_node_is_null(paramTypeNode))
             {
                 TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(paramTypeNode, sourceCode);
@@ -450,7 +451,7 @@ namespace angel_lsp::analysis
         // the analyzer replaces it with the container's element type.
         if (ts_node_symbol(declaratorNode) == m_symForeachVariable)
         {
-            TSNode foreachTypeNode = ts_node_child_by_field_name(declaratorNode, "type", static_cast<uint32_t>(strlen("type")));
+            TSNode foreachTypeNode = parser::GetChildByField(declaratorNode, parser::fields::Type);
             if (!ts_node_is_null(foreachTypeNode))
             {
                 TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(foreachTypeNode, sourceCode);
@@ -469,10 +470,10 @@ namespace angel_lsp::analysis
         if (ts_node_is_null(declarationNode))
             return;
 
-        TSNode typeNode = ts_node_child_by_field_name(declarationNode, "var_type", static_cast<uint32_t>(strlen("var_type")));
+        TSNode typeNode = parser::GetChildByField(declarationNode, parser::fields::VarType);
         if (ts_node_is_null(typeNode))
         {
-            typeNode = ts_node_child_by_field_name(declarationNode, "type", static_cast<uint32_t>(strlen("type")));
+            typeNode = parser::GetChildByField(declarationNode, parser::fields::Type);
         }
         if (ts_node_is_null(typeNode) && ts_node_named_child_count(declarationNode) > 0)
         {
@@ -495,7 +496,7 @@ namespace angel_lsp::analysis
         // via node-types.json - "value"/"initializer" checks below are defensive, matching
         // SymbolCollector::ProcessVariable's identical fallback scan) - so find it by scanning for
         // the '=' token and taking the next child.
-        TSNode valueNode = ts_node_child_by_field_name(declaratorNode, "value", static_cast<uint32_t>(strlen("value")));
+        TSNode valueNode = parser::GetChildByField(declaratorNode, parser::fields::Value);
         if (ts_node_is_null(valueNode))
         {
             uint32_t childCount = ts_node_child_count(declaratorNode);

@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include <unordered_set>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::features
 {
@@ -412,7 +413,7 @@ namespace angel_lsp::features
         bool isMemberChildOfExpression = false;
         if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "member_expression")
         {
-            TSNode memNode = ts_node_child_by_field_name(parent, "member", 6);
+            TSNode memNode = parser::GetChildByField(parent, parser::fields::Member);
             if (!ts_node_is_null(memNode) && (ts_node_eq(memNode, node) || ts_node_start_byte(memNode) == ts_node_start_byte(node)))
             {
                 isMemberChildOfExpression = true;
@@ -426,7 +427,7 @@ namespace angel_lsp::features
                 return std::nullopt;
             }
 
-            TSNode objectNode = ts_node_child_by_field_name(parent, "object", 6);
+            TSNode objectNode = parser::GetChildByField(parent, parser::fields::Object);
             if (ts_node_is_null(objectNode))
             {
                 return std::nullopt;
@@ -598,14 +599,14 @@ namespace angel_lsp::features
                             std::string_view cType = ts_node_type(cur);
                             if (cType == "parameter" || cType == "variable_declaration")
                             {
-                                TSNode typeNode = ts_node_child_by_field_name(cur, "param_type", 10);
+                                TSNode typeNode = parser::GetChildByField(cur, parser::fields::ParamType);
                                 if (ts_node_is_null(typeNode))
                                 {
-                                    typeNode = ts_node_child_by_field_name(cur, "var_type", 8);
+                                    typeNode = parser::GetChildByField(cur, parser::fields::VarType);
                                 }
                                 if (ts_node_is_null(typeNode))
                                 {
-                                    typeNode = ts_node_child_by_field_name(cur, "type", 4);
+                                    typeNode = parser::GetChildByField(cur, parser::fields::Type);
                                 }
                                 if (!ts_node_is_null(typeNode))
                                 {

@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string_view>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::features
 {
@@ -54,7 +55,7 @@ namespace angel_lsp::features
          */
         inline TSNode GetChildByFieldName(TSNode node, const char *fieldName)
         {
-            return ts_node_child_by_field_name(node, fieldName, static_cast<uint32_t>(std::strlen(fieldName)));
+            return parser::GetChildByField(node, fieldName);
         }
 
         std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const std::string &sourceCode, bool isInsideClass, std::string_view enclosingClassName);

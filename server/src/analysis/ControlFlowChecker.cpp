@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 #include "parser/Primitives.h"
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -129,7 +130,7 @@ namespace angel_lsp::analysis
                 return;
             }
 
-            const TSNode consequence = ts_node_child_by_field_name(node, "consequence", k_consequenceFieldLength);
+            const TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
             if (!ts_node_is_null(consequence) && std::string_view(ts_node_type(consequence)) == ";")
             {
                 const TSPoint start = ts_node_start_point(consequence);
@@ -137,7 +138,7 @@ namespace angel_lsp::analysis
                 ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-if-empty-statement");
             }
 
-            const TSNode alternative = ts_node_child_by_field_name(node, "alternative", k_alternativeFieldLength);
+            const TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
             if (!ts_node_is_null(alternative) && std::string_view(ts_node_type(alternative)) == ";")
             {
                 const TSPoint start = ts_node_start_point(alternative);
@@ -197,12 +198,12 @@ namespace angel_lsp::analysis
 
             if (type == "if_statement")
             {
-                TSNode alternative = ts_node_child_by_field_name(node, "alternative", k_alternativeFieldLength);
+                TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
                 if (ts_node_is_null(alternative))
                 {
                     return false;
                 }
-                TSNode consequence = ts_node_child_by_field_name(node, "consequence", k_consequenceFieldLength);
+                TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
                 return DefinitelyReturns(consequence, sourceCode) && DefinitelyReturns(alternative, sourceCode);
             }
 
@@ -703,9 +704,9 @@ namespace angel_lsp::analysis
                 // make a `break` inside the nested body legal.
                 state = FlowState{};
 
-                TSNode body = ts_node_child_by_field_name(node, "body", k_bodyFieldLength);
-                TSNode returnType = ts_node_child_by_field_name(node, "return_type", k_returnTypeFieldLength);
-                TSNode name = ts_node_child_by_field_name(node, "name", k_nameFieldLength);
+                TSNode body = parser::GetChildByField(node, parser::fields::Body);
+                TSNode returnType = parser::GetChildByField(node, parser::fields::ReturnType);
+                TSNode name = parser::GetChildByField(node, parser::fields::Name);
 
                 // What this body is required to return, and under whose name to say so.
                 //

@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <unordered_set>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::features
 {
@@ -289,7 +290,7 @@ namespace angel_lsp::features
 
         if (ts_node_is_null(argListNode))
         {
-            argListNode = ts_node_child_by_field_name(callNode, "arguments", 9);
+            argListNode = parser::GetChildByField(callNode, parser::fields::Arguments);
             if (ts_node_is_null(argListNode))
             {
                 uint32_t childCount = ts_node_child_count(callNode);
@@ -341,7 +342,7 @@ namespace angel_lsp::features
         }
 
         // Extract function node
-        TSNode funcNode = ts_node_child_by_field_name(callNode, "function", 8);
+        TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
         if (ts_node_is_null(funcNode))
         {
             uint32_t childCount = ts_node_child_count(callNode);
@@ -368,8 +369,8 @@ namespace angel_lsp::features
 
         if (funcType == "member_expression")
         {
-            TSNode objNode = ts_node_child_by_field_name(funcNode, "object", 6);
-            TSNode memNode = ts_node_child_by_field_name(funcNode, "member", 6);
+            TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+            TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
 
             if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
             {

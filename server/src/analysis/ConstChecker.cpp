@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
 {
@@ -92,7 +93,7 @@ namespace angel_lsp::analysis
                 return false;
             }
 
-            TSNode parameters = ts_node_child_by_field_name(owner, "parameters", 10);
+            TSNode parameters = parser::GetChildByField(owner, parser::fields::Parameters);
             if (ts_node_is_null(parameters))
             {
                 return false;
@@ -107,14 +108,14 @@ namespace angel_lsp::analysis
                     continue;
                 }
 
-                TSNode nameNode = ts_node_child_by_field_name(parameter, "name", 4);
+                TSNode nameNode = parser::GetChildByField(parameter, parser::fields::Name);
                 if (ts_node_is_null(nameNode) || NodeText(nameNode, sourceCode) != name)
                 {
                     continue;
                 }
 
                 found = true;
-                TSNode typeNode = ts_node_child_by_field_name(parameter, "param_type", 10);
+                TSNode typeNode = parser::GetChildByField(parameter, parser::fields::ParamType);
                 return !ts_node_is_null(typeNode) && TypeTextIsConst(NodeText(typeNode, sourceCode));
             }
             return false;
@@ -230,7 +231,7 @@ namespace angel_lsp::analysis
             if (nodeType == "member_expression")
             {
                 const Constness object = ResolveConstness(
-                    ts_node_child_by_field_name(node, "object", k_objectFieldLength), scope, table, sourceCode, depth + 1);
+                    parser::GetChildByField(node, parser::fields::Object), scope, table, sourceCode, depth + 1);
                 return object == Constness::Const ? Constness::Const : Constness::Unknown;
             }
 
@@ -362,7 +363,7 @@ namespace angel_lsp::analysis
         void CheckAssignment(TSNode node, const ConstCheckRequest &request,
                              const Scope *scope, DiagnosticContext &ctx)
         {
-            TSNode target = ts_node_child_by_field_name(node, "left", k_leftFieldLength);
+            TSNode target = parser::GetChildByField(node, parser::fields::Left);
             if (ts_node_is_null(target))
             {
                 return;
@@ -372,11 +373,11 @@ namespace angel_lsp::analysis
             TSNode actualTarget = target;
             if (std::string_view(ts_node_type(target)) == "unary_expression")
             {
-                TSNode opNode = ts_node_child_by_field_name(target, "operator", 8);
+                TSNode opNode = parser::GetChildByField(target, parser::fields::Operator);
                 if (!ts_node_is_null(opNode) && NodeText(opNode, request.sourceCode) == "@")
                 {
                     isHandleAssignment = true;
-                    TSNode operand = ts_node_child_by_field_name(target, "operand", 7);
+                    TSNode operand = parser::GetChildByField(target, parser::fields::Operand);
                     if (!ts_node_is_null(operand))
                     {
                         actualTarget = operand;
@@ -410,14 +411,14 @@ namespace angel_lsp::analysis
         void CheckMethodCall(TSNode node, const ConstCheckRequest &request,
                              const Scope *scope, DiagnosticContext &ctx)
         {
-            TSNode callee = ts_node_child_by_field_name(node, "function", k_functionFieldLength);
+            TSNode callee = parser::GetChildByField(node, parser::fields::Function);
             if (ts_node_is_null(callee) || std::string_view(ts_node_type(callee)) != "member_expression")
             {
                 return;
             }
 
-            TSNode objectNode = ts_node_child_by_field_name(callee, "object", k_objectFieldLength);
-            TSNode memberNode = ts_node_child_by_field_name(callee, "member", k_memberFieldLength);
+            TSNode objectNode = parser::GetChildByField(callee, parser::fields::Object);
+            TSNode memberNode = parser::GetChildByField(callee, parser::fields::Member);
             if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
             {
                 return;
