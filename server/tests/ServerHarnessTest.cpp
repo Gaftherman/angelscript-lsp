@@ -4507,3 +4507,130 @@ TEST_CASE("Server - Deleting the only stub leaves the host types unknown")
 
     CHECK(published.find("as-err-unresolved-type") != std::string::npos);
 }
+
+// =====================================================================================
+// Hover over the shapes that nest.
+//
+// `array<array<int>>`, a dictionary holding a dictionary, an element pulled out of an
+// `array<dictionary>`, a counter three loops deep. These are where a type answer degrades quietly:
+// the tooltip still appears, and says `array` or nothing useful, and nobody notices until they are
+// reading someone else's code.
+//
+// The scripts were also handed to the compiler, and three of the generated predictions about it
+// were wrong - see the `why` of each. Two of those are a property of how this engine build
+// registers the array template rather than a rule of the language, which is why the compiler
+// verdict is recorded in the fixture and not turned into a parity case.
+// =====================================================================================
+
+namespace
+{
+    struct NestedScenario
+    {
+        std::string name;
+        std::string why;
+        std::string source;
+
+        uint32_t hoverLine = 0;
+        uint32_t hoverCharacter = 0;
+        std::string hoverText;
+        std::string hoverContains;
+    };
+
+    std::vector<NestedScenario> LoadNestedScenarios()
+    {
+        const std::filesystem::path path =
+            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "nested_scenarios.json";
+
+        std::ifstream file(path, std::ios::binary);
+        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        lsp::json::Value parsed = lsp::json::parse(text);
+        REQUIRE(parsed.isObject());
+
+        const auto *list = parsed.object().find("scenarios");
+        REQUIRE(list != nullptr);
+        REQUIRE(list->isArray());
+
+        std::vector<NestedScenario> scenarios;
+        for (const auto &entry : list->array())
+        {
+            const lsp::json::Object &fields = entry.object();
+
+            NestedScenario scenario;
+            scenario.name = fields.find("name")->string();
+            scenario.why = fields.find("why")->string();
+            scenario.source = fields.find("source")->string();
+
+            const auto *hover = fields.find("hover");
+            if (hover == nullptr || !hover->isObject())
+                continue;
+
+            scenario.hoverLine = static_cast<uint32_t>(hover->object().find("line")->number());
+            scenario.hoverCharacter = static_cast<uint32_t>(hover->object().find("character")->number());
+            scenario.hoverText = hover->object().find("text")->string();
+            scenario.hoverContains = hover->object().find("contains")->string();
+
+            scenarios.push_back(std::move(scenario));
+        }
+
+        return scenarios;
+    }
+}
+
+TEST_CASE("Server - Hover answers for the shapes that nest")
+{
+    const std::vector<NestedScenario> scenarios = LoadNestedScenarios();
+    REQUIRE_FALSE(scenarios.empty());
+
+    size_t answered = 0;
+    size_t silent = 0;
+    size_t wrong = 0;
+
+    for (const NestedScenario &scenario : scenarios)
+    {
+        CAPTURE(scenario.name);
+        INFO(scenario.why);
+
+        WorkspaceFixture fixture;
+        fixture.Write("main.as", scenario.source);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeMessage(fixture.RootUri()));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        stream.Push(DidOpenMessage(fixture.Uri("main.as"), scenario.source));
+        stream.Push(R"({"jsonrpc":"2.0","id":50,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
+                    fixture.Uri("main.as") + R"("},"position":{"line":)" + std::to_string(scenario.hoverLine) +
+                    R"(,"character":)" + std::to_string(scenario.hoverCharacter) + R"(}}})");
+        stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        RunScript(serverConfig, stream);
+
+        const std::string hover = stream.ResponseFor(50);
+        INFO("hover: " << hover);
+        INFO("should mention: " << scenario.hoverContains);
+
+        if (hover.find("\"result\":null") != std::string::npos || hover.empty())
+        {
+            ++silent;
+            continue;
+        }
+
+        if (hover.find(scenario.hoverContains) != std::string::npos)
+            ++answered;
+        else
+            ++wrong;
+    }
+
+    MESSAGE("nested hover: " << answered << " of " << scenarios.size()
+                             << " named the type, " << wrong << " named something else, "
+                             << silent << " said nothing");
+
+    // Every one of them, because every one of them answered when this was written: 20 of 20 named
+    // the type, none said anything else, none stayed silent. A soft assertion would have been the
+    // honest thing only if something here were still broken, and nothing is - so this guards it.
+    CHECK(answered == scenarios.size());
+    CHECK(wrong == 0);
+    CHECK(silent == 0);
+}

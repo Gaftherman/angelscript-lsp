@@ -1,0 +1,244 @@
+{
+  "scenarios": [
+    {
+      "name": "nested-array-index",
+      "why": "Parsing and resolving multiple consecutive template brackets and chained index operator types. Rejected because the variable is called `grid`, which this engine registers as a type - \"Illegal variable name\". Nothing to do with nesting: the same script with the variable renamed to `matrix` compiles, indexing and all.",
+      "compiler": "reject",
+      "source": "void main() {\n    array<array<int>> grid;\n    int val = grid[0][0];\n}",
+      "hover": {
+        "line": 1,
+        "character": 22,
+        "text": "grid",
+        "contains": "array<array<int>>"
+      }
+    },
+    {
+      "name": "nested-array-extract-row",
+      "why": "Inferring the inner element type of a nested template container when assigned to a separate variable.",
+      "compiler": "accept",
+      "source": "void main() {\n    array<array<int>> matrix;\n    array<int> row = matrix[0];\n}",
+      "hover": {
+        "line": 2,
+        "character": 15,
+        "text": "row",
+        "contains": "array<int>"
+      }
+    },
+    {
+      "name": "deep-nested-array",
+      "why": "Handling template recursion depth and lexing multiple closing angle brackets without ambiguity.",
+      "compiler": "accept",
+      "source": "void main() {\n    array<array<array<int>>> cube;\n}",
+      "hover": {
+        "line": 1,
+        "character": 29,
+        "text": "cube",
+        "contains": "array<array<array<int>>>"
+      }
+    },
+    {
+      "name": "dictionary-retrieve-value",
+      "why": "Resolving output reference parameters on non-generic dictionary access methods.",
+      "compiler": "accept",
+      "source": "void main() {\n    dictionary dict;\n    int val = 0;\n    dict.get(\"score\", val);\n}",
+      "hover": {
+        "line": 2,
+        "character": 8,
+        "text": "val",
+        "contains": "int"
+      }
+    },
+    {
+      "name": "nested-dictionary",
+      "why": "Tracking nested container value semantics when storing one dictionary instance inside another.",
+      "compiler": "accept",
+      "source": "void main() {\n    dictionary outer;\n    dictionary inner;\n    outer.set(\"sub\", inner);\n}",
+      "hover": {
+        "line": 1,
+        "character": 15,
+        "text": "outer",
+        "contains": "dictionary"
+      }
+    },
+    {
+      "name": "array-of-dictionary",
+      "why": "Indexing an array instantiated with a non-primitive dictionary value type.",
+      "compiler": "accept",
+      "source": "void main() {\n    array<dictionary> list;\n    dictionary item = list[0];\n}",
+      "hover": {
+        "line": 2,
+        "character": 15,
+        "text": "item",
+        "contains": "dictionary"
+      }
+    },
+    {
+      "name": "class-array-member",
+      "why": "Resolving member access on a template container containing user class instances within a method.",
+      "compiler": "accept",
+      "source": "class Node {\n    int id;\n}\n\nclass Graph {\n    array<Node> nodes;\n    void test() {\n        nodes.length();\n    }\n}",
+      "hover": {
+        "line": 7,
+        "character": 8,
+        "text": "nodes",
+        "contains": "array<Node>"
+      }
+    },
+    {
+      "name": "function-returns-array",
+      "why": "Propagating template container return types across function call expression boundaries.",
+      "compiler": "accept",
+      "source": "array<int> getNumbers() {\n    array<int> arr;\n    return arr;\n}\n\nvoid main() {\n    array<int> res = getNumbers();\n}",
+      "hover": {
+        "line": 6,
+        "character": 15,
+        "text": "res",
+        "contains": "array<int>"
+      }
+    },
+    {
+      "name": "handle-assign-in-condition",
+      "why": "AngelScript treats assignments as statements rather than expressions, rejecting assignment inside conditions.",
+      "compiler": "reject",
+      "source": "class HandleObj {}\n\nvoid main() {\n    HandleObj@ h;\n    HandleObj@ other;\n    if (@h = @other) {}\n}",
+      "hover": {
+        "line": 3,
+        "character": 15,
+        "text": "h",
+        "contains": "HandleObj@"
+      }
+    },
+    {
+      "name": "value-assign-in-condition",
+      "why": "Assignments are strictly statements in AngelScript grammar and cannot be evaluated as condition expressions.",
+      "compiler": "reject",
+      "source": "class ValObj {\n    int x;\n}\n\nvoid main() {\n    ValObj obj;\n    ValObj other;\n    if (obj = other) {}\n}",
+      "hover": {
+        "line": 5,
+        "character": 11,
+        "text": "obj",
+        "contains": "ValObj"
+      }
+    },
+    {
+      "name": "handle-comparison-is",
+      "why": "Disambiguating handle identity comparison keywords from value equality operations.",
+      "compiler": "accept",
+      "source": "class Item {}\n\nvoid main() {\n    Item@ a;\n    Item@ b;\n    if (a is b) {}\n}",
+      "hover": {
+        "line": 5,
+        "character": 8,
+        "text": "a",
+        "contains": "Item@"
+      }
+    },
+    {
+      "name": "nested-array-method-condition",
+      "why": "Chaining multiple array index operators followed by member method invocation within a conditional expression. Rejected for the same reason as nested-array-index: the variable is named `grid`, a registered type. Not about the condition it was written for.",
+      "compiler": "reject",
+      "source": "class Cell {\n    int getValue() { return 42; }\n}\n\nvoid main() {\n    array<array<Cell>> grid;\n    if (grid[0][1].getValue() > 0) {}\n}",
+      "hover": {
+        "line": 6,
+        "character": 8,
+        "text": "grid",
+        "contains": "array<array<Cell>>"
+      }
+    },
+    {
+      "name": "class-op-equals-condition",
+      "why": "Resolving custom operator overload opEquals for equality expressions inside condition statements.",
+      "compiler": "accept",
+      "source": "class Point {\n    int x;\n    bool opEquals(const Point &in other) const {\n        return x == other.x;\n    }\n}\n\nvoid main() {\n    Point p1;\n    Point p2;\n    if (p1 == p2) {}\n}",
+      "hover": {
+        "line": 10,
+        "character": 8,
+        "text": "p1",
+        "contains": "Point"
+      }
+    },
+    {
+      "name": "handle-method-in-condition",
+      "why": "Resolving method calls via object handles used directly as boolean predicates in conditional expressions.",
+      "compiler": "accept",
+      "source": "class Service {\n    bool isActive() const { return true; }\n}\n\nvoid main() {\n    Service@ svc;\n    if (svc.isActive()) {}\n}",
+      "hover": {
+        "line": 5,
+        "character": 13,
+        "text": "svc",
+        "contains": "Service@"
+      }
+    },
+    {
+      "name": "triple-nested-loop-counters",
+      "why": "Tracking lexical scope chains and variable resolution across multiple nested for-loop headers.",
+      "compiler": "accept",
+      "source": "void main() {\n    for (int i = 0; i < 2; i++) {\n        for (int j = 0; j < 2; j++) {\n            for (int k = 0; k < 2; k++) {\n                int sum = k;\n            }\n        }\n    }\n}",
+      "hover": {
+        "line": 3,
+        "character": 21,
+        "text": "k",
+        "contains": "int"
+      }
+    },
+    {
+      "name": "foreach-nested-array",
+      "why": "AngelScript does not support foreach syntax or range-based for loops, causing a syntax rejection.",
+      "compiler": "reject",
+      "source": "void main() {\n    array<array<int>> grid;\n    foreach (array<int> row : grid) {\n    }\n}",
+      "hover": {
+        "line": 2,
+        "character": 24,
+        "text": "row",
+        "contains": "array<int>"
+      }
+    },
+    {
+      "name": "sibling-for-loops-same-counter",
+      "why": "Ensuring loop counter declarations in separate sibling scopes do not produce name collision errors.",
+      "compiler": "accept",
+      "source": "void main() {\n    for (int i = 0; i < 5; i++) {}\n    for (int i = 0; i < 5; i++) {}\n}",
+      "hover": {
+        "line": 2,
+        "character": 13,
+        "text": "i",
+        "contains": "int"
+      }
+    },
+    {
+      "name": "loop-variable-shadowing",
+      "why": "AngelScript strictly forbids shadowing any variable declared in an enclosing scope within the same function. A nested block is its own scope, so shadowing a loop counter inside the body is accepted - measured, and the same rule doc_p12 pins.",
+      "compiler": "accept",
+      "source": "void main() {\n    for (int i = 0; i < 5; i++) {\n        int i = 10;\n    }\n}",
+      "hover": {
+        "line": 2,
+        "character": 12,
+        "text": "i",
+        "contains": "int"
+      }
+    },
+    {
+      "name": "nested-while-for-while-break",
+      "why": "Resolving loop control statements to the correct innermost loop construct across mixed loop types.",
+      "compiler": "accept",
+      "source": "void main() {\n    while (true) {\n        for (int i = 0; i < 5; i++) {\n            while (true) {\n                break;\n            }\n        }\n        break;\n    }\n}",
+      "hover": {
+        "line": 2,
+        "character": 17,
+        "text": "i",
+        "contains": "int"
+      }
+    },
+    {
+      "name": "loop-over-array-elements",
+      "why": "Dictionary key iteration typically requires an array of strings which depends on host type registrations, so a plain for loop over an array of ints is used instead.",
+      "compiler": "accept",
+      "source": "void main() {\n    array<int> values;\n    for (uint i = 0; i < values.length(); i++) {\n        int v = values[i];\n    }\n}",
+      "hover": {
+        "line": 3,
+        "character": 12,
+        "text": "v",
+        "contains": "int"
+      }
+    }
+  ]
+}
