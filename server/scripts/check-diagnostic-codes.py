@@ -67,6 +67,31 @@ def referenced_codes() -> set:
     return referenced
 
 
+def unregistered_codes() -> set:
+    """Codes emitted somewhere that DiagnosticCodes.h does not declare a constant for.
+
+    CLAUDE.md has always required every new diagnostic to be registered in that header, and until
+    this check existed nothing enforced it: the header held 48 constants while 148 codes were being
+    emitted. The two checks above pass either way, because they ask whether a code and its message
+    agree - a different question, and one a raw literal answers just as well.
+
+    What the constant buys is the compiler. A misspelled literal at an emit site produces a code the
+    message table has never heard of, and the user is shown the raw string instead of a sentence.
+    With a constant, the same typo does not build.
+    """
+    header = CODES_HEADER.read_text(encoding='utf-8')
+    registered = {m.group(1) for m in re.finditer(r'=\s*"(as-[a-z0-9-]+)"', header)}
+
+    emitted = set()
+    for path in list((SERVER / 'src').rglob('*.cpp')) + list((SERVER / 'src').rglob('*.h')):
+        if path in (I18N, CODES_HEADER):
+            continue
+        text = path.read_text(encoding='utf-8', errors='replace')
+        emitted.update(m.group(1) for m in CODE_PATTERN.finditer(text))
+
+    return emitted - registered
+
+
 def severity_mismatches() -> list:
     """Emit sites where an `as-err-` code is produced at a severity that is not Error.
 
@@ -145,12 +170,27 @@ def main() -> int:
         for code in undeclared:
             print(f'  - {code}', file=sys.stderr)
 
+    unregistered = sorted(unregistered_codes())
+    if unregistered:
+        problems = True
+        print('\nThese are emitted but DiagnosticCodes.h declares no constant for them:',
+              file=sys.stderr)
+        for code in unregistered:
+            print(f'  - {code}', file=sys.stderr)
+        print('  Add a constant to src/analysis/DiagnosticCodes.h. Without one the emit site is a'
+              '\n  bare string, and a typo in it produces a code nothing has a message for - which'
+              '\n  shows the user the raw code and passes every other check in this script.',
+              file=sys.stderr)
+
     if problems:
         return 1
 
+    registered = len(set(re.findall(r'=\s*"(as-[a-z0-9-]+)"',
+                                    CODES_HEADER.read_text(encoding='utf-8'))))
     print(f'{len(declared)} diagnostic codes declared, '
           f'{len(declared) - len(dead)} live, '
-          f'{len(dead)} documented as never emitted.')
+          f'{len(dead)} documented as never emitted, '
+          f'{registered} with a constant in DiagnosticCodes.h.')
     return 0
 
 
