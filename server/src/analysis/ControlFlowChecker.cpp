@@ -320,13 +320,55 @@ namespace angel_lsp::analysis
                 if (NodeType(value) == "identifier" || NodeType(value) == "scoped_identifier")
                 {
                     std::string idText(Trim(NodeText(value, sourceCode)));
+
+                    bool reported = false;
                     auto syms = FindSymbolsInScope(idText, value, sourceCode, ctx.request.symbolTable);
                     for (const auto &s : syms)
                     {
                         if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
                         {
                             EmitAtNode(value, ctx, "as-err-case-not-constant");
+                            reported = true;
                             break;
+                        }
+                    }
+
+                    // A LOCAL is not in the symbol table - locals live in the scope tree - so
+                    // `void f() { int y = 2; switch (x) { case y: ... } }` went unreported while the
+                    // same mistake with a global was caught. Measured: "Case expressions must be
+                    // literal constants".
+                    //
+                    // Only a name that resolves to a local variable is reported. One that resolves
+                    // to nothing at all stays silent, because an enum member the host registered in
+                    // C++ and declared in no stub looks exactly like it from here - the same reason
+                    // the undeclared-identifier rule is a warning rather than an error.
+                    if (!reported && ctx.request.scopeRoot)
+                    {
+                        const TSPoint at = ts_node_start_point(value);
+                        if (const Scope *scope = FindInnermostScope(ctx.request.scopeRoot.get(), at.row, at.column))
+                        {
+                            const Scope *owner = nullptr;
+                            const LocalDefinition *def = ResolveInScope(scope, idText, &owner);
+
+                            // Inside a function body, and only there. The scope tree also holds
+                            // module-scope declarations, and it does not record `const` - so a
+                            // `const int` global used as a case label, which is legal and idiomatic,
+                            // looked exactly like a local from here and was reported. Requiring a
+                            // function scope is what tells the two apart.
+                            bool insideFunction = false;
+                            for (const Scope *current = owner; current != nullptr; current = current->parent)
+                            {
+                                if (current->isFunctionScope)
+                                {
+                                    insideFunction = true;
+                                    break;
+                                }
+                            }
+
+                            if (def && insideFunction && def->kind == LocalDefinitionKind::Variable)
+                            {
+                                EmitAtNode(value, ctx, "as-err-case-not-constant");
+                            }
                         }
                     }
                 }

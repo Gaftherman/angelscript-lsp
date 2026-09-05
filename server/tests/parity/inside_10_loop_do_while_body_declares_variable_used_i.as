@@ -1,0 +1,5 @@
+void test() {
+    do {
+        int x = 0;
+    } while (x == 0);
+}
