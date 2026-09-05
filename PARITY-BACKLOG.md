@@ -5,10 +5,18 @@ parser, the type system, scope, properties, lambdas, `as.predefined`, completion
 This file records what happened when each claim was put to a real compiler, and what is left to
 build.
 
-The suite here passes at 1369 with zero unexplained false positives across the corpora, so nothing
-on that list would ever have surfaced from the tests alone. That is the blind spot this file exists
-to cover. The count in this sentence has gone stale once already; if it disagrees with what
-`angel_lsp_tests` prints, the test run is right and this line is not.
+The suite here passes at 1483 with zero unexplained false positives across 214 parity scripts and
+22 corpus audits, so nothing on that list would ever have surfaced from the tests alone. That is the
+blind spot this file exists to cover. The count in this sentence has gone stale twice now; if it
+disagrees with what `angel_lsp_tests` prints, the test run is right and this line is not.
+
+There is a second blind spot, and it took longer to see: **a guard that enforces nothing passes in
+green.** `check-diagnostic-codes.py` ran on every push for months while two thirds of the rule it
+was believed to enforce went unchecked — it verified that a code and its message agree, which is a
+different question from the one CLAUDE.md asks. Twenty node types and four field names that the
+grammar has never defined sat in live conditions for as long, because nothing compared a string
+literal against the grammar. Both are closed now, and the lesson generalises: when a control has
+never failed, find out whether it can.
 
 ## The rule this file enforces
 
@@ -862,6 +870,25 @@ treats as unacceptable.
 Empty. Every item that was here has landed, each with its `doc_`-prefixed parity case and its
 number in a corpus audit. What is left below is not implementation work.
 
+### Measured and closed, so nobody reopens them
+
+  * **`try`/`catch` grammar.** The rule `seq("try", statement_block, "catch", statement_block)` -
+    one catch, no exception parameter, both bodies braced - looked stricter than the language, and a
+    grammar stricter than the engine costs a symbol rather than producing a diagnostic. Eight shapes
+    measured; the grammar is exactly right. `doc_p43`, `doc_r40`.
+  * **`default` at the end of a `switch`** stays a C++ rule, deliberately. The grammar could express
+    it, and doing so would trade a message carrying the compiler's own words for an ERROR node that
+    costs the enclosing function its symbol.
+  * **`asEP_HEREDOC_TRIM_MODE`** changes a string's content, not any verdict. There is no diagnostic
+    to emit; see `ServerConfig.h` for the eight probes.
+  * **A class with `opImplConv` as a condition** stays an opt-in hint rather than an error. Measured
+    under both bool-conversion modes: mode 0 rejects it, **mode 1 accepts it**, so an error would be
+    a false positive on any host running mode 1. A class with *no* conversion is rejected under both
+    and is reported. `doc_r06`, `doc_r36`.
+  * **Conditions that are not bool.** `cond_17`, `cond_19` and `cond_20` were carried as documented
+    misses and are now closed: a string, an enum, a class with no conversion operator, and a handle
+    are all reported. The parity audit's false negatives dropped from six to three.
+
 ## Open design
 
 One question, and it is not a task: nothing here is waiting on someone to write the code.
@@ -882,6 +909,20 @@ free:
   * **A marker in the stub** - an `@engineonly` or similar - letting a stub author say "this file
     describes the whole API". That is a real answer, and it asks every stub author to make a claim
     they may not be able to keep.
+
+    This got cheaper on 2026-09-05. `angelscript_oracle --dump-registry` prints the engine's own
+    registration table - `GetObjectTypeCount`, `GetGlobalFunctionCount`, `GetEnumCount` and the
+    rest - as a stub. A stub produced that way is not a description of the API, it is a reading of
+    it, so its author *can* keep the claim. That does not make the marker free (a host still has to
+    run the dump against its own engine, and the dump renders template factories in their internal
+    form - `weakref(int&in)`, with the type id as a parameter - which is not what a script writes),
+    but it moves the option from "asks for a promise nobody can keep" to "asks for a build step".
+
+    It has already paid for itself as a cross-check rather than a generator: comparing the dump
+    against the hand-maintained `sdk-addons.as.predefined` found `bool retrieve(?&out)` declared
+    without the `const` the engine registers, in all three overloads - a live false positive, since
+    a stub that forgets a `const` makes the analyzer refuse a call the compiler accepts. doc_p44
+    guards it.
   * **Learning from the workspace**: a name used consistently across many files and declared in none
     is more likely registered than mistyped. That is a heuristic, and a heuristic that produces an
     ERROR is the failure mode this project exists to avoid.
