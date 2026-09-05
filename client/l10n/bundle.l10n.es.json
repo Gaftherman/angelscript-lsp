@@ -23,5 +23,6 @@
   "Default. The workspace scan loads the first stub it finds, in path order.": "Por defecto. El barrido del espacio de trabajo carga el primer stub que encuentra, en orden de ruta.",
   "All stubs (merged)": "Todos los stubs (combinados)",
   "Loads every discovered stub. Declarations they share will resolve more than once.": "Carga todos los stubs descubiertos. Las declaraciones que comparten se resolverán más de una vez.",
-  "Select the predefined stub that describes the host application API": "Selecciona el stub predefinido que describe la API de la aplicación host"
+  "Select the predefined stub that describes the host application API": "Selecciona el stub predefinido que describe la API de la aplicación host",
+  "Stub: {0}": "Stub: {0}"
 }

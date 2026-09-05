@@ -75,6 +75,7 @@
   "command.showServerLog.category": "AngelScript",
   "command.restartServer.title": "Reiniciar servidor",
   "command.restartServer.category": "AngelScript",
+  "command.statusMenu.title": "Menu de estado de AngelScript",
   "command.selectPredefined.title": "Seleccionar stub predefinido",
   "command.selectPredefined.category": "AngelScript",
   "extension.description": "Soporte de lenguaje para AngelScript: información al pasar el cursor, ir a definición, autocompletado, resaltado semántico, diagnósticos, formateo y refactorización, impulsado por un motor nativo C++ de Tree-sitter.",

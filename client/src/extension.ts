@@ -54,6 +54,7 @@ let unexpectedExits = 0;
  * has been dismissed. Empty means the server has not said yet, or every stub is merged.
  */
 let activeStubLabel = '';
+let activeStubPath = '';
 
 /**
  * @brief The line ranges the preprocessor drops, per document, as the server last reported them.
@@ -161,7 +162,12 @@ function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): v
     statusBarItem.text = state === 'running' && activeStubLabel.length > 0
         ? `${label[state]}: ${activeStubLabel}`
         : label[state];
-    statusBarItem.tooltip = `${tooltip}\n${l10n.t('Click for the log, a restart, or the stub picker.')}`;
+    // The bar has room for a couple of path segments; the tooltip has room for the answer.
+    const stubLine = state === 'running' && activeStubPath.length > 0
+        ? `\n${l10n.t('Stub: {0}', activeStubPath)}`
+        : '';
+    statusBarItem.tooltip =
+        `${tooltip}${stubLine}\n${l10n.t('Click for the log, a restart, or the stub picker.')}`;
     statusBarItem.backgroundColor = state === 'failed'
         ? new ThemeColor('statusBarItem.errorBackground')
         : undefined;
@@ -913,6 +919,39 @@ interface PredefinedStubsResult {
  * @param stubs Optionally the answer already in hand, so the caller that just asked does not ask
  *        twice.
  */
+/**
+ * @brief Names a stub in the fewest path segments that can still tell it from its neighbours.
+ *
+ * The basename alone was the obvious choice and the wrong one: the file is called `as.predefined`
+ * in almost every workspace, so with two of them the bar read `AngelScript: as.predefined` for
+ * either, which is exactly the ambiguity the picker exists to resolve.
+ *
+ * Relative to the workspace folder when it is inside one, and short enough to sit in a status bar:
+ * the last two segments, so `scripts/as.predefined` rather than the whole absolute path. A name
+ * that is already distinctive - `svencoop.as.predefined` - keeps its own basename and gains
+ * nothing from the folder. The full path is in the tooltip, where there is room for it.
+ */
+function describeStubPath(fullPath: string): string {
+    const normalised = fullPath.replace(/\\/g, '/');
+    const base = path.basename(normalised);
+
+    const folder = workspace.workspaceFolders?.find(
+        candidate => normalised.toLowerCase().startsWith(
+            candidate.uri.fsPath.replace(/\\/g, '/').toLowerCase() + '/'));
+
+    const relative = folder
+        ? normalised.slice(folder.uri.fsPath.length + 1)
+        : normalised;
+
+    // A basename that already says which stub this is needs no folder in front of it.
+    if (base !== 'as.predefined') {
+        return base;
+    }
+
+    const segments = relative.split('/').filter(segment => segment.length > 0);
+    return segments.length > 1 ? segments.slice(-2).join('/') : base;
+}
+
 async function refreshStubStatus(stubs?: PredefinedStubsResult): Promise<void> {
     let result = stubs;
 
@@ -930,10 +969,13 @@ async function refreshStubStatus(stubs?: PredefinedStubsResult): Promise<void> {
 
     if (result?.merging === true) {
         activeStubLabel = l10n.t('all stubs');
+        activeStubPath = '';
     } else if (result && typeof result.active === 'string' && result.active.length > 0) {
-        activeStubLabel = path.basename(result.active);
+        activeStubPath = result.active;
+        activeStubLabel = describeStubPath(result.active);
     } else {
         activeStubLabel = '';
+        activeStubPath = '';
     }
 
     if (lastStatus) {

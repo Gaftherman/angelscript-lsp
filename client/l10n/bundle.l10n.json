@@ -23,5 +23,6 @@
   "Default. The workspace scan loads the first stub it finds, in path order.": "Default. The workspace scan loads the first stub it finds, in path order.",
   "All stubs (merged)": "All stubs (merged)",
   "Loads every discovered stub. Declarations they share will resolve more than once.": "Loads every discovered stub. Declarations they share will resolve more than once.",
-  "Select the predefined stub that describes the host application API": "Select the predefined stub that describes the host application API"
+  "Select the predefined stub that describes the host application API": "Select the predefined stub that describes the host application API",
+  "Stub: {0}": "Stub: {0}"
 }
