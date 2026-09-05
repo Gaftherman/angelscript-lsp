@@ -60,6 +60,7 @@ namespace angel_lsp::diagnostics::codes
     // Engine Property Disallowed Errors
     inline constexpr std::string_view PrimitiveInoutRefDisallowed = "as-err-inout-on-primitive";
     inline constexpr std::string_view GlobalVarsDisallowed = "as-err-global-vars-disallowed";
+    inline constexpr std::string_view EnumScopeRequired = "as-err-enum-scope-required";
 
     // Numeric Conversion Warnings
     //

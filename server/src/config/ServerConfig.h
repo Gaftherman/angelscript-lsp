@@ -231,6 +231,56 @@ namespace angel_lsp::config
          */
         bool foreachSupport = true;
 
+        /**
+         * @brief asEP_REQUIRE_ENUM_SCOPE (engine default: false).
+         *
+         * With it on, an unqualified enumerator stops resolving - `enum E { Alpha = 1 } int v = Alpha;`
+         * compiles with it off and answers "No matching symbol 'Alpha'" with it on. The engine's default
+         * is off.
+         */
+        bool requireEnumScope = false;
+
+        /**
+         * @brief asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT (engine default: true).
+         *
+         * With it OFF, a class that declares only a non-default constructor can no longer be
+         * default-constructed - `class C { C(int a) {} } C c;` answers "No default constructor for
+         * object of type 'C'." The engine's default is on, which is why the default here is true.
+         */
+        bool alwaysImplDefaultConstruct = false;
+
+        /**
+         * @brief asEP_ALLOW_UNICODE_IDENTIFIERS (engine default: false).
+         *
+         * With it off, a non-ASCII identifier is a parse error - `int arbol` spelled with an accented
+         * a answers "Expected '('". The engine's default is off.
+         */
+        bool allowUnicodeIdentifiers = false;
+
+        /**
+         * @brief asEP_IGNORE_DUPLICATE_SHARED_INTF (engine default: false).
+         *
+         * Declaring the same shared interface twice answers "Name conflict. 'I' is an interface."
+         * with it off, and compiles with it on. The engine's default is off.
+         */
+        bool ignoreDuplicateSharedIntf = false;
+
+        /**
+         * @brief asEP_COMPILER_WARNINGS (engine default: 1).
+         *
+         * Three values, and all three were measured on a script that produces "Signed/Unsigned mismatch" -
+         * 0 suppresses the warning entirely, 1 emits it (the engine's default), 2 turns it into an error.
+         * This is the only one of the five that changes the SEVERITY of something rather than whether
+         * it is reported.
+         */
+        int compilerWarnings = 1;
+
+        bool RequiresEnumScope() const { return requireEnumScope; }
+        bool AlwaysImplementsDefaultConstruct() const { return alwaysImplDefaultConstruct; }
+        bool AllowsUnicodeIdentifiers() const { return allowUnicodeIdentifiers; }
+        bool IgnoresDuplicateSharedInterface() const { return ignoreDuplicateSharedIntf; }
+        int CompilerWarningMode() const { return compilerWarnings; }
+
         // asEP_HEREDOC_TRIM_MODE and asEP_DISABLE_INTEGER_DIVISION are the two properties in the
         // brief that are NOT here, and both are absent for a measured reason rather than an
         // oversight. The oracle reads them - see server/tools/oracle/main.cpp - which is how the

@@ -318,6 +318,23 @@ int main(int argc, char **argv)
     int disableIntegerDivision = -1;
     int disallowEmptyListElements = -1;
     int foreachSupport = -1;
+
+    // These thirteen are the engine properties the analyzer does not model yet. Exposing each
+    // as a flag here makes its effect measurable, and measuring comes before modelling because
+    // a property that changes no verdict needs no rule - asEP_HEREDOC_TRIM_MODE is the precedent
+    // for one that was measured and declined.
+    int allowImplicitHandleTypes = -1;
+    int requireEnumScope = -1;
+    int scriptScanner = -1;
+    int stringEncoding = -1;
+    int expandDefArrayToTmpl = -1;
+    int alwaysImplDefaultConstruct = -1;
+    int compilerWarnings = -1;
+    int allowUnicodeIdentifiers = -1;
+    int ignoreDuplicateSharedIntf = -1;
+    int alwaysImplDefaultCopy = -1;
+    int alwaysImplDefaultCopyConstruct = -1;
+    int memberInitMode = -1;
     int heredocTrimMode = -1;
 
     // Not engine properties - these two describe how the *host* set up CScriptBuilder, which is the
@@ -396,6 +413,54 @@ int main(int argc, char **argv)
             {
                 foreachSupport = std::atoi(argv[i] + 18);
             }
+            else if (std::strncmp(argv[i], "--allow-implicit-handle-types=", 30) == 0)
+            {
+                allowImplicitHandleTypes = std::atoi(argv[i] + 30);
+            }
+            else if (std::strncmp(argv[i], "--require-enum-scope=", 21) == 0)
+            {
+                requireEnumScope = std::atoi(argv[i] + 21);
+            }
+            else if (std::strncmp(argv[i], "--script-scanner=", 17) == 0)
+            {
+                scriptScanner = std::atoi(argv[i] + 17);
+            }
+            else if (std::strncmp(argv[i], "--string-encoding=", 18) == 0)
+            {
+                stringEncoding = std::atoi(argv[i] + 18);
+            }
+            else if (std::strncmp(argv[i], "--expand-def-array-to-tmpl=", 27) == 0)
+            {
+                expandDefArrayToTmpl = std::atoi(argv[i] + 27);
+            }
+            else if (std::strncmp(argv[i], "--always-impl-default-construct=", 32) == 0)
+            {
+                alwaysImplDefaultConstruct = std::atoi(argv[i] + 32);
+            }
+            else if (std::strncmp(argv[i], "--compiler-warnings=", 20) == 0)
+            {
+                compilerWarnings = std::atoi(argv[i] + 20);
+            }
+            else if (std::strncmp(argv[i], "--allow-unicode-identifiers=", 28) == 0)
+            {
+                allowUnicodeIdentifiers = std::atoi(argv[i] + 28);
+            }
+            else if (std::strncmp(argv[i], "--ignore-duplicate-shared-intf=", 31) == 0)
+            {
+                ignoreDuplicateSharedIntf = std::atoi(argv[i] + 31);
+            }
+            else if (std::strncmp(argv[i], "--always-impl-default-copy=", 27) == 0)
+            {
+                alwaysImplDefaultCopy = std::atoi(argv[i] + 27);
+            }
+            else if (std::strncmp(argv[i], "--always-impl-default-copy-construct=", 37) == 0)
+            {
+                alwaysImplDefaultCopyConstruct = std::atoi(argv[i] + 37);
+            }
+            else if (std::strncmp(argv[i], "--member-init-mode=", 19) == 0)
+            {
+                memberInitMode = std::atoi(argv[i] + 19);
+            }
             else if (std::strncmp(argv[i], "--heredoc-trim-mode=", 20) == 0)
             {
                 heredocTrimMode = std::atoi(argv[i] + 20);
@@ -433,6 +498,19 @@ int main(int argc, char **argv)
                              "       [--disable-integer-division=<0|1>]\n"
                              "       [--disallow-empty-list-elements=<0|1>]\n"
                              "       [--foreach-support=<0|1>]\n"
+                             "       [--allow-implicit-handle-types=<0|1>]\n"
+                             "       [--require-enum-scope=<0|1>]\n"
+                             "       [--script-scanner=<0|1>]\n"
+                             "       [--string-encoding=<0|1>]\n"
+                             "       [--expand-def-array-to-tmpl=<0|1>]\n"
+                             "       [--always-impl-default-construct=<0|1>]\n"
+                             "       [--compiler-warnings=<0|1|2>]\n"
+                             "       [--allow-unicode-identifiers=<0|1>]\n"
+                             "       [--ignore-duplicate-shared-intf=<0|1>]\n"
+                             "       [--always-impl-default-copy=<0|1>]\n"
+                             "       [--always-impl-default-copy-construct=<0|1>]\n"
+                             "       [--member-init-mode=<0|1|2>]\n"
+                             "       [--anonymous-functions=<0|1>]\n"
                              "       [--heredoc-trim-mode=<0|1|2>]\n"
                              "       [--define=<WORD>]... [--pragma=<accept|reject>]\n"
                              "Any option left out keeps the engine's own default; --pragma defaults\n"
@@ -509,6 +587,66 @@ int main(int argc, char **argv)
     {
         engine->SetEngineProperty(asEP_FOREACH_SUPPORT,
                                   static_cast<asPWORD>(foreachSupport));
+    }
+    if (allowImplicitHandleTypes >= 0)
+    {
+        engine->SetEngineProperty(asEP_ALLOW_IMPLICIT_HANDLE_TYPES,
+                                  static_cast<asPWORD>(allowImplicitHandleTypes));
+    }
+    if (requireEnumScope >= 0)
+    {
+        engine->SetEngineProperty(asEP_REQUIRE_ENUM_SCOPE,
+                                  static_cast<asPWORD>(requireEnumScope));
+    }
+    if (scriptScanner >= 0)
+    {
+        engine->SetEngineProperty(asEP_SCRIPT_SCANNER,
+                                  static_cast<asPWORD>(scriptScanner));
+    }
+    if (stringEncoding >= 0)
+    {
+        engine->SetEngineProperty(asEP_STRING_ENCODING,
+                                  static_cast<asPWORD>(stringEncoding));
+    }
+    if (expandDefArrayToTmpl >= 0)
+    {
+        engine->SetEngineProperty(asEP_EXPAND_DEF_ARRAY_TO_TMPL,
+                                  static_cast<asPWORD>(expandDefArrayToTmpl));
+    }
+    if (alwaysImplDefaultConstruct >= 0)
+    {
+        engine->SetEngineProperty(asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT,
+                                  static_cast<asPWORD>(alwaysImplDefaultConstruct));
+    }
+    if (compilerWarnings >= 0)
+    {
+        engine->SetEngineProperty(asEP_COMPILER_WARNINGS,
+                                  static_cast<asPWORD>(compilerWarnings));
+    }
+    if (allowUnicodeIdentifiers >= 0)
+    {
+        engine->SetEngineProperty(asEP_ALLOW_UNICODE_IDENTIFIERS,
+                                  static_cast<asPWORD>(allowUnicodeIdentifiers));
+    }
+    if (ignoreDuplicateSharedIntf >= 0)
+    {
+        engine->SetEngineProperty(asEP_IGNORE_DUPLICATE_SHARED_INTF,
+                                  static_cast<asPWORD>(ignoreDuplicateSharedIntf));
+    }
+    if (alwaysImplDefaultCopy >= 0)
+    {
+        engine->SetEngineProperty(asEP_ALWAYS_IMPL_DEFAULT_COPY,
+                                  static_cast<asPWORD>(alwaysImplDefaultCopy));
+    }
+    if (alwaysImplDefaultCopyConstruct >= 0)
+    {
+        engine->SetEngineProperty(asEP_ALWAYS_IMPL_DEFAULT_COPY_CONSTRUCT,
+                                  static_cast<asPWORD>(alwaysImplDefaultCopyConstruct));
+    }
+    if (memberInitMode >= 0)
+    {
+        engine->SetEngineProperty(asEP_MEMBER_INIT_MODE,
+                                  static_cast<asPWORD>(memberInitMode));
     }
     if (heredocTrimMode >= 0)
     {

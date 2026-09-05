@@ -4,6 +4,28 @@
 
 namespace angel_lsp::analysis
 {
+    void DiagnosticContext::Append(Diagnostic &&diag) const
+    {
+        // Only warnings move. An error stays an error at every mode - asEP_COMPILER_WARNINGS
+        // decides what the compiler does with a warning, not whether it still refuses the file -
+        // and a hint is this analyzer's own idea rather than anything the engine emits, so neither
+        // is the engine's to suppress or promote.
+        if (diag.severity == DiagnosticSeverity::Warning)
+        {
+            const int mode = request.CompilerWarningMode();
+            if (mode == 0)
+            {
+                return;
+            }
+            if (mode == 2)
+            {
+                diag.severity = DiagnosticSeverity::Error;
+            }
+        }
+
+        diagnostics.push_back(std::move(diag));
+    }
+
     Diagnostic DiagnosticContext::CreateDiagnostic(const Symbol &sym, std::string_view code, DiagnosticSeverity severity) const
     {
         Diagnostic diag;
@@ -74,7 +96,7 @@ namespace angel_lsp::analysis
 
     void DiagnosticContext::Emit(const Symbol &sym, std::string_view code, DiagnosticSeverity severity) const
     {
-        diagnostics.push_back(CreateDiagnostic(sym, code, severity));
+        Append(CreateDiagnostic(sym, code, severity));
     }
 
     void DiagnosticContext::Emit(const Symbol &sym, std::string_view code, std::string_view arg1, DiagnosticSeverity severity) const
@@ -96,7 +118,7 @@ namespace angel_lsp::analysis
             diag.message = "[" + codeStr + "] " + a1;
         }
 
-        diagnostics.push_back(std::move(diag));
+        Append(std::move(diag));
     }
 
     void DiagnosticContext::Emit(const Symbol &sym, std::string_view code, std::string_view arg1, std::string_view arg2, DiagnosticSeverity severity) const
@@ -119,7 +141,7 @@ namespace angel_lsp::analysis
             diag.message = "[" + codeStr + "] " + a1 + ", " + a2;
         }
 
-        diagnostics.push_back(std::move(diag));
+        Append(std::move(diag));
     }
 
     void DiagnosticContext::Emit(const Symbol &sym, std::string_view code, std::string_view arg1, std::string_view arg2, std::string_view arg3, DiagnosticSeverity severity) const
@@ -143,12 +165,12 @@ namespace angel_lsp::analysis
             diag.message = "[" + codeStr + "] " + a1 + ", " + a2 + ", " + a3;
         }
 
-        diagnostics.push_back(std::move(diag));
+        Append(std::move(diag));
     }
 
     void DiagnosticContext::Emit(const ParameterInformation &param, const Symbol &parentSym, std::string_view code, DiagnosticSeverity severity) const
     {
-        diagnostics.push_back(CreateDiagnostic(param, parentSym, code, severity));
+        Append(CreateDiagnostic(param, parentSym, code, severity));
     }
 
     void DiagnosticContext::Emit(const ParameterInformation &param, const Symbol &parentSym, std::string_view code, std::string_view arg1, DiagnosticSeverity severity) const
@@ -170,7 +192,7 @@ namespace angel_lsp::analysis
             diag.message = "[" + codeStr + "] " + a1;
         }
 
-        diagnostics.push_back(std::move(diag));
+        Append(std::move(diag));
     }
 
     void DiagnosticContext::Emit(const ParameterInformation &param, const Symbol &parentSym, std::string_view code, std::string_view arg1, std::string_view arg2, DiagnosticSeverity severity) const
@@ -193,7 +215,7 @@ namespace angel_lsp::analysis
             diag.message = "[" + codeStr + "] " + a1 + ", " + a2;
         }
 
-        diagnostics.push_back(std::move(diag));
+        Append(std::move(diag));
     }
 
     void DiagnosticContext::EmitAtRange(const Symbol &parentSym, const SourceRange &range, std::string_view code, DiagnosticSeverity severity) const
@@ -227,7 +249,7 @@ namespace angel_lsp::analysis
             diag.message = "[" + codeStr + "] Diagnostic code: " + codeStr;
         }
 
-        diagnostics.push_back(std::move(diag));
+        Append(std::move(diag));
     }
 
     void DiagnosticContext::EmitAtRange(const Symbol &parentSym, const SourceRange &range, std::string_view code, std::string_view arg1, DiagnosticSeverity severity) const
@@ -266,7 +288,7 @@ namespace angel_lsp::analysis
             diag.message = "[" + codeStr + "] " + a1;
         }
 
-        diagnostics.push_back(std::move(diag));
+        Append(std::move(diag));
     }
 
     namespace
@@ -385,7 +407,7 @@ namespace angel_lsp::analysis
             diag.message = "[" + codeStr + "] Diagnostic code: " + codeStr;
         }
 
-        diagnostics.push_back(std::move(diag));
+        Append(std::move(diag));
     }
 
     void DiagnosticContext::EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, std::string_view arg1, DiagnosticSeverity severity) const
@@ -424,7 +446,7 @@ namespace angel_lsp::analysis
             diag.message = "[" + codeStr + "] " + a1;
         }
 
-        diagnostics.push_back(std::move(diag));
+        Append(std::move(diag));
     }
 
     void DiagnosticContext::EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, std::string_view arg1, std::string_view arg2, DiagnosticSeverity severity) const
@@ -464,7 +486,7 @@ namespace angel_lsp::analysis
             diag.message = "[" + codeStr + "] " + a1 + " -> " + a2;
         }
 
-        diagnostics.push_back(std::move(diag));
+        Append(std::move(diag));
     }
 
     void DiagnosticContext::LogRule(std::string_view ruleName, std::string_view code, const Symbol &sym) const

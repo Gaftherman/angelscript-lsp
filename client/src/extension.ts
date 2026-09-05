@@ -536,6 +536,37 @@ export function buildServerArgs(): string[] {
         args.push('--engine-property=foreachSupport=0');
     }
 
+    // The five measured on 2026-09-05. Twelve engine properties were unmodelled; probing each
+    // against the real compiler showed only these five change a verdict a reader of source could
+    // see, and the other seven were left alone rather than modelled on faith - the same answer
+    // asEP_HEREDOC_TRIM_MODE got.
+    if (config.get<boolean>('engine.requireEnumScope', false) === true) {
+        args.push('--engine-property=requireEnumScope=1');
+    }
+
+    // Measured, not assumed, and the assumption was wrong first time round: running the oracle with
+    // no flag gives the same verdict as running it with this property set to 0, so the engine's own
+    // default is OFF. Turning it ON is what makes `class C { C(int a) {} } C c;` start compiling.
+    if (config.get<boolean>('engine.alwaysImplDefaultConstruct', false) === true) {
+        args.push('--engine-property=alwaysImplDefaultConstruct=1');
+    }
+
+    if (config.get<boolean>('engine.allowUnicodeIdentifiers', false) === true) {
+        args.push('--engine-property=allowUnicodeIdentifiers=1');
+    }
+
+    if (config.get<boolean>('engine.ignoreDuplicateSharedIntf', false) === true) {
+        args.push('--engine-property=ignoreDuplicateSharedIntf=1');
+    }
+
+    // A number, not a boolean, and the only one that moves a severity rather than deciding whether
+    // something is reported at all: 0 suppresses every warning, 1 is the engine's default, 2 turns
+    // warnings into errors.
+    const compilerWarnings = config.get<number>('engine.compilerWarnings', 1);
+    if (compilerWarnings !== 1) {
+        args.push(`--engine-property=compilerWarnings=${compilerWarnings}`);
+    }
+
     // The host dialect. An enum rather than a boolean, so it is not one of ENGINE_PROPERTIES above
     // and needs its own line; without it the setting was declared, documented and inert.
     const engineProfile = config.get<string>('engine.profile', '').trim();

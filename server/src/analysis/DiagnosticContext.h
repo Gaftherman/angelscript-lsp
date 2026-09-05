@@ -71,6 +71,19 @@ namespace angel_lsp::analysis
         void LogParam(std::string_view ruleName, std::string_view code, const ParameterInformation &param, const Symbol &parentSym) const;
 
     private:
+        /**
+         * @brief Appends a finished diagnostic, unless the engine's warning mode says to drop it.
+         *
+         * asEP_COMPILER_WARNINGS is the one engine property that moves a severity rather than
+         * deciding whether something is legal, so it belongs here rather than in any single rule.
+         * Measured on a script producing "Signed/Unsigned mismatch": 0 suppresses the warning
+         * entirely, 1 emits it, 2 turns it into an error.
+         *
+         * Every Emit overload routes through this, which is the point - twelve push_back sites
+         * would otherwise each have had to remember.
+         */
+        void Append(Diagnostic &&diag) const;
+
         Diagnostic CreateDiagnostic(const Symbol &sym, std::string_view code, DiagnosticSeverity severity) const;
         Diagnostic CreateDiagnostic(const ParameterInformation &param, const Symbol &parentSym, std::string_view code, DiagnosticSeverity severity) const;
     };

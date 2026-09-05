@@ -477,6 +477,41 @@
           "default": true,
           "markdownDescription": "%config.engine.foreachSupport.description%"
         },
+        "angelscript.engine.requireEnumScope": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.engine.requireEnumScope.description%"
+        },
+        "angelscript.engine.alwaysImplDefaultConstruct": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.engine.alwaysImplDefaultConstruct.description%"
+        },
+        "angelscript.engine.allowUnicodeIdentifiers": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.engine.allowUnicodeIdentifiers.description%"
+        },
+        "angelscript.engine.ignoreDuplicateSharedIntf": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "%config.engine.ignoreDuplicateSharedIntf.description%"
+        },
+        "angelscript.engine.compilerWarnings": {
+          "type": "number",
+          "enum": [
+            0,
+            1,
+            2
+          ],
+          "enumDescriptions": [
+            "%config.engine.compilerWarnings.enum.0%",
+            "%config.engine.compilerWarnings.enum.1%",
+            "%config.engine.compilerWarnings.enum.2%"
+          ],
+          "default": 1,
+          "markdownDescription": "%config.engine.compilerWarnings.description%"
+        },
         "angelscript.engine.profile": {
           "type": "string",
           "enum": [

@@ -322,6 +322,57 @@ namespace angel_lsp
             }
         }
 
+        if (params.initializationOptions.has_value() && params.initializationOptions->isObject())
+        {
+            const lsp::LSPObject *initSection = &params.initializationOptions->object();
+            if (const auto *nested = initSection->find("angelscript"); nested && nested->isObject())
+            {
+                initSection = &nested->object();
+            }
+            const lsp::LSPObject *engineObj = nullptr;
+            if (const auto *e = initSection->find("engine"); e && e->isObject())
+            {
+                engineObj = &e->object();
+            }
+
+            auto getInitBool = [&](std::string_view name) -> std::optional<bool> {
+                if (engineObj)
+                {
+                    if (const auto *val = engineObj->find(std::string(name)); val && val->isBoolean())
+                        return val->boolean();
+                }
+                std::string dotKey = "engine." + std::string(name);
+                if (const auto *val = initSection->find(dotKey); val && val->isBoolean())
+                    return val->boolean();
+                std::string fullKey = "angelscript.engine." + std::string(name);
+                if (const auto *val = initSection->find(fullKey); val && val->isBoolean())
+                    return val->boolean();
+                return std::nullopt;
+            };
+
+            auto getInitInt = [&](std::string_view name) -> std::optional<int> {
+                if (engineObj)
+                {
+                    if (const auto *val = engineObj->find(std::string(name)); val && val->isNumber())
+                        return static_cast<int>(val->number());
+                }
+                std::string dotKey = "engine." + std::string(name);
+                if (const auto *val = initSection->find(dotKey); val && val->isNumber())
+                    return static_cast<int>(val->number());
+                std::string fullKey = "angelscript.engine." + std::string(name);
+                if (const auto *val = initSection->find(fullKey); val && val->isNumber())
+                    return static_cast<int>(val->number());
+                return std::nullopt;
+            };
+
+            if (auto v = getInitBool("foreachSupport")) m_config.engine.foreachSupport = *v;
+            if (auto v = getInitBool("requireEnumScope")) m_config.engine.requireEnumScope = *v;
+            if (auto v = getInitBool("alwaysImplDefaultConstruct")) m_config.engine.alwaysImplDefaultConstruct = *v;
+            if (auto v = getInitBool("allowUnicodeIdentifiers")) m_config.engine.allowUnicodeIdentifiers = *v;
+            if (auto v = getInitBool("ignoreDuplicateSharedIntf")) m_config.engine.ignoreDuplicateSharedIntf = *v;
+            if (auto v = getInitInt("compilerWarnings")) m_config.engine.compilerWarnings = *v;
+        }
+
         m_i18n = std::make_unique<angel_lsp::i18n::I18n>(params.locale.value_or(m_config.info.locale.empty() ? "en" : m_config.info.locale));
 
         lsp::requests::Initialize::Result result;
@@ -1282,6 +1333,97 @@ namespace angel_lsp
             }
         }
 
+        bool engineChanged = false;
+        const lsp::LSPObject *engineObj = nullptr;
+        if (const auto *e = section->find("engine"); e && e->isObject())
+        {
+            engineObj = &e->object();
+        }
+
+        auto getEngineBool = [&](std::string_view name) -> std::optional<bool> {
+            if (engineObj)
+            {
+                if (const auto *val = engineObj->find(std::string(name)); val && val->isBoolean())
+                    return val->boolean();
+            }
+            std::string dotKey = "engine." + std::string(name);
+            if (const auto *val = section->find(dotKey); val && val->isBoolean())
+                return val->boolean();
+            std::string fullKey = "angelscript.engine." + std::string(name);
+            if (const auto *val = section->find(fullKey); val && val->isBoolean())
+                return val->boolean();
+            return std::nullopt;
+        };
+
+        auto getEngineInt = [&](std::string_view name) -> std::optional<int> {
+            if (engineObj)
+            {
+                if (const auto *val = engineObj->find(std::string(name)); val && val->isNumber())
+                    return static_cast<int>(val->number());
+            }
+            std::string dotKey = "engine." + std::string(name);
+            if (const auto *val = section->find(dotKey); val && val->isNumber())
+                return static_cast<int>(val->number());
+            std::string fullKey = "angelscript.engine." + std::string(name);
+            if (const auto *val = section->find(fullKey); val && val->isNumber())
+                return static_cast<int>(val->number());
+            return std::nullopt;
+        };
+
+        if (auto v = getEngineBool("foreachSupport"))
+        {
+            if (m_config.engine.foreachSupport != *v)
+            {
+                m_config.engine.foreachSupport = *v;
+                engineChanged = true;
+            }
+        }
+        if (auto v = getEngineBool("requireEnumScope"))
+        {
+            if (m_config.engine.requireEnumScope != *v)
+            {
+                m_config.engine.requireEnumScope = *v;
+                engineChanged = true;
+            }
+        }
+        if (auto v = getEngineBool("alwaysImplDefaultConstruct"))
+        {
+            if (m_config.engine.alwaysImplDefaultConstruct != *v)
+            {
+                m_config.engine.alwaysImplDefaultConstruct = *v;
+                engineChanged = true;
+            }
+        }
+        if (auto v = getEngineBool("allowUnicodeIdentifiers"))
+        {
+            if (m_config.engine.allowUnicodeIdentifiers != *v)
+            {
+                m_config.engine.allowUnicodeIdentifiers = *v;
+                engineChanged = true;
+            }
+        }
+        if (auto v = getEngineBool("ignoreDuplicateSharedIntf"))
+        {
+            if (m_config.engine.ignoreDuplicateSharedIntf != *v)
+            {
+                m_config.engine.ignoreDuplicateSharedIntf = *v;
+                engineChanged = true;
+            }
+        }
+        if (auto v = getEngineInt("compilerWarnings"))
+        {
+            if (m_config.engine.compilerWarnings != *v)
+            {
+                m_config.engine.compilerWarnings = *v;
+                engineChanged = true;
+            }
+        }
+
+        if (engineChanged)
+        {
+            ReanalyseOpenDocuments();
+        }
+
         // The stub selection rides the same rescan the engine profile does. With a working unload
         // path the rescan is enough: the stub that stops being active is dropped and the new one
         // collected, without restarting the server.
@@ -1902,6 +2044,19 @@ namespace angel_lsp
         note(m_config.engine.allowUnsafeReferences, defaults.allowUnsafeReferences, "allowUnsafeReferences");
         note(m_config.engine.privatePropAsProtected, defaults.privatePropAsProtected, "privatePropAsProtected");
         note(m_config.engine.disallowGlobalVars, defaults.disallowGlobalVars, "disallowGlobalVars");
+        note(m_config.engine.foreachSupport, defaults.foreachSupport, "foreachSupport");
+        note(m_config.engine.requireEnumScope, defaults.requireEnumScope, "requireEnumScope");
+        note(m_config.engine.alwaysImplDefaultConstruct, defaults.alwaysImplDefaultConstruct, "alwaysImplDefaultConstruct");
+        note(m_config.engine.allowUnicodeIdentifiers, defaults.allowUnicodeIdentifiers, "allowUnicodeIdentifiers");
+        note(m_config.engine.ignoreDuplicateSharedIntf, defaults.ignoreDuplicateSharedIntf, "ignoreDuplicateSharedIntf");
+        if (m_config.engine.compilerWarnings != defaults.compilerWarnings)
+        {
+            if (!changed.empty())
+            {
+                changed += ", ";
+            }
+            changed += "compilerWarnings=" + std::to_string(m_config.engine.compilerWarnings);
+        }
 
         if (!changed.empty())
         {
