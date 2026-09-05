@@ -382,7 +382,7 @@ namespace angel_lsp::features
                 nodeTxt.starts_with("0x") || nodeTxt.starts_with("0X") ||
                 nodeTxt.starts_with("0b") || nodeTxt.starts_with("0B") ||
                 nodeTxt.starts_with("0o") || nodeTxt.starts_with("0O") ||
-                type == "number_literal" || type == "integer_literal" || type == "real_literal" || type == "float_literal"))
+                type == "number_literal"))
             {
                 if (nodeTxt.find('.') != std::string::npos || nodeTxt.find('e') != std::string::npos || nodeTxt.find('E') != std::string::npos)
                 {

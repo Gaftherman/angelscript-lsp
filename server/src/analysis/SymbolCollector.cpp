@@ -44,8 +44,6 @@ namespace angel_lsp::analysis
         m_symMixinDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("mixin_declaration"), true);
         m_symSharedExternalModifier = ts_language_symbol_for_name(lang, SYM_NAME("shared_external_modifier"), true);
         m_symVirtualProperty = ts_language_symbol_for_name(lang, SYM_NAME("virtual_property"), true);
-        m_symCompoundStatement = ts_language_symbol_for_name(lang, SYM_NAME("compound_statement"), true);
-        m_symBlock = ts_language_symbol_for_name(lang, SYM_NAME("block"), true);
         m_symBaseClassList = ts_language_symbol_for_name(lang, SYM_NAME("base_class_list"), true);
         m_symParameter = ts_language_symbol_for_name(lang, SYM_NAME("parameter"), true);
         m_symMemberExpression = ts_language_symbol_for_name(lang, SYM_NAME("member_expression"), true);
@@ -58,7 +56,6 @@ namespace angel_lsp::analysis
         m_tokAt = ts_language_symbol_for_name(lang, SYM_NAME("@"), false);
         m_tokPrivate = ts_language_symbol_for_name(lang, SYM_NAME("private"), false);
         m_tokProtected = ts_language_symbol_for_name(lang, SYM_NAME("protected"), false);
-        m_tokPublic = ts_language_symbol_for_name(lang, SYM_NAME("public"), false);
         m_tokShared = ts_language_symbol_for_name(lang, SYM_NAME("shared"), false);
         m_tokMixin = ts_language_symbol_for_name(lang, SYM_NAME("mixin"), false);
         m_tokAbstract = ts_language_symbol_for_name(lang, SYM_NAME("abstract"), false);
@@ -325,7 +322,6 @@ namespace angel_lsp::analysis
 
             TSNode nameNode = GetChildByFieldName(declaratorNode, "name");
             TSNode valueNode = GetChildByFieldName(declaratorNode, "value");
-            if (ts_node_is_null(valueNode)) valueNode = GetChildByFieldName(declaratorNode, "initializer");
             if (ts_node_is_null(valueNode))
             {
                 uint32_t cCnt = ts_node_child_count(declaratorNode);
@@ -386,7 +382,7 @@ namespace angel_lsp::analysis
             {
                 TSNode ch = ts_node_child(funcNode, i);
                 TSSymbol chSym = ts_node_symbol(ch);
-                if (chSym == m_symCompoundStatement || chSym == m_symStatementBlock || chSym == m_symBlock)
+                if (chSym == m_symStatementBlock)
                 {
                     bodyNode = ch;
                     break;
@@ -1097,8 +1093,6 @@ namespace angel_lsp::analysis
             modifiers.access = AccessModifier::Private;
         else if (tokenSymbol == m_tokProtected)
             modifiers.access = AccessModifier::Protected;
-        else if (tokenSymbol == m_tokPublic)
-            modifiers.access = AccessModifier::Public;
         else if (tokenSymbol == m_tokShared)
             modifiers.isShared = true;
         else if (tokenSymbol == m_tokMixin)

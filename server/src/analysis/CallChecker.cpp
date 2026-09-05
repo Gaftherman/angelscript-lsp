@@ -983,7 +983,7 @@ namespace angel_lsp::analysis
                                             }
                                         }
                                     }
-                                    else if (aType == "member_expression" || aType == "index_expression" || aType == "subscript_expression")
+                                    else if (aType == "member_expression" || aType == "index_expression")
                                     {
                                         isLVal = true;
                                     }

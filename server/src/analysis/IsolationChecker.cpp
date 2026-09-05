@@ -244,7 +244,7 @@ namespace angel_lsp::analysis
                     return;
                 }
 
-                if (nodeType == "func_declaration" || nodeType == "function_definition")
+                if (nodeType == "func_declaration")
                 {
                     bool funcShared = inSharedContext || NodeHasModifierToken(node, "shared", request.sourceCode);
                     if (!funcShared)
@@ -386,7 +386,7 @@ namespace angel_lsp::analysis
                                     break;
                                 }
                             }
-                            if (pType == "datatype" || pType == "type_identifier" || pType == "type" || pType == "base_class_list")
+                            if (pType == "datatype" || pType == "type" || pType == "base_class_list")
                             {
                                 isType = true;
                                 break;
@@ -400,7 +400,7 @@ namespace angel_lsp::analysis
                                     break;
                                 }
                             }
-                            if (pType == "func_declaration" || pType == "function_definition" ||
+                            if (pType == "func_declaration" ||
                                 pType == "class_declaration" || pType == "parameter" || pType == "enum_member")
                             {
                                 TSNode nameNode = ts_node_child_by_field_name(p, "name", 4);
@@ -410,16 +410,16 @@ namespace angel_lsp::analysis
                                     break;
                                 }
                             }
-                            if (pType == "member_expression" || pType == "field_expression")
+                            if (pType == "member_expression")
                             {
-                                TSNode propNode = ts_node_child_by_field_name(p, "property", 8);
+                                TSNode propNode = ts_node_child_by_field_name(p, "member", 6);
                                 if (!ts_node_is_null(propNode) && propNode.id == node.id)
                                 {
                                     isMemberProp = true;
                                     break;
                                 }
                             }
-                            if (pType == "statement_block" || pType == "compound_statement" || pType == "func_declaration" || pType == "class_declaration")
+                            if (pType == "statement_block" || pType == "func_declaration" || pType == "class_declaration")
                             {
                                 break;
                             }

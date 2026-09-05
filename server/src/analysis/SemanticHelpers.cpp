@@ -2026,7 +2026,7 @@ namespace angel_lsp::analysis
             return false;
         }
         const std::string_view type(ts_node_type(node));
-        return type == node_types::LambdaExpression || type == "anonymous_function";
+        return type == node_types::LambdaExpression;
     }
 
     std::vector<LambdaParameter> ReadLambdaParameters(TSNode listNode, std::string_view sourceCode)

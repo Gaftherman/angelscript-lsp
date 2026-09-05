@@ -451,13 +451,13 @@ namespace angel_lsp::analysis
             while (!ts_node_is_null(p))
             {
                 std::string_view pt = ts_node_type(p);
-                if (pt == "lambda_expression" || pt == "anonymous_function")
+                if (pt == "lambda_expression")
                 {
                     lambdaNode = p;
                     hasLambda = true;
                     break;
                 }
-                if (pt == "func_declaration" || pt == "function_definition")
+                if (pt == "func_declaration")
                 {
                     break;
                 }

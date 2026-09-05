@@ -1791,7 +1791,7 @@ namespace angel_lsp::analysis
             }
 
             const std::string_view valueType = NodeType(actualVal);
-            if (valueType == node_types::LambdaExpression || valueType == "anonymous_function")
+            if (valueType == node_types::LambdaExpression)
             {
                 // A lambda has no symbol to look up, so the name search below would find nothing
                 // and return in silence - which is what it did before this branch existed.
@@ -2424,10 +2424,6 @@ namespace angel_lsp::analysis
                         TSNode valueNode = ts_node_child_by_field_name(child, "value", k_valueFieldLength);
                         if (ts_node_is_null(valueNode))
                         {
-                            valueNode = ts_node_child_by_field_name(child, "initializer", 11);
-                        }
-                        if (ts_node_is_null(valueNode))
-                        {
                             uint32_t childCount = ts_node_child_count(child);
                             bool foundEq = false;
                             for (uint32_t c = 0; c < childCount; ++c)
@@ -2574,9 +2570,9 @@ namespace angel_lsp::analysis
                 {
                     // Property access checks
                     std::string_view leftNodeType = NodeType(left);
-                    if (leftNodeType == "subscript_expression" || leftNodeType == "index_expression")
+                    if (leftNodeType == "index_expression")
                     {
-                        TSNode arrayNode = ts_node_child_by_field_name(left, "array", 5);
+                        TSNode arrayNode = ts_node_child_by_field_name(left, "object", 6);
                         if (ts_node_is_null(arrayNode) && ts_node_named_child_count(left) > 0)
                         {
                             arrayNode = ts_node_named_child(left, 0);
@@ -2718,18 +2714,14 @@ namespace angel_lsp::analysis
             {
                 CheckSignedUnsignedComparison(node, scopeAt(), ctx, request.sourceCode);
             }
-            else if (nodeType == "update_expression" || nodeType == "unary_expression" || nodeType == "postfix_expression")
+            else if (nodeType == "unary_expression" || nodeType == "postfix_expression")
             {
                 TSNode opNode = ts_node_child_by_field_name(node, "operator", 8);
                 std::string opText = NodeText(opNode, request.sourceCode);
                 std::string nodeText = NodeText(node, request.sourceCode);
                 if (opText == "++" || opText == "--" || nodeText.find("++") != std::string::npos || nodeText.find("--") != std::string::npos)
                 {
-                    TSNode argNode = ts_node_child_by_field_name(node, "argument", 8);
-                    if (ts_node_is_null(argNode))
-                    {
-                        argNode = ts_node_child_by_field_name(node, "operand", 7);
-                    }
+                    TSNode argNode = ts_node_child_by_field_name(node, "operand", 7);
                     if (ts_node_is_null(argNode))
                     {
                         uint32_t count = ts_node_named_child_count(node);
@@ -2777,7 +2769,7 @@ namespace angel_lsp::analysis
                             isLhsAssignment = true;
                         }
                     }
-                    else if (pType == "update_expression" || pType == "unary_expression" || pType == "postfix_expression")
+                    else if (pType == "unary_expression" || pType == "postfix_expression")
                     {
                         isUnaryArg = true;
                     }
@@ -2864,7 +2856,7 @@ namespace angel_lsp::analysis
                     while (!ts_node_is_null(parent))
                     {
                         const std::string_view pType = ts_node_type(parent);
-                        if (pType == "lambda_expression" || pType == "anonymous_function")
+                        if (pType == "lambda_expression")
                         {
                             // A lambda writes no return type; the funcdef it is handed to supplies
                             // one. Measured: `funcdef void CB(); CB@ cb = function() { return 1; };`
@@ -2899,8 +2891,7 @@ namespace angel_lsp::analysis
                             }
                             break;
                         }
-                        if (pType == "func_declaration" || pType == "method_declaration" ||
-                            pType == "function_definition")
+                        if (pType == "func_declaration")
                         {
                             TSNode retTypeNode = ts_node_child_by_field_name(parent, "return_type", 11);
                             if (ts_node_is_null(retTypeNode))
@@ -3006,8 +2997,7 @@ namespace angel_lsp::analysis
                 }
                 const std::string_view soleArgumentType = NodeType(soleArgument);
                 const bool soleArgumentIsLambda =
-                    soleArgumentType == node_types::LambdaExpression ||
-                    soleArgumentType == "anonymous_function";
+                    soleArgumentType == node_types::LambdaExpression;
 
                 std::optional<Symbol> calleeFuncdef;
                 if (soleArgumentIsLambda)
@@ -3034,7 +3024,7 @@ namespace angel_lsp::analysis
                     }
                 }
             }
-            else if (nodeType == "func_declaration" || nodeType == "function_definition")
+            else if (nodeType == "func_declaration")
             {
                 CheckConstructorDelegation(node, ctx, request.sourceCode);
             }

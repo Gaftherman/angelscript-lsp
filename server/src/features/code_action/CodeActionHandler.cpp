@@ -439,7 +439,7 @@ namespace angel_lsp::features
                     std::string op = GetNodeText(opNode, sourceCode);
                     if (op == "++" || op == "--")
                     {
-                        TSNode arg = ts_node_child_by_field_name(curr, "argument", 8);
+                        TSNode arg = ts_node_child_by_field_name(curr, "operand", 7);
                         if (!ts_node_is_null(arg))
                         {
                             std::string_view aType = ts_node_type(arg);
@@ -572,7 +572,7 @@ namespace angel_lsp::features
             std::string_view nodeType = ts_node_type(targetNode);
             if (nodeType.ends_with("_statement") || nodeType.ends_with("_declaration") ||
                 nodeType == "statement_block" || nodeType == "class_body" ||
-                nodeType == "parameter" || nodeType == "type_specifier" || nodeType == "primitive_type")
+                nodeType == "parameter" || nodeType == "primitive_type")
             {
                 return;
             }
@@ -851,12 +851,12 @@ namespace angel_lsp::features
                                 }
                             }
                         }
-                        else if (type == "postfix_expression" || type == "unary_expression" || type == "update_expression")
+                        else if (type == "postfix_expression" || type == "unary_expression")
                         {
                             TSNode opNode = ts_node_child_by_field_name(curr, "operator", 8);
                             std::string op = !ts_node_is_null(opNode) ? GetNodeText(opNode, request.sourceCode) : "";
                             bool isIncDec = (op == "++" || op == "--");
-                            TSNode targetArg = ts_node_child_by_field_name(curr, "argument", 8);
+                            TSNode targetArg = ts_node_child_by_field_name(curr, "operand", 7);
                             if (!isIncDec || ts_node_is_null(targetArg))
                             {
                                 uint32_t cnt = ts_node_child_count(curr);
@@ -922,7 +922,6 @@ namespace angel_lsp::features
                                     if (argText.starts_with("&out ") || argText.starts_with("&inout ") || argText.starts_with("out ") || argText.starts_with("inout "))
                                     {
                                         TSNode idNode = ts_node_child_by_field_name(arg, "name", 4);
-                                        if (ts_node_is_null(idNode)) idNode = ts_node_child_by_field_name(arg, "argument", 8);
                                         if (ts_node_is_null(idNode) && ts_node_named_child_count(arg) > 0) idNode = ts_node_named_child(arg, ts_node_named_child_count(arg) - 1);
                                         if (!ts_node_is_null(idNode))
                                         {
