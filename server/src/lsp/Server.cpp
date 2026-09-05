@@ -1562,6 +1562,22 @@ namespace angel_lsp
         if (!graphChanged)
             return;
 
+        // An #include that pointed at nothing may point at something now, and the edge that says
+        // so belongs to the *including* file - which nothing here has touched. Creating helper.as
+        // updated helper.as's own entry in the graph and left `#include "helper.as"` in main.as
+        // exactly as unresolved as it was, so the type it declares stayed unknown until the user
+        // typed something in main.as.
+        //
+        // Only the open documents are refreshed: they are the ones whose diagnostics are on screen,
+        // and re-resolving every file in the workspace on every watched event would turn a `git
+        // checkout` into a full rescan. Directives only, so it costs a scan of the text rather than
+        // a parse.
+        for (const auto &[openUri, openText] : m_openDocuments)
+        {
+            if (const std::string openPath = CanonicalPathFromUri(openUri); !openPath.empty())
+                m_includeGraph.UpdateFile(openPath, openText, *SearchDirectories(), IncludeAllowedRoots());
+        }
+
         // An edited #include line can move a file between modules, so every open document's
         // closure is recomputed and re-diagnosed against whatever it now sees.
         ReanalyseOpenDocuments();

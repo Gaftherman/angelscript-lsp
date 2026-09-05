@@ -4300,3 +4300,210 @@ TEST_CASE("Server - A diagnostic underlines the text it is about")
 
     MESSAGE("diagnostic ranges: " << checked << " underlines checked");
 }
+
+// =====================================================================================
+// Files appearing and disappearing under the server.
+//
+// A workspace is not a fixed set of files: a branch switch, a pull, a `git checkout` or a plain
+// delete all happen while the server is running, and it hears about them as
+// workspace/didChangeWatchedFiles. Deleting the stub in force is covered above; these are the other
+// four corners - a script created, a script deleted, a stub created where there was none, and the
+// only stub deleted.
+// =====================================================================================
+
+namespace
+{
+    /** \nbrief One watched-file event, in the shape the client sends. */
+    std::string WatchedFileMessage(const std::string &uri, int changeType)
+    {
+        return R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[)"
+               R"({"uri":")" + uri + R"(","type":)" + std::to_string(changeType) + R"(}]}})";
+    }
+
+    /** \nbrief Waits until a needle has appeared at least `times` times. */
+    void WaitForCount(test::ScriptedStream &stream, const std::string &needle, size_t times)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            const std::string output = stream.Output();
+            size_t count = 0;
+            for (size_t at = output.find(needle); at != std::string::npos;
+                 at = output.find(needle, at + needle.size()))
+            {
+                ++count;
+            }
+            if (count >= times)
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+}
+
+TEST_CASE("Server - A script created on disk becomes part of the module")
+{
+    // main.as includes helper.as, which does not exist yet. Once it appears the type it declares has
+    // to resolve, without the user touching main.as.
+    WorkspaceFixture fixture;
+    const std::string source =
+        "#include \"helper.as\"\n"
+        "void main() { HelperType h; h.Poke(); }\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.PushAction([&]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    // The file arrives.
+    stream.PushAction([dir = fixture.dir]()
+    {
+        std::ofstream created(dir / "helper.as", std::ios::binary);
+        created << "class HelperType { void Poke() { } }\n";
+    });
+
+    stream.Push(WatchedFileMessage(fixture.Uri("helper.as"), /*Created=*/1));
+    stream.Push(R"({"jsonrpc":"2.0","id":1001,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 2); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "main.as");
+    INFO("last published: " << published);
+    INFO("everything: " << PublishedFrames(stream.Output()));
+    REQUIRE_FALSE(published.empty());
+
+    CHECK(published.find("as-err-unresolved-type") == std::string::npos);
+    CHECK(published.find("as-warn-include-not-found") == std::string::npos);
+}
+
+TEST_CASE("Server - A script deleted on disk stops resolving for the file that included it")
+{
+    // The other direction. helper.as exists at the start and goes away.
+    WorkspaceFixture fixture;
+    const std::string source =
+        "#include \"helper.as\"\n"
+        "void main() { HelperType h; h.Poke(); }\n";
+    fixture.Write("helper.as", "class HelperType { void Poke() { } }\n");
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.PushAction([&]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    stream.PushAction([dir = fixture.dir]() { std::filesystem::remove(dir / "helper.as"); });
+
+    stream.Push(WatchedFileMessage(fixture.Uri("helper.as"), /*Deleted=*/3));
+    stream.Push(R"({"jsonrpc":"2.0","id":1001,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 2); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "main.as");
+    INFO("last published: " << published);
+    REQUIRE_FALSE(published.empty());
+
+    // The type it declared is gone, and the include no longer resolves. Either is enough to say the
+    // deletion was noticed; both are what the user would see.
+    const bool typeGone = published.find("as-err-unresolved-type") != std::string::npos;
+    const bool includeGone = published.find("as-warn-include-not-found") != std::string::npos;
+    CHECK((typeGone || includeGone));
+}
+
+TEST_CASE("Server - A stub created where there was none is picked up")
+{
+    // A workspace with no as.predefined at all: the host types do not exist, and then one does.
+    WorkspaceFixture fixture;
+    const std::string source = "void main() { CBaseEntity e; }\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.PushAction([&]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    stream.PushAction([dir = fixture.dir]()
+    {
+        std::ofstream created(dir / "host.as.predefined", std::ios::binary);
+        created << "class CBaseEntity { void Spawn(); }\n";
+    });
+
+    stream.Push(WatchedFileMessage(fixture.Uri("host.as.predefined"), /*Created=*/1));
+    stream.Push(R"({"jsonrpc":"2.0","id":1001,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 2); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "main.as");
+    INFO("last published: " << published);
+    INFO("everything: " << PublishedFrames(stream.Output()));
+    REQUIRE_FALSE(published.empty());
+
+    CHECK(published.find("as-err-unresolved-type") == std::string::npos);
+}
+
+TEST_CASE("Server - Deleting the only stub leaves the host types unknown")
+{
+    // The counterpart of the test above it, and of the one where a second stub takes over: with no
+    // replacement to find, the types really do go, and saying so is right rather than a defect.
+    WorkspaceFixture fixture;
+    const std::string source = "void main() { CBaseEntity e; }\n";
+    fixture.Write("host.as.predefined", "class CBaseEntity { void Spawn(); }\n");
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.PushAction([&]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    stream.PushAction([dir = fixture.dir]() { std::filesystem::remove(dir / "host.as.predefined"); });
+
+    stream.Push(WatchedFileMessage(fixture.Uri("host.as.predefined"), /*Deleted=*/3));
+    stream.Push(R"({"jsonrpc":"2.0","id":1001,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.listPredefinedStubs"}})");
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 2); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "main.as");
+    INFO("last published: " << published);
+    REQUIRE_FALSE(published.empty());
+
+    CHECK(published.find("as-err-unresolved-type") != std::string::npos);
+}
