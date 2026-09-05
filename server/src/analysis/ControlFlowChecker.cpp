@@ -8,6 +8,7 @@
 #include <optional>
 #include <string_view>
 #include <vector>
+#include "parser/Primitives.h"
 
 namespace angel_lsp::analysis
 {
@@ -168,17 +169,7 @@ namespace angel_lsp::analysis
          */
         bool IsNonNullablePrimitiveName(std::string_view typeName)
         {
-            static constexpr std::string_view k_primitives[] = {
-                "bool", "int", "int8", "int16", "int32", "int64",
-                "uint", "uint8", "uint16", "uint32", "uint64", "float", "double"
-            };
-
-            for (const std::string_view primitive : k_primitives)
-            {
-                if (typeName == primitive)
-                    return true;
-            }
-            return false;
+            return parser::primitives::IsNonNullable(typeName);
         }
 
         bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
