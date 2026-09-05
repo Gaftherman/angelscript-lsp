@@ -63,6 +63,11 @@
         "command": "angelscript.selectPredefined",
         "title": "%command.selectPredefined.title%",
         "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.statusMenu",
+        "title": "%command.statusMenu.title%",
+        "category": "%command.selectPredefined.category%"
       }
     ],
     "grammars": [
