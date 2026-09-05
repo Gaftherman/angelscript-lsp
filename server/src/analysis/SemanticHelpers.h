@@ -117,6 +117,29 @@ namespace angel_lsp::analysis
     }
 
     /** @brief True for AngelScript's floating point primitives. */
+    /**
+     * @brief Strips a namespace qualification, leaving the last segment: `NS::Foo` -> `Foo`.
+     *
+     * Eight files carried a private copy of these two lines, byte for byte, and a ninth open-coded
+     * the same rfind/substr inline. Nothing was wrong with any of them; it is just that a name is
+     * either qualified or it is not, and that is one question.
+     */
+    /**
+     * @brief Splits a template argument list at the commas that are not inside a nested `<...>`.
+     *
+     * `int, array<int, float>, string` gives three, not four: the comma inside the inner list
+     * belongs to it. Each piece comes back trimmed, and empty pieces are KEPT - `int,,string` gives
+     * three, the middle one empty - because the two callers disagree about what to do with one and
+     * that disagreement is theirs to keep. ParseTemplateType drops them; BindTemplateArguments
+     * counts them, which is how it notices an argument list that does not match its parameters.
+     *
+     * The depth counter was written twice, here and in TypeConversionChecker, and this is the part
+     * they really shared.
+     */
+    [[nodiscard]] std::vector<std::string> SplitTemplateArguments(std::string_view inner);
+
+    [[nodiscard]] std::string LastScopeSegment(const std::string &name);
+
     [[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
     {
         return parser::primitives::IsFloatingPoint(typeName);

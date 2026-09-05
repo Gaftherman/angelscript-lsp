@@ -16,13 +16,6 @@ namespace angel_lsp::features
 
         constexpr uint32_t k_nameFieldLength = 4; ///< "name"
 
-        /** @brief Strips a namespace or class qualification, leaving the last segment. */
-        std::string LastScopeSegment(const std::string &name)
-        {
-            const size_t pos = name.rfind("::");
-            return pos == std::string::npos ? name : name.substr(pos + 2);
-        }
-
         std::string NodeText(TSNode node, std::string_view sourceCode)
         {
             if (ts_node_is_null(node))
@@ -50,7 +43,7 @@ namespace angel_lsp::features
         lsp::CallHierarchyItem ToItem(const Symbol &sym)
         {
             lsp::CallHierarchyItem item;
-            item.name = LastScopeSegment(sym.name);
+            item.name = analysis::LastScopeSegment(sym.name);
             item.kind = sym.containerName.empty() ? lsp::SymbolKind::Function : lsp::SymbolKind::Method;
             item.uri = lsp::DocumentUri::parse(sym.fileUri);
 
@@ -131,7 +124,7 @@ namespace angel_lsp::features
             {
                 for (const auto &sym : symbols)
                 {
-                    if (IsFunctionSymbol(sym) && LastScopeSegment(sym.name) == bareName)
+                    if (IsFunctionSymbol(sym) && analysis::LastScopeSegment(sym.name) == bareName)
                     {
                         found.push_back(sym);
                     }
@@ -226,7 +219,7 @@ namespace angel_lsp::features
 
     std::optional<std::vector<lsp::CallHierarchyIncomingCall>> GetIncomingCalls(const CallHierarchyItemRequest &request)
     {
-        const std::string target = LastScopeSegment(request.item.name);
+        const std::string target = analysis::LastScopeSegment(request.item.name);
         if (target.empty())
         {
             return std::nullopt;

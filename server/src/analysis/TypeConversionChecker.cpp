@@ -70,13 +70,6 @@ namespace angel_lsp::analysis
             return ts_node_is_null(node) ? std::string_view{} : std::string_view(ts_node_type(node));
         }
 
-        /** @brief Strips a namespace qualification, leaving the last segment ("NS::Foo" -> "Foo"). */
-        std::string LastScopeSegment(const std::string &name)
-        {
-            const size_t pos = name.rfind("::");
-            return pos == std::string::npos ? name : name.substr(pos + 2);
-        }
-
         bool IsSameType(const std::string &a, const std::string &b)
         {
             return a == b || LastScopeSegment(a) == LastScopeSegment(b);
@@ -288,29 +281,15 @@ namespace angel_lsp::analysis
             }
 
             const std::string inner = writtenType.substr(open + 1, writtenType.size() - open - 2);
-            int depth = 0;
-            std::string current;
-            for (char c : inner)
-            {
-                if (c == '<') { ++depth; }
-                else if (c == '>') { --depth; }
-                else if (c == ',' && depth == 0)
-                {
-                    binding.arguments.push_back(current);
-                    current.clear();
-                    continue;
-                }
-                current += c;
-            }
-            if (!current.empty())
-            {
-                binding.arguments.push_back(current);
-            }
+            binding.arguments = SplitTemplateArguments(inner);
 
-            for (auto &argument : binding.arguments)
+            // A trailing comma names no argument here - `array<int,>` binds one, not two. The other
+            // caller of the splitter, ParseTemplateType, drops every empty piece; this one drops
+            // only the last, because an empty piece in the MIDDLE is a written argument that failed
+            // to parse, and the count is what tells `usable` that the list does not match.
+            if (!binding.arguments.empty() && binding.arguments.back().empty())
             {
-                while (!argument.empty() && isspace(static_cast<unsigned char>(argument.front()))) argument.erase(argument.begin());
-                while (!argument.empty() && isspace(static_cast<unsigned char>(argument.back()))) argument.pop_back();
+                binding.arguments.pop_back();
             }
 
             binding.usable = binding.arguments.size() == binding.parameters.size();
