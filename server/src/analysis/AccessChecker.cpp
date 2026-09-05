@@ -40,13 +40,6 @@ namespace angel_lsp::analysis
         constexpr uint32_t k_objectFieldLength = 6; ///< "object"
         constexpr uint32_t k_memberFieldLength = 6; ///< "member"
 
-        /** @brief Strips a namespace qualification, leaving the last segment ("G::A" -> "A"). */
-        std::string LastScopeSegment(const std::string &name)
-        {
-            const size_t pos = name.rfind("::");
-            return pos == std::string::npos ? name : name.substr(pos + 2);
-        }
-
         /** @brief Compares two type names by their last segment, so a qualification cannot hide a match. */
         bool IsSameType(const std::string &a, const std::string &b)
         {

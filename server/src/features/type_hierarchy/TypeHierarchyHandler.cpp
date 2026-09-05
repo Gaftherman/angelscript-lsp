@@ -12,13 +12,6 @@ namespace angel_lsp::features
         using analysis::SymbolTable;
         using analysis::SymbolType;
 
-        /** @brief Strips a namespace qualification, leaving the last segment ("G::A" -> "A"). */
-        std::string LastScopeSegment(const std::string &name)
-        {
-            const size_t pos = name.rfind("::");
-            return pos == std::string::npos ? name : name.substr(pos + 2);
-        }
-
         bool IsTypeSymbol(const Symbol &sym)
         {
             return sym.type == SymbolType::Class || sym.type == SymbolType::Interface;
@@ -49,7 +42,7 @@ namespace angel_lsp::features
         lsp::TypeHierarchyItem ToItem(const Symbol &sym)
         {
             lsp::TypeHierarchyItem item;
-            item.name = LastScopeSegment(sym.name);
+            item.name = analysis::LastScopeSegment(sym.name);
             item.kind = sym.type == SymbolType::Interface ? lsp::SymbolKind::Interface : lsp::SymbolKind::Class;
             item.uri = lsp::DocumentUri::parse(sym.fileUri);
 
@@ -179,7 +172,7 @@ namespace angel_lsp::features
         {
             for (const auto &base : DeclaredBases(declaration))
             {
-                const std::string baseName = LastScopeSegment(analysis::CleanBaseType(base));
+                const std::string baseName = analysis::LastScopeSegment(analysis::CleanBaseType(base));
                 if (baseName.empty() || std::find(seen.begin(), seen.end(), baseName) != seen.end())
                 {
                     continue;
@@ -200,7 +193,7 @@ namespace angel_lsp::features
 
     std::optional<std::vector<lsp::TypeHierarchyItem>> GetSubtypes(const TypeHierarchyItemRequest &request)
     {
-        const std::string target = LastScopeSegment(request.item.name);
+        const std::string target = analysis::LastScopeSegment(request.item.name);
         if (target.empty())
         {
             return std::nullopt;
@@ -211,14 +204,14 @@ namespace angel_lsp::features
         {
             for (const auto &sym : symbols)
             {
-                if (!IsTypeSymbol(sym) || LastScopeSegment(sym.name) == target)
+                if (!IsTypeSymbol(sym) || analysis::LastScopeSegment(sym.name) == target)
                 {
                     continue;
                 }
 
                 for (const auto &base : DeclaredBases(sym))
                 {
-                    if (LastScopeSegment(analysis::CleanBaseType(base)) == target)
+                    if (analysis::LastScopeSegment(analysis::CleanBaseType(base)) == target)
                     {
                         items.push_back(ToItem(sym));
                         break;

@@ -84,12 +84,6 @@ namespace angel_lsp::analysis
             return typeName.starts_with("const ") || typeName.ends_with(" const");
         }
 
-        std::string LastScopeSegment(const std::string &name)
-        {
-            const size_t pos = name.rfind("::");
-            return pos == std::string::npos ? name : name.substr(pos + 2);
-        }
-
         bool HasUserConversion(const std::string &fromType, const std::string &toType, const SymbolTable &symbolTable)
         {
             if (fromType.empty() || toType.empty())

@@ -42,13 +42,6 @@ namespace angel_lsp::analysis
         constexpr uint32_t k_leftFieldLength = 4;     ///< "left"
         constexpr uint32_t k_functionFieldLength = 8; ///< "function"
 
-        /** @brief Strips a namespace qualification, leaving the last segment ("G::A" -> "A"). */
-        std::string LastScopeSegment(const std::string &name)
-        {
-            const size_t pos = name.rfind("::");
-            return pos == std::string::npos ? name : name.substr(pos + 2);
-        }
-
         /**
          * @brief True when a declared type's written form begins with `const`.
          *

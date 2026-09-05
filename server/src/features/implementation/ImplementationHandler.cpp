@@ -12,13 +12,6 @@ namespace angel_lsp::features
         using analysis::SymbolTable;
         using analysis::SymbolType;
 
-        /** @brief Strips a namespace qualification, leaving the last segment ("G::A" -> "A"). */
-        std::string LastScopeSegment(const std::string &name)
-        {
-            const size_t pos = name.rfind("::");
-            return pos == std::string::npos ? name : name.substr(pos + 2);
-        }
-
         /** @brief The identifier the cursor sits on, or empty when it is not on one. */
         std::string IdentifierAt(const ImplementationRequest &request, TSNode &outNode)
         {
@@ -71,7 +64,7 @@ namespace angel_lsp::features
          */
         std::vector<Symbol> CollectSubtypes(const std::string &rootType, const SymbolTable &table)
         {
-            std::vector<std::string> frontier{ LastScopeSegment(rootType) };
+            std::vector<std::string> frontier{ analysis::LastScopeSegment(rootType) };
             std::vector<std::string> seen{ frontier.front() };
             std::vector<Symbol> subtypes;
 
@@ -88,7 +81,7 @@ namespace angel_lsp::features
                             continue;
                         }
 
-                        const std::string bare = LastScopeSegment(sym.name);
+                        const std::string bare = analysis::LastScopeSegment(sym.name);
                         if (std::find(seen.begin(), seen.end(), bare) != seen.end())
                         {
                             continue;
@@ -96,7 +89,7 @@ namespace angel_lsp::features
 
                         for (const auto &base : DeclaredBases(sym))
                         {
-                            const std::string baseName = LastScopeSegment(analysis::CleanBaseType(base));
+                            const std::string baseName = analysis::LastScopeSegment(analysis::CleanBaseType(base));
                             if (std::find(frontier.begin(), frontier.end(), baseName) == frontier.end())
                             {
                                 continue;
@@ -185,7 +178,7 @@ namespace angel_lsp::features
         std::vector<lsp::Location> locations;
         for (const auto &subtype : CollectSubtypes(owner, table))
         {
-            const auto members = table.FindSymbolsPtr(LastScopeSegment(subtype.name) + "::" + name);
+            const auto members = table.FindSymbolsPtr(analysis::LastScopeSegment(subtype.name) + "::" + name);
             if (!members)
             {
                 continue;

@@ -261,6 +261,44 @@ namespace angel_lsp::analysis
         return false;
     }
 
+    std::vector<std::string> SplitTemplateArguments(std::string_view inner)
+    {
+        std::vector<std::string> arguments;
+        int depth = 0;
+        size_t start = 0;
+
+        const auto push = [&](std::string_view piece)
+        {
+            while (!piece.empty() && (piece.front() == ' ' || piece.front() == '	')) piece.remove_prefix(1);
+            while (!piece.empty() && (piece.back() == ' ' || piece.back() == '	')) piece.remove_suffix(1);
+            arguments.emplace_back(piece);
+        };
+
+        for (size_t i = 0; i < inner.size(); ++i)
+        {
+            if (inner[i] == '<')
+                ++depth;
+            else if (inner[i] == '>')
+                --depth;
+            else if (inner[i] == ',' && depth == 0)
+            {
+                push(inner.substr(start, i - start));
+                start = i + 1;
+            }
+        }
+
+        if (start <= inner.size())
+            push(inner.substr(start));
+
+        return arguments;
+    }
+
+    std::string LastScopeSegment(const std::string &name)
+    {
+        const size_t pos = name.rfind("::");
+        return pos == std::string::npos ? name : name.substr(pos + 2);
+    }
+
     std::string CleanBaseType(std::string_view typeName)
     {
         while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
@@ -436,40 +474,12 @@ namespace angel_lsp::analysis
         info.containerName = std::string(typeName.substr(0, openBracket));
         std::string_view inner = typeName.substr(openBracket + 1, typeName.size() - openBracket - 2);
 
-        int depth = 0;
-        size_t start = 0;
-        for (size_t i = 0; i < inner.size(); ++i)
+        // Empty pieces are dropped here: `array<int,>` names one argument, and the trailing
+        // nothing is a typo rather than a second one.
+        for (std::string &argument : SplitTemplateArguments(inner))
         {
-            if (inner[i] == '<')
-            {
-                ++depth;
-            }
-            else if (inner[i] == '>')
-            {
-                --depth;
-            }
-            else if (inner[i] == ',' && depth == 0)
-            {
-                std::string_view arg = inner.substr(start, i - start);
-                while (!arg.empty() && (arg.front() == ' ' || arg.front() == '\t')) arg.remove_prefix(1);
-                while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\t')) arg.remove_suffix(1);
-                if (!arg.empty())
-                {
-                    info.templateArgs.push_back(std::string(arg));
-                }
-                start = i + 1;
-            }
-        }
-
-        if (start < inner.size())
-        {
-            std::string_view arg = inner.substr(start);
-            while (!arg.empty() && (arg.front() == ' ' || arg.front() == '\t')) arg.remove_prefix(1);
-            while (!arg.empty() && (arg.back() == ' ' || arg.back() == '\t')) arg.remove_suffix(1);
-            if (!arg.empty())
-            {
-                info.templateArgs.push_back(std::string(arg));
-            }
+            if (!argument.empty())
+                info.templateArgs.push_back(std::move(argument));
         }
 
         return info;

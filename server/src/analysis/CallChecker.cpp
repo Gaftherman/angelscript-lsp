@@ -44,13 +44,6 @@ namespace angel_lsp::analysis
         constexpr uint32_t k_objectFieldLength = 6;    ///< "object"
         constexpr uint32_t k_memberFieldLength = 6;    ///< "member"
 
-        /** @brief Strips a namespace or class qualification, leaving the last segment. */
-        std::string LastScopeSegment(const std::string &name)
-        {
-            const size_t pos = name.rfind("::");
-            return pos == std::string::npos ? name : name.substr(pos + 2);
-        }
-
         /**
          * @brief Counts the arguments written between one call's parentheses.
          *
