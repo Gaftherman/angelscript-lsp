@@ -810,7 +810,7 @@ namespace angel_lsp
         // workspace folders - would never find them. ParserPredefined de-duplicates by canonical
         // path, so a stub that also happens to live inside the workspace is not indexed twice.
         ReportWorkspaceProgress("Loading predefined stubs", 70);
-        LoadConfiguredPredefinedFiles(backgroundParser, stopToken);
+        const std::vector<std::string> configuredPaths = LoadConfiguredPredefinedFiles(backgroundParser, stopToken);
 
         if (stopToken.stop_requested())
         {
@@ -842,6 +842,10 @@ namespace angel_lsp
 
             std::vector<std::string> discovered;
 
+            // Every stub this scan decides is still in force. Anything loaded that is not in here
+            // is released at the end - see UnloadUnselectedPredefinedStubs.
+            std::vector<std::string> wantedPaths = configuredPaths;
+
             const bool completed = angel_lsp::utils::ForEachWorkspaceFile(
                 rootPaths, m_config.exclude,
                 [&stopToken]() { return stopToken.stop_requested(); },
@@ -855,12 +859,18 @@ namespace angel_lsp
                     if (!activePath.empty())
                     {
                         if (PathsAreSameFile(path, activePath))
+                        {
                             ParserPredefined(entry.path().string(), backgroundParser);
+                            wantedPaths.push_back(path);
+                        }
                         return;
                     }
 
                     if (mergeAll)
+                    {
                         ParserPredefined(entry.path().string(), backgroundParser);
+                        wantedPaths.push_back(path);
+                    }
 
                     // Neither chosen nor merging: nothing is loaded here, because which stub wins
                     // cannot be decided until the walk has seen all of them.
@@ -884,7 +894,17 @@ namespace angel_lsp
             {
                 autoSelected = discovered.front();
                 ParserPredefined(autoSelected, backgroundParser);
+                wantedPaths.push_back(autoSelected);
             }
+
+            // Anything still loaded from a stub file this scan did not want has to go, for exactly
+            // the reason the built-in profiles above do: didChangeConfiguration sets shouldRescan,
+            // the rescan reaches here, and ClaimPredefinedFile refuses the URIs it has already seen
+            // while nothing ever releases the one the user just switched away from. Measured before
+            // this call existed - selecting a second stub left the first one's classes resolving in
+            // hover and completion, unmarked, and the `#define`s it wrote still keeping `#if`
+            // blocks live. Only the built-in profile half of this had ever been fixed.
+            UnloadUnselectedPredefinedStubs(wantedPaths);
 
             {
                 std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
@@ -1028,13 +1048,17 @@ namespace angel_lsp
         }
     }
 
-    void Server::LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser &parser,
-                                               const angel_lsp::utils::StopFlag &stopToken)
+    std::vector<std::string> Server::LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser &parser,
+                                                                   const angel_lsp::utils::StopFlag &stopToken)
     {
+        // Reported back so the caller can tell a stub that is still wanted from one the selection
+        // has moved away from. A configured stub is wanted whatever the selection says.
+        std::vector<std::string> loadedPaths;
+
         for (const auto &entry : m_config.predefinedFiles)
         {
             if (stopToken.stop_requested())
-                return;
+                return loadedPaths;
 
             std::error_code ec;
             const std::filesystem::path configured(entry);
@@ -1060,6 +1084,7 @@ namespace angel_lsp
                     continue;
 
                 ParserPredefined(candidate.string(), parser);
+                loadedPaths.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(candidate));
                 loaded = true;
                 break;
             }
@@ -1068,6 +1093,53 @@ namespace angel_lsp
             {
                 m_logger->LogError(fmt::format("Configured predefined file not found: {}", entry));
             }
+        }
+
+        return loadedPaths;
+    }
+
+    bool Server::RefreshStubDefinedWords(const std::string &uriStr, const std::string &text)
+    {
+        const std::string path = CanonicalPathFromUri(uriStr);
+        if (path.empty())
+            return false;
+
+        // A stub that is not the one in force contributes nothing - not its types, and not its
+        // words either. Letting it define them anyway is how two stubs get to be one: the user
+        // switches to a stub without `#define SERVER_BUILD`, the other one is still open in a tab,
+        // and `#if SERVER_BUILD` stays live because of a file that is no longer being used.
+        {
+            std::lock_guard<std::mutex> lock(m_predefinedMutex);
+            if (!PredefinedStubContributes(uriStr))
+                return false;
+        }
+
+        return SetDefinedWordsFrom(path, angel_lsp::utils::ScanDefinedWords(text));
+    }
+
+    void Server::UnloadUnselectedPredefinedStubs(const std::vector<std::string> &wantedPaths)
+    {
+        std::lock_guard<std::mutex> lock(m_predefinedMutex);
+
+        // Collected before unloading: UnloadPredefinedUri mutates the map being read.
+        //
+        // Only stubs with a real path are considered, which is what leaves the built-in profiles
+        // alone - their synthetic URIs have no filesystem path, so they never enter this map and
+        // are purged by their own pass in LoadBuiltinEngineProfiles.
+        std::vector<std::string> stale;
+        for (const auto &[path, uri] : m_predefinedUriByPath)
+        {
+            const bool wanted = std::any_of(wantedPaths.begin(), wantedPaths.end(),
+                                            [&path](const std::string &candidate)
+                                            { return PathsAreSameFile(candidate, path); });
+            if (!wanted)
+                stale.push_back(uri);
+        }
+
+        for (const auto &uri : stale)
+        {
+            if (UnloadPredefinedUri(uri))
+                m_logger->LogInfo(fmt::format("Unloaded predefined stub that is no longer selected: {}", uri));
         }
     }
 
@@ -1177,6 +1249,17 @@ namespace angel_lsp
         {
             if (it->second == uriStr)
             {
+                // A stub that is no longer loaded no longer tells this server what the host
+                // defined. Without this, switching from a stub that writes `#define SERVER_BUILD`
+                // to one that does not left the word defined for the rest of the session: its
+                // types were gone, so the code inside `#if SERVER_BUILD` was diagnosed against a
+                // table that no longer held them, and the block stayed live because the word that
+                // kept it alive belonged to a stub that had been unloaded.
+                //
+                // The map key is already normalised (CanonicalPathFromUri), which is the same key
+                // ParserPredefined records the words under.
+                SetDefinedWordsFrom(it->first, {});
+
                 m_predefinedUriByPath.erase(it);
                 break;
             }
@@ -1276,14 +1359,18 @@ namespace angel_lsp
         // this server's description of the host's engine setup and is never compiled by AngelScript
         // itself, so it is the one place the word can be written down. See PreprocessorRegions.h.
         //
-        // Keyed by path so reloading one stub replaces only its own words.
+        // Keyed by the *normalised* path so reloading one stub replaces only its own words. The
+        // spelling this function is handed varies by caller - a directory walk's, a configured
+        // setting's, a URI's - and keying on it raw meant the same stub could contribute its words
+        // twice under two spellings, with only one of them ever erased again.
         //
         // Recording only: reanalysis is the caller's business. This runs under m_predefinedMutex,
         // and ReanalyseOpenDocuments walks m_openDocuments and schedules work, so calling it from
         // here would hold a lock across the whole fan-out. The watched-file path already sets
         // graphChanged and reanalyses once for the whole batch, which is also the right count when
         // a workspace holds several stubs.
-        if (SetDefinedWordsFrom(filePath, angel_lsp::utils::ScanDefinedWords(content)))
+        if (SetDefinedWordsFrom(angel_lsp::utils::IncludeResolver::NormalizePath(filePath),
+                                angel_lsp::utils::ScanDefinedWords(content)))
             m_logger->LogInfo(fmt::format("Defined words changed after loading: {}", filePath));
 
         m_logger->LogInfo(fmt::format("Loaded predefined file: {}", filePath));
@@ -2231,6 +2318,12 @@ namespace angel_lsp
                 m_callGraph.ClearDocument(uriStr);
             }
 
+            // A save is the point the watcher would have reacted to, had the file not been open -
+            // didChangeWatchedFiles skips open documents on purpose, so this is the only place a
+            // saved stub can announce that its `#define`s moved. Before the analysis, which reads
+            // the words to decide what this stub's own `#if` blocks contain.
+            const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
+
             auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, savedTree);
             diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
@@ -2238,6 +2331,10 @@ namespace angel_lsp
                 ts_tree_delete(savedTree);
 
             PublishDiagnostics(uriStr, diagnostics);
+
+            if (wordsChanged)
+                ReanalyseOpenDocuments();
+
             return;
         }
 
@@ -2297,10 +2394,23 @@ namespace angel_lsp
                 }
             }
 
+            // Before the analysis below, which reads the words to decide what this very stub's own
+            // `#if` blocks contain. It also repairs the claim above: re-claiming a stub under a new
+            // URI spelling unloads the old one, and an unload now takes that stub's words with it.
+            //
+            // The buffer the editor holds may differ from the copy on disk the scan read, and from
+            // here on it is the one that counts - didChangeWatchedFiles will not touch an open
+            // document again.
+            const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
+
             auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, tree);
             diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
             PublishDiagnostics(uriStr, diagnostics);
+
+            if (wordsChanged)
+                ReanalyseOpenDocuments();
+
             return;
         }
 
@@ -2440,6 +2550,15 @@ namespace angel_lsp
                 m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(newTree), buffer));
                 m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(newTree), buffer));
             }
+
+            // On every keystroke, but the fan-out only when the word set actually moved - which
+            // typing inside a declaration never does. Commenting out a `#define` does, and that is
+            // the edit whose effect the user could not see: the stub's own symbols updated as they
+            // typed while every `#if` in every other document stayed on the previous answer until
+            // the stub was reloaded by hand.
+            if (RefreshStubDefinedWords(uriStr, buffer))
+                ReanalyseOpenDocuments();
+
             ScheduleAnalysis(uriStr, buffer);
             return;
         }

@@ -424,9 +424,42 @@ namespace angel_lsp
          *
          * @param parser Parser to reuse across all of them.
          * @param stopToken Checked between files, so shutdown does not wait on the whole list.
+         * @return The normalised paths actually loaded, for UnloadUnselectedPredefinedStubs. A
+         *         configured stub stays loaded whatever the active selection is.
          */
-        void LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser &parser,
-                                           const angel_lsp::utils::StopFlag &stopToken);
+        std::vector<std::string> LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser &parser,
+                                                               const angel_lsp::utils::StopFlag &stopToken);
+
+        /**
+         * @brief Releases every loaded stub file whose path is not in @p wantedPaths.
+         *
+         * The counterpart, for stubs on disk, of the stale-profile purge in
+         * LoadBuiltinEngineProfiles - and it was missing for years while that one existed.
+         * ClaimPredefinedFile refuses a URI it has already seen, so without this a rescan could
+         * only ever add: switching the active stub left the previous one's declarations resolving
+         * in hover and completion with no diagnostic to say they no longer exist, and the
+         * `#define`s it contributed still keeping `#if` blocks alive.
+         *
+         * Built-in profiles are untouched: their synthetic URIs have no filesystem path, so they
+         * never enter m_predefinedUriByPath.
+         *
+         * @param wantedPaths Normalised paths that survive this scan.
+         */
+        void UnloadUnselectedPredefinedStubs(const std::vector<std::string> &wantedPaths);
+
+        /**
+         * @brief Re-reads the `#define`s of a stub open in the editor, and says whether they moved.
+         *
+         * A stub is this server's description of the host's engine setup, so its `#define FOO`
+         * lines are what decide whether `#if FOO` is live code in every other open document. The
+         * disk path records them (ParserPredefined); the editor path did not, so commenting a
+         * `#define` out and saving changed the stub's symbols and left every `#if` exactly as it
+         * was until the stub was reloaded by hand.
+         *
+         * @return True when the merged set changed, i.e. when the other open documents now compile
+         *         differently and have to be re-analysed.
+         */
+        bool RefreshStubDefinedWords(const std::string &uriStr, const std::string &text);
 
         /**
          * @brief Loads built-in predefined stub profiles (e.g. Standard, SvenCoop, Urho3D, OpenXRay, OOTP).

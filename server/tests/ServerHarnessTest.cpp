@@ -4727,3 +4727,236 @@ TEST_CASE("Server - Hover answers for the shapes that nest")
     CHECK(wrong == 0);
     CHECK(silent == 0);
 }
+
+// =====================================================================================
+// Switching the active stub, and the half of that fix nobody had written.
+//
+// "Switching engine profile forgets the profile that was left" above pins the built-in half:
+// LoadBuiltinEngineProfiles releases the profile the user moved away from. The stubs on disk go
+// through the same ClaimPredefinedFile path and had no release at all, so a rescan could only ever
+// add - the stub that stopped being active kept every class it declared in the symbol table, kept
+// answering hover, and kept its `#define`s defined.
+//
+// Reported from use: after switching stubs, "me sigue pudiendo hacer hover y no marca la entidad
+// como si fuera invalida". Both halves of that sentence are a case below, because they fail
+// separately: diagnostics and hover read the symbol table through different paths, and a fix that
+// only silenced one would look right in whichever one you happened to check.
+// =====================================================================================
+
+namespace
+{
+    /**
+     * @brief Starts under host_a, switches the selection to host_b, then opens @p source.
+     *
+     * The switch travels the way the client makes it - didChangeConfiguration, not a restart -
+     * because that is the path with the missing unload. Restarting the server would rebuild the
+     * table from nothing and pass whatever the unload path did.
+     */
+    std::string RunAfterSwitchingStub(const TwoStubFixture &two, const std::string &source)
+    {
+        two.fixture.Write("main.as", source);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+        // The first scan loads host_a, named in the config at the bottom.
+        stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+        stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+                    R"({"settings":{"angelscript":{"predefined":{"active":")" +
+                    JsonEscape(two.Stub("host_b.as.predefined")) + R"("}}}}})");
+
+        // The rescan runs its own progress cycle, so wait for a second one to finish.
+        stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 2); });
+
+        stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
+        stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+        stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
+                    two.fixture.Uri("main.as") + R"("},"position":{"line":0,"character":16}}})");
+
+        stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        serverConfig.activePredefined = two.Stub("host_a.as.predefined");
+
+        // Not the default "none": the analyzer stays silent about a type whose world it cannot see,
+        // and with an empty table every assertion below would pass by vacuity.
+        serverConfig.engineProfile = "standard";
+
+        RunScript(serverConfig, stream);
+        return stream.Output();
+    }
+}
+
+TEST_CASE("Server - Switching the active stub forgets the stub that was left")
+{
+    TwoStubFixture two;
+
+    const std::string output = RunAfterSwitchingStub(two, "void main() { TypeFromA a; }\n");
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    // host_a is no longer the selection, so nothing it declares exists any more.
+    CHECK(Published(output, "as-err-unresolved-type"));
+}
+
+TEST_CASE("Server - The stub that was switched to still resolves")
+{
+    // The other half of the pair. Without it, a server that had simply stopped loading stubs
+    // altogether would pass the case above.
+    TwoStubFixture two;
+
+    const std::string output = RunAfterSwitchingStub(two, "void main() { TypeFromB b; }\n");
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK_FALSE(Published(output, "as-err-unresolved-type"));
+}
+
+TEST_CASE("Server - Hover stops describing a type the stub no longer declares")
+{
+    // The reported symptom, and the reason the diagnostic case above is not enough on its own: the
+    // error appeared and the hover card still described the class, side by side on the same word.
+    // A user reading that sees the server contradicting itself and believes the error.
+    TwoStubFixture two;
+
+    const std::string output = RunAfterSwitchingStub(two, "void main() { TypeFromA a; }\n");
+
+    INFO(output);
+
+    // The reply arrived at all - otherwise "no TypeFromA in the output" would be true of a server
+    // that answered nothing, which is exactly how this assertion could pass while broken.
+    REQUIRE(output.find(R"("id":3)") != std::string::npos);
+
+    // The card, not the word: the published diagnostic legitimately names TypeFromA in its own
+    // message, so searching the whole stream for the bare identifier would never pass.
+    CHECK(output.find("class TypeFromA") == std::string::npos);
+}
+
+// =====================================================================================
+// A stub edited in the editor, rather than on disk.
+//
+// didChangeWatchedFiles skips any document the editor has open, on purpose: the buffer wins over
+// the copy on disk. But the editor path never recorded a stub's `#define`s at all - only
+// ParserPredefined did, and that is the disk path. So editing a stub in a tab updated the types it
+// declares and left every `#if` in every other document on the previous answer until the stub was
+// reloaded by hand from the status menu.
+//
+// Reported from use: "si en mi stub tengo #define SERVER_BUILD y lo comento, no se actualiza al
+// momento, tendria que entrar a la opcion de stub y actualizarlo".
+// =====================================================================================
+
+namespace
+{
+    /**
+     * @brief Opens a stub and a document that depends on its `#define`, then edits the stub.
+     *
+     * @param editedStub What the stub becomes. The document is never touched, so any change in what
+     *        is published about it came from the stub.
+     * @return Everything the server wrote.
+     */
+    std::string RunEditingOpenStub(const std::string &editedStub, bool expectNewFrame)
+    {
+        const std::string stub = "#define SERVER_BUILD\nclass HostEntityA { void Spawn(); }\n";
+
+        const std::string source =
+            "#if SERVER_BUILD\n"
+            "void OnServerStart()\n"
+            "{\n"
+            "    UndefinedThingy();\n"
+            "}\n"
+            "#endif\n";
+
+        WorkspaceFixture fixture;
+        fixture.Write("engine.as.predefined", stub);
+        fixture.Write("main.as", source);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+        // With SERVER_BUILD defined the block is live code, so this publishes the error inside it.
+        stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+        stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+        // The user opens the stub in a tab. From here on didChangeWatchedFiles will not touch it.
+        stream.Push(DidOpenMessage(fixture.Uri("engine.as.predefined"), stub));
+        stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 2); });
+
+        size_t before = 0;
+        stream.PushAction([&stream, &before]() { before = CountPublishedFor(stream.Output(), "main.as"); });
+
+        stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                    fixture.Uri("engine.as.predefined") + R"(","version":2},)"
+                    R"("contentChanges":[{"text":")" + JsonEscape(editedStub) + R"("}]}})");
+
+        // A filler request between the edit and the wait, and it is load-bearing. PushAction runs
+        // on the reader thread, and it fires when the bytes before it are *consumed*, not when they
+        // are handled - so an action that waits here blocks the very message loop that has to
+        // dispatch the didChange above. The wait then always ran out. Reading a request back proves
+        // the loop got past the edit.
+        stream.Push(R"({"jsonrpc":"2.0","id":1500,"method":"textDocument/documentSymbol",)"
+                    R"("params":{"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("}}})");
+
+        // Waiting for a *new* frame about main.as, not for silence: the document was already
+        // published once, so "there is a publish for main.as" was true before the edit.
+        stream.PushAction([&stream, &before, expectNewFrame]()
+        {
+            // Bounded short when no new frame is expected: waiting the full timeout for something
+            // that correctly never arrives would cost fifteen seconds of suite time per run.
+            const auto budget = expectNewFrame ? std::chrono::seconds(15) : std::chrono::seconds(2);
+            const auto deadline = std::chrono::steady_clock::now() + budget;
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (CountPublishedFor(stream.Output(), "main.as") > before)
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        });
+
+        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        RunScript(serverConfig, stream);
+        return stream.Output();
+    }
+}
+
+TEST_CASE("Server - Commenting out a #define in an open stub re-evaluates every #if at once")
+{
+    const std::string output = RunEditingOpenStub("// #define SERVER_BUILD\nclass HostEntityA { void Spawn(); }\n",
+                                                    /*expectNewFrame=*/true);
+
+    INFO(PublishedFrames(output));
+
+    // A second frame about main.as arrived at all. Without this the assertion below would pass on a
+    // server that never said anything again, which is precisely the bug being fixed.
+    REQUIRE(CountPublishedFor(output, "main.as") >= 2);
+
+    // SERVER_BUILD is gone, so the block is not code any more and nothing inside it is reported.
+    const std::string last = LastPublishedFor(output, "main.as");
+    INFO(last);
+    CHECK(last.find(R"("diagnostics":[])") != std::string::npos);
+}
+
+TEST_CASE("Server - An edit that leaves the #defines alone does not change what the #if says")
+{
+    // The other direction, and the one that stops the fix from being "publish an empty list after
+    // any stub edit". The stub gains a class and keeps its `#define`, so the block stays live and
+    // the error inside it stays on screen.
+    const std::string output =
+        RunEditingOpenStub("#define SERVER_BUILD\nclass HostEntityA { void Spawn(); }\nclass HostEntityB {}\n",
+                           /*expectNewFrame=*/false);
+
+    INFO(PublishedFrames(output));
+
+    const std::string last = LastPublishedFor(output, "main.as");
+    INFO(last);
+    REQUIRE_FALSE(last.empty());
+    CHECK(last.find("as-err-undefined-identifier") != std::string::npos);
+}
