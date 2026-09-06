@@ -775,7 +775,8 @@ namespace angel_lsp
                              m_config.info.fileExtension,
                              [&stopToken]() { return stopToken.stop_requested(); },
                              {},
-                             m_config.exclude);
+                             m_config.exclude,
+                             ImplicitIncludeExtension());
 
         if (stopToken.stop_requested())
         {
@@ -1514,6 +1515,23 @@ namespace angel_lsp
         // The stub selection rides the same rescan the engine profile does. With a working unload
         // path the rescan is enough: the stub that stops being active is dropped and the new one
         // collected, without restarting the server.
+        // A change here changes which files every `#include` resolves to, so the include graph
+        // has to be rebuilt - the same rescan the stub selection and the engine profile ride.
+        if (const auto *includeVal = section->find("include"); includeVal && includeVal->isObject())
+        {
+            if (const auto *implicitVal = includeVal->object().find("implicitExtension");
+                implicitVal && implicitVal->isBoolean())
+            {
+                if (implicitVal->boolean() != m_config.implicitIncludeExtension)
+                {
+                    m_config.implicitIncludeExtension = implicitVal->boolean();
+                    m_logger->LogInfo(fmt::format("Implicit include extension {}; rebuilding the include graph",
+                                                  m_config.implicitIncludeExtension ? "on" : "off"));
+                    shouldRescan = true;
+                }
+            }
+        }
+
         if (const auto *predefinedVal = section->find("predefined"); predefinedVal && predefinedVal->isObject())
         {
             if (const auto *activeVal = predefinedVal->object().find("active");
@@ -1745,7 +1763,8 @@ namespace angel_lsp
 
             const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
-            m_includeGraph.UpdateFile(path, content, *SearchDirectories(), IncludeAllowedRoots());
+            m_includeGraph.UpdateFile(path, content, *SearchDirectories(), IncludeAllowedRoots(),
+                                      ImplicitIncludeExtension());
             graphChanged = true;
 
             // Only files already pulled in as part of an open document's module are re-indexed
@@ -1821,7 +1840,8 @@ namespace angel_lsp
         for (const auto &[openUri, openText] : m_openDocuments)
         {
             if (const std::string openPath = CanonicalPathFromUri(openUri); !openPath.empty())
-                m_includeGraph.UpdateFile(openPath, openText, *SearchDirectories(), IncludeAllowedRoots());
+                m_includeGraph.UpdateFile(openPath, openText, *SearchDirectories(), IncludeAllowedRoots(),
+                                          ImplicitIncludeExtension());
         }
 
         // An edited #include line can move a file between modules, so every open document's
@@ -2035,7 +2055,8 @@ namespace angel_lsp
         for (const auto &directive : angel_lsp::utils::IncludeResolver::ExtractIncludes(text))
         {
             const std::string resolved = angel_lsp::utils::IncludeResolver::ResolveIncludePath(
-                directive.rawPath, includerPath, *SearchDirectories(), IncludeAllowedRoots());
+                directive.rawPath, includerPath, *SearchDirectories(), IncludeAllowedRoots(),
+                ImplicitIncludeExtension());
             if (resolved != oldTargetPath)
                 continue;
 
@@ -2347,7 +2368,8 @@ namespace angel_lsp
         // A save is the only point at which an edited #include line can change which module this
         // file belongs to, so the graph is patched here rather than on every keystroke.
         if (const std::string savedPath = CanonicalPathFromUri(uriStr); !savedPath.empty())
-            m_includeGraph.UpdateFile(savedPath, text, *SearchDirectories(), IncludeAllowedRoots());
+            m_includeGraph.UpdateFile(savedPath, text, *SearchDirectories(), IncludeAllowedRoots(),
+                                      ImplicitIncludeExtension());
 
         IndexModuleClosure(uriStr);
 
@@ -2828,6 +2850,7 @@ namespace angel_lsp
         // as missing is a warning about a directive that does not exist. Measured: a missing file
         // included from inside `#if UNDEFINED` compiles, and the same line outside does not.
         request.excludedLineRanges = ExcludedLineRanges(text);
+        request.implicitExtension = std::string(ImplicitIncludeExtension());
 
         auto includeDiagnostics = features::GetUnresolvedIncludeDiagnostics(request);
         diagnostics.insert(diagnostics.end(), includeDiagnostics.begin(), includeDiagnostics.end());
@@ -3682,7 +3705,7 @@ namespace angel_lsp
                     [this, uriStr = doc->uri](const std::string &rawPath) {
                         return angel_lsp::utils::IncludeResolver::ResolveIncludePath(
                             rawPath, CanonicalPathFromUri(uriStr), *SearchDirectories(),
-                            IncludeAllowedRoots());
+                            IncludeAllowedRoots(), ImplicitIncludeExtension());
                     }
                 };
                 auto hover = features::GetHover(hr);
@@ -4147,6 +4170,14 @@ namespace angel_lsp
                     return lsp::Array<lsp::CompletionItem>{};
 
                 features::CompletionRequest cr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position), &m_config, m_snippetSupport };
+
+                cr.documentPath = CanonicalPathFromUri(doc->uri);
+                cr.implicitExtension = std::string(ImplicitIncludeExtension());
+
+                // A callback, so the walk below happens only when the cursor really is inside an
+                // `#include` - which almost no completion request is.
+                cr.listIncludeCandidates = [this]() { return IncludableFiles(); };
+
                 return features::GetCompletion(cr);
             });
 

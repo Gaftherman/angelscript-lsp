@@ -94,13 +94,27 @@ namespace angel_lsp::utils
          * @param allowedRoots Confinement roots; see IsWithinRoots. Empty (the default) resolves
          *        without confinement, which is what unit tests and library callers want. The server
          *        always passes its workspace folders and search directories.
+         * @param implicitExtension Suffix to try when the path as written matches no file - `.as`,
+         *        typically. Empty (the default) is AngelScript's own behaviour: CScriptBuilder
+         *        opens exactly the string between the quotes and appends nothing, measured, so
+         *        `#include "helper"` finds a file named `helper` and not `helper.as`.
+         *
+         *        Some hosts resolve the name themselves before the add-on sees it, and require the
+         *        extension to be left off - Sven Co-op is the reason this parameter exists. For
+         *        those, `#include "helper"` **is** `helper.as` and there is nothing to report.
+         *        Which of the two is true is a fact about the host, exactly like the engine
+         *        properties, so it is configuration rather than a guess.
+         *
+         *        Tried per directory and only after the exact name misses there, so a workspace
+         *        holding both `helper` and `helper.as` resolves the way the compiler would.
          * @return Canonicalized/normalized absolute path if found and permitted, else empty string.
          */
         static std::string ResolveIncludePath(
             std::string_view includePath,
             std::string_view currentFilePath,
             const std::vector<std::string> &searchDirectories,
-            const std::vector<std::string> &allowedRoots = {});
+            const std::vector<std::string> &allowedRoots = {},
+            std::string_view implicitExtension = {});
 
         /**
          * @brief Recursively discovers all resolved include files starting from rootFilePath.

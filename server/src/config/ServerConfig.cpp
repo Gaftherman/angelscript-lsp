@@ -341,6 +341,8 @@ namespace angel_lsp::config
                   << "  --predefined-file=<path>                Load a predefined stub by path, even outside the workspace (repeatable)\n"
                   << "  --predefined-active=<path>              Select the single predefined stub workspace scan will\n"
                   << "                                          load (leaving it empty loads all discovered stubs)\n"
+                  << "  --implicit-include-extension=<bool>     Let #include \"helper\" mean helper.as, for hosts that\n"
+                  << "                                          resolve the name themselves (e.g. Sven Co-op).\n"
                   << "  --exclude=<glob>                        Directory glob the workspace scans do not descend\n"
                   << "                                          into (repeatable). ?, * within a segment and **\n"
                   << "                                          across segments. The first one given replaces the\n"
@@ -748,6 +750,10 @@ namespace angel_lsp::config
                 {
                     config.activePredefined = std::string(val);
                 }
+            }
+            else if (key == "--implicit-include-extension")
+            {
+                config.implicitIncludeExtension = getBoolValue(true);
             }
             else if (key == "--format-brace-style" || key == "--brace-style")
             {

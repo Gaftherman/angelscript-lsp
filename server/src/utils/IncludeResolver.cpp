@@ -398,7 +398,8 @@ namespace angel_lsp::utils
         std::string_view includePath,
         std::string_view currentFilePath,
         const std::vector<std::string> &searchDirectories,
-        const std::vector<std::string> &allowedRoots)
+        const std::vector<std::string> &allowedRoots,
+        std::string_view implicitExtension)
     {
         // Every successful return below goes through this. Checking at the single exit rather than
         // per branch is deliberate: a new resolution strategy added later is confined by default
@@ -406,6 +407,39 @@ namespace angel_lsp::utils
         const auto permit = [&allowedRoots](std::string resolved) -> std::string
         {
             return IsWithinRoots(resolved, allowedRoots) ? resolved : std::string();
+        };
+
+        // One directory, tried the way the host would: the name exactly as written first, and only
+        // if nothing is there, the same name with the configured extension.
+        //
+        // That order is the whole of the rule. A workspace holding both `helper` and `helper.as`
+        // resolves to `helper`, which is what the compiler does; appending first would quietly pick
+        // the other file and nothing would say so.
+        const auto firstExisting = [&implicitExtension](const std::filesystem::path &directory,
+                                                        const std::filesystem::path &name) -> std::filesystem::path
+        {
+            std::error_code inner;
+
+            std::filesystem::path exact = directory / name;
+            if (std::filesystem::exists(exact, inner) && !std::filesystem::is_directory(exact, inner))
+            {
+                return exact;
+            }
+
+            if (implicitExtension.empty())
+            {
+                return {};
+            }
+
+            // No "does it already end in .as" test on purpose. If it does, the exact try above
+            // found it or the file is not there at all, and `helper.as.as` simply does not exist.
+            std::filesystem::path extended = directory / (name.string() + std::string(implicitExtension));
+            if (std::filesystem::exists(extended, inner) && !std::filesystem::is_directory(extended, inner))
+            {
+                return extended;
+            }
+
+            return {};
         };
 
         if (includePath.empty())
@@ -445,8 +479,7 @@ namespace angel_lsp::utils
                 parentDir = std::filesystem::current_path(ec);
             }
 
-            std::filesystem::path candidate = parentDir / inc;
-            if (std::filesystem::exists(candidate, ec) && !std::filesystem::is_directory(candidate, ec))
+            if (const std::filesystem::path candidate = firstExisting(parentDir, inc); !candidate.empty())
             {
                 return permit(NormalizePathString(candidate));
             }
@@ -460,9 +493,8 @@ namespace angel_lsp::utils
                 continue;
             }
 
-            std::filesystem::path searchDir(dir);
-            std::filesystem::path candidate = searchDir / inc;
-            if (std::filesystem::exists(candidate, ec) && !std::filesystem::is_directory(candidate, ec))
+            if (const std::filesystem::path candidate = firstExisting(std::filesystem::path(dir), inc);
+                !candidate.empty())
             {
                 return permit(NormalizePathString(candidate));
             }

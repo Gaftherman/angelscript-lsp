@@ -341,6 +341,31 @@ namespace angel_lsp
          */
         std::vector<std::string> IncludeAllowedRoots() const;
 
+        /**
+         * @brief The suffix an unresolvable include may be retried with, or empty for none.
+         *
+         * One accessor rather than the rule repeated at each call site: resolution happens in the
+         * include graph, in hover, in document links and in the rename fix-up, and a site that
+         * forgot it would resolve differently from the rest for the same file.
+         */
+        /**
+         * @brief Every file an `#include` in this workspace may name, as absolute paths.
+         *
+         * Answered from the include graph rather than by walking the disk: the graph was built by
+         * exactly the walk that decides which files count - the script extension, the workspace
+         * folders, the exclude globs - so a second walk would be both slower and free to disagree.
+         */
+        [[nodiscard]] std::vector<std::string> IncludableFiles() const
+        {
+            return m_includeGraph.AllFiles();
+        }
+
+        [[nodiscard]] std::string_view ImplicitIncludeExtension() const noexcept
+        {
+            return m_config.implicitIncludeExtension ? std::string_view(m_config.info.fileExtension)
+                                                     : std::string_view{};
+        }
+
         auto HandleRequestsInitialized(lsp::requests::Initialize::Params &&params);
         void HandleNotificationsInitialized(lsp::notifications::Initialized::Params &&params);
         auto HandleRequestsShutdown();

@@ -64,7 +64,8 @@ namespace angel_lsp::features
         for (const auto &directive : directives)
         {
             const std::string target = utils::IncludeResolver::ResolveIncludePath(
-                directive.rawPath, currentPath, request.searchDirectories, request.allowedRoots);
+                directive.rawPath, currentPath, request.searchDirectories, request.allowedRoots,
+                request.implicitExtension);
             if (target.empty())
                 continue;
 
@@ -103,7 +104,8 @@ namespace angel_lsp::features
 
         for (const auto &directive : directives)
         {
-            if (!utils::IncludeResolver::ResolveIncludePath(directive.rawPath, currentPath, request.searchDirectories, request.allowedRoots).empty())
+            if (!utils::IncludeResolver::ResolveIncludePath(directive.rawPath, currentPath, request.searchDirectories,
+                                                           request.allowedRoots, request.implicitExtension).empty())
                 continue;
 
             const std::string_view line = utils::GetLine(request.sourceCode, static_cast<uint32_t>(directive.line));

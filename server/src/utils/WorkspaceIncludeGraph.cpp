@@ -29,13 +29,15 @@ namespace angel_lsp::utils
         std::vector<std::string> ResolveDirectives(const std::string &normalizedPath,
                                                    std::string_view sourceCode,
                                                    const std::vector<std::string> &searchDirectories,
-                                                   const std::vector<std::string> &allowedRoots)
+                                                   const std::vector<std::string> &allowedRoots,
+                                                   std::string_view implicitExtension)
         {
             std::vector<std::string> resolved;
 
             for (const auto &directive : IncludeResolver::ExtractIncludes(sourceCode))
             {
-                std::string target = IncludeResolver::ResolveIncludePath(directive.rawPath, normalizedPath, searchDirectories, allowedRoots);
+                std::string target = IncludeResolver::ResolveIncludePath(
+                    directive.rawPath, normalizedPath, searchDirectories, allowedRoots, implicitExtension);
                 if (target.empty())
                     continue; // Unresolvable include - reported as a diagnostic elsewhere, not an edge.
 
@@ -82,7 +84,8 @@ namespace angel_lsp::utils
                                       std::string_view scriptExtension,
                                       const std::function<bool()> &shouldStop,
                                       const FileReader &fileReader,
-                                      const std::vector<std::string> &excludeGlobs)
+                                      const std::vector<std::string> &excludeGlobs,
+                                      std::string_view implicitExtension)
     {
         // An edge may only point at a file inside the workspace or one of the configured search
         // directories. Those are exactly the two places a script is legitimately allowed to include
@@ -105,7 +108,8 @@ namespace angel_lsp::utils
                 if (!scriptExtension.empty() && !std::string_view(path).ends_with(scriptExtension))
                     return;
 
-                std::vector<std::string> targets = ResolveDirectives(path, read(path), searchDirectories, allowedRoots);
+                std::vector<std::string> targets =
+                    ResolveDirectives(path, read(path), searchDirectories, allowedRoots, implicitExtension);
 
                 for (const auto &target : targets)
                     includedBy[target].push_back(path);
@@ -127,10 +131,12 @@ namespace angel_lsp::utils
     void WorkspaceIncludeGraph::UpdateFile(const std::string &filePath,
                                            std::string_view sourceCode,
                                            const std::vector<std::string> &searchDirectories,
-                                           const std::vector<std::string> &allowedRoots)
+                                           const std::vector<std::string> &allowedRoots,
+                                           std::string_view implicitExtension)
     {
         const std::string normalized = IncludeResolver::NormalizePath(filePath);
-        std::vector<std::string> targets = ResolveDirectives(normalized, sourceCode, searchDirectories, allowedRoots);
+        std::vector<std::string> targets =
+            ResolveDirectives(normalized, sourceCode, searchDirectories, allowedRoots, implicitExtension);
 
         std::unique_lock<std::shared_mutex> lock(m_mutex);
         SetIncludesLocked(normalized, std::move(targets));
@@ -246,6 +252,18 @@ namespace angel_lsp::utils
 
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         return m_includes.contains(normalized) || m_includedBy.contains(normalized);
+    }
+
+    std::vector<std::string> WorkspaceIncludeGraph::AllFiles() const
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+        std::vector<std::string> files;
+        files.reserve(m_includes.size());
+        for (const auto &[path, _] : m_includes)
+            files.push_back(path);
+
+        return files;
     }
 
     size_t WorkspaceIncludeGraph::FileCount() const

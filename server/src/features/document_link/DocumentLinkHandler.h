@@ -45,6 +45,14 @@ namespace angel_lsp::features
          * Empty means nothing is excluded, which is what every caller that does not care gets.
          */
         std::vector<utils::ExcludedLineRange> excludedLineRanges;
+
+        /**
+         * @brief Suffix an unresolvable include may be retried with, or empty for none.
+         *
+         * Must match what the include graph resolved with, or a link would point at nothing while
+         * the module closure had already found the file - see ServerConfig::implicitIncludeExtension.
+         */
+        std::string implicitExtension;
     };
 
     using DocumentLinkResult = std::vector<lsp::DocumentLink>;

@@ -60,7 +60,8 @@ namespace angel_lsp::utils
                    std::string_view scriptExtension,
                    const std::function<bool()> &shouldStop = {},
                    const FileReader &fileReader = {},
-                   const std::vector<std::string> &excludeGlobs = {});
+                   const std::vector<std::string> &excludeGlobs = {},
+                   std::string_view implicitExtension = {});
 
         /**
          * @brief Re-reads one file's directives and patches just its edges.
@@ -71,7 +72,8 @@ namespace angel_lsp::utils
         void UpdateFile(const std::string &filePath,
                         std::string_view sourceCode,
                         const std::vector<std::string> &searchDirectories,
-                        const std::vector<std::string> &allowedRoots = {});
+                        const std::vector<std::string> &allowedRoots = {},
+                        std::string_view implicitExtension = {});
 
         /**
          * @brief All files that make up the module the given file participates in.
@@ -119,6 +121,15 @@ namespace angel_lsp::utils
          * @brief Number of files currently in the graph.
          */
         size_t FileCount() const;
+
+        /**
+         * @brief Every file the graph knows, in no particular order.
+         *
+         * The set an `#include` may name: the walk that built the graph already visited exactly
+         * the files with the script extension, inside the workspace, that the exclude globs let
+         * through - so answering from here costs a copy rather than a second walk of the disk.
+         */
+        std::vector<std::string> AllFiles() const;
 
         /**
          * @brief Drops every node and edge.

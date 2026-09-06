@@ -554,6 +554,26 @@ namespace angel_lsp::config
         std::vector<std::string> predefinedFiles;
 
         /**
+         * @brief Whether `#include "helper"` may mean `helper.as`.
+         *
+         * Off by default, which is AngelScript's own behaviour: CScriptBuilder opens exactly the
+         * string between the quotes and appends nothing. Measured - with a file named `helper` on
+         * disk `#include "helper"` compiles, and without one it is
+         * `Failed to open script file '.../helper'` even when `helper.as` is sitting beside it.
+         *
+         * On, because some hosts resolve the name themselves before the add-on ever sees it and
+         * require the extension to be left off. Sven Co-op is the reason this exists: there
+         * `#include "helper"` is the *correct* spelling and `helper.as` is what it means, so a
+         * server that reported the short form as unresolved would be wrong about every include in
+         * the project.
+         *
+         * Which of the two is true is a fact about the host, like the engine properties, so it is
+         * configuration rather than something to infer. The extension appended is Info::
+         * fileExtension, so a host using something other than `.as` gets it right for free.
+         */
+        bool implicitIncludeExtension = false;
+
+        /**
          * @brief Predefined stub file to exclusively load during the workspace scan.
          *
          * When empty, the server preserves its default behaviour of ingesting every predefined
