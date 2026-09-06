@@ -91,6 +91,11 @@
             "punctuation.definition.typeparameters.angelscript",
             "punctuation.definition.typeparameters.begin.ts",
             "meta.type.parameters"
+          ],
+          "type.defaultLibrary": [
+            "storage.type.built-in.primitive.angelscript",
+            "storage.type.built-in",
+            "storage.type"
           ]
         }
       }
