@@ -4019,6 +4019,32 @@ TEST_CASE("Server - What it says while the code is still being written")
         // each wait can tell a publish that answers THIS step from one left over from the last.
         size_t publishesBefore = 0;
 
+        // The didOpen above produces a publish of its own, for the untouched document. Starting the
+        // count at zero made that publish look like step 0's answer, and on a slow machine it lands
+        // during step 0's wait - so the harness read an empty diagnostic list and checked it against
+        // expectations for text that had not been analysed yet.
+        //
+        // The filler request matters as much as the wait. A PushAction runs on the reader's thread,
+        // at the moment the bytes before it are consumed and BEFORE the server has dispatched them,
+        // and didOpen is handled on that same message loop. An action that blocks waiting for
+        // didOpen's publish therefore blocks the loop that would produce it - it cannot succeed, and
+        // it burned the full timeout in every scenario, taking this test from 28 seconds to five
+        // minutes. Putting a request between the two is what lets didOpen be handled first.
+        stream.Push(R"({"jsonrpc":"2.0","id":1500,"method":"textDocument/documentSymbol",)"
+                    R"("params":{"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("}}})");
+
+        stream.PushAction([&stream, &publishesBefore]()
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (CountPublishedFor(stream.Output(), "main.as") > 0)
+                    break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+            publishesBefore = CountPublishedFor(stream.Output(), "main.as");
+        });
+
         int version = 2;
         int requestId = 2000;
 
