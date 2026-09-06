@@ -449,11 +449,17 @@ function expandPathVariables(entry: string): string[] {
         });
 
         if (unresolved) {
-            lspOutputChannel.appendLine(
+            // Optional: this runs from buildServerArgs, which is called before activate() has made
+            // the channel. Without the guard an unresolvable variable crashed the whole
+            // settings-to-arguments pass instead of producing one line in a log.
+            lspOutputChannel?.appendLine(
                 `Setting "${entry}" names something this window does not have; left as written.`);
         }
 
-        expanded.push(value);
+        // Normalised, so the separator the user typed does not survive into the path handed to the
+        // server: `${workspaceFolder}/include` otherwise produces `E:\work/include`, which works
+        // and reads like a bug every time it turns up in a log.
+        expanded.push(path.normalize(value));
     }
 
     return expanded;
