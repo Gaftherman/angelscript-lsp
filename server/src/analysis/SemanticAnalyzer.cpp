@@ -201,6 +201,43 @@ namespace angel_lsp::analysis
         for (const auto &directive : request.unsupportedDirectives)
         {
             DiagnosticContext ctx{request, diagnostics, m_logger};
+
+            // The two below are Errors, and the difference from the Warning above is measured. A
+            // host really may have patched `#else` or `#define` into its copy of the add-on, so
+            // saying "error" about one would be a false positive on somebody's legal script. No
+            // host setting makes `#incude` or `# include` legal: the add-on reads the characters
+            // straight after the `#`, and anything it does not match is left for the compiler to
+            // choke on. A user who disagrees can still move either code with
+            // angelscript.diagnosticSeverity.
+            if (directive.problem == utils::DirectiveProblem::Unrecognised)
+            {
+                ctx.EmitAtRange(directive.line, directive.startColumn,
+                                directive.line, directive.endColumn,
+                                "as-err-unknown-directive", directive.name,
+                                DiagnosticSeverity::Error);
+                continue;
+            }
+
+            if (directive.problem == utils::DirectiveProblem::IncludeNotQuoted)
+            {
+                ctx.EmitAtRange(directive.line, directive.startColumn,
+                                directive.line, directive.endColumn,
+                                "as-err-include-not-quoted",
+                                DiagnosticSeverity::Error);
+                continue;
+            }
+
+            if (directive.problem == utils::DirectiveProblem::SpaceAfterHash)
+            {
+                // Twice: the message shows the line as written and then as it has to be, and the
+                // name is the only thing that changes between them.
+                ctx.EmitAtRange(directive.line, directive.startColumn,
+                                directive.line, directive.endColumn,
+                                "as-err-directive-space-after-hash", directive.name, directive.name,
+                                DiagnosticSeverity::Error);
+                continue;
+            }
+
             ctx.EmitAtRange(directive.line, directive.startColumn,
                             directive.line, directive.endColumn,
                             "as-warn-unsupported-directive", directive.name,

@@ -95,11 +95,56 @@ namespace angel_lsp::utils
      * is blanked with the rest of the block and compiles fine - measured, exit 0 - so it is not one
      * of these; the same `#define` one line outside is a syntax error.
      */
+    /** @brief What is wrong with a directive, which decides what the reader is told. */
+    enum class DirectiveProblem : uint8_t
+    {
+        /**
+         * @brief A directive CScriptBuilder knows about, that this host's copy does not support.
+         *
+         * The fix is a setting: the host may have patched the add-on, and the reader is the only
+         * one who knows.
+         */
+        Unsupported,
+
+        /**
+         * @brief Not a directive at all - a misspelled name, or no name.
+         *
+         * Measured: `#incude "test"` is `ERROR (1, 1): Unexpected token '<unrecognized token>'`.
+         * The add-on leaves anything it does not recognise in the source, and the compiler then
+         * reads a `#` where a declaration should be. No setting makes this legal; it is a typo.
+         */
+        Unrecognised,
+
+        /**
+         * @brief A recognised name, with whitespace between it and the `#`.
+         *
+         * Measured, and the surprise of this pass: `# include "helper.as"` and `#  if FOO` are both
+         * `Unexpected token '<unrecognized token>'`, while `#include` and `#if` compile. The add-on
+         * reads the characters immediately after the `#`, so one space stops it being a directive.
+         *
+         * Its own value because the fix is precise and mechanical - delete the space - and a reader
+         * told only "not recognised" about a name spelled perfectly correctly would go looking for
+         * the wrong mistake.
+         */
+        SpaceAfterHash,
+
+        /**
+         * @brief `#include` spelled correctly, with a path that is not in double quotes.
+         *
+         * Measured: `#include helper.as` is `Unexpected token '<unrecognized token>'`, the quoted
+         * form compiles. The add-on reads a string token after the name; without one it copies
+         * nothing and the line reaches the compiler intact.
+         */
+        IncludeNotQuoted,
+    };
+
+
     struct UnsupportedDirective
     {
         uint32_t line = 0;
         uint32_t startColumn = 0;  ///< Byte column of the `#`.
         uint32_t endColumn = 0;    ///< One past the last character of the directive name.
+        DirectiveProblem problem = DirectiveProblem::Unsupported;
         std::string name;          ///< "else", "elif", "ifdef", "ifndef", "define", "pragma", "endif".
     };
 

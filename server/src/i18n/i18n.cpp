@@ -128,6 +128,9 @@ namespace angel_lsp::i18n
         m_messages["as-warn-shadow-global"] = "Parameter '{}' shadows a global variable of the same name.";
         m_messages["as-hint-accessor-disabled"] = "Type '{}' reaches '{}' through a script property accessor, and this host disables those (asEP_PROPERTY_ACCESSOR_MODE 0 or 1). The compiler will not accept it; call the get_ or set_ function directly.";
         m_messages["as-warn-unsupported-directive"] = "CScriptBuilder does not recognise '#{}', so it is left in the source and the compiler rejects it. If the host patched its copy of the add-on to support it, say so with the matching angelscript.preprocessor setting.";
+        m_messages["as-err-unknown-directive"] = "'#{}' is not a directive. CScriptBuilder leaves anything it does not recognise in the source, and the compiler then rejects it. The names it reads are include, if, endif, pragma, else, elif, ifdef, ifndef and define.";
+        m_messages["as-err-directive-space-after-hash"] = "A directive name has to follow '#' with nothing between them. '# {}' is read as a stray '#' and the compiler rejects the line; '#{}' compiles.";
+        m_messages["as-err-include-not-quoted"] = "An #include path has to be in double quotes. Without them CScriptBuilder reads no filename, leaves the line in the source, and the compiler rejects it.";
         m_messages["as-warn-include-not-found"] = "Included file '{}' was not found.";
         m_messages["as-err-circular-inherit"] = "Circular inheritance detected: '{}' inherits from itself.";
         m_messages["as-err-const-out-param"] = "Parameter '{}' cannot be both 'const' and '&out'.";
@@ -286,6 +289,9 @@ namespace angel_lsp::i18n
             m_messages["as-warn-shadow-global"] = "El parámetro '{}' oculta una variable global con el mismo nombre.";
             m_messages["as-hint-accessor-disabled"] = "El tipo '{}' llega a '{}' mediante un accesor de propiedad de script, y este host los tiene desactivados (asEP_PROPERTY_ACCESSOR_MODE 0 o 1). El compilador no lo acepta; llama a la funcion get_ o set_ directamente.";
             m_messages["as-warn-unsupported-directive"] = "CScriptBuilder no reconoce '#{}', así que se queda en el código y el compilador lo rechaza. Si el host parcheó su copia del add-on para soportarlo, indícalo con la opción angelscript.preprocessor correspondiente.";
+            m_messages["as-err-unknown-directive"] = "'#{}' no es una directiva. CScriptBuilder deja en el código todo lo que no reconoce, y entonces el compilador lo rechaza. Los nombres que lee son include, if, endif, pragma, else, elif, ifdef, ifndef y define.";
+            m_messages["as-err-directive-space-after-hash"] = "El nombre de una directiva tiene que ir pegado a '#'. '# {}' se lee como un '#' suelto y el compilador rechaza la línea; '#{}' sí compila.";
+            m_messages["as-err-include-not-quoted"] = "La ruta de un #include tiene que ir entre comillas dobles. Sin ellas CScriptBuilder no lee ningún nombre de archivo, deja la línea en el código y el compilador la rechaza.";
             m_messages["as-warn-include-not-found"] = "No se encontró el archivo incluido '{}'.";
             m_messages["as-err-circular-inherit"] = "Herencia circular detectada: '{}' hereda de sí misma.";
             m_messages["as-err-const-out-param"] = "El parámetro '{}' no puede ser 'const' y '&out' al mismo tiempo.";

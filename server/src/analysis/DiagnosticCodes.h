@@ -70,6 +70,16 @@ namespace angel_lsp::diagnostics::codes
     // constant folder to answer. See TypeConversionChecker.cpp's numeric-warning section.
     inline constexpr std::string_view AccessorDisabled = "as-hint-accessor-disabled";
     inline constexpr std::string_view UnsupportedDirective = "as-warn-unsupported-directive";
+
+    // A `#` that is not a directive at all. Errors, not warnings, and the difference from the
+    // warning above is measured rather than assumed: `#incude "test"`, `# include "helper.as"`
+    // and a bare `#` are all `ERROR (1, 1): Unexpected token '<unrecognized token>'`, while
+    // `#include "helper.as"` and `#!/usr/bin/as` are exit 0. No host setting makes a misspelled
+    // name legal - unlike `#else` or `#define`, which a host really may have patched in, which is
+    // why that one stays a warning and these do not.
+    inline constexpr std::string_view UnknownDirective = "as-err-unknown-directive";
+    inline constexpr std::string_view DirectiveSpaceAfterHash = "as-err-directive-space-after-hash";
+    inline constexpr std::string_view IncludeNotQuoted = "as-err-include-not-quoted";
     inline constexpr std::string_view SignedUnsignedMismatch = "as-warn-signed-unsigned-mismatch";
     inline constexpr std::string_view FloatTruncation = "as-warn-float-truncation";
 

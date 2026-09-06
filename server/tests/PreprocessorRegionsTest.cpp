@@ -595,3 +595,151 @@ TEST_CASE("Preprocessor - The smoke file reports each directive mistake exactly 
     CHECK(scan.unsupported[0].name == "if");
     CHECK(scan.unsupported[0].line == 3);
 }
+
+// =====================================================================================
+// A `#` that is not a directive at all.
+//
+// Everything above asks whether a directive this add-on knows is supported by this host. These ask
+// the question before it: whether the line is a directive in the first place. It was never asked -
+// the dispatch was a chain of `else if (directive == "...")` with no final branch - so a misspelled
+// `#incude` was scanned, matched nothing, and produced silence.
+//
+// The second half is the one that mattered. The walk used to skip the whitespace after the `#`, so
+// `#  if UNDEFINED` was read as a live `#if` and EXCLUDED the block below it - which silences every
+// diagnostic inside a region the compiler keeps, and says nothing about the line that caused it.
+//
+// Measured against the compiler, and each case is a parity fixture in tests/parity:
+//
+//     #incude "test"          ERROR (1, 1): Unexpected token '<unrecognized token>'
+//     #                       ERROR (1, 1): Unexpected token '<unrecognized token>'
+//     # include "helper.as"   ERROR (1, 1): Unexpected token '<unrecognized token>'
+//     #  if FOO               ERROR (2, 1): Unexpected token '<unrecognized token>'
+//     #Include "helper.as"    ERROR (1, 1): Unexpected token '<unrecognized token>'
+//     #include "helper.as"    accepted
+//     #!/usr/bin/as           accepted
+//         #if FOO / #endif    accepted, indented
+// =====================================================================================
+
+TEST_CASE("Preprocessor - A misspelled directive is reported rather than ignored")
+{
+    const auto scan = ScanPreprocessor("#incude \"test\"\nvoid main() { }\n");
+
+    REQUIRE(scan.unsupported.size() == 1);
+    CHECK(scan.unsupported[0].name == "incude");
+    CHECK(scan.unsupported[0].line == 0);
+    CHECK(scan.unsupported[0].problem == angel_lsp::utils::DirectiveProblem::Unrecognised);
+
+    // And it opens nothing. A line that is not a directive must not exclude anything.
+    CHECK(scan.excluded.empty());
+}
+
+TEST_CASE("Preprocessor - A bare hash is reported")
+{
+    const auto scan = ScanPreprocessor("#\nvoid main() { }\n");
+
+    REQUIRE(scan.unsupported.size() == 1);
+    CHECK(scan.unsupported[0].name.empty());
+    CHECK(scan.unsupported[0].problem == angel_lsp::utils::DirectiveProblem::Unrecognised);
+}
+
+TEST_CASE("Preprocessor - A directive name is case-sensitive")
+{
+    const auto scan = ScanPreprocessor("#Include \"helper.as\"\nvoid main() { }\n");
+
+    REQUIRE(scan.unsupported.size() == 1);
+    CHECK(scan.unsupported[0].name == "Include");
+    CHECK(scan.unsupported[0].problem == angel_lsp::utils::DirectiveProblem::Unrecognised);
+}
+
+TEST_CASE("Preprocessor - A space between the hash and the name is its own mistake")
+{
+    // Reported apart from a typo because the fix is different and mechanical: the name is spelled
+    // perfectly, and a reader told "not recognised" would go looking for the wrong thing.
+    const auto scan = ScanPreprocessor("# include \"helper.as\"\nvoid main() { }\n");
+
+    REQUIRE(scan.unsupported.size() == 1);
+    CHECK(scan.unsupported[0].name == "include");
+    CHECK(scan.unsupported[0].problem == angel_lsp::utils::DirectiveProblem::SpaceAfterHash);
+}
+
+TEST_CASE("Preprocessor - A spaced #if excludes nothing")
+{
+    // The case with consequences beyond one squiggle. Reading this as a directive dropped the block
+    // below it, and everything the analyzer would have said about those lines went with it.
+    const auto scan = ScanPreprocessor("void main() { }\n#  if SOMEWORD\nint stray = 1;\n#  endif\n");
+
+    CHECK(scan.excluded.empty());
+
+    REQUIRE(scan.unsupported.size() == 2);
+    CHECK(scan.unsupported[0].name == "if");
+    CHECK(scan.unsupported[0].line == 1);
+    CHECK(scan.unsupported[0].problem == angel_lsp::utils::DirectiveProblem::SpaceAfterHash);
+    CHECK(scan.unsupported[1].name == "endif");
+    CHECK(scan.unsupported[1].line == 3);
+}
+
+TEST_CASE("Preprocessor - Whitespace before the hash is still fine")
+{
+    // The control, and the whole rule in one pair with the case above: space BEFORE the hash is
+    // accepted by the compiler, space AFTER it is not. A fix that rejected both would break every
+    // indented `#if` in the corpus.
+    const auto scan = ScanPreprocessor("void main() { }\n    #if SOMEWORD\nint stray = 1;\n    #endif\n");
+
+    CHECK(scan.unsupported.empty());
+    REQUIRE(scan.excluded.size() == 1);
+    CHECK(scan.excluded[0].startLine == 1);
+}
+
+TEST_CASE("Preprocessor - A shebang is not a directive")
+{
+    // Measured: `#!/usr/bin/as` is exit 0. CScriptBuilder skips the line, so reporting it would be
+    // a false positive on a script that compiles.
+    CHECK(ScanPreprocessor("#!/usr/bin/as\nvoid main() { }\n").unsupported.empty());
+}
+
+TEST_CASE("Preprocessor - The directives the add-on does read stay silent")
+{
+    // The other half of the control. A final "anything else is a mistake" branch is exactly the
+    // kind of rule that starts reporting the language's own directives, and that would be a false
+    // positive on every script in the corpus rather than on an unusual one.
+    CHECK(ScanPreprocessor("#include \"helper.as\"\nvoid main() { }\n").unsupported.empty());
+    CHECK(ScanPreprocessor("#if FOO\n#endif\n").unsupported.empty());
+
+    // `#pragma` is the recognised name whose support is a setting rather than a fact, so it must
+    // reach the pragma branch and not the unrecognised one.
+    const auto pragma = ScanPreprocessor("#pragma anything\n", {}, {}, /*reportPragma=*/true);
+    REQUIRE(pragma.unsupported.size() == 1);
+    CHECK(pragma.unsupported[0].name == "pragma");
+    CHECK(pragma.unsupported[0].problem == angel_lsp::utils::DirectiveProblem::Unsupported);
+}
+
+TEST_CASE("Preprocessor - A misspelled directive inside a dead block is still dead")
+{
+    // Blanked with the rest of the region before the compiler sees it, exactly like the `#define`
+    // case above. A rule that fired here would report text that does not exist.
+    const auto scan = ScanPreprocessor("#if UNDEFINED_WORD\n#incude \"test\"\n#endif\nvoid main() { }\n");
+
+    CHECK(scan.unsupported.empty());
+}
+
+
+TEST_CASE("Preprocessor - An include path has to be quoted")
+{
+    // The name is spelled correctly, so the unrecognised branch cannot see this one. Measured:
+    // `#include helper.as` is Unexpected token '<unrecognized token>', the quoted form compiles -
+    // CScriptBuilder reads a string token after the name and copies nothing when there is none.
+    const auto scan = ScanPreprocessor("#include helper.as\nvoid main() { }\n");
+
+    REQUIRE(scan.unsupported.size() == 1);
+    CHECK(scan.unsupported[0].name == "include");
+    CHECK(scan.unsupported[0].problem == angel_lsp::utils::DirectiveProblem::IncludeNotQuoted);
+}
+
+TEST_CASE("Preprocessor - A quoted include is still silent")
+{
+    // The control. This rule sits in front of every `#include` in the corpus, so a mistake here
+    // would be an error on the most common line in the language.
+    CHECK(ScanPreprocessor("#include \"helper.as\"\nvoid main() { }\n").unsupported.empty());
+    CHECK(ScanPreprocessor("#include   \"deep/helper.as\"\n").unsupported.empty());
+    CHECK(ScanPreprocessor("    #include \"helper.as\"\n").unsupported.empty());
+}

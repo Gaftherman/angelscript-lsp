@@ -34,6 +34,26 @@ namespace angel_lsp::utils
             uint32_t endColumn = 0;    ///< One past the last character of the name.
             std::string_view name;
             std::string_view argument;
+
+            /**
+             * @brief True when the name begins in the character right after the `#`.
+             *
+             * Measured: `# include "helper.as"` and `#  if FOO` are both rejected by the compiler
+             * while `#include` and `#if` compile, so a space here is the difference between a
+             * directive and a stray `#`. This walk used to skip that whitespace, which meant it
+             * read `# if UNDEFINED` as a live directive and excluded a block the compiler keeps.
+             */
+            bool touchesHash = true;
+
+            /**
+             * @brief First non-blank character after the name, or 0 at end of line.
+             *
+             * Only `#include` cares: it needs a quoted string, and `#include helper.as` is
+             * `ERROR (1, 1): Unexpected token '<unrecognized token>'` while the quoted form
+             * compiles. The name is spelled correctly in both, so nothing else in this walk can
+             * tell them apart.
+             */
+            char firstArgChar = 0;
         };
 
         /**
@@ -145,8 +165,19 @@ namespace angel_lsp::utils
                     hit.startColumn = static_cast<uint32_t>(i - lineStart);
                     ++i;
 
+                    // A shebang is not a directive and never was. CScriptBuilder skips the line
+                    // outright, and the compiler accepts it - measured, `#!/usr/bin/as` is exit 0.
+                    if (i < n && sourceCode[i] == '!')
+                    {
+                        while (i < n && sourceCode[i] != '\n' && sourceCode[i] != '\r')
+                            ++i;
+                        continue;
+                    }
+
+                    const size_t afterHash = i;
                     while (i < n && (sourceCode[i] == ' ' || sourceCode[i] == '\t'))
                         ++i;
+                    hit.touchesHash = (i == afterHash);
 
                     const size_t nameStart = i;
                     while (i < n && IsIdentifierChar(sourceCode[i]))
@@ -156,6 +187,10 @@ namespace angel_lsp::utils
 
                     while (i < n && (sourceCode[i] == ' ' || sourceCode[i] == '\t'))
                         ++i;
+
+                    hit.firstArgChar = (i < n && sourceCode[i] != '\n' && sourceCode[i] != '\r')
+                                           ? sourceCode[i]
+                                           : char{ 0 };
 
                     const size_t argStart = i;
                     while (i < n && IsIdentifierChar(sourceCode[i]))
@@ -237,10 +272,45 @@ namespace angel_lsp::utils
                 // includes and metadata in its second.
                 const bool reaches = !atExcludedTop && excludedNesting == 0;
 
-                const auto reportUnsupported = [&]() {
+                const auto report = [&](DirectiveProblem problem) {
                     scan.unsupported.push_back(UnsupportedDirective{
-                        hit.line, hit.startColumn, hit.endColumn, std::string(hit.name) });
+                        hit.line, hit.startColumn, hit.endColumn, problem, std::string(hit.name) });
                 };
+
+                const auto reportUnsupported = [&]() { report(DirectiveProblem::Unsupported); };
+
+                // Every name CScriptBuilder looks for. The four this server models as optional host
+                // extensions are in here too: whether they are *supported* is the question the
+                // chain below answers, and it is a different question from whether the word is a
+                // directive name at all.
+                const auto isDirectiveName = [](std::string_view candidate) {
+                    return candidate == "include" || candidate == "if" || candidate == "endif" ||
+                           candidate == "pragma" || candidate == "else" || candidate == "elif" ||
+                           candidate == "ifdef" || candidate == "ifndef" || candidate == "define";
+                };
+
+                // Before every other branch, because a line that is not a directive must not open a
+                // region, close one, or define a word. `# if UNDEFINED` used to exclude the block
+                // below it, which silenced every diagnostic inside a region the compiler keeps -
+                // and said nothing about the line that caused it.
+                if (!hit.touchesHash || !isDirectiveName(directive))
+                {
+                    if (reaches)
+                        report(hit.touchesHash ? DirectiveProblem::Unrecognised
+                                               : DirectiveProblem::SpaceAfterHash);
+                    return;
+                }
+
+                // A correctly spelled `#include` whose path is not quoted. CScriptBuilder reads a
+                // string token after the name and finds none, so the whole line stays in the
+                // source - measured, and its own problem because the name is right and the fix is
+                // a pair of quotes.
+                if (directive == "include" && hit.firstArgChar != '"')
+                {
+                    if (reaches)
+                        report(DirectiveProblem::IncludeNotQuoted);
+                    return;
+                }
 
                 const bool opensRegion =
                     directive == "if" ||
