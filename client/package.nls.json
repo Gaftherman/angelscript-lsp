@@ -87,6 +87,9 @@
   "command.selectPredefined.title": "Select Predefined Stub",
   "command.selectPredefined.category": "AngelScript",
   "extension.description": "Language support for AngelScript: hover, go to definition, completion, semantic highlighting, diagnostics, formatting and refactoring, powered by a native C++ Tree-sitter engine.",
+  "config.statusBar.alignment.description": "Which side of the status bar the AngelScript item sits on. It is the way to reach the server log, a restart and the stub picker, so the left is the default: that is where the problem counts are, and where the eye already is when a diagnostic sends you looking.",
+  "config.statusBar.alignment.left": "Next to the problem counts.",
+  "config.statusBar.alignment.right": "With the language mode and the editor indicators.",
   "config.dimInactiveRegions.description": "Dim the code inside a `#if` block the preprocessor drops, the way the C++ extension dims its inactive regions. A decoration rather than a colour: it dims whatever the syntax highlighting produced, brackets included, which a semantic token cannot do - the editor paints `(`, `{` and `[` from its own bracket-pair feature.",
   "config.inactiveRegionOpacity.description": "How visible the dimmed code inside a dropped `#if` block stays. 1 is no dimming at all. Matches `#angelscript.dimInactiveRegions#`, which has to be on for this to do anything."
 }

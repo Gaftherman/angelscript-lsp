@@ -526,6 +526,19 @@
           "default": "standard",
           "markdownDescription": "%config.engine.profile.description%"
         },
+        "angelscript.statusBar.alignment": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "enumDescriptions": [
+            "%config.statusBar.alignment.left%",
+            "%config.statusBar.alignment.right%"
+          ],
+          "default": "left",
+          "markdownDescription": "%config.statusBar.alignment.description%"
+        },
         "angelscript.dimInactiveRegions": {
           "type": "boolean",
           "default": true,

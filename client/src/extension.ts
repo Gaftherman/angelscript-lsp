@@ -148,6 +148,47 @@ let runningServerArgs: string[] = [];
  */
 let lastStatus: { state: 'starting' | 'running' | 'failed'; tooltip: string } | undefined;
 
+/**
+ * @brief Which side of the status bar the item currently sits on.
+ *
+ * Tracked because VS Code fixes an item's alignment when it is created: moving it is creating a
+ * new one, so the old has to be disposed and the last known state replayed onto the replacement.
+ * Undefined until the first createStatusBarItem call.
+ */
+let statusBarAlignmentInUse: StatusBarAlignment | undefined;
+
+/**
+ * @brief Creates the status bar item on the configured side, replacing the existing one if it moved.
+ *
+ * Defaults to the left. The item is the way to reach the log, a restart and the stub picker, and
+ * on the right it sits past whatever else the window has to say; on the left it is next to the
+ * problem counts, which is where the user is already looking. `angelscript.statusBar.alignment`
+ * moves it back for anyone who disagrees.
+ */
+function createStatusBarItem(context: ExtensionContext): void {
+    const configured = workspace.getConfiguration('angelscript').get<string>('statusBar.alignment', 'left');
+    const alignment = configured === 'right' ? StatusBarAlignment.Right : StatusBarAlignment.Left;
+
+    if (statusBarItem && statusBarAlignmentInUse === alignment) {
+        return;
+    }
+
+    // Disposed rather than hidden: an item left alive on the other side is a second copy of the
+    // same control, and the user moved it precisely because they did not want it there.
+    statusBarItem?.dispose();
+
+    statusBarItem = window.createStatusBarItem(alignment, 100);
+    statusBarItem.command = STATUS_MENU_COMMAND;
+    context.subscriptions.push(statusBarItem);
+    statusBarAlignmentInUse = alignment;
+
+    // The new item starts blank, and nothing else will speak until the server changes state - which
+    // it need not ever do again - so the last thing it said is replayed onto it.
+    if (lastStatus) {
+        setStatus(lastStatus.state, lastStatus.tooltip);
+    }
+}
+
 function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): void {
     lastStatus = { state, tooltip };
 
@@ -757,9 +798,7 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(
         window.onDidChangeVisibleTextEditors(editors => editors.forEach(applyInactiveRegions)));
 
-    statusBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 100);
-    statusBarItem.command = STATUS_MENU_COMMAND;
-    context.subscriptions.push(statusBarItem);
+    createStatusBarItem(context);
 
     // Deliberately not awaited. Everything this extension contributes to the UI - the commands,
     // the status bar item, the output channel - is registered above and ready now; what follows is
@@ -802,6 +841,13 @@ export async function activate(context: ExtensionContext) {
                 event.affectsConfiguration('angelscript.dimInactiveRegions')) {
                 resetInactiveDecoration();
                 window.visibleTextEditors.forEach(applyInactiveRegions);
+            }
+
+            // Purely a client-side control, so it moves without touching the server. Handled before
+            // the command-line comparison below, which would otherwise decide nothing changed and
+            // leave the item where it was.
+            if (event.affectsConfiguration('angelscript.statusBar.alignment')) {
+                createStatusBarItem(context);
             }
 
             const next = buildServerArgs();
