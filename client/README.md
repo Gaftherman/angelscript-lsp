@@ -44,11 +44,40 @@ extension at it — this is what makes the engine's own types resolve:
 Absolute paths are used as-is, so the stub may live outside your workspace. Relative paths resolve
 against each workspace folder.
 
+### Path variables
+
+Every path-valued setting accepts the same `${...}` variables `launch.json` does. VS Code does not
+expand these in ordinary settings, so the extension does it:
+
+| Variable | Becomes |
+| --- | --- |
+| `${workspaceFolder}` | Each workspace folder. In a multi-root workspace an entry using it is resolved once per folder. |
+| `${workspaceFolder:name}` | The folder with that name. |
+| `${userHome}` | Your home directory. |
+| `${env:NAME}` | An environment variable - the usual way a host SDK path is already written down. |
+
+```jsonc
+{
+  "angelscript.predefined.active": "${workspaceFolder}/stubs/host.as.predefined",
+  "angelscript.searchDirectories": ["${workspaceFolder}/scripts", "${env:SVENCOOP_SDK}/scripts"]
+}
+```
+
+A variable this window cannot answer - a folder name that does not exist, an unset environment
+variable - is left in the path as written and noted in the server log, rather than silently
+dropped.
+
+The stub picker writes `${workspaceFolder}/...` when the stub you choose lives inside a workspace
+folder, so the setting stays portable when it is committed. A stub outside every folder keeps its
+absolute path, and the two can be mixed in one workspace.
+
 ## Settings
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `angelscript.searchDirectories` | `[]` | Extra directories for resolving `#include "path.as"`. |
+| `angelscript.predefined.active` | `""` | The one stub to load, when the workspace holds several. `"all"` merges them. |
+| `angelscript.statusBar.alignment` | `left` | Which side of the status bar the AngelScript item sits on. |
 | `angelscript.predefinedFiles` | `[]` | Stub files describing the host application's API, loaded by path. |
 | `angelscript.predefinedExtension` | `.as.predefined` | Filename suffix that marks a workspace file as a stub. |
 | `angelscript.fileExtension` | `.as` | Filename suffix of script files, used when scanning the workspace. |

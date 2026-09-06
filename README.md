@@ -279,6 +279,17 @@ prints a notice until the `CORPUS_REPO` repository variable names a repository h
 
 ---
 
+## Planned work
+
+Two requests about *which files this server considers part of the program* - a root script, and
+opening a `.as` from outside the workspace - are designed but not implemented. The case for each,
+and the regressions each can cause, are written down in
+[PLANNED-WORKSPACE-SCOPE.md](PLANNED-WORKSPACE-SCOPE.md).
+
+That document also records what happens today when a script is opened from outside every
+workspace folder: it is analysed, but its `#include` of a file beside it is refused by the
+resolver's root allow-list, so everything that file declares is reported as an unresolved type.
+
 ## Command Line Configuration Flags
 
 The `angel_lsp` executable accepts command-line arguments to enable or disable individual LSP features and configure runtime options. Both `--flag=value` and `--flag value` syntaxes are supported.
