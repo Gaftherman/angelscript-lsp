@@ -446,8 +446,17 @@ namespace angel_lsp::features
             }
             else if (captureName == "type.builtin")
             {
-                tokenType = Type_Keyword;
-                tokenMod = 0;
+                // A type, not a keyword. `float` was reported as a keyword and themes paint that
+                // the colour of `if` and `return` - so a primitive read as control flow while every
+                // other type on the line read as a type, which is the one thing a reader uses
+                // colour for. The textmate grammar had it right all along
+                // (storage.type.built-in.primitive.angelscript); the semantic token was overriding
+                // it with a worse answer.
+                //
+                // defaultLibrary rather than a bare type so a theme can still tell `float` from a
+                // class the user wrote, which is the distinction "keyword" was reaching for.
+                tokenType = Type_Type;
+                tokenMod = Mod_DefaultLibrary;
                 priority = 7;
             }
             else if (captureName == "type")
@@ -502,8 +511,13 @@ namespace angel_lsp::features
                 tokenType = Type_Namespace;
                 priority = 6;
             }
-            else if (captureName == "keyword" || captureName == "keyword.control")
+            else if (captureName == "keyword" || captureName == "keyword.control" ||
+                     captureName == "keyword.operator")
             {
+                // keyword.operator is `and`, `or`, `xor`, `not`, `is` and `!is`: operators by
+                // grammar, words by spelling. They are captured twice - once by the generic
+                // operator patterns and once by their own - and this arm wins because it carries
+                // the higher priority. See HIGHLIGHTS_QUERY.
                 tokenType = Type_Keyword;
                 priority = 8;
             }

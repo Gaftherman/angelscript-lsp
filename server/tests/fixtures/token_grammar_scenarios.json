@@ -65,7 +65,7 @@
           "line": 0,
           "character": 8,
           "text": "int",
-          "type": "keyword"
+          "type": "type"
         },
         {
           "line": 0,
@@ -77,7 +77,7 @@
           "line": 0,
           "character": 21,
           "text": "float",
-          "type": "keyword"
+          "type": "type"
         },
         {
           "line": 0,
@@ -133,7 +133,7 @@
           "line": 0,
           "character": 8,
           "text": "float",
-          "type": "keyword"
+          "type": "type"
         },
         {
           "line": 0,
@@ -244,7 +244,7 @@
           "line": 0,
           "character": 6,
           "text": "int",
-          "type": "keyword"
+          "type": "type"
         },
         {
           "line": 0,
@@ -306,7 +306,7 @@
           "line": 0,
           "character": 12,
           "text": "int",
-          "type": "keyword"
+          "type": "type"
         },
         {
           "line": 0,

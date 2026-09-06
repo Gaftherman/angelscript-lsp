@@ -344,7 +344,17 @@ TEST_CASE("Adversarial Phase 3 - Diamond Interface Hierarchy Method Resolution")
 // AREA 2: PRIMITIVE TYPES SEMANTIC HIGHLIGHTING (R2)
 // =============================================================================
 
-TEST_CASE("Adversarial Phase 3 - All 15 Primitive Types Tokenized as Type_Keyword without Mod_DefaultLibrary")
+// This case used to be titled "...Tokenized as Type_Keyword without Mod_DefaultLibrary", and that
+// requirement has been deliberately reversed. It was written against what the handler did rather
+// than against what a reader sees: a theme paints `keyword` the colour of `if` and `return`, so
+// `float` read as control flow while every other type on the same line read as a type - reported
+// from use, with the editor's token inspector showing `semantic token type keyword` sitting on top
+// of a textmate scope of storage.type.built-in.primitive.angelscript.
+//
+// The half of the original requirement that was right is kept and still asserted below: a primitive
+// and a user-defined type must never be indistinguishable. Mod_DefaultLibrary is now what keeps
+// them apart, instead of a token type that named the wrong thing.
+TEST_CASE("Adversarial Phase 3 - All 15 primitive types are types from the default library")
 {
     // List of all 15 primitive types specified in R2:
     // int, float, uint, bool, double, void, int8, uint8, int16, uint16, int32, uint32, int64, uint64, auto
@@ -411,10 +421,11 @@ TEST_CASE("Adversarial Phase 3 - All 15 Primitive Types Tokenized as Type_Keywor
 
         INFO("Checking primitive type: " << ep.name << " at line " << ep.line);
         REQUIRE(it != decoded.end());
-        // Must be tokenType 15 (Type_Keyword)
-        CHECK(it->tokenType == 15);
-        // Must NEVER have Mod_DefaultLibrary (bit 9)
-        CHECK((it->tokenMod & (1 << 9)) == 0);
+        // Type_Type, not Type_Keyword: `float` is a type and themes colour types as types.
+        CHECK(it->tokenType == 1);
+        // Carrying Mod_DefaultLibrary, which is what now tells a primitive from a class the user
+        // wrote - the distinction the old requirement was reaching for by calling it a keyword.
+        CHECK((it->tokenMod & (1 << 9)) != 0);
     }
 
     // Verify user-defined class CustomClass on line 16 is a type of its own and NOT Type_Keyword
@@ -431,6 +442,11 @@ TEST_CASE("Adversarial Phase 3 - All 15 Primitive Types Tokenized as Type_Keywor
     REQUIRE(itUser != decoded.end());
     CHECK(itUser->tokenType == 2); // Type_Class
     CHECK(itUser->tokenType != 15); // and never Type_Keyword
+
+    // And it is still distinguishable from a primitive now that both are types: a class the user
+    // wrote is not from the default library. Without this the case above could be satisfied by
+    // stamping Mod_DefaultLibrary on everything.
+    CHECK((itUser->tokenMod & (1 << 9)) == 0);
 }
 
 TEST_CASE("Adversarial Phase 3 - Primitive Types in Signatures, Casts, and Modifiers")
@@ -450,25 +466,25 @@ TEST_CASE("Adversarial Phase 3 - Primitive Types in Signatures, Casts, and Modif
     auto itRet = std::find_if(decoded.begin(), decoded.end(),
         [](const DecodedSemToken &t) { return t.line == 0 && t.startCol == 0 && t.length == 5; });
     REQUIRE(itRet != decoded.end());
-    CHECK(itRet->tokenType == 15);
+    CHECK(itRet->tokenType == 1);
 
     // Parameter 'uint32' (line 0, col 24, len 6)
     auto itParam1 = std::find_if(decoded.begin(), decoded.end(),
         [](const DecodedSemToken &t) { return t.line == 0 && t.startCol == 24 && t.length == 6; });
     REQUIRE(itParam1 != decoded.end());
-    CHECK(itParam1->tokenType == 15);
+    CHECK(itParam1->tokenType == 1);
 
     // Parameter 'double' (line 0, col 39, len 6)
     auto itParam2 = std::find_if(decoded.begin(), decoded.end(),
         [](const DecodedSemToken &t) { return t.line == 0 && t.startCol == 39 && t.length == 6; });
     REQUIRE(itParam2 != decoded.end());
-    CHECK(itParam2->tokenType == 15);
+    CHECK(itParam2->tokenType == 1);
 
     // Parameter 'bool' (line 0, col 51, len 4)
     auto itParam3 = std::find_if(decoded.begin(), decoded.end(),
         [](const DecodedSemToken &t) { return t.line == 0 && t.startCol == 51 && t.length == 4; });
     REQUIRE(itParam3 != decoded.end());
-    CHECK(itParam3->tokenType == 15);
+    CHECK(itParam3->tokenType == 1);
 }
 
 // =============================================================================

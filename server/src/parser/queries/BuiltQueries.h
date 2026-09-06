@@ -184,6 +184,19 @@ namespace angel_lsp::parser::queries
 (postfix_expression operator: _ @operator)
 (typed_initializer_list "=" @operator)
 
+; Operators that are spelled as words.
+;
+; AngelScript writes `and`, `or`, `xor` and `not` for `&&`, `||`, `^^` and `!`, and `is` / `!is`
+; for handle identity. They occupy the `operator` field like any other, so the four patterns above
+; already matched them - as @operator, which a theme paints the colour of `+` and `;`. They read
+; as words and every theme has a colour for a word that is part of the language, so they are
+; captured again, more specifically, and the handler's priority rule keeps this answer.
+;
+; The textmate grammar has always agreed: it scopes them keyword.control.conditional. It was the
+; semantic token that overrode it and left them the colour of plain text.
+(binary_expression operator: ["and" "or" "xor" "is" "!is"] @keyword.operator)
+(unary_expression operator: "not" @keyword.operator)
+
 ; Index expression
 (index_expression index_name: (identifier) @variable.parameter)
 )SCM";

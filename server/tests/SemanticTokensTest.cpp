@@ -5,6 +5,7 @@
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/Keywords.h"
 
 #include <algorithm>
 #include <array>
@@ -81,7 +82,12 @@ TEST_CASE("SemanticTokensHandler - Empty Code Returns Empty Tokens")
     if (tree) ts_tree_delete(tree);
 }
 
-TEST_CASE("SemanticTokensHandler - Primitive Types Map to Type_Keyword")
+// A primitive used to be reported as a keyword, and themes paint a keyword the colour of `if`.
+// So `float` read as control flow while every other type on the line read as a type - reported from
+// use, with the editor's token inspector showing `semantic token type keyword` over a textmate scope
+// of storage.type.built-in.primitive.angelscript. The textmate grammar had the better answer and the
+// semantic token was overriding it.
+TEST_CASE("SemanticTokensHandler - A primitive is reported as a type from the default library")
 {
     std::string code = "int a = 1;\nfloat b = 2.0f;\nbool c = true;\nauto d = 4;\n";
 
@@ -128,33 +134,26 @@ TEST_CASE("SemanticTokensHandler - Primitive Types Map to Type_Keyword")
         decoded.push_back({ curLine, curCol, len, type, mod });
     }
 
-    // Check that int (line 0, col 0, len 3) is tokenType 15 (Type_Keyword)
-    auto itInt = std::find_if(decoded.begin(), decoded.end(),
-        [](const DecodedToken &t) { return t.line == 0 && t.startCol == 0 && t.length == 3; });
-    REQUIRE(itInt != decoded.end());
-    CHECK(itInt->tokenType == 15);
-    CHECK(itInt->tokenMod == 0);
+    // Type_Type, carrying Mod_DefaultLibrary so a theme can still tell `float` from a class the
+    // user wrote - the distinction "keyword" was reaching for, made without claiming it is one.
+    constexpr uint32_t k_type = 1;
+    constexpr uint32_t k_defaultLibrary = 1u << 9;
 
-    // Check that float (line 1, col 0, len 5) is tokenType 15
-    auto itFloat = std::find_if(decoded.begin(), decoded.end(),
-        [](const DecodedToken &t) { return t.line == 1 && t.startCol == 0 && t.length == 5; });
-    REQUIRE(itFloat != decoded.end());
-    CHECK(itFloat->tokenType == 15);
-    CHECK(itFloat->tokenMod == 0);
+    const auto require = [&decoded](uint32_t line, uint32_t length, const char *what)
+    {
+        auto it = std::find_if(decoded.begin(), decoded.end(),
+            [line, length](const DecodedToken &t)
+            { return t.line == line && t.startCol == 0 && t.length == length; });
+        INFO("primitive: " << what);
+        REQUIRE(it != decoded.end());
+        CHECK(it->tokenType == k_type);
+        CHECK(it->tokenMod == k_defaultLibrary);
+    };
 
-    // Check that bool (line 2, col 0, len 4) is tokenType 15
-    auto itBool = std::find_if(decoded.begin(), decoded.end(),
-        [](const DecodedToken &t) { return t.line == 2 && t.startCol == 0 && t.length == 4; });
-    REQUIRE(itBool != decoded.end());
-    CHECK(itBool->tokenType == 15);
-    CHECK(itBool->tokenMod == 0);
-
-    // Check that auto (line 3, col 0, len 4) is tokenType 15
-    auto itAuto = std::find_if(decoded.begin(), decoded.end(),
-        [](const DecodedToken &t) { return t.line == 3 && t.startCol == 0 && t.length == 4; });
-    REQUIRE(itAuto != decoded.end());
-    CHECK(itAuto->tokenType == 15);
-    CHECK(itAuto->tokenMod == 0);
+    require(0, 3, "int");
+    require(1, 5, "float");
+    require(2, 4, "bool");
+    require(3, 4, "auto");
 
     ts_tree_delete(tree);
 }
@@ -787,3 +786,365 @@ TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes 
     MESSAGE("semantic tokens: " << met << " expectations met, " << gaps << " known gaps");
 }
 
+
+// =====================================================================================
+// The colouring sweep.
+//
+// Every case above asks about one construct someone thought to check. This asks the opposite
+// question - is there anything we forgot - and it is the question that found the reported bugs:
+// `and` and `not` came back as operators, so a theme painted them the colour of `;`, and `float`
+// came back as a keyword, so it was painted the colour of `if` while every other type on the line
+// was painted as a type.
+//
+// Two halves, and they only mean something together. The sweep says every word of the language is
+// classified as *something*, which catches a construct nobody wired up - `foreach` was missing from
+// one of the three keyword lists this project used to keep, and nothing noticed. The spot checks
+// below say it is classified as the *right* thing, which the sweep cannot see: an operator and a
+// keyword are both "classified".
+// =====================================================================================
+
+namespace
+{
+    struct SweptToken
+    {
+        uint32_t line;
+        uint32_t startCol;
+        uint32_t length;
+        uint32_t type;
+        uint32_t mod;
+    };
+
+    /** @brief Semantic tokens for a document, decoded back to absolute positions. */
+    std::vector<SweptToken> SweepTokens(const std::string &code)
+    {
+        AngelScriptParser parser;
+        TSTree *tree = parser.Parse(code);
+        REQUIRE(tree != nullptr);
+
+        SymbolTable table;
+        SemanticTokensRequest request{ "file:///sweep.as", code, tree, table };
+        const auto tokens = GetSemanticTokens(request);
+        ts_tree_delete(tree);
+
+        std::vector<SweptToken> swept;
+        uint32_t line = 0;
+        uint32_t column = 0;
+
+        for (size_t i = 0; i + 4 < tokens.data.size(); i += 5)
+        {
+            const uint32_t deltaLine = tokens.data[i];
+            const uint32_t deltaStart = tokens.data[i + 1];
+
+            if (deltaLine > 0)
+            {
+                line += deltaLine;
+                column = deltaStart;
+            }
+            else
+            {
+                column += deltaStart;
+            }
+
+            swept.push_back(SweptToken{ line, column, tokens.data[i + 2], tokens.data[i + 3], tokens.data[i + 4] });
+        }
+
+        return swept;
+    }
+
+    /** @brief The token covering a position, or nullptr. Containment, not equality: `!is` starts a
+     *         character before the word `is` that the scan below finds. */
+    const SweptToken *TokenCovering(const std::vector<SweptToken> &swept, uint32_t line, uint32_t column)
+    {
+        for (const auto &token : swept)
+        {
+            if (token.line == line && column >= token.startCol && column < token.startCol + token.length)
+                return &token;
+        }
+        return nullptr;
+    }
+
+    /** @brief The token that starts exactly here, or nullptr. */
+    const SweptToken *TokenAt(const std::vector<SweptToken> &swept, uint32_t line, uint32_t column)
+    {
+        for (const auto &token : swept)
+        {
+            if (token.line == line && token.startCol == column)
+                return &token;
+        }
+        return nullptr;
+    }
+
+    /** @brief The column of a needle on a line, so no test has to count characters by hand. */
+    uint32_t ColumnOf(const std::string &code, uint32_t line, const std::string &needle)
+    {
+        size_t start = 0;
+        for (uint32_t current = 0; current < line; ++current)
+        {
+            start = code.find('\n', start);
+            REQUIRE(start != std::string::npos);
+            ++start;
+        }
+
+        const size_t lineEnd = code.find('\n', start);
+        const std::string text = code.substr(start, lineEnd == std::string::npos ? std::string::npos : lineEnd - start);
+
+        const size_t at = text.find(needle);
+        REQUIRE(at != std::string::npos);
+        return static_cast<uint32_t>(at);
+    }
+
+    struct WordSite
+    {
+        uint32_t line;
+        uint32_t column;
+        std::string word;
+    };
+
+    /** @brief Every place a reserved word appears as a whole word, wherever it appears. */
+    std::vector<WordSite> ReservedWordSites(const std::string &code)
+    {
+        const auto isWordChar = [](char c)
+        {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+        };
+
+        std::vector<WordSite> sites;
+        uint32_t line = 0;
+        uint32_t column = 0;
+
+        for (size_t i = 0; i < code.size();)
+        {
+            if (code[i] == '\n')
+            {
+                ++line;
+                column = 0;
+                ++i;
+                continue;
+            }
+
+            if (!isWordChar(code[i]) || (i > 0 && isWordChar(code[i - 1])))
+            {
+                ++column;
+                ++i;
+                continue;
+            }
+
+            size_t end = i;
+            while (end < code.size() && isWordChar(code[end]))
+                ++end;
+
+            const std::string word = code.substr(i, end - i);
+            if (angel_lsp::parser::keywords::IsReserved(word))
+                sites.push_back(WordSite{ line, column, word });
+
+            column += static_cast<uint32_t>(end - i);
+            i = end;
+        }
+
+        return sites;
+    }
+
+    struct Scenario
+    {
+        const char *name;
+        const char *source;
+    };
+
+    /**
+     * @brief One document per construct, chosen so a missed one is a missed row rather than a
+     *        missed line inside a big file nobody reads.
+     */
+    const std::vector<Scenario> &ColouringScenarios()
+    {
+        static const std::vector<Scenario> scenarios = {
+            { "while and do-while",
+              "void Loops()\n"
+              "{\n"
+              "    while (true) { break; }\n"
+              "    do { continue; } while (false);\n"
+              "}\n" },
+
+            { "for, with every clause filled in",
+              "void Counted(int limit)\n"
+              "{\n"
+              "    for (int i = 0; i < limit; i++) { }\n"
+              "    for (uint j = 0, k = 1; j < 4; j += 1, k *= 2) { }\n"
+              "}\n" },
+
+            { "foreach",
+              "void Walk(array<int>@ xs)\n"
+              "{\n"
+              "    foreach (int x : xs) { }\n"
+              "}\n" },
+
+            { "switch, case and default",
+              "void Pick(int which)\n"
+              "{\n"
+              "    switch (which)\n"
+              "    {\n"
+              "        case 1: break;\n"
+              "        default: break;\n"
+              "    }\n"
+              "}\n" },
+
+            { "try and catch",
+              "void Guarded()\n"
+              "{\n"
+              "    try { throwing(); }\n"
+              "    catch { }\n"
+              "}\n" },
+
+            { "the word operators",
+              "bool Decide(bool a, bool b, Thing@ t)\n"
+              "{\n"
+              "    if (a and b or not a) { }\n"
+              "    if (a xor b) { }\n"
+              "    if (t is null) { }\n"
+              "    return t !is null;\n"
+              "}\n" },
+
+            { "an anonymous function inside a block",
+              "funcdef void CallbackKind(int v);\n"
+              "void Register()\n"
+              "{\n"
+              "    {\n"
+              "        CallbackKind@ cb = function(int v) { return; };\n"
+              "    }\n"
+              "}\n" },
+
+            { "a class, with modifiers and accessors",
+              "shared abstract class Actor\n"
+              "{\n"
+              "    private int m_health;\n"
+              "    protected const bool m_alive = true;\n"
+              "    int Health { get const { return m_health; } set { m_health = value; } }\n"
+              "    void Hurt(int amount) override { }\n"
+              "}\n" },
+
+            { "namespace, enum, interface, mixin, typedef and funcdef",
+              "namespace World\n"
+              "{\n"
+              "    enum Phase { Start = 1, Stop = 2 }\n"
+              "    interface Tickable { void Tick(); }\n"
+              "    mixin class Helper { void Aid() {} }\n"
+              "    typedef double Real;\n"
+              "    funcdef void Handler();\n"
+              "}\n" },
+
+            { "templates, casts and handles",
+              "void Convert(Base@ b)\n"
+              "{\n"
+              "    array<array<int>> grid;\n"
+              "    Derived@ d = cast<Derived>(b);\n"
+              "    int64 big = 1;\n"
+              "    uint8 small = 2;\n"
+              "}\n" },
+
+            { "conditions of every shape",
+              "void Conditions(int i, float f, bool flag, Thing@ t)\n"
+              "{\n"
+              "    if (i > 0 && f <= 1.0f) { }\n"
+              "    else if (flag || not flag) { }\n"
+              "    else { }\n"
+              "    while (i >>> 1 != 0) { i = i >> 1; }\n"
+              "}\n" },
+        };
+
+        return scenarios;
+    }
+}
+
+TEST_CASE("SemanticTokensHandler - Every word of the language is classified, in every construct")
+{
+    // Type_Keyword, Type_Modifier and Type_Type are the three a keyword may legitimately land on -
+    // `foreach` is a keyword, `inout` a modifier, `int` a type. Comment and String are here because
+    // a reserved word inside a comment or a literal is not a keyword at all, and the scan below
+    // finds it anyway; the token covering it says which.
+    const std::vector<uint32_t> acceptable = { 15, 16, 1, 17, 18 };
+
+    size_t checked = 0;
+
+    for (const auto &scenario : ColouringScenarios())
+    {
+        const std::string source = scenario.source;
+        const auto swept = SweepTokens(source);
+        const auto sites = ReservedWordSites(source);
+
+        INFO("scenario: " << scenario.name);
+        REQUIRE_FALSE(sites.empty());
+
+        for (const auto &site : sites)
+        {
+            INFO("scenario: " << scenario.name << "\nword: " << site.word
+                              << " at line " << site.line << " column " << site.column);
+
+            const SweptToken *token = TokenCovering(swept, site.line, site.column);
+            REQUIRE(token != nullptr);
+
+            const bool ok = std::find(acceptable.begin(), acceptable.end(), token->type) != acceptable.end();
+            INFO("token type: " << token->type);
+            CHECK(ok);
+
+            ++checked;
+        }
+    }
+
+    // The sweep ran over something. Without this the whole case passes when ReservedWordSites
+    // stops finding anything - which is the honest failure mode of a scanner written by hand.
+    CHECK(checked > 60);
+}
+
+TEST_CASE("SemanticTokensHandler - A word operator is a keyword, not punctuation")
+{
+    // The report: `and` came back as `operator`, which themes paint the colour of plain text, while
+    // the textmate grammar had always scoped it keyword.control.conditional. The semantic token was
+    // overriding the better answer with a worse one.
+    const std::string source =
+        "bool Decide(bool a, bool b, Thing@ t)\n"
+        "{\n"
+        "    if (a and b) { }\n"
+        "    if (a or b) { }\n"
+        "    if (a xor b) { }\n"
+        "    if (not a) { }\n"
+        "    if (t is null) { }\n"
+        "    return t !is null;\n"
+        "}\n";
+
+    const auto swept = SweepTokens(source);
+
+    constexpr uint32_t k_keyword = 15;
+
+    struct Expectation { uint32_t line; const char *needle; };
+    const std::vector<Expectation> expectations = {
+        { 2, "and" }, { 3, "or" }, { 4, "xor" }, { 5, "not" }, { 6, "is" }, { 7, "!is" },
+    };
+
+    for (const auto &expected : expectations)
+    {
+        INFO("word operator: " << expected.needle);
+        const uint32_t column = ColumnOf(source, expected.line, expected.needle);
+        const SweptToken *token = TokenAt(swept, expected.line, column);
+        REQUIRE(token != nullptr);
+        CHECK(token->length == std::string(expected.needle).size());
+        CHECK(token->type == k_keyword);
+    }
+}
+
+TEST_CASE("SemanticTokensHandler - Punctuation operators stay operators")
+{
+    // The control for the case above. Turning every operator into a keyword would pass it, and
+    // would be a worse bug than the one being fixed.
+    const std::string source = "void Arithmetic() { int i = 1 + 2 * 3; i += 4; i = i >>> 1; }\n";
+
+    const auto swept = SweepTokens(source);
+    constexpr uint32_t k_operator = 21;
+
+    for (const char *needle : { "+ 2", "* 3", "+= 4", ">>> 1" })
+    {
+        INFO("operator: " << needle);
+        const uint32_t column = ColumnOf(source, 0, needle);
+        const SweptToken *token = TokenAt(swept, 0, column);
+        REQUIRE(token != nullptr);
+        CHECK(token->type == k_operator);
+    }
+}
