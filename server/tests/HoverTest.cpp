@@ -611,3 +611,118 @@ TEST_CASE("HoverHandler - A property backed by accessors is described")
     CHECK(text.find("(property) int Health") != std::string::npos);
     CHECK(text.find("get_Health") != std::string::npos);
 }
+
+// =====================================================================================
+// Hovering an `#include`.
+//
+// Reported as a want: the line says `#include "helper.as"` and gives no hint which of the search
+// directories won, or whether it resolved at all. The path is the answer, and it is not guessable
+// from the line.
+//
+// Answered from the text rather than from the tree. The grammar gives the whole directive one
+// opaque `preproc_directive` node with no structure inside it, so there is no node under the cursor
+// to hover.
+// =====================================================================================
+
+namespace
+{
+    /** @brief Hovers one position in a document, with a stub resolver standing in for the disk. */
+    std::optional<lsp::Hover> HoverInclude(const std::string &source,
+                                           uint32_t line,
+                                           uint32_t character,
+                                           std::function<std::string(const std::string &)> resolver)
+    {
+        AngelScriptParser parser;
+        TSTree *tree = parser.Parse(source);
+        REQUIRE(tree != nullptr);
+
+        SymbolTable table;
+        ScopeIndex scopes;
+        const std::string uri = "file:///main.as";
+
+        HoverRequest request{ uri, source, tree, table, scopes, lsp::Position{ line, character } };
+        request.resolveInclude = std::move(resolver);
+
+        auto hover = GetHover(request);
+        ts_tree_delete(tree);
+        return hover;
+    }
+
+    /** @brief The markdown of a hover, or "" when there was none. */
+    std::string HoverText(const std::optional<lsp::Hover> &hover)
+    {
+        if (!hover.has_value())
+            return "";
+        if (const auto *content = std::get_if<lsp::MarkupContent>(&hover->contents))
+            return content->value;
+        return "";
+    }
+}
+
+TEST_CASE("Hover - An include shows the file it resolves to")
+{
+    const std::string source = "#include \"helper.as\"\nvoid main() { }\n";
+
+    const auto hover = HoverInclude(source, 0, 12,
+        [](const std::string &raw) { return "E:/work/scripts/" + raw; });
+
+    const std::string text = HoverText(hover);
+    INFO(text);
+    REQUIRE_FALSE(text.empty());
+    CHECK(text.find("#include \"helper.as\"") != std::string::npos);
+    CHECK(text.find("E:/work/scripts/helper.as") != std::string::npos);
+}
+
+TEST_CASE("Hover - An include that resolves to nothing says so")
+{
+    // The half a user actually needs. "No hover" and "resolves to nothing" look identical in the
+    // editor, and only one of them is a mistake they can fix.
+    const std::string source = "#include \"missing.as\"\nvoid main() { }\n";
+
+    const auto hover = HoverInclude(source, 0, 12,
+        [](const std::string &) { return std::string(); });
+
+    const std::string text = HoverText(hover);
+    INFO(text);
+    REQUIRE_FALSE(text.empty());
+    CHECK(text.find("Does not resolve") != std::string::npos);
+}
+
+TEST_CASE("Hover - The whole directive answers, not only the quoted part")
+{
+    // A reader pointing at the word `include` is asking the same question as one pointing at the
+    // filename, so both positions answer. Past the closing quote is a different question and gets
+    // no answer at all.
+    const std::string source = "#include \"helper.as\"\nvoid main() { }\n";
+    const auto resolver = [](const std::string &raw) { return "/scripts/" + raw; };
+
+    CHECK_FALSE(HoverText(HoverInclude(source, 0, 0, resolver)).empty());   // the '#'
+    CHECK_FALSE(HoverText(HoverInclude(source, 0, 4, resolver)).empty());   // inside "include"
+    CHECK_FALSE(HoverText(HoverInclude(source, 0, 19, resolver)).empty());  // the closing quote
+    CHECK(HoverText(HoverInclude(source, 0, 25, resolver)).empty());        // past the end
+}
+
+TEST_CASE("Hover - A line that is not an include is left to the ordinary path")
+{
+    // The control, and it guards the thing that would actually break: this branch runs before the
+    // tree is consulted at all, so a loose match here would swallow every other hover in the file.
+    const std::string source = "int gCounter = 0;\nvoid main() { }\n";
+    const auto resolver = [](const std::string &raw) { return "/scripts/" + raw; };
+
+    const std::string text = HoverText(HoverInclude(source, 0, 5, resolver));
+    INFO(text);
+    CHECK(text.find("#include") == std::string::npos);
+}
+
+TEST_CASE("Hover - A spaced directive is not an include")
+{
+    // `# include "helper.as"` is not a directive to the compiler - measured - so it must not be one
+    // here either. Answering it would tell the reader the line works while the analyzer, one pass
+    // away, is calling it an error.
+    const std::string source = "# include \"helper.as\"\nvoid main() { }\n";
+
+    const auto hover = HoverInclude(source, 0, 13,
+        [](const std::string &raw) { return "/scripts/" + raw; });
+
+    CHECK(HoverText(hover).find("#include") == std::string::npos);
+}

@@ -382,11 +382,116 @@ namespace angel_lsp::features
         }
     }
 
+    namespace
+    {
+        /**
+         * @brief Answers a hover on an `#include` line with the file it actually resolves to.
+         *
+         * Reported as a want: the line says `#include "helper.as"` and gives no hint which of the
+         * search directories won, or whether it resolved at all. The path is the answer.
+         *
+         * Text-based rather than tree-based on purpose. The grammar produces one opaque
+         * `preproc_directive` node for the whole line, so there is nothing inside it to locate a
+         * cursor against. This finds the quotes on the cursor's line and answers only when the
+         * cursor is on the directive.
+         *
+         * @return A hover, or nullopt when the line is not an `#include` this can answer.
+         */
+        std::optional<lsp::Hover> HoverIncludeDirective(const HoverRequest &request)
+        {
+            const auto lineSpan = [&request]() -> std::pair<size_t, size_t>
+            {
+                size_t start = 0;
+                for (uint32_t current = 0; current < request.position.line; ++current)
+                {
+                    const size_t nextBreak = request.sourceCode.find('\n', start);
+                    if (nextBreak == std::string::npos)
+                        return { std::string::npos, std::string::npos };
+                    start = nextBreak + 1;
+                }
+                const size_t end = request.sourceCode.find('\n', start);
+                return { start, end == std::string::npos ? request.sourceCode.size() : end };
+            }();
+
+            if (lineSpan.first == std::string::npos)
+            {
+                return std::nullopt;
+            }
+
+            const std::string_view line(request.sourceCode.data() + lineSpan.first,
+                                        lineSpan.second - lineSpan.first);
+
+            const size_t hash = line.find_first_not_of(" \t");
+            if (hash == std::string_view::npos || line[hash] != '#')
+            {
+                return std::nullopt;
+            }
+
+            // No whitespace tolerated between the two, because the compiler tolerates none:
+            // `# include "helper.as"` is not a directive at all and has its own diagnostic. See
+            // PreprocessorRegions.h.
+            if (line.compare(hash + 1, 7, "include") != 0)
+            {
+                return std::nullopt;
+            }
+
+            const size_t openQuote = line.find('"', hash + 8);
+            if (openQuote == std::string_view::npos)
+            {
+                return std::nullopt;
+            }
+            const size_t closeQuote = line.find('"', openQuote + 1);
+            if (closeQuote == std::string_view::npos)
+            {
+                return std::nullopt;
+            }
+
+            // Anywhere on the directive answers, not only on the quoted text: a user pointing at
+            // `#include` is asking the same question as one pointing at the filename.
+            const auto character = static_cast<size_t>(request.position.character);
+            if (character < hash || character > closeQuote)
+            {
+                return std::nullopt;
+            }
+
+            const std::string rawPath(line.substr(openQuote + 1, closeQuote - openQuote - 1));
+
+            std::string markdown = "```angelscript\n#include \"" + rawPath + "\"\n```";
+
+            if (request.resolveInclude)
+            {
+                const std::string resolved = request.resolveInclude(rawPath);
+                markdown += resolved.empty()
+                    ? "\n\nDoes not resolve to a file. Checked this file's own directory, then each "
+                      "`angelscript.searchDirectories` entry in order."
+                    : "\n\n" + resolved;
+            }
+
+            lsp::Range range{};
+            range.start.line = request.position.line;
+            range.start.character = static_cast<lsp::uint>(hash);
+            range.end.line = request.position.line;
+            range.end.character = static_cast<lsp::uint>(closeQuote + 1);
+
+            return lsp::Hover{ lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
+                                                   std::move(markdown) },
+                               range };
+        }
+    }
+
     std::optional<lsp::Hover> GetHover(const HoverRequest &request)
     {
         if (!request.tree || request.sourceCode.empty())
         {
             return std::nullopt;
+        }
+
+        // Before the tree is consulted at all. A directive is not part of the AST - the grammar
+        // gives the whole line one `preproc_directive` node with no structure inside it - so there
+        // is no node here to hover and the answer has to come from the text.
+        if (auto includeHover = HoverIncludeDirective(request))
+        {
+            return includeHover;
         }
 
         TSNode rootNode = ts_tree_root_node(request.tree);

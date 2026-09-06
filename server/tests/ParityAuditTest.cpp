@@ -375,8 +375,19 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         request.scopeRoot = scopeRoot;
         request.mutableScopeRoot = scopeRoot.get();
         request.sourceCode = source;
-        // Same `#if` exclusion the server applies - see utils/PreprocessorRegions.h.
-        request.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(source);
+        // Same preprocessor pass the server runs, and both halves of it - see
+        // utils/PreprocessorRegions.h.
+        //
+        // This used to call FindExcludedLineRanges and take only the exclusion half, which left
+        // `unsupportedDirectives` empty for every script in the corpus. The audit could therefore
+        // never see a directive diagnostic at all: six fixtures the compiler rejects were counted
+        // as false negatives by a harness that had not been given the input needed to catch them.
+        //
+        // reportPragma stays false because that is the stock default. A host with a pragma callback
+        // accepts every pragma, and the audit must not invent a verdict the configuration decides.
+        auto scan = angel_lsp::utils::ScanPreprocessor(source, {}, {}, /*reportPragma=*/false);
+        request.excludedLineRanges = std::move(scan.excluded);
+        request.unsupportedDirectives = std::move(scan.unsupported);
         request.tree = parser.Parse(source);
 
         SemanticAnalyzer analyzer(nullptr);

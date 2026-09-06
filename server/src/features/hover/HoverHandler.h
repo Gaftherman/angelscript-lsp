@@ -47,6 +47,20 @@ namespace angel_lsp::features
          * with the diagnostics on the same line.
          */
         const config::ServerConfig *config = nullptr;
+
+        /**
+         * @brief Resolves the text inside an `#include` to an absolute path, or "" when it misses.
+         *
+         * Supplied by the caller rather than done here, for the reason readDocument is: resolution
+         * needs the configured search directories and the allow-list that confines them, and both
+         * live on the server. A null callback means the include line is answered with the raw text
+         * and nothing more, which is what a unit test with no filesystem should see.
+         *
+         * Hovering `#include "helper.as"` is the one place a user asks "which file is that,
+         * exactly" - a relative path resolves against the current file, then against each search
+         * directory in order, and the answer is not guessable from the line itself.
+         */
+        std::function<std::string(const std::string &rawPath)> resolveInclude;
     };
 
     /**

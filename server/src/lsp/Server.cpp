@@ -3675,7 +3675,15 @@ namespace angel_lsp
                     // A symbol's documentation comment lives above its declaration, which is
                     // usually in another file. The same reader CompletionItem/resolve is given.
                     [this](const std::string &uri) { return FindDocumentText(uri); },
-                    &m_config
+                    &m_config,
+                    // Resolution needs the search directories and the allow-list that confines
+                    // them, both of which live here. The handler is given the answer rather than
+                    // the means, which is also what keeps it testable without a filesystem.
+                    [this, uriStr = doc->uri](const std::string &rawPath) {
+                        return angel_lsp::utils::IncludeResolver::ResolveIncludePath(
+                            rawPath, CanonicalPathFromUri(uriStr), *SearchDirectories(),
+                            IncludeAllowedRoots());
+                    }
                 };
                 auto hover = features::GetHover(hr);
                 if (hover.has_value())

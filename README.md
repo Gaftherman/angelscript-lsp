@@ -77,6 +77,38 @@ a host engine setting can make legal), `doc_r07` (an accessor without the `prope
 - C++-style direct construction: `const Color red(1.0f, 0.0f, 0.0f);`
 - Unscoped enum values
 
+### Preprocessor directives
+
+CScriptBuilder reads the characters immediately after the `#`, and anything it does not match is
+left in the source for the compiler to reject. All of these were measured against the compiler and
+are pinned by fixtures in `server/tests/parity`:
+
+| Written | Verdict |
+| --- | --- |
+| `#include "helper.as"` | accepted |
+| `#!/usr/bin/as` | accepted - a shebang is skipped, not a directive |
+| `    #if FOO` ... `    #endif` | accepted - whitespace *before* the hash is fine |
+| `#incude "helper.as"` | rejected - `as-err-unknown-directive` |
+| `#` alone | rejected - `as-err-unknown-directive` |
+| `#Include "helper.as"` | rejected - directive names are case-sensitive |
+| `# include "helper.as"` | rejected - `as-err-directive-space-after-hash` |
+| `#  if FOO` | rejected, and it excludes nothing |
+| `#include helper.as` | rejected - `as-err-include-not-quoted`, the path needs double quotes |
+
+The last one is the reason the pair matters: reading `#  if UNDEFINED` as a live directive would
+drop the block below it, and every diagnostic inside a region the compiler actually keeps would go
+with it.
+
+`#else`, `#elif`, `#ifdef`, `#ifndef` and `#define` are recognised names that the stock add-on does
+not support. Those stay **warnings**, not errors, because a host may genuinely have patched its own
+copy of `scriptbuilder.cpp` - `angelscript.preprocessor.*` is how you say so. No setting makes a
+misspelled name legal, which is why those two are errors.
+
+Hovering an `#include` shows the file it actually resolves to - this file's own directory first,
+then each `angelscript.searchDirectories` entry in order - or says plainly that it resolves to
+nothing.
+
+
 ### Lexical edge cases
 - `!isFlag` tokenises as `!` followed by an identifier, not as `!is` followed by `Flag`
 - `property` and `super` used as ordinary identifiers, because they are contextual keywords
