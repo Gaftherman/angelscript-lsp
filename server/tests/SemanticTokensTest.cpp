@@ -139,7 +139,11 @@ TEST_CASE("SemanticTokensHandler - A primitive is reported as a type from the de
     constexpr uint32_t k_type = 1;
     constexpr uint32_t k_defaultLibrary = 1u << 9;
 
-    const auto require = [&decoded](uint32_t line, uint32_t length, const char *what)
+    // The two constants are captured explicitly. doctest's CHECK takes its operands by reference to
+    // build the failure message, which odr-uses them - MSVC lets that through on a constexpr local,
+    // GCC does not, and the difference only appeared in the Linux container: "'k_type' is not
+    // captured".
+    const auto require = [&decoded, k_type, k_defaultLibrary](uint32_t line, uint32_t length, const char *what)
     {
         auto it = std::find_if(decoded.begin(), decoded.end(),
             [line, length](const DecodedToken &t)

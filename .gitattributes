@@ -1,0 +1,10 @@
+# A shell script has to reach Linux with LF line endings, whoever checked it out.
+#
+# This repository is developed on Windows, where git hands out CRLF. docker/run-parity.sh is then
+# mounted straight into the container, bash reads `set -euo pipefail\r`, and reports
+# "pipefail: invalid option name" - so the local Linux gate died on its first line and every run of
+# it since has been checking nothing.
+*.sh text eol=lf
+
+# Same reasoning for anything else the container reads as a script.
+Dockerfile* text eol=lf
