@@ -390,15 +390,97 @@ const PREPROCESSOR_FEATURES: ReadonlyArray<string> = [
  * The server's working directory is not the project root, so a relative entry only means anything
  * once resolved - and in a multi-root workspace it can legitimately mean one path per folder.
  */
+/**
+ * @brief Expands the `${...}` variables VS Code uses in launch.json, in a setting value.
+ *
+ * VS Code resolves these itself in `launch.json` and `tasks.json` and nowhere else: a setting is
+ * handed to the extension exactly as it was typed. So `${workspaceFolder}/host.as.predefined`
+ * reached the server as a literal path with a dollar sign in it, matched no file, and the stub
+ * silently did not load. The only portable spelling left was a relative path, which is why a
+ * workspace that mixed one relative stub with one absolute path was the case that broke.
+ *
+ * Supported, and deliberately only these - each one has a single unambiguous answer:
+ *   - `${workspaceFolder}`         every workspace folder, one result each (see below)
+ *   - `${workspaceFolder:name}`    the folder with that name, and nothing if there is none
+ *   - `${userHome}`                the user's home directory
+ *   - `${env:NAME}`                an environment variable, which is how a host SDK path outside
+ *                                  the workspace is usually already written down
+ *
+ * The bare `${workspaceFolder}` expands to one result *per folder*, the same way a relative entry
+ * already did. In a single-root workspace - which is nearly all of them - that is exactly one.
+ *
+ * @return One entry per expansion, or none when a variable names something that does not exist.
+ *         An unknown variable is left untouched rather than dropped, so it reaches the log as the
+ *         path it is instead of vanishing.
+ */
+function expandPathVariables(entry: string): string[] {
+    const folders = workspace.workspaceFolders ?? [];
+
+    // The bare form first: it is the only one that can multiply a single entry into several, so it
+    // decides how many results there are before the single-valued ones are substituted into each.
+    const seeds = entry.includes('${workspaceFolder}')
+        ? folders.map(folder => entry.split('${workspaceFolder}').join(folder.uri.fsPath))
+        : [entry];
+
+    const expanded: string[] = [];
+
+    for (const seed of seeds) {
+        let value = seed;
+        let unresolved = false;
+
+        value = value.replace(/\$\{workspaceFolder:([^}]+)\}/g, (whole, name: string) => {
+            const folder = folders.find(candidate => candidate.name === name);
+            if (!folder) {
+                unresolved = true;
+                return whole;
+            }
+            return folder.uri.fsPath;
+        });
+
+        value = value.replace(/\$\{userHome\}/g, () => os.homedir());
+
+        value = value.replace(/\$\{env:([^}]+)\}/g, (whole, name: string) => {
+            const fromEnv = process.env[name];
+            if (fromEnv === undefined || fromEnv.length === 0) {
+                unresolved = true;
+                return whole;
+            }
+            return fromEnv;
+        });
+
+        if (unresolved) {
+            lspOutputChannel.appendLine(
+                `Setting "${entry}" names something this window does not have; left as written.`);
+        }
+
+        expanded.push(value);
+    }
+
+    return expanded;
+}
+
 function resolveAgainstWorkspace(entry: string): string[] {
     const trimmed = entry.trim();
     if (trimmed.length === 0) {
         return [];
     }
-    if (path.isAbsolute(trimmed)) {
-        return [trimmed];
+
+    const resolved: string[] = [];
+
+    for (const expanded of expandPathVariables(trimmed)) {
+        if (path.isAbsolute(expanded)) {
+            resolved.push(expanded);
+            continue;
+        }
+        // Still relative after expansion - either it never had a variable, or it had one that
+        // resolved to a relative fragment. Either way the workspace folders are what it is
+        // relative to, which is the behaviour this function has always had.
+        for (const folder of workspace.workspaceFolders ?? []) {
+            resolved.push(path.resolve(folder.uri.fsPath, expanded));
+        }
     }
-    return (workspace.workspaceFolders ?? []).map(folder => path.resolve(folder.uri.fsPath, trimmed));
+
+    return resolved;
 }
 
 export function buildServerArgs(): string[] {
@@ -913,6 +995,97 @@ async function showStatusMenu(context: ExtensionContext): Promise<void> {
  * Sent only while the client is actually running: a notification to one that is starting or
  * stopping makes the language client try to start it, which is the failure this replaced.
  */
+/**
+ * @brief Expands the path variables in the settings object handed to a running server.
+ *
+ * The command line goes through resolveAgainstWorkspace; this is the other half. Without it a
+ * setting changed while the server is running arrived with `${workspaceFolder}` still in it, so the
+ * same value worked at startup and stopped working the moment it was edited - which is the worst
+ * version of this bug, because it looks like the edit was the problem.
+ *
+ * Only the four path-valued settings are touched. Everything else is copied through untouched: a
+ * `$` in a define or an exclude glob is not a path variable, and rewriting it would be a surprise.
+ */
+function expandConfiguredPaths(settings: unknown): unknown {
+    if (typeof settings !== 'object' || settings === null) {
+        return settings;
+    }
+
+    const copy: Record<string, unknown> = { ...(settings as Record<string, unknown>) };
+
+    const expandList = (key: string) => {
+        const value = copy[key];
+        if (Array.isArray(value)) {
+            copy[key] = value.flatMap(entry =>
+                typeof entry === 'string' ? resolveAgainstWorkspace(entry) : [entry]);
+        }
+    };
+
+    expandList('searchDirectories');
+    expandList('predefinedFiles');
+
+    const expandOne = (key: string) => {
+        const value = copy[key];
+        if (typeof value === 'string' && value.trim().length > 0 && value.trim().toLowerCase() !== 'all') {
+            // One setting, one value: in a multi-root workspace a bare `${workspaceFolder}` has
+            // several answers and this field can hold one, so the first folder wins. The command
+            // line has the same shape and the same limit.
+            const [first] = resolveAgainstWorkspace(value);
+            if (first !== undefined) {
+                copy[key] = first;
+            }
+        }
+    };
+
+    expandOne('predefinedFile');
+
+    const predefined = copy['predefined'];
+    if (typeof predefined === 'object' && predefined !== null) {
+        const nested: Record<string, unknown> = { ...(predefined as Record<string, unknown>) };
+        const active = nested['active'];
+        if (typeof active === 'string' && active.trim().length > 0 && active.trim().toLowerCase() !== 'all') {
+            const [first] = resolveAgainstWorkspace(active);
+            if (first !== undefined) {
+                nested['active'] = first;
+            }
+        }
+        copy['predefined'] = nested;
+    }
+
+    return copy;
+}
+
+/**
+ * @brief Rewrites a chosen stub path as `${workspaceFolder}/...` when it lives inside one.
+ *
+ * The picker used to write the absolute path it had in hand, which pins the setting to one
+ * machine: committed to a repository it names a drive letter and a user directory that nobody else
+ * has. A stub outside every folder keeps its absolute path, because there is nothing else it could
+ * be - and the two can now sit in the same setting without either being wrong, which is the case
+ * that used to break.
+ *
+ * `all` is a request rather than a path and passes through untouched.
+ */
+export function portableStubPath(stubPath: string): string {
+    if (stubPath.toLowerCase() === 'all' || !path.isAbsolute(stubPath)) {
+        return stubPath;
+    }
+
+    for (const folder of workspace.workspaceFolders ?? []) {
+        const relative = path.relative(folder.uri.fsPath, stubPath);
+
+        // Inside the folder, rather than merely near it: a sibling directory produces a relative
+        // path that starts with `..`, and `${workspaceFolder}/../other` is portable in name only.
+        if (relative.length > 0 && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+            // Forward slashes on every platform. Windows accepts them, and a setting written with
+            // backslashes has to be escaped in JSON, which is how these get mistyped.
+            return '${workspaceFolder}/' + relative.split(path.sep).join('/');
+        }
+    }
+
+    return stubPath;
+}
+
 async function pushConfiguration(): Promise<void> {
     const running = client;
     if (!running || running.state !== State.Running) {
@@ -921,7 +1094,7 @@ async function pushConfiguration(): Promise<void> {
 
     try {
         await running.sendNotification(DidChangeConfigurationNotification.type, {
-            settings: { angelscript: workspace.getConfiguration().get('angelscript') ?? {} }
+            settings: { angelscript: expandConfiguredPaths(workspace.getConfiguration().get('angelscript') ?? {}) }
         });
     } catch (error) {
         lspOutputChannel.appendLine(
@@ -1195,7 +1368,8 @@ async function selectPredefinedStub(): Promise<void> {
         return;
     }
 
-    await workspace.getConfiguration('angelscript').update('predefined.active', chosen.stubPath, ConfigurationTarget.Workspace);
+    await workspace.getConfiguration('angelscript')
+        .update('predefined.active', portableStubPath(chosen.stubPath), ConfigurationTarget.Workspace);
 
     // The server reloads on its own, and the bar has to follow. Not awaited on the rescan, because
     // there is nothing to wait on: this reads what the server has now and will be right on the next

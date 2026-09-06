@@ -2,7 +2,9 @@ import * as assert from 'assert';
 import * as path from 'path';
 import { ConfigurationTarget, commands, extensions, workspace } from 'vscode';
 
-import { buildServerArgs } from '../extension';
+import * as os from 'os';
+
+import { buildServerArgs, portableStubPath } from '../extension';
 
 // =====================================================================================
 // The client's settings-to-arguments mapping.
@@ -190,5 +192,99 @@ suite('activation', () => {
         // when the user picks it, which is the worst place to find out.
         assert.ok(registered.includes('angelscript.selectPredefined'),
                   'angelscript.selectPredefined was declared in package.json but never registered');
+    });
+});
+
+// =====================================================================================
+// `${workspaceFolder}` and friends in a path-valued setting.
+//
+// VS Code expands these in launch.json and tasks.json and nowhere else: a setting reaches the
+// extension exactly as it was typed. So the spelling every user reaches for first arrived at the
+// server as a literal path with a dollar sign in it, matched no file, and the stub silently did not
+// load - which is what made a workspace mixing one relative stub with one absolute path fail.
+// =====================================================================================
+
+suite('path variables in settings', () => {
+    test('${workspaceFolder} becomes each workspace folder', async () => {
+        const folders = workspace.workspaceFolders ?? [];
+        assert.ok(folders.length > 0, 'this test needs the fixture workspace from .vscode-test.mjs');
+
+        const args = await withSetting('searchDirectories', ['${workspaceFolder}/include'], buildServerArgs);
+        const expected = folders.map(folder => path.resolve(folder.uri.fsPath, 'include'));
+        assert.deepStrictEqual(valuesOf(args, '--search-dir='), expected);
+    });
+
+    test('${userHome} becomes the home directory, and the result is absolute', async () => {
+        const args = await withSetting('searchDirectories', ['${userHome}/angelscript'], buildServerArgs);
+        assert.deepStrictEqual(valuesOf(args, '--search-dir='),
+                               [path.resolve(os.homedir(), 'angelscript')]);
+    });
+
+    test('${env:NAME} becomes the environment variable', async () => {
+        // The way a host SDK path outside the workspace is usually already written down.
+        const name = 'ANGELSCRIPT_TEST_SDK_ROOT';
+        const value = process.platform === 'win32' ? 'C:\\sdk\\angelscript' : '/opt/sdk/angelscript';
+
+        const previous = process.env[name];
+        process.env[name] = value;
+        try {
+            const args = await withSetting('searchDirectories', [`\${env:${name}}/include`], buildServerArgs);
+            assert.deepStrictEqual(valuesOf(args, '--search-dir='), [path.resolve(value, 'include')]);
+        } finally {
+            if (previous === undefined) {
+                delete process.env[name];
+            } else {
+                process.env[name] = previous;
+            }
+        }
+    });
+
+    test('a variable this window cannot answer is left as written, not dropped', async () => {
+        // Dropped, the setting vanishes and the user is told nothing. Left in place it reaches the
+        // log as the path it is, which is a thing they can read and correct.
+        const folders = workspace.workspaceFolders ?? [];
+        assert.ok(folders.length > 0, 'this test needs the fixture workspace from .vscode-test.mjs');
+
+        const args = await withSetting(
+            'searchDirectories', ['${workspaceFolder:nothing-is-named-this}/include'], buildServerArgs);
+
+        const emitted = valuesOf(args, '--search-dir=');
+        assert.strictEqual(emitted.length, folders.length);
+        assert.ok(emitted.every(entry => entry.includes('nothing-is-named-this')),
+                  `expected the unresolved name to survive, got ${JSON.stringify(emitted)}`);
+    });
+
+    test('an absolute path is still passed through untouched', async () => {
+        // The control. Rewriting a path that has no variable in it would be a worse bug than the
+        // one this fixes, and would look identical from the settings UI.
+        const absolute = process.platform === 'win32' ? 'C:\\scripts\\shared' : '/scripts/shared';
+        const args = await withSetting('searchDirectories', [absolute], buildServerArgs);
+        assert.deepStrictEqual(valuesOf(args, '--search-dir='), [absolute]);
+    });
+});
+
+suite('portableStubPath', () => {
+    test('a stub inside a workspace folder is stored as ${workspaceFolder}/...', () => {
+        // The picker used to write the absolute path it had in hand, which pins the setting to one
+        // machine: committed to a repository it names a drive letter and a user directory nobody
+        // else has.
+        const folders = workspace.workspaceFolders ?? [];
+        assert.ok(folders.length > 0, 'this test needs the fixture workspace from .vscode-test.mjs');
+
+        const inside = path.join(folders[0].uri.fsPath, 'stubs', 'host.as.predefined');
+        assert.strictEqual(portableStubPath(inside), '${workspaceFolder}/stubs/host.as.predefined');
+    });
+
+    test('a stub outside every folder keeps its absolute path', () => {
+        // There is nothing else it could be, and the two spellings have to be able to sit in the
+        // same setting - the combination that was reported as broken.
+        const outside = process.platform === 'win32'
+            ? 'C:\\sdk\\host.as.predefined'
+            : '/opt/sdk/host.as.predefined';
+        assert.strictEqual(portableStubPath(outside), outside);
+    });
+
+    test('"all" is a request rather than a path and passes through', () => {
+        assert.strictEqual(portableStubPath('all'), 'all');
     });
 });
