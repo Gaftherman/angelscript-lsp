@@ -556,6 +556,10 @@ export function buildServerArgs(): string[] {
         args.push(`--predefined-ext=${predefinedExtension}`);
     }
 
+    if (config.get<boolean>('include.implicitExtension', false) === true) {
+        args.push('--implicit-include-extension=true');
+    }
+
     const fileExtension = config.get<string>('fileExtension', '').trim();
     if (fileExtension.length > 0) {
         args.push(`--file-ext=${fileExtension}`);

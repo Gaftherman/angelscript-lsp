@@ -777,3 +777,177 @@ TEST_CASE("CompletionHandler - A host with accessors switched off is offered non
     // The methods themselves are still members whatever the mode.
     CHECK(HasItem(env.CompleteAtWithAccessorMode(10, 6, 1), "get_Health"));
 }
+
+// =====================================================================================
+// Completing the path inside an `#include`.
+//
+// Reported as missing: typing `#include ""` offered nothing. The rule that suppresses completion
+// inside a string literal is right about every other string in the language, and this is the one
+// place it is wrong - so the position was silent rather than wrong, which is why nobody had noticed.
+//
+// Every candidate comes back as a path relative to the file being edited, because that is how an
+// include has to be written. A file one directory up is `../shared.as`; one in a subdirectory is
+// `weapons/rifle.as`.
+// =====================================================================================
+
+namespace
+{
+    /** @brief Completes inside a document at a position, against a fixed list of workspace files. */
+    std::vector<lsp::CompletionItem> CompleteIncludeAt(const std::string &code,
+                                                       const std::string &documentPath,
+                                                       const std::vector<std::string> &workspaceFiles,
+                                                       uint32_t line,
+                                                       uint32_t character,
+                                                       const std::string &implicitExtension = "")
+    {
+        AngelScriptParser parser;
+        TSTree *tree = parser.Parse(code);
+
+        SymbolTable table;
+        ScopeIndex scopes;
+        const std::string uri = "file:///main.as";
+
+        CompletionRequest request{ uri, code, tree, table, scopes,
+                                   lsp::Position{ line, character }, nullptr, false };
+        request.documentPath = documentPath;
+        request.implicitExtension = implicitExtension;
+        request.listIncludeCandidates = [&workspaceFiles]() { return workspaceFiles; };
+
+        auto items = GetCompletion(request);
+        ts_tree_delete(tree);
+        return items;
+    }
+
+    /** @brief The labels of a completion list, sorted, so an assertion reads as a set. */
+    std::vector<std::string> LabelsOf(const std::vector<lsp::CompletionItem> &items)
+    {
+        std::vector<std::string> labels;
+        labels.reserve(items.size());
+        for (const auto &item : items)
+            labels.push_back(item.label);
+        std::sort(labels.begin(), labels.end());
+        return labels;
+    }
+
+    /** @brief A workspace laid out the way the report described it. */
+    struct IncludeFixture
+    {
+        std::string root = "/work";
+
+        std::string Main() const { return root + "/some/file.as"; }
+
+        std::vector<std::string> Files() const
+        {
+            return { root + "/some/path/file.as",
+                     root + "/some/file.as",
+                     root + "/file.as",
+                     root + "/anotherfile.as" };
+        }
+    };
+}
+
+TEST_CASE("Completion - An empty include offers the workspace's scripts")
+{
+    const IncludeFixture fixture;
+    const std::string code = "#include \"\"\n";
+
+    const auto items = CompleteIncludeAt(code, fixture.Main(), fixture.Files(), 0, 10);
+
+    const auto labels = LabelsOf(items);
+    INFO("labels: " << labels.size());
+    REQUIRE_FALSE(labels.empty());
+
+    // Editing some/file.as: a sibling is a bare name, the root is one directory up, and a file in a
+    // subdirectory carries the subdirectory. Exactly the three shapes the report asked about.
+    CHECK(std::find(labels.begin(), labels.end(), "path/file.as") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "../anotherfile.as") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "../file.as") != labels.end());
+}
+
+TEST_CASE("Completion - A file does not offer to include itself")
+{
+    const IncludeFixture fixture;
+    const auto items = CompleteIncludeAt("#include \"\"\n", fixture.Main(), fixture.Files(), 0, 10);
+
+    for (const auto &item : items)
+    {
+        INFO("label: " << item.label);
+        CHECK(item.label != "file.as");
+    }
+}
+
+TEST_CASE("Completion - An include item replaces what was typed rather than appending to it")
+{
+    // Without the text edit, completing `#include "ano` inserts the whole path after the prefix and
+    // produces `anoanotherfile.as` - which looks like the feature working right up until you use it.
+    const IncludeFixture fixture;
+    const std::string code = "#include \"ano\"\n";
+
+    const auto items = CompleteIncludeAt(code, fixture.Main(), fixture.Files(), 0, 13);
+
+    const auto found = std::find_if(items.begin(), items.end(),
+        [](const lsp::CompletionItem &item) { return item.label == "../anotherfile.as"; });
+    REQUIRE(found != items.end());
+    REQUIRE(found->textEdit.has_value());
+
+    const auto &edit = std::get<lsp::TextEdit>(found->textEdit.value());
+    CHECK(edit.range.start.character == 10);  // just past the opening quote
+    CHECK(edit.range.end.character == 13);    // the cursor
+    CHECK(edit.newText == "../anotherfile.as");
+}
+
+TEST_CASE("Completion - With an implicit extension the inserted path leaves it off")
+{
+    // A host that resolves the extension itself needs the short spelling: `#include "helper"` is the
+    // correct form there and the long one would not open. See ServerConfig::implicitIncludeExtension.
+    const IncludeFixture fixture;
+
+    const auto items = CompleteIncludeAt("#include \"\"\n", fixture.Main(), fixture.Files(), 0, 10, ".as");
+
+    const auto labels = LabelsOf(items);
+    CHECK(std::find(labels.begin(), labels.end(), "path/file") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "../anotherfile") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "path/file.as") == labels.end());
+}
+
+TEST_CASE("Completion - A spaced directive is not an include")
+{
+    // `# include "helper.as"` is not a directive to the compiler - measured - so completing there
+    // would offer help with a line the analyzer is calling an error one pass away.
+    const IncludeFixture fixture;
+
+    const auto items = CompleteIncludeAt("# include \"\"\n", fixture.Main(), fixture.Files(), 0, 11);
+
+    CHECK(items.empty());
+}
+
+TEST_CASE("Completion - An ordinary string literal still offers nothing")
+{
+    // The control, and the one that matters most: this branch runs BEFORE the rule that suppresses
+    // completion inside a string, so a loose match here would start completing file paths inside
+    // every string in the language.
+    const IncludeFixture fixture;
+
+    const auto items = CompleteIncludeAt("string s = \"\";\n", fixture.Main(), fixture.Files(), 0, 12);
+
+    CHECK(items.empty());
+}
+
+TEST_CASE("Completion - Ordinary completion still answers")
+{
+    // The other half of that control, and it has to go through the real environment: the helper
+    // above builds an empty symbol table on purpose, so asking it for a declared name proves
+    // nothing either way. TestEnvironment collects symbols the way the server does.
+    //
+    // What this guards is the include branch running BEFORE the string-literal rule. A loose match
+    // there would return an empty list for every completion in the file, and every other case in
+    // this section would still pass.
+    TestEnvironment env("int gCounter = 0;\nvoid Main() { gCou }\n");
+
+    const auto items = env.CompleteAt(1, 19);
+
+    const auto labels = LabelsOf(items);
+    INFO("labels: " << labels.size());
+    CHECK(std::find(labels.begin(), labels.end(), "gCounter") != labels.end());
+}
+

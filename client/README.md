@@ -80,6 +80,7 @@ absolute path, and the two can be mixed in one workspace.
 | `angelscript.statusBar.alignment` | `left` | Which side of the status bar the AngelScript item sits on. |
 | `angelscript.predefinedFiles` | `[]` | Stub files describing the host application's API, loaded by path. |
 | `angelscript.predefinedExtension` | `.as.predefined` | Filename suffix that marks a workspace file as a stub. |
+| `angelscript.include.implicitExtension` | `false` | Let `#include "helper"` find `helper.as`, for hosts that resolve the name themselves (Sven Co-op). |
 | `angelscript.fileExtension` | `.as` | Filename suffix of script files, used when scanning the workspace. |
 | `angelscript.diagnosticSeverity` | `{}` | Per-diagnostic severity overrides, e.g. `{"as-warn-unused-variable": "hint"}`. |
 | `angelscript.features.*` | `true` | One switch per feature (hover, completion, formatting, …) if you want to turn one off. |

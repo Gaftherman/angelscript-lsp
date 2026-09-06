@@ -6,6 +6,9 @@
 #include <unordered_set>
 #include <sstream>
 #include <regex>
+#include "utils/IncludeResolver.h"
+#include <optional>
+#include <filesystem>
 #include "parser/Keywords.h"
 
 namespace angel_lsp::features
@@ -470,6 +473,118 @@ namespace angel_lsp::features
         }
     }
 
+    /**
+     * @brief Completes the file path inside an `#include "..."`.
+     *
+     * Reported as missing: typing `#include ""` offered nothing, because the rule below it - no
+     * completion inside a string literal - is right about every other string in the language and
+     * this is the one place it is wrong.
+     *
+     * Every candidate is offered as a path relative to the file being edited, which is how an
+     * include has to be written: a file one directory up comes back as `../shared.as`, one in a
+     * subdirectory as `weapons/rifle.as`. The label carries that same relative path, so the list
+     * reads the way the line will.
+     *
+     * @return The items, or nullopt when the cursor is not inside an include's quotes - which is
+     *         the distinction the caller needs, since "inside an include with nothing to offer" and
+     *         "not in an include" must not lead to the same fallback.
+     */
+    std::optional<std::vector<lsp::CompletionItem>> CompleteIncludePath(const CompletionRequest &request,
+                                                                        const std::string &linePrefix)
+    {
+        if (request.documentPath.empty() || !request.listIncludeCandidates)
+        {
+            return std::nullopt;
+        }
+
+        // `#` and the name with nothing between them, because the compiler accepts nothing between
+        // them either - `# include "helper.as"` is not a directive at all. Offering completion
+        // there would say the line works while the analyzer calls it an error.
+        static const std::regex includePrefixRegex(R"(^[ \t]*#include[ \t]*"([^"]*)$)");
+        std::smatch match;
+        if (!std::regex_search(linePrefix, match, includePrefixRegex))
+        {
+            return std::nullopt;
+        }
+
+        const std::string typed = match[1].str();
+
+        std::vector<lsp::CompletionItem> items;
+
+        std::error_code ec;
+        const std::filesystem::path fromDirectory =
+            std::filesystem::path(request.documentPath).parent_path();
+
+        // Where the replacement starts: the character after the opening quote. Everything the user
+        // has typed inside the quotes is replaced, so `#include "wea` completes to the whole
+        // `weapons/rifle.as` rather than gluing a second copy of the prefix on.
+        const auto quoteColumn = static_cast<lsp::uint>(linePrefix.size() - typed.size());
+
+        std::unordered_set<std::string> offered;
+
+        for (const std::string &candidate : request.listIncludeCandidates())
+        {
+            if (candidate.empty())
+            {
+                continue;
+            }
+
+            // The file being edited is not a candidate for its own include list.
+            if (utils::IncludeResolver::NormalizePath(candidate) ==
+                utils::IncludeResolver::NormalizePath(request.documentPath))
+            {
+                continue;
+            }
+
+            std::filesystem::path relative =
+                std::filesystem::relative(std::filesystem::path(candidate), fromDirectory, ec);
+            if (ec || relative.empty())
+            {
+                ec.clear();
+                continue;
+            }
+
+            // Forward slashes on every platform. Windows accepts them, and a backslash inside a
+            // string literal is an escape - `#include "sub\rifle.as"` carries a carriage return.
+            std::string insertText = relative.generic_string();
+
+            // A host that resolves the extension itself wants the short spelling, and the long one
+            // would not open. See CompletionRequest::implicitExtension.
+            if (!request.implicitExtension.empty() &&
+                insertText.size() > request.implicitExtension.size() &&
+                insertText.ends_with(request.implicitExtension))
+            {
+                insertText.resize(insertText.size() - request.implicitExtension.size());
+            }
+
+            if (!offered.insert(insertText).second)
+            {
+                continue;
+            }
+
+            lsp::CompletionItem item;
+            item.label = insertText;
+            item.kind = lsp::CompletionItemKind::File;
+            item.detail = candidate;
+
+            // A path in the same directory sorts above one reached through `..`, which is the order
+            // a reader expects and not the order a plain string sort gives.
+            item.sortText = (insertText.starts_with("../") ? "1" : "0") + insertText;
+
+            lsp::TextEdit edit;
+            edit.range.start.line = request.position.line;
+            edit.range.start.character = quoteColumn;
+            edit.range.end.line = request.position.line;
+            edit.range.end.character = request.position.character;
+            edit.newText = insertText;
+            item.textEdit = edit;
+
+            items.push_back(std::move(item));
+        }
+
+        return items;
+    }
+
     std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest &request)
     {
         std::vector<lsp::CompletionItem> items;
@@ -488,6 +603,14 @@ namespace angel_lsp::features
         //    fell through to the global fallback below and answered with the entire scope.
         const size_t cursorOffset =
             utils::LineStartOffset(request.sourceCode, request.position.line) + prefix.size();
+        //    Before that guard, not after: an include path lives inside a string literal, so the
+        //    rule below is what made `#include ""` offer nothing at all. It is still the right
+        //    rule for every other string in the language.
+        if (auto includeItems = CompleteIncludePath(request, prefix))
+        {
+            return *includeItems;
+        }
+
         if (ContextAtOffset(request.sourceCode, cursorOffset) != LexicalContext::Code ||
             IsAfterCaseLabelColon(prefix))
         {

@@ -108,6 +108,26 @@ Hovering an `#include` shows the file it actually resolves to - this file's own 
 then each `angelscript.searchDirectories` entry in order - or says plainly that it resolves to
 nothing.
 
+### Include paths
+
+`#include` resolves against the including file's own directory first, then each
+`angelscript.searchDirectories` entry in the order given.
+
+Typing `#include "` completes with every script in the workspace, each offered as the path relative
+to the file you are editing - a sibling as `helper.as`, a file one directory up as `../shared.as`,
+one in a subdirectory as `weapons/rifle.as`.
+
+By default the path is opened exactly as written, which is what AngelScript does: measured,
+`#include "helper"` finds a file named literally `helper` and does **not** find `helper.as`. Some
+hosts resolve the name themselves and require the extension to be left off - Sven Co-op works this
+way, and there `#include "helper"` is the correct spelling. Set
+`angelscript.include.implicitExtension` to `true` for those, and `helper` finds `helper.as`, with
+completion inserting the short form to match.
+
+The exact name is always tried first in each directory before the extension is appended, so a
+directory holding both `helper` and `helper.as` resolves the way the compiler would.
+
+
 
 ### Lexical edge cases
 - `!isFlag` tokenises as `!` followed by an identifier, not as `!is` followed by `Flag`

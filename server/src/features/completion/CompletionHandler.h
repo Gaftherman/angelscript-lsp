@@ -33,6 +33,33 @@ namespace angel_lsp::features
          * client without snippet support would insert those six characters literally.
          */
         bool snippetSupport = false;
+
+        /**
+         * @brief Absolute path of the document being completed, for relative include paths.
+         *
+         * An include is written relative to the file it sits in, so the answer to "which files can
+         * I include" is different in every directory. Empty disables include completion, which is
+         * what a caller with no filesystem gets.
+         */
+        std::string documentPath;
+
+        /**
+         * @brief Every file that may be named in an `#include`, as absolute paths.
+         *
+         * A callback rather than a list, because the answer costs a walk of the include graph and
+         * almost no completion request is inside an include. Supplied by the server, which is the
+         * only thing that knows what the workspace holds.
+         */
+        std::function<std::vector<std::string>()> listIncludeCandidates;
+
+        /**
+         * @brief Suffix to leave off an inserted include path, or empty to insert the name in full.
+         *
+         * When the host resolves the extension itself the correct spelling is the short one -
+         * `#include "helper"`, not `#include "helper.as"` - so completing to the full filename
+         * would insert something the host cannot open. See ServerConfig::implicitIncludeExtension.
+         */
+        std::string implicitExtension;
     };
 
     /**
