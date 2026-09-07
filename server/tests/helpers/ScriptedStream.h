@@ -36,23 +36,34 @@ namespace angel_lsp::test
         }
 
         /**
-         * @brief Schedules a side effect to run once the server has consumed everything pushed so far.
+         * @brief Schedules a side effect to run once the message pushed before it has been handled.
          *
          * Needed because the whole script is built before the server starts: a plain statement
          * between two Push() calls would run before the first message is ever read. Anything that
-         * models the world changing mid-session - a file being deleted on disk between two
-         * notifications - has to be scheduled here instead.
+         * models the world changing mid-session - a file deleted on disk between two notifications,
+         * or a wait for something a handler produces - has to be scheduled here instead.
          *
-         * It fires when the reader has *consumed* the bytes, which is before the framework has
-         * dispatched the message they encode. So an action pushed straight after `initialized`
-         * runs before initialized's handler does - before the workspace scan it starts even
-         * exists - and an action there that waits for that scan waits for something that has not
-         * begun. Push one more message first: the action then runs after the message before it was
-         * handled. Every wait-for-the-scan test in this suite is written that way, and one written
-         * the other way waits out its whole timeout and then measures a race.
+         * An action fires on the reader thread, when the reader has *consumed* the bytes it is
+         * scheduled behind. Consuming bytes is not handling them: the framework reads a whole
+         * message, dispatches it, and only then reads the next. So an action recorded at the end of
+         * the script so far runs BEFORE the message just pushed has been dispatched - and one that
+         * waits for that message's effect waits for something that has not started, on the very
+         * thread that would have started it. It then waits out its entire timeout and measures a
+         * race afterwards.
+         *
+         * That trap was documented here and sprung anyway, in most of the suite. The durations gave
+         * it away: whole families of harness tests took 20, 40 or 60 seconds - round numbers, which
+         * is never work and always a deadline. Callers were expected to push a filler message
+         * themselves and most did not, so this pushes one for them.
+         *
+         * The filler is a notification the server does not handle. LSP requires an unknown
+         * notification to be ignored - only requests get MethodNotFound back - so it costs one
+         * dispatch and writes nothing, and its only job is to be the thing whose bytes the action
+         * waits behind.
          */
         void PushAction(std::function<void()> action)
         {
+            m_input += Frame(R"({"jsonrpc":"2.0","method":"$/angelscriptTestBarrier","params":{}})");
             m_actions.push_back({ m_input.size(), std::move(action) });
         }
 

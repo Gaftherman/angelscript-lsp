@@ -1038,7 +1038,6 @@ TEST_CASE("ServerHarness - Reports workspace scan progress when the client suppo
     // A request after the notification, so the loop has demonstrably come back round and dispatched
     // `initialized` before the wait below begins. Without it the action fires while that
     // notification is still in flight and the scan has not been started yet.
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
     stream.PushAction([&stream]()
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
@@ -1051,6 +1050,7 @@ TEST_CASE("ServerHarness - Reports workspace scan progress when the client suppo
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
     const std::string output = RunScript(serverConfig, stream);
@@ -1736,7 +1736,6 @@ TEST_CASE("Server - The workspace scan announces itself as cancellable")
     // about a notification the server was right not to send.
     stream.Push(InitializeWithProgress(fixture.RootUri(), true));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
     stream.PushAction([&stream]()
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
@@ -1747,6 +1746,7 @@ TEST_CASE("Server - The workspace scan announces itself as cancellable")
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
     const std::string output = RunScript(serverConfig, stream);
@@ -3407,22 +3407,6 @@ TEST_CASE("Server - Diagnostics and hover survive being typed one character at a
             }
         }
 
-        // Answered against the tree the keystrokes left behind, which is reparsed on the message
-        // loop and so is current the moment the last one is handled.
-        if (scenario.hasHover)
-        {
-            stream.Push(R"({"jsonrpc":"2.0","id":50,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
-                        fixture.Uri("main.as") + R"("},"position":{"line":)" + std::to_string(scenario.hoverLine) +
-                        R"(,"character":)" + std::to_string(scenario.hoverCharacter) + R"(}}})");
-        }
-        else
-        {
-            // A filler, so the wait below runs after the last keystroke has been *handled* rather
-            // than merely read - see ScriptedStream::PushAction.
-            stream.Push(R"({"jsonrpc":"2.0","id":50,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
-                        fixture.Uri("main.as") + R"("}}})");
-        }
-
         // Analysis is debounced, so the last keystroke's diagnostics arrive after a quiet period.
         // Waiting for the stream to go quiet rather than for a fixed delay: the debounce is 200ms
         // and the analysis itself is not instant, and a fixed sleep would be either flaky or slow.
@@ -3447,6 +3431,17 @@ TEST_CASE("Server - Diagnostics and hover survive being typed one character at a
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
         });
+
+        // Asked after the wait above, not before it. Analysis is debounced, so a hover sent in
+        // the same breath as the last keystroke is answered against a document the analyzer has
+        // not reached yet - and comes back null. This used to work by accident: PushAction fired
+        // before the message it was pushed behind was dispatched, so the wait ran first anyway.
+        if (scenario.hasHover)
+        {
+            stream.Push(R"({"jsonrpc":"2.0","id":50,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
+                        fixture.Uri("main.as") + R"("},"position":{"line":)" + std::to_string(scenario.hoverLine) +
+                        R"(,"character":)" + std::to_string(scenario.hoverCharacter) + R"(}}})");
+        }
 
         stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
 
