@@ -24,6 +24,7 @@
 #include "features/code_action/CodeActionHandler.h"
 #include "features/formatting/FormattingHandler.h"
 #include "features/formatting/PredefinedStubFormatter.h"
+#include "analysis/ListPattern.h"
 #include "features/document_link/DocumentLinkHandler.h"
 #include "features/code_lens/CodeLensHandler.h"
 #include "analysis/EngineProfiles.h"
@@ -1559,7 +1560,12 @@ namespace angel_lsp
                 continue;
             }
 
-            ReplaceSymbolsFromSource(syntheticUri, std::string(stubSource), parser);
+            // Through the same rewrite a stub on disk gets, so the built-in profiles may spell a
+            // list factory either way and one notation is enough to learn.
+            ReplaceSymbolsFromSource(
+                syntheticUri,
+                angel_lsp::analysis::RewriteInlineListPatterns(std::string(stubSource)),
+                parser);
 
             m_scopeIndex.ClearDocument(syntheticUri);
             m_callGraph.ClearDocument(syntheticUri);
@@ -1859,6 +1865,16 @@ namespace angel_lsp
         }
 
         std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+        // A stub may write its list factory the way the AngelScript manual does, with the
+        // pattern where a body would go:
+        //
+        //     array(int &in type, int &in list) {repeat T};   // asBEHAVE_LIST_FACTORY
+        //
+        // That is documentation notation and not script syntax - the compiler rejects it and
+        // so does this parser - so it never reaches the parser. See RewriteInlineListPatterns
+        // for what it becomes, and for why the pattern is blanked rather than removed.
+        content = angel_lsp::analysis::RewriteInlineListPatterns(content);
 
         // Claim and collect under one lock: didOpen may be claiming the very same stub under the
         // client's URI spelling on the message loop, and a claim that lands mid-collect would purge

@@ -77,4 +77,32 @@ namespace angel_lsp::analysis
      * @return The pattern text including braces, or empty when the tag is absent.
      */
     std::string FindListPatternTag(const std::string &sourceCode, uint32_t declStartLine);
+
+    /**
+     * @brief Rewrites a predefined stub's inline list-factory patterns into `@listpattern` tags.
+     *
+     * The AngelScript manual writes a list factory as the constructor it is, with the pattern
+     * where a body would go:
+     *
+     *     array(int &in type, int &in list) {repeat T};   // asBEHAVE_LIST_FACTORY
+     *
+     * That is not script syntax - the compiler rejects it, and so does this server's parser, which
+     * reads `{repeat T}` as a statement block declaring a variable `T` of type `repeat`. A stub is
+     * never compiled by AngelScript, so it may spell things the language does not; what it may not
+     * do is reach the parser that way.
+     *
+     * Each pattern is blanked with the same number of spaces and re-stated as a comment at the end
+     * of its own line. Blanking rather than deleting is load-bearing: every line, and every column
+     * of every declaration, is where it was, so a definition inside a stub still resolves to the
+     * place the user is pointing at. Byte offsets after a rewritten line do shift by the length of
+     * the appended comment, which nothing depends on - the tree and the text the collector reads
+     * are both this one, and no offset is ever compared against the file on disk.
+     *
+     * Applies only to predefined files. A script that writes this is still reporting a syntax
+     * error, which is what the compiler does with it.
+     *
+     * @param source The stub's full text.
+     * @return The text to parse and collect from; unchanged when there is no inline pattern.
+     */
+    std::string RewriteInlineListPatterns(const std::string &source);
 }
