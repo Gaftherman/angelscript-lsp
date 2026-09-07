@@ -1,10 +1,20 @@
-# A shell script has to reach Linux with LF line endings, whoever checked it out.
+# Line endings, decided here rather than by whoever happens to clone the repository.
 #
-# This repository is developed on Windows, where git hands out CRLF. docker/run-parity.sh is then
-# mounted straight into the container, bash reads `set -euo pipefail\r`, and reports
-# "pipefail: invalid option name" - so the local Linux gate died on its first line and every run of
-# it since has been checking nothing.
-*.sh text eol=lf
+# Two separate things were wrong before this file existed:
+#
+#   - `server/src/main.cpp` was committed with CRLF while every other source file was LF. Nothing
+#     noticed because a C++ compiler does not care, but it makes the repository inconsistent with
+#     itself and a text patch written against one form silently misses the other.
+#   - `docker/run-parity.sh` reached the Linux container with CRLF, so bash read `set -euo pipefail\r`
+#     and reported "pipefail: invalid option name" on line 2. The local Linux gate had been dying
+#     there, and exiting 0 while it did.
+#
+# `text=auto` makes git store LF for everything it detects as text and hand out the platform's own
+# form on checkout, which is what `core.autocrlf` on Windows already expects. Nothing tracked here
+# is binary today; if that changes, add an explicit `-text` line for it rather than loosening this.
+* text=auto
 
-# Same reasoning for anything else the container reads as a script.
+# A shell script is read by a shell, not by the platform, and that shell is bash inside a Linux
+# container regardless of who checked the file out.
+*.sh text eol=lf
 Dockerfile* text eol=lf
