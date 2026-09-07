@@ -1546,7 +1546,7 @@ namespace angel_lsp
                 return;
             }
 
-            const std::string_view stubSource = angel_lsp::analysis::GetProfileStubSource(pKind);
+            const std::string stubSource = angel_lsp::analysis::GetProfileStubText(pKind);
             if (stubSource.empty())
             {
                 continue;
@@ -1560,12 +1560,9 @@ namespace angel_lsp
                 continue;
             }
 
-            // Through the same rewrite a stub on disk gets, so the built-in profiles may spell a
-            // list factory either way and one notation is enough to learn.
-            ReplaceSymbolsFromSource(
-                syntheticUri,
-                angel_lsp::analysis::RewriteInlineListPatterns(std::string(stubSource)),
-                parser);
+            // GetProfileStubText already applied the list-factory rewrite, so this is the same
+            // text the parser would accept from a stub on disk.
+            ReplaceSymbolsFromSource(syntheticUri, stubSource, parser);
 
             m_scopeIndex.ClearDocument(syntheticUri);
             m_callGraph.ClearDocument(syntheticUri);

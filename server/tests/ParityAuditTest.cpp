@@ -154,6 +154,20 @@ namespace
             // not see the evidence for, and the corpus audit's 273 findings were the same mistake
             // at scale. CheckConstruction now stays silent when the target's constructors are not
             // visible, and this entry closed on its own.
+
+            // doc_p44 is not listed here, and the reason is worth writing down because the count
+            // above moved when the `any` add-on was added to the built-in standard profile.
+            //
+            // The two harnesses disagree about `any`. angelscript_oracle registers it - measured,
+            // `any v;` compiles - and doc_p44's header records that verdict. AS-Harness does not:
+            // it answers `Identifier 'any' is not a data type in global namespace`. So the file now
+            // counts as a false negative, meaning the compiler under test rejects what we accept.
+            //
+            // Left as a false negative rather than excused as a gap, because a gap entry says "our
+            // analyzer is wrong here" and it is not: an application with the standard add-ons has
+            // `any`, which is exactly what the standard profile describes. What is really being
+            // measured is one harness's engine configuration. Recorded here so the number moving
+            // from three to four is a decision someone made rather than drift nobody noticed.
         };
         return gaps;
     }
@@ -272,10 +286,13 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
 
     const bool useBuiltinProfile = !overrideDir.empty() && explicitStubPath.empty();
 
-    const std::string_view standardStub =
+    // Owned, not a view. GetProfileStubText answers by value - it rewrites the profile's inline
+    // list factories - so a view of it dangles the moment the ternary's temporary dies, which this
+    // test found as a SIGSEGV within one run of making that change.
+    const std::string standardStub =
         useBuiltinProfile
-            ? angel_lsp::analysis::GetProfileStubSource(angel_lsp::analysis::EngineProfileKind::Standard)
-            : std::string_view();
+            ? angel_lsp::analysis::GetProfileStubText(angel_lsp::analysis::EngineProfileKind::Standard)
+            : std::string();
 
     size_t agreeAccept = 0;
     size_t agreeReject = 0;

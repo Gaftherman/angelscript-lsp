@@ -108,7 +108,7 @@ namespace angel_lsp::test
             // measures a configuration nobody runs.
             if (profile != angel_lsp::analysis::EngineProfileKind::None)
             {
-                const std::string_view stub = angel_lsp::analysis::GetProfileStubSource(profile);
+                const std::string stub = angel_lsp::analysis::GetProfileStubText(profile);
                 if (!stub.empty())
                 {
                     AngelScriptParser stubParser;

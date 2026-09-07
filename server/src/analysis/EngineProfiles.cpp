@@ -1,4 +1,5 @@
 #include "analysis/EngineProfiles.h"
+#include "analysis/ListPattern.h"
 #include <algorithm>
 #include <cctype>
 
@@ -72,12 +73,12 @@ class string
     string opAdd_r(bool) const;
 }
 
-/// The list factory the array add-on registers:
-///   asBEHAVE_LIST_FACTORY, "array<T>@ f(int&in type, int&in list) {repeat T}"
-/// @listpattern {repeat T}
+/// A dynamically sized array of T.
 class array<T>
 {
     array();
+    /// The list factory the add-on registers, written the way the AngelScript manual writes one.
+    array(int &in type, int &in list) {repeat T};
     array(uint initialSize);
     array(uint initialSize, const T &in value);
     uint length() const;
@@ -109,12 +110,12 @@ class array<T>
     uint opForValue1(uint index) const;
 }
 
-/// The list factory the dictionary add-on registers:
-///   asBEHAVE_LIST_FACTORY, "dictionary @f(int &in) {repeat {string, ?}}"
-/// @listpattern {repeat {string, ?}}
+/// A string-keyed map of values of any type.
 class dictionary
 {
     dictionary();
+    /// The list factory the add-on registers, written the way the AngelScript manual writes one.
+    dictionary(int &in type, int &in list) {repeat {string, ?}};
     void set(const string &in key, const ? &in value);
     bool get(const string &in key, ? &out value) const;
     void set(const string &in key, const int64 &in value);
@@ -217,6 +218,113 @@ float max(float a, float b);
 float clamp(float val, float minVal, float maxVal);
 void print(const string &in msg);
 void println(const string &in msg);
+
+/// A generic container that can hold a value of any type.
+class any
+{
+    any();
+    any(? &in value);
+    any(const int64 &in value);
+    any(const double &in value);
+    any& opAssign(const any &in other);
+    void store(? &in value);
+    void store(const int64 &in value);
+    void store(const double &in value);
+    /// Retrieves the stored value, returning true if it is compatible with the requested type.
+    bool retrieve(? &out value) const;
+    bool retrieve(int64 &out value) const;
+    bool retrieve(double &out value) const;
+}
+
+/// A weak reference that does not keep its target alive.
+class weakref<T>
+{
+    weakref();
+    weakref(const weakref<T> &in other);
+    weakref(T@ value);
+    /// A strong handle to the target, or null once it has been destroyed.
+    T@ get() const;
+    T@ opImplCast();
+    const T@ opImplCast() const;
+    weakref<T>& opHndlAssign(const weakref<T> &in other);
+    weakref<T>& opHndlAssign(T@ value);
+    weakref<T>& opAssign(const weakref<T> &in other);
+    bool opEquals(const weakref<T> &in other) const;
+    bool opEquals(const T@ value) const;
+}
+
+/// The const counterpart of weakref, holding a handle that cannot modify its target.
+class const_weakref<T>
+{
+    const_weakref();
+    const_weakref(const const_weakref<T> &in other);
+    const_weakref(const T@ value);
+    /// A strong const handle to the target, or null once it has been destroyed.
+    const T@ get() const;
+    const T@ opImplCast() const;
+    const_weakref<T>& opHndlAssign(const const_weakref<T> &in other);
+    const_weakref<T>& opHndlAssign(const weakref<T> &in other);
+    const_weakref<T>& opHndlAssign(const T@ value);
+    const_weakref<T>& opAssign(const const_weakref<T> &in other);
+    bool opEquals(const const_weakref<T> &in other) const;
+    bool opEquals(const weakref<T> &in other) const;
+    bool opEquals(const T@ value) const;
+}
+
+/// A two-dimensional container, indexed by x and y.
+class grid<T>
+{
+    grid();
+    grid(uint width, uint height);
+    grid(uint width, uint height, const T &in fillValue);
+    grid(int &in type, int &in list) {repeat {repeat_same T}};
+    T& opIndex(uint x, uint y);
+    const T& opIndex(uint x, uint y) const;
+    /// Resizes the grid, keeping the elements that still fit.
+    void resize(uint width, uint height);
+    uint width() const;
+    uint height() const;
+}
+
+/// A complex number, with a real and an imaginary part.
+class complex
+{
+    complex();
+    complex(const complex &in other);
+    complex(float r);
+    complex(float r, float i);
+    complex(const int &in) {float, float};
+    float r;
+    float i;
+    complex& opAddAssign(const complex &in other);
+    complex& opSubAssign(const complex &in other);
+    complex& opMulAssign(const complex &in other);
+    complex& opDivAssign(const complex &in other);
+    bool opEquals(const complex &in other) const;
+    complex opAdd(const complex &in other) const;
+    complex opSub(const complex &in other) const;
+    complex opMul(const complex &in other) const;
+    complex opDiv(const complex &in other) const;
+    /// The magnitude of the complex number.
+    float abs() const;
+    complex get_ri() const;
+    void set_ri(const complex &in other);
+    /// The components the other way round.
+    complex get_ir() const;
+    void set_ir(const complex &in other);
+}
+
+float cosh(float rad);
+float sinh(float rad);
+float tanh(float rad);
+float log(float val);
+float log10(float val);
+float fraction(float val);
+float fpFromIEEE(uint raw);
+double fpFromIEEE(uint64 raw);
+uint fpToIEEE(float fp);
+uint64 fpToIEEE(double fp);
+
 )angelscript";
 
         constexpr std::string_view SVENCOOP_PROFILE_STUB = R"angelscript(
@@ -736,8 +844,11 @@ OOTPContext g_OOTP;
         };
     }
 
-    std::string_view GetProfileStubSource(EngineProfileKind kind)
+    namespace
     {
+        /** @brief The raw literal, before the list-factory rewrite. See GetProfileStubText. */
+        std::string_view RawProfileStub(EngineProfileKind kind)
+        {
         switch (kind)
         {
             case EngineProfileKind::None:
@@ -754,8 +865,14 @@ OOTPContext g_OOTP;
                 return OOTP_PROFILE_STUB;
             case EngineProfileKind::Auto:
                 return STANDARD_PROFILE_STUB;
+            }
+            return "";
         }
-        return "";
+    }
+
+    std::string GetProfileStubText(EngineProfileKind kind)
+    {
+        return RewriteInlineListPatterns(std::string(RawProfileStub(kind)));
     }
 
     std::string GetProfileSyntheticUri(EngineProfileKind kind)

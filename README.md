@@ -559,7 +559,7 @@ cmake -B server/build -S server -DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=/path/
 Run `tree-sitter generate` in that checkout after editing `grammar.js` — the build compiles the
 generated `src/parser.c` and does not run the CLI itself.
 
-### Initializer List Patterns (`@listpattern`)
+### Initializer List Patterns
 
 `{ ... }` is not a general-purpose initializer in AngelScript. A type accepts one only if the host
 registered a **list factory** for it, and the shape it accepts is written into that registration:
@@ -578,14 +578,30 @@ That trailing `{...}` is the only thing separating a type that takes `{1, 2, 3}`
 factory, so the real compiler answers `optional<int> o = {1};` with
 *"Initialization lists cannot be used with 'optional<int>'"*.
 
-A predefined stub carries the pattern as a doc-comment tag, copied verbatim from the registration:
+A predefined stub may carry the pattern either way. The preferred form writes the list factory as
+the constructor it is, exactly as the AngelScript manual documents one:
+
+```angelscript
+class array<T>
+{
+    array();                                        // asBEHAVE_FACTORY
+    array(uint length) explicit;                    // asBEHAVE_FACTORY
+    array(int &in type, int &in list) {repeat T};   // asBEHAVE_LIST_FACTORY
+}
+
+class dictionary
+{
+    dictionary();
+    dictionary(int &in type, int &in list) {repeat {string, ?}};   // asBEHAVE_LIST_FACTORY
+}
+```
+
+The older form is a doc-comment tag above the class, and still works — every stub already written
+keeps working:
 
 ```angelscript
 /// @listpattern {repeat T}
 class array<T> { /* ... */ }
-
-/// @listpattern {repeat {string, ?}}
-class dictionary { /* ... */ }
 ```
 
 With the tag present, the server reports a mismatched list the way the compiler does — including
@@ -594,9 +610,15 @@ inside nesting, so `array<int> a = {1, {2}};` and `dictionary d = {1, 2};` are b
 alone. Without it the server says nothing, because it cannot tell an absent list factory from a
 stub that simply did not mention one.
 
-A tag rather than a declaration because the pattern is not AngelScript source: written into a class
-body, `{repeat T}` parses as a statement block containing a syntax error, which would put red
-squiggles through your own stub. The built-in engine profiles already carry the tags for `array<T>`
+The inline form is not AngelScript source — measured, both the compiler and this server's parser
+read `{repeat T}` as a statement block declaring a variable `T` of type `repeat`. A stub is never
+compiled by AngelScript, so it is allowed to spell things the language does not; what it may not do
+is reach the parser that way. Predefined files, and only predefined files, therefore go through a
+pre-pass that blanks the pattern and re-states it as a tag on the same line, leaving every line and
+every column of every declaration where it was. Write it in an ordinary script and you still get the
+syntax error the compiler gives you.
+
+The built-in engine profiles carry the patterns for `array<T>`
 and `dictionary`. `--array-like-type=<name>` is shorthand for `{repeat T}` if you would rather not
 edit a stub you do not own.
 
