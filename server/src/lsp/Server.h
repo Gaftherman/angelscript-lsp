@@ -1100,7 +1100,10 @@ namespace angel_lsp
          * Coalescing is by URI, so a burst of keystrokes collapses into a single run against the
          * latest text.
          */
-        void ScheduleAnalysis(const std::string &uriStr, const std::string &text);
+        // `force` says the answer can differ even though the bytes did not - the symbol table
+        // moved, not the buffer. Without it the dedupe drops the request as a duplicate of the
+        // analysis whose answer is exactly the one being replaced.
+        void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force = false);
 
         /**
          * @brief Analysis worker: waits for a quiet period, then drains the queue.

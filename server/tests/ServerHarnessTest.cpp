@@ -4527,6 +4527,61 @@ TEST_CASE("Server - A script deleted on disk stops resolving for the file that i
     CHECK((typeGone || includeGone));
 }
 
+// =====================================================================================
+// A document opened before the table was built.
+//
+// Measured on a real Sven Co-op project: 258 diagnostics, every one of them a host type reported
+// unknown, on code the compiler builds. Nothing was wrong with the stub - the file had simply been
+// analysed before the scan finished loading it, and nothing ever looked again. Forcing one late
+// analysis took the same file to 126.
+//
+// The scan cannot be made to finish after the didOpen on demand, so what is guarded here is the
+// mechanism rather than the race: a scan that ends re-analyses whatever is open, even though not
+// one byte of it changed. Remove the guard in ReadWorkspaceFiles and this stops at one publication.
+// =====================================================================================
+TEST_CASE("Server - A finished scan re-analyses the open documents it did not know about")
+{
+    WorkspaceFixture fixture;
+    const std::string source = "void main() { ScanRaceHost h; h.Spawn(); }\n";
+    fixture.Write("main.as", source);
+    fixture.Write("host.as.predefined", "class ScanRaceHost { void Spawn(); }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    // The same text, and a table that has moved. A dedupe that only asks "are these the same
+    // bytes?" answers "already done" here, which is why ScheduleAnalysis has to be told otherwise.
+    stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
+                R"("params":{"command":"angelscript.rescanWorkspace"}})");
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 2); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    size_t publications = 0;
+    for (size_t at = output.find("publishDiagnostics"); at != std::string::npos;
+         at = output.find("publishDiagnostics", at + 1))
+    {
+        ++publications;
+    }
+
+    INFO("everything: " << PublishedFrames(output));
+    CHECK(publications >= 2);
+
+    // And the answer is still the right one: the host type resolves either way.
+    const std::string published = LastPublishedFor(output, "main.as");
+    REQUIRE_FALSE(published.empty());
+    CHECK(published.find("as-err-unresolved-type") == std::string::npos);
+}
+
 TEST_CASE("Server - A stub created where there was none is picked up")
 {
     // A workspace with no as.predefined at all: the host types do not exist, and then one does.

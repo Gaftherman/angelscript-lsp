@@ -391,7 +391,7 @@ namespace angel_lsp
         }
 
         for (const auto &[uriStr, text] : open)
-            ScheduleAnalysis(uriStr, text);
+            ScheduleAnalysis(uriStr, text, /*force=*/true);
 
         m_logger->LogInfo(fmt::format(
             "Re-analysing {} open document(s) now the workspace is indexed", open.size()));
@@ -1223,7 +1223,8 @@ namespace angel_lsp
         //
         // On a guard rather than a line at the bottom, because this function has five early
         // returns - cancellation, a disabled loader, a stop between phases - and a call at the end
-        // is reached by exactly one of them. Written as a line first, it never ran once.
+        // is reached by exactly one of them. The cancelled paths are the ones that most need it: a
+        // scan that gave up still leaves every open document judged against the empty table.
         //
         // Not ReanalyseOpenDocuments: that reads m_openDocuments, which belongs to the message
         // loop, and reading it from here corrupted the heap within one run. This reads the
@@ -3264,7 +3265,7 @@ namespace angel_lsp
         constexpr std::chrono::milliseconds k_analysisDebounce{200};
     }
 
-    void Server::ScheduleAnalysis(const std::string &uriStr, const std::string &text)
+    void Server::ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force)
     {
         {
             std::lock_guard<std::mutex> lock(m_analysisMutex);
@@ -3280,8 +3281,13 @@ namespace angel_lsp
             // because a save analyses on the message loop and never touches this queue.
             //
             // So: only text that is actually new restarts the clock.
+            //
+            // Both of these tests ask "are these the same bytes?" and answer "then it is the same
+            // answer". That is true of an edit and false of a table change: the startup
+            // re-analysis passes the identical text on purpose, and dropping it as a duplicate
+            // drops it in favour of the stale answer it exists to replace. `force` is that case.
             if (const auto running = m_analysisInFlight.find(uriStr);
-                running != m_analysisInFlight.end() && running->second == text)
+                !force && running != m_analysisInFlight.end() && running->second == text)
             {
                 // Already being analysed, with exactly these bytes. The answer is on its way.
                 return;
@@ -3290,7 +3296,7 @@ namespace angel_lsp
             const auto [entry, inserted] = m_pendingAnalysis.try_emplace(uriStr, text);
             if (!inserted)
             {
-                if (entry->second == text)
+                if (!force && entry->second == text)
                 {
                     // Already queued and unchanged. The thread is awake and holds this text; a
                     // second notify would only move the deadline.
