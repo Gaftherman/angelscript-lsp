@@ -331,6 +331,53 @@ prints a notice until the `CORPUS_REPO` repository variable names a repository h
 
 ---
 
+## Script modules
+
+A module is AngelScript's own unit of compilation - what `builder.StartNewModule(engine, name)`
+creates - and everything its entry script pulls in through `#include` belongs to it. The server
+cannot deduce this: a directory of scripts may be one module or one module per file, and only the
+host knows which. So you say:
+
+```jsonc
+{
+  "angelscript.modules": [
+    { "name": "shared", "entry": "${workspaceFolder}/scripts/shared_main.as" },
+    { "name": "server", "entry": "${workspaceFolder}/scripts/server_main.as" }
+  ]
+}
+```
+
+Empty is the default, and empty changes nothing.
+
+What it buys is `external shared`. Measured:
+
+| Written | Verdict |
+| --- | --- |
+| `external shared class Foo;`, and another module declares `shared class Foo` | accepted |
+| `external shared class Foo;` and nothing declares it | rejected |
+| `external shared class Foo;` **and `shared class Foo {}` in the same module** | rejected |
+
+The third row is the one worth reading twice. A full definition sitting in the same module does not
+satisfy an external declaration - `external` means "built elsewhere", and elsewhere means another
+module. So the question is not "does this name exist", which a symbol table can answer, but "does it
+exist somewhere else", which it cannot.
+
+Without `angelscript.modules` the server asks the older, laxer question and accepts the false
+negative, rather than reporting correct code as broken in whichever way it guessed wrong. With the
+modules described, it asks the right one.
+
+Configuring modules also makes the server read every file of every module, not only the closure of
+whatever document is open - two modules are by definition not connected by an `#include`, so
+nothing else would ever bring them into the same table.
+
+`import void F() from "other";` is checked too, but only as a **hint**: measured, the compiler
+accepts an import naming a module that was never built, because an imported function is bound at
+run time. All the server can say is that the name matches none of the modules you described.
+
+The workspace-wide predefined-stub loader is unaffected and can be turned off on its own with
+`angelscript.features.predefinedLoader`.
+
+
 ## Planned work
 
 Two requests about *which files this server considers part of the program* - a root script, and

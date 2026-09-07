@@ -341,6 +341,8 @@ namespace angel_lsp::config
                   << "  --predefined-file=<path>                Load a predefined stub by path, even outside the workspace (repeatable)\n"
                   << "  --predefined-active=<path>              Select the single predefined stub workspace scan will\n"
                   << "                                          load (leaving it empty loads all discovered stubs)\n"
+                  << "  --module=<name>=<path>                  Name one script module and the .as it is built from\n"
+                  << "                                          (repeatable). Lets external shared be checked.\n"
                   << "  --implicit-include-extension=<bool>     Let #include \"helper\" mean helper.as, for hosts that\n"
                   << "                                          resolve the name themselves (e.g. Sven Co-op).\n"
                   << "  --exclude=<glob>                        Directory glob the workspace scans do not descend\n"
@@ -749,6 +751,23 @@ namespace angel_lsp::config
                 if (getStringValue(val) && !val.empty())
                 {
                     config.activePredefined = std::string(val);
+                }
+            }
+            else if (key == "--module")
+            {
+                std::string_view val;
+                if (getStringValue(val) && !val.empty())
+                {
+                    const size_t sep = val.find('=');
+                    if (sep != std::string_view::npos)
+                    {
+                        std::string_view name = val.substr(0, sep);
+                        std::string_view entry = val.substr(sep + 1);
+                        if (!name.empty() && !entry.empty())
+                        {
+                            config.modules.push_back(ServerConfig::ModuleDefinition{std::string(name), std::string(entry)});
+                        }
+                    }
                 }
             }
             else if (key == "--implicit-include-extension")

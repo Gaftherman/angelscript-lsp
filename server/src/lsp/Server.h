@@ -339,6 +339,54 @@ namespace angel_lsp
          * Safe to call from any thread; recomputed per call from the guarded accessors, which is
          * cheap next to the filesystem work each resolve does anyway.
          */
+        /**
+         * @brief One configured module, resolved against the include graph.
+         *
+         * Rebuilt whenever the graph is - which is whenever an `#include` line could have moved a
+         * file between modules.
+         */
+        struct ModuleView
+        {
+            std::string name;
+            std::string entryPath;                                  ///< Normalised absolute path.
+            ankerl::unordered_dense::set<std::string> memberPaths;   ///< The entry's include closure.
+        };
+
+        /** @brief The configured modules, resolved. Empty when angelscript.modules is not set. */
+        std::vector<ModuleView> m_modules;
+
+        /**
+         * @brief Recomputes which files belong to which configured module.
+         *
+         * Cheap and rare: one GetModuleClosure per configured module, run only where the include
+         * graph itself is rebuilt.
+         */
+        void BuildModuleIndex();
+
+        /**
+         * @brief Indexes every file of every configured module.
+         *
+         * Without this a module is a name over an empty set. The symbol table only ever held the
+         * open document's own include closure, and two modules are by definition NOT connected by
+         * an `#include` - so the entities one module shares were invisible to the other, and the
+         * external-shared rule had nothing to find. It reported correct code as broken, which is
+         * how the feature failed its own first test.
+         *
+         * Paid only when angelscript.modules is configured: describing the modules is what asks
+         * for them all to be read.
+         */
+        void IndexConfiguredModules(angel_lsp::parser::AngelScriptParser &parser);
+
+        /**
+         * @brief The module scoping for one document, or nullopt when there is none to give.
+         *
+         * Nullopt when angelscript.modules is unset, and also when the document belongs to none of
+         * the configured modules - a scratch file beside the project is not evidence about the
+         * project, and rules that read this must stay as quiet for it as they were before.
+         */
+        [[nodiscard]] std::optional<angel_lsp::analysis::SemanticAnalysisRequest::ModuleContext>
+        ModuleContextFor(const std::string &uriStr) const;
+
         std::vector<std::string> IncludeAllowedRoots() const;
 
         /**

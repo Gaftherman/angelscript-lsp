@@ -4960,3 +4960,206 @@ TEST_CASE("Server - An edit that leaves the #defines alone does not change what 
     REQUIRE_FALSE(last.empty());
     CHECK(last.find("as-err-undefined-identifier") != std::string::npos);
 }
+
+// =====================================================================================
+// Script modules.
+//
+// `external shared class Foo;` says "this is built elsewhere", and elsewhere means another module.
+// Measured, and stricter than it reads:
+//
+//     external shared class MExt;                        ERROR: External shared entity 'MExt' not found
+//     external shared class MExt2; shared class MExt2 {} ERROR: External shared entity 'MExt2' not found
+//
+// The second one is the surprise. A full definition sitting in the SAME module does not satisfy an
+// external declaration - so the question this rule has to ask is not "does this name exist", which
+// the symbol table can answer, but "does it exist somewhere else", which it cannot.
+//
+// Without angelscript.modules configured the server cannot tell one module from another, so it asks
+// the older, laxer question and accepts the false negative. A directory of scripts may be one module
+// or one per file, and only the host knows which. These cases pin both answers, because a fix that
+// only tightened the configured case would look identical to one that tightened everything.
+// =====================================================================================
+
+namespace
+{
+    /**
+     * @brief A workspace with two modules: one that declares a shared class, one that externs it.
+     *
+     * The two are deliberately not connected by any `#include`. That is what makes them separate
+     * modules, and it is the whole point of the fixture.
+     */
+    struct TwoModuleFixture
+    {
+        WorkspaceFixture fixture;
+
+        TwoModuleFixture()
+        {
+            fixture.Write("mod_shared_lib.as", "shared class ModPacket { int id; }\n"
+                                               "shared void ModHelper() { }\n");
+            fixture.Write("mod_shared_main.as", "#include \"mod_shared_lib.as\"\n"
+                                                "void ModSharedMain() { }\n");
+        }
+
+        std::string Entry(const char *name) const { return (fixture.dir / name).generic_string(); }
+    };
+
+    /**
+     * @brief Opens `consumer.as` under a given module configuration and returns everything said.
+     *
+     * @param modules Empty means angelscript.modules is unset, which is the conservative default.
+     */
+    std::string RunWithModules(TwoModuleFixture &two,
+                               const std::string &consumerSource,
+                               const std::vector<config::ServerConfig::ModuleDefinition> &modules)
+    {
+        two.fixture.Write("mod_consumer.as", consumerSource);
+
+        test::ScriptedStream stream;
+        stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+        stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+        stream.Push(DidOpenMessage(two.fixture.Uri("mod_consumer.as"), consumerSource));
+        stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+        config::ServerConfig serverConfig;
+        serverConfig.modules = modules;
+
+        // Not the default "none": the analyzer stays silent about a world it cannot see, and with an
+        // empty table these assertions would pass by vacuity.
+        serverConfig.engineProfile = "standard";
+
+        RunScript(serverConfig, stream);
+        return stream.Output();
+    }
+
+    std::vector<config::ServerConfig::ModuleDefinition> BothModules(const TwoModuleFixture &two)
+    {
+        return { { "shared", two.Entry("mod_shared_main.as") },
+                 { "server", two.Entry("mod_consumer.as") } };
+    }
+}
+
+TEST_CASE("Server - An external shared class is satisfied by another module")
+{
+    TwoModuleFixture two;
+
+    const std::string output = RunWithModules(
+        two, "external shared class ModPacket;\nvoid ModConsumerMain() { }\n", BothModules(two));
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK_FALSE(Published(output, "as-err-external-not-found"));
+}
+
+TEST_CASE("Server - An external shared class is not satisfied by its own module")
+{
+    // The half that only module knowledge can catch, and today's false negative: the definition is
+    // right there in the same file, the symbol table finds it, and the compiler rejects it anyway.
+    TwoModuleFixture two;
+
+    const std::string output = RunWithModules(
+        two,
+        "external shared class ModLocal;\nshared class ModLocal { int id; }\nvoid ModConsumerMain() { }\n",
+        BothModules(two));
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK(Published(output, "as-err-external-not-found"));
+}
+
+TEST_CASE("Server - An external shared function is satisfied by another module")
+{
+    TwoModuleFixture two;
+
+    const std::string output = RunWithModules(
+        two, "external shared void ModHelper();\nvoid ModConsumerMain() { }\n", BothModules(two));
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK_FALSE(Published(output, "as-err-external-not-found"));
+}
+
+TEST_CASE("Server - Without configured modules the older, laxer question is asked")
+{
+    // The control, and it guards the thing that would actually hurt: tightening this rule for
+    // everyone would report correct code as broken in every workspace that has not described its
+    // modules, which is all of them by default.
+    TwoModuleFixture two;
+
+    const std::string output = RunWithModules(
+        two,
+        "external shared class ModLocal;\nshared class ModLocal { int id; }\nvoid ModConsumerMain() { }\n",
+        {});
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK_FALSE(Published(output, "as-err-external-not-found"));
+}
+
+TEST_CASE("Server - A name no module declares shared is still reported")
+{
+    // The other control. A rule that had simply stopped firing would pass every case above.
+    TwoModuleFixture two;
+
+    const std::string output = RunWithModules(
+        two, "external shared class ModNobodyHasThis;\nvoid ModConsumerMain() { }\n", BothModules(two));
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK(Published(output, "as-err-external-not-found"));
+}
+
+TEST_CASE("Server - An import naming no configured module is a hint, never an error")
+{
+    // Measured: the compiler accepts `import void F() from "nevermind";` for a module that was never
+    // built, because an imported function is bound at run time. So this may inform and must not
+    // reject - the severity is the assertion here, not the presence.
+    TwoModuleFixture two;
+
+    const std::string output = RunWithModules(
+        two,
+        "import void ModImported() from \"nosuchmodule\";\nvoid ModConsumerMain() { ModImported(); }\n",
+        BothModules(two));
+
+    const std::string frames = PublishedFrames(output);
+    INFO(frames);
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK(Published(output, "as-hint-import-unknown-module"));
+
+    // Severity 4 is Hint in the protocol. If this ever becomes 1, the server is rejecting a script
+    // the compiler accepts, and that is the assertion here - not that the diagnostic exists.
+    //
+    // Asked without assuming where "severity" sits inside the object. It used to look backwards
+    // for a literal `{"severity"`, which passed on Windows and failed on Linux for no reason at
+    // all: the two builds serialise the same object with its keys in a different order.
+    CHECK(frames.find("\"severity\":4") != std::string::npos);
+
+    // And nothing here is an error. This document publishes one diagnostic, so that pins the
+    // severity exactly without having to find which object carries it.
+    CHECK(frames.find("\"severity\":1") == std::string::npos);
+}
+
+TEST_CASE("Server - An import naming a configured module says nothing")
+{
+    // The control for the hint. Reporting every import would be noise on a correct project.
+    TwoModuleFixture two;
+
+    const std::string output = RunWithModules(
+        two,
+        "import void ModImported() from \"shared\";\nvoid ModConsumerMain() { ModImported(); }\n",
+        BothModules(two));
+
+    INFO(PublishedFrames(output));
+    REQUIRE(output.find("publishDiagnostics") != std::string::npos);
+
+    CHECK_FALSE(Published(output, "as-hint-import-unknown-module"));
+}

@@ -485,6 +485,21 @@ namespace angel_lsp::analysis::rules
         {
             if (sig.isImported)
             {
+                // A hint, never an error. Measured: the compiler accepts an import naming a module
+                // that was never built, because the binding happens at runtime. What it can say is
+                // that the name is not one of the modules the host described - almost always a
+                // typo, and otherwise a module this server has not been told about.
+                if (ctx.request.moduleContext.has_value() && !sig.originModule.empty())
+                {
+                    const auto &names = ctx.request.moduleContext->moduleNames;
+                    if (!names.empty() &&
+                        std::find(names.begin(), names.end(), sig.originModule) == names.end())
+                    {
+                        ctx.LogRule("CheckExternal", "as-hint-import-unknown-module", sym);
+                        ctx.Emit(sym, "as-hint-import-unknown-module", sig.originModule,
+                                 DiagnosticSeverity::Hint);
+                    }
+                }
                 return;
             }
 
@@ -497,8 +512,21 @@ namespace angel_lsp::analysis::rules
                 }
                 else
                 {
+                    // The same question, and the same two answers to it, as the class rule in
+                    // ClassRules.cpp - see the comment there. In a module the definition has to be
+                    // in a different one; without knowing the modules, anywhere will do and the
+                    // false negative is accepted rather than guessed at.
+                    const bool knowsModules =
+                        ctx.request.moduleContext.has_value() && !ctx.request.moduleContext->name.empty();
+
                     bool hasFullSharedDefinition = false;
-                    if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(sym.name))
+
+                    if (knowsModules)
+                    {
+                        hasFullSharedDefinition =
+                            ctx.request.moduleContext->sharedElsewhere.contains(sym.name);
+                    }
+                    else if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(sym.name))
                     {
                         for (const auto &s : *symsPtr)
                         {

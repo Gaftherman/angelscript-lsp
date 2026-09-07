@@ -574,6 +574,33 @@ namespace angel_lsp::config
         bool implicitIncludeExtension = false;
 
         /**
+         * @brief One script module: a name, and the `.as` the host builds it from.
+         *
+         * A module is AngelScript's own unit of compilation - `builder.StartNewModule(engine,
+         * name)` - and everything the entry point pulls in through `#include` is part of it. The
+         * server cannot deduce this: a directory of scripts may be one module, or one module per
+         * file, and only the host knows which.
+         */
+        struct ModuleDefinition
+        {
+            std::string name;
+            std::string entry;  ///< Absolute path to the module's entry-point script.
+        };
+
+        /**
+         * @brief The modules this workspace builds, or empty when the host has not said.
+         *
+         * Empty is the default and changes nothing: every rule that reads this stays exactly as
+         * conservative as it was. That is deliberate - see the external-shared rule in
+         * ClassRules.cpp. `external shared class Foo;` is legal only when *another* module already
+         * declares `shared class Foo`, measured, and without knowing the modules this server cannot
+         * tell a correct declaration from a broken one. It stays quiet rather than guessing.
+         *
+         * With modules configured it can tell, and that is the whole point of the setting.
+         */
+        std::vector<ModuleDefinition> modules;
+
+        /**
          * @brief Predefined stub file to exclusively load during the workspace scan.
          *
          * When empty, the server preserves its default behaviour of ingesting every predefined

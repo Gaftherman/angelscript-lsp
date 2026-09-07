@@ -237,6 +237,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous.";
         m_messages["as-err-undefined-namespace"] = "Undefined namespace '{}'.";
         m_messages["as-err-import-has-body"] = "Imported function '{}' cannot have a body.";
+        m_messages["as-hint-import-unknown-module"] = "No module named '{}' is configured. The compiler accepts this either way - an imported function is bound at run time - but the name matches none of the modules in angelscript.modules.";
         m_messages["as-err-not-lvalue"] = "Expression is not an assignable l-value.";
         m_messages["as-err-assign-void"] = "Cannot assign to expression of type 'void'.";
         m_messages["as-err-assign-non-ref-call"] = "Cannot assign to a function call result unless it returns a reference.";
@@ -398,6 +399,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";
             m_messages["as-err-undefined-namespace"] = "Namespace no definido '{}'.";
             m_messages["as-err-import-has-body"] = "La función importada '{}' no puede tener un cuerpo.";
+            m_messages["as-hint-import-unknown-module"] = "No hay ningún módulo configurado que se llame '{}'. El compilador lo acepta igualmente - una función importada se enlaza en tiempo de ejecución - pero el nombre no coincide con ninguno de los módulos de angelscript.modules.";
             m_messages["as-err-not-lvalue"] = "La expresión no es un l-value asignable.";
             m_messages["as-err-assign-void"] = "No se puede asignar a una expresión de tipo 'void'.";
             m_messages["as-err-assign-non-ref-call"] = "No se puede asignar al resultado de una llamada a función a menos que devuelva una referencia.";

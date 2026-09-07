@@ -180,6 +180,28 @@
           "default": false,
           "markdownDescription": "%config.include.implicitExtension.description%"
         },
+        "angelscript.modules": {
+          "type": "array",
+          "scope": "resource",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "entry": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "entry"
+            ],
+            "additionalProperties": false
+          },
+          "markdownDescription": "%config.modules.description%"
+        },
         "angelscript.fileExtension": {
           "type": "string",
           "scope": "resource",

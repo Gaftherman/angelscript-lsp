@@ -179,6 +179,149 @@ namespace angel_lsp
         return m_engineProfile;
     }
 
+    void Server::BuildModuleIndex()
+    {
+        std::vector<ModuleView> resolved;
+        resolved.reserve(m_config.modules.size());
+
+        for (const auto &definition : m_config.modules)
+        {
+            if (definition.name.empty() || definition.entry.empty())
+            {
+                m_logger->LogError("A configured module needs both a name and an entry script; one was skipped.");
+                continue;
+            }
+
+            ModuleView view;
+            view.name = definition.name;
+            view.entryPath = angel_lsp::utils::IncludeResolver::NormalizePath(definition.entry);
+
+            // Loud rather than silently empty. A mistyped entry path would otherwise produce a
+            // module with no members, which reads exactly like a module whose rules found nothing
+            // to say - the same silent-fallback failure this project has been bitten by twice.
+            std::error_code ec;
+            if (!std::filesystem::is_regular_file(std::filesystem::path(view.entryPath), ec))
+            {
+                m_logger->LogError(fmt::format(
+                    "Module '{}' names an entry script that does not exist: {}", view.name, view.entryPath));
+                continue;
+            }
+
+            for (const auto &member : m_includeGraph.GetModuleClosure(view.entryPath))
+                view.memberPaths.insert(member);
+
+            // The closure of a file nothing includes and that includes nothing is itself, but a
+            // graph that has not been built yet answers with nothing at all.
+            view.memberPaths.insert(view.entryPath);
+
+            m_logger->LogInfo(fmt::format("Module '{}': {} file(s) from {}",
+                                          view.name, view.memberPaths.size(), view.entryPath));
+
+            resolved.push_back(std::move(view));
+        }
+
+        m_modules = std::move(resolved);
+    }
+
+    void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser &parser)
+    {
+        for (const auto &view : m_modules)
+        {
+            for (const auto &path : view.memberPaths)
+            {
+                const std::string uriStr = UriFromPath(path);
+
+                // An open document owns its own symbols and holds edits this file does not, so
+                // reading it off disk here would overwrite the buffer with a stale revision.
+                if (m_openDocuments.contains(uriStr))
+                    continue;
+
+                if (const auto indexed = m_indexedUriByPath.find(path);
+                    indexed != m_indexedUriByPath.end() && indexed->second == uriStr)
+                {
+                    continue;
+                }
+
+                IndexClosureFile(path, parser);
+                m_indexedUriByPath[path] = uriStr;
+            }
+        }
+    }
+
+    std::optional<angel_lsp::analysis::SemanticAnalysisRequest::ModuleContext>
+    Server::ModuleContextFor(const std::string &uriStr) const
+    {
+        if (m_modules.empty())
+        {
+            return std::nullopt;
+        }
+
+        const std::string path = CanonicalPathFromUri(uriStr);
+        if (path.empty())
+        {
+            return std::nullopt;
+        }
+
+        angel_lsp::analysis::SemanticAnalysisRequest::ModuleContext context;
+        context.moduleNames.reserve(m_modules.size());
+        for (const auto &view : m_modules)
+            context.moduleNames.push_back(view.name);
+
+        const ModuleView *owning = nullptr;
+        for (const auto &view : m_modules)
+        {
+            if (view.memberPaths.contains(path))
+            {
+                owning = &view;
+                break;
+            }
+        }
+
+        // Still returned with a name of its own left empty: the import hint only needs the list of
+        // module names, and it is useful in a file that belongs to no module. The external-shared
+        // rule reads the name and falls back to its older question when it is empty.
+        if (owning == nullptr)
+        {
+            return context;
+        }
+
+        context.name = owning->name;
+
+        // Every `shared` entity another module declares - what an `external shared` here is allowed
+        // to refer to.
+        //
+        // One walk of the table per analysis, and only when modules are configured. It is the same
+        // cost as the redeclaration rules already pay, and it cannot be cached beside the module
+        // index: symbols change on every keystroke while the index only changes when an #include
+        // does.
+        m_symbolTable.ForEachSymbol(
+            [this, owning, &context](const std::string &name, const std::vector<angel_lsp::analysis::Symbol> &symbols)
+            {
+                for (const auto &symbol : symbols)
+                {
+                    const bool declaresShared =
+                        (symbol.type == angel_lsp::analysis::SymbolType::Class &&
+                         symbol.GetClass().hasBraces && symbol.GetClass().modifiers.isShared &&
+                         !symbol.GetClass().modifiers.isExternal) ||
+                        (symbol.type == angel_lsp::analysis::SymbolType::Function &&
+                         symbol.GetFunction().hasBody && symbol.GetFunction().modifiers.isShared &&
+                         !symbol.GetFunction().modifiers.isExternal);
+
+                    if (!declaresShared)
+                        continue;
+
+                    const std::string declaringPath = CanonicalPathFromUri(symbol.fileUri);
+                    if (declaringPath.empty() || owning->memberPaths.contains(declaringPath))
+                        continue;  // This module's own declaration is not "elsewhere".
+
+                    context.sharedElsewhere.insert(name);
+                    return;
+                }
+            });
+
+        return context;
+    }
+
     std::vector<std::string> Server::IncludeAllowedRoots() const
     {
         std::vector<std::string> roots;
@@ -785,6 +928,9 @@ namespace angel_lsp
         }
 
         m_logger->LogInfo(fmt::format("Include graph built: {} script file(s)", m_includeGraph.FileCount()));
+
+        // Which files a module contains is a question about the graph, so it is answered here and
+        // nowhere else - every path that rebuilds the graph passes through this line.
         ReportWorkspaceProgress(
             fmt::format("Indexed {} script file(s)", m_includeGraph.FileCount()), 40);
 
@@ -812,6 +958,13 @@ namespace angel_lsp
         // path, so a stub that also happens to live inside the workspace is not indexed twice.
         ReportWorkspaceProgress("Loading predefined stubs", 70);
         const std::vector<std::string> configuredPaths = LoadConfiguredPredefinedFiles(backgroundParser, stopToken);
+
+        // Which files each configured module contains, and then their contents. A module nobody
+        // has opened still has to be in the symbol table, or the module that externs its shared
+        // entities cannot see them - two modules are by definition not connected by an #include,
+        // so the open document's own closure never reaches across. See IndexConfiguredModules.
+        BuildModuleIndex();
+        IndexConfiguredModules(backgroundParser);
 
         if (stopToken.stop_requested())
         {
@@ -2202,6 +2355,11 @@ namespace angel_lsp
                                                                                  : UriFromPath(path));
             }
         }
+        // Empty unless angelscript.modules is configured, in which case it is what lets the
+        // external-shared rule ask "is this declared in ANOTHER module" instead of the laxer
+        // question it has to settle for otherwise. See SemanticAnalysisRequest::ModuleContext.
+        request.moduleContext = ModuleContextFor(uriStr);
+
         request.diagnostics = &m_config.diagnostics;
         request.severityOverrides = m_diagnosticSeverities.empty() ? nullptr : &m_diagnosticSeverities;
         request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;

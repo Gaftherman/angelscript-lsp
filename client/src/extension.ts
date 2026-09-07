@@ -560,6 +560,17 @@ export function buildServerArgs(): string[] {
         args.push('--implicit-include-extension=true');
     }
 
+    for (const mod of config.get<Array<{ name?: string; entry?: string }>>('modules', [])) {
+        const name = mod?.name?.trim();
+        const entry = mod?.entry?.trim();
+        if (!name || !entry) {
+            continue;
+        }
+        for (const resolved of resolveAgainstWorkspace(entry)) {
+            args.push(`--module=${name}=${resolved}`);
+        }
+    }
+
     const fileExtension = config.get<string>('fileExtension', '').trim();
     if (fileExtension.length > 0) {
         args.push(`--file-ext=${fileExtension}`);

@@ -46,8 +46,30 @@ namespace angel_lsp::analysis::rules
 
             if (sig.modifiers.isExternal && sig.modifiers.isShared)
             {
+                // Where the definition has to be depends on whether this server knows the modules.
+                //
+                // It has to be in a DIFFERENT module. Measured, and stricter than it looks: with
+                // `external shared class Foo;` and `shared class Foo { }` in the same module the
+                // compiler still answers "External shared entity 'Foo' not found". An `external`
+                // declaration says "this is built elsewhere", and elsewhere means another module.
+                //
+                // Without angelscript.modules configured this server cannot tell one module from
+                // another, so it keeps the older, laxer question - is the name declared shared
+                // anywhere - and accepts the false negative that comes with it. A directory of
+                // scripts may be one module or one per file, and only the host knows which; a rule
+                // that guessed would report correct code as broken in whichever case it guessed
+                // wrong.
+                const bool knowsModules =
+                    ctx.request.moduleContext.has_value() && !ctx.request.moduleContext->name.empty();
+
                 bool hasFullSharedDefinition = false;
-                if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(sym.name))
+
+                if (knowsModules)
+                {
+                    hasFullSharedDefinition =
+                        ctx.request.moduleContext->sharedElsewhere.contains(sym.name);
+                }
+                else if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(sym.name))
                 {
                     for (const auto &s : *symsPtr)
                     {
@@ -59,6 +81,7 @@ namespace angel_lsp::analysis::rules
                         }
                     }
                 }
+
                 if (!hasFullSharedDefinition)
                 {
                     ctx.LogRule("CheckClassModifiers", "as-err-external-not-found", sym);

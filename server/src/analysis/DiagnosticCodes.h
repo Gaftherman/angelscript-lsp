@@ -142,6 +142,12 @@ namespace angel_lsp::diagnostics::codes
     inline constexpr std::string_view GlobalFunctionQualifiers             = "as-err-global-function-qualifiers";
     inline constexpr std::string_view GlobalVariableAccessModifier         = "as-err-global-variable-access-modifier";
     inline constexpr std::string_view ImportHasBody                        = "as-err-import-has-body";
+
+    // A hint and never an error, and that is measured rather than cautious: the compiler accepts
+    // `import void F() from "nevermind";` for a module that was never built, because an imported
+    // function is bound at runtime with BindImportedFunction. All this can say is that the name
+    // matches none of the modules the host described in angelscript.modules.
+    inline constexpr std::string_view ImportUnknownModule                  = "as-hint-import-unknown-module";
     inline constexpr std::string_view IncDecOnVirtualProp                  = "as-err-inc-dec-on-virtual-prop";
     inline constexpr std::string_view InheritFinal                         = "as-err-inherit-final";
     inline constexpr std::string_view InitializerListExpected              = "as-err-initializer-list-expected";
