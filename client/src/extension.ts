@@ -1173,6 +1173,34 @@ function expandConfiguredPaths(settings: unknown): unknown {
 
     expandOne('predefinedFile');
 
+    // `modules` carries its paths one level down, in `entry` and `folder`, and was never expanded
+    // here. A module set from the Explorer context menu therefore did nothing until the next
+    // restart: the setting is written as `${workspaceFolder}/...` so it survives a different
+    // checkout, the command line expands it, and this notification handed the server the literal
+    // string to resolve against its own working directory.
+    const modules = copy['modules'];
+    if (Array.isArray(modules)) {
+        copy['modules'] = modules.map(item => {
+            if (typeof item !== 'object' || item === null) {
+                return item;
+            }
+
+            const module: Record<string, unknown> = { ...(item as Record<string, unknown>) };
+            for (const key of ['entry', 'folder']) {
+                const value = module[key];
+                if (typeof value === 'string' && value.trim().length > 0) {
+                    // The first expansion, as expandOne explains: one field holds one path, and a
+                    // bare `${workspaceFolder}` in a multi-root window has several answers.
+                    const [first] = resolveAgainstWorkspace(value);
+                    if (first !== undefined) {
+                        module[key] = first;
+                    }
+                }
+            }
+            return module;
+        });
+    }
+
     const predefined = copy['predefined'];
     if (typeof predefined === 'object' && predefined !== null) {
         const nested: Record<string, unknown> = { ...(predefined as Record<string, unknown>) };

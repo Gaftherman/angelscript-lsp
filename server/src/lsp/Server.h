@@ -410,6 +410,15 @@ namespace angel_lsp
          * Open documents are skipped. They have their own analysis, from the buffer rather than
          * from disk, and two publishers for one URI is a race whose loser publishes an older answer.
          */
+        /**
+         * @brief Resolves a configured module path, taking a relative one as workspace-relative.
+         *
+         * Absolute is taken at face value. Relative is tried against each workspace root and the
+         * first that exists wins, matching how a relative predefined file is treated. Falls back to
+         * the path as written when none match, so the caller's error names what the user typed.
+         */
+        std::string ResolveConfiguredPath(const std::string &configured) const;
+
         void AnalyzeConfiguredModules();
 
         /**

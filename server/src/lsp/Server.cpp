@@ -233,7 +233,7 @@ namespace angel_lsp
 
             if (!definition.folder.empty())
             {
-                view.folderPath = angel_lsp::utils::IncludeResolver::NormalizePath(definition.folder);
+                view.folderPath = ResolveConfiguredPath(definition.folder);
 
                 // Loud rather than silently empty. A mistyped folder would otherwise produce a
                 // module with no members, which reads exactly like a module whose rules found
@@ -257,7 +257,7 @@ namespace angel_lsp
 
             if (!definition.entry.empty())
             {
-                view.entryPath = angel_lsp::utils::IncludeResolver::NormalizePath(definition.entry);
+                view.entryPath = ResolveConfiguredPath(definition.entry);
 
                 std::error_code ec;
                 if (!std::filesystem::is_regular_file(std::filesystem::path(view.entryPath), ec))
@@ -395,6 +395,36 @@ namespace angel_lsp
 
         m_logger->LogInfo(fmt::format(
             "Re-analysing {} open document(s) now the workspace is indexed", open.size()));
+    }
+
+    std::string Server::ResolveConfiguredPath(const std::string &configured) const
+    {
+        const std::filesystem::path asWritten(configured);
+        if (asWritten.is_absolute())
+        {
+            return angel_lsp::utils::IncludeResolver::NormalizePath(configured);
+        }
+
+        // Relative means relative to the workspace, the same way a relative predefined file and a
+        // relative search directory do. Left to NormalizePath alone it meant relative to the
+        // server's own working directory, which is wherever the client happened to spawn it - and
+        // the message that followed named a path under the extension's install directory, which no
+        // user could act on.
+        std::error_code ec;
+        for (const auto &workspaceRoot : WorkspaceRoots())
+        {
+            const std::filesystem::path candidate =
+                std::filesystem::path(angel_lsp::utils::UriToPath(workspaceRoot)) / asWritten;
+
+            if (std::filesystem::exists(candidate, ec))
+            {
+                return angel_lsp::utils::IncludeResolver::NormalizePath(candidate.string());
+            }
+        }
+
+        // Nothing matched. Returned as written so the caller's "does not exist" message names what
+        // the user actually typed rather than one arbitrary root's version of it.
+        return angel_lsp::utils::IncludeResolver::NormalizePath(configured);
     }
 
     void Server::AnalyzeConfiguredModules()

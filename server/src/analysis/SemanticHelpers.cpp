@@ -1234,14 +1234,30 @@ namespace angel_lsp::analysis
         // `this` expression
         if (nodeType == "this_expression")
         {
+            // The class's QUALIFIED name, not its simple one. A class declared inside a namespace
+            // is collected as `NS::Class` and its methods as `NS::Class::member`, so answering
+            // `Class` here sent every member lookup to `Class::member` - a name nothing declares.
+            //
+            // Containers arrive innermost first, so the class is found first and each namespace
+            // outside it is prepended in turn.
+            std::string qualified;
             for (const auto &container : GetEnclosingContainers(exprNode, sourceCode))
             {
-                if (container.kind == ContainerKind::Class)
+                if (qualified.empty())
                 {
-                    return container.name;
+                    if (container.kind == ContainerKind::Class)
+                    {
+                        qualified = container.name;
+                    }
+                    continue;
+                }
+
+                if (container.kind == ContainerKind::Namespace)
+                {
+                    qualified = container.name + "::" + qualified;
                 }
             }
-            return "";
+            return qualified;
         }
 
         // String literal
