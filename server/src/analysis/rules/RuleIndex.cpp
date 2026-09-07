@@ -40,6 +40,31 @@ namespace angel_lsp::analysis::rules
                         }
                     }
 
+                    // `namespace A::B` declares A as well, and nothing writes `namespace A` on
+                    // its own - the Sven Co-op stub declares Hooks::Player, Hooks::Game and
+                    // Hooks::Weapon and no bare Hooks. Only the whole name was registered, so
+                    // every `Hooks::Player::ClientPutInServer` in a real plugin reported Hooks as
+                    // an undeclared identifier.
+                    //
+                    // Visible only through a stub: a script's own namespaces are reached by the
+                    // enclosing scope tree instead, and a predefined file has no scope tree.
+                    if (sym.type == SymbolType::Namespace)
+                    {
+                        // Every segment, the last one included: `Hooks::Player` is written both
+                        // as the qualifier `Hooks` and, one level in, as `Player`.
+                        std::string_view remaining = sym.name;
+                        for (size_t at = remaining.find("::"); at != std::string_view::npos;
+                             at = remaining.find("::"))
+                        {
+                            index->allNames.insert(std::string(remaining.substr(0, at)));
+                            remaining.remove_prefix(at + 2);
+                        }
+                        if (!remaining.empty())
+                        {
+                            index->allNames.insert(std::string(remaining));
+                        }
+                    }
+
                     if (sym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(sym.signature))
                     {
                         for (const auto &member : sym.GetEnum().members)

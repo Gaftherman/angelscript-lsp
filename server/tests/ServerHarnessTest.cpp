@@ -4582,6 +4582,49 @@ TEST_CASE("Server - A finished scan re-analyses the open documents it did not kn
     CHECK(published.find("as-err-unresolved-type") == std::string::npos);
 }
 
+// =====================================================================================
+// A namespace a stub declares only in qualified form.
+//
+// Measured against the game's own stub on a real Sven Co-op plugin: `Undeclared identifier 'Hooks'`
+// on every line reading `Hooks::Player::ClientPutInServer`. The stub declares
+// `namespace Hooks::Player`, `namespace Hooks::Game` and `namespace Hooks::Weapon`, and never a
+// bare `namespace Hooks` - so only the whole name reached the name set.
+//
+// A harness test rather than a unit one because the two halves are what makes it visible: the same
+// namespace written in the script itself resolves through that document's scope tree, and a
+// predefined file has no scope tree, so the name set is all a stub's namespaces ever reach.
+// =====================================================================================
+TEST_CASE("Server - A namespace a stub declares only as A::B still declares A")
+{
+    WorkspaceFixture fixture;
+    const std::string source =
+        "void main() { NsHostHandle h = NsHostOuter::NsHostInner::NsHostThing; }\n";
+    fixture.Write("main.as", source);
+    fixture.Write("host.as.predefined",
+                  "class NsHostHandle{}\n"
+                  "namespace NsHostOuter::NsHostInner { NsHostHandle NsHostThing; }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "main.as");
+    INFO("last published: " << published);
+    REQUIRE_FALSE(published.empty());
+
+    // Neither segment, and not the qualifier that used to be the only one missing.
+    CHECK(published.find("as-warn-undeclared-identifier") == std::string::npos);
+}
+
 TEST_CASE("Server - A stub created where there was none is picked up")
 {
     // A workspace with no as.predefined at all: the host types do not exist, and then one does.
