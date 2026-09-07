@@ -1838,11 +1838,22 @@ namespace angel_lsp
             return;
         }
 
-        ReplaceSymbolsFromSource(uri, content, parser);
+        // One parse, handed to both collectors. They each used to take the source text and parse
+        // it themselves, which on a 646 KB stub is 33 ms spent twice on identical bytes for an
+        // identical tree. Both already have an overload that borrows a tree; this is the caller
+        // that had never been changed to use them.
+        TSTree *tree = parser.Parse(content);
+
+        ReplaceSymbolsFromTree(uri, content, tree);
 
         m_scopeIndex.ClearDocument(uri);
         m_callGraph.ClearDocument(uri);
-        m_scopeIndex.SetScopeTree(uri, m_localScopeCollector->CollectScopes(content, parser));
+        if (tree)
+        {
+            m_scopeIndex.SetScopeTree(uri,
+                m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), content));
+            ts_tree_delete(tree);
+        }
 
         // `#define FOO` in a stub means "the host calls builder.DefineWord(\"FOO\")" - the stub is
         // this server's description of the host's engine setup and is never compiled by AngelScript
@@ -2769,7 +2780,7 @@ namespace angel_lsp
     {
         angel_lsp::analysis::SymbolTable staging;
         auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, staging, m_i18n.get(), &m_config.types);
-        m_symbolTable.ReplaceDocumentSymbols(uriStr, staging);
+        m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
         return diagnostics;
     }
 
@@ -2779,7 +2790,7 @@ namespace angel_lsp
     {
         angel_lsp::analysis::SymbolTable staging;
         auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, parser, staging, m_i18n.get(), &m_config.types);
-        m_symbolTable.ReplaceDocumentSymbols(uriStr, staging);
+        m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
         return diagnostics;
     }
 
@@ -3374,7 +3385,7 @@ namespace angel_lsp
         // never catches this document mid-rebuild with no symbols at all.
         angel_lsp::analysis::SymbolTable staging;
         auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, staging, m_i18n.get(), &m_config.types);
-        m_symbolTable.ReplaceDocumentSymbols(uriStr, staging);
+        m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
 
         // Analysed before the tree below is deleted, not after: the conversion rules read
         // expressions straight out of it, and it is the only tree this thread is allowed to touch.

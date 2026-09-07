@@ -179,17 +179,47 @@ namespace angel_lsp::analysis
                 fresh.insert(fresh.end(), symbols.begin(), symbols.end());
             });
 
+        PublishDocumentSymbols(fileUri, std::move(fresh));
+    }
+
+    void SymbolTable::ReplaceDocumentSymbols(const std::string &fileUri, SymbolTable &&staging)
+    {
+        std::vector<Symbol> fresh;
+
+        // Read without taking staging's lock, and through its members rather than ForEachSymbol:
+        // an rvalue reference is the caller stating that nothing else holds this table, which is
+        // exactly the condition that makes both of those safe. It is left empty.
+        for (auto &[key, bucket] : staging.m_symbols)
+        {
+            if (!bucket)
+                continue;
+
+            std::vector<Symbol> &symbols = MutableBucket(bucket);
+            fresh.insert(fresh.end(),
+                         std::make_move_iterator(symbols.begin()),
+                         std::make_move_iterator(symbols.end()));
+        }
+        staging.m_symbols.clear();
+
+        PublishDocumentSymbols(fileUri, std::move(fresh));
+    }
+
+    void SymbolTable::PublishDocumentSymbols(const std::string &fileUri, std::vector<Symbol> &&fresh)
+    {
         std::unique_lock<std::shared_mutex> lock(m_mutex);
 
         EraseDocumentLocked(fileUri);
 
-        for (const auto &symbol : fresh)
+        for (auto &symbol : fresh)
         {
             const std::string &key = symbol.qualifiedName.empty() ? symbol.name : symbol.qualifiedName;
-            MutableBucket(m_symbols[key]).push_back(symbol);
-            // Keyed by the symbol's own file, not the argument: a symbol filed under a different
-            // URI would otherwise be indexed here and never erased by its own document's clear.
+
+            // Indexed before the move, not after: the index is keyed by the symbol's own file, not
+            // by the argument - a symbol filed under a different URI would otherwise be indexed
+            // here and never erased by its own document's clear - and after the move the symbol
+            // that knew which file that was is gone.
             IndexKeyForFileLocked(symbol.fileUri, key);
+            MutableBucket(m_symbols[key]).push_back(std::move(symbol));
         }
 
         ++m_version;
