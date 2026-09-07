@@ -677,3 +677,19 @@ TEST_CASE("IncludeResolver - Resolves uppercase file extension with lowercase im
     }
 }
 
+
+
+TEST_CASE("IncludeResolver - A single-quoted include is extracted like a double-quoted one")
+{
+    // Sven Co-op's scripts write every include with single quotes, and the compiler accepts them -
+    // measured. Until this was handled the directive was not extracted at all: the file never
+    // entered the module, and every type it declared came back unresolved.
+    const auto directives = IncludeResolver::ExtractIncludes(
+        "#include \'pcp_misc/misc\'\n#include \"other.as\"\n");
+
+    REQUIRE(directives.size() == 2);
+    CHECK(directives[0].rawPath == "pcp_misc/misc");
+    CHECK_FALSE(directives[0].isAngled);
+    CHECK(directives[1].rawPath == "other.as");
+}
+

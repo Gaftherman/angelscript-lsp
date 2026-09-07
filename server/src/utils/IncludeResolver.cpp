@@ -443,9 +443,17 @@ namespace angel_lsp::utils
                         if (i < n)
                         {
                             char quoteChar = sourceCode[i];
-                            if (quoteChar == '"' || quoteChar == '<')
+
+                            // Single quotes too. AngelScript's string literal is `'...'` as well as
+                            // `"..."` while asEP_USE_CHARACTER_LITERALS is off, which is the default,
+                            // and CScriptBuilder reads whichever the file used - measured:
+                            // `#include 'helper.as'` compiles. Sven Co-op's scripts are written that
+                            // way throughout, and until this line not one of their includes was
+                            // extracted: the directive was skipped, the file never entered the
+                            // module, and every type it declared came back unresolved.
+                            if (quoteChar == '"' || quoteChar == '\'' || quoteChar == '<')
                             {
-                                char closingChar = (quoteChar == '"') ? '"' : '>';
+                                char closingChar = (quoteChar == '<') ? '>' : quoteChar;
                                 bool isAngled = (quoteChar == '<');
                                 ++i; // skip opening quote/bracket
 

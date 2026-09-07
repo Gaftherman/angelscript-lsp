@@ -305,7 +305,12 @@ namespace angel_lsp::utils
                 // string token after the name and finds none, so the whole line stays in the
                 // source - measured, and its own problem because the name is right and the fix is
                 // a pair of quotes.
-                if (directive == "include" && hit.firstArgChar != '"')
+                // Either quote. AngelScript's string literal is `'...'` as well as `"..."` at the
+                // engine's default settings, and CScriptBuilder reads whichever was used - measured,
+                // `#include 'helper.as'` compiles. Requiring a double quote reported every include
+                // in every Sven Co-op script as an error, which is a false positive on code that
+                // builds, and the one failure this project treats as fatal.
+                if (directive == "include" && hit.firstArgChar != '"' && hit.firstArgChar != '\'')
                 {
                     if (reaches)
                         report(DirectiveProblem::IncludeNotQuoted);

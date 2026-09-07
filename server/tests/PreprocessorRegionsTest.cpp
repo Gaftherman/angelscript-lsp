@@ -743,3 +743,17 @@ TEST_CASE("Preprocessor - A quoted include is still silent")
     CHECK(ScanPreprocessor("#include   \"deep/helper.as\"\n").unsupported.empty());
     CHECK(ScanPreprocessor("    #include \"helper.as\"\n").unsupported.empty());
 }
+
+
+TEST_CASE("Preprocessor - A single-quoted include path is a quoted one")
+{
+    // AngelScript's string literal is `'...'` as well as `"..."` while asEP_USE_CHARACTER_LITERALS
+    // is off, which is the default, and CScriptBuilder reads whichever the file used. Measured:
+    // `#include 'helper.as'` compiles.
+    //
+    // Found on real Sven Co-op scripts, which are written that way throughout - every include in
+    // them was being reported as an error, on code that builds and runs.
+    CHECK(ScanPreprocessor("#include \'helper.as\'\nvoid main() { }\n").unsupported.empty());
+    CHECK(ScanPreprocessor("#include \'pcp_misc/misc\'\n").unsupported.empty());
+}
+

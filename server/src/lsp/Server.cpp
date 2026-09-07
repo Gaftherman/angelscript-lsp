@@ -1348,6 +1348,20 @@ namespace angel_lsp
             m_logger->LogError(fmt::format("Error reading workspace files: {}", e.what()));
         }
 
+        // NOT ReanalyseOpenDocuments() here, however much this is the place that wants it.
+        //
+        // Everything opened before the scan finishes is judged against a table that does not yet
+        // hold the host API - a user opens a file, the server starts, the stub loads 400 ms later,
+        // and every type it declares stays "Unknown type" until the next keystroke. That is a real
+        // defect and it is measured: a real Sven Co-op project shows 258 diagnostics on code that
+        // builds.
+        //
+        // But this function runs on the workspace thread, and m_openDocuments belongs to the
+        // message loop. Fanning out from here read it without a lock and corrupted the heap -
+        // SIGSEGV in the stub harness, within one run. The fix needs a way to hand work back to
+        // the loop, which this server does not have yet; bolting the call in without one trades a
+        // stale diagnostic for a crash.
+
         EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
     }
 
