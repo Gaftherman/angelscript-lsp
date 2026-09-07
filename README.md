@@ -389,6 +389,13 @@ That document also records what happens today when a script is opened from outsi
 workspace folder: it is analysed, but its `#include` of a file beside it is refused by the
 resolver's root allow-list, so everything that file declares is reported as an unresolved type.
 
+Folder modules - `scripts/maps` as `MapScript`, `scripts/plugins` as `Plugin`, the way Sven Co-op
+lays them out - and module-wide diagnostics, so an error in a file the entry point includes reaches
+the Problems panel instead of waiting until you open that file, are designed in
+[PLANNED-FOLDER-MODULES.md](PLANNED-FOLDER-MODULES.md). Three design decisions in it were settled
+with the user; the rest carries its reasoning, and the table of cases at the end is the part to
+read before building any of it.
+
 ## Command Line Configuration Flags
 
 The `angel_lsp` executable accepts command-line arguments to enable or disable individual LSP features and configure runtime options. Both `--flag=value` and `--flag value` syntaxes are supported.
