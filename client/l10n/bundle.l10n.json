@@ -31,5 +31,12 @@
   "Module name cannot be empty.": "Module name cannot be empty.",
   "Set \"{0}\" as entry point for module \"{1}\".": "Set \"{0}\" as entry point for module \"{1}\".",
   "Set \"{0}\" as folder for module \"{1}\".": "Set \"{0}\" as folder for module \"{1}\".",
-  "This command is used from the explorer context menu.": "This command is used from the explorer context menu."
+  "This command is used from the explorer context menu.": "This command is used from the explorer context menu.",
+  "Open a predefined stub, or right-click one in the explorer, to format it.": "Open a predefined stub, or right-click one in the explorer, to format it.",
+  "The AngelScript server is not running, so the stub cannot be formatted.": "The AngelScript server is not running, so the stub cannot be formatted.",
+  "Could not format the stub: {0}": "Could not format the stub: {0}",
+  "The server did not return formatted text for this stub.": "The server did not return formatted text for this stub.",
+  "This stub is already formatted.": "This stub is already formatted.",
+  "Formatted \"{0}\". Save it to keep the change.": "Formatted \"{0}\". Save it to keep the change.",
+  "The edit that formats this stub was rejected.": "The edit that formats this stub was rejected."
 }

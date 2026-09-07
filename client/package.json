@@ -78,6 +78,11 @@
         "command": "angelscript.setModuleFolder",
         "title": "%command.setModuleFolder.title%",
         "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.formatPredefinedStub",
+        "title": "%command.formatPredefinedStub.title%",
+        "category": "%command.selectPredefined.category%"
       }
     ],
     "menus": {
@@ -91,6 +96,11 @@
           "command": "angelscript.setModuleFolder",
           "when": "explorerResourceIsFolder",
           "group": "angelscript@2"
+        },
+        {
+          "command": "angelscript.formatPredefinedStub",
+          "when": "resourceExtname == .predefined",
+          "group": "angelscript@3"
         }
       ],
       "commandPalette": [
@@ -101,6 +111,13 @@
         {
           "command": "angelscript.setModuleFolder",
           "when": "false"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "angelscript.formatPredefinedStub",
+          "when": "resourceExtname == .predefined",
+          "group": "angelscript@1"
         }
       ]
     },

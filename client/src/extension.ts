@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
     StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n,
-    TextEditorDecorationType, Range, TextEditor
+    TextEditorDecorationType, Range, TextEditor, WorkspaceEdit
 } from 'vscode';
 // Types only: erased at compile time, so naming them here costs nothing at runtime.
 import type {
@@ -102,6 +102,9 @@ const SET_MODULE_ENTRY_POINT_COMMAND = 'angelscript.setModuleEntryPoint';
 
 /** @brief Command that registers a directory as a module folder in workspace settings. */
 const SET_MODULE_FOLDER_COMMAND = 'angelscript.setModuleFolder';
+
+/** @brief Command that gathers a predefined stub's scattered namespaces into one block each. */
+const FORMAT_STUB_COMMAND = 'angelscript.formatPredefinedStub';
 
 /**
  * @brief Wording of the button on every failure notification.
@@ -999,6 +1002,9 @@ export async function activate(context: ExtensionContext) {
 
         context.subscriptions.push(
             commands.registerCommand(SET_MODULE_FOLDER_COMMAND, (resource?: Uri) => setModuleFolder(resource)));
+
+        context.subscriptions.push(
+            commands.registerCommand(FORMAT_STUB_COMMAND, (resource?: Uri) => formatPredefinedStub(resource)));
     });
 
     // An editor can appear after the notification that described its document - a second group, or
@@ -1546,6 +1552,79 @@ async function selectPredefinedStub(): Promise<void> {
     // there is nothing to wait on: this reads what the server has now and will be right on the next
     // read if the scan is still running.
     void refreshStubStatus();
+}
+
+/** @brief What `angelscript.formatPredefinedStub` answers. */
+interface FormatStubResult {
+    changed?: boolean;
+    text?: string;
+}
+
+/**
+ * @brief Formats a predefined stub, gathering each namespace it scatters into one block.
+ *
+ * A stub generated from an engine's registration table writes one declaration per registered
+ * entity, so a namespace with twenty members arrives as twenty namespaces. The server owns the
+ * transformation - it is the side that parses AngelScript - and answers with the text, which is
+ * applied here rather than pushed as a server edit: the user pressed a button, so the change
+ * belongs in their editor's undo stack.
+ *
+ * @param resource The stub clicked in the explorer, or undefined when run from the editor.
+ */
+async function formatPredefinedStub(resource?: Uri): Promise<void> {
+    const target = resource ?? window.activeTextEditor?.document.uri;
+    if (!target) {
+        void window.showInformationMessage(
+            l10n.t('Open a predefined stub, or right-click one in the explorer, to format it.'));
+        return;
+    }
+
+    if (!clientIsRunning()) {
+        void window.showWarningMessage(
+            l10n.t('The AngelScript server is not running, so the stub cannot be formatted.'));
+        return;
+    }
+
+    let result: FormatStubResult | undefined;
+    try {
+        result = await client.sendRequest<FormatStubResult>('workspace/executeCommand', {
+            command: FORMAT_STUB_COMMAND,
+            arguments: [target.toString()]
+        });
+    } catch (error) {
+        void window.showErrorMessage(l10n.t(
+            'Could not format the stub: {0}',
+            error instanceof Error ? error.message : String(error)));
+        return;
+    }
+
+    if (!result || typeof result.text !== 'string') {
+        void window.showErrorMessage(
+            l10n.t('The server did not return formatted text for this stub.'));
+        return;
+    }
+
+    if (result.changed !== true) {
+        void window.showInformationMessage(l10n.t('This stub is already formatted.'));
+        return;
+    }
+
+    // Opened first so the rewrite lands in a buffer the user can read and undo, rather than on
+    // disk under a file they cannot see.
+    const document = await workspace.openTextDocument(target);
+    const wholeDocument = new Range(
+        document.positionAt(0), document.positionAt(document.getText().length));
+
+    const edit = new WorkspaceEdit();
+    edit.replace(document.uri, wholeDocument, result.text);
+
+    if (await workspace.applyEdit(edit)) {
+        await window.showTextDocument(document);
+        void window.showInformationMessage(
+            l10n.t('Formatted "{0}". Save it to keep the change.', path.basename(target.fsPath)));
+    } else {
+        void window.showErrorMessage(l10n.t('The edit that formats this stub was rejected.'));
+    }
 }
 
 /** @brief An entry in the `angelscript.modules` workspace setting. */

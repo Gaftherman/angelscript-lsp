@@ -419,6 +419,50 @@ module is the statement that it is part of the project.
 
 
 
+## Formatting a predefined stub
+
+A stub generated from an engine's registration table emits one declaration per registered entity, so
+a namespace with twenty members arrives as twenty namespaces. Sven Co-op's own stub declares
+`Schedules` twenty times and `Hooks::Player` seventeen:
+
+```angelscript
+//Empty string. Useful when a reference to a string is needed.;
+namespace String { const string EMPTY_STRING; }
+//Default comparison type.;
+namespace String { const CompareType DEFAULT_COMPARE; }
+```
+
+That is legal, and the analyzer reads it perfectly well. Nobody else can. Right-click the stub -
+in the explorer or in the editor - and choose **Format Predefined Stub**:
+
+```angelscript
+namespace String
+{
+	//Empty string. Useful when a reference to a string is needed.;
+	const string EMPTY_STRING;
+	//Default comparison type.;
+	const CompareType DEFAULT_COMPARE;
+}
+```
+
+Every namespace comes out in that form, whether or not it had anything to merge, because a file
+where some are blocks and others are one-liners is not formatted. Everything else keeps its bytes: a
+class, an enum, a funcdef and every global are copied across untouched, so the command cannot
+rewrite the parts of a hand-written stub it was not asked about.
+
+Three properties it is worth knowing hold, because each has a test:
+
+- **A comment never parts company with its declaration.** The text between one declaration and the
+  next travels with the declaration below it, re-indented to its new depth. That includes blank
+  lines and anything the parser did not recognise.
+- **A file that does not parse is returned untouched.** Declaration boundaries in a broken file are
+  guesses, and moving text on a guess is how a formatter eats someone's work.
+- **Formatting twice changes nothing the second time.** The server answers `changed: false` and the
+  editor is told the stub is already formatted.
+
+Measured on Sven Co-op's 15,881-line stub: 79 namespace declarations become 14, and not one
+declaration line is lost.
+
 ## Planned work
 
 Two requests about *which files this server considers part of the program* - a root script, and

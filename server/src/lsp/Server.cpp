@@ -23,6 +23,7 @@
 #include "features/inlay_hint/InlayHintHandler.h"
 #include "features/code_action/CodeActionHandler.h"
 #include "features/formatting/FormattingHandler.h"
+#include "features/formatting/PredefinedStubFormatter.h"
 #include "features/document_link/DocumentLinkHandler.h"
 #include "features/code_lens/CodeLensHandler.h"
 #include "analysis/EngineProfiles.h"
@@ -1089,7 +1090,8 @@ namespace angel_lsp
 
         lsp::ExecuteCommandOptions cmdOpts;
         cmdOpts.commands = lsp::Array<lsp::String>{ "angelscript.rescanWorkspace",
-                                                    "angelscript.listPredefinedStubs" };
+                                                    "angelscript.listPredefinedStubs",
+                                                    "angelscript.formatPredefinedStub" };
         result.capabilities.executeCommandProvider = cmdOpts;
 
         return result;
@@ -4107,6 +4109,56 @@ namespace angel_lsp
         {
             RestartWorkspaceScan();
             return lsp::Null{};
+        }
+
+        if (params.command == "angelscript.formatPredefinedStub")
+        {
+            // Takes one argument, the stub's URI, and answers with its formatted text. The client
+            // applies the edit, which is what lets this work on a stub that is not open: the server
+            // reads it from disk when no buffer holds it.
+            //
+            // Answering with text rather than a WorkspaceEdit keeps the decision on the client
+            // side, where the user is: an edit the server pushed would rewrite a file the moment
+            // the command ran, with no editor to undo it in if the stub was not open.
+            if (!params.arguments || params.arguments->empty() || !params.arguments->front().isString())
+            {
+                m_logger->LogError("angelscript.formatPredefinedStub needs the stub's URI as its argument");
+                return lsp::Null{};
+            }
+
+            const std::string uriStr = params.arguments->front().string();
+            std::string text;
+
+            if (const auto doc = LookupOpenDocument(uriStr); doc && doc->text)
+            {
+                text = *doc->text;
+            }
+            else
+            {
+                const std::string path = CanonicalPathFromUri(uriStr);
+                std::ifstream file(path, std::ios::binary);
+                if (!file.is_open())
+                {
+                    m_logger->LogError(fmt::format("Cannot open predefined file to format: {}", path));
+                    return lsp::Null{};
+                }
+                text.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            }
+
+            // A parser of its own: this runs on the message loop, and m_parser holds the trees the
+            // open documents are using.
+            angel_lsp::parser::AngelScriptParser formatterParser(m_logger.get());
+            std::string formatted =
+                angel_lsp::features::formatting::FormatPredefinedStub(text, formatterParser);
+
+            const bool changed = formatted != text;
+            m_logger->LogInfo(fmt::format("Formatted predefined stub {}: {}",
+                                          uriStr, changed ? "rewritten" : "already formatted"));
+
+            lsp::json::Object answer;
+            answer["changed"] = lsp::json::Value(changed);
+            answer["text"] = lsp::json::Value(std::move(formatted));
+            return lsp::json::Value(std::move(answer));
         }
 
         if (params.command == "angelscript.listPredefinedStubs")

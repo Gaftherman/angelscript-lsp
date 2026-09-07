@@ -143,6 +143,13 @@ jobs:
         working-directory: server
         run: python scripts/check-grammar-pin.py
 
+      # VS Code falls back to the literal in the source when a bundle has no entry, so an
+      # untranslated message looks exactly like a translated one to anyone running in English -
+      # which is everyone writing this code. Nothing else in the repository notices.
+      - name: Audit client localisation
+        working-directory: server
+        run: python scripts/check-client-l10n.py
+
       - name: Build the oracle and the test suite
         run: cmake --build server/build --config Release --target angelscript_oracle angel_lsp_tests -j 4
 

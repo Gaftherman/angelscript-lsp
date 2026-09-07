@@ -31,5 +31,12 @@
   "Module name cannot be empty.": "El nombre del módulo no puede estar vacío.",
   "Set \"{0}\" as entry point for module \"{1}\".": "Se definió \"{0}\" como punto de entrada del módulo \"{1}\".",
   "Set \"{0}\" as folder for module \"{1}\".": "Se definió \"{0}\" como carpeta del módulo \"{1}\".",
-  "This command is used from the explorer context menu.": "Este comando se usa desde el menú contextual del explorador."
+  "This command is used from the explorer context menu.": "Este comando se usa desde el menú contextual del explorador.",
+  "Open a predefined stub, or right-click one in the explorer, to format it.": "Abre un stub predefinido, o haz clic derecho en uno en el explorador, para formatearlo.",
+  "The AngelScript server is not running, so the stub cannot be formatted.": "El servidor de AngelScript no está en ejecución, así que el stub no se puede formatear.",
+  "Could not format the stub: {0}": "No se pudo formatear el stub: {0}",
+  "The server did not return formatted text for this stub.": "El servidor no devolvió texto formateado para este stub.",
+  "This stub is already formatted.": "Este stub ya está formateado.",
+  "Formatted \"{0}\". Save it to keep the change.": "Se formateó \"{0}\". Guárdalo para conservar el cambio.",
+  "The edit that formats this stub was rejected.": "La edición que formatea este stub fue rechazada."
 }
