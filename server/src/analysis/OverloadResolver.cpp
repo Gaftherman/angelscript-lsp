@@ -257,6 +257,20 @@ namespace angel_lsp::analysis
         return IsIntegerPrimitive(NormalizeType(typeName));
     }
 
+    /**
+     * @brief True for AngelScript's unsigned integer primitives.
+     *
+     * Both spellings of each width, for the reason IsIntegerPrimitive gives: the parser hands back
+     * whichever the source wrote, so a classifier that knew only `uint` would answer differently
+     * for `uint32`.
+     */
+    bool IsUnsignedInteger(const std::string &typeName)
+    {
+        const std::string normalized = NormalizeType(typeName);
+        return normalized == "uint" || normalized == "uint8" || normalized == "uint16" ||
+               normalized == "uint32" || normalized == "uint64";
+    }
+
     /** @brief True for AngelScript's floating point primitives. */
     bool IsFloatingPointType(const std::string &typeName)
     {
@@ -624,8 +638,18 @@ namespace angel_lsp::analysis
             return static_cast<int>(OverloadMatchPenalty::Widening);
         }
 
-        // 4. Primitive widening conversion. Integer -> floating point is still safe but ranks
-        //    below integer -> wider integer, so an overload set offering both is resolvable.
+        // 4. Integer to integer with a different signedness, before size is looked at. Ranked
+        //    below every conversion that keeps the signedness and above every one into floating
+        //    point, and not refined by width - see OverloadMatchPenalty::SignednessChange for the
+        //    eight measurements that shape says.
+        if (IsIntegerType(cleanArg) && IsIntegerType(cleanParam) &&
+            IsUnsignedInteger(cleanArg) != IsUnsignedInteger(cleanParam))
+        {
+            return static_cast<int>(OverloadMatchPenalty::SignednessChange);
+        }
+
+        // 5. Primitive widening conversion. Integer -> floating point is still safe but ranks
+        //    below every integer conversion, so an overload set offering both is resolvable.
         if (IsPrimitiveWidening(cleanArg, cleanParam))
         {
             const bool crossesKind = IsIntegerType(cleanArg) && IsFloatingPointType(cleanParam);
@@ -633,13 +657,16 @@ namespace angel_lsp::analysis
                                                 : OverloadMatchPenalty::Widening);
         }
 
-        // 5. Primitive narrowing / cross conversion
+        // 6. Primitive narrowing / cross conversion
         if (IsPrimitiveNarrowing(cleanArg, cleanParam))
         {
+            // Cross-kind narrowing lands here too (float -> int), which is why Narrowing sits
+            // above WideningAcrossKind rather than below it: for an integer argument the compiler
+            // prefers a narrower integer to a wider float, measured both ways round.
             return static_cast<int>(OverloadMatchPenalty::Narrowing);
         }
 
-        // 6. User-defined constructor or opImplConv
+        // 7. User-defined constructor or opImplConv
         if (HasUserConversion(cleanArg, cleanParam, symbolTable))
         {
             return static_cast<int>(OverloadMatchPenalty::UserDefined);

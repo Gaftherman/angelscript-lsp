@@ -17,19 +17,38 @@ namespace angel_lsp::analysis
         Inheritance = 2,         ///< Derived -> Base / Interface (Derived@ -> Base@)
         Widening = 3,            ///< Safe promotion within one kind (int8 -> int32, float -> double)
 
+        Narrowing = 4,           ///< Lossy conversion within one kind (double -> float, float -> int)
+
+        /**
+         * @brief Integer to integer where the signedness differs (int -> uint64, int -> uint8).
+         *
+         * A rank of its own, and size does not refine it. Measured: for an `int` argument, `int64`
+         * beats `uint64` and even `int16` beats `uint64`, while `uint8` against `uint64` is
+         * "Multiple matching signatures" - so any signedness change ranks below every conversion
+         * that keeps it, and two of them tie however far apart their widths are.
+         *
+         * Without this rank int -> int64 and int -> uint64 both scored Widening, which is why a
+         * real script's `Math.min( 255, numBubbles )` was reported as an ambiguous call: the Sven
+         * Co-op stub declares min for float, int64 and uint64 and for no smaller integer.
+         */
+        SignednessChange = 5,
+
         /**
          * @brief Safe promotion that also crosses from integer to floating point (int -> double).
          *
-         * Ranked below same-kind widening because AngelScript prefers to stay within a kind, and
-         * because without the distinction genuine overload sets become unresolvable: the standard
-         * dictionary declares both `set(const string&in, const int64&in)` and
-         * `set(const string&in, const double&in)`, so scoring int -> int64 and int -> double
-         * identically made every `dict.set("k", 95)` report as an ambiguous call.
+         * Ranked below every integer conversion, including a narrowing one: measured, an `int`
+         * argument picks `int16` over `double` and `int8` over `float`, and picks `uint64` over
+         * `float` even though that changes signedness. Two floating point candidates tie with each
+         * other - `double` against `float` is "Multiple matching signatures".
+         *
+         * The distinction from same-kind widening was introduced for the standard dictionary,
+         * which declares both `set(const string&in, const int64&in)` and `set(const string&in,
+         * const double&in)`: scoring int -> int64 and int -> double identically made every
+         * `dict.set("k", 95)` report as ambiguous. That still resolves, now by two ranks.
          */
-        WideningAcrossKind = 4,
+        WideningAcrossKind = 6,
 
-        Narrowing = 5,           ///< Lossy conversion (double -> float, int -> bool, float -> int)
-        UserDefined = 6,         ///< opImplConv / single-arg converting constructor
+        UserDefined = 7,         ///< opImplConv / single-arg converting constructor
 
         /**
          * @brief Neither type has a declaration this analyzer can read, so nothing can be ruled out.
@@ -43,7 +62,7 @@ namespace angel_lsp::analysis
          * actually see: an overload set with one visible match still picks that one. It only keeps
          * a call from being *rejected* on the strength of declarations that are not there.
          */
-        UnknownTypes = 7,
+        UnknownTypes = 8,
 
         Incompatible = 999       ///< No viable conversion
     };

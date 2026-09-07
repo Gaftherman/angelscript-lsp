@@ -86,6 +86,48 @@ namespace
 // Inheritance cycles
 // =====================================================================================
 
+// =====================================================================================
+// Names inside a mixin body.
+//
+// A mixin's members are copied into whatever class includes it and compiled there, so an
+// unqualified name in a mixin method can be a member of that class - which the mixin cannot see,
+// and which may live in a file the workspace has not indexed. Measured on a real Sven Co-op plugin:
+// 12 errors in one file, every one of them a member of the including class.
+//
+// No parity fixture, uniquely among the rules here, and that is worth stating rather than leaving
+// as an omission: both harnesses synthesise a class that includes the mixin on its own so that its
+// body is compiled at all - asharness calls it _AutoMixinInstantiator_1 and angelscript_oracle
+// calls it _OracleMixinProbe_0 - and that synthetic class declares nothing. A corpus file of this
+// shape is therefore *rejected* by the compiler under test, and would record the opposite of what
+// it means. What the oracle does show, on
+//
+//     mixin class O5Mix { void Detonate() { O5Arm(); O5Value = 3; } }
+//     class O5User : O5Mix { int O5Value; void O5Arm() {} }
+//
+// is that the only errors name _OracleMixinProbe_0::Detonate. O5User::Detonate is never named,
+// which is the compiler saying it compiled clean.
+// =====================================================================================
+TEST_CASE("ClassRules - A call to the including class's method is not undefined inside a mixin")
+{
+    const std::string code =
+        "funcdef void MixThink();\n"
+        "class MixHost { void MixArm(MixThink@ f) {} }\n"
+        "mixin class MixShared { void Go() { MixArm(MixThink(Later)); } void Later() {} }\n"
+        "class MixUser : MixHost, MixShared {}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet(code), "as-err-undefined-identifier"));
+}
+
+TEST_CASE("ClassRules - The same call outside a mixin is still undefined")
+{
+    // The other half: silence is scoped to the mixin body and the rule is otherwise untouched.
+    // Without this, switching the rule off entirely would pass the test above.
+    const std::string code =
+        "class MixPlain { void Go() { MixNeverDeclaredAnywhere(); } }\n";
+
+    CHECK(HasCode(AnalyzeClassSnippet(code), "as-err-undefined-identifier"));
+}
+
 TEST_CASE("ClassRules - Reports a class that inherits from itself")
 {
     CHECK(HasCode(AnalyzeClassSnippet("class Loop : Loop {}\n"), "as-err-circular-inherit"));

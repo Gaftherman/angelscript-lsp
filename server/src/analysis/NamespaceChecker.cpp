@@ -8,6 +8,27 @@
 
 namespace angel_lsp::analysis
 {
+    namespace
+    {
+        /**
+         * @brief Whether a node sits inside a `mixin class` body.
+         *
+         * A mixin is compiled into the class that includes it, so an unqualified name in its body
+         * may name a member of a class this file has never seen. See the note at the caller.
+         */
+        bool IsInsideMixinBody(TSNode node)
+        {
+            for (TSNode current = node; !ts_node_is_null(current); current = ts_node_parent(current))
+            {
+                if (std::string_view(ts_node_type(current)) == "mixin_declaration")
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     void CheckNamespacesAndScopes(const NamespaceCheckRequest &request, DiagnosticContext &ctx)
     {
         const TSNode root = request.root;
@@ -76,7 +97,24 @@ namespace angel_lsp::analysis
                             // Nothing to report, and nothing below applies either: the ambiguity
                             // check that follows would look `super` up in every using-namespace.
                         }
-                        else if (!localDef && inScopeSyms.empty() && !ctx.request.IsRegisteredSymbol(calleeName) && !table.HasSymbol(calleeName))
+                        // Not inside a mixin: a mixin's members are copied into whatever class
+                        // includes it and compiled there, so an unqualified call here can name a
+                        // member of a class that is not in this file and may not be in the
+                        // workspace at all. Measured on a real Sven Co-op plugin: 12 errors in one
+                        // file, every one of them a member of the including class.
+                        //
+                        // The compiler does report a genuinely undefined name inside a mixin, so
+                        // this gives up a true positive. That is the trade this project has already
+                        // chosen - an error on code the compiler accepts is the one failure it
+                        // treats as fatal, and from in here the world is not visible.
+                        //
+                        // No parity fixture, uniquely: both harnesses synthesise a class that
+                        // includes the mixin on its own (`_AutoMixinInstantiator_1`,
+                        // `_OracleMixinProbe_0`) so that its body is compiled at all, and that
+                        // class declares nothing. A corpus file of this shape is therefore
+                        // *rejected* by the compiler under test and would record the opposite of
+                        // what it means. A unit test covers it instead.
+                        else if (!localDef && inScopeSyms.empty() && !ctx.request.IsRegisteredSymbol(calleeName) && !table.HasSymbol(calleeName) && !IsInsideMixinBody(node))
                         {
                             TSPoint startPt = ts_node_start_point(funcNode);
                             TSPoint endPt = ts_node_end_point(funcNode);
