@@ -1166,6 +1166,11 @@ namespace angel_lsp
         for (const auto &workspaceRoot : workspaceRoots)
             roots.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
 
+        // A rescan is the moment a remembered directory may have moved - a folder rename, a
+        // settings change and a workspace-folder change all end here. Forgetting first is what keeps
+        // the startup cache's stale-entry cost bounded rather than permanent.
+        angel_lsp::utils::IncludeResolver::ForgetCanonicalDirectories();
+
         BeginWorkspaceProgress("AngelScript: indexing workspace");
         ReportWorkspaceProgress("Building the include graph", 0);
 
@@ -1940,6 +1945,47 @@ namespace angel_lsp
         // collected, without restarting the server.
         // A change here changes which files every `#include` resolves to, so the include graph
         // has to be rebuilt - the same rescan the stub selection and the engine profile ride.
+        // Modules decide which files are analysed at all and what `external shared` may refer to,
+        // so a change here has to rebuild the index and re-walk the workspace. Without this the
+        // setting only took effect on the next restart - and a folder renamed on disk, which is
+        // the same edit from the server's point of view, never took effect at all.
+        if (const auto *modulesVal = section->find("modules"); modulesVal && modulesVal->isArray())
+        {
+            std::vector<config::ServerConfig::ModuleDefinition> parsed;
+
+            for (const auto &item : modulesVal->array())
+            {
+                if (!item.isObject())
+                    continue;
+
+                config::ServerConfig::ModuleDefinition definition;
+
+                if (const auto *nameVal = item.object().find("name"); nameVal && nameVal->isString())
+                    definition.name = nameVal->string();
+                if (const auto *entryVal = item.object().find("entry"); entryVal && entryVal->isString())
+                    definition.entry = entryVal->string();
+                if (const auto *folderVal = item.object().find("folder"); folderVal && folderVal->isString())
+                    definition.folder = folderVal->string();
+
+                parsed.push_back(std::move(definition));
+            }
+
+            const bool changed =
+                parsed.size() != m_config.modules.size() ||
+                !std::equal(parsed.begin(), parsed.end(), m_config.modules.begin(),
+                            [](const config::ServerConfig::ModuleDefinition &a,
+                               const config::ServerConfig::ModuleDefinition &b)
+                            { return a.name == b.name && a.entry == b.entry && a.folder == b.folder; });
+
+            if (changed)
+            {
+                m_config.modules = std::move(parsed);
+                m_logger->LogInfo(fmt::format("Modules changed ({} configured); rescanning",
+                                              m_config.modules.size()));
+                shouldRescan = true;
+            }
+        }
+
         if (const auto *includeVal = section->find("include"); includeVal && includeVal->isObject())
         {
             if (const auto *implicitVal = includeVal->object().find("implicitExtension");

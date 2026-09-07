@@ -39,10 +39,22 @@ namespace angel_lsp::utils
          * answer stays the path that directory had when it was first seen, which is also what every
          * document already indexed is keyed by.
          */
-        std::string CanonicalDirectory(const std::filesystem::path &directory)
+        std::mutex &CanonicalDirectoryMutex()
         {
             static std::mutex mutex;
+            return mutex;
+        }
+
+        std::unordered_map<std::string, std::string> &CanonicalDirectoryCache()
+        {
             static std::unordered_map<std::string, std::string> cache;
+            return cache;
+        }
+
+        std::string CanonicalDirectory(const std::filesystem::path &directory)
+        {
+            std::mutex &mutex = CanonicalDirectoryMutex();
+            std::unordered_map<std::string, std::string> &cache = CanonicalDirectoryCache();
 
             std::string key = directory.string();
 
@@ -109,6 +121,12 @@ namespace angel_lsp::utils
     std::string IncludeResolver::NormalizePath(const std::filesystem::path &path)
     {
         return NormalizePathString(path);
+    }
+
+    void IncludeResolver::ForgetCanonicalDirectories()
+    {
+        std::lock_guard<std::mutex> lock(CanonicalDirectoryMutex());
+        CanonicalDirectoryCache().clear();
     }
 
     std::string IncludeResolver::NormalizeWalkedPath(const std::filesystem::path &path)

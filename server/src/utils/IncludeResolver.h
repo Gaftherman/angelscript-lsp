@@ -85,6 +85,19 @@ namespace angel_lsp::utils
         static std::string NormalizeWalkedPath(const std::filesystem::path &path);
 
         /**
+         * @brief Forgets every remembered directory canonicalisation.
+         *
+         * The cache behind NormalizeWalkedPath trades a stale answer for a much faster startup, and
+         * that trade is only bounded if something eventually clears it. A directory renamed under a
+         * running server would otherwise keep resolving to the path it had when the server started
+         * - and module membership, which is decided by comparing paths, would follow it there.
+         *
+         * Called on every workspace rescan, which is what a folder rename, a settings change and a
+         * workspace-folder change all end in.
+         */
+        static void ForgetCanonicalDirectories();
+
+        /**
          * @brief True when a normalized path lies inside one of the allowed root directories.
          *
          * The confinement check behind every resolve. `#include` accepts whatever text sits between

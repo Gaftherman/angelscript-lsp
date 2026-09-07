@@ -5379,3 +5379,190 @@ TEST_CASE("Server - An open document keeps its own analysis inside a module")
     REQUIRE_FALSE(published.empty());
     CHECK(published.find("as-err-") == std::string::npos);
 }
+
+// =====================================================================================
+// The three rows of PLANNED-FOLDER-MODULES.md that shipped without a test.
+//
+// Named as such in the report that went with them, which is the only reason they are here now:
+// "not covered" is a claim with a shelf life, and this is it running out.
+// =====================================================================================
+
+TEST_CASE("Server - A renamed module folder is not remembered at its old path")
+{
+    // The cost the startup cache was documented as accepting: `weakly_canonical` per walked file was
+    // 85% of startup, so the canonicalisation of each directory is remembered. A directory renamed
+    // under a running server then keeps resolving to the path it had - and module membership, which
+    // is decided by comparing paths, follows it there.
+    //
+    // That cost is only bounded if something clears the cache, and until this case nothing did.
+    WorkspaceFixture fixture;
+    fixture.Write("before/renamed_map.as", "void RnRenamedMap()\n{\n    RnNoSuchFunction();\n}\n");
+    fixture.Write("opened.as", "void RnOpened() { }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    // The rename, and then the rescan a configuration change triggers. The module now names the new
+    // path; nothing the server remembered about the old one may answer for it.
+    stream.PushAction([&fixture]()
+    {
+        std::error_code ec;
+        std::filesystem::rename(fixture.dir / "before", fixture.dir / "after", ec);
+    });
+
+    // A modules change, because that is the notification that now rebuilds the index - and the
+    // folder this one names is the one the rename just created.
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+                R"({"settings":{"angelscript":{"modules":[{"name":"Renamed","folder":")" +
+                JsonEscape((fixture.dir / "after").generic_string()) + R"("}]}}}})");
+
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 2); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("opened.as"), "void RnOpened() { }\n"));
+
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("renamed_map.as"))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    // Deliberately none at startup. The module arrives with the configuration change below,
+    // which is also what makes the change a change - re-sending the same definition is not one.
+
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(PublishedFrames(output));
+
+    // Found under its new path, which it can only be if the old canonicalisation was forgotten.
+    REQUIRE(CountPublishedFor(output, "renamed_map.as") > 0);
+    CHECK(LastPublishedFor(output, "renamed_map.as").find("as-err-undefined-identifier") != std::string::npos);
+
+    // And the module was not reported as missing, which is what a stale path would have produced.
+    CHECK(output.find("names a folder that does not exist") == std::string::npos);
+}
+
+TEST_CASE("Server - A symlink does not put one file in two modules twice over")
+{
+    // Asked of the filesystem rather than of the operating system: creating a symlink on Windows
+    // needs Developer Mode or an elevated process, and a test that assumed either would fail on
+    // whichever machine did not have it. The same discipline the case-sensitivity cases use.
+    WorkspaceFixture fixture;
+    fixture.Write("real/linked_map.as", "void SlLinkedMap() { }\n");
+    fixture.Write("opened.as", "void SlOpened() { }\n");
+
+    std::error_code linkError;
+    std::filesystem::create_directory_symlink(fixture.dir / "real", fixture.dir / "mirror", linkError);
+
+    if (linkError)
+    {
+        MESSAGE("symlinks are not available to this process; case skipped");
+        return;
+    }
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("opened.as"), "void SlOpened() { }\n"));
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("linked_map.as"))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    serverConfig.modules = { { "Real",   "", (fixture.dir / "real").generic_string() },
+                             { "Mirror", "", (fixture.dir / "mirror").generic_string() } };
+
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(PublishedFrames(output));
+
+    // The walk resolves symlinks, so both module folders name the same directory and the file is
+    // seen once. What must not happen is two publishers for it - the same race an open document in
+    // a module would be, arriving by a different road.
+    const size_t published = CountPublishedFor(output, "linked_map.as");
+    INFO("published " << published << " time(s)");
+    CHECK(published <= 1);
+}
+
+TEST_CASE("Server - The cost of a module-wide pass is measured rather than assumed")
+{
+    // The design accepts that a save re-analyses the whole module. Accepting a cost is not the same
+    // as knowing it, and this is the number that was missing - printed rather than bounded, because
+    // a threshold here would be a test about the machine the suite runs on.
+    WorkspaceFixture fixture;
+
+    constexpr int k_files = 200;
+    for (int i = 0; i < k_files; ++i)
+    {
+        fixture.Write("module/file" + std::to_string(i) + ".as",
+                      "void MpFunction" + std::to_string(i) + "() { int v = " + std::to_string(i) + "; }\n");
+    }
+    fixture.Write("opened.as", "void MpOpened() { }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("opened.as"), "void MpOpened() { }\n"));
+
+    std::chrono::steady_clock::time_point savedAt;
+    stream.PushAction([&savedAt]() { savedAt = std::chrono::steady_clock::now(); });
+
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
+                fixture.Uri("opened.as") + R"("},"text":"void MpOpened() { }\n"}})");
+
+    std::chrono::milliseconds elapsed{ 0 };
+    stream.PushAction([&stream, &savedAt, &elapsed]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (CountPublishedFor(stream.Output(), "module/file") >= k_files)
+                break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - savedAt);
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    serverConfig.modules = { { "Big", "", (fixture.dir / "module").generic_string() } };
+
+    RunScript(serverConfig, stream);
+
+    const size_t published = CountPublishedFor(stream.Output(), "module/file");
+    MESSAGE("module-wide pass: " << published << " of " << k_files
+                                 << " files published " << elapsed.count() << " ms after the save");
+
+    // Every member reached the client. The timing above is the number worth having; this is the
+    // assertion, because a pass that published half the module would still look fast.
+    CHECK(published == static_cast<size_t>(k_files));
+}
