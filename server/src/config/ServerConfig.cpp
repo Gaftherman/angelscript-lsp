@@ -342,6 +342,8 @@ namespace angel_lsp::config
                   << "  --predefined-active=<path>              Select the single predefined stub workspace scan will\n"
                   << "                                          load (leaving it empty loads all discovered stubs)\n"
                   << "  --module=<name>=<path>                  Name one script module and the .as it is built from\n"
+                  << "  --module-folder=<name>=<dir>            Name one script module and a directory whose scripts\n"
+                  << "                                          all belong to it (repeatable). The deepest folder wins.\n"
                   << "                                          (repeatable). Lets external shared be checked.\n"
                   << "  --implicit-include-extension=<bool>     Let #include \"helper\" mean helper.as, for hosts that\n"
                   << "                                          resolve the name themselves (e.g. Sven Co-op).\n"
@@ -766,6 +768,28 @@ namespace angel_lsp::config
                         if (!name.empty() && !entry.empty())
                         {
                             config.modules.push_back(ServerConfig::ModuleDefinition{std::string(name), std::string(entry)});
+                        }
+                    }
+                }
+            }
+            else if (key == "--module-folder")
+            {
+                std::string_view val;
+                if (getStringValue(val) && !val.empty())
+                {
+                    // Split on the FIRST `=` only, for the reason --module does: a Windows path
+                    // cannot contain one, but a module name must not swallow one either.
+                    const size_t sep = val.find('=');
+                    if (sep != std::string_view::npos)
+                    {
+                        const std::string_view name = val.substr(0, sep);
+                        const std::string_view folder = val.substr(sep + 1);
+                        if (!name.empty() && !folder.empty())
+                        {
+                            ServerConfig::ModuleDefinition definition;
+                            definition.name = std::string(name);
+                            definition.folder = std::string(folder);
+                            config.modules.push_back(std::move(definition));
                         }
                     }
                 }

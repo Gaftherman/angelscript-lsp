@@ -198,6 +198,24 @@ namespace angel_lsp::analysis
         // compiler rejects every one of them: a host is free to have patched its copy of
         // scriptbuilder.cpp without telling this server, and the zero-false-positives rule is about
         // errors. Each one is silent as soon as its switch is on.
+        // Reported at the top of the file, because it is about the file rather than about anything
+        // in it. Once, not once per module that lost.
+        if (request.moduleContext.has_value() && !request.moduleContext->name.empty() &&
+            !request.moduleContext->alsoClaimedBy.empty())
+        {
+            std::string others;
+            for (const auto &name : request.moduleContext->alsoClaimedBy)
+            {
+                if (!others.empty())
+                    others += ", ";
+                others += "'" + name + "'";
+            }
+
+            DiagnosticContext ctx{request, diagnostics, m_logger};
+            ctx.EmitAtRange(0, 0, 0, 0, "as-hint-file-in-several-modules",
+                            request.moduleContext->name, others, DiagnosticSeverity::Hint);
+        }
+
         for (const auto &directive : request.unsupportedDirectives)
         {
             DiagnosticContext ctx{request, diagnostics, m_logger};

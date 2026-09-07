@@ -584,7 +584,26 @@ namespace angel_lsp::config
         struct ModuleDefinition
         {
             std::string name;
-            std::string entry;  ///< Absolute path to the module's entry-point script.
+
+            /**
+             * @brief Absolute path to the module's entry-point script, or empty.
+             *
+             * Everything this file reaches through `#include` is in the module, and it is where a
+             * module-wide analysis starts.
+             */
+            std::string entry;
+
+            /**
+             * @brief Absolute path to a directory whose scripts are all in this module, or empty.
+             *
+             * Sven Co-op is the shape this exists for: `scripts/maps` is the module MapScript and
+             * `scripts/plugins` is Plugin. A directory decides membership, with no entry point to
+             * name. Other hosts do the same with their own paths.
+             *
+             * A definition needs a name and at least one of these two. Both together is the
+             * fourth case: the folder decides who is in, the entry decides where analysis starts.
+             */
+            std::string folder;
         };
 
         /**

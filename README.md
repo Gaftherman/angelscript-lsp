@@ -377,6 +377,47 @@ run time. All the server can say is that the name matches none of the modules yo
 The workspace-wide predefined-stub loader is unaffected and can be turned off on its own with
 `angelscript.features.predefinedLoader`.
 
+### A folder as a module
+
+A module entry may name a `folder` instead of, or as well as, an `entry` — which is how Sven Co-op
+lays its scripts out, a directory deciding membership with no entry point to name:
+
+```jsonc
+{
+  "angelscript.modules": [
+    { "name": "MapScript", "folder": "${workspaceFolder}/scripts/maps" },
+    { "name": "Plugin",    "folder": "${workspaceFolder}/scripts/plugins" }
+  ]
+}
+```
+
+Right-click a `.as` for **Set as Module Entry Point**, or a folder for **Set as Module Folder**;
+both write into this setting with `${workspaceFolder}` so it stays portable.
+
+A file belongs to exactly one module, and the most specific claim wins:
+
+```
+an entry point's include closure   >   the deepest folder   >   any folder above it
+```
+
+So `scripts/maps` as `MapScript` and `scripts/maps/deep` as `DeepMaps` puts a file in `deep` into
+`DeepMaps`, the way a nested `.gitignore` works. AngelScript really does allow one file to be
+compiled into several modules, so this is a simplification — and when more than one module claims a
+file the server says so, naming the one it chose and the ones that lost. A rule that picks silently
+is a rule nobody can check.
+
+**Naming a module publishes diagnostics for every file in it**, not only the one you have open, so
+an error inside an `#include`d file reaches the Problems panel and can be clicked through. Those
+are recomputed when you save and when the workspace is scanned — not on every keystroke, which
+would re-analyse a few hundred files after each typing pause. A file that leaves a module has its
+diagnostics withdrawn; without that a renamed module would leave ghosts in the panel for the rest
+of the session.
+
+A configured module folder joins the roots an `#include` may resolve into. That is a deliberate
+widening of the confinement that stops `#include "../../../etc/passwd"` — naming a folder as a
+module is the statement that it is part of the project.
+
+
 
 ## Planned work
 

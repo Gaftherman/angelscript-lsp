@@ -63,6 +63,16 @@ namespace angel_lsp::analysis
 
             /** @brief Every configured module name, for the `import ... from "name"` hint. */
             std::vector<std::string> moduleNames;
+
+            /**
+             * @brief Modules that also claimed this file and lost, or empty when only one did.
+             *
+             * A file belongs to exactly one module here, and AngelScript really does allow one file
+             * to be compiled into several - so the rule that picked a winner has to be visible. A
+             * reader who cannot see it has no way to tell a deliberate assignment from an accident
+             * of which folder happens to be deeper.
+             */
+            std::vector<std::string> alsoClaimedBy;
         };
 
         /** @brief Module scoping, or empty when the host has not described its modules. */

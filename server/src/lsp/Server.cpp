@@ -185,43 +185,249 @@ namespace angel_lsp
         std::vector<ModuleView> resolved;
         resolved.reserve(m_config.modules.size());
 
+        // Every path this workspace holds, for the folder modules to select from. Asked once rather
+        // than per module: the answer is a copy of the graph's keys and does not change between
+        // definitions.
+        // Told to the editor, not only to the log. A module that silently is not there and a
+        // module whose rules found nothing to say look identical from the outside, and this
+        // project has confused the two twice.
+        const auto tellUser = [this](const std::string &text) {
+            m_logger->LogError(text);
+
+            lsp::notifications::Window_ShowMessage::Params params;
+            params.type = lsp::MessageType::Warning;
+            params.message = text;
+
+            std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
+            m_messageHandler->sendNotification<lsp::notifications::Window_ShowMessage>(std::move(params));
+        };
+
+        const std::vector<std::string> workspaceFiles = m_includeGraph.AllFiles();
+
         for (const auto &definition : m_config.modules)
         {
-            if (definition.name.empty() || definition.entry.empty())
+            if (definition.name.empty() || (definition.entry.empty() && definition.folder.empty()))
             {
-                m_logger->LogError("A configured module needs both a name and an entry script; one was skipped.");
+                tellUser("AngelScript: a configured module needs a name and at least one of an entry "
+                         "script or a folder. One was skipped.");
+                continue;
+            }
+
+            // Two modules with the same name make the external-shared rule meaningless: "declared in
+            // another module" stops having an answer. Rejected here rather than producing a verdict
+            // nobody can explain.
+            const bool duplicate = std::any_of(resolved.begin(), resolved.end(),
+                                               [&definition](const ModuleView &existing)
+                                               { return existing.name == definition.name; });
+            if (duplicate)
+            {
+                tellUser(fmt::format(
+                    "AngelScript: two modules are both named '{}'. The second was skipped - "
+                    "'external shared' cannot say which module an entity came from otherwise.",
+                    definition.name));
                 continue;
             }
 
             ModuleView view;
             view.name = definition.name;
-            view.entryPath = angel_lsp::utils::IncludeResolver::NormalizePath(definition.entry);
 
-            // Loud rather than silently empty. A mistyped entry path would otherwise produce a
-            // module with no members, which reads exactly like a module whose rules found nothing
-            // to say - the same silent-fallback failure this project has been bitten by twice.
-            std::error_code ec;
-            if (!std::filesystem::is_regular_file(std::filesystem::path(view.entryPath), ec))
+            if (!definition.folder.empty())
             {
-                m_logger->LogError(fmt::format(
-                    "Module '{}' names an entry script that does not exist: {}", view.name, view.entryPath));
-                continue;
+                view.folderPath = angel_lsp::utils::IncludeResolver::NormalizePath(definition.folder);
+
+                // Loud rather than silently empty. A mistyped folder would otherwise produce a
+                // module with no members, which reads exactly like a module whose rules found
+                // nothing to say - the silent-fallback failure this project has been bitten by
+                // twice.
+                std::error_code ec;
+                if (!std::filesystem::is_directory(std::filesystem::path(view.folderPath), ec))
+                {
+                    tellUser(fmt::format(
+                        "AngelScript: module '{}' names a folder that does not exist: {}",
+                        view.name, view.folderPath));
+                    continue;
+                }
+
+                for (const auto &candidate : workspaceFiles)
+                {
+                    if (PathIsInside(candidate, view.folderPath))
+                        view.memberPaths.insert(candidate);
+                }
             }
 
-            for (const auto &member : m_includeGraph.GetModuleClosure(view.entryPath))
-                view.memberPaths.insert(member);
+            if (!definition.entry.empty())
+            {
+                view.entryPath = angel_lsp::utils::IncludeResolver::NormalizePath(definition.entry);
 
-            // The closure of a file nothing includes and that includes nothing is itself, but a
-            // graph that has not been built yet answers with nothing at all.
-            view.memberPaths.insert(view.entryPath);
+                std::error_code ec;
+                if (!std::filesystem::is_regular_file(std::filesystem::path(view.entryPath), ec))
+                {
+                    tellUser(fmt::format(
+                        "AngelScript: module '{}' names an entry script that does not exist: {}",
+                        view.name, view.entryPath));
+                    continue;
+                }
 
-            m_logger->LogInfo(fmt::format("Module '{}': {} file(s) from {}",
-                                          view.name, view.memberPaths.size(), view.entryPath));
+                for (const auto &member : m_includeGraph.GetModuleClosure(view.entryPath))
+                {
+                    view.closurePaths.insert(member);
+                    view.memberPaths.insert(member);
+                }
+
+                // The closure of a file nothing includes and that includes nothing is itself, but a
+                // graph that has not been built yet answers with nothing at all.
+                view.closurePaths.insert(view.entryPath);
+                view.memberPaths.insert(view.entryPath);
+            }
+
+            m_logger->LogInfo(fmt::format(
+                "Module '{}': {} file(s){}{}", view.name, view.memberPaths.size(),
+                view.folderPath.empty() ? std::string() : fmt::format(" under {}", view.folderPath),
+                view.entryPath.empty() ? std::string() : fmt::format(" from {}", view.entryPath)));
 
             resolved.push_back(std::move(view));
         }
 
         m_modules = std::move(resolved);
+    }
+
+    bool Server::PathIsInside(const std::string &normalizedPath, const std::string &normalizedDirectory)
+    {
+        if (normalizedDirectory.empty() || normalizedPath.size() <= normalizedDirectory.size())
+        {
+            return false;
+        }
+
+        // Compared the way every other path comparison here is - case-insensitively on Windows,
+        // where `scripts/Maps` and `scripts/maps` are one directory and comparing bytes would make
+        // them two. See PathsAreSameFile.
+        if (!PathsAreSameFile(normalizedPath.substr(0, normalizedDirectory.size()), normalizedDirectory))
+        {
+            return false;
+        }
+
+        // On a component boundary, so `scripts/map` does not contain `scripts/maps/x.as`.
+        return normalizedPath[normalizedDirectory.size()] == '/';
+    }
+
+    Server::ModuleClaim Server::ClaimFor(const std::string &normalizedPath) const
+    {
+        // Rank first, then depth. An entry point names a file outright; a folder claims whatever
+        // falls under it, and the deeper folder is the more specific statement - the rule a nested
+        // .gitignore follows.
+        struct Candidate
+        {
+            const ModuleView *view;
+            int rank;
+            size_t depth;
+        };
+
+        std::vector<Candidate> candidates;
+
+        for (const auto &view : m_modules)
+        {
+            if (view.closurePaths.contains(normalizedPath))
+            {
+                candidates.push_back(Candidate{ &view, 2, 0 });
+            }
+            else if (PathIsInside(normalizedPath, view.folderPath))
+            {
+                candidates.push_back(Candidate{ &view, 1, view.folderPath.size() });
+            }
+        }
+
+        ModuleClaim claim;
+        if (candidates.empty())
+        {
+            return claim;
+        }
+
+        const auto best = std::max_element(candidates.begin(), candidates.end(),
+                                           [](const Candidate &a, const Candidate &b)
+                                           {
+                                               if (a.rank != b.rank) return a.rank < b.rank;
+                                               return a.depth < b.depth;
+                                           });
+
+        claim.owner = best->view;
+
+        for (const auto &candidate : candidates)
+        {
+            if (candidate.view != claim.owner)
+                claim.alsoClaimedBy.push_back(candidate.view->name);
+        }
+
+        return claim;
+    }
+
+    void Server::AnalyzeConfiguredModules()
+    {
+        if (m_modules.empty())
+        {
+            return;
+        }
+
+        for (const auto &view : m_modules)
+        {
+            for (const auto &path : view.memberPaths)
+            {
+                const std::string uriStr = UriFromPath(path);
+
+                // An open document has its own analysis, from the buffer rather than from disk. Two
+                // publishers for one URI is a race whose loser publishes the older answer.
+                if (m_openDocuments.contains(uriStr))
+                {
+                    continue;
+                }
+
+                // Only the module that actually owns the file analyses it, or a file claimed twice
+                // would be published twice with different verdicts.
+                const ModuleClaim claim = ClaimFor(path);
+                if (claim.owner == nullptr || claim.owner->name != view.name)
+                {
+                    continue;
+                }
+
+                std::ifstream file(path, std::ios::binary);
+                if (!file.is_open())
+                {
+                    continue;
+                }
+
+                std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+                m_publishedForModules.insert(uriStr);
+                ScheduleAnalysis(uriStr, content);
+            }
+        }
+    }
+
+    void Server::WithdrawStaleModuleDiagnostics()
+    {
+        std::vector<std::string> stale;
+
+        for (const auto &uriStr : m_publishedForModules)
+        {
+            const std::string path = CanonicalPathFromUri(uriStr);
+            if (path.empty() || ClaimFor(path).owner == nullptr)
+            {
+                stale.push_back(uriStr);
+            }
+        }
+
+        for (const auto &uriStr : stale)
+        {
+            // An empty list is how a diagnostic is taken back. Without it a renamed module leaves
+            // its errors in the Problems panel for the rest of the session, on files the user may
+            // not be able to open to clear by hand.
+            PublishDiagnostics(uriStr, std::string(), {});
+            m_publishedForModules.erase(uriStr);
+        }
+
+        if (!stale.empty())
+        {
+            m_logger->LogInfo(fmt::format("Withdrew module diagnostics for {} file(s)", stale.size()));
+        }
     }
 
     void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser &parser)
@@ -268,15 +474,9 @@ namespace angel_lsp
         for (const auto &view : m_modules)
             context.moduleNames.push_back(view.name);
 
-        const ModuleView *owning = nullptr;
-        for (const auto &view : m_modules)
-        {
-            if (view.memberPaths.contains(path))
-            {
-                owning = &view;
-                break;
-            }
-        }
+        const ModuleClaim claim = ClaimFor(path);
+        const ModuleView *owning = claim.owner;
+        context.alsoClaimedBy = claim.alsoClaimedBy;
 
         // Still returned with a name of its own left empty: the import hint only needs the list of
         // module names, and it is useful in a file that belongs to no module. The external-shared
@@ -346,6 +546,16 @@ namespace angel_lsp
             std::filesystem::path configured(predefined);
             if (configured.has_parent_path())
                 roots.push_back(configured.parent_path().string());
+        }
+
+        // A configured module folder is the user saying this directory is part of the project, so
+        // an `#include` may resolve into it. Deliberate rather than incidental: this is the list
+        // that stops `#include "../../../etc/passwd"` walking out of the workspace, and widening it
+        // is a decision, not a side effect of naming a module.
+        for (const auto &definition : m_config.modules)
+        {
+            if (!definition.folder.empty())
+                roots.push_back(definition.folder);
         }
 
         return roots;
@@ -1018,6 +1228,11 @@ namespace angel_lsp
         phase.emplace(m_logger.get(), "configured modules");
         BuildModuleIndex();
         IndexConfiguredModules(backgroundParser);
+
+        // Anything published for a module that no longer claims it has to be taken back before the
+        // new answers go out, or a file that changed module keeps both verdicts.
+        WithdrawStaleModuleDiagnostics();
+        AnalyzeConfiguredModules();
 
         if (stopToken.stop_requested())
         {
@@ -2595,6 +2810,19 @@ namespace angel_lsp
         AppendIncludeDiagnostics(uriStr, text, diagnostics);
 
         PublishDiagnostics(uriStr, diagnostics);
+
+        // The other half of the module design: a save re-analyses the whole module, so an error
+        // this edit introduced in a file nobody has opened still reaches the Problems panel. Not on
+        // every keystroke - a module of a few hundred files after each typing pause is a promise
+        // nobody has measured.
+        //
+        // Reading the members happens here, on the message loop; analysing them does not.
+        // ScheduleAnalysis queues, and the analysis thread publishes.
+        if (!m_modules.empty())
+        {
+            WithdrawStaleModuleDiagnostics();
+            AnalyzeConfiguredModules();
+        }
     }
 
     void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params)

@@ -68,8 +68,42 @@
         "command": "angelscript.statusMenu",
         "title": "%command.statusMenu.title%",
         "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.setModuleEntryPoint",
+        "title": "%command.setModuleEntryPoint.title%",
+        "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.setModuleFolder",
+        "title": "%command.setModuleFolder.title%",
+        "category": "%command.selectPredefined.category%"
       }
     ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "angelscript.setModuleEntryPoint",
+          "when": "resourceExtname == .as",
+          "group": "angelscript@1"
+        },
+        {
+          "command": "angelscript.setModuleFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "angelscript@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "angelscript.setModuleEntryPoint",
+          "when": "false"
+        },
+        {
+          "command": "angelscript.setModuleFolder",
+          "when": "false"
+        }
+      ]
+    },
     "grammars": [
       {
         "language": "angelscript",
@@ -190,13 +224,26 @@
               "name": {
                 "type": "string"
               },
+              "folder": {
+                "type": "string"
+              },
               "entry": {
                 "type": "string"
               }
             },
-            "required": [
-              "name",
-              "entry"
+            "anyOf": [
+              {
+                "required": [
+                  "name",
+                  "folder"
+                ]
+              },
+              {
+                "required": [
+                  "name",
+                  "entry"
+                ]
+              }
             ],
             "additionalProperties": false
           },

@@ -24,5 +24,12 @@
   "All stubs (merged)": "All stubs (merged)",
   "Loads every discovered stub. Declarations they share will resolve more than once.": "Loads every discovered stub. Declarations they share will resolve more than once.",
   "Select the predefined stub that describes the host application API": "Select the predefined stub that describes the host application API",
-  "Stub: {0}": "Stub: {0}"
+  "Stub: {0}": "Stub: {0}",
+  "Enter the module name for this entry point": "Enter the module name for this entry point",
+  "Enter the module name for this folder": "Enter the module name for this folder",
+  "Module name": "Module name",
+  "Module name cannot be empty.": "Module name cannot be empty.",
+  "Set \"{0}\" as entry point for module \"{1}\".": "Set \"{0}\" as entry point for module \"{1}\".",
+  "Set \"{0}\" as folder for module \"{1}\".": "Set \"{0}\" as folder for module \"{1}\".",
+  "This command is used from the explorer context menu.": "This command is used from the explorer context menu."
 }

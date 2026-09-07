@@ -348,9 +348,81 @@ namespace angel_lsp
         struct ModuleView
         {
             std::string name;
-            std::string entryPath;                                  ///< Normalised absolute path.
-            ankerl::unordered_dense::set<std::string> memberPaths;   ///< The entry's include closure.
+
+            /** @brief Normalised absolute path of the entry script, or empty when there is none. */
+            std::string entryPath;
+
+            /** @brief Normalised absolute path of the module's folder, or empty when there is none. */
+            std::string folderPath;
+
+            /**
+             * @brief Every file in the module: the entry's include closure, the folder's scripts,
+             *        or both.
+             */
+            ankerl::unordered_dense::set<std::string> memberPaths;
+
+            /** @brief The subset reached from the entry point, which a folder does not claim. */
+            ankerl::unordered_dense::set<std::string> closurePaths;
         };
+
+        /**
+         * @brief Which module owns a file, and which others also claimed it.
+         *
+         * A file belongs to exactly one module. AngelScript really does allow one file to be
+         * compiled into several, so this is a simplification - and the ones that lost are reported
+         * back so the server can say so rather than decide in silence.
+         */
+        struct ModuleClaim
+        {
+            const ModuleView *owner = nullptr;
+            std::vector<std::string> alsoClaimedBy;
+        };
+
+        /**
+         * @brief Resolves module membership for one path, most specific claim winning.
+         *
+         *     an entry point's include closure  >  the deepest folder  >  any folder above it
+         *
+         * One function, because everything else reads it: a second, subtly different copy of this
+         * rule is how the answer starts depending on which caller asked.
+         */
+        [[nodiscard]] ModuleClaim ClaimFor(const std::string &normalizedPath) const;
+
+        /**
+         * @brief True when a normalised path sits under a normalised directory.
+         *
+         * Compared the way every other path comparison here is - case-insensitively on Windows,
+         * where `scripts/Maps` and `scripts/maps` are one directory and comparing bytes would make
+         * them two - and on a component boundary, so `scripts/map` does not contain
+         * `scripts/maps/x.as`.
+         */
+        [[nodiscard]] static bool PathIsInside(const std::string &normalizedPath,
+                                               const std::string &normalizedDirectory);
+
+        /**
+         * @brief Re-analyses and republishes every file of every configured module.
+         *
+         * The point of naming a module: an error in a file the entry point includes reaches the
+         * Problems panel instead of waiting until that file is opened. Run on the workspace scan and
+         * on save - not on every keystroke, which would re-analyse a few hundred files after each
+         * typing pause and has not been measured at that size.
+         *
+         * Open documents are skipped. They have their own analysis, from the buffer rather than
+         * from disk, and two publishers for one URI is a race whose loser publishes an older answer.
+         */
+        void AnalyzeConfiguredModules();
+
+        /**
+         * @brief Publishes an empty list for every file that was in a module and no longer is.
+         *
+         * Without this a renamed module, a deleted file, or an `#include` edit that shrinks a
+         * closure leaves its diagnostics in the Problems panel for the rest of the session, on files
+         * the user may not be able to open to clear them by hand.
+         */
+        void WithdrawStaleModuleDiagnostics();
+
+        /** @brief URIs this server has published module diagnostics for, so they can be withdrawn. */
+        ankerl::unordered_dense::set<std::string> m_publishedForModules;
 
         /** @brief The configured modules, resolved. Empty when angelscript.modules is not set. */
         std::vector<ModuleView> m_modules;

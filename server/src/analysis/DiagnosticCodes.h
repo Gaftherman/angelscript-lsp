@@ -148,6 +148,11 @@ namespace angel_lsp::diagnostics::codes
     // function is bound at runtime with BindImportedFunction. All this can say is that the name
     // matches none of the modules the host described in angelscript.modules.
     inline constexpr std::string_view ImportUnknownModule                  = "as-hint-import-unknown-module";
+
+    // A file that more than one configured module claims. AngelScript really does allow one file
+    // to be compiled into several modules, and this server assigns it to exactly one - so the rule
+    // that picked has to be visible. A hint, because nothing is wrong with the script.
+    inline constexpr std::string_view FileInSeveralModules                 = "as-hint-file-in-several-modules";
     inline constexpr std::string_view IncDecOnVirtualProp                  = "as-err-inc-dec-on-virtual-prop";
     inline constexpr std::string_view InheritFinal                         = "as-err-inherit-final";
     inline constexpr std::string_view InitializerListExpected              = "as-err-initializer-list-expected";

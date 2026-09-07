@@ -97,6 +97,12 @@ const SELECT_PREDEFINED_COMMAND = 'angelscript.selectPredefined';
 /** @brief Command that opens the status bar menu: the log, a restart, and the stub picker. */
 const STATUS_MENU_COMMAND = 'angelscript.statusMenu';
 
+/** @brief Command that registers a script as a module entry point in workspace settings. */
+const SET_MODULE_ENTRY_POINT_COMMAND = 'angelscript.setModuleEntryPoint';
+
+/** @brief Command that registers a directory as a module folder in workspace settings. */
+const SET_MODULE_FOLDER_COMMAND = 'angelscript.setModuleFolder';
+
 /**
  * @brief Wording of the button on every failure notification.
  *
@@ -987,6 +993,12 @@ export async function activate(context: ExtensionContext) {
 
         context.subscriptions.push(
             commands.registerCommand(STATUS_MENU_COMMAND, () => showStatusMenu(context)));
+
+        context.subscriptions.push(
+            commands.registerCommand(SET_MODULE_ENTRY_POINT_COMMAND, (resource?: Uri) => setModuleEntryPoint(resource)));
+
+        context.subscriptions.push(
+            commands.registerCommand(SET_MODULE_FOLDER_COMMAND, (resource?: Uri) => setModuleFolder(resource)));
     });
 
     // An editor can appear after the notification that described its document - a second group, or
@@ -1506,6 +1518,122 @@ async function selectPredefinedStub(): Promise<void> {
     // there is nothing to wait on: this reads what the server has now and will be right on the next
     // read if the scan is still running.
     void refreshStubStatus();
+}
+
+/** @brief An entry in the `angelscript.modules` workspace setting. */
+interface ModuleConfig {
+    name: string;
+    folder?: string;
+    entry?: string;
+}
+
+/**
+ * @brief Prompts for a module name and associates the clicked resource with it in workspace settings.
+ *
+ * Persisting module membership in `.vscode/settings.json` makes module boundaries portable across
+ * checkouts. When a module with the given name already exists, updating `entry` or `folder` in place
+ * allows compound `{name, folder, entry}` declarations to be configured incrementally from the
+ * Explorer without editing JSON by hand.
+ *
+ * @param resource The file or directory clicked in the Explorer context menu.
+ * @param kind Whether the resource is being set as an entry point script or a module folder.
+ */
+async function configureModule(resource: Uri, kind: 'entry' | 'folder'): Promise<void> {
+    const defaultName = kind === 'entry'
+        ? path.basename(resource.fsPath, path.extname(resource.fsPath))
+        : path.basename(resource.fsPath);
+
+    const prompt = kind === 'entry'
+        ? l10n.t('Enter the module name for this entry point')
+        : l10n.t('Enter the module name for this folder');
+
+    const name = await window.showInputBox({
+        value: defaultName,
+        prompt,
+        placeHolder: l10n.t('Module name'),
+        validateInput: value => {
+            return value.trim().length === 0
+                ? l10n.t('Module name cannot be empty.')
+                : undefined;
+        }
+    });
+
+    if (name === undefined) {
+        return;
+    }
+
+    const trimmedName = name.trim();
+    if (trimmedName.length === 0) {
+        return;
+    }
+
+    const config = workspace.getConfiguration('angelscript');
+    const current = config.get<ModuleConfig[]>('modules', []);
+    const next = current.map(item => ({ ...item }));
+
+    const portablePath = portableStubPath(resource.fsPath);
+    const existing = next.find(item => item.name === trimmedName);
+
+    if (existing) {
+        if (kind === 'entry') {
+            existing.entry = portablePath;
+        } else {
+            existing.folder = portablePath;
+        }
+    } else {
+        next.push(
+            kind === 'entry'
+                ? { name: trimmedName, entry: portablePath }
+                : { name: trimmedName, folder: portablePath }
+        );
+    }
+
+    await workspace.getConfiguration('angelscript').update('modules', next, ConfigurationTarget.Workspace);
+
+    void window.showInformationMessage(
+        kind === 'entry'
+            ? l10n.t('Set "{0}" as entry point for module "{1}".', portablePath, trimmedName)
+            : l10n.t('Set "{0}" as folder for module "{1}".', portablePath, trimmedName)
+    );
+}
+
+/**
+ * @brief Registers the selected AngelScript file as a compilation entry point for a named module.
+ *
+ * Hosts compile one entry script which pulls in dependencies via `#include`. Marking a file as an
+ * entry point tells the language server where to begin whole-module diagnostic passes and symbol
+ * resolution for that compilation unit, without requiring the user to construct JSON objects by
+ * hand in settings.json.
+ *
+ * @param resource The file URI clicked in the Explorer context menu.
+ */
+export async function setModuleEntryPoint(resource?: Uri): Promise<void> {
+    if (!resource) {
+        void window.showInformationMessage(
+            l10n.t('This command is used from the explorer context menu.'));
+        return;
+    }
+
+    await configureModule(resource, 'entry');
+}
+
+/**
+ * @brief Registers the selected directory as a module folder in workspace settings.
+ *
+ * Game hosts like Sven Co-op partition scripts by folder (`scripts/maps`, `scripts/plugins`) where
+ * directory membership defines the module rather than an explicit entry file. Setting a folder
+ * claims every script under it without requiring `#include` graph tracking.
+ *
+ * @param resource The folder URI clicked in the Explorer context menu.
+ */
+export async function setModuleFolder(resource?: Uri): Promise<void> {
+    if (!resource) {
+        void window.showInformationMessage(
+            l10n.t('This command is used from the explorer context menu.'));
+        return;
+    }
+
+    await configureModule(resource, 'folder');
 }
 
 /**

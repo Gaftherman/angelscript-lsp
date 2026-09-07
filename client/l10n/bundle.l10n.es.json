@@ -24,5 +24,12 @@
   "All stubs (merged)": "Todos los stubs (combinados)",
   "Loads every discovered stub. Declarations they share will resolve more than once.": "Carga todos los stubs descubiertos. Las declaraciones que comparten se resolverán más de una vez.",
   "Select the predefined stub that describes the host application API": "Selecciona el stub predefinido que describe la API de la aplicación host",
-  "Stub: {0}": "Stub: {0}"
+  "Stub: {0}": "Stub: {0}",
+  "Enter the module name for this entry point": "Nombre del módulo para este punto de entrada",
+  "Enter the module name for this folder": "Nombre del módulo para esta carpeta",
+  "Module name": "Nombre del módulo",
+  "Module name cannot be empty.": "El nombre del módulo no puede estar vacío.",
+  "Set \"{0}\" as entry point for module \"{1}\".": "Se definió \"{0}\" como punto de entrada del módulo \"{1}\".",
+  "Set \"{0}\" as folder for module \"{1}\".": "Se definió \"{0}\" como carpeta del módulo \"{1}\".",
+  "This command is used from the explorer context menu.": "Este comando se usa desde el menú contextual del explorador."
 }
