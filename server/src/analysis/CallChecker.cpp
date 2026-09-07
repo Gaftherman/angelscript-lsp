@@ -709,17 +709,18 @@ namespace angel_lsp::analysis
 
             for (const auto &group : argGroups)
             {
+                // A ':' token directly in the argument list, and nothing else. The grammar writes
+                // a named argument as `optional(seq(field("arg_name", identifier), ":"))` before
+                // the expression, so the token is a child here exactly when the argument is named,
+                // and a ':' belonging to an expression stays inside that expression's own node.
+                //
+                // This used to also search the argument's text for a ':', which reported 156 errors
+                // on one real plugin file - `NS::GetName()` as an argument, and every argument
+                // after it. `bool ? 1 : 2` failed the same way. The oracle accepts both.
                 bool isNamed = false;
                 for (const auto &token : group)
                 {
-                    std::string_view tType = ts_node_type(token);
-                    if (tType == ":" || tType == "named_argument")
-                    {
-                        isNamed = true;
-                        break;
-                    }
-                    std::string text = NodeText(token, request.sourceCode);
-                    if (text.find(':') != std::string::npos && text.find('"') == std::string::npos && text.find('\'') == std::string::npos)
+                    if (std::string_view(ts_node_type(token)) == ":")
                     {
                         isNamed = true;
                         break;
