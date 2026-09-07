@@ -383,18 +383,63 @@ namespace angel_lsp::analysis
         }
 
         /**
-         * @brief True when the name is declared as an interface rather than a class.
+         * @brief The overload an assignment operator calls, or empty for one that has none.
          *
-         * An interface handle says nothing about the class behind it: any class may implement it,
-         * including one this file has never seen, so no compile-time verdict about what it can be
-         * cast to is available. See CheckCast.
+         * AngelScript spells each compound assignment as a method: `a += b` is `a.opAddAssign(b)`,
+         * and the operand types are that method's business rather than a conversion between the two
+         * sides. `@=` is left out on purpose - handle assignment is not an overloadable operator on
+         * a script class, measured, and opHndlAssign is a behaviour of application-registered
+         * types.
          */
-        bool DeclaresInterface(const std::string &typeName, const SymbolTable &table)
+        std::string_view AssignmentOverloadName(std::string_view op)
         {
+            if (op == "=")    return "opAssign";
+            if (op == "+=")   return "opAddAssign";
+            if (op == "-=")   return "opSubAssign";
+            if (op == "*=")   return "opMulAssign";
+            if (op == "/=")   return "opDivAssign";
+            if (op == "%=")   return "opModAssign";
+            if (op == "**=")  return "opPowAssign";
+            if (op == "&=")   return "opAndAssign";
+            if (op == "|=")   return "opOrAssign";
+            if (op == "^=")   return "opXorAssign";
+            if (op == "<<=")  return "opShlAssign";
+            if (op == ">>=")  return "opShrAssign";
+            if (op == ">>>=") return "opUShrAssign";
+            return {};
+        }
+
+        /** @brief Whether `typeName` declares the operator method `methodName` at all. */
+        bool DeclaresOperatorMethod(const std::string &typeName,
+                                    std::string_view methodName,
+                                    const SymbolTable &table)
+        {
+            if (typeName.empty() || methodName.empty())
+            {
+                return false;
+            }
+            return table.FindSymbolsPtr(typeName + "::" + std::string(methodName)) != nullptr;
+        }
+
+        /**
+         * @brief True for a type no `cast<>` may name: a primitive, or an enum.
+         *
+         * Measured against the compiler, which rejects every one of them the same way -
+         * `cast<int>(obj)`, `cast<int>(n)`, `cast<int>(enumValue)` and `cast<E>(n)` are all
+         * "Illegal target type for reference cast", and `cast<A@>(n)` is "No conversion from 'int'
+         * to 'A@' available". A reference cast is between reference types, and nothing else.
+         */
+        bool IsScalarCastTarget(const std::string &typeName, const SymbolTable &table)
+        {
+            if (parser::primitives::IsPrimitive(typeName))
+            {
+                return true;
+            }
+
             const auto symbols = table.FindSymbolsPtr(typeName);
             return symbols && std::any_of(symbols->begin(), symbols->end(),
                                           [](const Symbol &sym)
-                                          { return sym.type == SymbolType::Interface; });
+                                          { return sym.type == SymbolType::Enum; });
         }
 
         /** @brief True when a type declares any cast operator overload.
@@ -1941,9 +1986,14 @@ namespace angel_lsp::analysis
 
             const SymbolTable &table = ctx.request.symbolTable;
 
+            // A primitive has no declaration to find, and requiring one is what kept this rule from
+            // ever reporting the cases the compiler rejects - every one of them has a primitive on
+            // a side. Checked first, so the visibility guards below apply only to named types.
+            const bool targetIsScalar = IsScalarCastTarget(targetName, table);
+
             // Unlike the other two rules the target may legitimately be an interface here, so the
             // class-only ReadDeclaredType is not what decides visibility.
-            if (!FindTypeDeclaration(targetName, table).found)
+            if (!targetIsScalar && !FindTypeDeclaration(targetName, table).found)
             {
                 return;
             }
@@ -1953,7 +2003,9 @@ namespace angel_lsp::analysis
             {
                 return;
             }
-            if (!FindTypeDeclaration(source.baseName, table).found)
+
+            const bool sourceIsScalar = IsScalarCastTarget(source.baseName, table);
+            if (!sourceIsScalar && !FindTypeDeclaration(source.baseName, table).found)
             {
                 return;
             }
@@ -1967,19 +2019,34 @@ namespace angel_lsp::analysis
                 return;
             }
 
-            // An interface handle says nothing about the class behind it, so "unrelated" is not a
-            // verdict anyone can reach at compile time - the object may be an instance of a class
-            // this file has never seen, and `cast<>` answers null at runtime when it is not.
+            // Between two reference types `cast<>` is never a compile-time error, whatever their
+            // hierarchies say. It is a *dynamic* cast: it answers null at runtime when the object
+            // is not of that type, which is the entire reason the language spells it this way
+            // rather than with a conversion. Measured, all four accepted:
             //
-            //     interface CtIface {}
-            //     class CtUnrelated { int x; }
-            //     CtIface@ CtGet() { return null; }
-            //     CtUnrelated@ b = cast<CtUnrelated@>(CtGet());     // accepted by the oracle
+            //     class A {} class B {}  A@ g();
+            //     B@ b = cast<B@>(g());          // two unrelated classes
+            //     I@ i = cast<I@>(g());          // class to an interface it does not declare
+            //     B@ b = cast<B@>(iface);        // interface to a class that does not declare it
+            //     J@ j = cast<J@>(iface);        // one interface to another
             //
-            // Found against a real Sven Co-op plugin: `cast<CIns2GL@>(CastToScriptClass(pEntity))`
-            // is how the game hands a script its own object back, and the engine's own return type
-            // is an interface. Seven errors on code that runs.
-            if (DeclaresInterface(source.baseName, table) || DeclaresInterface(targetName, table))
+            // This rule used to report the first three, and a unit test asserted the first as
+            // correct behaviour. Found against a real Sven Co-op plugin, where
+            // `cast<CIns2GL@>(CastToScriptClass(pEntity))` is how the game hands a script its own
+            // object back: seven errors on code that runs.
+            //
+            // What the compiler rejects is the other half, and it rejects it uniformly - there is
+            // no legal cast<> with a primitive or an enum on either side, not even cast<int>(n):
+            //
+            //     cast<int>(obj)  cast<int>(n)  cast<int>(enumValue)  cast<E>(n)
+            //         Illegal target type for reference cast
+            //     cast<A@>(n)
+            //         No conversion from 'int' to 'A@' available
+            //
+            // So that is now the whole of the rule. Before this it had no true positives at all:
+            // the reference cases it reported are legal, and the scalar cases it could have caught
+            // were leaving early for want of a type declaration.
+            if (!sourceIsScalar && !targetIsScalar)
             {
                 return;
             }
@@ -2706,7 +2773,26 @@ namespace angel_lsp::analysis
 
                     if (!cleanLeft.empty() && !cleanRight.empty() && cleanLeft != cleanRight)
                     {
-                        if (!IsConvertible(cleanRight, cleanLeft, ctx))
+                        // Which operator sits between the two sides decides whether this is a
+                        // conversion at all. `value += 1` on a class declaring opAddAssign(int) is
+                        // a method call, and nothing converts an int to that class - measured
+                        // across all twelve compound assignments, every one of them reported here
+                        // on code the compiler accepts.
+                        //
+                        // Coarse on purpose: the overload's parameter types are not matched, only
+                        // its existence. Matching them is the overload resolver's job and it is
+                        // reached by the call path; what this rule needs to know is whether it is
+                        // looking at a conversion, and an operator method means it is not.
+                        const TSNode assignOp = parser::GetChildByField(node, parser::fields::Operator);
+                        const std::string_view overload =
+                            ts_node_is_null(assignOp)
+                                ? std::string_view()
+                                : AssignmentOverloadName(NodeText(assignOp, request.sourceCode));
+
+                        const bool operatorHandlesIt =
+                            DeclaresOperatorMethod(cleanLeft, overload, ctx.request.symbolTable);
+
+                        if (!operatorHandlesIt && !IsConvertible(cleanRight, cleanLeft, ctx))
                         {
                             EmitAtNode(right, ctx, "as-err-no-implicit-conversion", cleanRight, cleanLeft);
                         }

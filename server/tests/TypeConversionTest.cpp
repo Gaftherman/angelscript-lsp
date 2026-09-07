@@ -267,15 +267,39 @@ TEST_CASE("TypeConversion - opConv on the source satisfies the explicit conversi
 // cast<T>(expr)
 // =====================================================================================
 
-TEST_CASE("TypeConversion - Flags a cast between unrelated classes")
+TEST_CASE("TypeConversion - A cast between unrelated classes is not an error")
 {
+    // This test used to assert the opposite, and the assertion was wrong. `cast<>` is a dynamic
+    // cast: it answers null at runtime when the object is not of that type, which is why the
+    // language spells it this way rather than as a conversion. Measured - the compiler accepts it:
+    //
+    //     angelscript_oracle d1.as    class A{int x;} class B{int y;}
+    //                                 void main(){ A a; B@ r = cast<B@>(a); }
+    //         (accepted, no output)
+    //
+    // Found on a real Sven Co-op plugin, where `cast<CIns2GL@>(CastToScriptClass(pEntity))` is how
+    // the game hands a script its own object back. See doc_p121 and doc_p122.
     const std::string code =
         "class A {}\n"
         "class B {}\n"
         "void main() { A@ a; B@ b = cast<B>(a); }\n";
 
     auto diagnostics = ConversionDiagnostics(code);
-    CHECK(HasConversionDiagnostic(diagnostics, "as-err-invalid-cast", "A", "B"));
+    CHECK_FALSE(HasConversionDiagnostic(diagnostics, "as-err-invalid-cast", "A", "B"));
+}
+
+TEST_CASE("TypeConversion - A cast to a primitive is still an error")
+{
+    // The half the rule keeps, so narrowing it did not switch it off. Measured:
+    //
+    //     angelscript_oracle d2.as    class A{int x;} void main(){ A a; int r = cast<int>(a); }
+    //         ERROR (1, 48): Illegal target type for reference cast
+    const std::string code =
+        "class A {}\n"
+        "void main() { A@ a; int n = cast<int>(a); }\n";
+
+    auto diagnostics = ConversionDiagnostics(code);
+    CHECK(HasConversionDiagnostic(diagnostics, "as-err-invalid-cast", "A", "int"));
 }
 
 TEST_CASE("TypeConversion - A cast along the inheritance chain is accepted in both directions")
