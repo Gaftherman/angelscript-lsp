@@ -288,3 +288,66 @@ suite('portableStubPath', () => {
         assert.strictEqual(portableStubPath('all'), 'all');
     });
 });
+
+// =====================================================================================
+// What activation actually costs.
+//
+// A user reported 2942 ms to load a small project against 500 ms on a fast machine. The server's
+// workspace scan was timed and turned out to be nearly all of it - one canonicalisation per walked
+// file. This is the other half of that question: the client reported nothing at all, so anything
+// left over had nowhere to be looked up.
+//
+// The numbers are printed rather than bounded. A threshold here would be a test about the machine
+// the suite happens to run on, and would either be too loose to catch a regression or fail on a
+// loaded CI runner. What is asserted is that every phase is measured - a phase that silently stops
+// being recorded is how this stops answering the question it exists for.
+// =====================================================================================
+
+suite('activation timings', () => {
+    test('every activation phase is measured', async () => {
+        const extension = extensions.getExtension('Gaftherman.angelscript-lsp');
+        assert.ok(extension, 'the extension under test is not installed in this host');
+
+        await extension.activate();
+
+        // From the host's own module instance, not this test's - see activate()'s return.
+        const timings = (extension.exports as { activationTimings: Record<string, number> }).activationTimings;
+
+        // Printed so a slow start has somewhere to be looked up, here and in CI logs.
+        const report = Object.entries(timings)
+            .sort((a, b) => b[1] - a[1])
+            .map(([phase, ms]) => `${phase}=${ms}ms`)
+            .join('  ');
+        console.log('    activation: ' + report);
+
+        for (const phase of ['moduleToActivate', 'outputChannel', 'registerCommands',
+                             'statusBarItem', 'resolveServerBinary', 'buildServerArgs',
+                             'createFileSystemWatcher', 'constructLanguageClient']) {
+            assert.ok(phase in timings, `no measurement recorded for '${phase}'`);
+            assert.ok(Number.isFinite(timings[phase]) && timings[phase] >= 0,
+                      `'${phase}' recorded ${timings[phase]}, which is not a duration`);
+        }
+    });
+
+    test('nothing before the server spawn takes anything like a second', async () => {
+        // The one bound worth having, and it is deliberately generous. Everything measured here is
+        // in-process bookkeeping - registering commands, reading settings, allocating a client. If
+        // any of it reaches half a second on a developer machine, something has started doing work
+        // it should not, and that is worth failing over even though the exact figure is not.
+        //
+        // `clientStart` is excluded on purpose: it spawns a process and waits out a protocol
+        // handshake, which is legitimately the slow part and depends on the machine.
+        const extension = extensions.getExtension('Gaftherman.angelscript-lsp');
+        assert.ok(extension);
+        await extension.activate();
+
+        const timings = (extension.exports as { activationTimings: Record<string, number> }).activationTimings;
+        const inProcess = Object.entries(timings)
+            .filter(([phase]) => phase !== 'clientStart')
+            .reduce((total, [, ms]) => total + ms, 0);
+
+        assert.ok(inProcess < 500,
+                  `activation spent ${inProcess}ms before the server was spawned: ` +
+                  JSON.stringify(timings));
+    });
+});

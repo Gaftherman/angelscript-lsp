@@ -11,6 +11,37 @@ import {
     State, DidChangeConfigurationNotification
 } from 'vscode-languageclient/node';
 
+/**
+ * @brief When this module finished evaluating, as the baseline every activation mark is measured from.
+ *
+ * A user reported 2942 ms to load a small project against 500 ms on a fast machine. The server's
+ * workspace scan is timed and was most of it; the client reported nothing, so whatever remained had
+ * nowhere to be looked up. Everything below is measured from here.
+ *
+ * This cannot see the cost of loading the bundle itself - by the time a statement in it runs, that
+ * is already paid. What VS Code reports as activation time includes it, so a large gap between this
+ * baseline and the host's own figure is that load, and is the one number this file cannot produce.
+ */
+const moduleEvaluatedAt = Date.now();
+
+/**
+ * @brief Milliseconds from module evaluation to the end of each activation phase.
+ *
+ * Exported so a test can assert on it rather than on a log line, and so the numbers are available
+ * to anyone debugging a slow start without adding instrumentation of their own.
+ */
+export const activationTimings: Record<string, number> = {};
+
+/** @brief Records how long a phase took and returns its result, so a call site stays one line. */
+function timed<T>(phase: string, body: () => T): T {
+    const started = Date.now();
+    try {
+        return body();
+    } finally {
+        activationTimings[phase] = Date.now() - started;
+    }
+}
+
 let client: LanguageClient;
 let lspOutputChannel: OutputChannel;
 let statusBarItem: StatusBarItem;
@@ -755,7 +786,7 @@ export function buildServerArgs(): string[] {
  * @param context The extension execution context.
  */
 async function startClient(context: ExtensionContext): Promise<void> {
-    const server = resolveServerBinary(context);
+    const server = timed('resolveServerBinary', () => resolveServerBinary(context));
 
     lspOutputChannel.appendLine("--- AngelScript C++ Language Server Activation ---");
     lspOutputChannel.appendLine(`Runtime Platform Context: ${os.platform()}-${os.arch()}`);
@@ -774,7 +805,7 @@ async function startClient(context: ExtensionContext): Promise<void> {
 
     setStatus('starting', l10n.t('Starting the AngelScript language server.'));
 
-    const serverArgs = buildServerArgs();
+    const serverArgs = timed('buildServerArgs', () => buildServerArgs());
     runningServerArgs = serverArgs;
     lspOutputChannel.appendLine(`Server Arguments: ${serverArgs.join(" ") || "(none)"}`);
 
@@ -827,21 +858,31 @@ async function startClient(context: ExtensionContext): Promise<void> {
             // VS Code's own `files.watcherExclude` governs that, and it already excludes .git and
             // node_modules by default. Said plainly because the server-side scans ARE pruned, and
             // assuming the watcher followed them would be the natural mistake to make.
-            fileEvents: workspace.createFileSystemWatcher('**/*.{as,angelscript,predefined}')
+            fileEvents: timed('createFileSystemWatcher',
+                              () => workspace.createFileSystemWatcher('**/*.{as,angelscript,predefined}'))
         },
         outputChannel: lspOutputChannel,
         errorHandler
     };
 
-    client = new LanguageClient(
+    client = timed('constructLanguageClient', () => new LanguageClient(
         'angelScriptLSP',
         'AngelScript C++ Language Server',
         serverOptions,
         clientOptions
-    );
+    ));
 
     try {
+        const startedAt = Date.now();
         await client.start();
+        activationTimings['clientStart'] = Date.now() - startedAt;
+
+        // One line, because a user asked to attach one. `clientStart` is the process spawn plus the
+        // initialize handshake, and on a slow machine it is expected to dominate the rest.
+        lspOutputChannel.appendLine(
+            'Activation timings (ms): ' +
+            Object.entries(activationTimings).map(([phase, ms]) => `${phase}=${ms}`).join(' '));
+
         unexpectedExits = 0;
         setStatus('running', l10n.t('The AngelScript language server is running.'));
 
@@ -880,20 +921,28 @@ async function startClient(context: ExtensionContext): Promise<void> {
  * @param context The extension context provided by VS Code.
  */
 export async function activate(context: ExtensionContext) {
-    lspOutputChannel = window.createOutputChannel('AngelScript C++ Language Server');
-    context.subscriptions.push(lspOutputChannel);
+    const activateEnteredAt = Date.now();
+    activationTimings['moduleToActivate'] = activateEnteredAt - moduleEvaluatedAt;
 
-    context.subscriptions.push(
-        commands.registerCommand(SHOW_LOG_COMMAND, () => lspOutputChannel.show(true)));
+    lspOutputChannel = timed('outputChannel', () => {
+        const channel = window.createOutputChannel('AngelScript C++ Language Server');
+        context.subscriptions.push(channel);
+        return channel;
+    });
 
-    context.subscriptions.push(
-        commands.registerCommand(RESTART_COMMAND, () => restartClient(context, 'Restart requested from the command palette.')));
+    timed('registerCommands', () => {
+        context.subscriptions.push(
+            commands.registerCommand(SHOW_LOG_COMMAND, () => lspOutputChannel.show(true)));
 
-    context.subscriptions.push(
-        commands.registerCommand(SELECT_PREDEFINED_COMMAND, () => selectPredefinedStub()));
+        context.subscriptions.push(
+            commands.registerCommand(RESTART_COMMAND, () => restartClient(context, 'Restart requested from the command palette.')));
 
-    context.subscriptions.push(
-        commands.registerCommand(STATUS_MENU_COMMAND, () => showStatusMenu(context)));
+        context.subscriptions.push(
+            commands.registerCommand(SELECT_PREDEFINED_COMMAND, () => selectPredefinedStub()));
+
+        context.subscriptions.push(
+            commands.registerCommand(STATUS_MENU_COMMAND, () => showStatusMenu(context)));
+    });
 
     // An editor can appear after the notification that described its document - a second group, or
     // a tab returned to - and there is nothing to recompute from at that point, so the last thing
@@ -901,7 +950,7 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(
         window.onDidChangeVisibleTextEditors(editors => editors.forEach(applyInactiveRegions)));
 
-    createStatusBarItem(context);
+    timed('statusBarItem', () => createStatusBarItem(context));
 
     // Deliberately not awaited. Everything this extension contributes to the UI - the commands,
     // the status bar item, the output channel - is registered above and ready now; what follows is
@@ -970,6 +1019,13 @@ export async function activate(context: ExtensionContext) {
             await restartClient(context, 'Configuration changed; restarting the language server.');
         })
     );
+
+    // Handed back through the extension's exports, which is the only way a test can read them:
+    // VS Code loads the bundle at dist/extension.js while the test harness imports
+    // out/extension.js, so a test importing this module gets its own empty copy of the map.
+    // The same object is returned rather than a copy, so `clientStart` - recorded after activate
+    // has already returned - appears in it too.
+    return { activationTimings };
 }
 
 /**
