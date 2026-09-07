@@ -111,6 +111,33 @@ namespace angel_lsp::analysis::rules
                         }
                     }
 
+                    // A virtual property at global scope, before the container guard below sends
+                    // every global away. `CScheduler@ get_g_Scheduler();` is how a stub writes a
+                    // registered global property, and `g_Scheduler` is then a name nothing
+                    // declares - measured against the game's own stub as
+                    // `Undeclared identifier 'g_Scheduler'` on code that runs.
+                    //
+                    // The oracle agrees these exist: `int get_gxValue() property` makes `gxValue`
+                    // readable, and without the keyword the same script is rejected - which is the
+                    // distinction the two sets below carry for members, and carry here too.
+                    if (sym.containerName.empty() && sym.type == SymbolType::Function)
+                    {
+                        std::string_view accessor = sym.name;
+                        if (accessor.starts_with("get_") || accessor.starts_with("set_"))
+                        {
+                            accessor.remove_prefix(4);
+                            if (!accessor.empty())
+                            {
+                                index->accessorPropertyNames.emplace(accessor);
+                                if (std::holds_alternative<FunctionSignature>(sym.signature) &&
+                                    sym.GetFunction().modifiers.isProperty)
+                                {
+                                    index->keywordAccessorPropertyNames.emplace(accessor);
+                                }
+                            }
+                        }
+                    }
+
                     if (sym.containerName.empty())
                     {
                         continue;

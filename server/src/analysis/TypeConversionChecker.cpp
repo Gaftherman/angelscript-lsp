@@ -382,6 +382,21 @@ namespace angel_lsp::analysis
             return parameters.empty() ? "" : CleanBaseType(parameters[0].typeName);
         }
 
+        /**
+         * @brief True when the name is declared as an interface rather than a class.
+         *
+         * An interface handle says nothing about the class behind it: any class may implement it,
+         * including one this file has never seen, so no compile-time verdict about what it can be
+         * cast to is available. See CheckCast.
+         */
+        bool DeclaresInterface(const std::string &typeName, const SymbolTable &table)
+        {
+            const auto symbols = table.FindSymbolsPtr(typeName);
+            return symbols && std::any_of(symbols->begin(), symbols->end(),
+                                          [](const Symbol &sym)
+                                          { return sym.type == SymbolType::Interface; });
+        }
+
         /** @brief True when a type declares any cast operator overload.
          *  @note Deliberately coarse. Matching a cast operator to its result type means resolving
          *        the engine's template-ish opCast, which no declaration in the source states
@@ -1951,6 +1966,24 @@ namespace angel_lsp::analysis
             {
                 return;
             }
+
+            // An interface handle says nothing about the class behind it, so "unrelated" is not a
+            // verdict anyone can reach at compile time - the object may be an instance of a class
+            // this file has never seen, and `cast<>` answers null at runtime when it is not.
+            //
+            //     interface CtIface {}
+            //     class CtUnrelated { int x; }
+            //     CtIface@ CtGet() { return null; }
+            //     CtUnrelated@ b = cast<CtUnrelated@>(CtGet());     // accepted by the oracle
+            //
+            // Found against a real Sven Co-op plugin: `cast<CIns2GL@>(CastToScriptClass(pEntity))`
+            // is how the game hands a script its own object back, and the engine's own return type
+            // is an interface. Seven errors on code that runs.
+            if (DeclaresInterface(source.baseName, table) || DeclaresInterface(targetName, table))
+            {
+                return;
+            }
+
             if (DeclaresAnyCastOperator(source.baseName, table) || DeclaresAnyCastOperator(targetName, table))
             {
                 return;

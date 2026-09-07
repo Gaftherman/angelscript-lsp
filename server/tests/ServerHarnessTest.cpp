@@ -4594,6 +4594,50 @@ TEST_CASE("Server - A finished scan re-analyses the open documents it did not kn
 // namespace written in the script itself resolves through that document's scope tree, and a
 // predefined file has no scope tree, so the name set is all a stub's namespaces ever reach.
 // =====================================================================================
+// =====================================================================================
+// A virtual property the host registered at global scope.
+//
+// A generated stub writes a registered global property as its accessor - the Sven Co-op stub has
+// `CScheduler@ get_g_Scheduler();` and no variable of that name - so `g_Scheduler` is a name
+// nothing declares. Measured against the game's own stub on a real plugin.
+//
+// The oracle says these exist: `int get_gxValue() property { return 7; }` makes `gxValue` readable,
+// and the same script without the keyword is rejected. RuleIndex collected accessor names only for
+// class members; every global left the loop one line earlier.
+//
+// A harness test rather than a unit one for the same reason as the namespace case above: what makes
+// it visible is that the declaration lives in a stub.
+// =====================================================================================
+TEST_CASE("Server - A global property accessor in a stub declares the property")
+{
+    WorkspaceFixture fixture;
+    const std::string source =
+        "void main() { g_GaProbe.GaDo(); }\n";
+    fixture.Write("main.as", source);
+    fixture.Write("host.as.predefined",
+                  "class GaProbeHost { void GaDo(); }\n"
+                  "GaProbeHost@ get_g_GaProbe();\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "main.as");
+    INFO("last published: " << published);
+    REQUIRE_FALSE(published.empty());
+
+    CHECK(published.find("as-warn-undeclared-identifier") == std::string::npos);
+}
+
 TEST_CASE("Server - A namespace a stub declares only as A::B still declares A")
 {
     WorkspaceFixture fixture;
