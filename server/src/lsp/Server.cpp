@@ -360,6 +360,43 @@ namespace angel_lsp
         return claim;
     }
 
+    void Server::RememberOpenDocument(const std::string &uriStr, const std::string &text)
+    {
+        std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
+        m_openSnapshot[uriStr] = text;
+    }
+
+    void Server::ForgetOpenDocument(const std::string &uriStr)
+    {
+        std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
+        m_openSnapshot.erase(uriStr);
+    }
+
+    bool Server::IsOpenElsewhere(const std::string &uriStr) const
+    {
+        std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
+        return m_openSnapshot.contains(uriStr);
+    }
+
+    void Server::ScheduleOpenDocumentsForReanalysis()
+    {
+        // Copied out under the lock and scheduled outside it: ScheduleAnalysis takes a lock of its
+        // own, and holding two at once is how a deadlock gets written.
+        std::vector<std::pair<std::string, std::string>> open;
+        {
+            std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
+            open.reserve(m_openSnapshot.size());
+            for (const auto &[uriStr, text] : m_openSnapshot)
+                open.emplace_back(uriStr, text);
+        }
+
+        for (const auto &[uriStr, text] : open)
+            ScheduleAnalysis(uriStr, text);
+
+        m_logger->LogInfo(fmt::format(
+            "Re-analysing {} open document(s) now the workspace is indexed", open.size()));
+    }
+
     void Server::AnalyzeConfiguredModules()
     {
         if (m_modules.empty())
@@ -375,7 +412,10 @@ namespace angel_lsp
 
                 // An open document has its own analysis, from the buffer rather than from disk. Two
                 // publishers for one URI is a race whose loser publishes the older answer.
-                if (m_openDocuments.contains(uriStr))
+                //
+                // Asked of the snapshot: this runs on the workspace thread, and the map itself
+                // belongs to the message loop.
+                if (IsOpenElsewhere(uriStr))
                 {
                     continue;
                 }
@@ -1175,6 +1215,24 @@ namespace angel_lsp
         ReportWorkspaceProgress("Building the include graph", 0);
 
         const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
+
+        // Everything opened before this scan finishes was judged against a table that did not yet
+        // hold the host API - a user opens a file, the server starts, the stub loads 400 ms later,
+        // and every type it declares stays "Unknown type" until the next keystroke. Measured on a
+        // real Sven Co-op project: 258 diagnostics on code that builds, every one of them this.
+        //
+        // On a guard rather than a line at the bottom, because this function has five early
+        // returns - cancellation, a disabled loader, a stop between phases - and a call at the end
+        // is reached by exactly one of them. Written as a line first, it never ran once.
+        //
+        // Not ReanalyseOpenDocuments: that reads m_openDocuments, which belongs to the message
+        // loop, and reading it from here corrupted the heap within one run. This reads the
+        // snapshot and only schedules; the analysis thread does the work.
+        struct ReanalyseOnExit
+        {
+            Server *server;
+            ~ReanalyseOnExit() { server->ScheduleOpenDocumentsForReanalysis(); }
+        } reanalyseOnExit{ this };
         std::optional<PhaseTimer> phase;
         phase.emplace(m_logger.get(), "include graph");
 
@@ -1348,19 +1406,6 @@ namespace angel_lsp
             m_logger->LogError(fmt::format("Error reading workspace files: {}", e.what()));
         }
 
-        // NOT ReanalyseOpenDocuments() here, however much this is the place that wants it.
-        //
-        // Everything opened before the scan finishes is judged against a table that does not yet
-        // hold the host API - a user opens a file, the server starts, the stub loads 400 ms later,
-        // and every type it declares stays "Unknown type" until the next keystroke. That is a real
-        // defect and it is measured: a real Sven Co-op project shows 258 diagnostics on code that
-        // builds.
-        //
-        // But this function runs on the workspace thread, and m_openDocuments belongs to the
-        // message loop. Fanning out from here read it without a lock and corrupted the heap -
-        // SIGSEGV in the stub harness, within one run. The fix needs a way to hand work back to
-        // the loop, which this server does not have yet; bolting the call in without one trades a
-        // stale diagnostic for a crash.
 
         EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
     }
@@ -2895,6 +2940,7 @@ namespace angel_lsp
         std::string text = params.textDocument.text;
 
         m_openDocuments[uriStr] = text;
+        RememberOpenDocument(uriStr, text);
 
         if (auto treeIt = m_documentTrees.find(uriStr); treeIt != m_documentTrees.end())
         {
@@ -3082,6 +3128,7 @@ namespace angel_lsp
             if (RefreshStubDefinedWords(uriStr, buffer))
                 ReanalyseOpenDocuments();
 
+            RememberOpenDocument(uriStr, buffer);
             ScheduleAnalysis(uriStr, buffer);
             return;
         }
@@ -3092,6 +3139,7 @@ namespace angel_lsp
         // makes a 3000-line file feel slow when it runs on every keystroke - so they are queued and
         // run once typing pauses. Until then the symbol table still holds the previous revision,
         // which is the same trade every other language server makes.
+        RememberOpenDocument(uriStr, buffer);
         ScheduleAnalysis(uriStr, buffer);
     }
 
@@ -3099,6 +3147,7 @@ namespace angel_lsp
     {
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
         m_openDocuments.erase(uriStr);
+        ForgetOpenDocument(uriStr);
 
         // The cached token payload is only meaningful while the client still holds it. Dropping it
         // here also means a reopened document starts from a full stream rather than a delta against

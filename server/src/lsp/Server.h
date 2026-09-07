@@ -413,6 +413,39 @@ namespace angel_lsp
         void AnalyzeConfiguredModules();
 
         /**
+         * @brief What is open, readable from any thread.
+         *
+         * m_openDocuments belongs to the message loop and is touched in two dozen places without a
+         * lock, which is fine while only that thread touches it. The workspace thread needs the same
+         * answer twice - to skip open files during a module pass, and to re-analyse them once the
+         * host stub is finally in the table - and reading the real map from there corrupted the heap
+         * inside one run.
+         *
+         * So: a copy, written only where the loop already mutates the map, read only from off it.
+         * Two owners, one lock, and no existing call site changes behaviour.
+         */
+        mutable std::mutex m_openSnapshotMutex;
+        ankerl::unordered_dense::map<std::string, std::string> m_openSnapshot;
+
+        /** @brief Records a document's current text in the snapshot. Message loop only. */
+        void RememberOpenDocument(const std::string &uriStr, const std::string &text);
+
+        /** @brief Forgets a closed document. Message loop only. */
+        void ForgetOpenDocument(const std::string &uriStr);
+
+        /** @brief True when the snapshot holds this document. Safe from any thread. */
+        [[nodiscard]] bool IsOpenElsewhere(const std::string &uriStr) const;
+
+        /**
+         * @brief Re-analyses every open document, from the workspace thread.
+         *
+         * Only schedules: the analysis thread does the work and publishes. Deliberately does NOT
+         * index module closures the way ReanalyseOpenDocuments does - that touches message-loop
+         * state, and the scan calling this has just indexed everything anyway.
+         */
+        void ScheduleOpenDocumentsForReanalysis();
+
+        /**
          * @brief Publishes an empty list for every file that was in a module and no longer is.
          *
          * Without this a renamed module, a deleted file, or an `#include` edit that shrinks a
