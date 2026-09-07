@@ -6,10 +6,49 @@ import {
     StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n,
     TextEditorDecorationType, Range, TextEditor
 } from 'vscode';
-import {
-    LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler, ErrorAction, CloseAction,
-    State, DidChangeConfigurationNotification
+// Types only: erased at compile time, so naming them here costs nothing at runtime.
+import type {
+    LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler
 } from 'vscode-languageclient/node';
+
+/**
+ * @brief The language client library, loaded the first time the server is actually started.
+ *
+ * It is nearly the whole of this extension's bundle - 364 KB, 42 ms to require - and VS Code's
+ * reported activation time is that require plus activate(). activate() deliberately does not await
+ * startClient, precisely so the user is not waiting on a process spawn; leaving the library on the
+ * static import path put its cost back on the number they see anyway, for work nobody is waiting
+ * for.
+ *
+ * A dynamic import moves it off that path. esbuild keeps the code in the same output file for a cjs
+ * bundle, wrapped in a lazily-initialised module, so its top level runs on first call instead of at
+ * load. Cached here because restarting the client must not pay for it twice.
+ */
+type LanguageClientModule = typeof import('vscode-languageclient/node');
+
+let languageClientModule: LanguageClientModule | undefined;
+
+function loadLanguageClientModule(): LanguageClientModule {
+    // `require` rather than a dynamic `import()`: under "module": "Node16" TypeScript refuses to
+    // resolve an `import()` of this CommonJS package from a CommonJS file. esbuild gives both the
+    // same treatment in a bundle - the module becomes a lazily-initialised wrapper - so this is
+    // the same deferral, synchronous, and it types cleanly.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    languageClientModule ??= require('vscode-languageclient/node') as LanguageClientModule;
+    return languageClientModule;
+}
+
+/**
+ * @brief Whether the client exists and is up, without needing the library to be loaded.
+ *
+ * `State.Running` is 2. Naming the number rather than awaiting the module keeps the three callers
+ * that ask this synchronous - two of them are polling loops - and a client that exists at all has
+ * already loaded the library, so there is nothing to wait for either way.
+ */
+function clientIsRunning(): boolean {
+    const running = client;
+    return running !== undefined && running.state === 2;
+}
 
 /**
  * @brief When this module finished evaluating, as the baseline every activation mark is measured from.
@@ -805,6 +844,12 @@ async function startClient(context: ExtensionContext): Promise<void> {
 
     setStatus('starting', l10n.t('Starting the AngelScript language server.'));
 
+    // The first thing that needs the library, and the point its cost belongs at: the user is not
+    // waiting on this call - activate() did not await it.
+    const startedLoadingAt = Date.now();
+    const { LanguageClient, ErrorAction, CloseAction } = loadLanguageClientModule();
+    activationTimings['loadLanguageClientModule'] = Date.now() - startedLoadingAt;
+
     const serverArgs = timed('buildServerArgs', () => buildServerArgs());
     runningServerArgs = serverArgs;
     lspOutputChannel.appendLine(`Server Arguments: ${serverArgs.join(" ") || "(none)"}`);
@@ -1165,9 +1210,18 @@ export function portableStubPath(stubPath: string): string {
 
 async function pushConfiguration(): Promise<void> {
     const running = client;
-    if (!running || running.state !== State.Running) {
+    if (!running) {
         return;
     }
+
+    // Awaited rather than imported at the top for the reason in loadLanguageClientModule. There is
+    // always a client by the time this runs, so the module is already loaded and this resolves
+    // immediately.
+    if (!clientIsRunning()) {
+        return;
+    }
+
+    const { DidChangeConfigurationNotification } = loadLanguageClientModule();
 
     try {
         await running.sendNotification(DidChangeConfigurationNotification.type, {
@@ -1283,7 +1337,7 @@ async function refreshStubStatus(stubs?: PredefinedStubsResult): Promise<void> {
     let result = stubs;
 
     if (result === undefined) {
-        if (!client || client.state !== State.Running) {
+        if (!clientIsRunning()) {
             return;
         }
         try {
@@ -1330,7 +1384,7 @@ async function offerStubChoice(): Promise<void> {
     // delay: it costs a single request when the answer is ready immediately, and it gives up rather
     // than polling a workspace that simply has no stubs in it.
     for (let attempt = 0; attempt < 10; attempt++) {
-        if (!client || client.state !== State.Running) {
+        if (!clientIsRunning()) {
             return;
         }
 
