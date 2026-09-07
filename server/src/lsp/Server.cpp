@@ -32,6 +32,7 @@
 #include <fstream>
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <variant>
 #include <spdlog/fmt/fmt.h>
 
@@ -821,6 +822,51 @@ namespace angel_lsp
         StartWorkspaceScan();
     }
 
+    namespace
+    {
+        /**
+         * @brief Logs how long a startup phase took, when it ends.
+         *
+         * The workspace scan reports progress as percentages that were written into the source by
+         * hand: "55" for the engine profiles, "70" for the stubs. Those numbers describe the order
+         * of the phases and nothing about their cost, so a report of "2942 ms to load on a small
+         * project" had nowhere to be looked up. This gives every phase a number that came from a
+         * clock.
+         *
+         * Info level, so it is in the log a user is already asked to attach to a report, and off
+         * the wire otherwise.
+         */
+        class PhaseTimer
+        {
+        public:
+            PhaseTimer(angel_lsp::utils::LspLogger *logger, std::string phase)
+                : m_logger(logger), m_phase(std::move(phase)),
+                  m_start(std::chrono::steady_clock::now())
+            {
+            }
+
+            ~PhaseTimer()
+            {
+                if (m_logger == nullptr)
+                {
+                    return;
+                }
+
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - m_start);
+                m_logger->LogInfo(fmt::format("Startup phase '{}': {} ms", m_phase, elapsed.count()));
+            }
+
+            PhaseTimer(const PhaseTimer &) = delete;
+            PhaseTimer &operator=(const PhaseTimer &) = delete;
+
+        private:
+            angel_lsp::utils::LspLogger *m_logger;
+            std::string m_phase;
+            std::chrono::steady_clock::time_point m_start;
+        };
+    }
+
     void Server::BeginWorkspaceProgress(const std::string &title)
     {
         if (!m_workDoneProgressSupport)
@@ -913,6 +959,10 @@ namespace angel_lsp
         BeginWorkspaceProgress("AngelScript: indexing workspace");
         ReportWorkspaceProgress("Building the include graph", 0);
 
+        const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
+        std::optional<PhaseTimer> phase;
+        phase.emplace(m_logger.get(), "include graph");
+
         m_includeGraph.Build(roots,
                              *searchDirectories,
                              m_config.info.fileExtension,
@@ -944,6 +994,7 @@ namespace angel_lsp
 
         // Built-in predefined engine profiles (e.g. Standard, SvenCoop, Urho3D, OpenXRay, OOTP)
         ReportWorkspaceProgress("Loading engine profiles", 55);
+        phase.emplace(m_logger.get(), "built-in engine profiles");
         LoadBuiltinEngineProfiles(backgroundParser, stopToken);
 
         if (stopToken.stop_requested())
@@ -957,12 +1008,14 @@ namespace angel_lsp
         // workspace folders - would never find them. ParserPredefined de-duplicates by canonical
         // path, so a stub that also happens to live inside the workspace is not indexed twice.
         ReportWorkspaceProgress("Loading predefined stubs", 70);
+        phase.emplace(m_logger.get(), "configured predefined stubs");
         const std::vector<std::string> configuredPaths = LoadConfiguredPredefinedFiles(backgroundParser, stopToken);
 
         // Which files each configured module contains, and then their contents. A module nobody
         // has opened still has to be in the symbol table, or the module that externs its shared
         // entities cannot see them - two modules are by definition not connected by an #include,
         // so the open document's own closure never reaches across. See IndexConfiguredModules.
+        phase.emplace(m_logger.get(), "configured modules");
         BuildModuleIndex();
         IndexConfiguredModules(backgroundParser);
 
@@ -971,6 +1024,8 @@ namespace angel_lsp
             EndWorkspaceProgress("Cancelled");
             return;
         }
+
+        phase.emplace(m_logger.get(), "workspace stub discovery");
 
         try
         {
@@ -1007,7 +1062,7 @@ namespace angel_lsp
                     if (!angel_lsp::utils::IsPredefinedFile(entry.path().string(), m_config.info.predefinedFileExtension))
                         return;
 
-                    const std::string path = angel_lsp::utils::IncludeResolver::NormalizePath(entry.path());
+                    const std::string path = angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path());
                     discovered.push_back(path);
 
                     if (!activePath.empty())

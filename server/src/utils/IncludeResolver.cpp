@@ -4,6 +4,8 @@
 #include <cctype>
 #include <fstream>
 #include <sstream>
+#include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace angel_lsp::utils
@@ -11,10 +13,78 @@ namespace angel_lsp::utils
     namespace
     {
         /**
+         * @brief Canonical form of a directory, remembered so a workspace walk pays for it once.
+         *
+         * `weakly_canonical` queries the filesystem for every component of the path it is handed.
+         * The workspace walk hands it one path per file, and measured against a generated workspace
+         * that is nearly the whole of startup:
+         *
+         *     files   include-graph phase   of a total scan of
+         *     1       1 ms                  16 ms
+         *     50      305 ms                316 ms
+         *     200     1016 ms               1025 ms
+         *
+         * Which is where a report of "2942 ms to load a small project" comes from - it is linear in
+         * the file count and about 5 ms a file. Replacing the call with a purely lexical normalise
+         * took the 200-file case to 146 ms, so ~85% of it was this one function.
+         *
+         * The files in a directory all share that directory, so canonicalising the directory once
+         * turns a per-file cost into a per-directory one, without giving up what the call is for:
+         * `..` resolved against the real filesystem, symlinks followed, and on Windows the on-disk
+         * case of every directory component.
+         *
+         * Process-wide and never pruned. It holds one entry per directory a session touches, which
+         * is the shape of the workspace rather than of its history. A directory renamed underneath
+         * a running server leaves a stale entry - the cost of the cache, and a bounded one: the
+         * answer stays the path that directory had when it was first seen, which is also what every
+         * document already indexed is keyed by.
+         */
+        std::string CanonicalDirectory(const std::filesystem::path &directory)
+        {
+            static std::mutex mutex;
+            static std::unordered_map<std::string, std::string> cache;
+
+            std::string key = directory.string();
+
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (const auto found = cache.find(key); found != cache.end())
+                {
+                    return found->second;
+                }
+            }
+
+            std::error_code ec;
+            std::filesystem::path canonical = std::filesystem::weakly_canonical(directory, ec);
+            if (ec)
+            {
+                canonical = directory.lexically_normal();
+            }
+
+            std::string value = canonical.string();
+
+            std::lock_guard<std::mutex> lock(mutex);
+            cache.emplace(std::move(key), value);
+            return value;
+        }
+
+        /**
          * @brief Normalizes a filesystem path to use standard forward slashes and strips Windows long-path prefixes.
          * @param p The path to normalize.
          * @return Normalized path string with forward slashes.
          */
+        std::string TrimAndSlash(std::string s)
+        {
+#if defined(_WIN32)
+            if (s.rfind("\\\\?\\", 0) == 0)
+            {
+                s = s.substr(4);
+            }
+#endif
+            std::replace(s.begin(), s.end(), '\\', '/');
+            return s;
+        }
+
         std::string NormalizePathString(const std::filesystem::path &p)
         {
             std::error_code ec;
@@ -39,6 +109,18 @@ namespace angel_lsp::utils
     std::string IncludeResolver::NormalizePath(const std::filesystem::path &path)
     {
         return NormalizePathString(path);
+    }
+
+    std::string IncludeResolver::NormalizeWalkedPath(const std::filesystem::path &path)
+    {
+        if (!path.has_parent_path() || !path.has_filename())
+        {
+            return NormalizePathString(path);
+        }
+
+        return TrimAndSlash((std::filesystem::path(CanonicalDirectory(path.parent_path())) /
+                             path.filename())
+                                .string());
     }
 
     bool IncludeResolver::IsWithinRoots(const std::string &normalizedPath,

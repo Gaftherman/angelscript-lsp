@@ -65,6 +65,26 @@ namespace angel_lsp::utils
         static std::string NormalizePath(const std::filesystem::path &path);
 
         /**
+         * @brief NormalizePath for a path a directory walk produced, which is most of them.
+         *
+         * The general form calls `weakly_canonical`, which queries the filesystem for every
+         * component. That is what a path arriving from a client URI or a setting needs - it may be
+         * spelled with `..`, with the wrong case, or through a symlink - and it is also nearly the
+         * whole of this server's startup. Measured against a generated workspace, the include-graph
+         * phase was 1016 ms of a 1025 ms scan at 200 files, and 146 ms with the call removed.
+         *
+         * A path from `std::filesystem::directory_iterator` needs none of that work on its last
+         * component: the filesystem produced that name, so it is already the on-disk spelling. Only
+         * the directory has to be canonicalised, and every file in a directory shares it - so it is
+         * done once and remembered.
+         *
+         * Use this ONLY for a path the filesystem itself handed over. For anything a user or a
+         * client spelled, use NormalizePath: the filename case really does have to be corrected
+         * there, or `#include "HELPER.as"` and `helper.as` become two nodes for one file.
+         */
+        static std::string NormalizeWalkedPath(const std::filesystem::path &path);
+
+        /**
          * @brief True when a normalized path lies inside one of the allowed root directories.
          *
          * The confinement check behind every resolve. `#include` accepts whatever text sits between

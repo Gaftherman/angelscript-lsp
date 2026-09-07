@@ -104,7 +104,10 @@ namespace angel_lsp::utils
         const bool completed = ForEachWorkspaceFile(
             workspaceRoots, excludeGlobs, shouldStop,
             [&](const std::filesystem::directory_entry &entry) {
-                const std::string path = IncludeResolver::NormalizePath(entry.path());
+                // The walk produced this path, so its own spelling is already the filesystem's and only
+                // the directory needs canonicalising - see IncludeResolver::NormalizeWalkedPath. This
+                // one line was most of the server's startup time.
+                const std::string path = IncludeResolver::NormalizeWalkedPath(entry.path());
                 if (!scriptExtension.empty() && !std::string_view(path).ends_with(scriptExtension))
                     return;
 
