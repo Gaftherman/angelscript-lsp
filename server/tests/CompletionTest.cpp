@@ -339,6 +339,27 @@ TEST_CASE("Completion - Constructors and destructors are not offered as instance
 
 namespace
 {
+    /**
+     * @brief Finds the item with this label AND this kind.
+     *
+     * A snippet and the bare keyword deliberately share one label - `class` writes a class, `class`
+     * is the word - so a lookup by label alone would be answered by whichever came first, and a
+     * regression that dropped the other would still pass.
+     */
+    const lsp::CompletionItem *FindItemOfKind(const std::vector<lsp::CompletionItem> &items,
+                                              const std::string &label,
+                                              lsp::CompletionItemKind kind)
+    {
+        for (const auto &item : items)
+        {
+            if (item.label == label && item.kind == kind)
+            {
+                return &item;
+            }
+        }
+        return nullptr;
+    }
+
     const lsp::CompletionItem *FindItem(const std::vector<lsp::CompletionItem> &items,
                                         const std::string &label)
     {
@@ -950,4 +971,57 @@ TEST_CASE("Completion - Ordinary completion still answers")
     INFO("labels: " << labels.size());
     CHECK(std::find(labels.begin(), labels.end(), "gCounter") != labels.end());
 }
+
+TEST_CASE("Completion - Declaration snippets exist, carry Snippet format, and sort before bare keywords")
+{
+    TestEnvironment env("void Main() { }\n");
+    const auto items = env.CompleteAt(0, 0, /*snippetSupport=*/true);
+
+    // Both items carry the SAME label, so they have to be told apart by kind - which is also what
+    // makes this a real check. Asking FindItem for "class" would be answered by whichever of the
+    // pair came first, and a regression that dropped the other would still pass.
+    for (const std::string &word : { std::string("class"), std::string("interface"),
+                                     std::string("mixin"), std::string("function") })
+    {
+        const auto *snippet = FindItemOfKind(items, word, lsp::CompletionItemKind::Snippet);
+        const auto *keyword = FindItemOfKind(items, word, lsp::CompletionItemKind::Keyword);
+
+        REQUIRE_MESSAGE(snippet != nullptr, "snippet item not found: ", word);
+        REQUIRE_MESSAGE(keyword != nullptr, "bare keyword item not found: ", word);
+
+        REQUIRE(snippet->insertTextFormat.has_value());
+        CHECK(snippet->insertTextFormat.value() == lsp::InsertTextFormat::Snippet);
+        REQUIRE(snippet->insertText.has_value());
+        CHECK(snippet->insertText.value().find(word) != std::string::npos);
+
+        REQUIRE(snippet->sortText.has_value());
+        REQUIRE(keyword->sortText.has_value());
+        CHECK(snippet->sortText.value() < keyword->sortText.value());
+    }
+
+    // The class snippet is the one the user asked for by name: it writes the constructor and the
+    // destructor, not just the word.
+    const auto *classSnippet = FindItemOfKind(items, "class", lsp::CompletionItemKind::Snippet);
+    REQUIRE(classSnippet != nullptr);
+    REQUIRE(classSnippet->insertText.has_value());
+    CHECK(classSnippet->insertText.value().find("${1:Name}()") != std::string::npos);
+    CHECK(classSnippet->insertText.value().find("~${1:Name}()") != std::string::npos);
+}
+
+TEST_CASE("Completion - Without snippetSupport, declaration snippets are not emitted")
+{
+    TestEnvironment env("void Main() { }\n");
+    const auto items = env.CompleteAt(0, 0, /*snippetSupport=*/false);
+
+    CHECK(FindItemOfKind(items, "class", lsp::CompletionItemKind::Snippet) == nullptr);
+    CHECK(FindItemOfKind(items, "interface", lsp::CompletionItemKind::Snippet) == nullptr);
+    CHECK(FindItemOfKind(items, "mixin", lsp::CompletionItemKind::Snippet) == nullptr);
+    CHECK(FindItemOfKind(items, "function", lsp::CompletionItemKind::Snippet) == nullptr);
+
+    CHECK(FindItem(items, "class") != nullptr);
+    CHECK(FindItem(items, "interface") != nullptr);
+    CHECK(FindItem(items, "mixin") != nullptr);
+    CHECK(FindItem(items, "function") != nullptr);
+}
+
 

@@ -11,6 +11,8 @@
 #include <filesystem>
 #include "parser/Keywords.h"
 
+#include <iterator>
+
 namespace angel_lsp::features
 {
     namespace
@@ -162,7 +164,8 @@ namespace angel_lsp::features
                           const std::string &detail = "",
                           const std::string &doc = "",
                           const std::string &resolveKey = "",
-                          const std::string &snippet = "")
+                          const std::string &snippet = "",
+                          const std::string &sortText = "")
         {
             if (label.empty() || seenLabels.contains(label))
             {
@@ -177,6 +180,10 @@ namespace angel_lsp::features
             {
                 item.insertText = snippet;
                 item.insertTextFormat = lsp::InsertTextFormatEnum(lsp::InsertTextFormat::Snippet);
+            }
+            if (!sortText.empty())
+            {
+                item.sortText = sortText;
             }
             if (!detail.empty())
             {
@@ -1019,10 +1026,81 @@ namespace angel_lsp::features
             }
         });
 
-        // D. AngelScript Keywords
+        // D. AngelScript keywords, and the snippets that write the declaration for you
+        //
+        // Both are offered under the SAME label - `class` the snippet and `class` the word - and
+        // sortText decides the order: "0class" before "1class", so the one that writes a class with
+        // its constructor and destructor comes first and the bare keyword stays one line below it.
+        // A completion item is identified by its data and told apart in the list by its kind and
+        // detail, not by its label, so two items may share one.
+        //
+        // That is why these four are pushed directly instead of through AddItemIfNew, and why they
+        // deliberately do not claim their label in seenLabels: that helper dedupes on the label,
+        // which is the right rule for symbols - a name is a name - and the wrong one here, because
+        // claiming `class` would delete the bare keyword from the loop below.
+        //
+        // Every body below was measured against angelscript_oracle before it was written here; the
+        // destructor in particular is not an assumption.
+        if (request.snippetSupport)
+        {
+            const std::pair<const char *, const char *> declarationSnippets[] = {
+                { "class",
+                  "class ${1:Name}\n"
+                  "{\n"
+                  "    ${1:Name}()\n"
+                  "    {\n"
+                  "        $0\n"
+                  "    }\n"
+                  "\n"
+                  "    ~${1:Name}()\n"
+                  "    {\n"
+                  "    }\n"
+                  "}" },
+                { "interface",
+                  "interface ${1:Name}\n"
+                  "{\n"
+                  "    void ${2:DoThing}();\n"
+                  "}" },
+                { "mixin",
+                  "mixin class ${1:Name}\n"
+                  "{\n"
+                  "    $0\n"
+                  "}" },
+                // No trailing `;`. An anonymous function is legal only where a funcdef is expected -
+                // as an argument, or as the initialiser of a funcdef handle - and a semicolon here
+                // would write the one shape the compiler rejects, which as-err-standalone-anonymous
+                // -function now reports.
+                { "function",
+                  "function(${1:int value})\n"
+                  "{\n"
+                  "    $0\n"
+                  "}" },
+            };
+
+            const std::pair<const char *, const char *> snippetDetails[] = {
+                { "class", "declaration, with a constructor and a destructor" },
+                { "interface", "declaration, with one method" },
+                { "mixin", "mixin class declaration" },
+                { "function", "anonymous function, for a funcdef parameter or handle" },
+            };
+
+            for (size_t i = 0; i < std::size(declarationSnippets); ++i)
+            {
+                lsp::CompletionItem item;
+                item.label = declarationSnippets[i].first;
+                item.kind = lsp::CompletionItemKindEnum(lsp::CompletionItemKind::Snippet);
+                item.insertText = declarationSnippets[i].second;
+                item.insertTextFormat = lsp::InsertTextFormatEnum(lsp::InsertTextFormat::Snippet);
+                item.sortText = std::string("0") + declarationSnippets[i].first;
+                item.detail = snippetDetails[i].second;
+                items.push_back(std::move(item));
+            }
+        }
+
         for (const auto &kw : GetKeywords())
         {
-            AddItemIfNew(items, seenLabels, kw, lsp::CompletionItemKind::Keyword);
+            AddItemIfNew(items, seenLabels, kw, lsp::CompletionItemKind::Keyword,
+                         "", "", "", "", "1" + kw);
         }
 
         return items;
