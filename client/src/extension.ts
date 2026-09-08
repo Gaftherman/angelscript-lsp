@@ -55,6 +55,20 @@ function clientIsRunning(): boolean {
 }
 
 /**
+ * @brief The running client, or undefined when there is not one.
+ *
+ * `clientIsRunning()` cannot narrow the type: it reads a module variable instead of taking one, so
+ * it can never be a type predicate. This returns the reference instead, which is the part that
+ * matters - `performRestart` sets `client` to undefined while it stops the old one, and every
+ * caller here is about to `await`. Holding the reference means the request goes to the client the
+ * check passed for, rather than to whatever is in the slot when the await resumes.
+ */
+function activeClient(): LanguageClient | undefined {
+    const running = client;
+    return running !== undefined && running.state === 2 ? running : undefined;
+}
+
+/**
  * @brief When this module finished evaluating, as the baseline every activation mark is measured from.
  *
  * A user reported 2942 ms to load a small project against 500 ms on a fast machine. The server's
@@ -85,7 +99,7 @@ function timed<T>(phase: string, body: () => T): T {
     }
 }
 
-let client: LanguageClient;
+let client: LanguageClient | undefined;
 let lspOutputChannel: OutputChannel;
 let statusBarItem: StatusBarItem;
 
@@ -1325,7 +1339,7 @@ async function performRestart(context: ExtensionContext, reason: string): Promis
 
     if (client) {
         const oldClient = client;
-        client = undefined as unknown as LanguageClient;
+        client = undefined;
         try {
             await oldClient.stop();
             await oldClient.dispose();
@@ -1393,11 +1407,12 @@ async function refreshStubStatus(stubs?: PredefinedStubsResult): Promise<void> {
     let result = stubs;
 
     if (result === undefined) {
-        if (!clientIsRunning()) {
+        const running = activeClient();
+        if (running === undefined) {
             return;
         }
         try {
-            result = await client.sendRequest<PredefinedStubsResult>(
+            result = await running.sendRequest<PredefinedStubsResult>(
                 'workspace/executeCommand', { command: 'angelscript.listPredefinedStubs' });
         } catch {
             return;
@@ -1440,13 +1455,14 @@ async function offerStubChoice(): Promise<void> {
     // delay: it costs a single request when the answer is ready immediately, and it gives up rather
     // than polling a workspace that simply has no stubs in it.
     for (let attempt = 0; attempt < 10; attempt++) {
-        if (!clientIsRunning()) {
+        const running = activeClient();
+        if (running === undefined) {
             return;
         }
 
         let result: PredefinedStubsResult | undefined;
         try {
-            result = await client.sendRequest<PredefinedStubsResult>(
+            result = await running.sendRequest<PredefinedStubsResult>(
                 'workspace/executeCommand', { command: 'angelscript.listPredefinedStubs' });
         } catch {
             return;
@@ -1589,7 +1605,8 @@ async function formatPredefinedStub(resource?: Uri): Promise<void> {
         return;
     }
 
-    if (!clientIsRunning()) {
+    const running = activeClient();
+    if (running === undefined) {
         void window.showWarningMessage(
             l10n.t('The AngelScript server is not running, so the stub cannot be formatted.'));
         return;
@@ -1597,7 +1614,7 @@ async function formatPredefinedStub(resource?: Uri): Promise<void> {
 
     let result: FormatStubResult | undefined;
     try {
-        result = await client.sendRequest<FormatStubResult>('workspace/executeCommand', {
+        result = await running.sendRequest<FormatStubResult>('workspace/executeCommand', {
             command: FORMAT_STUB_COMMAND,
             arguments: [target.toString()]
         });

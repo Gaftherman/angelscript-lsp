@@ -41,7 +41,7 @@ namespace angel_lsp::features
          * I include" is different in every directory. Empty disables include completion, which is
          * what a caller with no filesystem gets.
          */
-        std::string documentPath;
+        std::string documentPath = {};
 
         /**
          * @brief Every file that may be named in an `#include`, as absolute paths.
@@ -50,7 +50,7 @@ namespace angel_lsp::features
          * almost no completion request is inside an include. Supplied by the server, which is the
          * only thing that knows what the workspace holds.
          */
-        std::function<std::vector<std::string>()> listIncludeCandidates;
+        std::function<std::vector<std::string>()> listIncludeCandidates = {};
 
         /**
          * @brief Suffix to leave off an inserted include path, or empty to insert the name in full.
@@ -59,7 +59,7 @@ namespace angel_lsp::features
          * `#include "helper"`, not `#include "helper.as"` - so completing to the full filename
          * would insert something the host cannot open. See ServerConfig::implicitIncludeExtension.
          */
-        std::string implicitExtension;
+        std::string implicitExtension = {};
     };
 
     /**
@@ -86,7 +86,7 @@ namespace angel_lsp::features
          * the symbol, which is rarely the file completion was invoked in, and only the server
          * knows which documents it currently holds text for.
          */
-        std::function<const std::string *(const std::string &)> readDocument;
+        std::function<const std::string *(const std::string &)> readDocument = {};
     };
 
     /**

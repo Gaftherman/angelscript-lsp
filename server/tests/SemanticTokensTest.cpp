@@ -460,17 +460,9 @@ namespace
         return out;
     }
 
-    /** @brief Index of "comment" in the legend, found by name so a reordering cannot silently pass. */
-    uint32_t CommentTokenType()
-    {
-        const auto &types = GetSemanticTokensLegend().tokenTypes;
-        for (uint32_t i = 0; i < types.size(); ++i)
-        {
-            if (types[i] == "comment")
-                return i;
-        }
-        return UINT32_MAX;
-    }
+    // CommentTokenType() lived here, and went unused when the test below stopped requiring one
+    // comment token per dead line - see its own comment for why that instrument was wrong. GCC
+    // said so (-Wunused-function) and MSVC did not, which is the only reason it survived this long.
 }
 
 TEST_CASE("SemanticTokensHandler - An excluded #if block is left to the decoration")

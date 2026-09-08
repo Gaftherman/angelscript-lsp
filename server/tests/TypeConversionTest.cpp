@@ -1804,8 +1804,11 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
 // as `file:line:column code` to the path in ANGELLSP_NUMERIC_WARNING_DUMP when that is set.
 // The compiler's own side of the comparison is one loop:
 //
-//   for f in angelscript/*.as; do server/build-release/Release/angelscript_oracle.exe "$f"; done \
-//     | grep -E 'Signed/Unsigned mismatch|Float value truncated'
+//   for f in angelscript/*.as; do server/build-release/Release/angelscript_oracle.exe "$f"; done
+//   and pipe that into: grep -E 'Signed/Unsigned mismatch|Float value truncated'
+//
+//   Two lines rather than one continued with a trailing \ - inside a // comment GCC reads
+//   that as continuing the comment onto the next line, and says so (-Wcomment).
 //
 // Any finding in the dump that the compiler does not also make is a false positive, and that
 // count - not the total - is the number these two rules live or die by. The same audit runs

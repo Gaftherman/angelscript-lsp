@@ -603,7 +603,7 @@ namespace angel_lsp::config
              * A definition needs a name and at least one of these two. Both together is the
              * fourth case: the folder decides who is in, the entry decides where analysis starts.
              */
-            std::string folder;
+            std::string folder = {};
         };
 
         /**

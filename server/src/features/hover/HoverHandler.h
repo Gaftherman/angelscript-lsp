@@ -36,8 +36,14 @@ namespace angel_lsp::features
          *
          * The same shape as CompletionResolveRequest::readDocument, and supplied from the same
          * place in Server.cpp.
+         *
+         * The `= {}` is not decoration. Callers build this struct with a braced list that stops at
+         * `position`, and GCC warns on every one of them (`-Wmissing-field-initializers`) for each
+         * trailing member that has no default of its own - five warnings on Linux x86 from two
+         * lines in the adversarial tests. A member that declares its own default is not "missing",
+         * so the fix belongs here, once, rather than at each call site that deliberately omits it.
          */
-        std::function<const std::string *(const std::string &)> readDocument;
+        std::function<const std::string *(const std::string &)> readDocument = {};
 
         /**
          * @brief The server's configuration, for the engine properties that change what is legal.
@@ -60,7 +66,7 @@ namespace angel_lsp::features
          * exactly" - a relative path resolves against the current file, then against each search
          * directory in order, and the answer is not guessable from the line itself.
          */
-        std::function<std::string(const std::string &rawPath)> resolveInclude;
+        std::function<std::string(const std::string &rawPath)> resolveInclude = {};
     };
 
     /**
