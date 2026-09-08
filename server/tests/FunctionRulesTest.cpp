@@ -1024,3 +1024,79 @@ TEST_CASE("FunctionRules - The implementing class's accessor is still hinted")
     }
     CHECK(hints == 1);
 }
+
+TEST_CASE("FunctionRules - Reports standalone anonymous function")
+{
+    const auto analyzeWithTree = [](const std::string &code)
+    {
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        LocalScopeCollector scopes(nullptr);
+        SymbolTable table;
+        static angel_lsp::i18n::I18n i18n;
+
+        collector.CollectSymbols("file:///funcs.as", code, parser, table);
+
+        SemanticAnalysisRequest request{ table, "file:///funcs.as", ".as.predefined", &i18n };
+        request.scopeRoot = scopes.CollectScopes(code, parser);
+        request.sourceCode = code;
+        request.tree = parser.Parse(code);
+
+        SemanticAnalyzer analyzer(nullptr);
+        auto diags = analyzer.Analyze(request);
+        if (request.tree)
+        {
+            ts_tree_delete(const_cast<TSTree *>(request.tree));
+        }
+        return diags;
+    };
+
+    const auto getErrors = [](const std::vector<Diagnostic> &diags)
+    {
+        std::vector<Diagnostic> errors;
+        for (const auto &d : diags)
+        {
+            if (d.severity == DiagnosticSeverity::Error)
+            {
+                errors.push_back(d);
+            }
+        }
+        return errors;
+    };
+
+    const std::string rejected =
+        "void OnServerStart()\n"
+        "{\n"
+        "    while (true)\n"
+        "    {\n"
+        "        function(bool param)\n"
+        "        {\n"
+        "        };\n"
+        "    }\n"
+        "}\n";
+
+    const auto errorsRejected = getErrors(analyzeWithTree(rejected));
+    REQUIRE(errorsRejected.size() == 1);
+    CHECK(errorsRejected[0].code == "as-err-standalone-anonymous-function");
+    CHECK(errorsRejected[0].range.start.line == 4);
+
+    const std::string legalCall =
+        "funcdef void CB(bool);\n"
+        "void Take(CB@ cb) {}\n"
+        "void F()\n"
+        "{\n"
+        "    Take(function(bool param) { });\n"
+        "}\n";
+    const auto errorsCall = getErrors(analyzeWithTree(legalCall));
+    CHECK(errorsCall.empty());
+
+    const std::string legalInit =
+        "funcdef void CB(bool);\n"
+        "void F()\n"
+        "{\n"
+        "    CB@ handle = function(bool param) { };\n"
+        "}\n";
+    const auto errorsInit = getErrors(analyzeWithTree(legalInit));
+    CHECK(errorsInit.empty());
+}
+

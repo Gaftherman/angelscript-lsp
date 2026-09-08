@@ -194,6 +194,7 @@ namespace angel_lsp::diagnostics::codes
     inline constexpr std::string_view RefTypeBoolConvDisallowed            = "as-err-ref-type-bool-conv-disallowed";
     inline constexpr std::string_view ReturnNotInstantiable                = "as-err-return-not-instantiable";
     inline constexpr std::string_view SignatureMismatchFuncHandle          = "as-err-signature-mismatch-func-handle";
+    inline constexpr std::string_view StandaloneAnonymousFunction          = "as-err-standalone-anonymous-function";
     inline constexpr std::string_view TemplateClassNotSupported            = "as-err-template-class-not-supported";
     inline constexpr std::string_view ValueAssignForRef                    = "as-err-value-assign-for-ref";
     inline constexpr std::string_view VirtualPropertySignature             = "as-err-virtual-property-signature";

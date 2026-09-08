@@ -96,6 +96,7 @@ namespace angel_lsp::analysis
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const ControlFlowCheckRequest flowRequest{ts_tree_root_node(request.tree), request.sourceCode};
             CheckControlFlow(flowRequest, ctx);
+            rules::ValidateStandaloneLambda(ts_tree_root_node(request.tree), ctx);
         }
 
         // The one pass that judges a use rather than a declaration, so it needs both the tree that

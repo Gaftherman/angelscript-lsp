@@ -1,5 +1,8 @@
 #include "analysis/rules/FunctionRules.h"
+#include "analysis/ASTUtils.h"
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/GrammarNames.h"
 
 #include <algorithm>
 #include <string>
@@ -744,4 +747,46 @@ namespace angel_lsp::analysis::rules
             }
         }
     }
+
+    namespace
+    {
+        void WalkStandaloneLambda(TSNode node, const DiagnosticContext &ctx, int depth = 0)
+        {
+            if (ts_node_is_null(node) || depth > k_maxAstDepth)
+            {
+                return;
+            }
+
+            const std::string_view nodeType = NodeType(node);
+            if (nodeType == parser::nodes::ExpressionStatement && ts_node_named_child_count(node) == 1)
+            {
+                const TSNode child = ts_node_named_child(node, 0);
+                if (NodeType(child) == parser::nodes::LambdaExpression)
+                {
+                    const TSPoint start = ts_node_start_point(child);
+                    const TSPoint end = ts_node_end_point(child);
+                    ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                    diagnostics::codes::StandaloneAnonymousFunction,
+                                    DiagnosticSeverity::Error);
+                }
+            }
+
+            const uint32_t count = ts_node_child_count(node);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                WalkStandaloneLambda(ts_node_child(node, i), ctx, depth + 1);
+            }
+        }
+    }
+
+    void ValidateStandaloneLambda(TSNode root, const DiagnosticContext &ctx)
+    {
+        if (ts_node_is_null(root))
+        {
+            return;
+        }
+
+        WalkStandaloneLambda(root, ctx);
+    }
 }
+

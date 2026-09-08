@@ -264,6 +264,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-cannot-return-local-ref"] = "Cannot return reference to local variable '{}'.";
         m_messages["as-err-cannot-return-param-ref"] = "Cannot return reference to parameter '{}'.";
         m_messages["as-err-lambda-closure-disallowed"] = "Lambdas cannot access outer local variables (no closures).";
+        m_messages["as-err-standalone-anonymous-function"] = "An anonymous function is an expression and cannot be used as a stand-alone statement. Pass it where a funcdef is expected or assign it to a funcdef handle.";
         m_messages["as-err-readonly-handle"] = "Cannot reassign read-only handle '{}'.";
 
         if (locale == "es")
@@ -427,6 +428,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-cannot-return-local-ref"] = "No se puede devolver una referencia a la variable local '{}'.";
             m_messages["as-err-cannot-return-param-ref"] = "No se puede devolver una referencia al parámetro '{}'.";
             m_messages["as-err-lambda-closure-disallowed"] = "Las lambdas no pueden acceder a variables locales externas (sin clausuras).";
+            m_messages["as-err-standalone-anonymous-function"] = "Una función anónima es una expresión y no puede usarse como una sentencia independiente. Pásala donde se espere un funcdef o asígnala a un handle de funcdef.";
             m_messages["as-err-readonly-handle"] = "No se puede reasignar el handle de solo lectura '{}'.";
         }
     }
