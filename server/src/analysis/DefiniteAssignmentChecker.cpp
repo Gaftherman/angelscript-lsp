@@ -666,7 +666,6 @@ namespace angel_lsp::analysis
                     TSNode cond = ts_node_named_child(node, 0);
                     CheckExpressionReads(cond, state);
 
-                    bool hasDefault = false;
                     std::vector<FlowState> caseStates;
                     uint32_t count = ts_node_named_child_count(node);
 
@@ -676,10 +675,6 @@ namespace angel_lsp::analysis
                         if (std::string_view(ts_node_type(child)) == "case_clause")
                         {
                             TSNode kw = ts_node_child(child, 0);
-                            if (std::string_view(ts_node_type(kw)) == "default")
-                            {
-                                hasDefault = true;
-                            }
 
                             FlowState caseState = state;
                             uint32_t stmtCount = ts_node_named_child_count(child);

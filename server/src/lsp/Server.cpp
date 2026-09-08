@@ -2476,6 +2476,14 @@ namespace angel_lsp
         case lsp::TraceValue::Verbose:
             m_logger->SetLevel(LogLevel::Debug);
             break;
+
+        // Not a value any client sends: the generator appends MAX_VALUE to every enum it writes,
+        // and the framework parks a string it did not recognise there. Leaving the level where the
+        // user last put it is the right answer to "I do not know what you asked for" - named rather
+        // than reached by falling out of the switch, so the compiler stops warning that this enum
+        // has an unhandled member and can warn about one that matters.
+        case lsp::TraceValue::MAX_VALUE:
+            break;
         }
     }
 
