@@ -79,6 +79,25 @@ namespace
         }
     };
 
+    /** @brief Waits until a needle has appeared at least `times` times. */
+    void WaitForCount(test::ScriptedStream &stream, const std::string &needle, size_t times)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            const std::string output = stream.Output();
+            size_t count = 0;
+            for (size_t at = output.find(needle); at != std::string::npos;
+                 at = output.find(needle, at + needle.size()))
+            {
+                ++count;
+            }
+            if (count >= times)
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+
     /** @brief Drives a Server through a scripted message sequence and returns everything it wrote. */
     std::string RunScript(const config::ServerConfig &config, test::ScriptedStream &stream)
     {
@@ -1823,6 +1842,16 @@ TEST_CASE("Server - A created file that something includes becomes visible")
     stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didCreateFiles","params":{"files":[{"uri":")" +
                 fixture.Uri("helper.as") + R"("}]}})");
 
+    // Waits for the republish didCreateFiles triggers, so the question is asked after the server
+    // has answered it rather than while it is still working.
+    //
+    // This wait is NOT what made the test pass, and the distinction is the whole story: it failed
+    // 60 times in 60 runs on Linux with the wait in place. What failed was the server - the closure
+    // indexer skipped any file it had already cached, so whichever analysis read helper.as first
+    // decided its contents for good, and on Linux that was the placeholder. See
+    // HandleNotificationsWorkspace_DidCreateFiles.
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 2); });
+
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/symbol","params":{"query":"UniquelyNamedNewcomer"}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
@@ -1855,6 +1884,10 @@ TEST_CASE("Server - A created file nothing includes is not indexed")
     });
     stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didCreateFiles","params":{"files":[{"uri":")" +
                 fixture.Uri("unreferenced.as") + R"("}]}})");
+
+    // The same wait as the test above, and here it earns its place: "not indexed" passes for free
+    // while nothing has been indexed yet, so without it this asserts nothing at all.
+    stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 2); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/symbol","params":{"query":"NobodyAsksForThis"}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
@@ -3202,7 +3235,7 @@ TEST_CASE("Server - Opening the stub that was selected keeps it loaded")
 
 namespace
 {
-    /** \nbrief One typed character, as the editor sends it: a zero-width range and the text. */
+    /** @brief One typed character, as the editor sends it: a zero-width range and the text. */
     std::string TypeCharMessage(const std::string &uri, int version,
                                 uint32_t line, uint32_t character, char typed)
     {
@@ -3294,7 +3327,7 @@ namespace
     }
 
     /**
-     * \nbrief The body of the last publishDiagnostics frame naming this URI.
+     * @brief The body of the last publishDiagnostics frame naming this URI.
      *
      * The last, not any: typing produces one per analysis, and only the final one describes the
      * document the assertions are about.
@@ -4411,31 +4444,13 @@ TEST_CASE("Server - A diagnostic underlines the text it is about")
 
 namespace
 {
-    /** \nbrief One watched-file event, in the shape the client sends. */
+    /** @brief One watched-file event, in the shape the client sends. */
     std::string WatchedFileMessage(const std::string &uri, int changeType)
     {
         return R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[)"
                R"({"uri":")" + uri + R"(","type":)" + std::to_string(changeType) + R"(}]}})";
     }
 
-    /** \nbrief Waits until a needle has appeared at least `times` times. */
-    void WaitForCount(test::ScriptedStream &stream, const std::string &needle, size_t times)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            const std::string output = stream.Output();
-            size_t count = 0;
-            for (size_t at = output.find(needle); at != std::string::npos;
-                 at = output.find(needle, at + needle.size()))
-            {
-                ++count;
-            }
-            if (count >= times)
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    }
 }
 
 TEST_CASE("Server - A script created on disk becomes part of the module")

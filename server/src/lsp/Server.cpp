@@ -2500,19 +2500,48 @@ namespace angel_lsp
         //
         // What actually has to happen is the reverse direction: the OPEN documents' directives are
         // re-resolved, because one of them now names a file that exists.
-        bool anyScriptCreated = false;
+        // And the created file's own contents have to be forgotten, which is the second half of
+        // this and was missing. A name can already be in the closure cache before the file exists:
+        // an editor that writes a placeholder and then the real thing, a template that scaffolds
+        // and fills in, a `git checkout` racing the first analysis. The closure indexer skips
+        // anything m_closureDocuments already holds, so whichever read wins decides the contents
+        // for good, and no later reanalysis re-reads it.
+        //
+        // Measured: the test for this failed 60 times in 60 runs on Linux and 0 in 40 on Windows -
+        // the two platforms losing the same race on opposite sides, which is what reached CI as an
+        // intermittent. Waiting longer in the test does not help, because nothing was going to
+        // re-read the file.
+        //
+        // The watched-file handler above has done this all along; this one had not learned it.
+        std::vector<std::string> createdPaths;
         for (const auto &created : params.files)
         {
             const std::string path = CanonicalPathFromUri(DocumentKey(created.uri.toString()));
             if (!path.empty() && path.ends_with(m_config.info.fileExtension))
             {
-                anyScriptCreated = true;
-                break;
+                createdPaths.push_back(path);
             }
         }
 
-        if (!anyScriptCreated)
+        if (createdPaths.empty())
             return;
+
+        {
+            angel_lsp::parser::AngelScriptParser createdParser(m_logger.get());
+            for (const std::string &path : createdPaths)
+            {
+                if (const auto indexed = m_indexedUriByPath.find(path);
+                    indexed != m_indexedUriByPath.end())
+                {
+                    const std::string indexedUri = indexed->second;
+                    m_symbolTable.ClearDocumentSymbols(indexedUri);
+                    m_scopeIndex.ClearDocument(indexedUri);
+                    m_callGraph.ClearDocument(indexedUri);
+                    m_closureDocuments.erase(indexedUri);
+                    IndexClosureFile(path, createdParser);
+                }
+            }
+        }
 
         const auto searchDirectories = SearchDirectories();
         for (const auto &[openUri, text] : m_openDocuments)
