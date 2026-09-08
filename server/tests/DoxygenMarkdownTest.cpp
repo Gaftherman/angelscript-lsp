@@ -77,7 +77,7 @@ TEST_CASE("DoxygenMarkdown - Inline formatting commands merge into preceding blo
 
     const std::string rendered = RenderDoxygenMarkdown(input);
 
-    CHECK(rendered == "> **Note:** Uses `slashForm` and **bold** and *em* and `param.`");
+    CHECK(rendered == "> **Note:** Uses `slashForm` and **bold** and *em* and `param`.");
     CHECK(rendered.find("> **B:**") == std::string::npos);
     CHECK(rendered.find("> **E:**") == std::string::npos);
     CHECK(rendered.find("> **P:**") == std::string::npos);
@@ -180,4 +180,185 @@ TEST_CASE("DoxygenMarkdown - First line without period preserves subsequent @par
     const std::string rendered = RenderDoxygenMarkdown(input);
     CHECK(rendered == expected);
     CHECK(rendered.find("* `a`: Value.") != std::string::npos);
+}
+
+TEST_CASE("DoxygenMarkdown - Structural tags (@class, @struct, @fn, @file) are omitted from hover")
+{
+    SUBCASE("Bare @class produces empty markdown")
+    {
+        const std::string input =
+            "/**\n"
+            " * @class Player\n"
+            " */";
+
+        CHECK(RenderDoxygenMarkdown(input).empty());
+    }
+
+    SUBCASE("@class with attached description preserves description as body without @class tag")
+    {
+        const std::string input =
+            "/**\n"
+            " * @class Player\n"
+            " * Controls player movement and state.\n"
+            " */";
+
+        const std::string rendered = RenderDoxygenMarkdown(input);
+        CHECK(rendered == "Controls player movement and state.");
+        CHECK(rendered.find("Class") == std::string::npos);
+    }
+
+    SUBCASE("Structural tags @struct, @file, @fn are stripped without generating admonitions")
+    {
+        const std::string input =
+            "/**\n"
+            " * @struct Transform2D\n"
+            " * Represents a 2D coordinate transform.\n"
+            " * @fn void UpdateTransform()\n"
+            " * @file MathUtils.as\n"
+            " */";
+
+        const std::string rendered = RenderDoxygenMarkdown(input);
+        CHECK(rendered == "Represents a 2D coordinate transform.");
+        CHECK(rendered.find("Struct") == std::string::npos);
+        CHECK(rendered.find("Fn") == std::string::npos);
+        CHECK(rendered.find("File") == std::string::npos);
+    }
+}
+
+TEST_CASE("DoxygenMarkdown - @details produces a body paragraph, not an admonition")
+{
+    const std::string input =
+        "/**\n"
+        " * @brief Short summary.\n"
+        " * @details Extended detailed explanation across\n"
+        " * multiple lines.\n"
+        " */";
+
+    const std::string expected =
+        "Short summary.\n\n"
+        "Extended detailed explanation across multiple lines.";
+
+    CHECK(RenderDoxygenMarkdown(input) == expected);
+    CHECK(RenderDoxygenMarkdown(input).find("Details:") == std::string::npos);
+}
+
+TEST_CASE("DoxygenMarkdown - @retval renders bullets under Returns section")
+{
+    SUBCASE("@retval alongside @return")
+    {
+        const std::string input =
+            "/**\n"
+            " * @brief Executes a task.\n"
+            " * @return Exit status code.\n"
+            " * @retval 0 Success.\n"
+            " * @retval -1 Generic error.\n"
+            " */";
+
+        const std::string expected =
+            "Executes a task.\n\n"
+            "**Returns:** Exit status code.\n"
+            "* `0`: Success.\n"
+            "* `-1`: Generic error.";
+
+        CHECK(RenderDoxygenMarkdown(input) == expected);
+    }
+
+    SUBCASE("@retval without @return synthesizes Returns header")
+    {
+        const std::string input =
+            "/**\n"
+            " * @brief Checks validity.\n"
+            " * @retval true Valid.\n"
+            " * @retval false Invalid.\n"
+            " */";
+
+        const std::string expected =
+            "Checks validity.\n\n"
+            "**Returns:**\n"
+            "* `true`: Valid.\n"
+            "* `false`: Invalid.";
+
+        CHECK(RenderDoxygenMarkdown(input) == expected);
+    }
+}
+
+TEST_CASE("DoxygenMarkdown - @ref formats as inline code")
+{
+    const std::string input =
+        "/**\n"
+        " * See @ref Actor for the base class.\n"
+        " */";
+
+    CHECK(RenderDoxygenMarkdown(input) == "See `Actor` for the base class.");
+}
+
+TEST_CASE("DoxygenMarkdown - Inline command trailing and leading punctuation")
+{
+    SUBCASE("Trailing periods, commas, colons, and parens remain outside code delimiters")
+    {
+        const std::string input =
+            "/**\n"
+            " * Returns @c true. Also (@c value), check @b status: ok!\n"
+            " */";
+
+        const std::string expected =
+            "Returns `true`.\n\n"
+            "Also (`value`), check **status**: ok!";
+
+        CHECK(RenderDoxygenMarkdown(input) == expected);
+    }
+}
+
+TEST_CASE("DoxygenMarkdown - @verbatim renders as an unfenced code block")
+{
+    const std::string input =
+        "/**\n"
+        " * @verbatim\n"
+        " * raw ASCII art or text\n"
+        " * line two\n"
+        " * @endverbatim\n"
+        " */";
+
+    const std::string expected =
+        "```\n"
+        "raw ASCII art or text\n"
+        "line two\n"
+        "```";
+
+    CHECK(RenderDoxygenMarkdown(input) == expected);
+}
+
+TEST_CASE("DoxygenMarkdown - Basic HTML tags convert to Markdown")
+{
+    const std::string input =
+        "/**\n"
+        " * Uses <code>int</code>, <b>bold text</b>, and <i>italic text</i>.\n"
+        " */";
+
+    CHECK(RenderDoxygenMarkdown(input) == "Uses `int`, **bold text**, and *italic text*.");
+}
+
+TEST_CASE("DoxygenMarkdown - Doxygen -# numbered list converts to ordered markdown")
+{
+    const std::string input =
+        "/**\n"
+        " * -# First step\n"
+        " * -# Second step\n"
+        " */";
+
+    const std::string expected =
+        "1. First step\n"
+        "2. Second step";
+
+    CHECK(RenderDoxygenMarkdown(input) == expected);
+}
+
+TEST_CASE("DoxygenMarkdown - Doxygen escape sequences unescape cleanly")
+{
+    const std::string input =
+        "/**\n"
+        " * Contact at \\@admin or use \\$variable and \\\\backslash.\n"
+        " */";
+
+    CHECK(RenderDoxygenMarkdown(input) == "Contact at @admin or use $variable and \\backslash.");
 }

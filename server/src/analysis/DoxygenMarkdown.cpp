@@ -102,10 +102,8 @@ namespace angel_lsp::analysis
         }
 
         /**
-         * @brief Cleans description lines by stripping line decorations and joining with single spaces.
-         *
-         * Strips leading [ \t]*\*[ \t]? from every line after the first, trims trailing whitespace,
-         * and joins non-empty lines with a single space.
+         * @brief Cleans description lines by stripping line decorations, converting `-#` list items,
+         * and joining lines with single spaces or linebreaks (for lists).
          */
         std::string CleanDescriptionLines(const std::string &raw)
         {
@@ -116,6 +114,7 @@ namespace angel_lsp::analysis
             }
 
             std::vector<std::string> cleaned;
+            int listNum = 1;
             for (size_t i = 0; i < lines.size(); ++i)
             {
                 std::string l = lines[i];
@@ -126,6 +125,14 @@ namespace angel_lsp::analysis
                 l = Trim(l);
                 if (!l.empty())
                 {
+                    if (l.starts_with("-# ") || l.starts_with("-#\t"))
+                    {
+                        l = std::to_string(listNum++) + ". " + TrimLeading(l.substr(2));
+                    }
+                    else
+                    {
+                        listNum = 1;
+                    }
                     cleaned.push_back(std::move(l));
                 }
             }
@@ -135,7 +142,18 @@ namespace angel_lsp::analysis
             {
                 if (i > 0)
                 {
-                    result += " ";
+                    bool isListLine = (cleaned[i].size() >= 3 && std::isdigit(static_cast<unsigned char>(cleaned[i][0])) && cleaned[i].find(". ") != std::string::npos) ||
+                                      cleaned[i].starts_with("* ") || cleaned[i].starts_with("- ");
+                    bool prevIsListLine = (cleaned[i - 1].size() >= 3 && std::isdigit(static_cast<unsigned char>(cleaned[i - 1][0])) && cleaned[i - 1].find(". ") != std::string::npos) ||
+                                          cleaned[i - 1].starts_with("* ") || cleaned[i - 1].starts_with("- ");
+                    if (isListLine || prevIsListLine)
+                    {
+                        result += "\n";
+                    }
+                    else
+                    {
+                        result += " ";
+                    }
                 }
                 result += cleaned[i];
             }
@@ -153,11 +171,14 @@ namespace angel_lsp::analysis
          *   @a X, @e X, @em X -> *X*
          * where X is the next whitespace-delimited word, only when preceded by whitespace or start-of-run.
          */
-        std::string RewriteAtInlineCommands(const std::string &text)
+        /**
+         * @brief Converts common inline HTML tags (<code>, <tt>, <b>, <strong>, <i>, <em>) to Markdown.
+         */
+        std::string RewriteInlineHtml(const std::string &text)
         {
-            if (text.empty())
+            if (text.find('<') == std::string::npos)
             {
-                return "";
+                return text;
             }
 
             std::string result;
@@ -165,15 +186,103 @@ namespace angel_lsp::analysis
             size_t i = 0;
             while (i < text.size())
             {
+                if (text[i] == '<')
+                {
+                    std::string_view rem(&text[i], text.size() - i);
+                    auto tryReplaceTag = [&](std::string_view openTag, std::string_view closeTag, std::string_view mdWrapper) -> bool
+                    {
+                        if (rem.starts_with(openTag))
+                        {
+                            size_t closePos = text.find(closeTag, i + openTag.size());
+                            if (closePos != std::string::npos)
+                            {
+                                std::string inner = text.substr(i + openTag.size(), closePos - (i + openTag.size()));
+                                result += mdWrapper;
+                                result += inner;
+                                result += mdWrapper;
+                                i = closePos + closeTag.size();
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
+
+                    if (tryReplaceTag("<code>", "</code>", "`") ||
+                        tryReplaceTag("<tt>", "</tt>", "`") ||
+                        tryReplaceTag("<b>", "</b>", "**") ||
+                        tryReplaceTag("<strong>", "</strong>", "**") ||
+                        tryReplaceTag("<i>", "</i>", "*") ||
+                        tryReplaceTag("<em>", "</em>", "*"))
+                    {
+                        continue;
+                    }
+                }
+                result += text[i];
+                ++i;
+            }
+            return result;
+        }
+
+        /**
+         * @brief Rewrites at-form inline formatting commands (@c, @p, @b, @a, @e, @em, @ref) in verbatim text.
+         *
+         * The tree-sitter-doxygen grammar's _text token (/[^*{}@\\\s][^*!{}\\\n]*.../) swallows '@'
+         * characters after the first character of text into anonymous text, so at-form inline commands
+         * are never emitted as tag nodes. We rewrite them directly in raw text runs:
+         *   @c X, @p X, @ref X -> `X`
+         *   @b X               -> **X**
+         *   @a X, @e X, @em X  -> *X*
+         * where X is the next whitespace-delimited word (excluding trailing punctuation),
+         * only when preceded by whitespace or start-of-run/punctuation opener.
+         */
+        std::string RewriteAtInlineCommands(const std::string &input)
+        {
+            if (input.empty())
+            {
+                return "";
+            }
+
+            std::string text = RewriteInlineHtml(input);
+
+            std::string result;
+            result.reserve(text.size());
+            size_t i = 0;
+            while (i < text.size())
+            {
+                // Unescape Doxygen escaped characters (\@, \\, \$, \&, \#, \%, \<, \>)
+                if (text[i] == '\\' && i + 1 < text.size())
+                {
+                    char next = text[i + 1];
+                    if (next == '@' || next == '\\' || next == '$' || next == '&' ||
+                        next == '#' || next == '%' || next == '<' || next == '>')
+                    {
+                        result += next;
+                        i += 2;
+                        continue;
+                    }
+                }
+                if (text[i] == '@' && i + 1 < text.size() && text[i + 1] == '@')
+                {
+                    result += '@';
+                    i += 2;
+                    continue;
+                }
+
                 if (text[i] == '@' || text[i] == '\\')
                 {
                     bool atStartOrWs = (i == 0 || std::isspace(static_cast<unsigned char>(text[i - 1])) ||
-                                        text[i - 1] == '(' || text[i - 1] == '[');
+                                        text[i - 1] == '(' || text[i - 1] == '[' || text[i - 1] == '{' ||
+                                        text[i - 1] == '<' || text[i - 1] == '"' || text[i - 1] == '\'');
                     if (atStartOrWs)
                     {
                         size_t cmdLen = 0;
                         std::string_view cmd;
-                        if (i + 3 <= text.size() && text[i + 1] == 'e' && text[i + 2] == 'm')
+                        if (i + 4 <= text.size() && text[i + 1] == 'r' && text[i + 2] == 'e' && text[i + 3] == 'f')
+                        {
+                            cmdLen = 3;
+                            cmd = "ref";
+                        }
+                        else if (i + 3 <= text.size() && text[i + 1] == 'e' && text[i + 2] == 'm')
                         {
                             cmdLen = 2;
                             cmd = "em";
@@ -205,8 +314,24 @@ namespace angel_lsp::analysis
                                     ++argEnd;
                                 }
 
+                                // Exclude trailing punctuation so it remains outside the Markdown delimiters
+                                size_t trailingStart = argEnd;
+                                while (trailingStart > argStart &&
+                                       (text[trailingStart - 1] == '.' || text[trailingStart - 1] == ',' ||
+                                        text[trailingStart - 1] == ';' || text[trailingStart - 1] == ':' ||
+                                        text[trailingStart - 1] == '!' || text[trailingStart - 1] == '?' ||
+                                        text[trailingStart - 1] == ')' || text[trailingStart - 1] == ']' ||
+                                        text[trailingStart - 1] == '}'))
+                                {
+                                    --trailingStart;
+                                }
+                                if (trailingStart > argStart)
+                                {
+                                    argEnd = trailingStart;
+                                }
+
                                 std::string X = text.substr(argStart, argEnd - argStart);
-                                if (cmd == "c" || cmd == "p")
+                                if (cmd == "c" || cmd == "p" || cmd == "ref")
                                 {
                                     result += "`" + X + "`";
                                 }
@@ -390,7 +515,8 @@ namespace angel_lsp::analysis
             }
 
             // Verbatim code commands are handled separately:
-            if (cmdName == "code" || cmdName == "endcode")
+            if (cmdName == "code" || cmdName == "endcode" ||
+                cmdName == "verbatim" || cmdName == "endverbatim")
             {
                 return false;
             }
@@ -441,7 +567,8 @@ namespace angel_lsp::analysis
                     {
                         break;
                     }
-                    if (nextTrimmed.starts_with("@code") || nextTrimmed.starts_with("\\code"))
+                    if (nextTrimmed.starts_with("@code") || nextTrimmed.starts_with("\\code") ||
+                        nextTrimmed.starts_with("@verbatim") || nextTrimmed.starts_with("\\verbatim"))
                     {
                         break;
                     }
@@ -487,7 +614,10 @@ namespace angel_lsp::analysis
             }
 
             std::string firstLine = TrimLeading(lines[firstContentIdx]);
-            if (firstLine.starts_with("@code") || firstLine.starts_with("\\code"))
+            if (firstLine.starts_with("@code") || firstLine.starts_with("\\code") ||
+                firstLine.starts_with("@verbatim") || firstLine.starts_with("\\verbatim") ||
+                firstLine.starts_with("-# ") || firstLine.starts_with("-#\t") ||
+                firstLine.starts_with("* ") || firstLine.starts_with("- "))
             {
                 return "";
             }
@@ -538,7 +668,7 @@ namespace angel_lsp::analysis
          *    grammar never sees it.
          * 2. The segmenter cuts lines into TAG segments (each starting with a block command and
          *    continuing over multi-line descriptions), TEXT segments (body paragraphs broken
-         *    on blank lines), and VERBATIM segments (@code ... @endcode).
+         *    on blank lines), and VERBATIM segments (@code ... @endcode, @verbatim ... @endverbatim).
          * 3. Lines starting with inline commands (\b, \e, \em, \a, \c, \p and their @-forms) are
          *    NOT block commands and must not start a segment; they belong to the block above them.
          * 4. Each TAG and TEXT segment is wrapped in its own synthetic comment and parsed on its own.
@@ -568,7 +698,8 @@ namespace angel_lsp::analysis
                 if (inCode)
                 {
                     std::string trimmed = Trim(line);
-                    if (trimmed.starts_with("@endcode") || trimmed.starts_with("\\endcode"))
+                    if (trimmed.starts_with("@endcode") || trimmed.starts_with("\\endcode") ||
+                        trimmed.starts_with("@endverbatim") || trimmed.starts_with("\\endverbatim"))
                     {
                         inCode = false;
                         segments.push_back(std::move(currentCode));
@@ -582,10 +713,12 @@ namespace angel_lsp::analysis
 
                 std::string trimmedLeading = TrimLeading(line);
 
-                // Verbatim code start: @code / \code
-                if (trimmedLeading.starts_with("@code") || trimmedLeading.starts_with("\\code"))
+                // Verbatim code start: @code / \code / @verbatim / \verbatim
+                if (trimmedLeading.starts_with("@code") || trimmedLeading.starts_with("\\code") ||
+                    trimmedLeading.starts_with("@verbatim") || trimmedLeading.starts_with("\\verbatim"))
                 {
-                    size_t cmdLen = 5;
+                    bool isVerbatim = trimmedLeading.starts_with("@verbatim") || trimmedLeading.starts_with("\\verbatim");
+                    size_t cmdLen = isVerbatim ? 9 : 5;
                     std::string afterCmd = trimmedLeading.substr(cmdLen);
                     if (afterCmd.empty() || std::isspace(static_cast<unsigned char>(afterCmd.front())) ||
                         afterCmd.front() == '{' || afterCmd.front() == '.')
@@ -595,17 +728,20 @@ namespace angel_lsp::analysis
                         currentCode = CommentSegment{};
                         currentCode.kind = CommentSegmentKind::VerbatimCode;
 
-                        std::string lang = Trim(afterCmd);
-                        if (lang.starts_with('{') && lang.ends_with('}'))
+                        if (!isVerbatim)
                         {
-                            lang = lang.substr(1, lang.size() - 2);
+                            std::string lang = Trim(afterCmd);
+                            if (lang.starts_with('{') && lang.ends_with('}'))
+                            {
+                                lang = lang.substr(1, lang.size() - 2);
+                            }
+                            lang = Trim(lang);
+                            if (lang.starts_with('.'))
+                            {
+                                lang = lang.substr(1);
+                            }
+                            currentCode.language = Trim(lang);
                         }
-                        lang = Trim(lang);
-                        if (lang.starts_with('.'))
-                        {
-                            lang = lang.substr(1);
-                        }
-                        currentCode.language = Trim(lang);
                         continue;
                     }
                 }
@@ -941,6 +1077,12 @@ namespace angel_lsp::analysis
             std::string description;
         };
 
+        struct RetValItem
+        {
+            std::string value;
+            std::string description;
+        };
+
         enum class DocBlockKind
         {
             Brief,
@@ -949,6 +1091,7 @@ namespace angel_lsp::analysis
             TParam,
             Param,
             Return,
+            RetVal,
             Admonition
         };
 
@@ -959,6 +1102,7 @@ namespace angel_lsp::analysis
             std::string label;
             TParamItem tparam;
             ParamItem param;
+            RetValItem retval;
 
             static DocBlock MakeBrief(std::string t)
             {
@@ -1005,6 +1149,14 @@ namespace angel_lsp::analysis
                 DocBlock b;
                 b.kind = DocBlockKind::Return;
                 b.text = std::move(t);
+                return b;
+            }
+
+            static DocBlock MakeRetVal(RetValItem r)
+            {
+                DocBlock b;
+                b.kind = DocBlockKind::RetVal;
+                b.retval = std::move(r);
                 return b;
             }
 
@@ -1214,6 +1366,8 @@ namespace angel_lsp::analysis
                 label = "Warning";
             else if (lower == "attention")
                 label = "Attention";
+            else if (lower == "caution")
+                label = "Caution";
             else if (lower == "deprecated")
                 label = "Deprecated";
             else if (lower == "see" || lower == "sa")
@@ -1224,6 +1378,8 @@ namespace angel_lsp::analysis
                 label = "Since";
             else if (lower == "todo")
                 label = "Todo";
+            else if (lower == "bug")
+                label = "Bug";
             else if (lower == "pre")
                 label = "Pre";
             else if (lower == "post")
@@ -1237,6 +1393,150 @@ namespace angel_lsp::analysis
             }
 
             return DocBlock::MakeAdmonition(std::move(label), std::move(desc));
+        }
+
+        /**
+         * @brief Extracts value and description from a @retval tag.
+         */
+        RetValItem ProcessRetValTag(TSNode tagNode, const std::string &sourceCode)
+        {
+            RetValItem item;
+            TSNode descChild = FindChildByType(tagNode, "description");
+            std::string desc;
+            if (!ts_node_is_null(descChild))
+            {
+                desc = RenderDescription(descChild, sourceCode);
+            }
+            else
+            {
+                TSNode nameChild = FindChildByType(tagNode, "tag_name");
+                uint32_t start = !ts_node_is_null(nameChild) ? ts_node_end_byte(nameChild) : ts_node_start_byte(tagNode);
+                uint32_t end = ts_node_end_byte(tagNode);
+                if (end > start && end <= sourceCode.size())
+                {
+                    desc = CleanDescriptionLines(RewriteAtInlineCommands(sourceCode.substr(start, end - start)));
+                }
+            }
+
+            desc = Trim(desc);
+            size_t sp = desc.find_first_of(" \t");
+            if (sp != std::string::npos)
+            {
+                item.value = desc.substr(0, sp);
+                item.description = Trim(desc.substr(sp + 1));
+            }
+            else
+            {
+                item.value = desc;
+                item.description = "";
+            }
+            return item;
+        }
+
+        /**
+         * @brief Checks whether a Doxygen tag is a structural declaration command.
+         *
+         * Commands like @class, @struct, @fn, @file designate the documented entity in Doxygen.
+         * In LSP Hover, the compiler AST already provides the declaration signature, so these tags
+         * are omitted to match clangd's clean hover output.
+         */
+        bool IsStructuralTag(std::string_view tag)
+        {
+            static const char *const kStructuralTags[] = {
+                "class", "struct", "union", "enum",
+                "typedef", "typealias", "interface",
+                "fn", "function", "method", "property",
+                "var", "variable", "overload",
+                "file", "headerfile", "namespace", "package",
+                "defgroup", "addtogroup", "ingroup",
+                "weakgroup", "endgroup", "name",
+                "def", "define"
+            };
+            for (const char *st : kStructuralTags)
+            {
+                if (tag == st)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * @brief Extracts attached body description following a structural tag, if any.
+         *
+         * If documentation text was written after the structural target identifier,
+         * it is preserved as standard body text.
+         */
+        std::string ProcessStructuralTagDescription(TSNode tagNode, const std::string &sourceCode)
+        {
+            TSNode descChild = FindChildByType(tagNode, "description");
+            std::string raw;
+            if (!ts_node_is_null(descChild))
+            {
+                raw = RenderDescription(descChild, sourceCode);
+            }
+            else
+            {
+                TSNode nameChild = FindChildByType(tagNode, "tag_name");
+                uint32_t start = !ts_node_is_null(nameChild) ? ts_node_end_byte(nameChild) : ts_node_start_byte(tagNode);
+                uint32_t end = ts_node_end_byte(tagNode);
+                if (end > start && end <= sourceCode.size())
+                {
+                    raw = CleanDescriptionLines(RewriteAtInlineCommands(sourceCode.substr(start, end - start)));
+                }
+            }
+
+            raw = Trim(raw);
+            if (raw.empty())
+            {
+                return "";
+            }
+
+            // Tags like @class have their identifier in a "type" child; their description child
+            // already holds only the actual documentation text. If no description child, there is no doc.
+            TSNode typeChild = FindChildByType(tagNode, "type");
+            if (!ts_node_is_null(typeChild))
+            {
+                if (!ts_node_is_null(descChild))
+                {
+                    return raw;
+                }
+                return "";
+            }
+
+            // For other structural tags without a separate type node (@struct, @file, @fn, etc.),
+            // if multi-line, the first line is the identifier/target and subsequent lines are description.
+            auto lines = SplitLines(raw);
+            if (lines.size() > 1)
+            {
+                std::string subDesc;
+                for (size_t i = 1; i < lines.size(); ++i)
+                {
+                    std::string l = Trim(lines[i]);
+                    if (!l.empty())
+                    {
+                        if (!subDesc.empty())
+                        {
+                            subDesc += " ";
+                        }
+                        subDesc += l;
+                    }
+                }
+                return CleanDescriptionLines(subDesc);
+            }
+
+            // Single line: check if there is descriptive text after the entity identifier
+            size_t sp = raw.find_first_of(" \t");
+            if (sp != std::string::npos)
+            {
+                std::string remainder = Trim(raw.substr(sp + 1));
+                if (!remainder.empty() && !remainder.ends_with(')') && !remainder.ends_with(';'))
+                {
+                    return remainder;
+                }
+            }
+            return "";
         }
 
         /** @brief Appends text to a string block with proper spacing. */
@@ -1276,13 +1576,16 @@ namespace angel_lsp::analysis
             case DocBlockKind::Param:
                 AppendToBlockText(block.param.description, text);
                 break;
+            case DocBlockKind::RetVal:
+                AppendToBlockText(block.retval.description, text);
+                break;
             case DocBlockKind::CodeBlock:
                 break;
             }
         }
 
         /**
-         * @brief Merges an inline formatting tag (\b, \e, \em, \a, \c, \p) into the preceding block.
+         * @brief Merges an inline formatting tag (\b, \e, \em, \a, \c, \p, \ref) into the preceding block.
          *
          * The Doxygen grammar treats any backslash or at word as a tag, fragmenting lines at inline
          * formatting commands. This merge pass appends the rendered inline command to the preceding block
@@ -1323,8 +1626,25 @@ namespace angel_lsp::analysis
                 remainder = "";
             }
 
+            // Exclude trailing punctuation so it remains outside the Markdown formatting
+            size_t punct = X.size();
+            while (punct > 0 &&
+                   (X[punct - 1] == '.' || X[punct - 1] == ',' ||
+                    X[punct - 1] == ';' || X[punct - 1] == ':' ||
+                    X[punct - 1] == '!' || X[punct - 1] == '?' ||
+                    X[punct - 1] == ')' || X[punct - 1] == ']' ||
+                    X[punct - 1] == '}'))
+            {
+                --punct;
+            }
+            if (punct > 0 && punct < X.size())
+            {
+                remainder = X.substr(punct) + remainder;
+                X = X.substr(0, punct);
+            }
+
             std::string formatted;
-            if (cmd == "c" || cmd == "p")
+            if (cmd == "c" || cmd == "p" || cmd == "ref")
             {
                 formatted = "`" + X + "`";
             }
@@ -1431,7 +1751,8 @@ namespace angel_lsp::analysis
 
                     std::string lowerTag = ToLower(rawTagName);
                     if (lowerTag == "b" || lowerTag == "e" || lowerTag == "em" ||
-                        lowerTag == "a" || lowerTag == "c" || lowerTag == "p")
+                        lowerTag == "a" || lowerTag == "c" || lowerTag == "p" ||
+                        lowerTag == "ref")
                     {
                         MergeInlineTag(lowerTag, child, syntheticDoc, blocks);
                     }
@@ -1447,12 +1768,32 @@ namespace angel_lsp::analysis
                     {
                         blocks.push_back(DocBlock::MakeReturn(ProcessReturnTag(child, syntheticDoc)));
                     }
+                    else if (lowerTag == "retval")
+                    {
+                        blocks.push_back(DocBlock::MakeRetVal(ProcessRetValTag(child, syntheticDoc)));
+                    }
                     else if (lowerTag == "brief")
                     {
                         std::string brief = ProcessReturnTag(child, syntheticDoc);
                         if (!brief.empty())
                         {
                             blocks.push_back(DocBlock::MakeBody(std::move(brief)));
+                        }
+                    }
+                    else if (lowerTag == "details")
+                    {
+                        std::string details = ProcessReturnTag(child, syntheticDoc);
+                        if (!details.empty())
+                        {
+                            blocks.push_back(DocBlock::MakeBody(std::move(details)));
+                        }
+                    }
+                    else if (IsStructuralTag(lowerTag))
+                    {
+                        std::string desc = ProcessStructuralTagDescription(child, syntheticDoc);
+                        if (!desc.empty())
+                        {
+                            blocks.push_back(DocBlock::MakeBody(std::move(desc)));
                         }
                     }
                     else if (!rawTagName.empty())
@@ -1595,18 +1936,48 @@ namespace angel_lsp::analysis
                 outputSections.push_back(std::move(joined));
             }
 
-            // 5. Returns
+            // 5. Returns and Retvals
+            std::string returnSection;
             for (const auto &b : blocks)
             {
                 if (b.kind == DocBlockKind::Return)
                 {
-                    std::string ret = "**Returns:**";
+                    returnSection = "**Returns:**";
                     if (!b.text.empty())
                     {
-                        ret += " " + b.text;
+                        returnSection += " " + b.text;
                     }
-                    outputSections.push_back(std::move(ret));
+                    break;
                 }
+            }
+
+            std::vector<std::string> retvalBullets;
+            for (const auto &b : blocks)
+            {
+                if (b.kind == DocBlockKind::RetVal)
+                {
+                    std::string bullet = "* `" + b.retval.value + "`";
+                    if (!b.retval.description.empty())
+                    {
+                        bullet += ": " + b.retval.description;
+                    }
+                    retvalBullets.push_back(std::move(bullet));
+                }
+            }
+            if (!retvalBullets.empty())
+            {
+                if (returnSection.empty())
+                {
+                    returnSection = "**Returns:**";
+                }
+                for (const auto &bullet : retvalBullets)
+                {
+                    returnSection += "\n" + bullet;
+                }
+            }
+            if (!returnSection.empty())
+            {
+                outputSections.push_back(std::move(returnSection));
             }
 
             // 6. Admonitions in source order
@@ -1690,8 +2061,29 @@ namespace angel_lsp::analysis
                 {
                     continue;
                 }
+                size_t beforeCount = allBlocks.size();
                 std::string synthetic = WrapInSyntheticComment(seg.lines);
                 ParseDocSegment(synthetic, allBlocks);
+
+                // Fallback for tree-sitter-doxygen grammar limitations (e.g. grammar rejects '!' in text):
+                // If tree-sitter produced 0 blocks for a non-empty Text segment, preserve the content as body text.
+                if (seg.kind == CommentSegmentKind::Text && allBlocks.size() == beforeCount)
+                {
+                    std::string rawJoined;
+                    for (size_t i = 0; i < seg.lines.size(); ++i)
+                    {
+                        if (i > 0)
+                        {
+                            rawJoined += "\n";
+                        }
+                        rawJoined += seg.lines[i];
+                    }
+                    std::string cleaned = CleanDescriptionLines(RewriteAtInlineCommands(rawJoined));
+                    if (!cleaned.empty())
+                    {
+                        allBlocks.push_back(DocBlock::MakeBody(std::move(cleaned)));
+                    }
+                }
             }
         }
 
