@@ -296,6 +296,21 @@ namespace angel_lsp::analysis
                 return;
             }
 
+            // A conditional is an l-value in AngelScript, so it is never the reason an assignment
+            // is illegal. Found on a real Cry of Fear weapon script:
+            //
+            //     (g_iMode == MODE_SLASH) ? pev.punchangle.y = f(-3, -2)
+            //                             : pev.punchangle.x = f(2, 3);
+            //
+            // Both compilers accept that, and both accept the shape it is being confused with -
+            // `(f ? a.y : a.x) = 1.0f;` - so nothing is given up by staying quiet here. Where this
+            // grammar puts the `=` relative to the `?:` is a question about the tree rather than
+            // about the language, and this rule is not the place to answer it.
+            if (targetType == "ternary_expression")
+            {
+                return;
+            }
+
             if (!IsAssignableLValueNode(target, scope, request, ctx.request.symbolTable))
             {
                 EmitAtNode(target, ctx, "as-err-not-lvalue");
