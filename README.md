@@ -2,6 +2,36 @@
 
 AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) implementation for the [AngelScript](https://www.angelcode.com/angelscript/) programming language (`.as` files). Built with C++20, it features a 100% pure **Tree-Sitter** & **SymbolTable** analysis architecture for instant response times and low memory footprint, paired with a Visual Studio Code extension client.
 
+> [!WARNING]
+> ### ⚠️ Project Status: Work in Progress (WIP)
+> **AngelLSP is currently under active, heavy development and experimental validation.** While it already provides rich language intelligence, high-performance AST analysis, and continuous parity verification against the reference compiler, certain language constructs, edge cases, and diagnostics are still evolving.
+>
+> 💡 **Recommended Alternative for Production:**  
+> If you need a battle-tested, mature language server for daily production work or mission-critical AngelScript projects right now, we **strongly and wholeheartedly recommend** using [**sashi0034/angel-lsp**](https://github.com/sashi0034/angel-lsp).
+
+---
+
+## What's New & Recent Updates (v0.5.0)
+
+- **Doxygen Documentation Parser (clangd Parity)**: Hover tooltips now feature an AST-based Doxygen docstring parser supporting `@brief`, `@param`, `@tparam`, `@return`, `@note`, `@warning`, `@see`, `@throw`, formatting identically to `clangd`.
+- **Full Operator Overload System**: Complete validation of all 52 AngelScript operator overloads (`opCmp`, `opEquals`, `opAdd`, `opSub`, `opMul`, `opDiv`, `opIndex`, `opPostInc`, `opAssign`, etc.) and dynamic `cast<T>` expressions.
+- **Enhanced Type & Expression Diagnostics**:
+  - Rejection and diagnostic reporting for standalone anonymous functions/lambdas.
+  - Support for ternary conditional expressions (`cond ? a : b`) as assignable l-values.
+  - Fully qualified enum member names (`Enum::Member`) in symbol table and resolution.
+  - Strict validation of parameter names preventing collisions with reserved keywords.
+- **Predefined Stubs & Engine Extensions**:
+  - Native support for standard AngelScript add-on types (`string`, `array<T>`, `dictionary`, `ref`, `datetime`, `file`).
+  - Predefined stubs can specify list factories using manual constructor syntax `{repeat T}`.
+  - Built-in Sven Co-op API stub (`predefned/sven.as.predefined`) and workspace stub selection.
+  - **Format Predefined Stub** editor command: automatically consolidates duplicate namespace declarations from engine dumps while preserving 100% of comments and formatting.
+- **Context-Aware Completion & Semantic Tokens**:
+  - Completion prioritization offers declared class types before the `class` keyword.
+  - Precise token classification for preprocessor directive lines.
+- **Automated Parity & Multi-Platform Testing**:
+  - Parity audit test suite (`server/tests/parity`) continuously measuring analyzer verdicts against the reference AngelScript compiler with over 213 test scripts.
+  - Local Docker test harness (`docker/run_audit.sh`) for rapid parity testing on Linux.
+
 ---
 
 ## Features
@@ -466,20 +496,15 @@ declaration line is lost.
 ## Planned work
 
 Two requests about *which files this server considers part of the program* - a root script, and
-opening a `.as` from outside the workspace - are designed but not implemented. The case for each,
-and the regressions each can cause, are written down in
-[PLANNED-WORKSPACE-SCOPE.md](PLANNED-WORKSPACE-SCOPE.md).
+opening a `.as` from outside the workspace - are designed but not implemented.
 
-That document also records what happens today when a script is opened from outside every
-workspace folder: it is analysed, but its `#include` of a file beside it is refused by the
-resolver's root allow-list, so everything that file declares is reported as an unresolved type.
+Today, when a script is opened from outside every workspace folder: it is analysed, but its
+`#include` of a file beside it is refused by the resolver's root allow-list, so everything that
+file declares is reported as an unresolved type.
 
 Folder modules - `scripts/maps` as `MapScript`, `scripts/plugins` as `Plugin`, the way Sven Co-op
 lays them out - and module-wide diagnostics, so an error in a file the entry point includes reaches
-the Problems panel instead of waiting until you open that file, are designed in
-[PLANNED-FOLDER-MODULES.md](PLANNED-FOLDER-MODULES.md). Three design decisions in it were settled
-with the user; the rest carries its reasoning, and the table of cases at the end is the part to
-read before building any of it.
+the Problems panel instead of waiting until you open that file, are planned for future milestones.
 
 ## Command Line Configuration Flags
 
