@@ -15,6 +15,11 @@ opencode.json
 .claudeignore
 .mcp.json
 CLAUDE.md
+PARITY-BACKLOG.md
+PLANNED-FOLDER-MODULES.md
+PLANNED-WORKSPACE-SCOPE.md
+PROJECT.md
+TEST_INFRA.md
 
 # Temporary Logs & Output Files
 *.log
