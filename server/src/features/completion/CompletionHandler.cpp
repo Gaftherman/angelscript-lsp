@@ -202,6 +202,60 @@ namespace angel_lsp::features
             items.push_back(std::move(item));
         }
 
+        /**
+         * @brief Builds `Name(${1:int a}, ${2:bool b})$0` for a function, or `Name()$0` with none.
+         *
+         * The placeholder text is the parameter as it was declared - its type and its name - so the
+         * hint the user tabs through says what belongs there rather than `arg1`. The signature is
+         * already in the symbol table; without this the item inserts a bare name and the call has
+         * to be finished by hand.
+         *
+         * Returns an empty string when there is nothing useful to insert, which is the caller's
+         * signal to leave the item as a plain name.
+         */
+        std::string CallSnippet(const std::string &name, const std::vector<analysis::ParameterInformation> &params)
+        {
+            if (name.empty())
+            {
+                return {};
+            }
+
+            std::string snippet = name + "(";
+            for (size_t i = 0; i < params.size(); ++i)
+            {
+                if (i > 0)
+                {
+                    snippet += ", ";
+                }
+
+                std::string label = params[i].typeName;
+                if (!params[i].name.empty())
+                {
+                    label += label.empty() ? params[i].name : " " + params[i].name;
+                }
+                if (label.empty())
+                {
+                    label = "arg" + std::to_string(i + 1);
+                }
+
+                // `}` and `$` end a placeholder, and a default value or a template argument can
+                // contain either. Escaped, they stay text.
+                std::string escaped;
+                for (char c : label)
+                {
+                    if (c == '}' || c == '$' || c == '\\')
+                    {
+                        escaped += '\\';
+                    }
+                    escaped += c;
+                }
+
+                snippet += "${" + std::to_string(i + 1) + ":" + escaped + "}";
+            }
+            snippet += ")$0";
+            return snippet;
+        }
+
         /** @brief The primitive type names, for the contexts where only a type may be written. */
         const std::vector<std::string> &GetPrimitiveTypeNames()
         {
@@ -442,6 +496,41 @@ namespace angel_lsp::features
          * first - so it wins the de-duplication, and `array` reached the client as a bare name
          * however carefully the symbol-table pass was written. This is the bridge between the two.
          */
+        /**
+         * @brief The call snippet for a function known only by name, looked up in the symbol table.
+         *
+         * The scope tree answers completion inside a function body, and a definition there carries
+         * a name and a type but no parameter list. The signature is one lookup away, and this is
+         * the same arrangement TemplateSnippetForName uses immediately below for types.
+         *
+         * Empty when the name is not a function, or is overloaded: with more than one signature
+         * there is no single call to insert, and guessing one would put the wrong arguments in the
+         * user's file.
+         */
+        std::string CallSnippetForName(const std::string &name, const analysis::SymbolTable &table)
+        {
+            const auto symbols = table.FindSymbolsPtr(name);
+            if (!symbols)
+            {
+                return {};
+            }
+            const analysis::Symbol *only = nullptr;
+            for (const auto &sym : *symbols)
+            {
+                if (sym.type != analysis::SymbolType::Function)
+                {
+                    continue;
+                }
+                if (only != nullptr)
+                {
+                    return {};
+                }
+                only = &sym;
+            }
+
+            return only == nullptr ? std::string{} : CallSnippet(only->name, only->GetFunction().parameters);
+        }
+
         std::string TemplateSnippetForName(const std::string &name, const analysis::SymbolTable &table)
         {
             if (const auto symbols = table.FindSymbolsPtr(name))
@@ -916,6 +1005,10 @@ namespace angel_lsp::features
                     {
                         kind = lsp::CompletionItemKind::Function;
                         isCallable = true;
+                        if (request.snippetSupport)
+                        {
+                            snippet = CallSnippetForName(def.name, request.symbolTable);
+                        }
                     }
                     else if (def.kind == analysis::LocalDefinitionKind::Type)
                     {
@@ -984,6 +1077,10 @@ namespace angel_lsp::features
                     case analysis::SymbolType::Function:
                         kind = lsp::CompletionItemKind::Function;
                         detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
+                        if (request.snippetSupport)
+                        {
+                            snippet = CallSnippet(sym.name, sym.GetFunction().parameters);
+                        }
                         break;
                     case analysis::SymbolType::Class:
                         kind = lsp::CompletionItemKind::Class;
@@ -1075,6 +1172,57 @@ namespace angel_lsp::features
                   "{\n"
                   "    $0\n"
                   "}" },
+                { "enum",
+                  "enum ${1:Name}\n"
+                  "{\n"
+                  "    ${2:Member} = 0\n"
+                  "}" },
+                { "funcdef",
+                  "funcdef ${1:void} ${2:Name}(${3:int value});" },
+                { "switch",
+                  "switch (${1:value})\n"
+                  "{\n"
+                  "case ${2:0}:\n"
+                  "    $0\n"
+                  "    break;\n"
+                  "\n"
+                  "default:\n"
+                  "    break;\n"
+                  "}" },
+                { "if",
+                  "if (${1:condition})\n"
+                  "{\n"
+                  "    $0\n"
+                  "}" },
+                { "else",
+                  "else\n"
+                  "{\n"
+                  "    $0\n"
+                  "}" },
+                { "for",
+                  "for (uint ${1:i} = 0; ${1:i} < ${2:count}; ${1:i}++)\n"
+                  "{\n"
+                  "    $0\n"
+                  "}" },
+                { "while",
+                  "while (${1:condition})\n"
+                  "{\n"
+                  "    $0\n"
+                  "}" },
+                { "do",
+                  "do\n"
+                  "{\n"
+                  "    $0\n"
+                  "}\n"
+                  "while (${1:condition});" },
+                { "try",
+                  "try\n"
+                  "{\n"
+                  "    $0\n"
+                  "}\n"
+                  "catch\n"
+                  "{\n"
+                  "}" },
             };
 
             const std::pair<const char *, const char *> snippetDetails[] = {
@@ -1082,6 +1230,15 @@ namespace angel_lsp::features
                 { "interface", "declaration, with one method" },
                 { "mixin", "mixin class declaration" },
                 { "function", "anonymous function, for a funcdef parameter or handle" },
+                { "enum", "declaration, with one member" },
+                { "funcdef", "function-pointer type declaration" },
+                { "switch", "block, with a case and a default" },
+                { "if", "block" },
+                { "else", "block" },
+                { "for", "loop over a counter" },
+                { "while", "loop" },
+                { "do", "loop, with the test at the end" },
+                { "try", "block, with its catch" },
             };
 
             for (size_t i = 0; i < std::size(declarationSnippets); ++i)
@@ -1095,6 +1252,22 @@ namespace angel_lsp::features
                 item.detail = snippetDetails[i].second;
                 items.push_back(std::move(item));
             }
+
+            // `#include` is a directive, not a keyword, so there is no bare item beside it and no
+            // ordering to arrange - it is simply missing from completion altogether today.
+            //
+            // The cursor lands between the quotes because that is where the next thing the user
+            // wants already lives: this handler has an include branch that answers with the paths
+            // that resolve, and it fires on the string literal of a `#include`. Leaving `$1` inside
+            // the quotes is what joins the two halves.
+            lsp::CompletionItem include;
+            include.label = "#include";
+            include.kind = lsp::CompletionItemKindEnum(lsp::CompletionItemKind::Snippet);
+            include.insertText = "#include \"$1\"";
+            include.insertTextFormat = lsp::InsertTextFormatEnum(lsp::InsertTextFormat::Snippet);
+            include.sortText = "0#include";
+            include.detail = "directive, with the path left open";
+            items.push_back(std::move(include));
         }
 
         for (const auto &kw : GetKeywords())

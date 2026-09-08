@@ -981,7 +981,12 @@ TEST_CASE("Completion - Declaration snippets exist, carry Snippet format, and so
     // makes this a real check. Asking FindItem for "class" would be answered by whichever of the
     // pair came first, and a regression that dropped the other would still pass.
     for (const std::string &word : { std::string("class"), std::string("interface"),
-                                     std::string("mixin"), std::string("function") })
+                                     std::string("mixin"), std::string("function"),
+                                     std::string("enum"), std::string("funcdef"),
+                                     std::string("switch"), std::string("if"),
+                                     std::string("else"), std::string("for"),
+                                     std::string("while"), std::string("do"),
+                                     std::string("try") })
     {
         const auto *snippet = FindItemOfKind(items, word, lsp::CompletionItemKind::Snippet);
         const auto *keyword = FindItemOfKind(items, word, lsp::CompletionItemKind::Keyword);
@@ -1024,4 +1029,69 @@ TEST_CASE("Completion - Without snippetSupport, declaration snippets are not emi
     CHECK(FindItem(items, "function") != nullptr);
 }
 
+TEST_CASE("Completion - #include is offered, and leaves the cursor inside the quotes")
+{
+    // `#include` is a directive, not a keyword, so nothing in GetKeywords() offers it and it was
+    // simply absent from completion. It has no bare item to pair with, so it stands alone.
+    TestEnvironment env("void Main() { }\n");
+    const auto items = env.CompleteAt(0, 0, /*snippetSupport=*/true);
 
+    const auto *include = FindItemOfKind(items, "#include", lsp::CompletionItemKind::Snippet);
+    REQUIRE(include != nullptr);
+    REQUIRE(include->insertTextFormat.has_value());
+    CHECK(include->insertTextFormat.value() == lsp::InsertTextFormat::Snippet);
+
+    // The cursor belongs between the quotes: the include branch of this handler answers with the
+    // paths that resolve, and it fires on the string literal of a #include. That is what makes the
+    // two halves one gesture.
+    REQUIRE(include->insertText.has_value());
+    CHECK(include->insertText.value() == "#include \"$1\"");
+}
+
+TEST_CASE("Completion - Without snippetSupport, #include is not offered as a snippet")
+{
+    TestEnvironment env("void Main() { }\n");
+    const auto items = env.CompleteAt(0, 0, /*snippetSupport=*/false);
+
+    CHECK(FindItemOfKind(items, "#include", lsp::CompletionItemKind::Snippet) == nullptr);
+}
+
+TEST_CASE("Completion - A function completes to its call, with the arguments as placeholders")
+{
+    TestEnvironment env(
+        "void AnotherFunctionName(bool first, bool second) { }\n"
+        "void NoArguments() { }\n"
+        "void Main() { }\n");
+
+    const auto items = env.CompleteAt(2, 14, /*snippetSupport=*/true);
+
+    const auto *twoArgs = FindItemOfKind(items, "AnotherFunctionName", lsp::CompletionItemKind::Function);
+    REQUIRE(twoArgs != nullptr);
+    REQUIRE(twoArgs->insertText.has_value());
+    REQUIRE(twoArgs->insertTextFormat.has_value());
+    CHECK(twoArgs->insertTextFormat.value() == lsp::InsertTextFormat::Snippet);
+
+    // The placeholder says what belongs there - the parameter as it was declared - rather than
+    // `arg1`, because the signature is already in the symbol table and there is no reason to
+    // paraphrase it.
+    CHECK(twoArgs->insertText.value() == "AnotherFunctionName(${1:bool first}, ${2:bool second})$0");
+
+    const auto *none = FindItemOfKind(items, "NoArguments", lsp::CompletionItemKind::Function);
+    REQUIRE(none != nullptr);
+    REQUIRE(none->insertText.has_value());
+    CHECK(none->insertText.value() == "NoArguments()$0");
+}
+
+TEST_CASE("Completion - Without snippetSupport a function still completes to its bare name")
+{
+    // A client that cannot expand a snippet would otherwise be handed `${1:bool first}` as text.
+    TestEnvironment env(
+        "void AnotherFunctionName(bool first, bool second) { }\n"
+        "void Main() { }\n");
+
+    const auto items = env.CompleteAt(1, 14, /*snippetSupport=*/false);
+
+    const auto *fn = FindItemOfKind(items, "AnotherFunctionName", lsp::CompletionItemKind::Function);
+    REQUIRE(fn != nullptr);
+    CHECK_FALSE(fn->insertText.has_value());
+}
