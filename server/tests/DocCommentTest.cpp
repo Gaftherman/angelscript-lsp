@@ -22,13 +22,12 @@ TEST_CASE("DocComment - Renders every Doxygen tag a declaration carries")
 
     const std::string doc = ExtractDocComment(source, 9);
     CHECK(doc.find("Calculates the sum.") != std::string::npos);
-    CHECK(doc.find("**Parameters:**") != std::string::npos);
-    CHECK(doc.find("`a`: First value.") != std::string::npos);
-    CHECK(doc.find("`b`: Second value.") != std::string::npos);
-    CHECK(doc.find("**Returns:**") != std::string::npos);
+    CHECK(doc.find("* `a`: First value.") != std::string::npos);
+    CHECK(doc.find("* `b`: Second value.") != std::string::npos);
+    CHECK(doc.find("**Returns:** The sum.") != std::string::npos);
     CHECK(doc.find("> **Note:** Important function.") != std::string::npos);
     CHECK(doc.find("> **Warning:** Use with care.") != std::string::npos);
-    CHECK(doc.find("**See also:** OtherFunc") != std::string::npos);
+    CHECK(doc.find("> **See also:** OtherFunc") != std::string::npos);
 }
 
 TEST_CASE("DocComment - Reads a run of line comments")

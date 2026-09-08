@@ -8,8 +8,12 @@ namespace angel_lsp::analysis
     /**
      * @brief Extracts and formats the doc comment preceding a declaration.
      *
-     * Understands both `///`/`//` runs and `/\*\* ... *\/` blocks, and renders the Doxygen tags a
-     * declaration usually carries (@brief, @param, @return, @note, @warning, @see) as markdown.
+     * Understands both `///`/`//` runs and `/\*\* ... *\/` blocks. Finding the comment is this
+     * function's job; reading it is `RenderDoxygenMarkdown`'s, which parses it with the
+     * tree-sitter-doxygen grammar and emits the Markdown clangd emits - no headings, bullets for
+     * the parameters, `**Returns:**` for the return, block quotes for the notes and warnings.
+     * What is passed on is the RAW comment, delimiters and leading stars included: the grammar
+     * needs them to recognise a comment at all.
      *
      * Lives in the analysis layer rather than with hover because more than one feature shows
      * documentation - hover eagerly, completion when an item is resolved - and a feature may not

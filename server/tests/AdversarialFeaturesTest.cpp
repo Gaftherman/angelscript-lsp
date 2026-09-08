@@ -236,7 +236,7 @@ TEST_CASE("Adversarial Hover - Doxygen Doc Comments Edge Cases")
         REQUIRE(hover.has_value());
         auto content = std::get<lsp::MarkupContent>(hover->contents);
         CHECK(content.value.find("Backslash brief.") != std::string::npos);
-        CHECK(content.value.find("<T>") != std::string::npos);
+        CHECK(content.value.find("`T`: Template type.") != std::string::npos);
         CHECK(content.value.find("`val`: Value.") != std::string::npos);
         CHECK(content.value.find("Important note.") != std::string::npos);
         CHECK(content.value.find("Be careful.") != std::string::npos);

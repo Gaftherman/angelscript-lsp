@@ -17,8 +17,22 @@ asks the loaded language whether the constants in src/parser/GrammarNames.h stil
 what catches a grammar pin bump that renames a node. This one asks the source whether anyone wrote
 a raw literal the grammar has never defined, which is what catches a name typed from memory.
 
+Two grammars now, since the doc-comment renderer parses Doxygen. A name real in one is imaginary in
+the other, so each file is checked against the grammar it actually parses - `brief_header` is a
+doxygen type and `func_declaration` an AngelScript one, and each is an error in the other's file.
+Checking everything against one grammar was not a smaller version of this: it let
+`src/analysis/DoxygenMarkdown.cpp` through entirely, because the calibration only fires on a line
+that names a type the grammar DOES define, and that file names none of AngelScript's.
+
+That file also spells the comparison `std::strcmp(type, "brief_header") == 0`, with the literal to
+the left of the operator, which the original pattern never saw. Both spellings are read now, and the
+strcmp form calibrates on the variable rather than the line - `type` is whatever the file last
+assigned from `ts_node_type`.
+
 Needs the grammar's own src/node-types.json, which CMake fetches - so unlike the other two guards
-in this directory, this one runs after a configure, not before.
+in this directory, this one runs after a configure, not before. It also reads grammar.json beside
+it, for the hidden rules: `_text_line` is absent from node-types.json and is still what
+`ts_node_type` returns for a plain body line, and reporting it would be this guard crying wolf.
 
 Run from server/:  python scripts/check-grammar-names.py
 """
@@ -42,6 +56,22 @@ SRC = SERVER / 'src'
 NODE_TYPE_HOLDERS = re.compile(
     r'\b(?:ts_node_type\s*\(|NodeType\s*\()')
 COMPARISON = re.compile(r'==\s*"([a-z][a-z_]*)"')
+
+# `ts_node_type` returns a `const char *`, so the other natural spelling of the same comparison puts
+# the literal to the LEFT of the operator and the regex above never sees it:
+#
+#     if (std::strcmp(type, "brief_header") == 0)
+#
+# DoxygenMarkdown.cpp is written entirely in this form. Without this pattern the guard read that
+# file, found no comparison it recognised, and passed - enforcing nothing on the one file in the
+# server most likely to name a node that does not exist, which is how it was caught.
+STRCMP_COMPARISON = re.compile(r'\bstrcmp\s*\(\s*([A-Za-z_]\w*)\s*,\s*"([a-z_][a-z_]*)"\s*\)')
+
+# The per-line calibration cannot fire on the strcmp form: `strcmp(type, "_text_line") == 0` names
+# no node type the grammar defines, so nothing on that line gives it away as being about node types.
+# What gives it away is one line earlier - `const char *type = ts_node_type(child);` - so the
+# variable is what carries the calibration here, and it is collected per file.
+NODE_TYPE_VARIABLE = re.compile(r'\b([A-Za-z_]\w*)\s*=\s*ts_node_type\s*\(')
 COMMENT = re.compile(r'^\s*(?://|\*|/\*)')
 
 FIELD_LOOKUP = re.compile(
@@ -92,34 +122,85 @@ def logical_lines(text):
         yield pending_number, ' '.join(pending_parts)
 
 
-def find_node_types_json():
+# This server parses two languages, and a name that is real in one is imaginary in the other.
+# `brief_header` and `storageclass` are doxygen node types and are not in the AngelScript grammar;
+# `func_declaration` is the reverse. Checking every file against one grammar would either report the
+# doxygen renderer as full of errors, or - the way this guard was written before doxygen arrived -
+# let it through unchecked, because the calibration only fires on a line that names a node type the
+# grammar does define, and a file that names none of them is invisible.
+#
+# So each file is checked against the grammar it actually parses. A file that reaches for
+# DoxygenParser, or names the doxygen language entry point, is talking about doxygen nodes.
+GRAMMARS = {
+    'angelscript': 'tree_sitter_angelscript-src',
+    'doxygen': 'tree_sitter_doxygen-src',
+}
+DOXYGEN_MARKERS = ('parser/DoxygenParser.h', 'tree_sitter_doxygen')
+
+
+def find_node_types_json(checkout):
     """The grammar checkout lives wherever the build tree is; find it rather than assume one."""
-    candidates = sorted(SERVER.glob('build*/_deps/tree_sitter_angelscript-src/src/node-types.json'))
+    candidates = sorted(SERVER.glob('build*/_deps/%s/src/node-types.json' % checkout))
     return candidates[0] if candidates else None
 
 
+def load_grammar(path):
+    """Reads one grammar's node-types.json into the three sets the checks below need.
+
+    node-types.json is not the whole truth about what `ts_node_type` can return: it lists the
+    VISIBLE types, and a rule whose name begins with an underscore is hidden from it while still
+    being a real symbol at runtime. `_text_line` is exactly that - absent from the doxygen
+    node-types.json, present in its parser.c as `[sym__text_line] = "_text_line"`, and returned by
+    `ts_node_type` for every plain body line. Reporting it would be this guard crying wolf, so the
+    hidden rule names are read from grammar.json beside it and accepted.
+
+    They are accepted, not trusted: a hidden name may be compared against but may never calibrate a
+    line, for the same reason the anonymous tokens may not.
+    """
+    grammar = json.loads(path.read_text(encoding='utf-8'))
+    fields = set()
+    for entry in grammar:
+        fields.update(entry.get('fields') or {})
+
+    hidden = set()
+    grammar_json = path.parent / 'grammar.json'
+    if grammar_json.exists():
+        rules = json.loads(grammar_json.read_text(encoding='utf-8')).get('rules') or {}
+        hidden = {name for name in rules if name.startswith('_')}
+
+    return {
+        'nodes': {entry['type'] for entry in grammar} | hidden,
+        'named': {entry['type'] for entry in grammar if entry.get('named')},
+        'fields': fields,
+        'path': path,
+    }
+
+
+def grammar_for(text):
+    """Which grammar's names a file is entitled to use, decided by what it parses."""
+    return 'doxygen' if any(marker in text for marker in DOXYGEN_MARKERS) else 'angelscript'
+
+
 def main():
-    node_types_json = find_node_types_json()
-    if node_types_json is None:
+    # Two different sets per grammar, and the difference matters. Every entry is a legitimate thing
+    # to compare a node type against - `ts_node_type(x) == ";"` is how you spot an empty statement,
+    # and ";" is an anonymous token. But only the NAMED ones may calibrate a line, because the
+    # anonymous set is full of ordinary words - "return", "case", "is", "on" - and a line comparing
+    # keyword TEXT would otherwise look like a line comparing node types.
+    loaded = {}
+    for name, checkout in GRAMMARS.items():
+        found = find_node_types_json(checkout)
+        if found is not None:
+            loaded[name] = load_grammar(found)
+
+    if 'angelscript' not in loaded:
         print('check-grammar-names: no node-types.json found under server/build*/', file=sys.stderr)
         print('  Configure CMake first - this guard reads the grammar CMake fetches.', file=sys.stderr)
         return 0  # Not a failure: there is nothing to check against yet.
 
-    grammar = json.loads(node_types_json.read_text(encoding='utf-8'))
-
-    # Two different sets, and the difference matters. Every entry is a legitimate thing to compare
-    # a node type against - `ts_node_type(x) == ";"` is how you spot an empty statement, and ";" is
-    # an anonymous token. But only the NAMED ones may calibrate a line, because the anonymous set
-    # is full of ordinary words - "return", "case", "is", "on" - and a line comparing keyword TEXT
-    # would otherwise look like a line comparing node types.
-    grammar_nodes = {entry['type'] for entry in grammar}
-    grammar_named = {entry['type'] for entry in grammar if entry.get('named')}
-    grammar_fields = set()
-    for entry in grammar:
-        grammar_fields.update(entry.get('fields') or {})
-
     bad_nodes = []
     bad_fields = []
+    unchecked = set()
 
     for path in sorted(SRC.rglob('*')):
         if path.suffix not in ('.cpp', '.h'):
@@ -132,6 +213,19 @@ def main():
         # and has no parse tree at all, and every word it matches would read as a node type here.
         if 'ts_node' not in text:
             continue
+
+        # A file whose grammar this checkout has not fetched cannot be checked. Skipping it is the
+        # honest outcome, but say so - silence here is the exact failure this guard exists to catch.
+        wanted = grammar_for(text)
+        if wanted not in loaded:
+            unchecked.add(wanted)
+            continue
+
+        grammar_nodes = loaded[wanted]['nodes']
+        grammar_named = loaded[wanted]['named']
+        grammar_fields = loaded[wanted]['fields']
+
+        node_type_vars = set(NODE_TYPE_VARIABLE.findall(text))
 
         rel = path.relative_to(SERVER).as_posix()
         for number, line in logical_lines(text):
@@ -152,13 +246,18 @@ def main():
                 continue
 
             compared = [match.group(1) for match in COMPARISON.finditer(line)]
+            strcmp_hits = [(match.group(1), match.group(2))
+                           for match in STRCMP_COMPARISON.finditer(line)]
+            compared += [name for _, name in strcmp_hits]
             if not compared:
                 continue
 
-            # Either the line reads a node type outright, or one of the names it compares is a real
-            # node type - both mean the rest of the line is talking about node types too.
+            # Either the line reads a node type outright, one of the names it compares is a real
+            # node type, or it strcmps a variable this file filled from ts_node_type - all three
+            # mean the rest of the line is talking about node types too.
             about_node_types = (NODE_TYPE_HOLDERS.search(line) is not None
-                                or any(name in grammar_named for name in compared))
+                                or any(name in grammar_named for name in compared)
+                                or any(var in node_type_vars for var, _ in strcmp_hits))
             if not about_node_types:
                 continue
 
@@ -177,11 +276,17 @@ def main():
     total = len(bad_nodes) + len(bad_fields)
     if total:
         print()
-        print('%d name(s) the grammar does not define. Either the name is wrong, or the grammar '
-              'needs it - check %s.' % (total, node_types_json.relative_to(SERVER).as_posix()))
+        print('%d name(s) no grammar defines. Either the name is wrong, or the grammar needs it - '
+              'check %s.' % (total, ', '.join(sorted(
+                  loaded[name]['path'].relative_to(SERVER).as_posix() for name in loaded))))
         return 1
 
-    print('Every node type and field named in src/ exists in the grammar.')
+    for name in sorted(unchecked):
+        print('check-grammar-names: the %s grammar is not in this build tree; files that parse it '
+              'went unchecked.' % name, file=sys.stderr)
+
+    print('Every node type and field named in src/ exists in the grammar it parses (%s).'
+          % ', '.join(sorted(loaded)))
     return 0
 
 
