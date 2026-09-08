@@ -11,6 +11,19 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
 
 ---
 
+## What's New & Recent Updates (v0.6.0)
+
+- **Predefined Stubs in Editor & Live Incremental Editing**: Opening `.as.predefined` stub files directly in the editor now parses clean without false-positive errors; inline list-pattern notation (`{repeat T}`) is transparently rewritten on the document analysis path while keeping the client buffer mirror verbatim.
+- **Rich Completion Snippets & Function Call Expansion**:
+  - Dedicated declaration snippets for `enum`, `funcdef`, `switch`, `if`, `else`, `for`, `while`, `do`, `try`, and `#include "$1"`.
+  - Function completion automatically inserts the call with parameter placeholders (`Function(${1:int arg})$0`) matching the symbol table signature.
+- **Compiler Parity Validation (247 Scripts Clean)**:
+  - Diagnostic for duplicate enum member declarations (`as-err-name-conflict`).
+  - Validation of parameter names preventing collisions with non-contextual reserved keywords.
+  - Clean sweep verification across all workspace predefined stubs.
+
+---
+
 ## What's New & Recent Updates (v0.5.0)
 
 - **Doxygen Documentation Parser (clangd Parity)**: Hover tooltips now feature an AST-based Doxygen docstring parser supporting `@brief`, `@param`, `@tparam`, `@return`, `@note`, `@warning`, `@see`, `@throw`, formatting identically to `clangd`.
