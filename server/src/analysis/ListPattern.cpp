@@ -332,38 +332,48 @@ namespace angel_lsp::analysis
 
             const std::string_view line(source.data() + lineStart, lineEnd - lineStart);
 
-            // The pattern sits between the `)` that closes the parameters and the `;` that ends
-            // the declaration. Both must be on this line, in that order, with a `{...}` between.
-            const size_t closeParen = line.rfind(')');
-            const size_t open = closeParen == std::string_view::npos
-                                    ? std::string_view::npos
-                                    : line.find('{', closeParen);
-            const size_t close = open == std::string_view::npos
-                                     ? std::string_view::npos
-                                     : line.rfind('}');
-            const size_t semi = close == std::string_view::npos
-                                    ? std::string_view::npos
-                                    : line.find(';', close);
-
-            const bool hasPattern = open != std::string_view::npos && close > open &&
-                                    semi != std::string_view::npos;
-
-            if (!hasPattern)
+            // A line that already carries a `//@listpattern` marker was rewritten on a previous
+            // pass. Skip it as insurance against double-application, which would otherwise match
+            // the pattern inside the appended comment and rewrite it again.
+            if (line.find("//@listpattern") != std::string_view::npos)
             {
                 out.append(line);
             }
             else
             {
-                const std::string_view pattern = line.substr(open, close - open + 1);
+                // The pattern sits between the `)` that closes the parameters and the `;` that ends
+                // the declaration. Both must be on this line, in that order, with a `{...}` between.
+                const size_t closeParen = line.rfind(')');
+                const size_t open = closeParen == std::string_view::npos
+                                        ? std::string_view::npos
+                                        : line.find('{', closeParen);
+                const size_t close = open == std::string_view::npos
+                                         ? std::string_view::npos
+                                         : line.rfind('}');
+                const size_t semi = close == std::string_view::npos
+                                        ? std::string_view::npos
+                                        : line.find(';', close);
 
-                // Blanked in place, then re-stated at the end of the line. Blanked rather than
-                // deleted on purpose: a stub is a file the user navigates, and closing the gap
-                // would pull the `;` left and send go-to-definition to the wrong column here.
-                out.append(line.substr(0, open));
-                out.append(pattern.size(), ' ');
-                out.append(line.substr(close + 1));
-                out.append("//@listpattern ");
-                out.append(pattern);
+                const bool hasPattern = open != std::string_view::npos && close > open &&
+                                        semi != std::string_view::npos;
+
+                if (!hasPattern)
+                {
+                    out.append(line);
+                }
+                else
+                {
+                    const std::string_view pattern = line.substr(open, close - open + 1);
+
+                    // Blanked in place, then re-stated at the end of the line. Blanked rather than
+                    // deleted on purpose: a stub is a file the user navigates, and closing the gap
+                    // would pull the `;` left and send go-to-definition to the wrong column here.
+                    out.append(line.substr(0, open));
+                    out.append(pattern.size(), ' ');
+                    out.append(line.substr(close + 1));
+                    out.append("//@listpattern ");
+                    out.append(pattern);
+                }
             }
 
             if (last)

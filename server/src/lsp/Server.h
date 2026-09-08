@@ -1120,8 +1120,10 @@ namespace angel_lsp
         /**
          * @brief Queues a document for re-analysis once the user stops typing.
          *
-         * Coalescing is by URI, so a burst of keystrokes collapses into a single run against the
-         * latest text.
+         * Funnel for all background analysis: callers pass raw mirror text, and ScheduleAnalysis
+         * applies AnalysisTextFor before queueing so that stub rewrites happen exactly once and
+         * callers need not know about them. Coalescing is by URI, so a burst of keystrokes collapses
+         * into a single run against the latest text.
          */
         // `force` says the answer can differ even though the bytes did not - the symbol table
         // moved, not the buffer. Without it the dedupe drops the request as a duplicate of the

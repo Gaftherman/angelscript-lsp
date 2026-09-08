@@ -3251,7 +3251,7 @@ namespace angel_lsp
                 ReanalyseOpenDocuments();
 
             RememberOpenDocument(uriStr, buffer);
-            ScheduleAnalysis(uriStr, analysisText);
+            ScheduleAnalysis(uriStr, buffer);
             return;
         }
 
@@ -3388,6 +3388,16 @@ namespace angel_lsp
 
     void Server::ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force)
     {
+        // ScheduleAnalysis is the funnel through which every background analysis request passes.
+        // Background schedulers (such as ScheduleOpenDocumentsForReanalysis and ReanalyseOpenDocuments)
+        // hand it raw mirror text from m_openSnapshot and m_openDocuments - deliberately, because
+        // client buffers must remain verbatim so incremental edits apply to correct offsets.
+        // If callers had to apply the rewrite themselves, any scheduler path that passes raw mirror
+        // text would hand tree-sitter raw list-pattern notation and emit syntax errors.
+        // By running AnalysisTextFor here at the funnel, the rewrite is guaranteed to happen exactly
+        // once for background analysis, and no scheduler can bypass it.
+        const std::string analysisText = AnalysisTextFor(uriStr, text);
+
         {
             std::lock_guard<std::mutex> lock(m_analysisMutex);
 
@@ -3408,23 +3418,23 @@ namespace angel_lsp
             // re-analysis passes the identical text on purpose, and dropping it as a duplicate
             // drops it in favour of the stale answer it exists to replace. `force` is that case.
             if (const auto running = m_analysisInFlight.find(uriStr);
-                !force && running != m_analysisInFlight.end() && running->second == text)
+                !force && running != m_analysisInFlight.end() && running->second == analysisText)
             {
                 // Already being analysed, with exactly these bytes. The answer is on its way.
                 return;
             }
 
-            const auto [entry, inserted] = m_pendingAnalysis.try_emplace(uriStr, text);
+            const auto [entry, inserted] = m_pendingAnalysis.try_emplace(uriStr, analysisText);
             if (!inserted)
             {
-                if (!force && entry->second == text)
+                if (!force && entry->second == analysisText)
                 {
                     // Already queued and unchanged. The thread is awake and holds this text; a
                     // second notify would only move the deadline.
                     return;
                 }
 
-                entry->second = text;
+                entry->second = analysisText;
             }
 
             ++m_analysisRevision;

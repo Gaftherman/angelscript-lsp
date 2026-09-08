@@ -170,3 +170,28 @@ TEST_CASE("InlineListPattern - The doc-comment form still works")
     CHECK(RewriteInlineListPatterns(source) == source);
     CHECK(FindListPatternTag(source, 1) == "{repeat T}");
 }
+
+TEST_CASE("InlineListPattern - Rewriting is idempotent")
+{
+    // The rewrite blanks `{repeat T}` in place and appends `//@listpattern {repeat T}` to the
+    // end of the line. Run over its own output, the scan can find the `{` inside the comment and
+    // attempt to rewrite again unless lines already carrying `//@listpattern` are skipped.
+    const std::string source =
+        "class array<T>\n"
+        "{\n"
+        "\tarray();\n"
+        "\tarray(int &in type, int &in list) {repeat T};\n"
+        "}\n"
+        "class dictionary\n"
+        "{\n"
+        "\tdictionary(int &in type, int &in list) {repeat {string, ?}};\n"
+        "}\n"
+        "void Helper() { int x = 1; }\n";
+
+    const std::string once = RewriteInlineListPatterns(source);
+    const std::string twice = RewriteInlineListPatterns(once);
+
+    CHECK(twice == once);
+    CHECK(RewriteInlineListPatterns(RewriteInlineListPatterns(source)) == RewriteInlineListPatterns(source));
+}
+

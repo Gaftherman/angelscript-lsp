@@ -5831,4 +5831,72 @@ TEST_CASE("Server - An incremental edit to an open stub is applied and re-analys
     CHECK(reply.find("UniquelyNamedAfterEdit") != std::string::npos);
 }
 
+TEST_CASE("Server - Reanalysing open predefined stub preserves rewritten list patterns")
+{
+    // We trigger ReanalyseOpenDocuments() via `workspace/didChangeConfiguration` updating
+    // `angelscript.engine.compilerWarnings`. Among the call sites of ReanalyseOpenDocuments()
+    // (Server.cpp lines 2055, 2433, 2553, 2578, 2641, 2983), an engine configuration update is
+    // the cleanest client-visible message that a scripted stream can send without filesystem side-effects
+    // or triggering an unrelated workspace-wide directory rescan.
+    //
+    // The second publish is the assertion that matters: didOpen rewrites the text locally before
+    // parsing and publishing the initial diagnostics, but prior to funneling reanalysis through
+    // Server::ScheduleAnalysis, ReanalyseOpenDocuments() re-read the client's verbatim raw buffer
+    // and queued it without rewriting. On reanalysis, tree-sitter parsed the raw `{repeat int}` notation,
+    // publishing "Unknown type 'repeat'" and syntax errors. Funneling the rewrite through
+    // ScheduleAnalysis ensures the reanalysed text is rewritten even when the scheduler hands it
+    // the raw mirror.
+    const std::string probe =
+        "class ListPatternProbe\n"
+        "{\n"
+        "    ListPatternProbe(int &in type, int &in list) {repeat int};\n"
+        "}\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("as.predefined", probe);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("as.predefined"), probe));
+
+    std::string firstPublished;
+    stream.PushAction([&stream, &firstPublished]()
+    {
+        WaitForCount(stream, "publishDiagnostics", 1);
+        firstPublished = LastPublishedFor(stream.Output(), "as.predefined");
+    });
+
+    // Send workspace/didChangeConfiguration updating angelscript.engine.compilerWarnings from 1 (default) to 2.
+    // This triggers ReanalyseOpenDocuments() via Server.cpp line 2055 without restarting the workspace scan.
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+                R"({"settings":{"angelscript":{"engine":{"compilerWarnings":2}}}}})");
+
+    std::string secondPublished;
+    stream.PushAction([&stream, &secondPublished]()
+    {
+        WaitForCount(stream, "publishDiagnostics", 2);
+        secondPublished = LastPublishedFor(stream.Output(), "as.predefined");
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    INFO("first publish: " << firstPublished);
+    REQUIRE_FALSE(firstPublished.empty());
+    CHECK(firstPublished.find(R"("diagnostics":[])") != std::string::npos);
+
+    INFO("second publish: " << secondPublished);
+    REQUIRE_FALSE(secondPublished.empty());
+    // The second publish is the assertion that matters: reanalysis must not report syntax errors
+    // or unknown type 'repeat' on valid predefined stub notation.
+    CHECK(secondPublished.find(R"("diagnostics":[])") != std::string::npos);
+    CHECK(secondPublished.find("repeat") == std::string::npos);
+    CHECK(secondPublished.find("as-syntax-error") == std::string::npos);
+    CHECK(CountPublishedFor(stream.Output(), "as.predefined") >= 2);
+}
+
+
 
