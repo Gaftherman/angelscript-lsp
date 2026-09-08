@@ -1091,8 +1091,7 @@ namespace angel_lsp
 
         lsp::ExecuteCommandOptions cmdOpts;
         cmdOpts.commands = lsp::Array<lsp::String>{ "angelscript.rescanWorkspace",
-                                                    "angelscript.listPredefinedStubs",
-                                                    "angelscript.formatPredefinedStub" };
+                                                    "angelscript.listPredefinedStubs" };
         result.capabilities.executeCommandProvider = cmdOpts;
 
         return result;

@@ -1028,7 +1028,7 @@ export async function activate(context: ExtensionContext) {
     // Safe to leave running because the parts activate() still needs from it are set before its
     // first await: resolveServerBinary and buildServerArgs are synchronous, so runningServerArgs
     // holds the real command line by the time the listener below can read it.
-    void startClient(context).catch(error => {
+    restartChain = startClient(context).catch(error => {
         // startClient reports its own failures; this catches the ones it cannot, so an unexpected
         // throw becomes a line the user can act on rather than an unhandled rejection in a log
         // they will never open.
@@ -1323,10 +1323,16 @@ async function performRestart(context: ExtensionContext, reason: string): Promis
     lspOutputChannel.appendLine(reason);
     setStatus('starting', l10n.t('Restarting the AngelScript language server.'));
 
-    try {
-        await client?.stop();
-    } catch (error) {
-        lspOutputChannel.appendLine(`Failed to stop Language Client: ${error instanceof Error ? error.message : String(error)}`);
+    if (client) {
+        const oldClient = client;
+        client = undefined as unknown as LanguageClient;
+        try {
+            await oldClient.stop();
+            await oldClient.dispose();
+        } catch (error) {
+            lspOutputChannel.appendLine(
+                `Failed to stop Language Client: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     // A restart the user asked for starts the exit budget over. The stop above is an expected
