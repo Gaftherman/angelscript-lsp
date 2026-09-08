@@ -658,7 +658,20 @@ namespace angel_lsp::analysis
             if (!m.name.empty())
             {
                 VariableSignature varSig;
-                varSig.typeName = sym.name;
+
+                // The enum's QUALIFIED name, which is what the symbol table keys it under.
+                // `sym.name` here is the simple one, so `NF::Admin` was typed `Kind` while the
+                // enum lives under `NF::Kind` - and every lookup of that type came back empty.
+                //
+                // Measured: `namespace NF { enum Kind { Admin = 1 } } void Take(uint f);
+                // Take(NF::Admin);` is accepted by both compilers and was reported as
+                // "Cannot implicitly convert 'Kind' to 'const uint'", because an enum only widens
+                // to an integer when the analyzer can find it. The same value passed through a
+                // variable declared `NF::Kind k` always worked, which is what pointed here.
+                //
+                // For an enum at file scope the two spellings are the same string, so nothing
+                // changes there. enumContainer is computed just above for the scoped member below.
+                varSig.typeName = enumContainer;
                 // An enum member is a constant by definition - the compiler answers "Expression is
                 // not an l-value" to `Red = 5;`. Recorded here rather than left to each rule to
                 // infer, because the default was false and every rule that asked got the wrong
