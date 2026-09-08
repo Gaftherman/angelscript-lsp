@@ -4,6 +4,7 @@
 #include "spdlog/fmt/fmt.h"
 
 #include <algorithm>
+#include <iterator>
 #include <functional>
 
 namespace angel_lsp::analysis

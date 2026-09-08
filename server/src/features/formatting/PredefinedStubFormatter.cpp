@@ -1,6 +1,7 @@
 #include "features/formatting/PredefinedStubFormatter.h"
 
 #include <algorithm>
+#include <cctype>
 #include <map>
 #include <string>
 #include <string_view>

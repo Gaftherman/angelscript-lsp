@@ -1,6 +1,12 @@
 #include <doctest/doctest.h>
 
+// <algorithm> for std::count, and it is named here rather than arriving by luck: MSVC pulls it in
+// through <string> and GCC does not, so this file built on Windows and failed the Linux job with
+// "'count' is not a member of 'std'". Same shape as the constexpr-in-a-CHECK capture that only
+// GCC rejected - the local build cannot see either.
+#include <algorithm>
 #include <string>
+#include <utility>
 
 #include "analysis/ListPattern.h"
 

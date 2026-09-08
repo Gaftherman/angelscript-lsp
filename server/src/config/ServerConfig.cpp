@@ -767,7 +767,11 @@ namespace angel_lsp::config
                         std::string_view entry = val.substr(sep + 1);
                         if (!name.empty() && !entry.empty())
                         {
-                            config.modules.push_back(ServerConfig::ModuleDefinition{std::string(name), std::string(entry)});
+                            // `folder` named rather than left to the aggregate's default, which
+                            // is what GCC warns about: a member added to ModuleDefinition later
+                            // would be silently default-initialised here and nowhere else.
+                            config.modules.push_back(ServerConfig::ModuleDefinition{
+                                std::string(name), std::string(entry), std::string() });
                         }
                     }
                 }
