@@ -211,8 +211,24 @@ namespace angel_lsp::analysis::rules
                 ctx.Emit(sym, "as-err-handle-on-primitive", param.baseTypeName);
             }
 
+            // `?` is the variable-argument type, and it is never an unresolved type - the host
+            // registers signatures with it and the engine prints them back that way. MEASURED with
+            // `angelscript_oracle --dump-registry`, which emits fourteen of them:
+            //
+            //     void opCast(?&out);
+            //     void set(const string&in, const ?&in);
+            //     string format(const string&in fmt, const ?&in...);
+            //
+            // ValidateParameters never reported it because its check is gated on
+            // ReportsUnknownTypes(), which is false for a stub. This one was not, so a predefined
+            // stub declaring a funcdef over `?` got "Unknown type '?'" - a false positive on the
+            // one kind of file the server reads to learn what exists.
+            //
+            // Script code cannot write `?` either, but that is a different complaint with a
+            // different message - the compiler says "Expected data type", not "unknown type" - and
+            // this rule is not the place to invent it.
             const std::string paramBase = CleanBaseType(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
-            if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" &&
+            if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" && paramBase != "?" &&
                 !IsKnownType(paramBase, ctx))
             {
                 ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);

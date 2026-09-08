@@ -123,10 +123,10 @@ class dictionary{
 	//The index operator takes a string for the key, and returns a reference to the value.\nIf the key/value pair doesn't exist it will be inserted with a null value.;
 	const dictionaryValue& opIndex(const string& in key) const;
 	dictionaryIter@ opForBegin() const;
-	bool opForEnd(dictionaryIter@+ it) const;
-	dictionaryIter@+ opForNext(dictionaryIter@+ it) const;
-	const dictionaryValue& opForValue0(dictionaryIter@+ it) const;
-	const string& opForValue1(dictionaryIter@+ it) const;
+	bool opForEnd(dictionaryIter@ it) const;
+	dictionaryIter@ opForNext(dictionaryIter@ it) const;
+	const dictionaryValue& opForValue0(dictionaryIter@ it) const;
+	const string& opForValue1(dictionaryIter@ it) const;
 }
 class dictionaryValue {
 	dictionaryValue();	// asBEHAVE_CONSTRUCT;
@@ -5336,8 +5336,6 @@ namespace Reflection
 	Arguments@ Arguments(?& in, ?& in);
 	//Constructs a Arguments instance with the given arguments.;
 	Arguments@ Arguments(?& in);
-	//Constructs a Arguments instance with the given arguments.;
-	Arguments@ Arguments();
 	//Copy constructor;
 	Arguments@ Arguments(const Arguments& in other);
 	//Default constructor;
@@ -9006,7 +9004,7 @@ class dictionaryIter {}
 //A weakref object can be used in place of the handle where the reference to the object is needed but the object shouldn\'t be kept alive.\nThis type is for non-const handles.;
 class weakref<T> {
 	weakref();	// asBEHAVE_CONSTRUCT;
-	weakref(T@+ value) explicit;	// asBEHAVE_CONSTRUCT;
+	weakref(T@ value) explicit;	// asBEHAVE_CONSTRUCT;
 	~weakref();	// asBEHAVE_DESTRUCT;
 	//The implicit cast operator is used to cast the weak ref type to strong reference of the type.\nIf the object referred to by the weakref is already dead this operator will return null.;
 	T@ opImplCast();
@@ -9021,13 +9019,13 @@ class weakref<T> {
 	//The identity operators are used to compare the address of the object referred to by the ref type.;
 	bool opEquals(const weakref<T>& in other) const;
 	//The identity operators are used to compare the address of the object referred to by the ref type.;
-	bool opEquals(const T@+ value) const;
+	bool opEquals(const T@ value) const;
 }
 
 //A const_weakref object can be used in place of the handle where the reference to the object is needed but the object shouldn\'t be kept alive.\nThis type is for const handles.;
 class const_weakref<T> {
 	const_weakref();	// asBEHAVE_CONSTRUCT;
-	const_weakref(const T@+ value) explicit;	// asBEHAVE_CONSTRUCT;
+	const_weakref(const T@ value) explicit;	// asBEHAVE_CONSTRUCT;
 	~const_weakref();	// asBEHAVE_DESTRUCT;
 	//The implicit cast operator is used to cast the weak ref type to strong reference of the type.\nIf the object referred to by the weakref is already dead this operator will return null.;
 	const T@ opImplCast() const;
@@ -9046,7 +9044,7 @@ class const_weakref<T> {
 	//The identity operators are used to compare the address of the object referred to by the ref type.;
 	bool opEquals(const weakref<T>& in other) const;
 	//The identity operators are used to compare the address of the object referred to by the ref type.;
-	bool opEquals(const T@+ value) const;
+	bool opEquals(const T@ value) const;
 }
 
 //This type represents a complex number with real and imaginary parts.;

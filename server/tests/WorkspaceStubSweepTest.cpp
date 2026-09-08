@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "analysis/ListPattern.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SymbolCollector.h"
@@ -87,7 +88,13 @@ TEST_CASE("Every predefined stub in this checkout parses and analyses clean")
 
     for (const auto &stub : stubs)
     {
-        const std::string source = ReadWholeFile(stub);
+        // Read it the way the server reads it. RewriteInlineListPatterns turns the manual's inline
+        // list-factory notation - `array (int& in type, int& in list) {repeat T};` - into the
+        // comment form the grammar accepts, and every path in the server that loads a stub applies
+        // it. Parsing the raw bytes here measured text the server never sees, and reported syntax
+        // errors on notation that is correct.
+        const std::string source =
+            angel_lsp::analysis::RewriteInlineListPatterns(ReadWholeFile(stub));
         const std::string uri = "file:///" + stub.generic_string();
 
         INFO("stub: " << stub.generic_string() << " (" << source.size() << " bytes)");
