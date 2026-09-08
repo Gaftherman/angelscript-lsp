@@ -272,6 +272,20 @@ namespace angel_lsp
         std::string m_workspaceProgressToken;
         unsigned m_workspaceProgressCounter = 0;
 
+        /**
+         * @brief The text the parser and analyzer should see: a stub's inline list patterns become comments.
+         *
+         * The document mirror (m_openDocuments) must equal the client's buffer byte for byte because
+         * incremental edits (contentChanges with range) are applied to it, so the rewrite may never be
+         * stored - only handed to the parser and downstream collectors. RewriteInlineListPatterns blanks
+         * inline list patterns and appends `//@listpattern <pattern>` to the end of the line. While columns
+         * before the pattern's end are preserved and line count is unchanged, the rewritten line is longer
+         * than the client's. Storing the rewritten text in the mirror would cause subsequent incremental
+         * edits (applied via PositionToOffset against our copy) to land at the wrong place and permanently
+         * desynchronise the server's buffer from the editor.
+         */
+        std::string AnalysisTextFor(const std::string &uriStr, const std::string &text) const;
+
     public:
         /**
          * @brief Constructs the server over a JSON-RPC transport.

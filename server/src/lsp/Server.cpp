@@ -3023,6 +3023,27 @@ namespace angel_lsp
         }
     }
 
+    /**
+     * @brief The text the parser and analyzer should see: a stub's inline list patterns become comments.
+     *
+     * The document mirror (m_openDocuments) must equal the client's buffer byte for byte because
+     * incremental edits (contentChanges with range) are applied to it, so the rewrite may never be
+     * stored - only handed to the parser and downstream collectors. RewriteInlineListPatterns blanks
+     * inline list patterns and appends `//@listpattern <pattern>` to the end of the line. While columns
+     * before the pattern's end are preserved and line count is unchanged, the rewritten line is longer
+     * than the client's. Storing the rewritten text in the mirror would cause subsequent incremental
+     * edits (applied via PositionToOffset against our copy) to land at the wrong place and permanently
+     * desynchronise the server's buffer from the editor.
+     */
+    std::string Server::AnalysisTextFor(const std::string &uriStr, const std::string &text) const
+    {
+        if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+        {
+            return angel_lsp::analysis::RewriteInlineListPatterns(text);
+        }
+        return text;
+    }
+
     void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params)
     {
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
@@ -3040,7 +3061,8 @@ namespace angel_lsp
             if (treeIt->second)
                 ts_tree_delete(treeIt->second);
         }
-        TSTree *tree = m_parser->Parse(text);
+        const std::string analysisText = AnalysisTextFor(uriStr, text);
+        TSTree *tree = m_parser->Parse(analysisText);
         m_documentTrees[uriStr] = tree;
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
@@ -3050,7 +3072,7 @@ namespace angel_lsp
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
                 if (PredefinedStubContributes(uriStr) && ClaimPredefinedFile(uriStr))
                 {
-                    diagnostics = ReplaceSymbolsFromTree(uriStr, text, tree);
+                    diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
                     m_scopeIndex.ClearDocument(uriStr);
                     m_callGraph.ClearDocument(uriStr);
                 }
@@ -3065,7 +3087,7 @@ namespace angel_lsp
             // document again.
             const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
 
-            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, tree);
+            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree);
             diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
             PublishDiagnostics(uriStr, diagnostics);
@@ -3076,7 +3098,7 @@ namespace angel_lsp
             return;
         }
 
-        auto diagnostics = ReplaceSymbolsFromTree(uriStr, text, tree);
+        auto diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
 
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
@@ -3085,10 +3107,10 @@ namespace angel_lsp
         // file legitimately uses, and without them every one of them would be reported undeclared.
         IndexModuleClosure(uriStr);
 
-        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, tree);
+        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
-        AppendIncludeDiagnostics(uriStr, text, diagnostics);
+        AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
 
         PublishDiagnostics(uriStr, diagnostics);
     }
@@ -3109,13 +3131,15 @@ namespace angel_lsp
         auto treeIt = m_documentTrees.find(uriStr);
         TSTree *tree = (treeIt != m_documentTrees.end()) ? treeIt->second : nullptr;
 
+        const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
+
         for (const auto &change : params.contentChanges)
         {
             if (std::holds_alternative<lsp::TextDocumentContentChangePartial>(change))
             {
                 const auto &rt = std::get<lsp::TextDocumentContentChangePartial>(change);
 
-                if (tree)
+                if (tree && !isPredefined)
                 {
                     uint32_t startLine = rt.range.start.line;
                     // rt.range is expressed in the negotiated encoding, while TSPoint::column and every
@@ -3187,15 +3211,20 @@ namespace angel_lsp
             }
         }
 
-        TSTree *oldTree = tree;
-        TSTree *newTree = m_parser->Parse(buffer, oldTree);
-        if (oldTree)
+        const std::string analysisText = AnalysisTextFor(uriStr, buffer);
+
+        // For a predefined stub, the tree belongs to the rewritten text while the edits were applied
+        // to the verbatim buffer mirror. Offsets diverge because RewriteInlineListPatterns appends comments.
+        // Therefore, skip the incremental tree edit above and parse from scratch (oldTree = nullptr).
+        TSTree *oldTree = isPredefined ? nullptr : tree;
+        TSTree *newTree = m_parser->Parse(analysisText, oldTree);
+        if (tree)
         {
-            ts_tree_delete(oldTree);
+            ts_tree_delete(tree);
         }
         m_documentTrees[uriStr] = newTree;
 
-        if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+        if (isPredefined)
         {
             m_symbolTable.ClearDocumentSymbols(uriStr);
             m_scopeIndex.ClearDocument(uriStr);
@@ -3205,12 +3234,12 @@ namespace angel_lsp
             // clear above is still right, because whatever was there is now the wrong revision of a
             // file that should not be contributing at all.
             if (PredefinedStubContributes(uriStr))
-                ReplaceSymbolsFromTree(uriStr, buffer, newTree);
+                ReplaceSymbolsFromTree(uriStr, analysisText, newTree);
 
             if (newTree)
             {
-                m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(newTree), buffer));
-                m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(newTree), buffer));
+                m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(newTree), analysisText));
+                m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(newTree), analysisText));
             }
 
             // On every keystroke, but the fan-out only when the word set actually moved - which
@@ -3222,7 +3251,7 @@ namespace angel_lsp
                 ReanalyseOpenDocuments();
 
             RememberOpenDocument(uriStr, buffer);
-            ScheduleAnalysis(uriStr, buffer);
+            ScheduleAnalysis(uriStr, analysisText);
             return;
         }
 

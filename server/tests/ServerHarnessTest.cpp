@@ -5723,3 +5723,112 @@ TEST_CASE("Server - The cost of a module-wide pass is measured rather than assum
     // assertion, because a pass that published half the module would still look fast.
     CHECK(published == static_cast<size_t>(k_files));
 }
+
+TEST_CASE("Server - Opening a predefined stub rewrites inline list patterns without error")
+{
+    const std::string probe =
+        "class ListPatternProbe\n"
+        "{\n"
+        "    ListPatternProbe(int &in type, int &in list) {repeat int};\n"
+        "}\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("as.predefined", probe);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("as.predefined"), probe));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "as.predefined");
+    INFO("published for as.predefined: " << published);
+    REQUIRE_FALSE(published.empty());
+    CHECK(published.find(R"("diagnostics":[])") != std::string::npos);
+
+    // Negative case: in an ordinary script file the inline list-pattern notation is illegal syntax
+    // and must produce a syntax error.
+    WorkspaceFixture asScript;
+    asScript.Write("main.as", probe);
+
+    test::ScriptedStream scriptStream;
+    scriptStream.Push(InitializeMessage(asScript.RootUri()));
+    scriptStream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    scriptStream.Push(DidOpenMessage(asScript.Uri("main.as"), probe));
+    scriptStream.PushAction([&scriptStream]() { WaitForCount(scriptStream, "publishDiagnostics", 1); });
+    scriptStream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    RunScript(serverConfig, scriptStream);
+
+    const std::string scriptPublished = LastPublishedFor(scriptStream.Output(), "main.as");
+    INFO("published for main.as: " << scriptPublished);
+    REQUIRE_FALSE(scriptPublished.empty());
+    CHECK(scriptPublished.find(R"("diagnostics":[])") == std::string::npos);
+    CHECK(scriptPublished.find("as-syntax-error") != std::string::npos);
+}
+
+TEST_CASE("Server - An incremental edit to an open stub is applied and re-analysed")
+{
+    const std::string initialStub =
+        "class ListPatternProbe\n"
+        "{\n"
+        "    ListPatternProbe(int &in type, int &in list) {repeat int};\n"
+        "}\n"
+        "class SecondClass\n"
+        "{\n"
+        "}\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("as.predefined", initialStub);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("as.predefined"), initialStub));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    // Send an incremental didChange (with a range) that inserts a new declaration
+    // at a position after the list-pattern line. If the mirror drifted because
+    // RewriteInlineListPatterns was stored on didOpen, or if ts_tree_edit was applied
+    // with mirror offsets against a rewritten tree, the edit lands at the wrong place
+    // and the declaration either fails to parse or is not indexed in workspace symbols.
+    // Column 62 is the end of the list-pattern line - the edit lands right after the `;`, so it
+    // exercises the line the rewrite touched rather than one it left alone.
+    //
+    // What this pins: the edit is applied, the stub still analyses clean afterwards, and the
+    // declaration the edit opens is in the index. What it does NOT pin, and was once named as
+    // though it did: that the document mirror matches the client's buffer. That was checked by
+    // putting the defect back - storing the rewritten text in m_openDocuments - and this test
+    // stayed green, because the rewrite appends a COMMENT to the end of the line, so an edit
+    // before it only pushes the comment onto a line of its own where it is still a comment.
+    //
+    // The mirror is kept verbatim anyway, for a reason this test cannot see: any feature that
+    // hands text back - formatting, a whole-document edit - would otherwise write
+    // `//@listpattern` into the user's file.
+    const std::string insertText = "\n}\nclass UniquelyNamedAfterEdit\n{\n";
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                fixture.Uri("as.predefined") + R"(","version":2},"contentChanges":[{"range":{"start":{"line":2,"character":62},"end":{"line":2,"character":62}},"text":")" +
+                JsonEscape(insertText) + R"("}]}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 2); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/symbol","params":{"query":"UniquelyNamedAfterEdit"}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "as.predefined");
+    INFO("republished for as.predefined: " << published);
+    REQUIRE_FALSE(published.empty());
+    CHECK(published.find(R"("diagnostics":[])") != std::string::npos);
+
+    const std::string reply = stream.ResponseFor(2);
+    INFO("workspace/symbol reply: " << reply);
+    CHECK(reply.find("UniquelyNamedAfterEdit") != std::string::npos);
+}
+
+
