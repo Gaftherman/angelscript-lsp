@@ -52,49 +52,7 @@
           "end": "\\*/",
           "patterns": [
             {
-              "match": "([@\\\\](?:access|permission|visibility))\\s+(public|private|protected|package|internal)\\b",
-              "captures": {
-                "1": {
-                  "name": "keyword.other.documentation.doxygen.angelscript"
-                },
-                "2": {
-                  "name": "constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript"
-                }
-              }
-            },
-            {
-              "match": "([@\\\\](?:param|tparam))\\s*(\\[(?:in|out|in,out|out,in)\\])?\\s*([A-Za-z_][A-Za-z0-9_]*)?",
-              "captures": {
-                "1": {
-                  "name": "keyword.other.documentation.doxygen.angelscript"
-                },
-                "2": {
-                  "name": "keyword.operator.direction.doxygen.angelscript"
-                },
-                "3": {
-                  "name": "variable.parameter.doxygen.angelscript variable.parameter.angelscript"
-                }
-              }
-            },
-            {
-              "match": "\\[(in|out|in,out|out,in)\\]",
-              "captures": {
-                "0": {
-                  "name": "keyword.operator.direction.doxygen.angelscript"
-                }
-              }
-            },
-            {
-              "name": "markup.inline.raw.doxygen.angelscript",
-              "match": "[@\\\\][cpbia]\\b"
-            },
-            {
-              "name": "keyword.other.documentation.doxygen.angelscript",
-              "match": "[@\\\\][A-Za-z_][A-Za-z0-9_]*\\b"
-            },
-            {
-              "name": "markup.inline.raw.string.angelscript",
-              "match": "`[^`]+`"
+              "include": "#doxygen"
             }
           ]
         },
@@ -109,49 +67,7 @@
           "end": "$\n?",
           "patterns": [
             {
-              "match": "([@\\\\](?:access|permission|visibility))\\s+(public|private|protected|package|internal)\\b",
-              "captures": {
-                "1": {
-                  "name": "keyword.other.documentation.doxygen.angelscript"
-                },
-                "2": {
-                  "name": "constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript"
-                }
-              }
-            },
-            {
-              "match": "([@\\\\](?:param|tparam))\\s*(\\[(?:in|out|in,out|out,in)\\])?\\s*([A-Za-z_][A-Za-z0-9_]*)?",
-              "captures": {
-                "1": {
-                  "name": "keyword.other.documentation.doxygen.angelscript"
-                },
-                "2": {
-                  "name": "keyword.operator.direction.doxygen.angelscript"
-                },
-                "3": {
-                  "name": "variable.parameter.doxygen.angelscript variable.parameter.angelscript"
-                }
-              }
-            },
-            {
-              "match": "\\[(in|out|in,out|out,in)\\]",
-              "captures": {
-                "0": {
-                  "name": "keyword.operator.direction.doxygen.angelscript"
-                }
-              }
-            },
-            {
-              "name": "markup.inline.raw.doxygen.angelscript",
-              "match": "[@\\\\][cpbia]\\b"
-            },
-            {
-              "name": "keyword.other.documentation.doxygen.angelscript",
-              "match": "[@\\\\][A-Za-z_][A-Za-z0-9_]*\\b"
-            },
-            {
-              "name": "markup.inline.raw.string.angelscript",
-              "match": "`[^`]+`"
+              "include": "#doxygen"
             }
           ]
         },
@@ -461,6 +377,98 @@
         {
           "name": "punctuation.bracket.angelscript",
           "match": "\\(|\\)|\\{|\\}|\\[|\\]"
+        }
+      ]
+    },
+    "doxygen": {
+      "patterns": [
+        {
+          "begin": "([@\\\\]code)(?:\\{\\.?([A-Za-z0-9_+-]+)\\})?",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.other.documentation.doxygen.angelscript"
+            },
+            "2": {
+              "name": "entity.name.type.doxygen.angelscript"
+            }
+          },
+          "end": "([@\\\\]endcode)",
+          "endCaptures": {
+            "1": {
+              "name": "keyword.other.documentation.doxygen.angelscript"
+            }
+          },
+          "name": "markup.raw.block.doxygen.angelscript",
+          "patterns": []
+        },
+        {
+          "begin": "([@\\\\]verbatim)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.other.documentation.doxygen.angelscript"
+            }
+          },
+          "end": "([@\\\\]endverbatim)",
+          "endCaptures": {
+            "1": {
+              "name": "keyword.other.documentation.doxygen.angelscript"
+            }
+          },
+          "name": "markup.raw.block.doxygen.angelscript",
+          "patterns": []
+        },
+        {
+          "match": "([@\\\\](?:access|permission|visibility))\\s+(public|private|protected|package|internal)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.documentation.doxygen.angelscript"
+            },
+            "2": {
+              "name": "constant.language.access-type.doxygen.angelscript storage.type.modifier.angelscript"
+            }
+          }
+        },
+        {
+          "match": "([@\\\\](?:param|tparam))\\s*(\\[(?:in|out|in,out|out,in)\\])?\\s*([A-Za-z_][A-Za-z0-9_]*)?",
+          "captures": {
+            "1": {
+              "name": "keyword.other.documentation.doxygen.angelscript"
+            },
+            "2": {
+              "name": "keyword.operator.direction.doxygen.angelscript"
+            },
+            "3": {
+              "name": "variable.parameter.doxygen.angelscript variable.parameter.angelscript"
+            }
+          }
+        },
+        {
+          "match": "\\[(in|out|in,out|out,in)\\]",
+          "captures": {
+            "0": {
+              "name": "keyword.operator.direction.doxygen.angelscript"
+            }
+          }
+        },
+        {
+          "name": "markup.inline.raw.doxygen.angelscript",
+          "match": "[@\\\\](?:em|[cpbiae])\\b"
+        },
+        {
+          "name": "keyword.other.documentation.doxygen.angelscript",
+          "match": "[@\\\\][A-Za-z_][A-Za-z0-9_]*\\b"
+        },
+        {
+          "name": "markup.inline.raw.string.angelscript",
+          "match": "`[^`]+`"
+        },
+        {
+          "match": "^\\s*\\*?\\s*(-#|-)\\s",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.list.begin.markdown.doxygen.angelscript"
+            }
+          }
         }
       ]
     }

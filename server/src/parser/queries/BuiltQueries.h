@@ -9,7 +9,10 @@ namespace angel_lsp::parser::queries
 (comment) @comment
 
 ; Preprocessor directives (#include, #if, #ifdef, #else, #endif, #pragma, ...)
-(preproc_directive) @keyword.directive
+; `preproc_directive` is a leaf token in the grammar spanning the whole directive line.
+; A single semantic token cannot express a keyword, a macro name, and a string on one line.
+; The TextMate grammar is finer-grained and already scopes them correctly; emitting a blanket
+; semantic token here was overriding it with a worse answer (repainting the entire line).
 
 ; Literals
 (string_literal) @string

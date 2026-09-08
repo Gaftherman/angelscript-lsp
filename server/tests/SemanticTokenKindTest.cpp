@@ -269,3 +269,26 @@ TEST_CASE("Semantic tokens - a qualified enum member keeps its namespace qualifi
 
     fixture.CheckType(3, 12, "namespace");
 }
+
+TEST_CASE("Semantic tokens - preprocessor lines do not produce blanket macro tokens")
+{
+    // `preproc_directive` is a leaf token spanning the whole line, so capturing it painted one
+    // `macro` token over `#include "test"` and threw away the string scope underneath - and over
+    // `#if SERVER_BUILD`, throwing away both the keyword and the macro name. The TextMate grammar
+    // scopes all three correctly on its own; a semantic token can only overrule it with less.
+    //
+    // The declaration is here so the fixture produces tokens at all. Without it this file yields
+    // none, and "no macro token" would be true of an empty list - a test that cannot fail.
+    TokenFixture fixture(
+        "#include \"test\"\n"
+        "#if SERVER_BUILD\n"
+        "int afterTheDirectives = 1;\n"
+        "#endif\n");
+
+    REQUIRE_FALSE(fixture.tokens.empty());
+    for (const auto &token : fixture.tokens)
+    {
+        CHECK(TypeName(token.type) != "macro");
+    }
+}
+
