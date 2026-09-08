@@ -1,7 +1,26 @@
-// A launch configuration that compiles the extension and then opens it inside a new window
-// Use IntelliSense to learn about possible attributes.
-// Hover to view descriptions of existing attributes.
-// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+// Launches this extension in a second VS Code window, for when the `client` folder is the one
+// open. (Opening the repository root instead uses the root .vscode/launch.json, which is local to
+// each machine - /.vscode/ is in .gitignore, so this file is the one everybody gets.)
+//
+// Three things here were wrong and are worth naming, because each fails silently:
+//
+//   * `main` in package.json is ./dist/extension.js, written by esbuild through the `bundle`
+//     script. The build task was `tsc -watch`, and tsconfig writes to out/. So F5 type-checked the
+//     sources and then launched an extension whose entry point it had not built. dist/ is in
+//     .gitignore, so on a fresh clone it is absent altogether and the Extension Development Host
+//     comes up with no `main` to load - which is what a launch that "crashes as the window opens,
+//     with no .as file involved" looks like. Where dist/ did exist, F5 ran whatever was bundled
+//     last, which is worse: the code runs, it is just not the code on disk.
+//
+//   * `outFiles` pointed at out/, the tsc output, while the code being executed was dist/. Nothing
+//     for a breakpoint to bind to.
+//
+//   * `--extensionDevelopmentPath` was ${workspaceFolder}/client. This file is read when `client`
+//     IS the workspace folder, so that resolved to client/client.
+//
+// `build` below chains compile and bundle in that order. Both are needed and neither replaces the
+// other: esbuild does no type checking, and tsc also writes out/test/, which the integration suite
+// loads directly rather than through the bundle. That is written down at the top of esbuild.mjs.
 {
 	"version": "0.2.0",
 	"configurations": [
@@ -10,12 +29,12 @@
 			"type": "extensionHost",
 			"request": "launch",
 			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}/client"
+				"--extensionDevelopmentPath=${workspaceFolder}"
 			],
 			"outFiles": [
-				"${workspaceFolder}/out/**/*.js"
+				"${workspaceFolder}/dist/**/*.js"
 			],
-			"preLaunchTask": "${defaultBuildTask}"
+			"preLaunchTask": "build"
 		}
 	]
 }

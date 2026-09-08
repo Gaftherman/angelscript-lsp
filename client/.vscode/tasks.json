@@ -1,8 +1,43 @@
 // See https://go.microsoft.com/fwlink/?LinkId=733558
 // for the documentation about the tasks.json format
+//
+// `compile` writes client/out/ and type-checks. It does NOT write client/dist/extension.js, which
+// is what package.json names as "main" and what VS Code actually loads - that comes from esbuild,
+// through `bundle`. A build that runs only one of the two leaves the extension being whatever was
+// bundled last, which is why `build` chains both and is the default.
+//
+// `watch` is kept for editing with continuous type checking, but it is deliberately NOT the default
+// build task any more: it produces out/ only, so launching after it runs stale code.
 {
 	"version": "2.0.0",
 	"tasks": [
+		{
+			"type": "npm",
+			"script": "compile",
+			"problemMatcher": "$tsc",
+			"label": "compile",
+			"group": "build"
+		},
+		{
+			"type": "npm",
+			"script": "bundle",
+			"problemMatcher": [],
+			"label": "bundle",
+			"group": "build"
+		},
+		{
+			"label": "build",
+			"dependsOn": [
+				"compile",
+				"bundle"
+			],
+			"dependsOrder": "sequence",
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
 		{
 			"type": "npm",
 			"script": "watch",
@@ -11,10 +46,8 @@
 			"presentation": {
 				"reveal": "never"
 			},
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			}
+			"label": "watch",
+			"group": "build"
 		}
 	]
 }
