@@ -153,6 +153,55 @@ TEST_CASE("TypeRules - An initializer this pass cannot evaluate is left alone")
     CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-enum-invalid-initializer"));
 }
 
+TEST_CASE("TypeRules - Reports a duplicate enumerator name in the same enum")
+{
+    // MEASURED, angelscript_oracle:
+    //   enum DupEnumProbe { Member1 = 0, Member1 = 0 }
+    //   ERROR (4, 5): Name conflict. 'Member1' is already used.
+    // The second occurrence is reported on the duplicate member node; the first is kept.
+    const std::string code =
+        "enum DupEnumProbe\n"
+        "{\n"
+        "    Member1 = 0,\n"
+        "    Member1 = 0\n"
+        "}\n";
+
+    const auto diagnostics = AnalyzeTypeSnippet(code);
+    const auto errors = FilterErrors(diagnostics);
+    REQUIRE(errors.size() == 1);
+    CHECK(errors[0].code == "as-err-duplicate-enum-member");
+    CHECK(errors[0].range.start.line == 3);
+}
+
+TEST_CASE("TypeRules - Enumerators with different names in the same enum are accepted")
+{
+    const std::string code =
+        "enum DistinctEnum\n"
+        "{\n"
+        "    Member1 = 0,\n"
+        "    Member2 = 1\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-duplicate-enum-member"));
+}
+
+TEST_CASE("TypeRules - The same enumerator name in two different enums is accepted")
+{
+    // Scope is per enum: the same name in two different enums is fine unless they collide
+    // in an enclosing namespace, which is a different rule.
+    const std::string code =
+        "enum EnumA\n"
+        "{\n"
+        "    SharedMember = 0\n"
+        "}\n"
+        "enum EnumB\n"
+        "{\n"
+        "    SharedMember = 0\n"
+        "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-duplicate-enum-member"));
+}
+
 // =====================================================================================
 // Funcdef
 // =====================================================================================

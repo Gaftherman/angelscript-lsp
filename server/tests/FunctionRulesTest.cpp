@@ -1100,3 +1100,56 @@ TEST_CASE("FunctionRules - Reports standalone anonymous function")
     CHECK(errorsInit.empty());
 }
 
+TEST_CASE("FunctionRules - Reports a reserved keyword used as a parameter name")
+{
+    const auto analyze = [](const std::string &code)
+    {
+        AngelScriptParser parser;
+        SymbolCollector collector(nullptr);
+        LocalScopeCollector scopes(nullptr);
+        SymbolTable table;
+        static angel_lsp::i18n::I18n i18n;
+
+        collector.CollectSymbols("file:///reserved.as", code, parser, table);
+
+        SemanticAnalysisRequest request{ table, "file:///reserved.as", ".as.predefined", &i18n };
+        request.scopeRoot = scopes.CollectScopes(code, parser);
+        request.sourceCode = code;
+        request.tree = parser.Parse(code);
+
+        SemanticAnalyzer analyzer(nullptr);
+        auto diags = analyzer.Analyze(request);
+        if (request.tree)
+        {
+            ts_tree_delete(const_cast<TSTree *>(request.tree));
+        }
+        return diags;
+    };
+
+    const auto hasReservedError = [](const std::vector<Diagnostic> &diags)
+    {
+        for (const auto &d : diags)
+        {
+            if (d.code == "as-err-reserved-word-as-parameter-name")
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // MEASURED, angelscript_oracle:
+    //   void KeywordParamProbe(bool true, bool false)
+    //   ERROR (1, 29): Expected ')' or ','
+    //   ERROR (1, 29): Instead found reserved keyword 'true'
+    CHECK(hasReservedError(analyze("void ReservedProbeOne(bool true)\n{\n}\n")));
+    CHECK(hasReservedError(analyze("void ReservedProbeTwo(int class)\n{\n}\n")));
+
+    // The other half of the rule, and the half that keeps it honest. These three compile - measured
+    // one word at a time against the compiler, which accepts 15 contextual keywords as parameter
+    // names and rejects 53 reserved ones. Reporting any of the 15 would be a false positive.
+    CHECK_FALSE(hasReservedError(analyze("void ReservedProbeThree(int property)\n{\n}\n")));
+    CHECK_FALSE(hasReservedError(analyze("void ReservedProbeFour(float super)\n{\n}\n")));
+    CHECK_FALSE(hasReservedError(analyze("void ReservedProbeFive(int public)\n{\n}\n")));
+    CHECK_FALSE(hasReservedError(analyze("void ReservedProbeSix(int ordinary)\n{\n}\n")));
+}

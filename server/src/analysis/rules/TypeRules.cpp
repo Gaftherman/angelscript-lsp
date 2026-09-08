@@ -1,16 +1,54 @@
 #include "analysis/rules/TypeRules.h"
+#include "analysis/ASTUtils.h"
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/GrammarNames.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
 #include <cctype>
 #include <string>
+#include <string_view>
 #include <vector>
+#include <ankerl/unordered_dense.h>
 
 namespace angel_lsp::analysis::rules
 {
     namespace
     {
+        /**
+         * @brief Recursively searches for the enum_declaration AST node matching the symbol's start point or name.
+         */
+        TSNode FindEnumDeclarationNode(TSNode node, uint32_t startLine, uint32_t startChar, std::string_view name, std::string_view sourceCode, int depth = 0)
+        {
+            if (ts_node_is_null(node) || depth > k_maxAstDepth)
+            {
+                return TSNode{};
+            }
+            if (NodeType(node) == parser::nodes::EnumDeclaration)
+            {
+                const TSPoint pt = ts_node_start_point(node);
+                if (pt.row == startLine && pt.column == startChar)
+                {
+                    return node;
+                }
+                const TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
+                if (!ts_node_is_null(nameNode) && NodeText(nameNode, sourceCode) == name)
+                {
+                    return node;
+                }
+            }
+            const uint32_t count = ts_node_child_count(node);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode found = FindEnumDeclarationNode(ts_node_child(node, i), startLine, startChar, name, sourceCode, depth + 1);
+                if (!ts_node_is_null(found))
+                {
+                    return found;
+                }
+            }
+            return TSNode{};
+        }
         /** @brief True when the name collides with a keyword or a built-in type name. */
         bool IsUnusableName(const std::string &name, const DiagnosticContext &ctx)
         {
@@ -265,6 +303,68 @@ namespace angel_lsp::analysis::rules
             {
                 ctx.LogRule("ValidateEnum", "as-err-enum-invalid-initializer", sym);
                 ctx.Emit(sym, "as-err-enum-invalid-initializer", member.value);
+            }
+        }
+
+        // Duplicate enumerator names within one enum. AngelScript rejects redeclaring an
+        // enumerator in the same enum: `Member1 = 0, Member1 = 0` answers "Name conflict. 'Member1'
+        // is already used." The first occurrence is kept; every subsequent occurrence is reported.
+        // Scope is per enum - the same name in two different enums is valid unless colliding at
+        // enclosing scope, which is judged elsewhere.
+        if (ctx.request.tree && !ctx.request.sourceCode.empty())
+        {
+            const TSNode root = ts_tree_root_node(ctx.request.tree);
+            const TSNode enumNode = FindEnumDeclarationNode(root, sym.startLine, sym.startCharacter, sym.name, ctx.request.sourceCode);
+            if (!ts_node_is_null(enumNode))
+            {
+                ankerl::unordered_dense::set<std::string> seenMemberNames;
+                const uint32_t count = ts_node_child_count(enumNode);
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    const TSNode child = ts_node_child(enumNode, i);
+                    if (NodeType(child) != parser::nodes::EnumMember)
+                    {
+                        continue;
+                    }
+
+                    const TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+                    if (ts_node_is_null(nameNode))
+                    {
+                        continue;
+                    }
+
+                    const std::string memberName(NodeText(nameNode, ctx.request.sourceCode));
+                    if (memberName.empty())
+                    {
+                        continue;
+                    }
+
+                    if (!seenMemberNames.insert(memberName).second)
+                    {
+                        const TSPoint start = ts_node_start_point(nameNode);
+                        const TSPoint end = ts_node_end_point(nameNode);
+                        ctx.LogRule("ValidateEnum", diagnostics::codes::DuplicateEnumMember, sym);
+                        ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                        diagnostics::codes::DuplicateEnumMember, memberName);
+                    }
+                }
+            }
+        }
+        else
+        {
+            // Fallback when no AST tree was supplied: evaluate against symbol table signatures.
+            ankerl::unordered_dense::set<std::string> seenMemberNames;
+            for (const auto &member : sig.members)
+            {
+                if (member.name.empty())
+                {
+                    continue;
+                }
+                if (!seenMemberNames.insert(member.name).second)
+                {
+                    ctx.LogRule("ValidateEnum", diagnostics::codes::DuplicateEnumMember, sym);
+                    ctx.Emit(sym, diagnostics::codes::DuplicateEnumMember, member.name);
+                }
             }
         }
     }

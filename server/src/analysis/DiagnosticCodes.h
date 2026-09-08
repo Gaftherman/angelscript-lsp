@@ -132,6 +132,7 @@ namespace angel_lsp::diagnostics::codes
     inline constexpr std::string_view DestructorParam                      = "as-err-destructor-param";
     inline constexpr std::string_view DestructorReturnType                 = "as-err-destructor-return-type";
     inline constexpr std::string_view DoubleReference                      = "as-err-double-reference";
+    inline constexpr std::string_view DuplicateEnumMember                  = "as-err-duplicate-enum-member";
     inline constexpr std::string_view DuplicateParam                       = "as-err-duplicate-param";
     inline constexpr std::string_view EmptyListElement                     = "as-err-empty-list-element";
     inline constexpr std::string_view EnumInvalidInitializer               = "as-err-enum-invalid-initializer";
@@ -192,6 +193,7 @@ namespace angel_lsp::diagnostics::codes
     inline constexpr std::string_view PropertyTypeMismatch                 = "as-err-property-type-mismatch";
     inline constexpr std::string_view ReadOnlyProperty                     = "as-err-read-only-property";
     inline constexpr std::string_view RefTypeBoolConvDisallowed            = "as-err-ref-type-bool-conv-disallowed";
+    inline constexpr std::string_view ReservedWordAsParameterName          = "as-err-reserved-word-as-parameter-name";
     inline constexpr std::string_view ReturnNotInstantiable                = "as-err-return-not-instantiable";
     inline constexpr std::string_view SignatureMismatchFuncHandle          = "as-err-signature-mismatch-func-handle";
     inline constexpr std::string_view StandaloneAnonymousFunction          = "as-err-standalone-anonymous-function";

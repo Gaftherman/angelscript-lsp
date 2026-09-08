@@ -549,6 +549,38 @@ namespace angel_lsp::analysis::rules
                 }
             }
         }
+
+        /**
+         * @brief Reserved words rejected as parameter names by the real AngelScript compiler.
+         *
+         * MEASURED: Each keyword was probed against the AngelScript compiler via angelscript_oracle
+         * with `void Probe(<type> <word>)`. The compiler rejects these 53 words with:
+         *   "Expected ')' or ',' / Instead found reserved keyword '<word>'"
+         *
+         * In contrast, 15 contextual words are ACCEPTED as parameter names by the compiler:
+         *   abstract, delete, explicit, external, final, from, function, get, override,
+         *   property, public, set, shared, super, this.
+         *
+         * Those 15 words compile cleanly and must NEVER be reported. Keywords.h mixes reserved
+         * and contextual words and must NOT be used here. Extend this list only by measuring
+         * new words against the compiler, never by reasoning or guessing.
+         */
+        inline constexpr std::string_view k_reservedParameterNames[] = {
+            "and", "auto", "bool", "break", "case", "cast", "catch", "class", "const", "continue",
+            "default", "do", "double", "else", "enum", "false", "float", "for", "foreach",
+            "funcdef", "if", "import", "in", "inout", "int", "int16", "int32", "int64", "int8",
+            "interface", "is", "mixin", "namespace", "not", "null", "or", "out", "private",
+            "protected", "return", "switch", "true", "try", "typedef", "uint", "uint16", "uint32",
+            "uint64", "uint8", "using", "void", "while", "xor",
+        };
+
+        /** @brief True when the word is in the 53-word measured rejected list for parameter names. */
+        [[nodiscard]] bool IsReservedParameterName(std::string_view name) noexcept
+        {
+            return std::binary_search(std::begin(k_reservedParameterNames),
+                                      std::end(k_reservedParameterNames),
+                                      name);
+        }
     }
 
     // =============================================================================
@@ -682,6 +714,16 @@ namespace angel_lsp::analysis::rules
 
             if (param.name.empty())
             {
+                continue;
+            }
+
+            // A reserved keyword cannot be used as a parameter name. The tree-sitter grammar accepts
+            // it as a parameter node with the keyword in the name field, so this rule reports the
+            // compiler parse error ("Instead found reserved keyword '<word>'").
+            if (IsReservedParameterName(param.name))
+            {
+                ctx.LogParam("ValidateParameters", diagnostics::codes::ReservedWordAsParameterName, param, sym);
+                ctx.Emit(param, sym, diagnostics::codes::ReservedWordAsParameterName, param.name);
                 continue;
             }
 

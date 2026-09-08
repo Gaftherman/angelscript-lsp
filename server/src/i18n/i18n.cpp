@@ -124,6 +124,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-multi-class-inherit"] = "Class '{}' cannot inherit from multiple classes.";
         m_messages["as-err-base-not-found"] = "Base type '{}' not found.";
         m_messages["as-err-funcdef-not-handle"] = "Variables or parameters of funcdef type '{}' must be declared as handles ('{}@').";
+        m_messages["as-err-duplicate-enum-member"] = "Duplicate enum member '{}'.";
         m_messages["as-err-duplicate-param"] = "Duplicate parameter name '{}' in function '{}'.";
         m_messages["as-warn-shadow-global"] = "Parameter '{}' shadows a global variable of the same name.";
         m_messages["as-hint-accessor-disabled"] = "Type '{}' reaches '{}' through a script property accessor, and this host disables those (asEP_PROPERTY_ACCESSOR_MODE 0 or 1). The compiler will not accept it; call the get_ or set_ function directly.";
@@ -137,6 +138,7 @@ namespace angel_lsp::i18n
         m_messages["as-err-interface-impl-missing"] = "Class '{}' does not implement interface method '{}' from interface '{}'.";
         m_messages["as-err-attribute-repeated"] = "Attribute '{}' is informed multiple times.";
         m_messages["as-err-reserved-keyword-name"] = "Instead found reserved keyword '{}'.";
+        m_messages["as-err-reserved-word-as-parameter-name"] = "Reserved keyword '{}' cannot be used as an identifier here.";
         m_messages["as-err-name-conflict"] = "Name conflict. '{}' is already declared as a {}.";
         m_messages["as-err-const-void-return"] = "Return type can't be 'const void'.";
         m_messages["as-err-global-function-qualifiers"] = "Global function '{}' cannot be declared 'const'.";
@@ -288,6 +290,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-multi-class-inherit"] = "La clase '{}' no puede heredar de múltiples clases.";
             m_messages["as-err-base-not-found"] = "Tipo base '{}' no encontrado.";
             m_messages["as-err-funcdef-not-handle"] = "Variables o parámetros de tipo funcdef '{}' deben declararse como handle ('{}@').";
+            m_messages["as-err-duplicate-enum-member"] = "Miembro de enum duplicado '{}'.";
             m_messages["as-err-duplicate-param"] = "Nombre de parámetro '{}' duplicado en la función '{}'.";
             m_messages["as-warn-shadow-global"] = "El parámetro '{}' oculta una variable global con el mismo nombre.";
             m_messages["as-hint-accessor-disabled"] = "El tipo '{}' llega a '{}' mediante un accesor de propiedad de script, y este host los tiene desactivados (asEP_PROPERTY_ACCESSOR_MODE 0 o 1). El compilador no lo acepta; llama a la funcion get_ o set_ directamente.";
@@ -301,6 +304,7 @@ namespace angel_lsp::i18n
             m_messages["as-err-interface-impl-missing"] = "La clase '{}' no implementa el método de interfaz '{}' de la interfaz '{}'.";
             m_messages["as-err-attribute-repeated"] = "El atributo '{}' se informa múltiples veces.";
             m_messages["as-err-reserved-keyword-name"] = "Se encontró la palabra reservada '{}' en lugar de un identificador.";
+            m_messages["as-err-reserved-word-as-parameter-name"] = "La palabra reservada '{}' no se puede usar como un identificador aquí.";
             m_messages["as-err-name-conflict"] = "Conflicto de nombre. '{}' ya está declarado como {}.";
             m_messages["as-err-const-void-return"] = "El tipo de retorno no puede ser 'const void'.";
             m_messages["as-err-global-function-qualifiers"] = "La función global '{}' no puede declararse 'const'.";
