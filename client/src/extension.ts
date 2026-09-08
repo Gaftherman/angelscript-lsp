@@ -33,7 +33,11 @@ function loadLanguageClientModule(): LanguageClientModule {
     // resolve an `import()` of this CommonJS package from a CommonJS file. esbuild gives both the
     // same treatment in a bundle - the module becomes a lazily-initialised wrapper - so this is
     // the same deferral, synchronous, and it types cleanly.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    //
+    // No eslint-disable above it: this config enables four rules and naming-convention, and
+    // `@typescript-eslint/no-require-imports` is not among them - so the directive reported itself
+    // as unused. Turning the recommended set on is what would need it back, and the paragraph above
+    // is the reason it would be granted.
     languageClientModule ??= require('vscode-languageclient/node') as LanguageClientModule;
     return languageClientModule;
 }

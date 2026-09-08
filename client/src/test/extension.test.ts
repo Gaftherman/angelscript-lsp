@@ -301,6 +301,11 @@ suite('portableStubPath', () => {
 // the suite happens to run on, and would either be too loose to catch a regression or fail on a
 // loaded CI runner. What is asserted is that every phase is measured - a phase that silently stops
 // being recorded is how this stops answering the question it exists for.
+//
+// The last three phases are reached only once a server binary exists: startClient returns early
+// at `!server.found` before them. The CI job running these tests does not build the server, so it
+// always takes that path, and the test therefore asserts the group is all-present or all-absent
+// rather than requiring it.
 // =====================================================================================
 
 suite('activation timings', () => {
@@ -321,11 +326,25 @@ suite('activation timings', () => {
         console.log('    activation: ' + report);
 
         for (const phase of ['moduleToActivate', 'outputChannel', 'registerCommands',
-                             'statusBarItem', 'resolveServerBinary', 'buildServerArgs',
-                             'createFileSystemWatcher', 'constructLanguageClient']) {
+                             'statusBarItem', 'resolveServerBinary']) {
             assert.ok(phase in timings, `no measurement recorded for '${phase}'`);
             assert.ok(Number.isFinite(timings[phase]) && timings[phase] >= 0,
                       `'${phase}' recorded ${timings[phase]}, which is not a duration`);
+        }
+
+        const afterBinary = ['buildServerArgs', 'createFileSystemWatcher', 'constructLanguageClient'];
+        const presentBinary = afterBinary.filter(phase => phase in timings);
+        if (presentBinary.length === 0) {
+            console.log('    activation: ran without a server binary');
+        } else {
+            const missing = afterBinary.filter(phase => !(phase in timings));
+            assert.ok(missing.length === 0,
+                      `server binary was found but missing phases: ${missing.join(', ')}`);
+            for (const phase of afterBinary) {
+                assert.ok(phase in timings, `no measurement recorded for '${phase}'`);
+                assert.ok(Number.isFinite(timings[phase]) && timings[phase] >= 0,
+                          `'${phase}' recorded ${timings[phase]}, which is not a duration`);
+            }
         }
     });
 
