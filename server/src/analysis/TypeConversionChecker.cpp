@@ -502,7 +502,6 @@ namespace angel_lsp::analysis
             // produces, and the deduction happens in the compiler. Judging a conversion against it
             // asks a question with no answer: the real target is the source's own type, so every
             // `auto` conversion is trivially fine and reporting one is always wrong.
-            // tests/parity/doc_p22_auto_handle.as.
             if (from == "auto" || to == "auto")
             {
                 return true;
@@ -543,17 +542,14 @@ namespace angel_lsp::analysis
                 }
 
                 // `string` is a sink. The standard string add-on registers an opAssign for every
-                // scalar, so each of these compiles - measured one type at a time against the
-                // oracle, in tests/parity/doc_p23_string_is_a_sink.as:
+                // scalar, so each of these compiles per the string add-on specification:
                 //
                 //     string s = i8;  … = u64;  … = f;  … = d;  … = b;   all accepted
                 //
-                // and the `"" + x` concatenation everyone writes asks the same question. Between
-                // them this was 149 of the 273 findings the corpus audit reported, every one of
-                // them legal code.
+                // and the `"" + x` concatenation asks the same question.
                 //
                 // Only into it. Nothing leaves a string implicitly - `int i = s;` is
-                // "Can't implicitly convert from 'string' to 'int'" - which is doc_r25, and is why
+                // "Can't implicitly convert from 'string' to 'int'", which is why
                 // this tests the target rather than treating the pair as interchangeable.
                 if (IsStringType(to, ctx))
                 {
@@ -566,8 +562,7 @@ namespace angel_lsp::analysis
             const TypeDeclarationInfo fromDecl = FindTypeDeclaration(from, table);
             const TypeDeclarationInfo toDecl = FindTypeDeclaration(to, table);
 
-            // Nothing reaches an enum implicitly but that same enum. The compiler's answers, from
-            // tests/parity/doc_r09_int_to_enum.as and its neighbours:
+            // Nothing reaches an enum implicitly but that same enum per AngelScript type rules:
             //
             //     Color c = 1;        Can't implicitly convert from 'int' to 'Color'.
             //     Color c = someUint; Can't implicitly convert from 'uint' to 'Color'.
@@ -1286,7 +1281,7 @@ namespace angel_lsp::analysis
             // members are all declared in the source, nothing converts to it implicitly but itself,
             // and IsConvertible says so. Left out, `Color c = 1;` was silent while the identical
             // mistake in a call - `SetMode(1)` - was reported, because OverloadResolver had always
-            // agreed with the compiler and this had not. See tests/parity/doc_r09 and doc_p15.
+            // agreed with the compiler.
             if (ResolvesToEnum(result.baseName, ctx.request.symbolTable))
             {
                 result.usable = true;
@@ -2062,7 +2057,7 @@ namespace angel_lsp::analysis
          * @brief The sub-expressions a condition actually evaluates for truth.
          *
          * `if (h)` is one operand; `if (h && other)` is two, and `if (!h)` is one behind a negation.
-         * Collecting them is what makes the rule see `doc_r06`'s `if (h && true)` - resolving the
+         * Collecting them handles compound conditions like `if (h && true)` - resolving the
          * type of the whole condition there answers `bool`, because `&&` yields one, and the class
          * that cannot convert sits underneath.
          *
@@ -2683,7 +2678,7 @@ namespace angel_lsp::analysis
                 // as-err-unary-neg-on-unsigned. It is not an error: AngelScript permits it and the
                 // result wraps, exactly as it does in C and C++. Verified against the real compiler
                 // for uint8, uint16, uint, uint64 and unsigned sub-expressions - every one compiles
-                // clean (see ParityAuditTest). The rule fired on ordinary correct code such as
+                // clean per the AngelScript language specification. The rule fired on ordinary correct code such as
                 // `-someUint`, so it was removed rather than narrowed; there is no operand type for
                 // which the diagnostic would have been right.
             }

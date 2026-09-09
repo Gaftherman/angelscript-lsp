@@ -108,12 +108,9 @@ namespace angel_lsp::analysis
                         // chosen - an error on code the compiler accepts is the one failure it
                         // treats as fatal, and from in here the world is not visible.
                         //
-                        // No parity fixture, uniquely: both harnesses synthesise a class that
-                        // includes the mixin on its own (`_AutoMixinInstantiator_1`,
-                        // `_OracleMixinProbe_0`) so that its body is compiled at all, and that
-                        // class declares nothing. A corpus file of this shape is therefore
-                        // *rejected* by the compiler under test and would record the opposite of
-                        // what it means. A unit test covers it instead.
+                        // Mixin bodies cannot be fully checked until included in a concrete host class,
+                        // because symbols referenced inside the mixin body may be provided by the host class
+                        // or other mixins included alongside it.
                         else if (!localDef && inScopeSyms.empty() && !ctx.request.IsRegisteredSymbol(calleeName) && !table.HasSymbol(calleeName) && !IsInsideMixinBody(node))
                         {
                             TSPoint startPt = ts_node_start_point(funcNode);
@@ -138,8 +135,6 @@ namespace angel_lsp::analysis
                         // as-err-call-ambiguous, which is the only place it can honestly be
                         // decided. Two namespaces declaring the same *variable* are not reported
                         // by the compiler at all.
-                        //
-                        // See tests/parity/doc_p16_using_ns_overloads_merge.as, which found this.
                     }
                 }
             }

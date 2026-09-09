@@ -23,9 +23,9 @@
  *
  *   - tests/GrammarNamesTest.cpp asks the LOADED language whether each constant below still
  *     resolves. That is what turns a grammar pin bump into a failing test with a name in it,
- *     instead of a rule that quietly stops matching. The parity audit structurally cannot catch
- *     this: an unparseable construct costs a symbol rather than producing a diagnostic, so a
- *     grammar gap reaches it as silence. See PARITY-BACKLOG.md.
+ *     instead of a rule that quietly stops matching. Semantic analysis cannot catch
+ *     this directly: an unparseable construct costs a symbol rather than producing a diagnostic,
+ *     so a grammar gap would otherwise go undetected.
  *
  *   - scripts/check-grammar-names.py asks the SOURCE whether anyone wrote a raw string literal in
  *     a node-type or field position that the grammar does not define. That is what catches a new

@@ -18,9 +18,8 @@ namespace angel_lsp::analysis
      * compiler answers each with `Initialization lists cannot be used with 'int'`, because it
      * matches the list against the element pattern and the element there is a plain `int`.
      *
-     * This pass was written from that compiler's answers rather than from the grammar: it existed
-     * as a known parity gap - a script the real compiler rejected and this analyzer accepted in
-     * silence - until the nesting rule was traced case by case against AS-Harness.
+     * This checker validates initializer list nesting and element compatibility
+     * against target types per the AngelScript compiler specifications.
      */
     struct InitializerListCheckRequest
     {

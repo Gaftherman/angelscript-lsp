@@ -30,7 +30,7 @@ namespace angel_lsp::parser::keywords
      * This is the set a diagnostic may be built on, and the only one. `string` is deliberately NOT
      * here even though `int string;` is rejected: `string` is a type the application registers, not
      * a word of the language, and a host that registers something else makes that name legal again.
-     * The same reasoning keeps tests/parity/doc_p15 silent about a local shadowing a script class.
+     * The same reasoning applies to user-defined types: a local variable may shadow a script class or type without a syntax error.
      */
     inline constexpr std::array<std::string_view, 53> k_reserved = {
         "and", "auto", "bool", "break", "case", "cast", "catch", "class", "const", "continue",

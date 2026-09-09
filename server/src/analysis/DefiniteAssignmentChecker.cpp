@@ -188,13 +188,9 @@ namespace angel_lsp::analysis
                         std::string locationKey = name + ":" + std::to_string(start.row) + ":" + std::to_string(start.column);
                         if (m_reportedReads.insert(locationKey).second)
                         {
-                            // A WARNING, which is what the compiler answers. Measured, seven
-                            // shapes, every one accepted with `WARNING: 'n' is not initialized.`
-                            // and exit 0: a plain read, a read inside an expression, a by-value
-                            // argument, and a `const &in` argument. This was emitted as an ERROR
-                            // over 749 sites in the corpus - errors are what the parity audit
-                            // counts and what a build gate would stop on, so the severity was not
-                            // a cosmetic detail.
+                            // A WARNING, which is what the AngelScript compiler produces
+                            // for uninitialized variable reads: a plain read, a read inside an expression,
+                            // a by-value argument, or a `const &in` argument are warnings rather than errors.
                             m_ctx.EmitAtRange(start.row, start.column, end.row, end.column,
                                               "as-warn-uninitialized-variable-read", name,
                                               DiagnosticSeverity::Warning);

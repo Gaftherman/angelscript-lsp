@@ -122,13 +122,8 @@ namespace angel_lsp::analysis
          * asEP_PROPERTY_ACCESSOR_MODE decides it, and the two settings really do accept different
          * programs. Under mode 2 any method named `get_X` is the property `X`; under mode 3 - the
          * SDK's own default - it is an ordinary method until the `property` keyword is written, and
-         * `c.V` is answered with "'V' is not a member of 'C'". Both halves measured directly:
-         *
-         *     angelscript_oracle doc_r07_accessor_without_kw.as --property-accessor-mode=3   rejects
-         *     angelscript_oracle doc_r07_accessor_without_kw.as --property-accessor-mode=2   accepts
-         *
-         * The `--property-accessor-mode` flag was added to the oracle for this, because a setting
-         * whose second half cannot be asked about is a setting recorded on faith.
+         * `c.V` is answered with "'V' is not a member of 'C'". Under mode 3, accessors require
+         * the explicit 'property' keyword decoration, whereas mode 2 accepts implicit accessor methods.
          */
         bool AccessorStandsForProperty(const Symbol &sym, bool keywordRequired)
         {
@@ -284,7 +279,7 @@ namespace angel_lsp::analysis
             // has no member 'insertLast'" on ordinary code. It stayed hidden because the element
             // type is usually a primitive, and a primitive has no hierarchy, so the guard below
             // returned before the lookup: only an array of a SCRIPT-DECLARED class reached far
-            // enough to be reported. Found by doc_p30, which happened to need `array<Item@>`.
+            // enough to be reported (e.g. `array<Item@>`).
             //
             // The container name falls back to `array` when nothing is configured:
             // GetArrayTypeName() answers empty with no TypeConfig, and an empty container name

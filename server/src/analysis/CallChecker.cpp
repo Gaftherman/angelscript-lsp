@@ -311,7 +311,6 @@ namespace angel_lsp::analysis
             // namespaced function under its qualified name alone - `TEST::my_test_func`, never
             // `my_test_func` - so inside a namespace the probe found nothing and every call in the
             // file went unchecked. The identical call at file scope was checked.
-            // tests/parity/doc_r12 against doc_r14 is exactly that pair.
             std::vector<std::string> reachableScopes;
             for (const auto &container : GetEnclosingContainers(callNode, sourceCode))
             {
@@ -868,8 +867,7 @@ namespace angel_lsp::analysis
             // An initializer list argument. `take({1, 2})` compiles - the compiler takes the target
             // type from the parameter the list lands on and builds the list against it, so
             // `take({"x"})` against `array<int>` is "Can't implicitly convert from 'const string' to
-            // 'int&'" (tests/parity/doc_r18_initlist_call_argument.as). The list itself resolves to
-            // no type, so nothing in this pass ever judged it.
+            // 'int&'". The list itself resolves to no type on its own, so it requires target-type context.
             //
             // Only where the parameter is not in question: one candidate of this arity, and no
             // named argument to move the positions around. With two overloads the compiler's own

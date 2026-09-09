@@ -255,8 +255,7 @@ namespace angel_lsp::analysis
          *
          * asEP_PROPERTY_ACCESSOR_MODE. Under 3 - the SDK's own default - an accessor without the
          * keyword is an ordinary method and `c.V` is "'V' is not a member of 'C'"; under 2 the name
-         * alone is enough. Both measured, in tests/parity/doc_r07_accessor_without_kw.as:
-         * `angelscript_oracle --property-accessor-mode=3` rejects it and `=2` accepts it.
+         * alone is enough.
          *
          * This server defaults to 2, the more permissive of the two, and the reasoning is at
          * EngineProperties::propertyAccessorMode: under 2 the analyzer misses a diagnostic a

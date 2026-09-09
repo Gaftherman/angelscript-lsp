@@ -1035,10 +1035,7 @@ namespace angel_lsp::analysis
                     // `auto` is in IsCorePrimitive's list, and it is not a primitive - it is not a
                     // type at all, but a placeholder for whatever the initializer produces, so
                     // whether a handle is allowed is decided by *that* type. The compiler accepts
-                    // `auto@ g = MakeFoo();` and rejects `int@ x;`, and this reported both. Found
-                    // by the corpus audit: two of the 1,061 scripts declare a deduced handle, and
-                    // both were flagged on code that compiles.
-                    // tests/parity/doc_p22_auto_handle.as, doc_r24_handle_on_primitive.as.
+                    // `auto@ g = MakeFoo();` and rejects `int@ x;`.
                     else if (def.isHandleType && def.typeKind != TypeKind::Array &&
                              base != "auto" && IsPrimitiveTypeName(base))
                     {

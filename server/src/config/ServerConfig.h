@@ -148,7 +148,7 @@ namespace angel_lsp::config
          * 3 a `c.V` whose accessor lacks the keyword is an error the compiler does report, so
          * defaulting to 3 would be more faithful - and would hand a new diagnostic to every
          * workspace whose host sets 2, which many do, for code that compiles for them today. Being
-         * lenient here misses an error; being strict invents one. See PARITY-BACKLOG.md.
+         * lenient here avoids false positive diagnostics for code valid under mode 2.
          */
         int propertyAccessorMode = 2;
 

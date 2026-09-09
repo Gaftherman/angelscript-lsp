@@ -203,12 +203,10 @@ namespace angel_lsp::analysis
                 }
             }
 
-            // A typedef names a primitive, and a primitive is most of what a template argument ever
-            // is. `typedef uint8 byte;` makes `array<byte>` and `array<uint8>` the same
-            // instantiation, and the compiler accepts a call between them in either direction -
-            // but unwrapping only the outer name left them as two unrelated spellings, so a legal
-            // call was reported. That is a false positive, which is the one failure mode this
-            // project does not accept. tests/parity/doc_p19_typedef_template_argument.as.
+            // A typedef names a primitive, and a primitive is often used as a template argument.
+            // For example, `typedef uint8 byte;` makes `array<byte>` and `array<uint8>` the same
+            // instantiation, and the compiler accepts a call between them in either direction.
+            // Unwrapping template arguments ensures typedef aliases match their canonical base types.
             //
             // Rebuilding also canonicalises the separator, so `array<int,string>` and
             // `array<int, string>` stop being different types to a string comparison.
@@ -614,9 +612,8 @@ namespace angel_lsp::analysis
         // 3b. An enum widens out to an integer, and `auto` is not a type at all.
         //
         // `Take(ModeOne)` against `void Take(int)` compiles - an enum is an integer with a name,
-        // and only the *inward* direction is closed (`Color c = 1;` is the error, doc_r09). Eleven
-        // corpus findings were flag arguments spelled as the enum they belong to, which is how
-        // every one of them is meant to be written.
+        // and only the *inward* direction is closed (`Color c = 1;` is rejected without an explicit cast).
+        // Flag arguments spelled as the enum they belong to implicitly convert outward to integer.
         //
         // `auto` reaches this as the resolved type of a deduced variable. The deduction happens in
         // the compiler and its result is not written anywhere the analyzer can read, so scoring it

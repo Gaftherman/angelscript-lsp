@@ -72,11 +72,8 @@ namespace angel_lsp::features::resolution
      * something else changes. No diagnostic covers that and neither file's own tests would have
      * noticed, since each would still pass.
      *
-     * RenameReferencesParityTest sweeps every identifier position in a set of samples and requires
-     * the two features to return the same ranges. It caught nothing when it was written - they
-     * agreed everywhere, 303 comparisons - which is exactly why extracting this was safe to do,
-     * and why the sweep stays: a shared core can still be given a caller-specific branch by
-     * mistake.
+     * Tests verify identifier positions across representative samples and require
+     * the two features to return consistent ranges.
      *
      * @param includeDeclaration Whether the declaration itself is one of the occurrences. This is
      *        the one place the two callers genuinely disagreed, and the sweep above could not have
