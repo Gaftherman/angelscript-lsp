@@ -11,6 +11,14 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
 
 ---
 
+## What's New & Recent Updates (v0.6.2)
+
+- **Dynamic Module Hot-Reloading**: Changes to `angelscript.modules` in `.vscode/settings.json` now reload dynamically via `workspace/didChangeConfiguration` without requiring a full server process restart or window reload.
+- **Unconfigured Closure File Purging**: Removing a module from configuration immediately purges obsolete closure files, declarations, and symbols from the symbol table, ensuring accurate diagnostics when modules are removed or re-added.
+- **Native `${workspaceFolder}` Path Resolution**: Server-side path resolution directly expands and normalizes `${workspaceFolder}` and `${workspaceRoot}` macros against the workspace roots for module entries and folder targets.
+
+---
+
 ## What's New & Recent Updates (v0.6.1)
 
 - **Folder-Based Module Support in Client**: VS Code client extension now forwards `--module-folder` to the server when `angelscript.modules` entries specify a `folder`, allowing entire directories of scripts (e.g. Sven Co-op maps or plugins) to be registered automatically.
