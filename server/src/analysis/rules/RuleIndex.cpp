@@ -73,6 +73,17 @@ namespace angel_lsp::analysis::rules
                         }
                     }
 
+                    if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
+                        sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef || sym.type == SymbolType::Funcdef)
+                    {
+                        const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                        auto &vec = index->qualifiedTypesByShortName[sym.name];
+                        if (std::find(vec.begin(), vec.end(), qName) == vec.end())
+                        {
+                            vec.push_back(qName);
+                        }
+                    }
+
                     // Reverse inheritance edges, for GetAllRelatedClasses. Recorded before the
                     // containerName check below, because a class's bases matter whether or not the
                     // class itself is nested inside something.

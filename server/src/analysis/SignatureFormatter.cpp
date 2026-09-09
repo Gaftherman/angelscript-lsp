@@ -253,6 +253,10 @@ namespace angel_lsp::analysis
             }
             oss << "}";
         }
+        else if (!var.defaultValue.empty())
+        {
+            oss << " = " << var.defaultValue;
+        }
 
         return oss.str();
     }

@@ -1145,3 +1145,24 @@ TEST_CASE("Completion - Chained member access completes with whitespace around a
     REQUIRE(reset != nullptr);
 }
 
+TEST_CASE("Completion - Member completion on unqualified namespaced class")
+{
+    TestEnvironment env(
+        "namespace INS2PROP {\n"
+        "    class CIns2Prop {\n"
+        "        int health;\n"
+        "        void Fire() {}\n"
+        "    }\n"
+        "}\n"
+        "void Main() {\n"
+        "    CIns2Prop@ n;\n"
+        "    n.\n"
+        "}\n");
+
+    const auto items = env.CompleteAt(8, 6);
+    const auto *h = FindItemOfKind(items, "health", lsp::CompletionItemKind::Field);
+    REQUIRE(h != nullptr);
+    const auto *f = FindItemOfKind(items, "Fire", lsp::CompletionItemKind::Method);
+    REQUIRE(f != nullptr);
+}
+

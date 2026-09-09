@@ -113,10 +113,22 @@ namespace angel_lsp::features
                 hierarchy.push_back(currentTypeName);
 
                 auto syms = symbolTable.FindSymbols(currentTypeName);
+                if (syms.empty() && currentTypeName.find("::") == std::string::npos)
+                {
+                    syms = symbolTable.FindTypeSymbolsByShortName(currentTypeName);
+                }
+
                 for (const auto &sym : syms)
                 {
                     if (sym.type == analysis::SymbolType::Class)
                     {
+                        const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                        if (qName != currentTypeName && visited.find(qName) == visited.end())
+                        {
+                            visited.insert(qName);
+                            hierarchy.push_back(qName);
+                        }
+
                         const auto &classSig = sym.GetClass();
                         for (const auto &baseName : classSig.bases)
                         {
@@ -125,6 +137,13 @@ namespace angel_lsp::features
                     }
                     else if (sym.type == analysis::SymbolType::Interface)
                     {
+                        const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                        if (qName != currentTypeName && visited.find(qName) == visited.end())
+                        {
+                            visited.insert(qName);
+                            hierarchy.push_back(qName);
+                        }
+
                         const auto &ifaceSig = sym.GetInterface();
                         for (const auto &baseName : ifaceSig.inheritedInterfaces)
                         {
@@ -1072,6 +1091,18 @@ namespace angel_lsp::features
 
                 auto targetTemplate = analysis::ParseTemplateType(canonicalType);
                 std::string baseContainer = targetTemplate.containerName;
+                if (baseContainer.find("::") == std::string::npos && !request.symbolTable.HasSymbol(baseContainer))
+                {
+                    auto shortMatches = request.symbolTable.FindTypeSymbolsByShortName(baseContainer);
+                    for (const auto &sym : shortMatches)
+                    {
+                        if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface)
+                        {
+                            baseContainer = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                            break;
+                        }
+                    }
+                }
                 std::vector<std::string> templateArgs = targetTemplate.templateArgs;
                 const auto binding = analysis::BindTemplateArguments(canonicalType, request.symbolTable);
 

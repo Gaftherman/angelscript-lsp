@@ -86,6 +86,15 @@ namespace angel_lsp::analysis
 
         /** @brief Same condition as isHandleType: the declared type's source text, e.g. "int". */
         std::string typeName;
+
+        /** @brief Initializer value expression as written in source, e.g. "\"ins2/arf/\"" or "40". */
+        std::string defaultValue;
+
+        /** @brief Full range of the declaration or declarator including type and initializer. */
+        uint32_t fullStartLine = 0;
+        uint32_t fullStartCharacter = 0;
+        uint32_t fullEndLine = 0;
+        uint32_t fullEndCharacter = 0;
     };
 
     /** @brief A single identifier occurrence inside a Scope, not yet resolved to a definition. */

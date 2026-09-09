@@ -858,4 +858,49 @@ TEST_CASE("Hover - Multiple overloads display distinct doc comments")
     CHECK(text.find("First overload docs.") != std::string::npos);
 }
 
+TEST_CASE("Hover - Variable with default value displays initializer")
+{
+    TestEnvironment env(
+        "namespace INS2_L85A2 {\n"
+        "    string SPR_CAT = \"ins2/arf/\";\n"
+        "}\n"
+        "void main() {\n"
+        "    int speed = 40;\n"
+        "}\n");
+
+    // Line 1, column 12 is on SPR_CAT
+    const auto hover1 = env.HoverAt(1, 12);
+    REQUIRE(hover1.has_value());
+    const std::string text1 = std::get<lsp::MarkupContent>(hover1->contents).value;
+    CHECK(text1.find("(global variable)") != std::string::npos);
+    CHECK(text1.find("string SPR_CAT = \"ins2/arf/\"") != std::string::npos);
+
+    // Line 4, column 9 is on speed
+    const auto hover2 = env.HoverAt(4, 9);
+    REQUIRE(hover2.has_value());
+    const std::string text2 = std::get<lsp::MarkupContent>(hover2->contents).value;
+    CHECK(text2.find("(local variable)") != std::string::npos);
+    CHECK(text2.find("int speed = 40") != std::string::npos);
+}
+
+TEST_CASE("Hover - Member access on unqualified namespaced class resolves correctly")
+{
+    TestEnvironment env(
+        "namespace INS2PROP {\n"
+        "    class CIns2Prop {\n"
+        "        int health;\n"
+        "    };\n"
+        "}\n"
+        "void main() {\n"
+        "    CIns2Prop@ n;\n"
+        "    n.health;\n"
+        "}\n");
+
+    // Line 7, column 7 is on health
+    const auto hover = env.HoverAt(7, 7);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("(property) int health") != std::string::npos);
+}
+
 

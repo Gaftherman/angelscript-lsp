@@ -271,6 +271,30 @@ namespace angel_lsp::analysis
         return FindFirstSymbol(name);
     }
 
+    std::vector<Symbol> SymbolTable::FindTypeSymbolsByShortName(const std::string &shortName) const
+    {
+        std::vector<Symbol> result;
+        const auto index = GetRuleIndex();
+        if (!index)
+        {
+            return result;
+        }
+
+        const auto it = index->qualifiedTypesByShortName.find(shortName);
+        if (it != index->qualifiedTypesByShortName.end())
+        {
+            for (const auto &qKey : it->second)
+            {
+                auto ptr = FindSymbolsPtr(qKey);
+                if (ptr)
+                {
+                    result.insert(result.end(), ptr->begin(), ptr->end());
+                }
+            }
+        }
+        return result;
+    }
+
     void SymbolTable::InsertSymbol(const std::string &name, SymbolKind kind, const std::string &type)
     {
         Symbol sym;

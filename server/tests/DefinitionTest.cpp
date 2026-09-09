@@ -296,3 +296,56 @@ TEST_CASE("DefinitionHandler - Go to Definition on subsequent lines after inline
     ts_tree_delete(tree);
 }
 
+TEST_CASE("DefinitionHandler - Local and namespace variables return full declaration range")
+{
+    const std::string code =
+        "namespace INS2_L85A2 {\n"
+        "    string SPR_CAT = \"ins2/arf/\";\n"
+        "}\n"
+        "void main() {\n"
+        "    int count = 10;\n"
+        "    count++;\n"
+        "    INS2_L85A2::SPR_CAT;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Line 5: "    count++;" -> column 4 is on "count"
+    auto defCount = env.DefAt(5, 4);
+    REQUIRE(defCount.has_value());
+    REQUIRE(!defCount->empty());
+    // The range start should be at line 4, col 4 ("int count = 10;")
+    CHECK((*defCount)[0].range.start.line == 4);
+    CHECK((*defCount)[0].range.start.character == 4);
+
+    // Line 6: "    INS2_L85A2::SPR_CAT;" -> column 17 is on "SPR_CAT"
+    auto defSpr = env.DefAt(6, 17);
+    REQUIRE(defSpr.has_value());
+    REQUIRE(!defSpr->empty());
+    // The range start should be at line 1, col 4 ("string SPR_CAT = \"ins2/arf/\";")
+    CHECK((*defSpr)[0].range.start.line == 1);
+    CHECK((*defSpr)[0].range.start.character == 4);
+}
+
+TEST_CASE("DefinitionHandler - Member access on unqualified namespaced class resolves to member definition")
+{
+    const std::string code =
+        "namespace INS2PROP {\n"
+        "    class CIns2Prop {\n"
+        "        int health;\n"
+        "    };\n"
+        "}\n"
+        "void main() {\n"
+        "    CIns2Prop@ n;\n"
+        "    n.health;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Line 7: "    n.health;" -> column 7 is on "health"
+    auto defs = env.DefAt(7, 7);
+    REQUIRE(defs.has_value());
+    REQUIRE(!defs->empty());
+    CHECK((*defs)[0].range.start.line == 2);
+}
+

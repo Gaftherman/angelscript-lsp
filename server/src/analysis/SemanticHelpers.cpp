@@ -768,10 +768,27 @@ namespace angel_lsp::analysis
             // FindSymbolsPtr, not FindSymbols: the latter deep-copies the whole overload bucket,
             // and Symbol is a heavy value type. Nothing here mutates it.
             const auto symbols = symbolTable.FindSymbolsPtr(curType);
-            for (const auto &sym : (symbols ? *symbols : std::vector<Symbol>{}))
+            std::vector<Symbol> fallbackSymbols;
+            const std::vector<Symbol> *symbolsToIterate = symbols ? symbols.get() : nullptr;
+            if (!symbolsToIterate || symbolsToIterate->empty())
+            {
+                if (curType.find("::") == std::string::npos)
+                {
+                    fallbackSymbols = symbolTable.FindTypeSymbolsByShortName(curType);
+                    symbolsToIterate = &fallbackSymbols;
+                }
+            }
+
+            for (const auto &sym : (symbolsToIterate ? *symbolsToIterate : std::vector<Symbol>{}))
             {
                 if (sym.type == SymbolType::Class)
                 {
+                    const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                    if (visited.insert(qName).second)
+                    {
+                        hierarchy.push_back(qName);
+                    }
+
                     const auto &cls = sym.GetClass();
 
                     // Classified once, then partitioned. Mixins must still be enqueued ahead of
@@ -1332,6 +1349,13 @@ namespace angel_lsp::analysis
         if (!enumMembers.empty())
         {
             return enumMembers;
+        }
+
+        // 5. Short-name type fallback (e.g. CIns2Prop -> INS2PROP::CIns2Prop)
+        auto typeMatches = symbolTable.FindTypeSymbolsByShortName(name);
+        if (!typeMatches.empty())
+        {
+            return typeMatches;
         }
 
         return {};

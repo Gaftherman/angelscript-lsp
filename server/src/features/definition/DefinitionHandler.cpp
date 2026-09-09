@@ -60,6 +60,34 @@ namespace angel_lsp::features
             outNode = node;
             return request.sourceCode.substr(startByte, endByte - startByte);
         }
+
+        const analysis::Scope *FindScopeDeclaringDefinition(const analysis::Scope *current, const analysis::LocalDefinition &def)
+        {
+            if (!current)
+            {
+                return nullptr;
+            }
+
+            for (const auto &d : current->definitions)
+            {
+                if (d.name == def.name &&
+                    d.startLine == def.startLine &&
+                    d.startCharacter == def.startCharacter)
+                {
+                    return current;
+                }
+            }
+
+            for (const auto &child : current->children)
+            {
+                if (const auto *found = FindScopeDeclaringDefinition(child.get(), def))
+                {
+                    return found;
+                }
+            }
+
+            return nullptr;
+        }
     }
 
     std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest &request)
@@ -236,6 +264,19 @@ namespace angel_lsp::features
 
             if (!receiverTypeName.empty())
             {
+                if (receiverTypeName.find("::") == std::string::npos && !request.symbolTable.HasSymbol(receiverTypeName))
+                {
+                    auto shortMatches = request.symbolTable.FindTypeSymbolsByShortName(receiverTypeName);
+                    for (const auto &sym : shortMatches)
+                    {
+                        if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface)
+                        {
+                            receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                            break;
+                        }
+                    }
+                }
+
                 std::vector<analysis::Symbol> memberSymbols;
                 auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, request.symbolTable);
                 for (const auto &typeName : hierarchy)
@@ -306,14 +347,33 @@ namespace angel_lsp::features
                 if (def && (def->kind == analysis::LocalDefinitionKind::Parameter ||
                             def->kind == analysis::LocalDefinitionKind::Variable))
                 {
-                    locations.push_back(lsp::Location{
-                        lsp::DocumentUri::parse(request.uri),
-                        lsp::Range{
-                            lsp::Position{ def->startLine, def->startCharacter },
-                            lsp::Position{ def->endLine, def->endCharacter }
+                    const analysis::Scope *declaringScope = FindScopeDeclaringDefinition(rootScope.get(), *def);
+                    bool isInsideFunction = false;
+                    for (const analysis::Scope *s = declaringScope; s != nullptr; s = s->parent)
+                    {
+                        if (s->isFunctionScope)
+                        {
+                            isInsideFunction = true;
+                            break;
                         }
-                    });
-                    return locations;
+                    }
+
+                    if (isInsideFunction)
+                    {
+                        uint32_t sLine = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullStartLine : def->startLine;
+                        uint32_t sChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullStartCharacter : def->startCharacter;
+                        uint32_t eLine = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndLine : def->endLine;
+                        uint32_t eChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndCharacter : def->endCharacter;
+
+                        locations.push_back(lsp::Location{
+                            lsp::DocumentUri::parse(request.uri),
+                            lsp::Range{
+                                lsp::Position{ sLine, sChar },
+                                lsp::Position{ eLine, eChar }
+                            }
+                        });
+                        return locations;
+                    }
                 }
             }
         }
@@ -359,11 +419,16 @@ namespace angel_lsp::features
                 const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, nodeText);
                 if (def)
                 {
+                    uint32_t sLine = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullStartLine : def->startLine;
+                    uint32_t sChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullStartCharacter : def->startCharacter;
+                    uint32_t eLine = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndLine : def->endLine;
+                    uint32_t eChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndCharacter : def->endCharacter;
+
                     locations.push_back(lsp::Location{
                         lsp::DocumentUri::parse(request.uri),
                         lsp::Range{
-                            lsp::Position{ def->startLine, def->startCharacter },
-                            lsp::Position{ def->endLine, def->endCharacter }
+                            lsp::Position{ sLine, sChar },
+                            lsp::Position{ eLine, eChar }
                         }
                     });
                     return locations;

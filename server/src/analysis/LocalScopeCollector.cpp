@@ -307,6 +307,10 @@ namespace angel_lsp::analysis
                     GetNodeText(capture.node, sourceCode),
                     capture.definitionKind,
                     startPt.row, startPt.column, endPt.row, endPt.column};
+                def.fullStartLine = startPt.row;
+                def.fullStartCharacter = startPt.column;
+                def.fullEndLine = endPt.row;
+                def.fullEndCharacter = endPt.column;
 
                 if (capture.definitionKind == LocalDefinitionKind::Variable ||
                     capture.definitionKind == LocalDefinitionKind::Parameter)
@@ -430,6 +434,13 @@ namespace angel_lsp::analysis
         // the most common object in any function body.
         if (ts_node_symbol(declaratorNode) == m_symParameter)
         {
+            TSPoint pStart = ts_node_start_point(declaratorNode);
+            TSPoint pEnd = ts_node_end_point(declaratorNode);
+            def.fullStartLine = pStart.row;
+            def.fullStartCharacter = pStart.column;
+            def.fullEndLine = pEnd.row;
+            def.fullEndCharacter = pEnd.column;
+
             TSNode paramTypeNode = parser::GetChildByField(declaratorNode, parser::fields::ParamType);
             if (!ts_node_is_null(paramTypeNode))
             {
@@ -438,6 +449,22 @@ namespace angel_lsp::analysis
                 def.typeKind = typeInfo.kind;
                 def.typeName = GetNodeText(paramTypeNode, sourceCode);
                 populateTypeRanges(paramTypeNode);
+            }
+
+            uint32_t pCount = ts_node_child_count(declaratorNode);
+            bool foundEq = false;
+            for (uint32_t i = 0; i < pCount; ++i)
+            {
+                TSNode child = ts_node_child(declaratorNode, i);
+                if (foundEq)
+                {
+                    def.defaultValue = GetNodeText(child, sourceCode);
+                    break;
+                }
+                if (GetNodeText(child, sourceCode) == "=")
+                {
+                    foundEq = true;
+                }
             }
             return;
         }
@@ -451,6 +478,13 @@ namespace angel_lsp::analysis
         // the analyzer replaces it with the container's element type.
         if (ts_node_symbol(declaratorNode) == m_symForeachVariable)
         {
+            TSPoint fStart = ts_node_start_point(declaratorNode);
+            TSPoint fEnd = ts_node_end_point(declaratorNode);
+            def.fullStartLine = fStart.row;
+            def.fullStartCharacter = fStart.column;
+            def.fullEndLine = fEnd.row;
+            def.fullEndCharacter = fEnd.column;
+
             TSNode foreachTypeNode = parser::GetChildByField(declaratorNode, parser::fields::Type);
             if (!ts_node_is_null(foreachTypeNode))
             {
@@ -469,6 +503,23 @@ namespace angel_lsp::analysis
         TSNode declarationNode = ts_node_parent(declaratorNode);
         if (ts_node_is_null(declarationNode))
             return;
+
+        uint32_t declChildCount = ts_node_named_child_count(declarationNode);
+        uint32_t varDeclCount = 0;
+        for (uint32_t i = 0; i < declChildCount; ++i)
+        {
+            if (ts_node_symbol(ts_node_named_child(declarationNode, i)) == m_symVariableDeclarator)
+            {
+                varDeclCount++;
+            }
+        }
+        TSNode rangeNode = (varDeclCount <= 1) ? declarationNode : declaratorNode;
+        TSPoint rStart = ts_node_start_point(rangeNode);
+        TSPoint rEnd = ts_node_end_point(rangeNode);
+        def.fullStartLine = rStart.row;
+        def.fullStartCharacter = rStart.column;
+        def.fullEndLine = rEnd.row;
+        def.fullEndCharacter = rEnd.column;
 
         TSNode typeNode = parser::GetChildByField(declarationNode, parser::fields::VarType);
         if (ts_node_is_null(typeNode))
@@ -514,6 +565,10 @@ namespace angel_lsp::analysis
             }
         }
 
+        if (!ts_node_is_null(valueNode))
+        {
+            def.defaultValue = GetNodeText(valueNode, sourceCode);
+        }
         def.hasNullInitializer = IsNullInitializer(valueNode);
     }
 }

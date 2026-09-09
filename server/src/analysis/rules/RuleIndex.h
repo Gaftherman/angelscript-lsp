@@ -43,6 +43,12 @@ namespace angel_lsp::analysis::rules
         ankerl::unordered_dense::set<std::string> enumMemberNames;
 
         /**
+         * @brief Qualified names of types (classes, interfaces, enums, typedefs, funcdefs) keyed by short name.
+         * Allows fast lookup of types when referenced without their enclosing namespace (e.g. CIns2Prop -> INS2PROP::CIns2Prop).
+         */
+        ankerl::unordered_dense::map<std::string, std::vector<std::string>> qualifiedTypesByShortName;
+
+        /**
          * @brief Property names behind `get_X` / `set_X` members, for the undeclared-identifier rule.
          *
          * A virtual property is reached by a name nothing declares. `class C { int get_Up() const

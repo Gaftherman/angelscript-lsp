@@ -3382,6 +3382,7 @@ namespace angel_lsp
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
 
+        bool isModuleFile = false;
         if (const std::string path = CanonicalPathFromUri(uriStr); !path.empty())
         {
             if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end() && indexed->second == uriStr)
@@ -3389,10 +3390,19 @@ namespace angel_lsp
 
             // If the document that was closed belongs to a configured module, revert it to an
             // on-disk closure file so its declarations remain visible to the module.
-            if (ClaimFor(path).owner != nullptr)
+            if (ClaimFor(path).owner != nullptr || m_publishedForModules.contains(uriStr))
             {
+                isModuleFile = true;
                 angel_lsp::parser::AngelScriptParser restoreParser(m_logger.get());
                 IndexClosureFile(path, restoreParser);
+
+                std::ifstream file(path, std::ios::binary);
+                if (file.is_open())
+                {
+                    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                    m_publishedForModules.insert(uriStr);
+                    ScheduleAnalysis(uriStr, content, true);
+                }
             }
         }
 
@@ -3410,7 +3420,10 @@ namespace angel_lsp
                 IndexModuleClosure(openUri);
         }
 
-        PublishDiagnostics(uriStr, {});
+        if (!isModuleFile)
+        {
+            PublishDiagnostics(uriStr, {});
+        }
     }
 
     std::string Server::CanonicalPathFromUri(const std::string &uriStr)

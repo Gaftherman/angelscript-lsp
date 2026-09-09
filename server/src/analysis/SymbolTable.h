@@ -463,6 +463,9 @@ namespace angel_lsp::analysis
         std::optional<Symbol> FindFirstSymbol(const std::string &qualifiedName) const;
         std::optional<Symbol> LookupSymbol(const std::string &name) const;
 
+        /** @brief Returns all type symbols (class, interface, enum, typedef, funcdef) whose short name matches. */
+        std::vector<Symbol> FindTypeSymbolsByShortName(const std::string &shortName) const;
+
         /** @brief Returns a copy of all symbols currently present in the table. */
         std::vector<Symbol> GetAllSymbols() const;
 

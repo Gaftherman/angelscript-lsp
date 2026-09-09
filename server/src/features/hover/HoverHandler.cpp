@@ -215,7 +215,7 @@ namespace angel_lsp::features
         }
 
         /** @brief Renders the single hover line that describes a symbol of any kind. */
-        std::string FormatDeclarationText(const analysis::Symbol &sym)
+        std::string FormatDeclarationText(const analysis::Symbol &sym, const analysis::SymbolTable *symbolTable = nullptr)
         {
             switch (sym.type)
             {
@@ -228,7 +228,29 @@ namespace angel_lsp::features
             case analysis::SymbolType::Enum:
                 return "enum " + sym.name;
             case analysis::SymbolType::Variable:
-                return FormatVariableSignature(sym, sym.containerName.empty() ? "(global variable) " : "(property) ");
+            {
+                bool isProperty = false;
+                if (!sym.containerName.empty())
+                {
+                    if (symbolTable)
+                    {
+                        auto containerSyms = symbolTable->FindSymbols(sym.containerName);
+                        for (const auto &cs : containerSyms)
+                        {
+                            if (cs.type == analysis::SymbolType::Class || cs.type == analysis::SymbolType::Interface)
+                            {
+                                isProperty = true;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        isProperty = true;
+                    }
+                }
+                return FormatVariableSignature(sym, isProperty ? "(property) " : "(global variable) ");
+            }
             case analysis::SymbolType::Typedef:
                 return "typedef " + sym.GetTypedef().baseType + " " + sym.name;
             case analysis::SymbolType::Namespace:
@@ -614,6 +636,19 @@ namespace angel_lsp::features
 
             if (!receiverTypeName.empty())
             {
+                if (receiverTypeName.find("::") == std::string::npos && !request.symbolTable.HasSymbol(receiverTypeName))
+                {
+                    auto shortMatches = request.symbolTable.FindTypeSymbolsByShortName(receiverTypeName);
+                    for (const auto &sym : shortMatches)
+                    {
+                        if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface)
+                        {
+                            receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                            break;
+                        }
+                    }
+                }
+
                 std::vector<analysis::Symbol> memberSymbols;
                 auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, request.symbolTable);
                 for (const auto &typeName : hierarchy)
@@ -772,31 +807,55 @@ namespace angel_lsp::features
                                 oss << typeName << " ";
                             }
                             oss << def->name;
+                            if (!def->defaultValue.empty())
+                            {
+                                oss << " = " << def->defaultValue;
+                            }
                         }
                         break;
                     }
                     case analysis::LocalDefinitionKind::Variable:
                     {
                         const analysis::Scope *declaringScope = FindScopeDeclaringDefinition(rootScope.get(), *def);
-                        bool isFileScope = (declaringScope == rootScope.get() || (declaringScope && declaringScope->parent == nullptr));
+                        bool isInsideFunction = false;
+                        for (const analysis::Scope *s = declaringScope; s != nullptr; s = s->parent)
+                        {
+                            if (s->isFunctionScope)
+                            {
+                                isInsideFunction = true;
+                                break;
+                            }
+                        }
 
-                        if (isFileScope)
+                        if (!isInsideFunction)
                         {
                             const analysis::Symbol *globalSym = nullptr;
-                            auto candidates = request.symbolTable.FindSymbols(def->name);
+                            auto candidates = analysis::FindSymbolsInScope(def->name, node, request.sourceCode, request.symbolTable);
                             for (const auto &cand : candidates)
                             {
-                                if (cand.type == analysis::SymbolType::Variable && cand.containerName.empty() && cand.fileUri == request.uri)
+                                if (cand.type == analysis::SymbolType::Variable && cand.fileUri == request.uri)
                                 {
                                     globalSym = &cand;
                                     break;
                                 }
                             }
-                            if (!globalSym)
+                            if (!globalSym && !candidates.empty())
                             {
                                 for (const auto &cand : candidates)
                                 {
-                                    if (cand.type == analysis::SymbolType::Variable && cand.containerName.empty())
+                                    if (cand.type == analysis::SymbolType::Variable)
+                                    {
+                                        globalSym = &cand;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!globalSym)
+                            {
+                                auto exactCandidates = request.symbolTable.FindSymbols(def->name);
+                                for (const auto &cand : exactCandidates)
+                                {
+                                    if (cand.type == analysis::SymbolType::Variable && cand.fileUri == request.uri)
                                     {
                                         globalSym = &cand;
                                         break;
@@ -817,6 +876,10 @@ namespace angel_lsp::features
                                     oss << typeName << " ";
                                 }
                                 oss << def->name;
+                                if (!def->defaultValue.empty())
+                                {
+                                    oss << " = " << def->defaultValue;
+                                }
                             }
                         }
                         else
@@ -827,6 +890,10 @@ namespace angel_lsp::features
                                 oss << typeName << " ";
                             }
                             oss << def->name;
+                            if (!def->defaultValue.empty())
+                            {
+                                oss << " = " << def->defaultValue;
+                            }
                         }
                         break;
                     }
@@ -944,7 +1011,7 @@ namespace angel_lsp::features
             {
                 oss << "\n";
             }
-            oss << FormatDeclarationText(symbols[i]);
+            oss << FormatDeclarationText(symbols[i], &request.symbolTable);
         }
         oss << "\n```";
 
