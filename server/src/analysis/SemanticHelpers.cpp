@@ -1583,6 +1583,10 @@ namespace angel_lsp::analysis
             }
 
             auto syms = symbolTable.FindSymbols(name);
+            if (syms.empty())
+            {
+                syms = FindSymbolsInScope(name, exprNode, sourceCode, symbolTable);
+            }
             for (const auto &sym : syms)
             {
                 if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) && !sym.GetVariable().typeName.empty())

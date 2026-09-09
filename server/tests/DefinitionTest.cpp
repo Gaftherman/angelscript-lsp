@@ -349,3 +349,27 @@ TEST_CASE("DefinitionHandler - Member access on unqualified namespaced class res
     CHECK((*defs)[0].range.start.line == 2);
 }
 
+TEST_CASE("DefinitionHandler - Member access on class member variable of unqualified namespaced class")
+{
+    const std::string code =
+        "namespace INS2PROP {\n"
+        "    class CIns2Prop {\n"
+        "        int health;\n"
+        "    };\n"
+        "}\n"
+        "class Weapon {\n"
+        "    CIns2Prop@ n;\n"
+        "    void Attack() {\n"
+        "        n.health;\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Line 8: "        n.health;" -> column 11 is on "health"
+    auto defs = env.DefAt(8, 11);
+    REQUIRE(defs.has_value());
+    REQUIRE(!defs->empty());
+    CHECK((*defs)[0].range.start.line == 2);
+}
+

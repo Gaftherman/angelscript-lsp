@@ -672,6 +672,7 @@ namespace angel_lsp::analysis
                 // For an enum at file scope the two spellings are the same string, so nothing
                 // changes there. enumContainer is computed just above for the scoped member below.
                 varSig.typeName = enumContainer;
+                varSig.defaultValue = m.value;
                 // An enum member is a constant by definition - the compiler answers "Expression is
                 // not an l-value" to `Red = 5;`. Recorded here rather than left to each rule to
                 // infer, because the default was false and every rule that asked got the wrong

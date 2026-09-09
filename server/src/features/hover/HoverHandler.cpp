@@ -237,7 +237,7 @@ namespace angel_lsp::features
                         auto containerSyms = symbolTable->FindSymbols(sym.containerName);
                         for (const auto &cs : containerSyms)
                         {
-                            if (cs.type == analysis::SymbolType::Class || cs.type == analysis::SymbolType::Interface)
+                            if (cs.type == analysis::SymbolType::Class || cs.type == analysis::SymbolType::Interface || cs.type == analysis::SymbolType::Enum)
                             {
                                 isProperty = true;
                                 break;
@@ -247,6 +247,18 @@ namespace angel_lsp::features
                     else
                     {
                         isProperty = true;
+                    }
+                }
+                if (!isProperty && symbolTable)
+                {
+                    auto typeSyms = symbolTable->FindSymbols(sym.GetVariable().typeName);
+                    for (const auto &ts : typeSyms)
+                    {
+                        if (ts.type == analysis::SymbolType::Enum)
+                        {
+                            isProperty = true;
+                            break;
+                        }
                     }
                 }
                 return FormatVariableSignature(sym, isProperty ? "(property) " : "(global variable) ");
@@ -925,26 +937,26 @@ namespace angel_lsp::features
         }
 
         // 4. Container / Scoped / Global Symbol Lookup
-        auto symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
-        if (symbols.empty())
+        std::vector<analysis::Symbol> symbols;
+        if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "scoped_identifier")
         {
-            // Try resolving if inside a scoped identifier
-            if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "scoped_identifier")
+            uint32_t pStart = ts_node_start_byte(parent);
+            uint32_t pEnd = ts_node_end_byte(parent);
+            if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size())
             {
-                uint32_t pStart = ts_node_start_byte(parent);
-                uint32_t pEnd = ts_node_end_byte(parent);
-                if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size())
+                std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
+                symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
+                if (!symbols.empty())
                 {
-                    std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
-                    symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
-                    if (!symbols.empty())
-                    {
-                        TSPoint pStartPt = ts_node_start_point(parent);
-                        TSPoint pEndPt = ts_node_end_point(parent);
-                        range = lsp::Range{ { pStartPt.row, pStartPt.column }, { pEndPt.row, pEndPt.column } };
-                    }
+                    TSPoint pStartPt = ts_node_start_point(parent);
+                    TSPoint pEndPt = ts_node_end_point(parent);
+                    range = lsp::Range{ { pStartPt.row, pStartPt.column }, { pEndPt.row, pEndPt.column } };
                 }
             }
+        }
+        if (symbols.empty())
+        {
+            symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
         }
 
         // Fallback to local scope definition (e.g. Field or non-function variable) if not found in SymbolTable

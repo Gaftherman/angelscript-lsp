@@ -903,4 +903,60 @@ TEST_CASE("Hover - Member access on unqualified namespaced class resolves correc
     CHECK(text.find("(property) int health") != std::string::npos);
 }
 
+TEST_CASE("Hover - Member access on class member variable of unqualified namespaced class")
+{
+    TestEnvironment env(
+        "namespace INS2PROP {\n"
+        "    class CIns2Prop {\n"
+        "        int health;\n"
+        "    };\n"
+        "}\n"
+        "class Weapon {\n"
+        "    CIns2Prop@ n;\n"
+        "    void Attack() {\n"
+        "        n.health;\n"
+        "    }\n"
+        "}\n");
+
+    // Line 8, column 11 is on health
+    const auto hover = env.HoverAt(8, 11);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("(property) int health") != std::string::npos);
+}
+
+TEST_CASE("Hover - Enum member displays default value and property tag")
+{
+    TestEnvironment env(
+        "namespace INS2_L85A2 {\n"
+        "    enum INS2_L85A2_Animations {\n"
+        "        IDLE = 0\n"
+        "    };\n"
+        "}\n"
+        "void main() {\n"
+        "    INS2_L85A2::IDLE;\n"
+        "}\n");
+
+    // Line 6, column 18 is on IDLE
+    const auto hover = env.HoverAt(6, 18);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("(property)") != std::string::npos);
+    CHECK(text.find("IDLE = 0") != std::string::npos);
+
+    TestEnvironment envBare(
+        "enum SimpleEnum {\n"
+        "    FIRST = 10\n"
+        "};\n"
+        "void main() {\n"
+        "    FIRST;\n"
+        "}\n");
+
+    const auto hoverBare = envBare.HoverAt(4, 5);
+    REQUIRE(hoverBare.has_value());
+    const std::string textBare = std::get<lsp::MarkupContent>(hoverBare->contents).value;
+    CHECK(textBare.find("(property)") != std::string::npos);
+    CHECK(textBare.find("FIRST = 10") != std::string::npos);
+}
+
 

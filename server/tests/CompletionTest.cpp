@@ -1166,3 +1166,26 @@ TEST_CASE("Completion - Member completion on unqualified namespaced class")
     REQUIRE(f != nullptr);
 }
 
+TEST_CASE("Completion - Member completion on class member variable of unqualified namespaced class")
+{
+    TestEnvironment env(
+        "namespace INS2PROP {\n"
+        "    class CIns2Prop {\n"
+        "        int health;\n"
+        "        void Fire() {}\n"
+        "    }\n"
+        "}\n"
+        "class Weapon {\n"
+        "    CIns2Prop@ n;\n"
+        "    void Attack() {\n"
+        "        n.\n"
+        "    }\n"
+        "}\n");
+
+    const auto items = env.CompleteAt(9, 10);
+    const auto *h = FindItemOfKind(items, "health", lsp::CompletionItemKind::Field);
+    REQUIRE(h != nullptr);
+    const auto *f = FindItemOfKind(items, "Fire", lsp::CompletionItemKind::Method);
+    REQUIRE(f != nullptr);
+}
+

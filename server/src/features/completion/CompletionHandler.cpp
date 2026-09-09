@@ -977,6 +977,28 @@ namespace angel_lsp::features
                     }
                 }
 
+                if (rawTypeName.empty() && request.tree)
+                {
+                    TSNode rootNode = ts_tree_root_node(request.tree);
+                    TSPoint pt{ request.position.line, request.position.character };
+                    TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+                    auto inScopeSyms = analysis::FindSymbolsInScope(seg0.name, curNode, request.sourceCode, request.symbolTable);
+                    for (const auto &sym : inScopeSyms)
+                    {
+                        if ((sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property) &&
+                            !sym.GetVariable().typeName.empty())
+                        {
+                            rawTypeName = sym.GetVariable().typeName;
+                            break;
+                        }
+                        else if (sym.type == analysis::SymbolType::Function && seg0.isCall)
+                        {
+                            rawTypeName = sym.GetFunction().returnType;
+                            break;
+                        }
+                    }
+                }
+
                 if (rawTypeName.empty())
                 {
                     auto globSyms = request.symbolTable.FindSymbols(seg0.name);

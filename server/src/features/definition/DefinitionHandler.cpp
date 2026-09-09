@@ -389,19 +389,20 @@ namespace angel_lsp::features
         }
 
         // 4. Container / Scoped / Global Symbol Lookup
-        auto symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
+        std::vector<analysis::Symbol> symbols;
+        if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "scoped_identifier")
+        {
+            uint32_t pStart = ts_node_start_byte(parent);
+            uint32_t pEnd = ts_node_end_byte(parent);
+            if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size())
+            {
+                std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
+                symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
+            }
+        }
         if (symbols.empty())
         {
-            if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "scoped_identifier")
-            {
-                uint32_t pStart = ts_node_start_byte(parent);
-                uint32_t pEnd = ts_node_end_byte(parent);
-                if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size())
-                {
-                    std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
-                    symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
-                }
-            }
+            symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
         }
 
         // Global property accessors fallback (e.g. g_Module -> get_g_Module)
