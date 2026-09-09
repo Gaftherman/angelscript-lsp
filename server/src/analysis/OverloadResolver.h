@@ -74,6 +74,7 @@ namespace angel_lsp::analysis
     {
         const Symbol *bestCandidate = nullptr; ///< Best matching function candidate, or nullptr if none
         int bestScore = 999999;                ///< Cumulative penalty score of best candidate
+        std::vector<int> bestCostVector;       ///< Argument conversion penalty vector of best candidate
         bool isAmbiguous = false;              ///< True if two or more candidates tied for best score
         std::vector<const Symbol *> viableCandidates; ///< All viable candidates with finite penalty scores
     };

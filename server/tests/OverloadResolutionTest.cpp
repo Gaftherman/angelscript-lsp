@@ -117,6 +117,46 @@ TEST_SUITE("OverloadResolution")
         auto match = ResolveBestOverload(candidates, { "int", "int" }, table);
         CHECK(match.isAmbiguous);
     }
+
+    TEST_CASE("Multi-argument Pareto dominance chooses candidate strictly better across arguments")
+    {
+        std::string code =
+            "void Process(int a, int b) { }\n"
+            "void Process(int a, double b) { }\n"
+            "void Process(double a, double b) { }\n";
+
+        SymbolTable table;
+        auto candidates = CollectFunctionCandidates(code, "Process", table);
+        REQUIRE(candidates.size() == 3);
+
+        auto match = ResolveBestOverload(candidates, { "int", "int" }, table);
+        REQUIRE(match.bestCandidate != nullptr);
+        CHECK_FALSE(match.isAmbiguous);
+        CHECK(match.bestCandidate->GetFunction().parameters[0].typeName == "int");
+        CHECK(match.bestCandidate->GetFunction().parameters[1].typeName == "int");
+        REQUIRE(match.bestCostVector.size() == 2);
+        CHECK(match.bestCostVector[0] == 0); // Exact
+        CHECK(match.bestCostVector[1] == 0); // Exact
+    }
+
+    TEST_CASE("Multi-argument cost vector identical tie broken by fewer default arguments")
+    {
+        std::string code =
+            "void Calc(int a, int b) { }\n"
+            "void Calc(int a, int b, int c = 0) { }\n";
+
+        SymbolTable table;
+        auto candidates = CollectFunctionCandidates(code, "Calc", table);
+        REQUIRE(candidates.size() == 2);
+
+        auto match = ResolveBestOverload(candidates, { "int", "int" }, table);
+        REQUIRE(match.bestCandidate != nullptr);
+        CHECK_FALSE(match.isAmbiguous);
+        CHECK(match.bestCandidate->GetFunction().parameters.size() == 2);
+        REQUIRE(match.bestCostVector.size() == 2);
+        CHECK(match.bestCostVector[0] == 0);
+        CHECK(match.bestCostVector[1] == 0);
+    }
 }
 
 // =====================================================================================

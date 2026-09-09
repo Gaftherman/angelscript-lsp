@@ -716,6 +716,16 @@ namespace angel_lsp::analysis
         OverloadMatchResult result;
         const uint32_t argCount = static_cast<uint32_t>(argumentTypes.size());
 
+        struct EvaluatedCandidate
+        {
+            const Symbol *symbol = nullptr;
+            std::vector<int> costVector;
+            int defaultArgs = 0;
+            int totalCost = 0;
+        };
+
+        std::vector<EvaluatedCandidate> evaluated;
+
         for (const auto &sym : candidates)
         {
             if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
@@ -757,6 +767,8 @@ namespace angel_lsp::analysis
                 }
             }
 
+            std::vector<int> costVector;
+            costVector.reserve(argCount);
             int currentScore = 0;
             bool incompatible = false;
 
@@ -770,10 +782,12 @@ namespace angel_lsp::analysis
                         incompatible = true;
                         break;
                     }
+                    costVector.push_back(paramScore);
                     currentScore += paramScore;
                 }
                 else if (isVariadic)
                 {
+                    costVector.push_back(10);
                     currentScore += 10;
                 }
             }
@@ -783,52 +797,97 @@ namespace angel_lsp::analysis
                 continue;
             }
 
-            // Penalty for default arguments used to prefer exact arity over defaults
+            int defaultArgs = 0;
             if (argCount < sig.parameters.size())
             {
-                currentScore += static_cast<int>(sig.parameters.size() - argCount) * 1;
+                defaultArgs = static_cast<int>(sig.parameters.size() - argCount);
+                currentScore += defaultArgs * 1;
             }
 
             result.viableCandidates.push_back(&sym);
+            evaluated.push_back(EvaluatedCandidate{ &sym, std::move(costVector), defaultArgs, currentScore });
+        }
 
-            if (currentScore < result.bestScore)
-            {
-                result.bestScore = currentScore;
-                result.bestCandidate = &sym;
-                result.isAmbiguous = false;
-            }
-            else if (currentScore == result.bestScore)
-            {
-                // A tie between two *identical* signatures is not an ambiguity - it is the same
-                // function declared twice. That happens routinely in a real configuration: a
-                // --predefined-file and a built-in engine profile that both describe the standard
-                // library will each declare `array<T>::insertLast(const T&in)`, and reporting every
-                // call to it as ambiguous made the server unusable against that setup.
-                // An argument whose type is unknown scores Exact against every parameter - see
-                // ScoreArgumentMatch, where that is the right answer for "do not reject". It is the
-                // wrong answer for "these two tie": a tie reached through an unknown is a fact
-                // about this analyzer's knowledge, not about the code.
-                //
-                // `auto` is the spelling that matters here. An empty type also scores Exact, but
-                // CheckCall's allArgsResolved gate stops those calls before they reach a verdict;
-                // `auto` is not empty, so it sails past that gate and ties every candidate. Both of
-                // the last two ambiguity findings over the corpus were exactly this - `auto ptr =
-                // __Tests__[ui]; Start(ptr);` against two unrelated `Start` overloads, and an
-                // `auto@` schema handle against two `Validate` overloads. Found by instrumenting
-                // the emit site, which printed `args=[auto,]`.
-                const bool anyArgumentUnknown =
-                    std::any_of(argumentTypes.begin(), argumentTypes.end(),
-                                [](const std::string &argType)
-                                {
-                                    const std::string bare = NormalizeType(argType);
-                                    return bare.empty() || bare == "auto";
-                                });
+        if (evaluated.empty())
+        {
+            return result;
+        }
 
-                if (result.bestCandidate && !anyArgumentUnknown &&
-                    !HasSameSignature(*result.bestCandidate, sym))
+        // Pareto dominance check:
+        // Candidate A is strictly better than B if for all i, costA[i] <= costB[i],
+        // and either costA[j] < costB[j] for some j, or (costA == costB and defaultArgsA < defaultArgsB).
+        auto isStrictlyBetter = [](const EvaluatedCandidate &a, const EvaluatedCandidate &b) -> bool
+        {
+            bool hasStrictlyBetterArg = false;
+            for (size_t i = 0; i < a.costVector.size(); ++i)
+            {
+                if (a.costVector[i] > b.costVector[i])
                 {
-                    result.isAmbiguous = true;
+                    return false;
                 }
+                if (a.costVector[i] < b.costVector[i])
+                {
+                    hasStrictlyBetterArg = true;
+                }
+            }
+            if (hasStrictlyBetterArg)
+            {
+                return true;
+            }
+            return (a.costVector == b.costVector && a.defaultArgs < b.defaultArgs);
+        };
+
+        std::vector<EvaluatedCandidate> nonDominated;
+        for (const auto &cand : evaluated)
+        {
+            bool dominated = false;
+            for (const auto &other : evaluated)
+            {
+                if (&cand != &other && isStrictlyBetter(other, cand))
+                {
+                    dominated = true;
+                    break;
+                }
+            }
+            if (!dominated)
+            {
+                nonDominated.push_back(cand);
+            }
+        }
+
+        if (nonDominated.empty())
+        {
+            nonDominated.push_back(evaluated.front());
+        }
+
+        result.bestCandidate = nonDominated.front().symbol;
+        result.bestScore = nonDominated.front().totalCost;
+        result.bestCostVector = nonDominated.front().costVector;
+
+        if (nonDominated.size() > 1)
+        {
+            const bool anyArgumentUnknown =
+                std::any_of(argumentTypes.begin(), argumentTypes.end(),
+                            [](const std::string &argType)
+                            {
+                                const std::string bare = NormalizeType(argType);
+                                return bare.empty() || bare == "auto";
+                            });
+
+            // Check if all non-dominated candidates share the exact same signature (duplicate declarations of the same function)
+            bool allIdentical = true;
+            for (size_t i = 1; i < nonDominated.size(); ++i)
+            {
+                if (!HasSameSignature(*nonDominated.front().symbol, *nonDominated[i].symbol))
+                {
+                    allIdentical = false;
+                    break;
+                }
+            }
+
+            if (!anyArgumentUnknown && !allIdentical)
+            {
+                result.isAmbiguous = true;
             }
         }
 
