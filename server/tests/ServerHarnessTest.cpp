@@ -5806,59 +5806,12 @@ TEST_CASE("Server - Closing an open file in a folder module does not purge modul
     CHECK(published.find("as-err-undefined-identifier") == std::string::npos);
 }
 
-TEST_CASE("Server - Opening a predefined stub rewrites inline list patterns without error")
-{
-    const std::string probe =
-        "class ListPatternProbe\n"
-        "{\n"
-        "    ListPatternProbe(int &in type, int &in list) {repeat int};\n"
-        "}\n";
-
-    WorkspaceFixture fixture;
-    fixture.Write("as.predefined", probe);
-
-    test::ScriptedStream stream;
-    stream.Push(InitializeMessage(fixture.RootUri()));
-    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.Push(DidOpenMessage(fixture.Uri("as.predefined"), probe));
-    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
-
-    config::ServerConfig serverConfig;
-    RunScript(serverConfig, stream);
-
-    const std::string published = LastPublishedFor(stream.Output(), "as.predefined");
-    INFO("published for as.predefined: " << published);
-    REQUIRE_FALSE(published.empty());
-    CHECK(published.find(R"("diagnostics":[])") != std::string::npos);
-
-    // Negative case: in an ordinary script file the inline list-pattern notation is illegal syntax
-    // and must produce a syntax error.
-    WorkspaceFixture asScript;
-    asScript.Write("main.as", probe);
-
-    test::ScriptedStream scriptStream;
-    scriptStream.Push(InitializeMessage(asScript.RootUri()));
-    scriptStream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    scriptStream.Push(DidOpenMessage(asScript.Uri("main.as"), probe));
-    scriptStream.PushAction([&scriptStream]() { WaitForCount(scriptStream, "publishDiagnostics", 1); });
-    scriptStream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
-
-    RunScript(serverConfig, scriptStream);
-
-    const std::string scriptPublished = LastPublishedFor(scriptStream.Output(), "main.as");
-    INFO("published for main.as: " << scriptPublished);
-    REQUIRE_FALSE(scriptPublished.empty());
-    CHECK(scriptPublished.find(R"("diagnostics":[])") == std::string::npos);
-    CHECK(scriptPublished.find("as-syntax-error") != std::string::npos);
-}
-
 TEST_CASE("Server - An incremental edit to an open stub is applied and re-analysed")
 {
     const std::string initialStub =
-        "class ListPatternProbe\n"
+        "class StubClassProbe\n"
         "{\n"
-        "    ListPatternProbe(int &in type, int &in list) {repeat int};\n"
+        "    StubClassProbe(int &in type, int &in list);\n"
         "}\n"
         "class SecondClass\n"
         "{\n"
@@ -5874,26 +5827,10 @@ TEST_CASE("Server - An incremental edit to an open stub is applied and re-analys
     stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
 
     // Send an incremental didChange (with a range) that inserts a new declaration
-    // at a position after the list-pattern line. If the mirror drifted because
-    // RewriteInlineListPatterns was stored on didOpen, or if ts_tree_edit was applied
-    // with mirror offsets against a rewritten tree, the edit lands at the wrong place
-    // and the declaration either fails to parse or is not indexed in workspace symbols.
-    // Column 62 is the end of the list-pattern line - the edit lands right after the `;`, so it
-    // exercises the line the rewrite touched rather than one it left alone.
-    //
-    // What this pins: the edit is applied, the stub still analyses clean afterwards, and the
-    // declaration the edit opens is in the index. What it does NOT pin, and was once named as
-    // though it did: that the document mirror matches the client's buffer. That was checked by
-    // putting the defect back - storing the rewritten text in m_openDocuments - and this test
-    // stayed green, because the rewrite appends a COMMENT to the end of the line, so an edit
-    // before it only pushes the comment onto a line of its own where it is still a comment.
-    //
-    // The mirror is kept verbatim anyway, for a reason this test cannot see: any feature that
-    // hands text back - formatting, a whole-document edit - would otherwise write
-    // `//@listpattern` into the user's file.
+    // at a position after the constructor line.
     const std::string insertText = "\n}\nclass UniquelyNamedAfterEdit\n{\n";
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
-                fixture.Uri("as.predefined") + R"(","version":2},"contentChanges":[{"range":{"start":{"line":2,"character":62},"end":{"line":2,"character":62}},"text":")" +
+                fixture.Uri("as.predefined") + R"(","version":2},"contentChanges":[{"range":{"start":{"line":2,"character":47},"end":{"line":2,"character":47}},"text":")" +
                 JsonEscape(insertText) + R"("}]}})");
     stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 2); });
 
@@ -5911,73 +5848,6 @@ TEST_CASE("Server - An incremental edit to an open stub is applied and re-analys
     const std::string reply = stream.ResponseFor(2);
     INFO("workspace/symbol reply: " << reply);
     CHECK(reply.find("UniquelyNamedAfterEdit") != std::string::npos);
-}
-
-TEST_CASE("Server - Reanalysing open predefined stub preserves rewritten list patterns")
-{
-    // We trigger ReanalyseOpenDocuments() via `workspace/didChangeConfiguration` updating
-    // `angelscript.engine.compilerWarnings`. Among the call sites of ReanalyseOpenDocuments()
-    // (Server.cpp lines 2055, 2433, 2553, 2578, 2641, 2983), an engine configuration update is
-    // the cleanest client-visible message that a scripted stream can send without filesystem side-effects
-    // or triggering an unrelated workspace-wide directory rescan.
-    //
-    // The second publish is the assertion that matters: didOpen rewrites the text locally before
-    // parsing and publishing the initial diagnostics, but prior to funneling reanalysis through
-    // Server::ScheduleAnalysis, ReanalyseOpenDocuments() re-read the client's verbatim raw buffer
-    // and queued it without rewriting. On reanalysis, tree-sitter parsed the raw `{repeat int}` notation,
-    // publishing "Unknown type 'repeat'" and syntax errors. Funneling the rewrite through
-    // ScheduleAnalysis ensures the reanalysed text is rewritten even when the scheduler hands it
-    // the raw mirror.
-    const std::string probe =
-        "class ListPatternProbe\n"
-        "{\n"
-        "    ListPatternProbe(int &in type, int &in list) {repeat int};\n"
-        "}\n";
-
-    WorkspaceFixture fixture;
-    fixture.Write("as.predefined", probe);
-
-    test::ScriptedStream stream;
-    stream.Push(InitializeMessage(fixture.RootUri()));
-    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.Push(DidOpenMessage(fixture.Uri("as.predefined"), probe));
-
-    std::string firstPublished;
-    stream.PushAction([&stream, &firstPublished]()
-    {
-        WaitForCount(stream, "publishDiagnostics", 1);
-        firstPublished = LastPublishedFor(stream.Output(), "as.predefined");
-    });
-
-    // Send workspace/didChangeConfiguration updating angelscript.engine.compilerWarnings from 1 (default) to 2.
-    // This triggers ReanalyseOpenDocuments() via Server.cpp line 2055 without restarting the workspace scan.
-    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
-                R"({"settings":{"angelscript":{"engine":{"compilerWarnings":2}}}}})");
-
-    std::string secondPublished;
-    stream.PushAction([&stream, &secondPublished]()
-    {
-        WaitForCount(stream, "publishDiagnostics", 2);
-        secondPublished = LastPublishedFor(stream.Output(), "as.predefined");
-    });
-
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
-
-    config::ServerConfig serverConfig;
-    RunScript(serverConfig, stream);
-
-    INFO("first publish: " << firstPublished);
-    REQUIRE_FALSE(firstPublished.empty());
-    CHECK(firstPublished.find(R"("diagnostics":[])") != std::string::npos);
-
-    INFO("second publish: " << secondPublished);
-    REQUIRE_FALSE(secondPublished.empty());
-    // The second publish is the assertion that matters: reanalysis must not report syntax errors
-    // or unknown type 'repeat' on valid predefined stub notation.
-    CHECK(secondPublished.find(R"("diagnostics":[])") != std::string::npos);
-    CHECK(secondPublished.find("repeat") == std::string::npos);
-    CHECK(secondPublished.find("as-syntax-error") == std::string::npos);
-    CHECK(CountPublishedFor(stream.Output(), "as.predefined") >= 2);
 }
 
 TEST_CASE("Server - Dynamic modules change updates diagnostics for open document")

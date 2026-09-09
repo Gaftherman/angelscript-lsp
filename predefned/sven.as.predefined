@@ -37,7 +37,7 @@ class array<T>{
 	array(uint length) explicit;	// asBEHAVE_FACTORY;
 	//An array of *T* with *length* elements, all set to *value* by default.;
 	array(uint length, const T& in value);	// asBEHAVE_FACTORY;
-	array(int &in type, int &in list) {repeat T};	// asBEHAVE_LIST_FACTORY
+	array(int &in type, int &in list);	// asBEHAVE_LIST_FACTORY
 	//The index operator returns the reference of an element allowing it to be inspected or modified.\nIf the index is out of range, then an exception will be raised.;
 	T& opIndex(uint index);
 	//The index operator returns the reference of an element allowing it to be inspected or modified.\nIf the index is out of range, then an exception will be raised.;
@@ -95,7 +95,7 @@ class any{
 }
 class dictionary{
 	dictionary();	// asBEHAVE_FACTORY;
-	dictionary(int &in type, int &in list) {repeat {string, ?}};	// asBEHAVE_LIST_FACTORY
+	dictionary(int &in type, int &in list);	// asBEHAVE_LIST_FACTORY
 	//The assignment operator performs a shallow copy of the content.;
 	dictionary& opAssign(const dictionary& in dict);
 	//Sets a key/value pair in the dictionary. If the key already exists, the value will be changed.
@@ -9057,7 +9057,7 @@ class complex {
 	complex(float r);	// asBEHAVE_CONSTRUCT
 	//The constructors allow for explicit initialization from two float values.;
 	complex(float r, float i);	// asBEHAVE_CONSTRUCT
-	complex(const int &in) {float, float};	// asBEHAVE_LIST_CONSTRUCT
+	complex(const int &in);	// asBEHAVE_LIST_CONSTRUCT
 	//Retrieves the real part of the complex value.;
 	float r;
 	//Retrieves the imaginary part of the complex value.;
@@ -9100,7 +9100,7 @@ class grid<T> {
 	grid(uint width, uint height);	// asBEHAVE_FACTORY
 	//The constructors initializes the grid object.;
 	grid(uint width, uint height, const T& in fillValue);	// asBEHAVE_FACTORY
-	grid(int &in type, int &in list) {repeat {repeat_same T}};	// asBEHAVE_LIST_FACTORY
+	grid(int &in type, int &in list);	// asBEHAVE_LIST_FACTORY
 	//The index operator returns a reference to one of the elements.\nIf the index is out of bounds a script exception will be raised.;
 	T& opIndex(uint x, uint y);
 	//The index operator returns a reference to one of the elements.\nIf the index is out of bounds a script exception will be raised.;

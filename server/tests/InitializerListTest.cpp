@@ -298,32 +298,11 @@ TEST_CASE("InitializerList - Decorations are stripped without truncating names")
 // expectation below is asharness's answer for the corresponding standard add-on.
 // =====================================================================================
 
-namespace
-{
-    /** @brief A stub declaring one class with the given pattern, plus a body that uses it. */
-    std::string WithPattern(const std::string &declaration, const std::string &pattern,
-                            const std::string &body)
-    {
-        return "/// @listpattern " + pattern + "\n" + declaration + "\n" + body;
-    }
-}
-
-TEST_CASE("ListPattern - A tagged template needs no configuration at all")
-{
-    // No --array-like-type, no arrayTypeName match: the stub alone carries it.
-    const std::string code = WithPattern("class vector<T> { uint size() const; }", "{repeat T}",
-                                         "void main() { vector<int> v = {1, {2}, 3}; }\n");
-
-    const auto diagnostics = Diagnose(code, {}, /*arrayTypeName=*/"");
-    REQUIRE(diagnostics.size() == 1);
-    CHECK(Names(diagnostics, "int"));
-}
-
-TEST_CASE("ListPattern - An untagged template of the same shape stays silent")
+TEST_CASE("InitializerList - An untagged template of the same shape stays silent")
 {
     // `optional<T>` is declared exactly like `array<T>` and registers no list factory; the compiler
     // answers `optional<int> o = {1};` with "Initialization lists cannot be used with 'optional<int>'".
-    // Without a tag this server cannot tell the two apart, and says nothing rather than guessing.
+    // Without configuration this server cannot tell the two apart, and says nothing rather than guessing.
     const std::string code =
         "class optional<T> { bool has_value() const; }\n"
         "void main() { optional<int> o = {1, {2}}; }\n";
@@ -331,49 +310,35 @@ TEST_CASE("ListPattern - An untagged template of the same shape stays silent")
     CHECK(Diagnose(code, {}, /*arrayTypeName=*/"").empty());
 }
 
-TEST_CASE("ListPattern - A dictionary's pair pattern is honoured in both directions")
+TEST_CASE("InitializerList - A dictionary's pair pattern is honoured in both directions")
 {
-    const std::string declaration = "class dict { bool exists(const string &in) const; }";
-    const std::string pattern = "{repeat {string, ?}}";
+    const std::string declaration = "class dict { bool exists(const string &in) const; };\n";
 
     // `{{'a', 1}}` matches: one repetition of a two-item group.
-    CHECK(Diagnose(WithPattern(declaration, pattern,
-                               "void main() { dict d = {{'a', 1}}; }\n")).empty());
+    CHECK(Diagnose(declaration + "void main() { dict d = {{'a', 1}}; }\n").empty());
 
     // `{1, 2}` does not: the pattern wants a nested list per element, and the compiler says
     // "Expected a list enclosed by { } to match pattern".
-    const auto flat = Diagnose(WithPattern(declaration, pattern,
-                                           "void main() { dict d = {1, 2}; }\n"));
+    const auto flat = Diagnose(declaration + "void main() { dict d = {1, 2}; }\n");
     REQUIRE(flat.size() == 2);
     CHECK(flat[0].code == "as-err-initializer-list-expected");
 
     // `?` takes a value of any type, not a list of any shape. The compiler rejects a list there
     // with "Initialization lists cannot be used with '?'".
-    const auto nested = Diagnose(WithPattern(declaration, pattern,
-                                             "void main() { dict d = {{'a', {1}}}; }\n"));
+    const auto nested = Diagnose(declaration + "void main() { dict d = {{'a', {1}}}; }\n");
     REQUIRE(nested.size() == 1);
     CHECK(Names(nested, "?"));
 }
 
-TEST_CASE("ListPattern - A tagged element type makes a nested list correct")
+TEST_CASE("InitializerList - A dictionary element type makes a nested list correct")
 {
     // `array<dict> a = {{{'a', 1}}};` is accepted by the compiler: the outer list repeats `dict`,
     // and `dict` in turn accepts the inner one. Nesting is only wrong where the element type
     // accepts no list, which is what makes this the same rule as the primitive case.
     const std::string code =
-        "/// @listpattern {repeat {string, ?}}\n"
         "class dict {}\n"
         "void main() { array<dict> a = {{{'a', 1}}}; }\n";
     CHECK(Diagnose(code).empty());
-}
-
-TEST_CASE("ListPattern - A malformed tag is ignored rather than reported")
-{
-    // A stub this server cannot read is not the stub author's error to see here. It falls back to
-    // saying nothing, exactly as an absent tag does.
-    const std::string code = WithPattern("class thing {}", "{repeat",
-                                         "void main() { thing t = {1, {2}}; }\n");
-    CHECK(Diagnose(code, {}, /*arrayTypeName=*/"").empty());
 }
 
 // =====================================================================================
@@ -614,13 +579,12 @@ TEST_CASE("InitializerList - an anonymous object carries its own target type")
 
 namespace
 {
-    /** @brief The dictionary pattern, declared the way the SDK stub declares it. */
+    /** @brief The dictionary declaration. */
     const std::string k_dictStub =
-        "/// @listpattern {repeat {string, ?}}\n"
         "class dict {}\n";
 }
 
-TEST_CASE("ListPattern - a fixed group wants exactly its own number of values")
+TEST_CASE("InitializerList - a fixed dictionary pair wants exactly its own number of values")
 {
     const auto tooFew = DiagnoseAll(k_dictStub + "void main() { dict d = {{'a'}}; }\n");
     CHECK(HasAnyCode(tooFew, "as-err-initializer-list-too-few"));
@@ -633,7 +597,7 @@ TEST_CASE("ListPattern - a fixed group wants exactly its own number of values")
     CHECK_FALSE(HasAnyCode(exact, "as-err-initializer-list-too-many"));
 }
 
-TEST_CASE("ListPattern - a repeat has no count to check")
+TEST_CASE("InitializerList - an array repeat has no count to check")
 {
     const auto diagnostics = DiagnoseAll(
         "void main() { array<int> none = {}; array<int> many = {1, 2, 3, 4, 5}; }\n");
@@ -642,10 +606,9 @@ TEST_CASE("ListPattern - a repeat has no count to check")
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-too-many"));
 }
 
-TEST_CASE("ListPattern - a fixed pattern at the top level is counted too")
+TEST_CASE("InitializerList - a fixed aggregate struct at the top level is counted too")
 {
-    // `complex`'s registration is `{float, float}` - the SDK stub in tests/fixtures carries it.
-    const std::string stub = "/// @listpattern {float, float}\nclass complex {}\n";
+    const std::string stub = "class complex { float r; float i; };\n";
 
     CHECK(HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1, 2, 3}; }\n"),
                      "as-err-initializer-list-too-many"));

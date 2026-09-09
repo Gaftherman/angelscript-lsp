@@ -24,7 +24,6 @@
 #include "features/code_action/CodeActionHandler.h"
 #include "features/formatting/FormattingHandler.h"
 #include "features/formatting/PredefinedStubFormatter.h"
-#include "analysis/ListPattern.h"
 #include "features/document_link/DocumentLinkHandler.h"
 #include "features/code_lens/CodeLensHandler.h"
 #include "analysis/EngineProfiles.h"
@@ -1956,16 +1955,6 @@ namespace angel_lsp
 
         std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
-        // A stub may write its list factory the way the AngelScript manual does, with the
-        // pattern where a body would go:
-        //
-        //     array(int &in type, int &in list) {repeat T};   // asBEHAVE_LIST_FACTORY
-        //
-        // That is documentation notation and not script syntax - the compiler rejects it and
-        // so does this parser - so it never reaches the parser. See RewriteInlineListPatterns
-        // for what it becomes, and for why the pattern is blanked rather than removed.
-        content = angel_lsp::analysis::RewriteInlineListPatterns(content);
-
         // Claim and collect under one lock: didOpen may be claiming the very same stub under the
         // client's URI spelling on the message loop, and a claim that lands mid-collect would purge
         // symbols this call is about to re-add.
@@ -3135,24 +3124,8 @@ namespace angel_lsp
         }
     }
 
-    /**
-     * @brief The text the parser and analyzer should see: a stub's inline list patterns become comments.
-     *
-     * The document mirror (m_openDocuments) must equal the client's buffer byte for byte because
-     * incremental edits (contentChanges with range) are applied to it, so the rewrite may never be
-     * stored - only handed to the parser and downstream collectors. RewriteInlineListPatterns blanks
-     * inline list patterns and appends `//@listpattern <pattern>` to the end of the line. While columns
-     * before the pattern's end are preserved and line count is unchanged, the rewritten line is longer
-     * than the client's. Storing the rewritten text in the mirror would cause subsequent incremental
-     * edits (applied via PositionToOffset against our copy) to land at the wrong place and permanently
-     * desynchronise the server's buffer from the editor.
-     */
-    std::string Server::AnalysisTextFor(const std::string &uriStr, const std::string &text) const
+    std::string Server::AnalysisTextFor(const std::string & /*uriStr*/, const std::string &text) const
     {
-        if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
-        {
-            return angel_lsp::analysis::RewriteInlineListPatterns(text);
-        }
         return text;
     }
 
@@ -3327,9 +3300,7 @@ namespace angel_lsp
 
         const std::string analysisText = AnalysisTextFor(uriStr, buffer);
 
-        // For a predefined stub, the tree belongs to the rewritten text while the edits were applied
-        // to the verbatim buffer mirror. Offsets diverge because RewriteInlineListPatterns appends comments.
-        // Therefore, skip the incremental tree edit above and parse from scratch (oldTree = nullptr).
+        // For a predefined stub, reparse cleanly without reusing incremental state.
         TSTree *oldTree = isPredefined ? nullptr : tree;
         TSTree *newTree = m_parser->Parse(analysisText, oldTree);
         if (tree)

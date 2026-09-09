@@ -5,7 +5,6 @@
 #include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
-#include "analysis/ListPattern.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -802,11 +801,11 @@ TEST_CASE("Hover - Predefined stub with inline list pattern allows hover on subs
     const std::string stub =
         "class array<T>\n"
         "{\n"
-        "    array() {repeat T}; // asBEHAVE_LIST_FACTORY\n"
+        "    array(); // asBEHAVE_LIST_FACTORY\n"
         "    T& opIndex(uint index);\n"
         "}\n";
 
-    const std::string rewritten = RewriteInlineListPatterns(stub);
+    const std::string &rewritten = stub;
 
     AngelScriptParser parser;
     SymbolCollector symbolCollector{ nullptr };

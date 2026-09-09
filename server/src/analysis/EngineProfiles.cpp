@@ -1,5 +1,4 @@
 #include "analysis/EngineProfiles.h"
-#include "analysis/ListPattern.h"
 #include <algorithm>
 #include <cctype>
 
@@ -872,7 +871,7 @@ OOTPContext g_OOTP;
 
     std::string GetProfileStubText(EngineProfileKind kind)
     {
-        return RewriteInlineListPatterns(std::string(RawProfileStub(kind)));
+        return std::string(RawProfileStub(kind));
     }
 
     std::string GetProfileSyntheticUri(EngineProfileKind kind)

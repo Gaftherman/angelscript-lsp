@@ -253,16 +253,6 @@ namespace angel_lsp::analysis
         SymbolModifiers modifiers;
         bool isTemplate = false;
         bool hasBraces = false;
-
-        /**
-         * @brief The shape of initializer list this type accepts, from its `@listpattern` tag.
-         *
-         * Held as written - `{repeat T}`, `{repeat {string, ?}}` - and parsed on use. Empty for the
-         * overwhelming majority of types, which is the answer "this stub does not say", not "no
-         * list is accepted": see analysis/ListPattern.h for why a stub is the only thing that can
-         * say and why the rules stay silent when it does not.
-         */
-        std::string listPattern;
     };
 
     struct InterfaceSignature

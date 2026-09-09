@@ -57,17 +57,6 @@ namespace angel_lsp::analysis
      */
     /**
      * @brief The profile's declarations, ready to parse.
-     *
-     * By value and not a view, and named "text" rather than "source", because the raw literal is
-     * not parseable on its own: a profile may write a list factory the way the AngelScript manual
-     * does, `grid(int &in type, int &in list) {repeat {repeat_same T}};`, which is documentation
-     * notation the parser rejects. RewriteInlineListPatterns turns it into a tag first.
-     *
-     * The parity audit found this the hard way. The rewrite used to live in the two paths the
-     * server takes, and the audit loads a profile itself - three fixtures that had agreed with the
-     * compiler for this corpus's whole life started reporting errors, because `{repeat T}` reached
-     * the parser and cost `array` its members. Patching that caller would have left the trap for
-     * the next one.
      */
     std::string GetProfileStubText(EngineProfileKind kind);
 

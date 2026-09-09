@@ -66,4 +66,12 @@ namespace angel_lsp::analysis
                                          std::string_view sourceCode,
                                          const Scope *scope,
                                          DiagnosticContext &ctx);
+
+    /**
+     * @brief Validates an initializer list recursively against an expected target type.
+     * @param listNode The `initializer_list` AST node.
+     * @param expectedType The expected target type name.
+     * @param ctx Diagnostic context.
+     */
+    void ValidateInitializerList(TSNode listNode, const std::string &expectedType, DiagnosticContext &ctx);
 }

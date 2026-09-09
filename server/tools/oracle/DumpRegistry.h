@@ -362,8 +362,7 @@ inline void DumpRegistry(asIScriptEngine *engine, std::FILE *out)
         // it describes what a script may write, and a script writes `ref r;` either way.
         //
         // The LIST_ variants are skipped: their declarations name the internal `$list` type, which
-        // is not script syntax. The initializer list a type accepts is described by @listpattern
-        // in a stub instead - see analysis/ListPattern.h.
+        // is not script syntax. Initializer lists are validated against target types by InitializerListChecker.
         const asUINT behaviourCount = t->GetBehaviourCount();
         for (asUINT b = 0; b < behaviourCount; ++b)
         {

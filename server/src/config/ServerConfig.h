@@ -407,11 +407,9 @@ namespace angel_lsp::config
         /**
          * @brief Templates whose initializer list is a plain repeat of their element type.
          *
-         * This is the shorthand. The general mechanism is a `@listpattern` tag in the stub itself,
-         * carrying the pattern from the type's own `asBEHAVE_LIST_FACTORY` registration - see
-         * analysis/ListPattern.h. That expresses shapes this set cannot, such as `dictionary`'s
-         * `{repeat {string, ?}}`; this exists for a host that would rather not edit a stub it does
-         * not own.
+         * Initializer lists are validated against target types (such as array, dictionary, grid,
+         * or struct aggregates) in InitializerListChecker. This configuration allows hosts to specify
+         * additional array-like template types that should be treated as element-wise lists.
          *
          * Either way it has to be stated rather than inferred. Reading "one type parameter" as
          * "array-like" would be wrong: AS-Harness declares `optional<T>` in exactly the same shape
