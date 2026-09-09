@@ -11,6 +11,13 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
 
 ---
 
+## What's New & Recent Updates (v0.6.1)
+
+- **Folder-Based Module Support in Client**: VS Code client extension now forwards `--module-folder` to the server when `angelscript.modules` entries specify a `folder`, allowing entire directories of scripts (e.g. Sven Co-op maps or plugins) to be registered automatically.
+- **Closure Cache & Symbol Retention**: The LSP server retains symbol table declarations and closure caches for configured module members across document open/close cycles, eliminating repetitive disk reads and UI freezes when switching between editor tabs.
+
+---
+
 ## What's New & Recent Updates (v0.6.0)
 
 - **Predefined Stubs in Editor & Live Incremental Editing**: Opening `.as.predefined` stub files directly in the editor now parses clean without false-positive errors; inline list-pattern notation (`{repeat T}`) is transparently rewritten on the document analysis path while keeping the client buffer mirror verbatim.
