@@ -1069,12 +1069,13 @@ export async function activate(context: ExtensionContext) {
             }
 
             // A setting only needs a restart if it changes what the server was launched with.
-            // `predefined.active` is the exception that proves it: it *is* on the command line, so
-            // a fresh server gets it, but the running one is told through didChangeConfiguration
-            // and reloads on its own. Restarting for it would tear down and redo the whole
-            // workspace scan to reach the state the server had already reached.
-            const withoutActiveStub = (args: string[]) =>
-                args.filter(arg => !arg.startsWith('--predefined-active='));
+            // Settings like `predefined.active` and `modules` (--module and --module-folder)
+            // are on the command line for fresh starts, but can be hot-reloaded via
+            // didChangeConfiguration without restarting the entire server.
+            const withoutHotReloadable = (args: string[]) =>
+                args.filter(arg => !arg.startsWith('--predefined-active=') &&
+                                   !arg.startsWith('--module=') &&
+                                   !arg.startsWith('--module-folder='));
 
             // The decoration bakes the opacity in, so a change to either setting has to build a
             // new one. Cheap, and it happens only when the user edits the setting.
@@ -1093,7 +1094,7 @@ export async function activate(context: ExtensionContext) {
 
             const next = buildServerArgs();
             const unchanged =
-                withoutActiveStub(next).join('\u0000') === withoutActiveStub(runningServerArgs).join('\u0000');
+                withoutHotReloadable(next).join('\u0000') === withoutHotReloadable(runningServerArgs).join('\u0000');
 
             runningServerArgs = next;
 

@@ -506,6 +506,12 @@ namespace angel_lsp
         void IndexConfiguredModules(angel_lsp::parser::AngelScriptParser &parser);
 
         /**
+         * @brief Purges symbols and state for indexed closure files that no longer belong to
+         *        any configured module and are not required by any open document's include closure.
+         */
+        void PurgeUnusedClosureFiles();
+
+        /**
          * @brief The module scoping for one document, or nullopt when there is none to give.
          *
          * Nullopt when angelscript.modules is unset, and also when the document belongs to none of

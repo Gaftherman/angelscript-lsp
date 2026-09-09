@@ -401,10 +401,24 @@ namespace angel_lsp
 
     std::string Server::ResolveConfiguredPath(const std::string &configured) const
     {
-        const std::filesystem::path asWritten(configured);
+        std::string cleaned = configured;
+        for (const std::string_view prefix : {"${workspaceFolder}/", "${workspaceFolder}\\", "${workspaceRoot}/", "${workspaceRoot}\\"})
+        {
+            if (cleaned.rfind(prefix, 0) == 0)
+            {
+                cleaned = cleaned.substr(prefix.size());
+                break;
+            }
+        }
+        if (cleaned == "${workspaceFolder}" || cleaned == "${workspaceRoot}")
+        {
+            cleaned = ".";
+        }
+
+        const std::filesystem::path asWritten(cleaned);
         if (asWritten.is_absolute())
         {
-            return angel_lsp::utils::IncludeResolver::NormalizePath(configured);
+            return angel_lsp::utils::IncludeResolver::NormalizePath(cleaned);
         }
 
         // Relative means relative to the workspace, the same way a relative predefined file and a
@@ -502,6 +516,80 @@ namespace angel_lsp
         }
     }
 
+    void Server::PurgeUnusedClosureFiles()
+    {
+        ankerl::unordered_dense::set<std::string> wantedCanonicalPaths;
+
+        {
+            std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
+            for (const auto &[openUri, _] : m_openSnapshot)
+            {
+                const std::string p = CanonicalPathFromUri(openUri);
+                if (!p.empty())
+                {
+                    wantedCanonicalPaths.insert(p);
+                }
+            }
+        }
+
+        for (const auto &[_, closureUris] : m_openDocumentClosures)
+        {
+            for (const auto &uri : closureUris)
+            {
+                const std::string p = CanonicalPathFromUri(uri);
+                if (!p.empty())
+                {
+                    wantedCanonicalPaths.insert(p);
+                }
+            }
+        }
+
+        for (const auto &view : m_modules)
+        {
+            for (const auto &path : view.memberPaths)
+            {
+                const std::string p = angel_lsp::utils::IncludeResolver::NormalizePath(path);
+                if (!p.empty())
+                {
+                    wantedCanonicalPaths.insert(p);
+                }
+            }
+        }
+
+        std::vector<std::string> toPurge;
+        for (const auto &[uriStr, _] : m_closureDocuments)
+        {
+            const std::string p = CanonicalPathFromUri(uriStr);
+            if (p.empty() || !wantedCanonicalPaths.contains(p))
+            {
+                toPurge.push_back(uriStr);
+            }
+        }
+
+        for (const auto &[path, uriStr] : m_indexedUriByPath)
+        {
+            const std::string p = angel_lsp::utils::IncludeResolver::NormalizePath(path);
+            if (!wantedCanonicalPaths.contains(p) && !IsOpenElsewhere(uriStr))
+            {
+                toPurge.push_back(uriStr);
+            }
+        }
+
+        std::sort(toPurge.begin(), toPurge.end());
+        toPurge.erase(std::unique(toPurge.begin(), toPurge.end()), toPurge.end());
+
+        for (const auto &uriStr : toPurge)
+        {
+            PurgeClosureFile(uriStr);
+        }
+
+        if (!toPurge.empty())
+        {
+            m_logger->LogInfo(fmt::format(
+                "Purged {} stale closure file(s) no longer in any module or open closure", toPurge.size()));
+        }
+    }
+
     void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser &parser)
     {
         for (const auto &view : m_modules)
@@ -512,8 +600,10 @@ namespace angel_lsp
 
                 // An open document owns its own symbols and holds edits this file does not, so
                 // reading it off disk here would overwrite the buffer with a stale revision.
-                if (m_openDocuments.contains(uriStr))
+                if (IsOpenElsewhere(uriStr) || m_openDocuments.contains(uriStr))
+                {
                     continue;
+                }
 
                 if (const auto indexed = m_indexedUriByPath.find(path);
                     indexed != m_indexedUriByPath.end() && indexed->second == uriStr)
@@ -1323,6 +1413,7 @@ namespace angel_lsp
         // so the open document's own closure never reaches across. See IndexConfiguredModules.
         phase.emplace(m_logger.get(), "configured modules");
         BuildModuleIndex();
+        PurgeUnusedClosureFiles();
         IndexConfiguredModules(backgroundParser);
 
         // Anything published for a module that no longer claims it has to be taken back before the

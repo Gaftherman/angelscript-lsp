@@ -5943,5 +5943,100 @@ TEST_CASE("Server - Reanalysing open predefined stub preserves rewritten list pa
     CHECK(CountPublishedFor(stream.Output(), "as.predefined") >= 2);
 }
 
+TEST_CASE("Server - Dynamic modules change updates diagnostics for open document")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("maps/ins2/weapon.as", "namespace INS2_KNUCKLES { void Register() { } }\n");
+    fixture.Write("maps/ins2/ins2_register.as", "void main()\n{\n    INS2_KNUCKLES::Register();\n}\n");
 
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
+    // 1. Open ins2_register.as with both MapInit and ins2 folder module configured.
+    // INS2_KNUCKLES is defined in weapon.as under maps/ins2, so no errors.
+    stream.Push(DidOpenMessage(fixture.Uri("maps/ins2/ins2_register.as"), "void main()\n{\n    INS2_KNUCKLES::Register();\n}\n"));
+    std::string initialPublished;
+    stream.PushAction([&stream, &initialPublished]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("ins2_register.as"))
+            {
+                initialPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    // 2. Send didChangeConfiguration REMOVING the ins2 folder module.
+    // Now only MapInit (entry ins2_register.as) is configured, which does not include weapon.as.
+    // INS2_KNUCKLES should now be undefined!
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+                R"({"settings":{"angelscript":{"modules":[{"name":"MapInit","entry":")" +
+                JsonEscape((fixture.dir / "maps/ins2/ins2_register.as").generic_string()) + R"("}]}}}})");
+
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 2); });
+
+    std::string removedPublished;
+    stream.PushAction([&stream, &removedPublished]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (CountPublishedFor(stream.Output(), "ins2_register.as") >= 2)
+            {
+                removedPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    // 3. Send didChangeConfiguration ADDING the ins2 folder module back using ${workspaceFolder}!
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+                R"({"settings":{"angelscript":{"modules":[{"name":"MapInit","entry":"${workspaceFolder}/maps/ins2/ins2_register.as"},)"
+                R"({"name":"ins2","folder":"${workspaceFolder}/maps/ins2"}]}}}})");
+
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 3); });
+
+    std::string restoredPublished;
+    stream.PushAction([&stream, &restoredPublished]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (CountPublishedFor(stream.Output(), "ins2_register.as") >= 3)
+            {
+                restoredPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    serverConfig.modules = {
+        { "MapInit", (fixture.dir / "maps/ins2/ins2_register.as").generic_string(), "" },
+        { "ins2", "", (fixture.dir / "maps/ins2").generic_string() }
+    };
+
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO("Output:\n" << output);
+    INFO("Initial published: " << initialPublished);
+    CHECK(initialPublished.find("as-err-undefined-namespace") == std::string::npos);
+
+    INFO("After remove published: " << removedPublished);
+    CHECK(removedPublished.find("as-err-undefined-namespace") != std::string::npos);
+
+    INFO("After restore published: " << restoredPublished);
+    CHECK(restoredPublished.find("as-err-undefined-namespace") == std::string::npos);
+}
