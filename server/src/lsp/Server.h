@@ -125,6 +125,7 @@ namespace angel_lsp
         // every predefined declaration twice in hover, completion and signature help.
         // Guarded by m_predefinedMutex.
         ankerl::unordered_dense::map<std::string, std::string> m_predefinedUriByPath;
+        ankerl::unordered_dense::map<std::string, std::string> m_predefinedDocuments;
 
 
         /**

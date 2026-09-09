@@ -744,3 +744,36 @@ TEST_CASE("Hover - Global property accessors show property and accessor declarat
     CHECK(text.find("CModule@ get_g_Module()") != std::string::npos);
 }
 
+TEST_CASE("Hover - Cross-file class hover shows class declaration and doc comment")
+{
+    TwoFileEnvironment env(
+        "// CVar class\n"
+        "class CCVar {\n"
+        "    void SetInt(int val);\n"
+        "}\n",
+        "CCVar@ g_MaxMoney;\n"
+        "void main() {\n"
+        "    CCVar@ cvar = g_MaxMoney;\n"
+        "}\n");
+
+    // Hover on CCVar type in declaration
+    const auto hoverType = env.HoverAt(0, 2);
+    REQUIRE(hoverType.has_value());
+    const std::string textType = std::get<lsp::MarkupContent>(hoverType->contents).value;
+    CHECK(textType.find("class CCVar") != std::string::npos);
+    CHECK(textType.find("CVar class") != std::string::npos);
+
+    // Hover on CCVar type in local variable
+    const auto hoverLocalType = env.HoverAt(2, 6);
+    REQUIRE(hoverLocalType.has_value());
+    const std::string textLocal = std::get<lsp::MarkupContent>(hoverLocalType->contents).value;
+    CHECK(textLocal.find("class CCVar") != std::string::npos);
+    CHECK(textLocal.find("CVar class") != std::string::npos);
+
+    // Hover on g_MaxMoney variable
+    const auto hoverVar = env.HoverAt(0, 10);
+    REQUIRE(hoverVar.has_value());
+    const std::string textVar = std::get<lsp::MarkupContent>(hoverVar->contents).value;
+    CHECK(textVar.find("CCVar@ g_MaxMoney") != std::string::npos);
+}
+

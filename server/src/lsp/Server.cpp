@@ -1357,6 +1357,140 @@ namespace angel_lsp
             ~ReanalyseOnExit() { server->ScheduleOpenDocumentsForReanalysis(); }
         } reanalyseOnExit{ this };
         std::optional<PhaseTimer> phase;
+
+        angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
+
+        if (m_config.features.enablePredefinedLoader)
+        {
+            // Built-in predefined engine profiles (e.g. Standard, SvenCoop, Urho3D, OpenXRay, OOTP)
+            ReportWorkspaceProgress("Loading engine profiles", 15);
+            phase.emplace(m_logger.get(), "built-in engine profiles");
+            LoadBuiltinEngineProfiles(backgroundParser, stopToken);
+
+            if (stopToken.stop_requested())
+            {
+                EndWorkspaceProgress("Cancelled");
+                return;
+            }
+
+            // Explicitly configured stubs first. A host application's declarations usually ship with
+            // the application, not with the scripts, so the scan below - which only ever walks
+            // workspace folders - would never find them. ParserPredefined de-duplicates by canonical
+            // path, so a stub that also happens to live inside the workspace is not indexed twice.
+            ReportWorkspaceProgress("Loading predefined stubs", 30);
+            phase.emplace(m_logger.get(), "configured predefined stubs");
+            const std::vector<std::string> configuredPaths = LoadConfiguredPredefinedFiles(backgroundParser, stopToken);
+
+            phase.emplace(m_logger.get(), "workspace stub discovery");
+
+            try
+            {
+                std::vector<std::string> rootPaths;
+                rootPaths.reserve(workspaceRoots.size());
+                for (const auto &workspaceRoot : workspaceRoots)
+                    rootPaths.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
+
+                // Compared as canonical paths, never as text. The setting arrives with whatever
+                // spelling the client used and the walk produces the filesystem's own - different case,
+                // different separators, a percent-encoded drive letter. This project already carries
+                // m_clientUriByKey because that difference bit it once.
+                // "all" is a request, not a path: it asks for the old behaviour of loading every stub
+                // the walk finds. Spelled out rather than left as the empty default because merging two
+                // stubs that both declare `string` resolves that name twice, and a user who wants that
+                // should have said so.
+                const bool mergeAll = m_config.activePredefined == "all";
+
+                const std::string activePath =
+                    (m_config.activePredefined.empty() || mergeAll)
+                        ? std::string()
+                        : angel_lsp::utils::IncludeResolver::NormalizePath(m_config.activePredefined);
+
+                std::vector<std::string> discovered;
+
+                // Every stub this scan decides is still in force. Anything loaded that is not in here
+                // is released at the end - see UnloadUnselectedPredefinedStubs.
+                std::vector<std::string> wantedPaths = configuredPaths;
+
+                const bool completed = angel_lsp::utils::ForEachWorkspaceFile(
+                    rootPaths, m_config.exclude,
+                    [&stopToken]() { return stopToken.stop_requested(); },
+                    [&](const std::filesystem::directory_entry &entry) {
+                        if (!angel_lsp::utils::IsPredefinedFile(entry.path().string(), m_config.info.predefinedFileExtension))
+                            return;
+
+                        const std::string path = angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path());
+                        discovered.push_back(path);
+
+                        if (!activePath.empty())
+                        {
+                            if (PathsAreSameFile(path, activePath))
+                            {
+                                ParserPredefined(entry.path().string(), backgroundParser);
+                                wantedPaths.push_back(path);
+                            }
+                            return;
+                        }
+
+                        if (mergeAll)
+                        {
+                            ParserPredefined(entry.path().string(), backgroundParser);
+                            wantedPaths.push_back(path);
+                        }
+
+                        // Neither chosen nor merging: nothing is loaded here, because which stub wins
+                        // cannot be decided until the walk has seen all of them.
+                    });
+
+                // The only caller with something to close out on a cancel, which is why the walker
+                // reports whether it finished rather than swallowing the distinction.
+                if (!completed)
+                {
+                    EndWorkspaceProgress("Cancelled");
+                    return;
+                }
+
+                // Sorted so the pick below is the same on every machine and every run. Directory
+                // iteration order is not specified, and a stub that wins on one developer's disk and
+                // loses on another's is the worst possible version of this feature.
+                std::sort(discovered.begin(), discovered.end());
+
+                std::string autoSelected;
+                if (activePath.empty() && !mergeAll && !discovered.empty())
+                {
+                    autoSelected = discovered.front();
+                    ParserPredefined(autoSelected, backgroundParser);
+                    wantedPaths.push_back(autoSelected);
+                }
+
+                // Anything still loaded from a stub file this scan did not want has to go, for exactly
+                // the reason the built-in profiles above do: didChangeConfiguration sets shouldRescan,
+                // the rescan reaches here, and ClaimPredefinedFile refuses the URIs it has already seen
+                // while nothing ever releases the one the user just switched away from. Measured before
+                // this call existed - selecting a second stub left the first one's classes resolving in
+                // hover and completion, unmarked, and the `#define`s it wrote still keeping `#if`
+                // blocks live. Only the built-in profile half of this had ever been fixed.
+                UnloadUnselectedPredefinedStubs(wantedPaths);
+
+                {
+                    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+                    m_discoveredPredefined = discovered;
+                    m_effectivePredefined = autoSelected.empty() ? activePath : autoSelected;
+                }
+
+                ReportPredefinedSelection(discovered, activePath, autoSelected, mergeAll);
+            }
+            catch (const std::exception &e)
+            {
+                m_logger->LogError(fmt::format("Error reading workspace files: {}", e.what()));
+            }
+
+            if (stopToken.stop_requested())
+            {
+                EndWorkspaceProgress("Cancelled");
+                return;
+            }
+        }
+
         phase.emplace(m_logger.get(), "include graph");
 
         m_includeGraph.Build(roots,
@@ -1378,143 +1512,7 @@ namespace angel_lsp
         // Which files a module contains is a question about the graph, so it is answered here and
         // nowhere else - every path that rebuilds the graph passes through this line.
         ReportWorkspaceProgress(
-            fmt::format("Indexed {} script file(s)", m_includeGraph.FileCount()), 40);
-
-        if (!m_config.features.enablePredefinedLoader)
-        {
-            EndWorkspaceProgress(fmt::format("{} script file(s)", m_includeGraph.FileCount()));
-            return;
-        }
-
-        angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
-
-        // Built-in predefined engine profiles (e.g. Standard, SvenCoop, Urho3D, OpenXRay, OOTP)
-        ReportWorkspaceProgress("Loading engine profiles", 55);
-        phase.emplace(m_logger.get(), "built-in engine profiles");
-        LoadBuiltinEngineProfiles(backgroundParser, stopToken);
-
-        if (stopToken.stop_requested())
-        {
-            EndWorkspaceProgress("Cancelled");
-            return;
-        }
-
-        // Explicitly configured stubs first. A host application's declarations usually ship with
-        // the application, not with the scripts, so the scan below - which only ever walks
-        // workspace folders - would never find them. ParserPredefined de-duplicates by canonical
-        // path, so a stub that also happens to live inside the workspace is not indexed twice.
-        ReportWorkspaceProgress("Loading predefined stubs", 70);
-        phase.emplace(m_logger.get(), "configured predefined stubs");
-        const std::vector<std::string> configuredPaths = LoadConfiguredPredefinedFiles(backgroundParser, stopToken);
-
-        phase.emplace(m_logger.get(), "workspace stub discovery");
-
-        try
-        {
-            std::vector<std::string> rootPaths;
-            rootPaths.reserve(workspaceRoots.size());
-            for (const auto &workspaceRoot : workspaceRoots)
-                rootPaths.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
-
-            // Compared as canonical paths, never as text. The setting arrives with whatever
-            // spelling the client used and the walk produces the filesystem's own - different case,
-            // different separators, a percent-encoded drive letter. This project already carries
-            // m_clientUriByKey because that difference bit it once.
-            // "all" is a request, not a path: it asks for the old behaviour of loading every stub
-            // the walk finds. Spelled out rather than left as the empty default because merging two
-            // stubs that both declare `string` resolves that name twice, and a user who wants that
-            // should have said so.
-            const bool mergeAll = m_config.activePredefined == "all";
-
-            const std::string activePath =
-                (m_config.activePredefined.empty() || mergeAll)
-                    ? std::string()
-                    : angel_lsp::utils::IncludeResolver::NormalizePath(m_config.activePredefined);
-
-            std::vector<std::string> discovered;
-
-            // Every stub this scan decides is still in force. Anything loaded that is not in here
-            // is released at the end - see UnloadUnselectedPredefinedStubs.
-            std::vector<std::string> wantedPaths = configuredPaths;
-
-            const bool completed = angel_lsp::utils::ForEachWorkspaceFile(
-                rootPaths, m_config.exclude,
-                [&stopToken]() { return stopToken.stop_requested(); },
-                [&](const std::filesystem::directory_entry &entry) {
-                    if (!angel_lsp::utils::IsPredefinedFile(entry.path().string(), m_config.info.predefinedFileExtension))
-                        return;
-
-                    const std::string path = angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path());
-                    discovered.push_back(path);
-
-                    if (!activePath.empty())
-                    {
-                        if (PathsAreSameFile(path, activePath))
-                        {
-                            ParserPredefined(entry.path().string(), backgroundParser);
-                            wantedPaths.push_back(path);
-                        }
-                        return;
-                    }
-
-                    if (mergeAll)
-                    {
-                        ParserPredefined(entry.path().string(), backgroundParser);
-                        wantedPaths.push_back(path);
-                    }
-
-                    // Neither chosen nor merging: nothing is loaded here, because which stub wins
-                    // cannot be decided until the walk has seen all of them.
-                });
-
-            // The only caller with something to close out on a cancel, which is why the walker
-            // reports whether it finished rather than swallowing the distinction.
-            if (!completed)
-            {
-                EndWorkspaceProgress("Cancelled");
-                return;
-            }
-
-            // Sorted so the pick below is the same on every machine and every run. Directory
-            // iteration order is not specified, and a stub that wins on one developer's disk and
-            // loses on another's is the worst possible version of this feature.
-            std::sort(discovered.begin(), discovered.end());
-
-            std::string autoSelected;
-            if (activePath.empty() && !mergeAll && !discovered.empty())
-            {
-                autoSelected = discovered.front();
-                ParserPredefined(autoSelected, backgroundParser);
-                wantedPaths.push_back(autoSelected);
-            }
-
-            // Anything still loaded from a stub file this scan did not want has to go, for exactly
-            // the reason the built-in profiles above do: didChangeConfiguration sets shouldRescan,
-            // the rescan reaches here, and ClaimPredefinedFile refuses the URIs it has already seen
-            // while nothing ever releases the one the user just switched away from. Measured before
-            // this call existed - selecting a second stub left the first one's classes resolving in
-            // hover and completion, unmarked, and the `#define`s it wrote still keeping `#if`
-            // blocks live. Only the built-in profile half of this had ever been fixed.
-            UnloadUnselectedPredefinedStubs(wantedPaths);
-
-            {
-                std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-                m_discoveredPredefined = discovered;
-                m_effectivePredefined = autoSelected.empty() ? activePath : autoSelected;
-            }
-
-            ReportPredefinedSelection(discovered, activePath, autoSelected, mergeAll);
-        }
-        catch (const std::exception &e)
-        {
-            m_logger->LogError(fmt::format("Error reading workspace files: {}", e.what()));
-        }
-
-        if (stopToken.stop_requested())
-        {
-            EndWorkspaceProgress("Cancelled");
-            return;
-        }
+            fmt::format("Indexed {} script file(s)", m_includeGraph.FileCount()), 60);
 
         // Which files each configured module contains, and then their contents. A module nobody
         // has opened still has to be in the symbol table, or the module that externs its shared
@@ -1529,7 +1527,6 @@ namespace angel_lsp
         // new answers go out, or a file that changed module keeps both verdicts.
         WithdrawStaleModuleDiagnostics();
         AnalyzeConfiguredModules();
-
 
         EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
     }
@@ -1856,6 +1853,7 @@ namespace angel_lsp
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
         m_predefinedUris.erase(uriStr);
+        m_predefinedDocuments.erase(uriStr);
 
         // Keyed by path, so the reverse lookup is a scan. It is over the number of stubs a
         // workspace has, which is single digits.
@@ -1972,6 +1970,8 @@ namespace angel_lsp
         {
             return;
         }
+
+        m_predefinedDocuments[uri] = content;
 
         // One parse, handed to both collectors. They each used to take the source text and parse
         // it themselves, which on a 646 KB stub is 33 ms spent twice on identical bytes for an
@@ -3050,6 +3050,7 @@ namespace angel_lsp
                 if (PredefinedStubContributes(uriStr))
                 {
                     ClaimPredefinedFile(uriStr, /*forceReload=*/true);
+                    m_predefinedDocuments[uriStr] = analysisText;
                     diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree);
                 }
 
@@ -3173,6 +3174,7 @@ namespace angel_lsp
                 if (PredefinedStubContributes(uriStr))
                 {
                     ClaimPredefinedFile(uriStr, /*forceReload=*/true);
+                    m_predefinedDocuments[uriStr] = analysisText;
                     diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
                     m_scopeIndex.ClearDocument(uriStr);
                     m_callGraph.ClearDocument(uriStr);
@@ -3582,6 +3584,7 @@ namespace angel_lsp
                 if (PredefinedStubContributes(uriStr))
                 {
                     ClaimPredefinedFile(uriStr, /*forceReload=*/true);
+                    m_predefinedDocuments[uriStr] = analysisText;
                     diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
                 }
                 m_scopeIndex.ClearDocument(uriStr);
@@ -3791,6 +3794,10 @@ namespace angel_lsp
         // definitions and multi-file rename edits, so their text has to be reachable too.
         if (const auto closure = m_closureDocuments.find(uri); closure != m_closureDocuments.end())
             return &closure->second;
+
+        std::lock_guard<std::mutex> lock(const_cast<std::mutex &>(m_predefinedMutex));
+        if (const auto predefined = m_predefinedDocuments.find(uri); predefined != m_predefinedDocuments.end())
+            return &predefined->second;
 
         return nullptr;
     }

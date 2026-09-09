@@ -356,29 +356,22 @@ function resolveServerBinary(context: ExtensionContext): ServerBinary {
 
     const candidates: string[] = [];
 
-    // 1. Development mode paths (prefer the most recently modified build artifact)
+    // 1. Development mode paths (prefer optimized Release builds first to avoid severe latency during editing)
+    const releaseDevCandidate = context.asAbsolutePath(path.join('..', 'server', 'build', 'Release', binaryName));
+    const relWithDebInfoCandidate = context.asAbsolutePath(path.join('..', 'server', 'build', 'RelWithDebInfo', binaryName));
+    const debugDevCandidate = context.asAbsolutePath(path.join('..', 'server', 'build', 'Debug', binaryName));
+    const buildRootCandidate = context.asAbsolutePath(path.join('..', 'server', 'build', binaryName));
+
     const devCandidates = [
-        context.asAbsolutePath(path.join('..', 'server', 'build', 'Release', binaryName)),
-        context.asAbsolutePath(path.join('..', 'server', 'build', 'Debug', binaryName)),
-        context.asAbsolutePath(path.join('..', 'server', 'build', binaryName))
+        releaseDevCandidate,
+        relWithDebInfoCandidate,
+        debugDevCandidate,
+        buildRootCandidate
     ];
 
     if (context.extensionMode === ExtensionMode.Development) {
-        const existingDev = devCandidates
-            .filter(c => fs.existsSync(c))
-            .sort((a, b) => {
-                try {
-                    return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
-                } catch {
-                    return 0;
-                }
-            });
-
-        for (const c of existingDev) {
-            candidates.push(c);
-        }
         for (const c of devCandidates) {
-            if (!candidates.includes(c)) {
+            if (fs.existsSync(c)) {
                 candidates.push(c);
             }
         }
@@ -398,20 +391,6 @@ function resolveServerBinary(context: ExtensionContext): ServerBinary {
     }
 
     // 5. Development / build fallback paths (e.g. when testing compiled extension against local build)
-    const fallbackDev = devCandidates
-        .filter(c => fs.existsSync(c))
-        .sort((a, b) => {
-            try {
-                return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
-            } catch {
-                return 0;
-            }
-        });
-    for (const c of fallbackDev) {
-        if (!candidates.includes(c)) {
-            candidates.push(c);
-        }
-    }
     for (const c of devCandidates) {
         if (!candidates.includes(c)) {
             candidates.push(c);

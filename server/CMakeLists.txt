@@ -177,6 +177,13 @@ add_custom_command(TARGET angel_lsp POST_BUILD
     COMMENT "Deploying compiled LSP server binary to client/bin"
 )
 
+if(WIN32)
+    add_custom_command(TARGET angel_lsp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_ROOT}/win32-x64"
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_ROOT}/win32-x64/$<TARGET_FILE_NAME:angel_lsp>"
+    )
+endif()
+
 # ==============================================================================
 # 4. UNIT TESTS (doctest)
 # ==============================================================================

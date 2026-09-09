@@ -1128,3 +1128,20 @@ TEST_CASE("Completion - Chained member access completes across multiple levels")
     REQUIRE(reset != nullptr);
 }
 
+TEST_CASE("Completion - Chained member access completes with whitespace around access operators")
+{
+    TestEnvironment env(
+        "class CScriptInfo { int version; void Reset() {} }\n"
+        "class CModule { CScriptInfo@ get_ScriptInfo(); }\n"
+        "CModule@ get_g_Module();\n"
+        "void Main() {\n"
+        "    g_Module . ScriptInfo .\n"
+        "}\n");
+
+    const auto items = env.CompleteAt(4, 27);
+    const auto *ver = FindItemOfKind(items, "version", lsp::CompletionItemKind::Field);
+    REQUIRE(ver != nullptr);
+    const auto *reset = FindItemOfKind(items, "Reset", lsp::CompletionItemKind::Method);
+    REQUIRE(reset != nullptr);
+}
+

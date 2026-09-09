@@ -192,6 +192,11 @@ namespace angel_lsp::features
                     }
                 }
 
+                while (i < chain.size() && (chain[i] == ' ' || chain[i] == '\t'))
+                {
+                    ++i;
+                }
+
                 if (i < chain.size() && chain[i] == '.')
                 {
                     ++i;
@@ -899,7 +904,7 @@ namespace angel_lsp::features
         }
 
         // 2. Check for Member Access Context: "receiver." or "receiver->" or chained like "a.b.c." (with optional partial identifier)
-        static const std::regex memberChainRegex(R"(((?:[a-zA-Z_][a-zA-Z0-9_]*(?:\([^\)]*\)|\[[^\]]*\])*(?:\.|\->))+)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
+        static const std::regex memberChainRegex(R"(((?:[a-zA-Z_][a-zA-Z0-9_]*(?:\([^\)]*\)|\[[^\]]*\])*\s*(?:\.|\->)\s*)+)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
         std::smatch memberMatch;
         if (std::regex_search(prefix, memberMatch, memberChainRegex))
         {
