@@ -75,3 +75,52 @@ TEST_CASE("DocComment - Returns nothing when there is no comment to read")
         CHECK(ExtractDocComment("void Spawn();\n", 500).empty());
     }
 }
+
+TEST_CASE("DocComment - Reads trailing comments on declaration line")
+{
+    SUBCASE("Line 0 declaration with trailing comment")
+    {
+        const std::string source = "ref(); // asBEHAVE_CONSTRUCT;\n";
+        CHECK(ExtractDocComment(source, 0) == "asBEHAVE_CONSTRUCT;");
+    }
+
+    SUBCASE("Later line declaration with trailing comment")
+    {
+        const std::string source = "class Entity {\n    Entity(); // asBEHAVE_CONSTRUCT;\n};\n";
+        CHECK(ExtractDocComment(source, 1) == "asBEHAVE_CONSTRUCT;");
+    }
+
+    SUBCASE("Trailing block comment on declaration line")
+    {
+        const std::string source = "void Spawn(); /* Spawns the entity */\n";
+        CHECK(ExtractDocComment(source, 0) == "Spawns the entity");
+    }
+
+    SUBCASE("Ignores comment syntax inside string literals")
+    {
+        const std::string source = "void Log(string s = \"// not a comment\"); // Real doc comment\n";
+        CHECK(ExtractDocComment(source, 0) == "Real doc comment");
+    }
+
+    SUBCASE("Ignores internal list pattern marker")
+    {
+        const std::string source = "array(int &in) {repeat T}; //@listpattern {repeat T}\n";
+        CHECK(ExtractDocComment(source, 0).empty());
+    }
+
+    SUBCASE("Strips internal list pattern marker following real trailing comment")
+    {
+        const std::string sourceWithoutSemi = "array(int &in) {repeat T}; // asBEHAVE_LIST_FACTORY//@listpattern {repeat T}\n";
+        CHECK(ExtractDocComment(sourceWithoutSemi, 0) == "asBEHAVE_LIST_FACTORY");
+
+        const std::string sourceWithSemi = "array(int &in) {repeat T}; // asBEHAVE_LIST_FACTORY;//@listpattern {repeat T}\n";
+        CHECK(ExtractDocComment(sourceWithSemi, 0) == "asBEHAVE_LIST_FACTORY;");
+    }
+
+    SUBCASE("Isolates block comment when trailing code exists on same line")
+    {
+        const std::string source = "void Spawn(); /* Spawns the entity */ int unused = 0;\n";
+        CHECK(ExtractDocComment(source, 0) == "Spawns the entity");
+    }
+}
+

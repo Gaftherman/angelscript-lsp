@@ -5,6 +5,7 @@
 #include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/ListPattern.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -776,4 +777,85 @@ TEST_CASE("Hover - Cross-file class hover shows class declaration and doc commen
     const std::string textVar = std::get<lsp::MarkupContent>(hoverVar->contents).value;
     CHECK(textVar.find("CCVar@ g_MaxMoney") != std::string::npos);
 }
+
+TEST_CASE("Hover - Trailing comment on constructor is rendered in hover")
+{
+    TestEnvironment env(
+        "class Entity {\n"
+        "    Entity(); // asBEHAVE_CONSTRUCT;\n"
+        "    void Spawn(); // asBEHAVE_SPAWN;\n"
+        "};\n");
+
+    const auto hoverConstruct = env.HoverAt(1, 4);
+    REQUIRE(hoverConstruct.has_value());
+    const std::string textConstruct = std::get<lsp::MarkupContent>(hoverConstruct->contents).value;
+    CHECK(textConstruct.find("asBEHAVE_CONSTRUCT;") != std::string::npos);
+
+    const auto hoverMethod = env.HoverAt(2, 9);
+    REQUIRE(hoverMethod.has_value());
+    const std::string textMethod = std::get<lsp::MarkupContent>(hoverMethod->contents).value;
+    CHECK(textMethod.find("asBEHAVE_SPAWN;") != std::string::npos);
+}
+
+TEST_CASE("Hover - Predefined stub with inline list pattern allows hover on subsequent lines")
+{
+    const std::string stub =
+        "class array<T>\n"
+        "{\n"
+        "    array() {repeat T}; // asBEHAVE_LIST_FACTORY\n"
+        "    T& opIndex(uint index);\n"
+        "}\n";
+
+    const std::string rewritten = RewriteInlineListPatterns(stub);
+
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{ nullptr };
+    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    const std::string stubUri = "file:///as.predefined";
+    TSTree *tree = parser.Parse(rewritten);
+    symbolCollector.CollectSymbols(stubUri, rewritten, parser, symbolTable);
+    auto rootScope = scopeCollector.CollectScopes(rewritten, parser);
+    if (rootScope)
+    {
+        scopeIndex.SetScopeTree(stubUri, std::move(rootScope));
+    }
+
+    // Line 3: "    T& opIndex(uint index);" -> column 7 is on "opIndex"
+    HoverRequest req{
+        stubUri, rewritten, tree, symbolTable, scopeIndex,
+        lsp::Position{ 3, 7 }
+    };
+
+    auto hover = GetHover(req);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("opIndex") != std::string::npos);
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("Hover - Multiple overloads display distinct doc comments")
+{
+    TestEnvironment env(
+        "class Worker {\n"
+        "    /// First overload docs.\n"
+        "    void DoWork(int a);\n"
+        "    /// Second overload docs.\n"
+        "    void DoWork(string b);\n"
+        "};\n"
+        "void main() {\n"
+        "    Worker w;\n"
+        "    w.DoWork(1);\n"
+        "}\n");
+
+    // Line 8, column 7 is on "DoWork"
+    const auto hover = env.HoverAt(8, 7);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("First overload docs.") != std::string::npos);
+}
+
 

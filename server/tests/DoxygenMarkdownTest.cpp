@@ -362,3 +362,52 @@ TEST_CASE("DoxygenMarkdown - Doxygen escape sequences unescape cleanly")
 
     CHECK(RenderDoxygenMarkdown(input) == "Contact at @admin or use $variable and \\backslash.");
 }
+
+TEST_CASE("DoxygenMarkdown - Trailing semicolon after sentence-ending dot is not emitted as separate paragraph")
+{
+    const std::string input = "//Persistence object id type.;";
+    CHECK(RenderDoxygenMarkdown(input) == "Persistence object id type.");
+}
+
+TEST_CASE("DoxygenMarkdown - Literal newline escape splits into paragraphs without creating NIf admonition")
+{
+    const std::string input = "// Persistence object id type.\\nIf foo is true: do bar.";
+    const std::string expected =
+        "Persistence object id type.\n\n"
+        "If foo is true: do bar.";
+    CHECK(RenderDoxygenMarkdown(input) == expected);
+}
+
+TEST_CASE("DoxygenMarkdown - Literal newline at start does not create NIf tag")
+{
+    const std::string input = "/// \\nIf condition is true: proceed.";
+    CHECK(RenderDoxygenMarkdown(input) == "If condition is true: proceed.");
+}
+
+TEST_CASE("DoxygenMarkdown - Numbered item in brief description does not truncate at digit dot")
+{
+    const std::string input = "/// 1. Initialize subsystem.\\n2. Run processing loop.";
+    const std::string expected =
+        "1. Initialize subsystem.\n\n"
+        "2. Run processing loop.";
+    CHECK(RenderDoxygenMarkdown(input) == expected);
+}
+
+TEST_CASE("DoxygenMarkdown - Trailing semicolon after sentence dot strips semicolon from remainder")
+{
+    const std::string input = "/// First sentence.; Second sentence.";
+    const std::string expected =
+        "First sentence.\n\n"
+        "Second sentence.";
+    CHECK(RenderDoxygenMarkdown(input) == expected);
+}
+
+TEST_CASE("DoxygenMarkdown - Literal CRLF newlines split cleanly without underflow")
+{
+    const std::string input = "/// Line 1.\\r\\n\\r\\nLine 2.";
+    const std::string expected =
+        "Line 1.\n\n"
+        "Line 2.";
+    CHECK(RenderDoxygenMarkdown(input) == expected);
+}
+

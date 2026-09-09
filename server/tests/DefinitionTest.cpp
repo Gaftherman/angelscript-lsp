@@ -5,6 +5,7 @@
 #include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/ListPattern.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -253,5 +254,45 @@ TEST_CASE("DefinitionHandler - Go to Definition for Global Property Accessor")
     REQUIRE(defs.has_value());
     REQUIRE(defs->size() == 1);
     CHECK((*defs)[0].range.start.line == 1);
+}
+
+TEST_CASE("DefinitionHandler - Go to Definition on subsequent lines after inline list pattern")
+{
+    const std::string stub =
+        "class array<T>\n"
+        "{\n"
+        "    array() {repeat T}; // asBEHAVE_LIST_FACTORY\n"
+        "    T& opIndex(uint index);\n"
+        "}\n";
+
+    const std::string rewritten = RewriteInlineListPatterns(stub);
+
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{ nullptr };
+    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    const std::string stubUri = "file:///as.predefined";
+    TSTree *tree = parser.Parse(rewritten);
+    symbolCollector.CollectSymbols(stubUri, rewritten, parser, symbolTable);
+    auto rootScope = scopeCollector.CollectScopes(rewritten, parser);
+    if (rootScope)
+    {
+        scopeIndex.SetScopeTree(stubUri, std::move(rootScope));
+    }
+
+    // Line 3: "    T& opIndex(uint index);" -> column 7 is on "opIndex"
+    DefinitionRequest req{
+        stubUri, rewritten, tree, symbolTable, scopeIndex,
+        lsp::Position{ 3, 7 }
+    };
+
+    auto defs = GetDefinition(req);
+    REQUIRE(defs.has_value());
+    REQUIRE(!defs->empty());
+    CHECK((*defs)[0].range.start.line == 3);
+
+    ts_tree_delete(tree);
 }
 

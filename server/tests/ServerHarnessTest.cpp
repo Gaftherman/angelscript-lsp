@@ -1470,6 +1470,43 @@ TEST_CASE("Server - A pulled diagnostic carries what the pushed one carried")
     CHECK(pulled.find("as-err-undefined-identifier") != std::string::npos);
 }
 
+TEST_CASE("Server - Pull diagnostics client receives workspace/diagnostic/refresh on publish")
+{
+    WorkspaceFixture fixture;
+
+    const std::string source = "void Main()\n{\n    UndefinedThingy();\n}\n";
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    std::string initMsg = R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+                          R"("processId":null,"rootUri":")" + fixture.RootUri() + R"(",)"
+                          R"("capabilities":{"textDocument":{"diagnostic":{}},"workspace":{"diagnostics":{"refreshSupport":true}}},)"
+                          R"("workspaceFolders":[{"uri":")" + fixture.RootUri() + R"(","name":"fixture"}]}})";
+    stream.Push(initMsg);
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("workspace/diagnostic/refresh"))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    CHECK(stream.OutputContains("workspace/diagnostic/refresh"));
+}
+
 TEST_CASE("Server - A second pull of an unedited document is answered unchanged")
 {
     // What the pull model is for. The client echoes the result id back and an untouched file costs

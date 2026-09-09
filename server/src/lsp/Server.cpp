@@ -926,6 +926,11 @@ namespace angel_lsp
         m_clientPullsDiagnostics = params.capabilities.textDocument.has_value() &&
                                    params.capabilities.textDocument->diagnostic.has_value();
 
+        m_clientSupportsDiagnosticRefresh = params.capabilities.workspace.has_value() &&
+                                            params.capabilities.workspace->diagnostics.has_value() &&
+                                            params.capabilities.workspace->diagnostics->refreshSupport.has_value() &&
+                                            params.capabilities.workspace->diagnostics->refreshSupport.value();
+
         if (params.capabilities.textDocument.has_value() &&
             params.capabilities.textDocument->completion.has_value() &&
             params.capabilities.textDocument->completion->completionItem.has_value() &&
@@ -1940,7 +1945,7 @@ namespace angel_lsp
 
     void Server::ParserPredefined(const std::string &filePath, angel_lsp::parser::AngelScriptParser &parser, bool forceReload)
     {
-        std::string uri = angel_lsp::utils::PathToUri(filePath);
+        std::string uri = UriFromPath(filePath);
 
         std::ifstream file(filePath, std::ios::binary);
         if (!file.is_open())
@@ -3327,6 +3332,12 @@ namespace angel_lsp
         }
         m_documentTrees[uriStr] = newTree;
 
+        if (isPredefined)
+        {
+            std::lock_guard<std::mutex> lock(m_predefinedMutex);
+            m_predefinedDocuments[uriStr] = analysisText;
+        }
+
 
         // The reparse above is incremental and cheap, and stays on this thread so a request
         // arriving right after the edit is answered against a current tree. Symbol collection,
@@ -3787,17 +3798,28 @@ namespace angel_lsp
 
     const std::string *Server::FindDocumentText(const std::string &uri) const
     {
-        if (const auto open = m_openDocuments.find(uri); open != m_openDocuments.end())
+        const std::string key = DocumentKey(uri);
+
+        if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
+        {
+            std::lock_guard<std::mutex> lock(const_cast<std::mutex &>(m_predefinedMutex));
+            if (const auto predefined = m_predefinedDocuments.find(key); predefined != m_predefinedDocuments.end())
+            {
+                return &predefined->second;
+            }
+        }
+
+        if (const auto open = m_openDocuments.find(key); open != m_openDocuments.end())
+        {
             return &open->second;
+        }
 
         // Closure files are not open, but their ranges still reach the client through references,
         // definitions and multi-file rename edits, so their text has to be reachable too.
-        if (const auto closure = m_closureDocuments.find(uri); closure != m_closureDocuments.end())
+        if (const auto closure = m_closureDocuments.find(key); closure != m_closureDocuments.end())
+        {
             return &closure->second;
-
-        std::lock_guard<std::mutex> lock(const_cast<std::mutex &>(m_predefinedMutex));
-        if (const auto predefined = m_predefinedDocuments.find(uri); predefined != m_predefinedDocuments.end())
-            return &predefined->second;
+        }
 
         return nullptr;
     }
@@ -4124,11 +4146,26 @@ namespace angel_lsp
         // collection beside the one it asked for, and the user would read every finding twice.
         if (m_clientPullsDiagnostics)
         {
+            if (m_clientSupportsDiagnosticRefresh)
+            {
+                std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
+                if (m_messageHandler)
+                {
+                    m_messageHandler->sendRequest(
+                        "workspace/diagnostic/refresh",
+                        std::nullopt,
+                        [](lsp::json::Value &&) {},
+                        [](const lsp::ResponseError &) {});
+                }
+            }
             return;
         }
 
         std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
-        m_messageHandler->sendNotification<lsp::notifications::TextDocument_PublishDiagnostics>(std::move(params));
+        if (m_messageHandler)
+        {
+            m_messageHandler->sendNotification<lsp::notifications::TextDocument_PublishDiagnostics>(std::move(params));
+        }
     }
 
     lsp::requests::TextDocument_Diagnostic::Result Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagnostic::Params &&params)
@@ -4436,11 +4473,24 @@ namespace angel_lsp
 
         const auto docIt = m_openDocuments.find(key);
         if (docIt == m_openDocuments.end())
+        {
             return std::nullopt;
+        }
 
         const auto treeIt = m_documentTrees.find(key);
 
-        return OpenDocument{ key, &docIt->second,
+        const std::string *textPtr = &docIt->second;
+        if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
+        {
+            std::lock_guard<std::mutex> lock(m_predefinedMutex);
+            auto preIt = m_predefinedDocuments.find(key);
+            if (preIt != m_predefinedDocuments.end())
+            {
+                textPtr = &preIt->second;
+            }
+        }
+
+        return OpenDocument{ key, textPtr,
                              treeIt == m_documentTrees.end() ? nullptr : treeIt->second };
     }
 

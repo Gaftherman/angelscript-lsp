@@ -862,6 +862,11 @@ namespace angel_lsp
         bool m_clientPullsDiagnostics = false;
 
         /**
+         * @brief True when the client announced support for workspace/diagnostic/refresh.
+         */
+        bool m_clientSupportsDiagnosticRefresh = false;
+
+        /**
          * @brief Tells the client which line ranges the preprocessor drops, so it can dim them.
          *
          * A custom notification because LSP has none: `angelscript/inactiveRegions`, carrying the

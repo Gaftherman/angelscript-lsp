@@ -359,6 +359,83 @@ namespace angel_lsp::analysis
         }
 
         /**
+         * @brief Checks if a token is a known Doxygen command starting with 'n'.
+         */
+        bool IsKnownDoxygenCommandStartingWithN(std::string_view text)
+        {
+            auto matchesCmd = [&](std::string_view cmd)
+            {
+                if (text.size() < cmd.size())
+                {
+                    return false;
+                }
+                for (size_t i = 0; i < cmd.size(); ++i)
+                {
+                    if (std::tolower(static_cast<unsigned char>(text[i])) != cmd[i])
+                    {
+                        return false;
+                    }
+                }
+                if (text.size() == cmd.size())
+                {
+                    return true;
+                }
+                return !std::isalpha(static_cast<unsigned char>(text[cmd.size()]));
+            };
+
+            return matchesCmd("note") ||
+                   matchesCmd("name") ||
+                   matchesCmd("namespace") ||
+                   matchesCmd("nosubgrouping");
+        }
+
+        /**
+         * @brief Splits a comment line into multiple lines at literal \n or @n escapes.
+         */
+        std::vector<std::string> SplitCommentLineOnNewlines(const std::string &line)
+        {
+            std::vector<std::string> result;
+            size_t start = 0;
+            size_t i = 0;
+            while (i < line.size())
+            {
+                if ((line[i] == '\\' || line[i] == '@') && i + 1 < line.size() && line[i + 1] == 'n')
+                {
+                    if (line[i] == '\\' && i > 0 && line[i - 1] == '\\')
+                    {
+                        ++i;
+                        continue;
+                    }
+
+                    std::string_view remainder = std::string_view(line).substr(i + 1);
+                    if (!IsKnownDoxygenCommandStartingWithN(remainder))
+                    {
+                        size_t chunkEnd = i;
+                        if (i >= 2 && line[i - 2] == '\\' && line[i - 1] == 'r')
+                        {
+                            chunkEnd = i - 2;
+                        }
+                        if (chunkEnd < start)
+                        {
+                            chunkEnd = start;
+                        }
+                        result.push_back(line.substr(start, chunkEnd - start));
+                        i += 2;
+                        if (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+                        {
+                            ++i;
+                        }
+                        start = i;
+                        continue;
+                    }
+                }
+                ++i;
+            }
+            result.push_back(line.substr(start));
+            return result;
+        }
+
+        /**
          * @brief Extracts the content lines of a raw comment, whichever way it was written.
          *
          * Strips the delimiters - `/\*`, `*\/`, `///`, `//`, `//!` - and the per-line star
@@ -465,7 +542,42 @@ namespace angel_lsp::analysis
                 }
             }
 
-            return contents;
+            std::vector<std::string> finalContents;
+            finalContents.reserve(contents.size());
+            bool inVerbatim = false;
+            for (const auto &cLine : contents)
+            {
+                std::string trimmedLine = TrimLeading(cLine);
+                if (trimmedLine.starts_with("@code") || trimmedLine.starts_with("\\code") ||
+                    trimmedLine.starts_with("@verbatim") || trimmedLine.starts_with("\\verbatim"))
+                {
+                    inVerbatim = true;
+                    finalContents.push_back(cLine);
+                    continue;
+                }
+                if (trimmedLine.starts_with("@endcode") || trimmedLine.starts_with("\\endcode") ||
+                    trimmedLine.starts_with("@endverbatim") || trimmedLine.starts_with("\\endverbatim"))
+                {
+                    inVerbatim = false;
+                    finalContents.push_back(cLine);
+                    continue;
+                }
+
+                if (inVerbatim)
+                {
+                    finalContents.push_back(cLine);
+                }
+                else
+                {
+                    auto splitLines = SplitCommentLineOnNewlines(cLine);
+                    for (auto &&s : splitLines)
+                    {
+                        finalContents.push_back(std::move(s));
+                    }
+                }
+            }
+
+            return finalContents;
         }
 
         enum class CommentSegmentKind
@@ -485,7 +597,7 @@ namespace angel_lsp::analysis
         /**
          * @brief Checks if a line begins with a Doxygen block command (@name or \name).
          *
-         * Lines starting with inline formatting commands (\b, \e, \em, \a, \c, \p and their @-forms)
+         * Lines starting with inline formatting commands (\b, \e, \em, \a, \c, \p, \n and their @-forms)
          * are NOT block commands and must not start a new segment; they belong to the block above them.
          */
         bool IsBlockCommand(std::string_view line, size_t &cmdEnd)
@@ -509,7 +621,7 @@ namespace angel_lsp::analysis
 
             // Inline formatting commands must NOT start a segment:
             if (cmdName == "b" || cmdName == "e" || cmdName == "em" ||
-                cmdName == "a" || cmdName == "c" || cmdName == "p")
+                cmdName == "a" || cmdName == "c" || cmdName == "p" || cmdName == "n")
             {
                 return false;
             }
@@ -627,8 +739,40 @@ namespace angel_lsp::analysis
                 return "";
             }
 
+            auto findSentenceEndingDot = [](std::string_view line) -> size_t
+            {
+                for (size_t i = 0; i < line.size(); ++i)
+                {
+                    if (line[i] != '.')
+                    {
+                        continue;
+                    }
+                    if (i > 0 && (line[i - 1] == '.' || std::isdigit(static_cast<unsigned char>(line[i - 1]))))
+                    {
+                        continue;
+                    }
+                    if (i + 1 < line.size() && line[i + 1] == '.')
+                    {
+                        continue;
+                    }
+
+                    size_t next = i + 1;
+                    while (next < line.size() && (line[next] == '"' || line[next] == '\'' ||
+                                                 line[next] == ')' || line[next] == ']' ||
+                                                 line[next] == '}' || line[next] == ';'))
+                    {
+                        ++next;
+                    }
+                    if (next == line.size() || std::isspace(static_cast<unsigned char>(line[next])))
+                    {
+                        return i;
+                    }
+                }
+                return std::string::npos;
+            };
+
             std::string briefText;
-            size_t dotPos = firstLine.find('.');
+            size_t dotPos = findSentenceEndingDot(firstLine);
             if (dotPos == std::string::npos)
             {
                 briefText = Trim(firstLine);
@@ -636,9 +780,30 @@ namespace angel_lsp::analysis
             }
             else
             {
-                briefText = Trim(firstLine.substr(0, dotPos + 1));
-                std::string remainder = TrimLeading(firstLine.substr(dotPos + 1));
-                if (remainder.empty())
+                size_t cutPos = dotPos + 1;
+                while (cutPos < firstLine.size() && (firstLine[cutPos] == '"' || firstLine[cutPos] == '\'' ||
+                                                     firstLine[cutPos] == ')' || firstLine[cutPos] == ']' ||
+                                                     firstLine[cutPos] == '}'))
+                {
+                    ++cutPos;
+                }
+                briefText = Trim(firstLine.substr(0, cutPos));
+                std::string remainder = TrimLeading(firstLine.substr(cutPos));
+                while (!remainder.empty() && (remainder.front() == ';' ||
+                                              std::isspace(static_cast<unsigned char>(remainder.front()))))
+                {
+                    remainder.erase(0, 1);
+                }
+                bool hasAlnum = false;
+                for (unsigned char ch : remainder)
+                {
+                    if (std::isalnum(ch))
+                    {
+                        hasAlnum = true;
+                        break;
+                    }
+                }
+                if (!hasAlnum)
                 {
                     lines.erase(lines.begin() + firstContentIdx);
                 }
@@ -1388,8 +1553,16 @@ namespace angel_lsp::analysis
                 label = "Throws";
             else
             {
-                char first = static_cast<char>(std::toupper(static_cast<unsigned char>(cleanedTag[0])));
-                label = first + cleanedTag.substr(1);
+                if (cleanedTag.size() >= 2 && cleanedTag[0] == 'n' &&
+                    std::isupper(static_cast<unsigned char>(cleanedTag[1])))
+                {
+                    label = cleanedTag.substr(1);
+                }
+                else
+                {
+                    char first = static_cast<char>(std::toupper(static_cast<unsigned char>(cleanedTag[0])));
+                    label = first + cleanedTag.substr(1);
+                }
             }
 
             return DocBlock::MakeAdmonition(std::move(label), std::move(desc));

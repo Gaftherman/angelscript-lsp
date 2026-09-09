@@ -670,10 +670,18 @@ namespace angel_lsp::features
                     }
                     oss << "\n```";
 
-                    std::string doc = DocCommentForSymbol(request, memberSymbols[0]);
-                    if (!doc.empty())
+                    std::vector<std::string> docs;
+                    for (const auto &sym : memberSymbols)
                     {
-                        oss << "\n\n" << doc;
+                        std::string d = DocCommentForSymbol(request, sym);
+                        if (!d.empty() && std::find(docs.begin(), docs.end(), d) == docs.end())
+                        {
+                            docs.push_back(std::move(d));
+                        }
+                    }
+                    for (const auto &d : docs)
+                    {
+                        oss << "\n\n" << d;
                     }
 
                     return lsp::Hover{ lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str() }, range };
@@ -940,10 +948,18 @@ namespace angel_lsp::features
         }
         oss << "\n```";
 
-        std::string doc = DocCommentForSymbol(request, symbols[0]);
-        if (!doc.empty())
+        std::vector<std::string> docs;
+        for (const auto &sym : symbols)
         {
-            oss << "\n\n" << doc;
+            std::string d = DocCommentForSymbol(request, sym);
+            if (!d.empty() && std::find(docs.begin(), docs.end(), d) == docs.end())
+            {
+                docs.push_back(std::move(d));
+            }
+        }
+        for (const auto &d : docs)
+        {
+            oss << "\n\n" << d;
         }
 
         return lsp::Hover{ lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str() }, range };
