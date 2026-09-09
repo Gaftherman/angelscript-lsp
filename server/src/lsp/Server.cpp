@@ -3040,6 +3040,12 @@ namespace angel_lsp
         if (text.empty() && m_openDocuments.contains(uriStr))
             text = m_openDocuments[uriStr];
 
+        {
+            std::lock_guard<std::mutex> lock(m_analysisMutex);
+            m_pendingAnalysis.erase(uriStr);
+            m_savedUris.insert(uriStr);
+        }
+
         m_symbolTable.ClearDocumentSymbols(uriStr);
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
@@ -3355,6 +3361,11 @@ namespace angel_lsp
         m_openDocuments.erase(uriStr);
         ForgetOpenDocument(uriStr);
 
+        {
+            std::lock_guard<std::mutex> lock(m_analysisMutex);
+            m_savedUris.erase(uriStr);
+        }
+
         // The cached token payload is only meaningful while the client still holds it. Dropping it
         // here also means a reopened document starts from a full stream rather than a delta against
         // a payload the client threw away when it closed the editor tab.
@@ -3505,6 +3516,7 @@ namespace angel_lsp
 
         {
             std::lock_guard<std::mutex> lock(m_analysisMutex);
+            m_savedUris.erase(uriStr);
 
             // Bumping the revision restarts the quiet period, and the revision means "new text
             // arrived", not "somebody asked about this document". Those came apart once the pull
@@ -3585,7 +3597,16 @@ namespace angel_lsp
             lock.unlock();
 
             for (const auto &[uriStr, text] : m_analysisInFlight)
+            {
+                {
+                    std::lock_guard<std::mutex> savedLock(m_analysisMutex);
+                    if (m_savedUris.erase(uriStr) > 0)
+                    {
+                        continue;
+                    }
+                }
                 AnalyzeDocument(uriStr, text, parser);
+            }
 
             {
                 std::lock_guard<std::mutex> doneLock(m_analysisMutex);

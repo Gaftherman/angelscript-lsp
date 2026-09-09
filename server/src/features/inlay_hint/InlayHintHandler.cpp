@@ -1,5 +1,6 @@
 #include "features/inlay_hint/InlayHintHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/OverloadResolver.h"
 #include <string>
 #include <string_view>
 #include <vector>
@@ -119,9 +120,25 @@ namespace angel_lsp::features
                         auto containers = analysis::GetEnclosingContainers(callNode, request.sourceCode);
                         for (const auto &c : containers)
                         {
-                            if (c.kind == analysis::ContainerKind::Class)
+                            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
                             {
-                                receiverTypeName = c.name;
+                                receiverTypeName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+                                break;
+                            }
+                        }
+                    }
+                    else if (objText == "BaseClass")
+                    {
+                        auto containers = analysis::GetEnclosingContainers(callNode, request.sourceCode);
+                        for (const auto &c : containers)
+                        {
+                            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+                            {
+                                auto hier = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
+                                if (hier.size() > 1)
+                                {
+                                    receiverTypeName = hier[1];
+                                }
                                 break;
                             }
                         }
@@ -129,10 +146,11 @@ namespace angel_lsp::features
                     else
                     {
                         auto rootScope = request.scopeIndex.GetRoot(request.uri);
+                        const analysis::Scope *scope = nullptr;
                         if (rootScope)
                         {
                             TSPoint objPoint = ts_node_start_point(objNode);
-                            const analysis::Scope *scope = FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column);
+                            scope = FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column);
                             if (scope)
                             {
                                 const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, objText);
@@ -140,6 +158,16 @@ namespace angel_lsp::features
                                 {
                                     receiverTypeName = analysis::CleanBaseType(def->typeName);
                                 }
+                            }
+                        }
+
+                        if (receiverTypeName.empty())
+                        {
+                            std::string resolved = analysis::ResolveExpressionType(
+                                objNode, scope, request.symbolTable, request.sourceCode, request.uri);
+                            if (!resolved.empty() && resolved != "void" && resolved != "unknown")
+                            {
+                                receiverTypeName = analysis::CleanBaseType(resolved);
                             }
                         }
                     }
@@ -168,10 +196,23 @@ namespace angel_lsp::features
                         {
                             std::string qualifiedName = typeName + "::" + memText;
                             auto found = request.symbolTable.FindSymbols(qualifiedName);
-                            if (!found.empty())
+                            for (const auto &sym : found)
                             {
-                                candidateSymbols = std::move(found);
-                                break;
+                                if (sym.type == analysis::SymbolType::Function)
+                                {
+                                    bool overriddenLower = std::any_of(candidateSymbols.begin(), candidateSymbols.end(),
+                                        [&](const analysis::Symbol &kept) {
+                                            return analysis::HasSameParameterList(kept, sym);
+                                        });
+                                    if (!overriddenLower)
+                                    {
+                                        candidateSymbols.push_back(sym);
+                                    }
+                                }
+                                else
+                                {
+                                    candidateSymbols.push_back(sym);
+                                }
                             }
                         }
                     }
@@ -181,6 +222,37 @@ namespace angel_lsp::features
             {
                 std::string calleeName = GetNodeText(funcNode, request.sourceCode);
                 candidateSymbols = analysis::FindSymbolsInScope(calleeName, callNode, request.sourceCode, request.symbolTable);
+
+                // Look up in enclosing class hierarchy
+                auto containers = analysis::GetEnclosingContainers(callNode, request.sourceCode);
+                for (const auto &c : containers)
+                {
+                    if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+                    {
+                        auto hierarchy = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
+                        for (const auto &typeName : hierarchy)
+                        {
+                            std::string qualifiedName = typeName + "::" + calleeName;
+                            auto found = request.symbolTable.FindSymbols(qualifiedName);
+                            for (const auto &sym : found)
+                            {
+                                if (sym.type == analysis::SymbolType::Function)
+                                {
+                                    bool overriddenLower = std::any_of(candidateSymbols.begin(), candidateSymbols.end(),
+                                        [&](const analysis::Symbol &kept) {
+                                            return analysis::HasSameParameterList(kept, sym);
+                                        });
+                                    if (!overriddenLower)
+                                    {
+                                        candidateSymbols.push_back(sym);
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+
                 if (candidateSymbols.empty())
                 {
                     candidateSymbols = request.symbolTable.FindSymbols(calleeName);
@@ -203,29 +275,96 @@ namespace angel_lsp::features
             }
 
             const analysis::Symbol *bestSym = nullptr;
-            for (const auto &sym : candidateSymbols)
+
+            if (candidateSymbols.size() > 1)
             {
-                if (sym.type == analysis::SymbolType::Function)
+                TSNode argListNode = parser::GetChildByField(callNode, parser::fields::Arguments);
+                if (ts_node_is_null(argListNode))
                 {
-                    const auto &fn = sym.GetFunction();
-                    if (fn.parameters.size() >= numArgs)
+                    uint32_t childCount = ts_node_child_count(callNode);
+                    for (uint32_t i = 0; i < childCount; ++i)
                     {
-                        bestSym = &sym;
-                        if (fn.parameters.size() == numArgs)
+                        TSNode child = ts_node_child(callNode, i);
+                        if (std::string_view(ts_node_type(child)) == "argument_list")
                         {
+                            argListNode = child;
                             break;
                         }
                     }
                 }
-                else if (sym.type == analysis::SymbolType::Funcdef)
+
+                auto rootScope = request.scopeIndex.GetRoot(request.uri);
+                const analysis::Scope *scope = nullptr;
+                if (rootScope)
                 {
-                    const auto &fn = sym.GetFuncdef();
-                    if (fn.parameters.size() >= numArgs)
+                    TSPoint pt = ts_node_start_point(callNode);
+                    scope = FindInnermostScope(rootScope.get(), pt.row, pt.column);
+                }
+
+                std::vector<std::string> argTypes;
+                if (!ts_node_is_null(argListNode))
+                {
+                    uint32_t count = ts_node_child_count(argListNode);
+                    for (uint32_t i = 0; i < count; ++i)
                     {
-                        bestSym = &sym;
-                        if (fn.parameters.size() == numArgs)
+                        TSNode ch = ts_node_child(argListNode, i);
+                        std::string_view ct = ts_node_type(ch);
+                        if (ct == "(" || ct == ")" || ct == "," || ct == "comment" || ct == ":")
                         {
-                            break;
+                            continue;
+                        }
+                        const char *fieldName = ts_node_field_name_for_child(argListNode, i);
+                        if (fieldName && std::string_view(fieldName) == "arg_name")
+                        {
+                            continue;
+                        }
+                        std::string aType = analysis::ResolveExpressionType(
+                            ch, scope, request.symbolTable, request.sourceCode, request.uri);
+                        argTypes.push_back(std::move(aType));
+                    }
+                }
+
+                auto match = analysis::ResolveBestOverload(candidateSymbols, argTypes, request.symbolTable);
+                if (match.bestCandidate != nullptr)
+                {
+                    bestSym = match.bestCandidate;
+                }
+            }
+
+            if (!bestSym)
+            {
+                for (const auto &sym : candidateSymbols)
+                {
+                    if (sym.type == analysis::SymbolType::Function)
+                    {
+                        const auto &fn = sym.GetFunction();
+                        if (fn.parameters.size() >= numArgs)
+                        {
+                            if (!bestSym || fn.parameters.size() == numArgs ||
+                                (bestSym->type == analysis::SymbolType::Function && bestSym->GetFunction().parameters.size() < numArgs))
+                            {
+                                bestSym = &sym;
+                                if (fn.parameters.size() == numArgs)
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else if (sym.type == analysis::SymbolType::Funcdef)
+                    {
+                        const auto &fn = sym.GetFuncdef();
+                        if (fn.parameters.size() >= numArgs)
+                        {
+                            if (!bestSym || fn.parameters.size() == numArgs ||
+                                (bestSym->type == analysis::SymbolType::Funcdef && bestSym->GetFuncdef().parameters.size() < numArgs))
+                            {
+                                bestSym = &sym;
+                                if (fn.parameters.size() == numArgs)
+                                {
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -282,7 +421,7 @@ namespace angel_lsp::features
                 TSNode child = ts_node_child(argListNode, i);
                 std::string_view type = ts_node_type(child);
 
-                if (type == "(" || type == ")" || type == ",")
+                if (type == "(" || type == ")" || type == "," || type == "comment")
                 {
                     if (type == ",")
                     {

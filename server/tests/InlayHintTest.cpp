@@ -343,3 +343,84 @@ TEST_CASE("InlayHintHandler - Robustness with Empty / Null Tree")
     auto hints = GetInlayHints(req);
     CHECK(!hints.has_value());
 }
+
+TEST_CASE("InlayHintHandler - ShootGrenade and trailing parameter hints")
+{
+    std::string code =
+        "namespace INS2GLPROJECTILE {\n"
+        "    void ShootGrenade(int pevOwner, int vecStart, int vecVelocity, float dmg, string model, bool bRocketExplosions = false, const string& in szName = \"proj_ins2gl\") {}\n"
+        "}\n"
+        "void main() {\n"
+        "    INS2GLPROJECTILE::ShootGrenade(1, 2, 3, 4.0f, \"gmodel\", false, \"proj_name\");\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+    std::vector<std::string> labels;
+    for (const auto &h : *hints)
+    {
+        if (std::holds_alternative<std::string>(h.label))
+        {
+            labels.push_back(std::get<std::string>(h.label));
+        }
+    }
+    CHECK(labels.size() == 7);
+}
+
+TEST_CASE("InlayHintHandler - BaseClass and inherited unqualified call parameter hints")
+{
+    std::string code =
+        "class WeaponBase {\n"
+        "    void Holster(int skiplocal = 0) {}\n"
+        "    bool Deploy(string v, string p, int draw, string model, int body, float speed) { return true; }\n"
+        "}\n"
+        "class weapon_ins2l85a2 : WeaponBase {\n"
+        "    bool Deploy() { return true; }\n"
+        "    void Holster(int skipLocal = 0) {\n"
+        "        BaseClass.Holster(skipLocal);\n"
+        "        Deploy(\"v\", \"p\", 1, \"model\", 0, 1.5f);\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+    std::vector<std::string> labels;
+    for (const auto &h : *hints)
+    {
+        if (std::holds_alternative<std::string>(h.label))
+        {
+            labels.push_back(std::get<std::string>(h.label));
+        }
+    }
+    CHECK(std::find(labels.begin(), labels.end(), "skiplocal:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "speed:") != labels.end());
+}
+
+TEST_CASE("InlayHintHandler - Namespaced class this.Method parameter hints")
+{
+    std::string code =
+        "namespace INS2_L85A2 {\n"
+        "    class weapon_ins2l85a2 {\n"
+        "        void SendWeaponAnim(int anim, int body) {}\n"
+        "        void Test() {\n"
+        "            this.SendWeaponAnim(1, 2);\n"
+        "        }\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+    std::vector<std::string> labels;
+    for (const auto &h : *hints)
+    {
+        if (std::holds_alternative<std::string>(h.label))
+        {
+            labels.push_back(std::get<std::string>(h.label));
+        }
+    }
+    CHECK(std::find(labels.begin(), labels.end(), "anim:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "body:") != labels.end());
+}

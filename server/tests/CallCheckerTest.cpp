@@ -1276,3 +1276,53 @@ TEST_CASE("CallChecker - An argument of unknown type does not make a call ambigu
         "class D : B { bool Get(int &out v) { v = 1; return true; } }\n"
         "void main() { D d; int n; d.Get(n); }\n"), "as-err-call-ambiguous"));
 }
+
+TEST_CASE("CallChecker - Unqualified call to method in class hierarchy with invalid argument type is flagged")
+{
+    const std::string code =
+        "class Base {\n"
+        "    void Deploy(int a, float b) {}\n"
+        "}\n"
+        "class Derived : Base {\n"
+        "    void Test() {\n"
+        "        Deploy(1, \"not a float\");\n"
+        "    }\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK((HasCode(diags, "as-err-no-implicit-conversion") ||
+           HasCode(diags, "as-err-call-no-matching-signature")));
+}
+
+TEST_CASE("CallChecker - Namespaced function handle passed as callback to funcdef parameter")
+{
+    const std::string code =
+        "funcdef void ClientCommandCallback(const string &in);\n"
+        "class CClientCommand {\n"
+        "    CClientCommand(const string &in name, const string &in desc, ClientCommandCallback@ cb) {}\n"
+        "}\n"
+        "namespace BuyMenu {\n"
+        "    void INS2_Buy(const string &in args) {}\n"
+        "    CClientCommand _buy(\"buy\", \"Opens the BuyMenu\", @INS2_Buy);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(!HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK(!HasCode(diags, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - Invalid argument flagged even when another argument is unresolved")
+{
+    const std::string code =
+        "class WeaponBase {\n"
+        "    bool Deploy(string v, string p, int draw, string model, int body, float speed) { return true; }\n"
+        "}\n"
+        "class weapon_ins2l85a2 : WeaponBase {\n"
+        "    void Test() {\n"
+        "        Deploy(\"v\", \"p\", 1, \"model\", UnknownFunc(), \"(72.0/32.0)\");\n"
+        "    }\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-no-implicit-conversion"));
+}

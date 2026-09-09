@@ -1573,6 +1573,33 @@ namespace angel_lsp::analysis
         if (nodeType == "identifier")
         {
             std::string name = GetNodeText(exprNode, sourceCode);
+            if (name == "this")
+            {
+                auto containers = GetEnclosingContainers(exprNode, sourceCode);
+                for (const auto &c : containers)
+                {
+                    if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
+                    {
+                        return CleanExpressionType(c.qualifiedName.empty() ? c.name : c.qualifiedName);
+                    }
+                }
+            }
+            if (name == "BaseClass")
+            {
+                auto containers = GetEnclosingContainers(exprNode, sourceCode);
+                for (const auto &c : containers)
+                {
+                    if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
+                    {
+                        auto hier = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, symbolTable);
+                        if (hier.size() > 1)
+                        {
+                            return CleanExpressionType(hier[1]);
+                        }
+                        break;
+                    }
+                }
+            }
             if (scope)
             {
                 const LocalDefinition *def = ResolveInScope(scope, name);
@@ -1586,6 +1613,27 @@ namespace angel_lsp::analysis
             if (syms.empty())
             {
                 syms = FindSymbolsInScope(name, exprNode, sourceCode, symbolTable);
+            }
+            if (syms.empty())
+            {
+                auto containers = GetEnclosingContainers(exprNode, sourceCode);
+                for (const auto &c : containers)
+                {
+                    if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
+                    {
+                        auto hierarchy = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, symbolTable);
+                        for (const auto &cls : hierarchy)
+                        {
+                            auto found = symbolTable.FindSymbols(cls + "::" + name);
+                            if (!found.empty())
+                            {
+                                syms = std::move(found);
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
             }
             for (const auto &sym : syms)
             {
@@ -2006,15 +2054,60 @@ namespace angel_lsp::analysis
             else
             {
                 std::string funcName = GetNodeText(funcNode, sourceCode);
-                std::vector<Symbol> inScope = FindSymbolsInScope(funcName, exprNode, sourceCode, symbolTable);
                 std::vector<Symbol> candidates;
-                for (const auto &sym : inScope)
+
+                auto containers = GetEnclosingContainers(exprNode, sourceCode);
+                for (const auto &c : containers)
                 {
-                    if (sym.type == SymbolType::Function)
+                    if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
                     {
-                        candidates.push_back(sym);
+                        auto hierarchy = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, symbolTable);
+                        for (const auto &cls : hierarchy)
+                        {
+                            auto found = symbolTable.FindSymbols(cls + "::" + funcName);
+                            for (const auto &sym : found)
+                            {
+                                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                                {
+                                    bool overriddenLower = std::any_of(candidates.begin(), candidates.end(),
+                                        [&](const Symbol &kept) {
+                                            return HasSameParameterList(kept, sym);
+                                        });
+                                    if (!overriddenLower)
+                                    {
+                                        candidates.push_back(sym);
+                                    }
+                                }
+                            }
+                        }
+                        break;
                     }
                 }
+
+                if (candidates.empty())
+                {
+                    std::vector<Symbol> inScope = FindSymbolsInScope(funcName, exprNode, sourceCode, symbolTable);
+                    for (const auto &sym : inScope)
+                    {
+                        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                        {
+                            candidates.push_back(sym);
+                        }
+                    }
+                }
+
+                if (candidates.empty())
+                {
+                    auto globalFound = symbolTable.FindSymbols(funcName);
+                    for (const auto &sym : globalFound)
+                    {
+                        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                        {
+                            candidates.push_back(sym);
+                        }
+                    }
+                }
+
                 if (!candidates.empty())
                 {
                     auto match = ResolveBestOverload(candidates, argTypes, symbolTable);
@@ -2125,6 +2218,22 @@ namespace angel_lsp::analysis
                             if (const auto bucket = symbolTable.FindSymbolsPtr(targetName))
                             {
                                 for (const auto &candidate : *bucket)
+                                {
+                                    if (candidate.type == SymbolType::Function)
+                                    {
+                                        namesFunction = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!namesFunction)
+                            {
+                                auto syms = FindSymbolsInScope(targetName, exprNode, sourceCode, symbolTable);
+                                if (syms.empty())
+                                {
+                                    syms = symbolTable.FindSymbols(targetName);
+                                }
+                                for (const auto &candidate : syms)
                                 {
                                     if (candidate.type == SymbolType::Function)
                                     {

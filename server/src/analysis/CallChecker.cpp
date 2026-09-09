@@ -317,9 +317,7 @@ namespace angel_lsp::analysis
             {
                 if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
                 {
-                    // A call inside a class body is a method call on `this` as often as not, and
-                    // FindMethodCandidates owns that question.
-                    return candidates;
+                    continue;
                 }
                 if (container.kind == ContainerKind::Namespace)
                 {
@@ -538,6 +536,7 @@ namespace angel_lsp::analysis
             // does not model - a mixin's method beats the base class's, and the class's own beats
             // the mixin's - so two same-named members are routinely not a choice at all.
             bool candidatesAreFreeFunctions = false;
+            bool isUnqualifiedClassCall = false;
             std::string reportedName;
 
             if (calleeType == "member_expression")
@@ -684,10 +683,55 @@ namespace angel_lsp::analysis
                 }
                 else
                 {
-                    candidatesAreFreeFunctions = true;
-                    candidates = FindFreeCandidates(node, written, request.sourceCode,
-                                                    ctx.request.fileUri, ctx.request.predefinedFileExtension,
-                                                    table, ctx.request.GetRuleIndex());
+                    // Check if inside a class or interface; if so, probe class hierarchy for method candidates
+                    std::string enclosingClass;
+                    for (const auto &container : GetEnclosingContainers(node, request.sourceCode))
+                    {
+                        if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
+                        {
+                            enclosingClass = container.qualifiedName.empty() ? container.name : container.qualifiedName;
+                            break;
+                        }
+                    }
+
+                    if (!enclosingClass.empty())
+                    {
+                        candidates = FindMethodCandidates(enclosingClass, written, table);
+                        if (!candidates.empty())
+                        {
+                            candidatesAreFreeFunctions = false;
+                            isUnqualifiedClassCall = true;
+                            const auto binding = BindTemplateArguments(enclosingClass, table);
+                            if (binding.usable)
+                            {
+                                for (auto &sym : candidates)
+                                {
+                                    if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                                    {
+                                        auto fn = sym.GetFunction();
+                                        for (size_t i = 0; i < binding.parameters.size(); ++i)
+                                        {
+                                            fn.returnType = SubstituteTypeParam(fn.returnType, binding.parameters[i], binding.arguments[i]);
+                                            for (auto &p : fn.parameters)
+                                            {
+                                                p.typeName = SubstituteTypeParam(p.typeName, binding.parameters[i], binding.arguments[i]);
+                                                p.baseTypeName = SubstituteTypeParam(p.baseTypeName, binding.parameters[i], binding.arguments[i]);
+                                            }
+                                        }
+                                        sym.signature = fn;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (candidates.empty())
+                    {
+                        candidatesAreFreeFunctions = true;
+                        candidates = FindFreeCandidates(node, written, request.sourceCode,
+                                                        ctx.request.fileUri, ctx.request.predefinedFileExtension,
+                                                        table, ctx.request.GetRuleIndex());
+                    }
                 }
             }
             else
@@ -768,7 +812,7 @@ namespace angel_lsp::analysis
             const CandidateSet judged = JudgeAgainst(candidates, argumentCount);
             if (!judged.decided || !judged.accepts)
             {
-                if (judged.decided && !judged.accepts)
+                if (judged.decided && !judged.accepts && !isUnqualifiedClassCall)
                 {
                     const TSPoint start = ts_node_start_point(callee);
                     const TSPoint end = ts_node_end_point(arguments);
@@ -853,12 +897,12 @@ namespace angel_lsp::analysis
                                      reportedName, table, request.sourceCode, ctx);
             }
 
-            if (allArgsResolved && (!argTypes.empty() || candidatesAreFreeFunctions))
+            if (!argTypes.empty() || candidatesAreFreeFunctions)
             {
                 if (!matchingArityCandidates.empty())
                 {
                     OverloadMatchResult match = ResolveBestOverload(matchingArityCandidates, argTypes, table);
-                    if (match.isAmbiguous)
+                    if (match.isAmbiguous && allArgsResolved)
                     {
                         const TSPoint start = ts_node_start_point(callee);
                         const TSPoint end = ts_node_end_point(arguments);
@@ -930,7 +974,7 @@ namespace angel_lsp::analysis
                             }
                         }
 
-                        if (!emittedSpecificConversion)
+                        if (!emittedSpecificConversion && allArgsResolved)
                         {
                             const TSPoint start = ts_node_start_point(callee);
                             const TSPoint end = ts_node_end_point(arguments);

@@ -6077,3 +6077,40 @@ TEST_CASE("Server - Dynamic modules change updates diagnostics for open document
     INFO("After restore published: " << restoredPublished);
     CHECK(restoredPublished.find("as-err-undefined-namespace") == std::string::npos);
 }
+
+TEST_CASE("Server - Saving document suppresses duplicate background analysis")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("script.as", "void main() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("script.as"), "void main() {}\n"));
+    stream.PushAction([&stream]()
+    {
+        WaitForCount(stream, "publishDiagnostics", 1);
+    });
+
+    // Send didSave notification
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
+                fixture.Uri("script.as") + R"("}}})");
+
+    std::string savedPublished;
+    stream.PushAction([&stream, &savedPublished]()
+    {
+        WaitForCount(stream, "publishDiagnostics", 2);
+        savedPublished = LastPublishedFor(stream.Output(), "script.as");
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    REQUIRE_FALSE(savedPublished.empty());
+    CHECK(savedPublished.find(R"("diagnostics":[])") != std::string::npos);
+}
+

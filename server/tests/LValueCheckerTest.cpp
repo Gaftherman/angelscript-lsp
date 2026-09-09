@@ -134,3 +134,20 @@ TEST_CASE("LValueChecker - Cannot assign to literal")
         [](const Diagnostic &d) { return d.code == "as-err-not-lvalue"; });
     CHECK(hasNotLValueError);
 }
+
+TEST_CASE("LValueChecker - Cannot assign to non-reference function call in return statement")
+{
+    std::string code =
+        "class Weapon {\n"
+        "    bool Deploy(int a, float b) { return true; }\n"
+        "    bool Test() {\n"
+        "        return Deploy(1, 2.0f) = true;\n"
+        "    }\n"
+        "}\n";
+
+    auto diags = RunAnalysis(code);
+    bool hasAssignNonRefError = std::any_of(diags.begin(), diags.end(),
+        [](const Diagnostic &d) { return d.code == "as-err-assign-non-ref-call"; });
+    CHECK(hasAssignNonRefError);
+}
+

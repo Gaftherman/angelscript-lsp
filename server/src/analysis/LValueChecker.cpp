@@ -112,10 +112,34 @@ namespace angel_lsp::analysis
                         candidates.push_back(sym);
                     }
                 }
+                if (candidates.empty())
+                {
+                    auto containers = GetEnclosingContainers(funcNode, request.sourceCode);
+                    for (const auto &c : containers)
+                    {
+                        if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
+                        {
+                            auto hierarchy = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, ctx.request.symbolTable);
+                            for (const auto &cls : hierarchy)
+                            {
+                                auto found = ctx.request.symbolTable.FindSymbols(cls + "::" + name);
+                                for (const auto &sym : found)
+                                {
+                                    if (sym.type == SymbolType::Function)
+                                    {
+                                        candidates.push_back(sym);
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
             }
 
             if (candidates.empty())
             {
+                EmitAtNode(callNode, ctx, "as-err-assign-non-ref-call");
                 return;
             }
 
@@ -290,9 +314,15 @@ namespace angel_lsp::analysis
             }
 
             std::string_view targetType = ts_node_type(target);
-            if (targetType == "call_expression")
+            TSNode unwrapped = target;
+            while (std::string_view(ts_node_type(unwrapped)) == "parenthesized_expression" && ts_node_named_child_count(unwrapped) > 0)
             {
-                CheckCallLValue(target, request, scope, ctx);
+                unwrapped = ts_node_named_child(unwrapped, 0);
+            }
+
+            if (std::string_view(ts_node_type(unwrapped)) == "call_expression")
+            {
+                CheckCallLValue(unwrapped, request, scope, ctx);
                 return;
             }
 

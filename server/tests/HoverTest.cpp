@@ -959,4 +959,51 @@ TEST_CASE("Hover - Enum member displays default value and property tag")
     CHECK(textBare.find("FIRST = 10") != std::string::npos);
 }
 
+TEST_CASE("HoverHandler - Call overload resolution across inheritance hierarchy")
+{
+    std::string code =
+        "class WeaponBase {\n"
+        "    bool Deploy(string v, string p, int draw, string model, int body, float speed) { return true; }\n"
+        "}\n"
+        "class weapon_ins2l85a2 : WeaponBase {\n"
+        "    bool Deploy() { return true; }\n"
+        "    void Test() {\n"
+        "        Deploy(\"v\", \"p\", 1, \"model\", 0, 1.5f);\n"
+        "    }\n"
+        "}\n";
 
+    TestEnvironment env(code);
+    // Line 6, column 9 is 'Deploy'
+    auto hover = env.HoverAt(6, 9);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(content.value.find("bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)") != std::string::npos);
+    CHECK(content.value.find("bool weapon_ins2l85a2::Deploy()") != std::string::npos);
+    // Best matching overload must appear before the 0-arg overload
+    size_t posBest = content.value.find("WeaponBase::Deploy");
+    size_t posDerived = content.value.find("weapon_ins2l85a2::Deploy");
+    CHECK(posBest < posDerived);
+}
+
+TEST_CASE("HoverHandler - Call overload resolution fallback when argument type mismatches")
+{
+    std::string code =
+        "class WeaponBase {\n"
+        "    bool Deploy(string v, string p, int draw, string model, int body, float speed) { return true; }\n"
+        "}\n"
+        "class weapon_ins2l85a2 : WeaponBase {\n"
+        "    bool Deploy() { return true; }\n"
+        "    void Test() {\n"
+        "        Deploy(\"v\", \"p\", 1, \"model\", 0, \"(72.0/32.0)\");\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hover = env.HoverAt(6, 9);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(content.value.find("bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)") != std::string::npos);
+    size_t posBest = content.value.find("WeaponBase::Deploy");
+    size_t posDerived = content.value.find("weapon_ins2l85a2::Deploy");
+    CHECK(posBest < posDerived);
+}

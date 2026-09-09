@@ -210,6 +210,7 @@ namespace angel_lsp
         // Written only by the analysis thread and only under m_analysisMutex; that thread then
         // iterates it unlocked, which is safe because it is also the only writer.
         ankerl::unordered_dense::map<std::string, std::string> m_analysisInFlight;
+        ankerl::unordered_dense::set<std::string> m_savedUris;
 
         uint64_t m_analysisRevision = 0;
         bool m_analysisStop = false;
