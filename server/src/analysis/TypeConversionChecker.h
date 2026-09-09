@@ -74,4 +74,27 @@ namespace angel_lsp::analysis
      */
     bool CanConvertImplicitly(const std::string &fromType, const std::string &toType,
                               const DiagnosticContext &ctx);
+
+    /**
+     * @brief Evaluates whether a type satisfies boolean truthiness in control flow conditions.
+     *
+     * In AngelScript, conditions (if, while, for, do-while, ternary) accept:
+     * - `bool`
+     * - Object handles (types ending with `@` or handle definitions)
+     * - Class instances declaring `opImplConv` or `opConv` returning `bool`
+     * All other types (primitives, string, enum, non-converting classes) return false.
+     *
+     * @param typeName Type name to evaluate.
+     * @param table SymbolTable for looking up class declarations and methods.
+     * @return True if the type can evaluate as a condition; false otherwise.
+     */
+    bool IsTruthyCondition(const std::string &typeName, const SymbolTable &table);
+
+    namespace TypeConversionChecker
+    {
+        inline bool IsTruthyCondition(const std::string &typeName, const SymbolTable &table)
+        {
+            return ::angel_lsp::analysis::IsTruthyCondition(typeName, table);
+        }
+    }
 }

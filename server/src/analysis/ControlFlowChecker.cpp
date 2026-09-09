@@ -1,4 +1,5 @@
 #include "analysis/ControlFlowChecker.h"
+#include "analysis/TypeConversionChecker.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 

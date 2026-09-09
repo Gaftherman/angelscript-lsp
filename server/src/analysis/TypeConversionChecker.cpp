@@ -2003,83 +2003,7 @@ namespace angel_lsp::analysis
          * `opImplConv` is preferred over `opConv` when a class declares both, because that is the
          * one the engine reaches for first and so the one the quick fix should name.
          */
-        /**
-         * @brief True for a primitive that AngelScript will not convert to bool.
-         *
-         * By name, and only these: anything else - a class, an enum, a host type, a name that
-         * resolved to nothing - is left alone. `bool` itself is obviously not here, and neither is
-         * a handle, which is tested with `is`/`!is` rather than for truth.
-         */
-        bool IsNumericPrimitiveName(std::string_view typeName)
-        {
-            return parser::primitives::IsNumeric(typeName);
-        }
 
-        /**
-         * @brief True for a type that can never stand alone as a condition, and that this analyzer
-         *        can see well enough to say so.
-         *
-         * The numeric primitives are handled by IsNumericPrimitiveName. This answers the rest, and
-         * only where the answer is not a guess. Measured, every one of them:
-         *
-         *     string s;      if (s)   Expression must be of boolean type, instead found 'string'
-         *     enum E{A};     if (e)   ... instead found 'E'
-         *     class C{}      if (c)   ... instead found 'C&'
-         *     C@ h;          if (h)   ... instead found 'C@&'
-         *
-         * A handle is the one worth spelling out, because it is the mistake people carry in from
-         * C++: `if (h)` is not a null test in AngelScript, `if (h !is null)` is - measured accepted.
-         *
-         * Deliberately NOT reported: a class that declares opImplConv or opConv. This engine build
-         * rejects those too (measured, both spellings, const and not), but asEP_BOOL_CONVERSION_MODE
-         * is a host setting this analyzer only models, and a host running mode 1 makes that code
-         * legal. It keeps the opt-in `as-hint-bool-conversion` it already had, and nothing louder.
-         *
-         * Also not reported: a type with no declaration anywhere in view. Silent unless fully
-         * visible - the host may have registered it with a conversion no stub records.
-         */
-        bool ConditionTypeIsNeverBool(const std::string &typeName, const SymbolTable &table)
-        {
-            if (typeName.empty() || typeName == "bool" || typeName == "auto" || typeName == "void")
-                return false;
-
-            // `string` is not in the symbol table as a Class in every profile, and it is the single
-            // most common thing to put in a condition by mistake, so it is named directly.
-            if (typeName == "string")
-                return true;
-
-            bool isEnum = false;
-            bool isClass = false;
-            bool hasConversion = false;
-
-            table.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
-            {
-                for (const auto &sym : symbols)
-                {
-                    if (sym.name == typeName)
-                    {
-                        if (sym.type == SymbolType::Enum)
-                            isEnum = true;
-                        else if (sym.type == SymbolType::Class)
-                            isClass = true;
-                    }
-
-                    if (sym.type != SymbolType::Function || sym.containerName != typeName)
-                        continue;
-                    if (!std::holds_alternative<FunctionSignature>(sym.signature))
-                        continue;
-                    if (CleanBaseType(sym.GetFunction().returnType) != "bool")
-                        continue;
-                    if (sym.name == "opImplConv" || sym.name == "opConv")
-                        hasConversion = true;
-                }
-            });
-
-            if (isEnum)
-                return true;
-
-            return isClass && !hasConversion;
-        }
 
         const std::string *BoolConversionOperator(const std::string &typeName, const SymbolTable &table)
         {
@@ -2283,29 +2207,16 @@ namespace angel_lsp::analysis
                         const std::string operandType = CleanBaseType(ResolveExpressionType(
                             operand, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
 
-                        // A number where a bool belongs. Restricted to the primitives by name: a
-                        // type this analyzer cannot resolve, or one the host registered, is left
-                        // alone - the same policy the hint below keeps, and the reason this reports
-                        // `if (x)` on an int and says nothing about `if (SomeHostCall())`.
-                        if (IsNumericPrimitiveName(operandType))
+                        if (operandType.empty() || operandType == "auto" || operandType == "void")
                         {
-                            const TSPoint start = ts_node_start_point(operand);
-                            const TSPoint end = ts_node_end_point(operand);
-                            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
-                                            "as-err-condition-not-boolean", operandType);
                             continue;
                         }
 
-                        // The same rule for the types that are not numbers: a string, an enum, a
-                        // class with no conversion. Gated on the mode this analyzer is configured
-                        // for, because mode 1 is exactly the setting that would make a class with
-                        // opConv legal here - see ConditionTypeIsNeverBool.
-                        //
-                        // A handle never reaches this: as-err-ref-type-bool-conv-disallowed catches
-                        // `if (h)` earlier and says more, naming both ways out. Measured across the
-                        // whole probe set before this comment was written.
-                        if (ctx.request.BoolConversionMode() == 0 &&
-                            ConditionTypeIsNeverBool(operandType, ctx.request.symbolTable))
+                        const bool isKnown = parser::primitives::IsNumeric(operandType) ||
+                                             operandType == "string" ||
+                                             ctx.request.symbolTable.HasSymbolAnywhere(operandType);
+
+                        if (isKnown && !IsTruthyCondition(operandType, ctx.request.symbolTable))
                         {
                             const TSPoint start = ts_node_start_point(operand);
                             const TSPoint end = ts_node_end_point(operand);
@@ -3065,6 +2976,64 @@ namespace angel_lsp::analysis
                 VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
             }
         }
+    }
+
+    bool IsTruthyCondition(const std::string &typeName, const SymbolTable &table)
+    {
+        if (typeName.empty())
+        {
+            return false;
+        }
+
+        // Handles (isHandle or type ends with @) -> true
+        if (typeName.ends_with('@') || typeName.find('@') != std::string::npos)
+        {
+            return true;
+        }
+
+        const std::string clean = CleanBaseType(typeName);
+        // bool -> true
+        if (clean == "bool")
+        {
+            return true;
+        }
+
+        // classes declaring opImplConv or opConv to bool -> true
+        bool hasConversion = false;
+        table.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
+        {
+            if (hasConversion)
+            {
+                return;
+            }
+            for (const auto &sym : symbols)
+            {
+                if (sym.type != SymbolType::Function || sym.containerName != clean)
+                {
+                    continue;
+                }
+                if (!std::holds_alternative<FunctionSignature>(sym.signature))
+                {
+                    continue;
+                }
+                if (sym.name == "opImplConv" || sym.name == "opConv")
+                {
+                    if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                    {
+                        hasConversion = true;
+                        return;
+                    }
+                }
+            }
+        });
+
+        if (hasConversion)
+        {
+            return true;
+        }
+
+        // all other types -> false
+        return false;
     }
 
     bool CanConvertImplicitly(const std::string &fromType, const std::string &toType,

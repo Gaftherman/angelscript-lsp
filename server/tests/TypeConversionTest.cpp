@@ -6,6 +6,7 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/TypeConversionChecker.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
@@ -2244,3 +2245,43 @@ TEST_CASE("TypeConversion - The for header and the ternary are conditions too")
             preamble + "void main() { H h; int x = h ? 1 : 2; }\n", /*enabled=*/true, /*mode=*/1)));
     }
 }
+
+TEST_CASE("TypeConversion - IsTruthyCondition first-principles verification")
+{
+    const std::string code =
+        "enum MyEnum { ValueA, ValueB }\n"
+        "class NoConvClass {}\n"
+        "class ConvImplClass { bool opImplConv() const { return true; } }\n"
+        "class ConvExplicitClass { bool opConv() const { return true; } }\n"
+        "class NonBoolConvClass { int opImplConv() const { return 0; } }\n";
+
+    AngelScriptParser parser;
+    SymbolCollector collector{ nullptr };
+    SymbolTable table;
+    collector.CollectSymbols("file:///truthy_test.as", code, parser, table);
+
+    // 1. Boolean primitive
+    CHECK(IsTruthyCondition("bool", table));
+    CHECK(IsTruthyCondition("const bool", table));
+    CHECK(IsTruthyCondition("bool&", table));
+
+    // 2. Object handles
+    CHECK(IsTruthyCondition("NoConvClass@", table));
+    CHECK(IsTruthyCondition("const NoConvClass@", table));
+    CHECK(IsTruthyCondition("ConvImplClass@", table));
+
+    // 3. Classes declaring opImplConv or opConv to bool
+    CHECK(IsTruthyCondition("ConvImplClass", table));
+    CHECK(IsTruthyCondition("ConvExplicitClass", table));
+
+    // 4. Non-truthy types
+    CHECK_FALSE(IsTruthyCondition("int", table));
+    CHECK_FALSE(IsTruthyCondition("float", table));
+    CHECK_FALSE(IsTruthyCondition("double", table));
+    CHECK_FALSE(IsTruthyCondition("string", table));
+    CHECK_FALSE(IsTruthyCondition("MyEnum", table));
+    CHECK_FALSE(IsTruthyCondition("NoConvClass", table));
+    CHECK_FALSE(IsTruthyCondition("NonBoolConvClass", table));
+    CHECK_FALSE(IsTruthyCondition("", table));
+}
+
