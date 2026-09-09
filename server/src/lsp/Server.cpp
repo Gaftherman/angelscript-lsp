@@ -3041,37 +3041,46 @@ namespace angel_lsp
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
-            TSTree *savedTree = m_parser->Parse(text);
+            const std::string analysisText = AnalysisTextFor(uriStr, text);
+            TSTree *savedTree = m_parser->Parse(analysisText);
             std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
 
                 if (PredefinedStubContributes(uriStr))
                 {
-                    ClaimPredefinedFile(uriStr);
-                    diagnostics = ReplaceSymbolsFromTree(uriStr, text, savedTree);
+                    ClaimPredefinedFile(uriStr, /*forceReload=*/true);
+                    diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree);
                 }
 
                 m_scopeIndex.ClearDocument(uriStr);
                 m_callGraph.ClearDocument(uriStr);
+                if (savedTree)
+                {
+                    m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(savedTree), analysisText));
+                    m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(savedTree), analysisText));
+                }
             }
 
             // A save is the point the watcher would have reacted to, had the file not been open -
             // didChangeWatchedFiles skips open documents on purpose, so this is the only place a
-            // saved stub can announce that its `#define`s moved. Before the analysis, which reads
-            // the words to decide what this stub's own `#if` blocks contain.
+            // saved stub can announce that its `#define`s moved.
             const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
 
-            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, savedTree);
+            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, savedTree);
             diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
             if (savedTree)
+            {
                 ts_tree_delete(savedTree);
+            }
 
             PublishDiagnostics(uriStr, diagnostics);
 
             if (wordsChanged)
+            {
                 ReanalyseOpenDocuments();
+            }
 
             return;
         }
@@ -3161,21 +3170,20 @@ namespace angel_lsp
             std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                if (PredefinedStubContributes(uriStr) && ClaimPredefinedFile(uriStr))
+                if (PredefinedStubContributes(uriStr))
                 {
+                    ClaimPredefinedFile(uriStr, /*forceReload=*/true);
                     diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
                     m_scopeIndex.ClearDocument(uriStr);
                     m_callGraph.ClearDocument(uriStr);
+                    if (tree)
+                    {
+                        m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), analysisText));
+                        m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), analysisText));
+                    }
                 }
             }
 
-            // Before the analysis below, which reads the words to decide what this very stub's own
-            // `#if` blocks contain. It also repairs the claim above: re-claiming a stub under a new
-            // URI spelling unloads the old one, and an unload now takes that stub's words with it.
-            //
-            // The buffer the editor holds may differ from the copy on disk the scan read, and from
-            // here on it is the one that counts - didChangeWatchedFiles will not touch an open
-            // document again.
             const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
 
             auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree);
@@ -3184,7 +3192,9 @@ namespace angel_lsp
             PublishDiagnostics(uriStr, diagnostics);
 
             if (wordsChanged)
+            {
                 ReanalyseOpenDocuments();
+            }
 
             return;
         }
@@ -3315,36 +3325,6 @@ namespace angel_lsp
         }
         m_documentTrees[uriStr] = newTree;
 
-        if (isPredefined)
-        {
-            m_symbolTable.ClearDocumentSymbols(uriStr);
-            m_scopeIndex.ClearDocument(uriStr);
-            m_callGraph.ClearDocument(uriStr);
-
-            // Typing in a stub that is not the active one must not put it back in the table; the
-            // clear above is still right, because whatever was there is now the wrong revision of a
-            // file that should not be contributing at all.
-            if (PredefinedStubContributes(uriStr))
-                ReplaceSymbolsFromTree(uriStr, analysisText, newTree);
-
-            if (newTree)
-            {
-                m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(newTree), analysisText));
-                m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(newTree), analysisText));
-            }
-
-            // On every keystroke, but the fan-out only when the word set actually moved - which
-            // typing inside a declaration never does. Commenting out a `#define` does, and that is
-            // the edit whose effect the user could not see: the stub's own symbols updated as they
-            // typed while every `#if` in every other document stayed on the previous answer until
-            // the stub was reloaded by hand.
-            if (RefreshStubDefinedWords(uriStr, buffer))
-                ReanalyseOpenDocuments();
-
-            RememberOpenDocument(uriStr, buffer);
-            ScheduleAnalysis(uriStr, buffer);
-            return;
-        }
 
         // The reparse above is incremental and cheap, and stays on this thread so a request
         // arriving right after the edit is answered against a current tree. Symbol collection,
@@ -3591,6 +3571,48 @@ namespace angel_lsp
     void Server::AnalyzeDocument(const std::string &uriStr, const std::string &text,
                                  angel_lsp::parser::AngelScriptParser &parser)
     {
+        const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
+        if (isPredefined)
+        {
+            const std::string analysisText = AnalysisTextFor(uriStr, text);
+            TSTree *tree = parser.Parse(analysisText);
+            std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
+            {
+                std::lock_guard<std::mutex> lock(m_predefinedMutex);
+                if (PredefinedStubContributes(uriStr))
+                {
+                    ClaimPredefinedFile(uriStr, /*forceReload=*/true);
+                    diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
+                }
+                m_scopeIndex.ClearDocument(uriStr);
+                m_callGraph.ClearDocument(uriStr);
+                if (tree)
+                {
+                    m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), analysisText));
+                    m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), analysisText));
+                }
+            }
+
+            const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
+
+            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree);
+            diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
+
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
+
+            PublishDiagnostics(uriStr, text, diagnostics);
+
+            if (wordsChanged)
+            {
+                ReanalyseOpenDocuments();
+            }
+
+            return;
+        }
+
         // Own tree, own copy of the text. The message loop owns m_documentTrees and deletes the
         // tree there on the next edit; reading it from here would be a use-after-free.
         //

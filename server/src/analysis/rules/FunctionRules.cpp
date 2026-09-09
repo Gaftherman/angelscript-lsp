@@ -216,7 +216,7 @@ namespace angel_lsp::analysis::rules
             // is opt-in: an engine-registered type and a typo look identical from here, and the
             // reasoning is in config::DiagnosticsConfig::reportUnknownTypes.
             if ((sig.isImported || ctx.request.ReportsUnknownTypes()) &&
-                !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" &&
+                !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" && sig.returnBaseTypeName != "?" &&
                 !IsKnownType(sig.returnBaseTypeName, ctx))
             {
                 ctx.LogRule("CheckReturnType", "as-err-unresolved-type", sym);
@@ -704,7 +704,7 @@ namespace angel_lsp::analysis::rules
             const bool judgeParameterType =
                 (sym.type == SymbolType::Function && sym.GetFunction().isImported) ||
                 ctx.request.ReportsUnknownTypes();
-            if (judgeParameterType && !param.baseTypeName.empty() && !IsKnownType(param.baseTypeName, ctx))
+            if (judgeParameterType && !param.baseTypeName.empty() && param.baseTypeName != "?" && !IsKnownType(param.baseTypeName, ctx))
             {
                 ctx.LogParam("ValidateParameters", "as-err-unresolved-type", param, sym);
 
