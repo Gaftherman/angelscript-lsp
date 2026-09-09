@@ -1553,16 +1553,8 @@ namespace angel_lsp::analysis
                 label = "Throws";
             else
             {
-                if (cleanedTag.size() >= 2 && cleanedTag[0] == 'n' &&
-                    std::isupper(static_cast<unsigned char>(cleanedTag[1])))
-                {
-                    label = cleanedTag.substr(1);
-                }
-                else
-                {
-                    char first = static_cast<char>(std::toupper(static_cast<unsigned char>(cleanedTag[0])));
-                    label = first + cleanedTag.substr(1);
-                }
+                char first = static_cast<char>(std::toupper(static_cast<unsigned char>(cleanedTag[0])));
+                label = first + cleanedTag.substr(1);
             }
 
             return DocBlock::MakeAdmonition(std::move(label), std::move(desc));

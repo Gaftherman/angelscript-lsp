@@ -445,6 +445,153 @@ namespace angel_lsp::analysis
         return result;
     }
 
+    TemplateBinding BindTemplateArguments(const std::string &writtenType, const SymbolTable &table)
+    {
+        TemplateBinding binding;
+
+        const size_t open = writtenType.find('<');
+        const std::string name = (open == std::string::npos) ? writtenType : writtenType.substr(0, open);
+
+        const auto declarations = table.FindSymbolsPtr(LastScopeSegment(name));
+        if (!declarations)
+        {
+            return binding;
+        }
+
+        for (const auto &declaration : *declarations)
+        {
+            if (declaration.type != SymbolType::Class ||
+                !std::holds_alternative<ClassSignature>(declaration.signature))
+            {
+                continue;
+            }
+            const auto &cls = std::get<ClassSignature>(declaration.signature);
+            if (!cls.isTemplate || cls.templateParams.empty())
+            {
+                continue;
+            }
+
+            binding.isTemplate = true;
+            binding.parameters = cls.templateParams;
+            break;
+        }
+
+        if (!binding.isTemplate || open == std::string::npos || !writtenType.ends_with('>'))
+        {
+            return binding;
+        }
+
+        const std::string inner = writtenType.substr(open + 1, writtenType.size() - open - 2);
+        binding.arguments = SplitTemplateArguments(inner);
+
+        if (!binding.arguments.empty() && binding.arguments.back().empty())
+        {
+            binding.arguments.pop_back();
+        }
+
+        binding.usable = binding.arguments.size() == binding.parameters.size();
+        return binding;
+    }
+
+    std::string SubstituteTemplateParameters(std::string_view typeStr, const TemplateBinding &binding)
+    {
+        std::string result(typeStr);
+        if (binding.usable)
+        {
+            for (size_t i = 0; i < binding.parameters.size(); ++i)
+            {
+                result = SubstituteTypeParam(result, binding.parameters[i], binding.arguments[i]);
+            }
+        }
+        return result;
+    }
+
+    std::string ResolveIndexedType(
+        std::string_view typeName,
+        size_t indexCount,
+        const SymbolTable &symbolTable,
+        std::string_view arrayTypeName)
+    {
+        std::string current(typeName);
+        for (size_t idx = 0; idx < indexCount && !current.empty(); ++idx)
+        {
+            std::string canonical = CanonicalizeArrayType(current, arrayTypeName);
+            std::string owner = MemberOwnerType(canonical, arrayTypeName);
+            if (owner.empty())
+            {
+                owner = CleanExpressionType(canonical);
+            }
+
+            std::string indexedType;
+            auto hierarchy = GetInheritedTypeHierarchy(owner, symbolTable);
+            for (const auto &typeInHierarchy : hierarchy)
+            {
+                auto found = symbolTable.FindSymbols(typeInHierarchy + "::opIndex");
+                for (const auto &sym : found)
+                {
+                    if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                    {
+                        std::string ret = sym.GetFunction().returnType;
+                        auto binding = BindTemplateArguments(canonical, symbolTable);
+                        if (binding.usable)
+                        {
+                            ret = SubstituteTemplateParameters(ret, binding);
+                        }
+                        else
+                        {
+                            auto tmpl = ParseTemplateType(canonical);
+                            if (tmpl.templateArgs.size() == 1)
+                            {
+                                ret = SubstituteTypeParam(ret, "T", tmpl.templateArgs[0]);
+                            }
+                            else if (tmpl.templateArgs.size() >= 2)
+                            {
+                                ret = SubstituteTypeParam(ret, "T", tmpl.templateArgs.back());
+                                ret = SubstituteTypeParam(ret, "V", tmpl.templateArgs[1]);
+                                ret = SubstituteTypeParam(ret, "K", tmpl.templateArgs[0]);
+                            }
+                        }
+                        indexedType = CleanExpressionType(ret);
+                        break;
+                    }
+                }
+                if (!indexedType.empty())
+                {
+                    break;
+                }
+            }
+
+            if (!indexedType.empty())
+            {
+                current = indexedType;
+                continue;
+            }
+
+            // Fallback for stubless environments or native bracket types
+            auto tmpl = ParseTemplateType(canonical);
+            if (!tmpl.templateArgs.empty())
+            {
+                if (tmpl.templateArgs.size() >= 2)
+                {
+                    current = CleanExpressionType(tmpl.templateArgs[1]);
+                }
+                else
+                {
+                    current = CleanExpressionType(tmpl.templateArgs[0]);
+                }
+            }
+            else if (canonical.ends_with("[]"))
+            {
+                current = CleanExpressionType(canonical.substr(0, canonical.size() - 2));
+            }
+            else
+            {
+                break;
+            }
+        }
+        return current;
+    }
+
     TemplateTypeInfo ParseTemplateType(std::string_view typeName)
     {
         TemplateTypeInfo info;
@@ -1773,15 +1920,14 @@ namespace angel_lsp::analysis
                     while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front()))) memName.erase(memName.begin());
                     while (!memName.empty() && isspace(static_cast<unsigned char>(memName.back()))) memName.pop_back();
 
-                    if (templateInfo.containerName == "array" && !templateInfo.templateArgs.empty())
+                    std::string ownerType = MemberOwnerType(objType);
+                    if (ownerType.empty())
                     {
-                        if (memName == "length" || memName == "size") { return "uint"; }
-                        if (memName == "isEmpty") { return "bool"; }
+                        ownerType = CleanExpressionType(objType);
                     }
 
-                    std::string cleanObj = CleanBaseType(objType);
                     std::vector<Symbol> candidates;
-                    auto hierarchy = GetInheritedTypeHierarchy(cleanObj, symbolTable);
+                    auto hierarchy = GetInheritedTypeHierarchy(ownerType, symbolTable);
                     for (const auto &typeName : hierarchy)
                     {
                         auto found = symbolTable.FindSymbols(typeName + "::" + memName);
@@ -1797,16 +1943,35 @@ namespace angel_lsp::analysis
                     if (!candidates.empty())
                     {
                         auto match = ResolveBestOverload(candidates, argTypes, symbolTable);
-                        if (match.bestCandidate && std::holds_alternative<FunctionSignature>(match.bestCandidate->signature))
+                        const Symbol *chosen = match.bestCandidate ? match.bestCandidate : &candidates[0];
+                        if (chosen && std::holds_alternative<FunctionSignature>(chosen->signature))
                         {
-                            std::string ret = match.bestCandidate->GetFunction().returnType;
-                            if (ret == "T" && !templateInfo.templateArgs.empty())
+                            std::string ret = chosen->GetFunction().returnType;
+                            auto binding = BindTemplateArguments(objType, symbolTable);
+                            if (binding.usable)
                             {
-                                return templateInfo.templateArgs[0];
+                                ret = SubstituteTemplateParameters(ret, binding);
+                            }
+                            else if (!templateInfo.templateArgs.empty())
+                            {
+                                ret = SubstituteTypeParam(ret, "T", templateInfo.templateArgs[0]);
                             }
                             return CleanExpressionType(ret);
                         }
                         return CleanExpressionType(candidates[0].GetFunction().returnType);
+                    }
+
+                    // Fallback when symbol table has no stubs or declarations for this container method
+                    if (!templateInfo.templateArgs.empty() || objType.ends_with("[]"))
+                    {
+                        if (memName == "length" || memName == "size")
+                        {
+                            return "uint";
+                        }
+                        if (memName == "isEmpty")
+                        {
+                            return "bool";
+                        }
                     }
                 }
             }
@@ -1896,37 +2061,7 @@ namespace angel_lsp::analysis
                 return "";
             }
 
-            auto templateInfo = ParseTemplateType(objType);
-            if (templateInfo.containerName == "array" && !templateInfo.templateArgs.empty())
-            {
-                return CleanExpressionType(templateInfo.templateArgs[0]);
-            }
-            if ((templateInfo.containerName == "dictionary" || templateInfo.containerName == "map") &&
-                templateInfo.templateArgs.size() >= 2)
-            {
-                return CleanExpressionType(templateInfo.templateArgs[1]);
-            }
-
-            std::string cleanObj = CleanBaseType(objType);
-            std::vector<Symbol> candidates;
-            auto hierarchy = GetInheritedTypeHierarchy(cleanObj, symbolTable);
-            for (const auto &typeName : hierarchy)
-            {
-                auto found = symbolTable.FindSymbols(typeName + "::opIndex");
-                for (const auto &sym : found)
-                {
-                    if (sym.type == SymbolType::Function)
-                    {
-                        candidates.push_back(sym);
-                    }
-                }
-            }
-            if (!candidates.empty())
-            {
-                return CleanExpressionType(candidates[0].GetFunction().returnType);
-            }
-
-            return "";
+            return ResolveIndexedType(objType, 1, symbolTable);
         }
 
         // Unary expression (e.g. !x, -x, ++i)

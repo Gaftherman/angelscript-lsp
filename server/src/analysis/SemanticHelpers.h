@@ -493,6 +493,49 @@ namespace angel_lsp::analysis
     std::string SubstituteTypeParam(std::string_view typeStr, std::string_view paramName, std::string_view concreteType);
 
     /**
+     * @brief A template type's parameters paired with the arguments written at the use site.
+     */
+    struct TemplateBinding
+    {
+        bool isTemplate = false;
+        bool usable = false; ///< False when the arity does not line up, so nothing may be concluded.
+        std::vector<std::string> parameters;
+        std::vector<std::string> arguments;
+    };
+
+    /**
+     * @brief Resolves template arguments and parameters for a type from its declaration in the SymbolTable.
+     * @param writtenType The instantiated type string (e.g. "map<string, int>").
+     * @param table The symbol table.
+     * @return TemplateBinding structure.
+     */
+    TemplateBinding BindTemplateArguments(const std::string &writtenType, const SymbolTable &table);
+
+    /**
+     * @brief Replaces all bound template parameters with their corresponding concrete arguments in a type string.
+     * @param typeStr Type string containing generic parameters.
+     * @param binding The active template binding.
+     * @return Substituted type string.
+     */
+    std::string SubstituteTemplateParameters(std::string_view typeStr, const TemplateBinding &binding);
+
+    /**
+     * @brief Resolves the resulting type after applying N indexing operations: `x[0][1]`.
+     *        Queries `opIndex` from the symbol table with template substitution,
+     *        falling back to template arguments or bracket array syntax.
+     * @param typeName Written or resolved type name.
+     * @param indexCount Number of index brackets applied.
+     * @param symbolTable Symbol table.
+     * @param arrayTypeName Array container name from config (defaults to "array").
+     * @return Resulting element or value type.
+     */
+    std::string ResolveIndexedType(
+        std::string_view typeName,
+        size_t indexCount,
+        const SymbolTable &symbolTable,
+        std::string_view arrayTypeName = "array");
+
+    /**
      * @brief Performs container-aware, using-aware and inheritance-aware symbol lookup for a name at an AST node.
      * @param name Symbol name to resolve.
      * @param node The AST node providing lexical context.

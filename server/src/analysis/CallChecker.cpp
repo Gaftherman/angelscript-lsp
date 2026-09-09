@@ -597,7 +597,28 @@ namespace angel_lsp::analysis
                 }
 
                 candidates = FindMethodCandidates(objectType, reportedName, table);
-                if (!templateArgs.empty())
+                const auto binding = BindTemplateArguments(objectType, table);
+                if (binding.usable)
+                {
+                    for (auto &sym : candidates)
+                    {
+                        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                        {
+                            auto fn = sym.GetFunction();
+                            for (size_t i = 0; i < binding.parameters.size(); ++i)
+                            {
+                                fn.returnType = SubstituteTypeParam(fn.returnType, binding.parameters[i], binding.arguments[i]);
+                                for (auto &p : fn.parameters)
+                                {
+                                    p.typeName = SubstituteTypeParam(p.typeName, binding.parameters[i], binding.arguments[i]);
+                                    p.baseTypeName = SubstituteTypeParam(p.baseTypeName, binding.parameters[i], binding.arguments[i]);
+                                }
+                            }
+                            sym.signature = fn;
+                        }
+                    }
+                }
+                else if (!templateArgs.empty())
                 {
                     for (auto &sym : candidates)
                     {

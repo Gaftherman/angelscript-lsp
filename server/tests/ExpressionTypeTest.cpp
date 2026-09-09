@@ -193,4 +193,53 @@ TEST_SUITE("ExpressionTypeDeduction")
             "}\n";
         CHECK(DeduceTypeInMain(code4) == "float");
     }
+
+    TEST_CASE("Custom container with opIndex and template parameter binding")
+    {
+        std::string code1 =
+            "class CustomList<T>\n"
+            "{\n"
+            "    T& opIndex(uint idx);\n"
+            "}\n"
+            "void main()\n"
+            "{\n"
+            "    CustomList<string> list;\n"
+            "    list[0];\n"
+            "}\n";
+        CHECK(DeduceTypeInMain(code1) == "string");
+
+        std::string code2 =
+            "class MyMap<Key, Value>\n"
+            "{\n"
+            "    Value& opIndex(const Key &in key);\n"
+            "}\n"
+            "void main()\n"
+            "{\n"
+            "    MyMap<int, float> map;\n"
+            "    map[42];\n"
+            "}\n";
+        CHECK(DeduceTypeInMain(code2) == "float");
+
+        std::string code3 =
+            "class Player {}\n"
+            "class PlayerRegistry\n"
+            "{\n"
+            "    Player@ opIndex(uint idx);\n"
+            "}\n"
+            "void main()\n"
+            "{\n"
+            "    PlayerRegistry reg;\n"
+            "    reg[0];\n"
+            "}\n";
+        CHECK(DeduceTypeInMain(code3) == "Player@");
+
+        std::string code4 =
+            "void main()\n"
+            "{\n"
+            "    int[] nums;\n"
+            "    nums[0];\n"
+            "}\n";
+        CHECK(DeduceTypeInMain(code4) == "int");
+    }
 }
+

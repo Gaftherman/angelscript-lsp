@@ -57,7 +57,9 @@ namespace angel_lsp::features
                    std::string_view(sym.name).substr(1) == shortName;
         }
 
-        std::string FormatMethodDetail(const analysis::Symbol &sym, const std::vector<std::string> &templateArgs)
+        std::string FormatMethodDetail(const analysis::Symbol &sym,
+                                       const analysis::TemplateBinding &binding,
+                                       const std::vector<std::string> &templateArgs)
         {
             if (sym.type != analysis::SymbolType::Function)
             {
@@ -65,7 +67,19 @@ namespace angel_lsp::features
             }
             analysis::Symbol substitutedSym = sym;
             auto fn = sym.GetFunction();
-            if (!templateArgs.empty())
+            if (binding.usable)
+            {
+                for (size_t i = 0; i < binding.parameters.size(); ++i)
+                {
+                    fn.returnType = analysis::SubstituteTypeParam(fn.returnType, binding.parameters[i], binding.arguments[i]);
+                    for (auto &param : fn.parameters)
+                    {
+                        param.typeName = analysis::SubstituteTypeParam(param.typeName, binding.parameters[i], binding.arguments[i]);
+                        param.baseTypeName = analysis::SubstituteTypeParam(param.baseTypeName, binding.parameters[i], binding.arguments[i]);
+                    }
+                }
+            }
+            else if (!templateArgs.empty())
             {
                 fn.returnType = analysis::SubstituteTypeParam(fn.returnType, "T", templateArgs[0]);
                 for (auto &param : fn.parameters)
@@ -985,20 +999,7 @@ namespace angel_lsp::features
 
                 if (!rawTypeName.empty())
                 {
-                    std::string canonicalType = CanonicalizeArrayType(rawTypeName, arrayContainer);
-                    for (size_t idx = 0; idx < seg0.indexCount; ++idx)
-                    {
-                        auto tmpl = analysis::ParseTemplateType(canonicalType);
-                        if (!tmpl.templateArgs.empty())
-                        {
-                            canonicalType = tmpl.templateArgs[0];
-                        }
-                        else if (canonicalType.ends_with("[]"))
-                        {
-                            canonicalType = canonicalType.substr(0, canonicalType.size() - 2);
-                        }
-                    }
-                    rawTypeName = canonicalType;
+                    rawTypeName = analysis::ResolveIndexedType(rawTypeName, seg0.indexCount, request.symbolTable, arrayContainer);
                 }
 
                 // Resolve subsequent chained segments
@@ -1060,20 +1061,7 @@ namespace angel_lsp::features
                         break;
                     }
 
-                    std::string canonicalNext = CanonicalizeArrayType(nextTypeName, arrayContainer);
-                    for (size_t idx = 0; idx < seg.indexCount; ++idx)
-                    {
-                        auto tmpl = analysis::ParseTemplateType(canonicalNext);
-                        if (!tmpl.templateArgs.empty())
-                        {
-                            canonicalNext = tmpl.templateArgs[0];
-                        }
-                        else if (canonicalNext.ends_with("[]"))
-                        {
-                            canonicalNext = canonicalNext.substr(0, canonicalNext.size() - 2);
-                        }
-                    }
-                    rawTypeName = canonicalNext;
+                    rawTypeName = analysis::ResolveIndexedType(nextTypeName, seg.indexCount, request.symbolTable, arrayContainer);
                 }
             }
 
@@ -1085,6 +1073,24 @@ namespace angel_lsp::features
                 auto targetTemplate = analysis::ParseTemplateType(canonicalType);
                 std::string baseContainer = targetTemplate.containerName;
                 std::vector<std::string> templateArgs = targetTemplate.templateArgs;
+                const auto binding = analysis::BindTemplateArguments(canonicalType, request.symbolTable);
+
+                auto substituteParams = [&](std::string text) -> std::string
+                {
+                    if (binding.usable)
+                    {
+                        for (size_t i = 0; i < binding.parameters.size(); ++i)
+                        {
+                            text = analysis::SubstituteTypeParam(text, binding.parameters[i], binding.arguments[i]);
+                        }
+                        return text;
+                    }
+                    if (!templateArgs.empty())
+                    {
+                        return analysis::SubstituteTypeParam(text, "T", templateArgs[0]);
+                    }
+                    return text;
+                };
 
                 const auto ruleIndex = request.symbolTable.GetRuleIndex();
 
@@ -1109,17 +1115,13 @@ namespace angel_lsp::features
                                 if (sym.type == analysis::SymbolType::Function)
                                 {
                                     kind = lsp::CompletionItemKind::Method;
-                                    detail = FormatMethodDetail(sym, templateArgs);
+                                    detail = FormatMethodDetail(sym, binding, templateArgs);
                                 }
                                 else if (sym.type == analysis::SymbolType::Variable)
                                 {
                                     kind = lsp::CompletionItemKind::Field;
                                     const auto &var = sym.GetVariable();
-                                    detail = var.typeName;
-                                    if (!templateArgs.empty())
-                                    {
-                                        detail = analysis::SubstituteTypeParam(detail, "T", templateArgs[0]);
-                                    }
+                                    detail = substituteParams(var.typeName);
                                 }
                                 else if (sym.type == analysis::SymbolType::Property)
                                 {
@@ -1148,10 +1150,7 @@ namespace angel_lsp::features
                                     analysis::FindPropertyAccessors(typeName, propertyName,
                                                                     request.symbolTable,
                                                                     accessorKeywordRequired));
-                                if (!templateArgs.empty())
-                                {
-                                    propertyType = analysis::SubstituteTypeParam(propertyType, "T", templateArgs[0]);
-                                }
+                                propertyType = substituteParams(propertyType);
 
                                 // Resolved against the accessor, so the doc comment written on the
                                 // getter is the one the user reads on the property.
