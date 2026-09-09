@@ -3,6 +3,7 @@
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <string>
@@ -215,8 +216,10 @@ namespace angel_lsp::analysis::rules
             // against another module by signature - so that case is always judged. Everything else
             // is opt-in: an engine-registered type and a typo look identical from here, and the
             // reasoning is in config::DiagnosticsConfig::reportUnknownTypes.
+            const bool isPredefined = angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
             if ((sig.isImported || ctx.request.ReportsUnknownTypes()) &&
-                !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" && sig.returnBaseTypeName != "?" &&
+                !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" &&
+                !(isPredefined && sig.returnBaseTypeName == "?") &&
                 !IsKnownType(sig.returnBaseTypeName, ctx))
             {
                 ctx.LogRule("CheckReturnType", "as-err-unresolved-type", sym);
@@ -701,10 +704,13 @@ namespace angel_lsp::analysis::rules
                 }
             }
 
+            const bool isPredefined = angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
             const bool judgeParameterType =
                 (sym.type == SymbolType::Function && sym.GetFunction().isImported) ||
                 ctx.request.ReportsUnknownTypes();
-            if (judgeParameterType && !param.baseTypeName.empty() && param.baseTypeName != "?" && !IsKnownType(param.baseTypeName, ctx))
+            if (judgeParameterType && !param.baseTypeName.empty() &&
+                !(isPredefined && param.baseTypeName == "?") &&
+                !IsKnownType(param.baseTypeName, ctx))
             {
                 ctx.LogParam("ValidateParameters", "as-err-unresolved-type", param, sym);
 

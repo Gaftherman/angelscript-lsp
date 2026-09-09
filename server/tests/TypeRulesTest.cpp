@@ -603,6 +603,28 @@ TEST_SUITE("AngelScript_Funcdef_Verification")
         CHECK((diagnostics[0].code == "as-err-unresolved-type" || diagnostics[0].code == "E_UNKNOWN_TYPE")); // UnregisteredType
         CHECK((diagnostics[1].code == "as-err-unresolved-type" || diagnostics[1].code == "E_UNKNOWN_TYPE")); // UnknownParam
     }
+
+    TEST_CASE("Diagnostics: Wildcard type '?' allowed only in predefined stubs")
+    {
+        const char *predefinedScript = R"(
+            funcdef bool Less(const ? &in a, const ? &in b);
+        )";
+
+        auto predefinedDoc = CreateTestDocument("file:///workspace/as.predefined", predefinedScript);
+        REQUIRE(predefinedDoc != nullptr);
+        auto predefinedDiags = predefinedDoc->GetDiagnostics();
+        CHECK(predefinedDiags.empty());
+
+        const char *normalScript = R"(
+            funcdef bool NormalLess(const ? &in a, const ? &in b);
+        )";
+
+        auto normalDoc = CreateTestDocument("file:///workspace/script.as", normalScript);
+        REQUIRE(normalDoc != nullptr);
+        auto normalDiags = normalDoc->GetDiagnostics();
+        REQUIRE(normalDiags.size() >= 1);
+        CHECK(normalDiags[0].code == "as-err-unresolved-type");
+    }
 }
 
 TEST_SUITE("AngelScript_EngineParity_Verification")

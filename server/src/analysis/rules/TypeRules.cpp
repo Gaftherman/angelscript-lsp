@@ -227,8 +227,10 @@ namespace angel_lsp::analysis::rules
             // Script code cannot write `?` either, but that is a different complaint with a
             // different message - the compiler says "Expected data type", not "unknown type" - and
             // this rule is not the place to invent it.
+            const bool isPredefined = angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
             const std::string paramBase = CleanBaseType(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
-            if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" && paramBase != "?" &&
+            if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" &&
+                !(isPredefined && paramBase == "?") &&
                 !IsKnownType(paramBase, ctx))
             {
                 ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
