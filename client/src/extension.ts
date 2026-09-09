@@ -657,14 +657,22 @@ export function buildServerArgs(): string[] {
         args.push('--implicit-include-extension=true');
     }
 
-    for (const mod of config.get<Array<{ name?: string; entry?: string }>>('modules', [])) {
+    for (const mod of config.get<Array<{ name?: string; entry?: string; folder?: string }>>('modules', [])) {
         const name = mod?.name?.trim();
         const entry = mod?.entry?.trim();
-        if (!name || !entry) {
+        const folder = mod?.folder?.trim();
+        if (!name || (!entry && !folder)) {
             continue;
         }
-        for (const resolved of resolveAgainstWorkspace(entry)) {
-            args.push(`--module=${name}=${resolved}`);
+        if (entry) {
+            for (const resolved of resolveAgainstWorkspace(entry)) {
+                args.push(`--module=${name}=${resolved}`);
+            }
+        }
+        if (folder) {
+            for (const resolved of resolveAgainstWorkspace(folder)) {
+                args.push(`--module-folder=${name}=${resolved}`);
+            }
         }
     }
 

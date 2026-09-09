@@ -3302,6 +3302,14 @@ namespace angel_lsp
         {
             if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end() && indexed->second == uriStr)
                 m_indexedUriByPath.erase(indexed);
+
+            // If the document that was closed belongs to a configured module, revert it to an
+            // on-disk closure file so its declarations remain visible to the module.
+            if (ClaimFor(path).owner != nullptr)
+            {
+                angel_lsp::parser::AngelScriptParser restoreParser(m_logger.get());
+                IndexClosureFile(path, restoreParser);
+            }
         }
 
         // Closing a file does not remove it from the modules of the documents still open. Re-running
@@ -3582,6 +3590,7 @@ namespace angel_lsp
         m_indexedUriByPath[openPath] = openUriStr;
 
         std::vector<std::string> indexed;
+        size_t newlyIndexed = 0;
         angel_lsp::parser::AngelScriptParser closureParser(m_logger.get());
 
         for (const auto &path : m_includeGraph.GetModuleClosure(openPath))
@@ -3603,14 +3612,17 @@ namespace angel_lsp
             }
 
             if (!m_closureDocuments.contains(uriStr))
+            {
                 IndexClosureFile(path, closureParser);
+                ++newlyIndexed;
+            }
 
             indexed.push_back(uriStr);
         }
 
-        if (!indexed.empty())
+        if (newlyIndexed > 0)
         {
-            m_logger->LogInfo(fmt::format("Indexed {} file(s) from the #include module of {}", indexed.size(), openUriStr));
+            m_logger->LogInfo(fmt::format("Indexed {} file(s) from the #include module of {}", newlyIndexed, openUriStr));
         }
 
         m_openDocumentClosures[openUriStr] = std::move(indexed);
@@ -3639,7 +3651,18 @@ namespace angel_lsp
             }
 
             if (!stillNeeded)
+            {
+                // A closure file that belongs to a configured module must not be purged when an
+                // open document is closed; its symbols were indexed for the workspace and stay
+                // valid until the module configuration itself changes.
+                const std::string path = CanonicalPathFromUri(uriStr);
+                if (!path.empty() && ClaimFor(path).owner != nullptr)
+                {
+                    continue;
+                }
+
                 PurgeClosureFile(uriStr);
+            }
         }
     }
 

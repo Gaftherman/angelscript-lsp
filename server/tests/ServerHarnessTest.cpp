@@ -5724,6 +5724,51 @@ TEST_CASE("Server - The cost of a module-wide pass is measured rather than assum
     CHECK(published == static_cast<size_t>(k_files));
 }
 
+TEST_CASE("Server - Closing an open file in a folder module does not purge module symbols")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("scripts/maps/decl.as", "void RetainedHelper() { }\n");
+    fixture.Write("scripts/maps/use.as", "void UserFunc()\n{\n    RetainedHelper();\n}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    // Open decl.as so its buffer is active
+    stream.Push(DidOpenMessage(fixture.Uri("scripts/maps/decl.as"), "void RetainedHelper() { }\n"));
+
+    // Close decl.as: its symbols must NOT be purged from the module MapScript
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":")" +
+                fixture.Uri("scripts/maps/decl.as") + R"("}}})");
+
+    // Open use.as: RetainedHelper must still be known and resolve without error
+    stream.Push(DidOpenMessage(fixture.Uri("scripts/maps/use.as"), "void UserFunc()\n{\n    RetainedHelper();\n}\n"));
+
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (stream.OutputContains("use.as"))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    serverConfig.modules = { { "MapScript", "", (fixture.dir / "scripts/maps").generic_string() } };
+
+    RunScript(serverConfig, stream);
+
+    const std::string published = LastPublishedFor(stream.Output(), "use.as");
+    INFO("published for use.as: " << published);
+    CHECK(published.find("as-err-undefined-identifier") == std::string::npos);
+}
+
 TEST_CASE("Server - Opening a predefined stub rewrites inline list patterns without error")
 {
     const std::string probe =

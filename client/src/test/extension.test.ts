@@ -263,6 +263,46 @@ suite('path variables in settings', () => {
     });
 });
 
+suite('modules in buildServerArgs', () => {
+    test('modules with entry emits --module flag', async () => {
+        const folders = workspace.workspaceFolders ?? [];
+        assert.ok(folders.length > 0, 'this test needs the fixture workspace from .vscode-test.mjs');
+
+        const args = await withSetting('modules', [{ name: 'Game', entry: '${workspaceFolder}/main.as' }], buildServerArgs);
+        const emitted = valuesOf(args, '--module=');
+        assert.strictEqual(emitted.length, folders.length);
+        assert.ok(emitted[0].startsWith('Game='), `expected Game= prefix, got ${emitted[0]}`);
+    });
+
+    test('modules with folder emits --module-folder flag', async () => {
+        const folders = workspace.workspaceFolders ?? [];
+        assert.ok(folders.length > 0, 'this test needs the fixture workspace from .vscode-test.mjs');
+
+        const args = await withSetting('modules', [{ name: 'Scripts', folder: '${workspaceFolder}/scripts' }], buildServerArgs);
+        const emitted = valuesOf(args, '--module-folder=');
+        assert.strictEqual(emitted.length, folders.length);
+        assert.ok(emitted[0].startsWith('Scripts='), `expected Scripts= prefix, got ${emitted[0]}`);
+    });
+
+    test('modules with both entry and folder emits both flags', async () => {
+        const folders = workspace.workspaceFolders ?? [];
+        assert.ok(folders.length > 0, 'this test needs the fixture workspace from .vscode-test.mjs');
+
+        const args = await withSetting('modules', [{
+            name: 'Mixed',
+            entry: '${workspaceFolder}/main.as',
+            folder: '${workspaceFolder}/scripts'
+        }], buildServerArgs);
+
+        const emittedModule = valuesOf(args, '--module=');
+        const emittedFolder = valuesOf(args, '--module-folder=');
+        assert.strictEqual(emittedModule.length, folders.length);
+        assert.strictEqual(emittedFolder.length, folders.length);
+        assert.ok(emittedModule[0].startsWith('Mixed='), `expected Mixed= prefix, got ${emittedModule[0]}`);
+        assert.ok(emittedFolder[0].startsWith('Mixed='), `expected Mixed= prefix, got ${emittedFolder[0]}`);
+    });
+});
+
 suite('portableStubPath', () => {
     test('a stub inside a workspace folder is stored as ${workspaceFolder}/...', () => {
         // The picker used to write the absolute path it had in hand, which pins the setting to one
