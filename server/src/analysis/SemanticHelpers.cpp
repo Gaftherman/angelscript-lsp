@@ -243,9 +243,16 @@ namespace angel_lsp::analysis
             {
                 return NonInstantiableKind::Interface;
             }
-            if (sym.type == SymbolType::Class && sym.GetClass().modifiers.isAbstract)
+            if (sym.type == SymbolType::Class)
             {
-                return NonInstantiableKind::Abstract;
+                if (sym.GetClass().modifiers.isMixin)
+                {
+                    return NonInstantiableKind::Mixin;
+                }
+                if (sym.GetClass().modifiers.isAbstract)
+                {
+                    return NonInstantiableKind::Abstract;
+                }
             }
         }
         return NonInstantiableKind::None;
@@ -1592,9 +1599,12 @@ namespace angel_lsp::analysis
                     if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
                     {
                         auto hier = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, symbolTable);
-                        if (hier.size() > 1)
+                        for (size_t i = 1; i < hier.size(); ++i)
                         {
-                            return CleanExpressionType(hier[1]);
+                            if (!IsMixinClass(hier[i], symbolTable))
+                            {
+                                return CleanExpressionType(hier[i]);
+                            }
                         }
                         break;
                     }

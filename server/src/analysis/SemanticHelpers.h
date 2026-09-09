@@ -263,7 +263,8 @@ namespace angel_lsp::analysis
     {
         None,       ///< The type can be instantiated, or this analyzer cannot see its declaration.
         Abstract,   ///< An abstract class.
-        Interface   ///< An interface.
+        Interface,  ///< An interface.
+        Mixin       ///< A mixin class.
     };
 
     /**

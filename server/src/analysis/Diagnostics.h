@@ -2,6 +2,7 @@
 
 #include <string>
 #include <cstdint>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -28,6 +29,14 @@ namespace angel_lsp::analysis
         DiagnosticPosition end;
     };
 
+    /** @brief Represents a related information location for an LSP Diagnostic. */
+    struct DiagnosticRelatedInformation
+    {
+        DiagnosticRange range;
+        std::string message;
+        std::string fileUri;
+    };
+
     /** @brief Represents a single LSP Diagnostic message to be published to the client. */
     struct Diagnostic
     {
@@ -37,5 +46,7 @@ namespace angel_lsp::analysis
         std::string source = "AngelScript";
         std::string message;
         std::string fileUri;
+        std::vector<DiagnosticRelatedInformation> relatedInformation;
     };
 }
+

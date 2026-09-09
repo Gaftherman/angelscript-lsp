@@ -248,6 +248,7 @@ namespace angel_lsp::analysis
     struct ClassSignature
     {
         std::vector<std::string> bases;
+        std::vector<std::string> includedMixins;
         std::vector<std::string> templateParams;
         SymbolModifiers modifiers;
         bool isTemplate = false;
@@ -447,6 +448,7 @@ namespace angel_lsp::analysis
          * 411 ms a 646 KB stub took to load. `staging` is left empty.
          */
         void ReplaceDocumentSymbols(const std::string &fileUri, SymbolTable &&staging);
+        void ResolveIncludedMixins();
 
         bool HasSymbol(const std::string &qualifiedName) const;
         bool HasSymbolAnywhere(const std::string &name) const;
@@ -513,6 +515,7 @@ namespace angel_lsp::analysis
 
         /** @brief The half both ReplaceDocumentSymbols overloads share: take the write lock, swap the file's symbols for these. */
         void PublishDocumentSymbols(const std::string &fileUri, std::vector<Symbol> &&fresh);
+        void ResolveIncludedMixinsLocked();
 
         struct TransparentStringHash
         {

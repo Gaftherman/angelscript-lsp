@@ -1,5 +1,6 @@
 #include "SymbolTable.h"
 #include "analysis/rules/RuleIndex.h"
+#include "analysis/SemanticHelpers.h"
 #include "utils/LspLogger.h"
 #include "spdlog/fmt/fmt.h"
 
@@ -223,8 +224,70 @@ namespace angel_lsp::analysis
             MutableBucket(m_symbols[key]).push_back(std::move(symbol));
         }
 
+        ResolveIncludedMixinsLocked();
         ++m_version;
     }
+
+    void SymbolTable::ResolveIncludedMixinsLocked()
+    {
+        for (auto &[name, bucket] : m_symbols)
+        {
+            if (!bucket)
+            {
+                continue;
+            }
+
+            bool hasClass = false;
+            for (const auto &sym : *bucket)
+            {
+                if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+                {
+                    hasClass = true;
+                    break;
+                }
+            }
+
+            if (!hasClass)
+            {
+                continue;
+            }
+
+            std::vector<Symbol> &symbols = MutableBucket(bucket);
+            for (auto &sym : symbols)
+            {
+                if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+                {
+                    auto &sig = std::get<ClassSignature>(sym.signature);
+                    sig.includedMixins.clear();
+                    for (const auto &b : sig.bases)
+                    {
+                        std::string clean = CleanBaseType(b);
+                        auto it = m_symbols.find(clean);
+                        if (it != m_symbols.end() && it->second)
+                        {
+                            for (const auto &cand : *it->second)
+                            {
+                                if (cand.type == SymbolType::Class &&
+                                    std::holds_alternative<ClassSignature>(cand.signature) &&
+                                    cand.GetClass().modifiers.isMixin)
+                                {
+                                    sig.includedMixins.push_back(clean);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    void SymbolTable::ResolveIncludedMixins()
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        ResolveIncludedMixinsLocked();
+    }
+
 
     static inline std::string_view CleanScope(const std::string &name)
     {

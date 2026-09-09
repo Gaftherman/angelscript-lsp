@@ -2522,7 +2522,7 @@ namespace angel_lsp::analysis
                     }
 
                     const DeclaredType declared = ReadDeclaredType(typeNode, ctx, request.sourceCode);
-                    if (declared.usable)
+                    if (declared.usable && !IsMixinClass(declared.baseName, ctx.request.symbolTable))
                     {
                         for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
                         {
@@ -2536,7 +2536,8 @@ namespace angel_lsp::analysis
 
                             if (!declared.isHandle)
                             {
-                                if (ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable) == NonInstantiableKind::Abstract)
+                                NonInstantiableKind nonInst = ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable);
+                                if (nonInst == NonInstantiableKind::Abstract)
                                 {
                                     EmitAtNode(child, ctx, "as-err-abstract-instantiated", declared.baseName, declared.baseName);
                                 }
@@ -3027,9 +3028,14 @@ namespace angel_lsp::analysis
                     calleeFuncdef = FindFuncdef(calleeName, ctx.request.symbolTable);
                 }
 
-                if (ClassifyNonInstantiable(calleeName, ctx.request.symbolTable) == NonInstantiableKind::Abstract)
+                NonInstantiableKind calleeNonInst = ClassifyNonInstantiable(calleeName, ctx.request.symbolTable);
+                if (calleeNonInst == NonInstantiableKind::Abstract)
                 {
                     EmitAtNode(node, ctx, "as-err-abstract-instantiated", calleeName, calleeName);
+                }
+                else if (calleeNonInst == NonInstantiableKind::Mixin)
+                {
+                    EmitAtNode(node, ctx, "as-err-mixin-not-a-type", calleeName);
                 }
                 else if (calleeFuncdef)
                 {

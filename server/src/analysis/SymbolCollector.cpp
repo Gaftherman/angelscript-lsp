@@ -137,6 +137,7 @@ namespace angel_lsp::analysis
 
         TSNode rootNode = ts_tree_root_node(tree);
         CollectFromTree(rootNode, sourceCode, fileUri, symbolTable, i18n, diagnostics);
+        symbolTable.ResolveIncludedMixins();
 
         ts_tree_delete(tree);
         return diagnostics;
@@ -150,6 +151,7 @@ namespace angel_lsp::analysis
 
         TSNode rootNode = ts_tree_root_node(tree);
         CollectFromTree(rootNode, sourceCode, fileUri, symbolTable, i18n, diagnostics);
+        symbolTable.ResolveIncludedMixins();
 
         return diagnostics;
     }

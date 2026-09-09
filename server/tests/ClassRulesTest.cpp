@@ -268,18 +268,23 @@ TEST_CASE("ClassRules - An abstract class that implements its interface is silen
     CHECK_FALSE(HasCode(AnalyzeClassSnippet(code), "as-err-interface-impl-missing"));
 }
 
-// The surprising half, and the reason this needed the oracle rather than a reading of the docs:
-// a mixin that names an interface must implement it *itself*. A class including the mixin and
-// implementing the method does not satisfy the mixin - the compiler reports both.
-// tests/parity/doc_r23_mixin_missing_impl.as.
-TEST_CASE("ClassRules - A mixin naming an interface must implement it itself")
+// Deferred interface completion: a mixin that names an interface may omit methods;
+// the consuming class is required to complete the interface.
+TEST_CASE("ClassRules - A mixin naming an interface defers completion to the consuming class")
 {
-    const std::string code =
+    const std::string codeValid =
         "interface IThink { void Think(); }\n"
         "mixin class Helper : IThink { void Assist() {} }\n"
         "class Agent : Helper { void Think() {} }\n";
 
-    CHECK(HasCode(AnalyzeClassSnippet(code), "as-err-interface-impl-missing"));
+    CHECK_FALSE(HasCode(AnalyzeClassSnippet(codeValid), "as-err-interface-impl-missing"));
+
+    const std::string codeMissing =
+        "interface IThink { void Think(); }\n"
+        "mixin class Helper : IThink { void Assist() {} }\n"
+        "class IncompleteAgent : Helper {}\n";
+
+    CHECK(HasCode(AnalyzeClassSnippet(codeMissing), "as-err-interface-impl-missing"));
 }
 
 TEST_CASE("ClassRules - A mixin that implements its interface is silent")

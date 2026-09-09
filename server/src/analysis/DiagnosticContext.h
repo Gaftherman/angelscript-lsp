@@ -43,6 +43,7 @@ namespace angel_lsp::analysis
         void EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
         void EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, std::string_view arg1, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
         void EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, std::string_view arg1, std::string_view arg2, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+        void EmitWithRelated(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, std::string_view arg1, const DiagnosticRelatedInformation &related, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
         /**
          * @brief Emits at the type name inside a declaration, rather than over the declaration.
