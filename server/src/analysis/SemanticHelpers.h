@@ -376,6 +376,17 @@ namespace angel_lsp::analysis
                                               bool keywordRequired);
 
     /**
+     * @brief The global `get_X`/`set_X` functions that stand for virtual property `X`.
+     * @param propertyName Name of the property (without get_/set_ prefix).
+     * @param symbolTable Symbol table to search.
+     * @param keywordRequired True if the `property` modifier is required (accessor mode 3).
+     * @return The accessors found, getter first when both exist; empty when not a property.
+     */
+    std::vector<Symbol> FindGlobalPropertyAccessors(const std::string &propertyName,
+                                                    const SymbolTable &symbolTable,
+                                                    bool keywordRequired);
+
+    /**
      * @brief The type a property backed by these accessors carries.
      *
      * The getter's return type, or the setter's parameter when there is no getter - a write-only

@@ -1095,3 +1095,36 @@ TEST_CASE("Completion - Without snippetSupport a function still completes to its
     REQUIRE(fn != nullptr);
     CHECK_FALSE(fn->insertText.has_value());
 }
+
+TEST_CASE("Completion - Global property accessor completes to property item")
+{
+    TestEnvironment env(
+        "class CModule { }\n"
+        "CModule@ get_g_Module();\n"
+        "void Main() {\n"
+        "    g_\n"
+        "}\n");
+
+    const auto items = env.CompleteAt(3, 6);
+    const auto *prop = FindItemOfKind(items, "g_Module", lsp::CompletionItemKind::Property);
+    REQUIRE(prop != nullptr);
+    CHECK(prop->detail == "CModule@");
+}
+
+TEST_CASE("Completion - Chained member access completes across multiple levels")
+{
+    TestEnvironment env(
+        "class CScriptInfo { int version; void Reset() {} }\n"
+        "class CModule { CScriptInfo@ get_ScriptInfo(); }\n"
+        "CModule@ get_g_Module();\n"
+        "void Main() {\n"
+        "    g_Module.ScriptInfo.\n"
+        "}\n");
+
+    const auto items = env.CompleteAt(4, 24);
+    const auto *ver = FindItemOfKind(items, "version", lsp::CompletionItemKind::Field);
+    REQUIRE(ver != nullptr);
+    const auto *reset = FindItemOfKind(items, "Reset", lsp::CompletionItemKind::Method);
+    REQUIRE(reset != nullptr);
+}
+

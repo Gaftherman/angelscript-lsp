@@ -45,9 +45,12 @@ namespace
             }
         }
 
+        std::function<std::string(const std::string &)> resolveInclude = {};
+
         std::optional<std::vector<lsp::Location>> DefAt(uint32_t line, uint32_t character)
         {
             DefinitionRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{ line, character } };
+            req.resolveInclude = resolveInclude;
             return GetDefinition(req);
         }
 
@@ -217,3 +220,38 @@ TEST_CASE("DefinitionHandler - Go to Definition for Namespace Function")
     REQUIRE(defOutside->size() == 1);
     CHECK((*defOutside)[0].range.start.line == 1);
 }
+
+TEST_CASE("DefinitionHandler - Go to Definition for Include Directive")
+{
+    std::string code = "#include \"BuyMenu\"\nvoid main() {}\n";
+    TestEnvironment env(code);
+    env.resolveInclude = [](const std::string &raw) {
+        if (raw == "BuyMenu")
+        {
+            return "file:///scripts/BuyMenu.as";
+        }
+        return "";
+    };
+
+    auto defs = env.DefAt(0, 12);
+    REQUIRE(defs.has_value());
+    REQUIRE(defs->size() == 1);
+    CHECK((*defs)[0].uri.toString() == "file:///scripts/BuyMenu.as");
+}
+
+TEST_CASE("DefinitionHandler - Go to Definition for Global Property Accessor")
+{
+    std::string code =
+        "class CModule {}\n"
+        "CModule@ get_g_Module();\n"
+        "void main() {\n"
+        "    g_Module;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto defs = env.DefAt(3, 6);
+    REQUIRE(defs.has_value());
+    REQUIRE(defs->size() == 1);
+    CHECK((*defs)[0].range.start.line == 1);
+}
+

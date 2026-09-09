@@ -64,6 +64,67 @@ namespace angel_lsp::features
 
     std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest &request)
     {
+        // 0. Include directive lookup: #include "..." or #include <...>
+        if (request.resolveInclude)
+        {
+            const auto lineSpan = [&request]() -> std::pair<size_t, size_t>
+            {
+                size_t start = 0;
+                for (uint32_t current = 0; current < request.position.line; ++current)
+                {
+                    const size_t nextBreak = request.sourceCode.find('\n', start);
+                    if (nextBreak == std::string::npos)
+                    {
+                        return { std::string::npos, std::string::npos };
+                    }
+                    start = nextBreak + 1;
+                }
+                const size_t end = request.sourceCode.find('\n', start);
+                return { start, end == std::string::npos ? request.sourceCode.size() : end };
+            }();
+
+            if (lineSpan.first != std::string::npos)
+            {
+                const std::string_view line(request.sourceCode.data() + lineSpan.first,
+                                            lineSpan.second - lineSpan.first);
+                const size_t hash = line.find_first_not_of(" \t");
+                if (hash != std::string_view::npos && line[hash] == '#' &&
+                    line.compare(hash + 1, 7, "include") == 0)
+                {
+                    size_t openDelim = line.find_first_of("\"<", hash + 8);
+                    if (openDelim != std::string_view::npos)
+                    {
+                        char closeChar = line[openDelim] == '<' ? '>' : '"';
+                        size_t closeDelim = line.find(closeChar, openDelim + 1);
+                        if (closeDelim != std::string_view::npos)
+                        {
+                            const auto character = static_cast<size_t>(request.position.character);
+                            if (character >= hash && character <= closeDelim)
+                            {
+                                std::string rawPath(line.substr(openDelim + 1, closeDelim - openDelim - 1));
+                                std::string resolved = request.resolveInclude(rawPath);
+                                if (!resolved.empty())
+                                {
+                                    lsp::DocumentUri targetUri = resolved.rfind("file://", 0) == 0
+                                        ? lsp::DocumentUri::parse(resolved)
+                                        : lsp::Uri::fileUriFromPath(resolved);
+                                    return std::vector<lsp::Location>{
+                                        lsp::Location{
+                                            targetUri,
+                                            lsp::Range{
+                                                lsp::Position{ 0, 0 },
+                                                lsp::Position{ 0, 0 }
+                                            }
+                                        }
+                                    };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         TSNode node{};
         std::string nodeText = GetNodeTextAt(request, node);
         if (nodeText.empty() || ts_node_is_null(node))
@@ -101,57 +162,73 @@ namespace angel_lsp::features
                 return std::nullopt;
             }
 
-            uint32_t objStart = ts_node_start_byte(objectNode);
-            uint32_t objEnd = ts_node_end_byte(objectNode);
-            if (objStart >= request.sourceCode.size() || objEnd > request.sourceCode.size() || objStart >= objEnd)
-            {
-                return std::nullopt;
-            }
-
-            std::string objText = request.sourceCode.substr(objStart, objEnd - objStart);
             std::string receiverTypeName;
-
-            if (objText == "this")
-            {
-                request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
-                {
-                    for (const auto &sym : symbols)
-                    {
-                        if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
-                        {
-                            if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
-                            {
-                                receiverTypeName = sym.name;
-                            }
-                        }
-                    }
-                });
-            }
-            else if (rootScope)
+            if (rootScope)
             {
                 const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
-                if (scope)
-                {
-                    const analysis::LocalDefinition *objDef = analysis::ResolveInScope(scope, objText);
-                    if (objDef && !objDef->typeName.empty())
-                    {
-                        receiverTypeName = analysis::CleanBaseType(objDef->typeName);
-                    }
-                }
+                receiverTypeName = analysis::ResolveExpressionType(objectNode, scope, request.symbolTable, request.sourceCode, request.uri);
+            }
+            else
+            {
+                receiverTypeName = analysis::ResolveExpressionType(objectNode, nullptr, request.symbolTable, request.sourceCode, request.uri);
+            }
+
+            if (!receiverTypeName.empty())
+            {
+                receiverTypeName = analysis::MemberOwnerType(receiverTypeName);
             }
 
             if (receiverTypeName.empty())
             {
-                auto globSyms = request.symbolTable.FindSymbols(objText);
-                for (const auto &sym : globSyms)
+                uint32_t objStart = ts_node_start_byte(objectNode);
+                uint32_t objEnd = ts_node_end_byte(objectNode);
+                if (objStart < request.sourceCode.size() && objEnd <= request.sourceCode.size() && objStart < objEnd)
                 {
-                    if (sym.type == analysis::SymbolType::Variable)
+                    std::string objText = request.sourceCode.substr(objStart, objEnd - objStart);
+
+                    if (objText == "this")
                     {
-                        const auto &var = sym.GetVariable();
-                        if (!var.typeName.empty())
+                        request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
                         {
-                            receiverTypeName = analysis::CleanBaseType(var.typeName);
-                            break;
+                            for (const auto &sym : symbols)
+                            {
+                                if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
+                                {
+                                    if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
+                                    {
+                                        receiverTypeName = sym.name;
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    else if (rootScope)
+                    {
+                        const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+                        if (scope)
+                        {
+                            const analysis::LocalDefinition *objDef = analysis::ResolveInScope(scope, objText);
+                            if (objDef && !objDef->typeName.empty())
+                            {
+                                receiverTypeName = analysis::CleanBaseType(objDef->typeName);
+                            }
+                        }
+                    }
+
+                    if (receiverTypeName.empty())
+                    {
+                        auto globSyms = request.symbolTable.FindSymbols(objText);
+                        for (const auto &sym : globSyms)
+                        {
+                            if (sym.type == analysis::SymbolType::Variable)
+                            {
+                                const auto &var = sym.GetVariable();
+                                if (!var.typeName.empty())
+                                {
+                                    receiverTypeName = analysis::CleanBaseType(var.typeName);
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -169,6 +246,19 @@ namespace angel_lsp::features
                     {
                         memberSymbols = std::move(found);
                         break;
+                    }
+                }
+
+                if (memberSymbols.empty())
+                {
+                    for (const auto &typeName : hierarchy)
+                    {
+                        auto accessors = analysis::FindPropertyAccessors(typeName, nodeText, request.symbolTable, false);
+                        if (!accessors.empty())
+                        {
+                            memberSymbols = std::move(accessors);
+                            break;
+                        }
                     }
                 }
 
@@ -252,6 +342,12 @@ namespace angel_lsp::features
                     symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
                 }
             }
+        }
+
+        // Global property accessors fallback (e.g. g_Module -> get_g_Module)
+        if (symbols.empty())
+        {
+            symbols = analysis::FindGlobalPropertyAccessors(nodeText, request.symbolTable, false);
         }
 
         // Fallback to local scope definition (e.g. Field or non-function scope definition) if not in SymbolTable

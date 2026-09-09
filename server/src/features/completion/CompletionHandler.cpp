@@ -124,6 +124,92 @@ namespace angel_lsp::features
             return hierarchy;
         }
 
+        struct AccessSegment
+        {
+            std::string name;
+            bool isCall = false;
+            size_t indexCount = 0;
+        };
+
+        /**
+         * @brief Parses a chained member access expression into individual segments.
+         * @param chain The string of the chain including trailing dot or arrow.
+         * @return Vector of segments with names, call flags, and index counts.
+         */
+        std::vector<AccessSegment> ParseAccessChain(std::string_view chain)
+        {
+            std::vector<AccessSegment> segments;
+            size_t i = 0;
+            while (i < chain.size())
+            {
+                while (i < chain.size() && (chain[i] == ' ' || chain[i] == '\t'))
+                {
+                    ++i;
+                }
+                if (i >= chain.size())
+                {
+                    break;
+                }
+
+                size_t nameStart = i;
+                if (!isalpha(static_cast<unsigned char>(chain[i])) && chain[i] != '_')
+                {
+                    break;
+                }
+                while (i < chain.size() && (isalnum(static_cast<unsigned char>(chain[i])) || chain[i] == '_'))
+                {
+                    ++i;
+                }
+                std::string name(chain.substr(nameStart, i - nameStart));
+                AccessSegment seg;
+                seg.name = std::move(name);
+
+                while (i < chain.size() && (chain[i] == '(' || chain[i] == '['))
+                {
+                    char open = chain[i];
+                    char close = (open == '(') ? ')' : ']';
+                    if (open == '(')
+                    {
+                        seg.isCall = true;
+                    }
+                    else
+                    {
+                        ++seg.indexCount;
+                    }
+                    ++i;
+                    int depth = 1;
+                    while (i < chain.size() && depth > 0)
+                    {
+                        if (chain[i] == open)
+                        {
+                            ++depth;
+                        }
+                        else if (chain[i] == close)
+                        {
+                            --depth;
+                        }
+                        ++i;
+                    }
+                }
+
+                if (i < chain.size() && chain[i] == '.')
+                {
+                    ++i;
+                    segments.push_back(std::move(seg));
+                }
+                else if (i + 1 < chain.size() && chain[i] == '-' && chain[i + 1] == '>')
+                {
+                    i += 2;
+                    segments.push_back(std::move(seg));
+                }
+                else
+                {
+                    break;
+                }
+            }
+            return segments;
+        }
+
         std::string GetLinePrefix(const std::string &sourceCode, uint32_t line, uint32_t character)
         {
             size_t currentLine = 0;
@@ -694,6 +780,14 @@ namespace angel_lsp::features
             innermostScope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
         }
 
+        // asEP_PROPERTY_ACCESSOR_MODE: 0 and 1 leave script-defined accessors out of the
+        // language entirely, 3 wants the `property` keyword written, and 2 - this server's
+        // default - takes the name alone. Read from the config the analyzer reads, so the
+        // completion list and the diagnostics cannot disagree about what a property is.
+        const int accessorMode = request.config ? request.config->engine.propertyAccessorMode : 2;
+        const bool accessorsAreProperties = accessorMode >= 2;
+        const bool accessorKeywordRequired = accessorMode == 3;
+
         // 0. Positions where nothing may be completed. A comment, a string literal and the colon
         //    of a `case` label are all places the language has no symbol for, and each of them
         //    fell through to the global fallback below and answered with the entire scope.
@@ -804,62 +898,177 @@ namespace angel_lsp::features
             return items;
         }
 
-        // 2. Check for Member Access Context: "receiver." or "receiver->" (with optional partial identifier)
-        static const std::regex memberAccessRegex(R"(([a-zA-Z_][a-zA-Z0-9_]*(?:\[[^\]]*\])*)(?:\.|\->)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
+        // 2. Check for Member Access Context: "receiver." or "receiver->" or chained like "a.b.c." (with optional partial identifier)
+        static const std::regex memberChainRegex(R"(((?:[a-zA-Z_][a-zA-Z0-9_]*(?:\([^\)]*\)|\[[^\]]*\])*(?:\.|\->))+)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
         std::smatch memberMatch;
-        if (std::regex_search(prefix, memberMatch, memberAccessRegex))
+        if (std::regex_search(prefix, memberMatch, memberChainRegex))
         {
-            std::string receiverFull = memberMatch[1].str();
-            size_t bracketPos = receiverFull.find('[');
-            std::string receiverName = (bracketPos != std::string::npos) ? receiverFull.substr(0, bracketPos) : receiverFull;
-            size_t indexCount = 0;
-            for (char ch : receiverFull)
-            {
-                if (ch == '[') ++indexCount;
-            }
+            std::string chainFull = memberMatch[1].str();
+            auto segments = ParseAccessChain(chainFull);
 
             std::string rawTypeName;
 
-            if (receiverName == "this")
+            if (!segments.empty())
             {
-                request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+                std::string arrayContainer = (request.config && !request.config->types.arrayTypeName.empty()) ? request.config->types.arrayTypeName : "array";
+
+                // Resolve base segment (segments[0])
+                const auto &seg0 = segments[0];
+                if (seg0.name == "this")
                 {
-                    for (const auto &sym : symbols)
+                    request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
                     {
-                        if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
+                        for (const auto &sym : symbols)
                         {
-                            if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
+                            if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
                             {
-                                rawTypeName = sym.name;
+                                if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
+                                {
+                                    rawTypeName = sym.name;
+                                }
+                            }
+                        }
+                    });
+                }
+                else if (innermostScope)
+                {
+                    const analysis::LocalDefinition *def = analysis::ResolveInScope(innermostScope, seg0.name);
+                    if (def && !def->typeName.empty())
+                    {
+                        rawTypeName = def->typeName;
+                    }
+                }
+
+                if (rawTypeName.empty())
+                {
+                    auto globSyms = request.symbolTable.FindSymbols(seg0.name);
+                    for (const auto &sym : globSyms)
+                    {
+                        if (sym.type == analysis::SymbolType::Variable && sym.containerName.empty())
+                        {
+                            const auto &var = sym.GetVariable();
+                            if (!var.typeName.empty())
+                            {
+                                rawTypeName = var.typeName;
+                                break;
                             }
                         }
                     }
-                });
-            }
-            else if (innermostScope)
-            {
-                const analysis::LocalDefinition *def = analysis::ResolveInScope(innermostScope, receiverName);
-                if (def && !def->typeName.empty())
-                {
-                    rawTypeName = def->typeName;
                 }
-            }
 
-            if (rawTypeName.empty())
-            {
-                // Check if receiverName is a global variable
-                auto globSyms = request.symbolTable.FindSymbols(receiverName);
-                for (const auto &sym : globSyms)
+                if (rawTypeName.empty() && accessorsAreProperties)
                 {
-                    if (sym.type == analysis::SymbolType::Variable)
+                    auto globalAccessors = analysis::FindGlobalPropertyAccessors(seg0.name, request.symbolTable, accessorKeywordRequired);
+                    if (!globalAccessors.empty())
                     {
-                        const auto &var = sym.GetVariable();
-                        if (!var.typeName.empty())
+                        rawTypeName = analysis::PropertyTypeFromAccessors(globalAccessors);
+                    }
+                }
+
+                if (rawTypeName.empty() && seg0.isCall)
+                {
+                    auto fnSyms = request.symbolTable.FindSymbols(seg0.name);
+                    for (const auto &sym : fnSyms)
+                    {
+                        if (sym.type == analysis::SymbolType::Function && sym.containerName.empty())
                         {
-                            rawTypeName = var.typeName;
+                            rawTypeName = sym.GetFunction().returnType;
                             break;
                         }
                     }
+                }
+
+                if (!rawTypeName.empty())
+                {
+                    std::string canonicalType = CanonicalizeArrayType(rawTypeName, arrayContainer);
+                    for (size_t idx = 0; idx < seg0.indexCount; ++idx)
+                    {
+                        auto tmpl = analysis::ParseTemplateType(canonicalType);
+                        if (!tmpl.templateArgs.empty())
+                        {
+                            canonicalType = tmpl.templateArgs[0];
+                        }
+                        else if (canonicalType.ends_with("[]"))
+                        {
+                            canonicalType = canonicalType.substr(0, canonicalType.size() - 2);
+                        }
+                    }
+                    rawTypeName = canonicalType;
+                }
+
+                // Resolve subsequent chained segments
+                for (size_t s = 1; s < segments.size() && !rawTypeName.empty(); ++s)
+                {
+                    const auto &seg = segments[s];
+                    std::string cleanType = analysis::CleanBaseType(rawTypeName);
+                    auto hierarchy = GetInheritedTypeHierarchy(request.symbolTable, cleanType);
+                    std::string nextTypeName;
+
+                    for (const auto &typeName : hierarchy)
+                    {
+                        auto memberSyms = request.symbolTable.FindSymbols(typeName + "::" + seg.name);
+                        for (const auto &sym : memberSyms)
+                        {
+                            if (sym.type == analysis::SymbolType::Variable)
+                            {
+                                nextTypeName = sym.GetVariable().typeName;
+                                break;
+                            }
+                            else if (sym.type == analysis::SymbolType::Function && seg.isCall)
+                            {
+                                nextTypeName = sym.GetFunction().returnType;
+                                break;
+                            }
+                        }
+                        if (!nextTypeName.empty())
+                        {
+                            break;
+                        }
+
+                        if (accessorsAreProperties)
+                        {
+                            auto accessors = analysis::FindPropertyAccessors(typeName, seg.name, request.symbolTable, accessorKeywordRequired);
+                            if (!accessors.empty())
+                            {
+                                nextTypeName = analysis::PropertyTypeFromAccessors(accessors);
+                                break;
+                            }
+                        }
+
+                        for (const auto &sym : memberSyms)
+                        {
+                            if (sym.type == analysis::SymbolType::Function)
+                            {
+                                nextTypeName = sym.GetFunction().returnType;
+                                break;
+                            }
+                        }
+                        if (!nextTypeName.empty())
+                        {
+                            break;
+                        }
+                    }
+
+                    if (nextTypeName.empty())
+                    {
+                        rawTypeName.clear();
+                        break;
+                    }
+
+                    std::string canonicalNext = CanonicalizeArrayType(nextTypeName, arrayContainer);
+                    for (size_t idx = 0; idx < seg.indexCount; ++idx)
+                    {
+                        auto tmpl = analysis::ParseTemplateType(canonicalNext);
+                        if (!tmpl.templateArgs.empty())
+                        {
+                            canonicalNext = tmpl.templateArgs[0];
+                        }
+                        else if (canonicalNext.ends_with("[]"))
+                        {
+                            canonicalNext = canonicalNext.substr(0, canonicalNext.size() - 2);
+                        }
+                    }
+                    rawTypeName = canonicalNext;
                 }
             }
 
@@ -868,36 +1077,11 @@ namespace angel_lsp::features
                 std::string arrayContainer = (request.config && !request.config->types.arrayTypeName.empty()) ? request.config->types.arrayTypeName : "array";
                 std::string canonicalType = CanonicalizeArrayType(rawTypeName, arrayContainer);
 
-                for (size_t idx = 0; idx < indexCount; ++idx)
-                {
-                    auto tmpl = analysis::ParseTemplateType(canonicalType);
-                    if (!tmpl.templateArgs.empty())
-                    {
-                        canonicalType = tmpl.templateArgs[0];
-                    }
-                    else if (canonicalType.ends_with("[]"))
-                    {
-                        canonicalType = canonicalType.substr(0, canonicalType.size() - 2);
-                    }
-                }
-
                 auto targetTemplate = analysis::ParseTemplateType(canonicalType);
                 std::string baseContainer = targetTemplate.containerName;
                 std::vector<std::string> templateArgs = targetTemplate.templateArgs;
 
-                // Probes the version-cached container index rather than walking the whole workspace
-                // table. This ran once per type in the inheritance chain, on every keystroke, over
-                // a table the codebase's own comments size at fifty thousand symbols - so a member
-                // completion on a class with three bases was four full-table scans per character.
                 const auto ruleIndex = request.symbolTable.GetRuleIndex();
-
-                // asEP_PROPERTY_ACCESSOR_MODE: 0 and 1 leave script-defined accessors out of the
-                // language entirely, 3 wants the `property` keyword written, and 2 - this server's
-                // default - takes the name alone. Read from the config the analyzer reads, so the
-                // completion list and the diagnostics cannot disagree about what a property is.
-                const int accessorMode = request.config ? request.config->engine.propertyAccessorMode : 2;
-                const bool accessorsAreProperties = accessorMode >= 2;
-                const bool accessorKeywordRequired = accessorMode == 3;
 
                 auto addMembersForType = [&](const std::string &typeName)
                 {
@@ -1080,6 +1264,18 @@ namespace angel_lsp::features
                         if (request.snippetSupport)
                         {
                             snippet = CallSnippet(sym.name, sym.GetFunction().parameters);
+                        }
+                        if (accessorsAreProperties)
+                        {
+                            const std::string propName = analysis::PropertyNameFromAccessor(sym, accessorKeywordRequired);
+                            if (!propName.empty())
+                            {
+                                std::string propType = analysis::PropertyTypeFromAccessors(
+                                    analysis::FindGlobalPropertyAccessors(propName, request.symbolTable, accessorKeywordRequired));
+                                AddItemIfNew(items, seenLabels, propName,
+                                             lsp::CompletionItemKind::Property, propType,
+                                             "", sym.qualifiedName);
+                            }
                         }
                         break;
                     case analysis::SymbolType::Class:

@@ -538,60 +538,75 @@ namespace angel_lsp::features
                 return std::nullopt;
             }
 
-            uint32_t objStart = ts_node_start_byte(objectNode);
-            uint32_t objEnd = ts_node_end_byte(objectNode);
-            if (objStart >= request.sourceCode.size() || objEnd > request.sourceCode.size() || objStart >= objEnd)
-            {
-                return std::nullopt;
-            }
-
-            std::string objText = request.sourceCode.substr(objStart, objEnd - objStart);
             std::string receiverTypeName;
-
-            if (objText == "this")
-            {
-                // Look for enclosing class from symbols
-                request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
-                {
-                    for (const auto &sym : symbols)
-                    {
-                        if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
-                        {
-                            if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
-                            {
-                                receiverTypeName = sym.name;
-                            }
-                        }
-                    }
-                });
-            }
-            else if (rootScope)
+            if (rootScope)
             {
                 const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
-                if (scope)
-                {
-                    const analysis::LocalDefinition *objDef = analysis::ResolveInScope(scope, objText);
-                    if (objDef && !objDef->typeName.empty())
-                    {
-                        // The type whose members `.` reaches, not the element type. CleanBaseType
-                        // answers the second, so `int[] a; a.length` looked for `int::length`.
-                        receiverTypeName = analysis::MemberOwnerType(objDef->typeName);
-                    }
-                }
+                receiverTypeName = analysis::ResolveExpressionType(objectNode, scope, request.symbolTable, request.sourceCode, request.uri);
+            }
+            else
+            {
+                receiverTypeName = analysis::ResolveExpressionType(objectNode, nullptr, request.symbolTable, request.sourceCode, request.uri);
+            }
+
+            if (!receiverTypeName.empty())
+            {
+                std::string arrayContainer = (request.config && !request.config->types.arrayTypeName.empty()) ? request.config->types.arrayTypeName : "array";
+                receiverTypeName = analysis::MemberOwnerType(receiverTypeName, arrayContainer);
             }
 
             if (receiverTypeName.empty())
             {
-                auto globSyms = request.symbolTable.FindSymbols(objText);
-                for (const auto &sym : globSyms)
+                uint32_t objStart = ts_node_start_byte(objectNode);
+                uint32_t objEnd = ts_node_end_byte(objectNode);
+                if (objStart < request.sourceCode.size() && objEnd <= request.sourceCode.size() && objStart < objEnd)
                 {
-                    if (sym.type == analysis::SymbolType::Variable)
+                    std::string objText = request.sourceCode.substr(objStart, objEnd - objStart);
+
+                    if (objText == "this")
                     {
-                        const auto &var = sym.GetVariable();
-                        if (!var.typeName.empty())
+                        // Look for enclosing class from symbols
+                        request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
                         {
-                            receiverTypeName = analysis::CleanBaseType(var.typeName);
-                            break;
+                            for (const auto &sym : symbols)
+                            {
+                                if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
+                                {
+                                    if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
+                                    {
+                                        receiverTypeName = sym.name;
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    else if (rootScope)
+                    {
+                        const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+                        if (scope)
+                        {
+                            const analysis::LocalDefinition *objDef = analysis::ResolveInScope(scope, objText);
+                            if (objDef && !objDef->typeName.empty())
+                            {
+                                receiverTypeName = analysis::MemberOwnerType(objDef->typeName);
+                            }
+                        }
+                    }
+
+                    if (receiverTypeName.empty())
+                    {
+                        auto globSyms = request.symbolTable.FindSymbols(objText);
+                        for (const auto &sym : globSyms)
+                        {
+                            if (sym.type == analysis::SymbolType::Variable)
+                            {
+                                const auto &var = sym.GetVariable();
+                                if (!var.typeName.empty())
+                                {
+                                    receiverTypeName = analysis::CleanBaseType(var.typeName);
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -887,6 +902,19 @@ namespace angel_lsp::features
             }
         }
 
+        std::string accessorPropertyType;
+        if (symbols.empty())
+        {
+            const int accessorMode =
+                request.config ? request.config->engine.propertyAccessorMode : 2;
+
+            if (accessorMode >= 2)
+            {
+                symbols = analysis::FindGlobalPropertyAccessors(nodeText, request.symbolTable, accessorMode == 3);
+                accessorPropertyType = analysis::PropertyTypeFromAccessors(symbols);
+            }
+        }
+
         if (symbols.empty())
         {
             return std::nullopt;
@@ -896,6 +924,11 @@ namespace angel_lsp::features
 
         std::ostringstream oss;
         oss << "```angelscript\n";
+
+        if (!accessorPropertyType.empty())
+        {
+            oss << "(property) " << accessorPropertyType << " " << nodeText << "\n";
+        }
 
         for (size_t i = 0; i < symbols.size(); ++i)
         {

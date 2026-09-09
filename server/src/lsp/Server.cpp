@@ -1407,26 +1407,6 @@ namespace angel_lsp
         phase.emplace(m_logger.get(), "configured predefined stubs");
         const std::vector<std::string> configuredPaths = LoadConfiguredPredefinedFiles(backgroundParser, stopToken);
 
-        // Which files each configured module contains, and then their contents. A module nobody
-        // has opened still has to be in the symbol table, or the module that externs its shared
-        // entities cannot see them - two modules are by definition not connected by an #include,
-        // so the open document's own closure never reaches across. See IndexConfiguredModules.
-        phase.emplace(m_logger.get(), "configured modules");
-        BuildModuleIndex();
-        PurgeUnusedClosureFiles();
-        IndexConfiguredModules(backgroundParser);
-
-        // Anything published for a module that no longer claims it has to be taken back before the
-        // new answers go out, or a file that changed module keeps both verdicts.
-        WithdrawStaleModuleDiagnostics();
-        AnalyzeConfiguredModules();
-
-        if (stopToken.stop_requested())
-        {
-            EndWorkspaceProgress("Cancelled");
-            return;
-        }
-
         phase.emplace(m_logger.get(), "workspace stub discovery");
 
         try
@@ -1529,6 +1509,26 @@ namespace angel_lsp
         {
             m_logger->LogError(fmt::format("Error reading workspace files: {}", e.what()));
         }
+
+        if (stopToken.stop_requested())
+        {
+            EndWorkspaceProgress("Cancelled");
+            return;
+        }
+
+        // Which files each configured module contains, and then their contents. A module nobody
+        // has opened still has to be in the symbol table, or the module that externs its shared
+        // entities cannot see them - two modules are by definition not connected by an #include,
+        // so the open document's own closure never reaches across. See IndexConfiguredModules.
+        phase.emplace(m_logger.get(), "configured modules");
+        BuildModuleIndex();
+        PurgeUnusedClosureFiles();
+        IndexConfiguredModules(backgroundParser);
+
+        // Anything published for a module that no longer claims it has to be taken back before the
+        // new answers go out, or a file that changed module keeps both verdicts.
+        WithdrawStaleModuleDiagnostics();
+        AnalyzeConfiguredModules();
 
 
         EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
@@ -3620,6 +3620,9 @@ namespace angel_lsp
         // each construction is a ts_parser_new plus a language load, paid once per document per
         // debounced analysis for nothing. It stays private to the analysis thread, which is what
         // keeps that safe - a TSParser is not shareable.
+        // Ensure module closure files are indexed for this open document
+        IndexModuleClosure(uriStr);
+
         TSTree *tree = parser.Parse(text);
 
         // Collected into a staging table and swapped in one step, so a reader on the message loop
@@ -4602,6 +4605,11 @@ namespace angel_lsp
                     return lsp::Null{};
 
                 features::DefinitionRequest dr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position) };
+                dr.resolveInclude = [this, uriStr = doc->uri](const std::string &rawPath) {
+                    return angel_lsp::utils::IncludeResolver::ResolveIncludePath(
+                        rawPath, CanonicalPathFromUri(uriStr), *SearchDirectories(),
+                        IncludeAllowedRoots(), ImplicitIncludeExtension());
+                };
                 auto defs = features::GetDefinition(dr);
                 if (defs.has_value() && !defs->empty())
                 {
@@ -4629,6 +4637,11 @@ namespace angel_lsp
 
                 features::DefinitionRequest dr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex,
                                                 codec::Decode(*doc->text, m_positionEncoding, req.position) };
+                dr.resolveInclude = [this, uriStr = doc->uri](const std::string &rawPath) {
+                    return angel_lsp::utils::IncludeResolver::ResolveIncludePath(
+                        rawPath, CanonicalPathFromUri(uriStr), *SearchDirectories(),
+                        IncludeAllowedRoots(), ImplicitIncludeExtension());
+                };
 
                 const auto defs = features::GetDefinition(dr);
                 if (!defs.has_value() || defs->empty())
@@ -5440,6 +5453,7 @@ namespace angel_lsp
                 const auto searchDirectories = SearchDirectories();
 
                 features::DocumentLinkRequest dlr{ doc->uri, *doc->text, *searchDirectories, m_i18n.get(), IncludeAllowedRoots() };
+                dlr.implicitExtension = std::string(ImplicitIncludeExtension());
                 auto links = features::GetDocumentLinks(dlr);
                 if (links.has_value())
                 {

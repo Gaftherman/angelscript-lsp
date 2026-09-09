@@ -5,6 +5,7 @@
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <tree_sitter/api.h>
+#include <functional>
 #include <string>
 #include <vector>
 #include <optional>
@@ -22,6 +23,7 @@ namespace angel_lsp::features
         const analysis::SymbolTable &symbolTable;
         const analysis::ScopeIndex &scopeIndex;
         lsp::Position position;
+        std::function<std::string(const std::string &rawPath)> resolveInclude = {};
     };
 
     /**

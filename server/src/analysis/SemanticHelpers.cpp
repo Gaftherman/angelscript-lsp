@@ -538,6 +538,40 @@ namespace angel_lsp::analysis
         return accessors;
     }
 
+    std::vector<Symbol> FindGlobalPropertyAccessors(const std::string &propertyName,
+                                                    const SymbolTable &symbolTable,
+                                                    bool keywordRequired)
+    {
+        std::vector<Symbol> accessors;
+        if (propertyName.empty())
+        {
+            return accessors;
+        }
+
+        for (const std::string_view prefix : { std::string_view("get_"), std::string_view("set_") })
+        {
+            for (const auto &sym : symbolTable.FindSymbols(std::string(prefix) + propertyName))
+            {
+                if (sym.type != SymbolType::Function || !sym.containerName.empty())
+                {
+                    continue;
+                }
+                if (!std::holds_alternative<FunctionSignature>(sym.signature))
+                {
+                    continue;
+                }
+                if (keywordRequired && !sym.GetFunction().modifiers.isProperty)
+                {
+                    continue;
+                }
+
+                accessors.push_back(sym);
+            }
+        }
+
+        return accessors;
+    }
+
     std::string PropertyTypeFromAccessors(const std::vector<Symbol> &accessors)
     {
         for (const auto &sym : accessors)
@@ -1389,6 +1423,26 @@ namespace angel_lsp::analysis
                     return CleanExpressionType(sym.GetFunction().returnType);
                 }
             }
+
+            for (const auto &prefix : { "get_", "set_" })
+            {
+                auto accessorSyms = symbolTable.FindSymbols(std::string(prefix) + name);
+                for (const auto &sym : accessorSyms)
+                {
+                    if (sym.type == SymbolType::Function && sym.containerName.empty())
+                    {
+                        if (!sym.GetFunction().returnType.empty() && sym.GetFunction().returnType != "void")
+                        {
+                            return CleanExpressionType(sym.GetFunction().returnType);
+                        }
+                        else if (!sym.GetFunction().parameters.empty())
+                        {
+                            return CleanExpressionType(sym.GetFunction().parameters.front().typeName);
+                        }
+                    }
+                }
+            }
+
             return "";
         }
 

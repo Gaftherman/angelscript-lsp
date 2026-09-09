@@ -726,3 +726,21 @@ TEST_CASE("Hover - A spaced directive is not an include")
 
     CHECK(HoverText(hover).find("#include") == std::string::npos);
 }
+
+TEST_CASE("Hover - Global property accessors show property and accessor declaration")
+{
+    const std::string source =
+        "class CModule {}\n"
+        "CModule@ get_g_Module();\n"
+        "void main() {\n"
+        "    g_Module;\n"
+        "}\n";
+
+    TestEnvironment env(source);
+    const auto hover = env.HoverAt(3, 6);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("(property) CModule@ g_Module") != std::string::npos);
+    CHECK(text.find("CModule@ get_g_Module()") != std::string::npos);
+}
+

@@ -356,11 +356,32 @@ function resolveServerBinary(context: ExtensionContext): ServerBinary {
 
     const candidates: string[] = [];
 
-    // 1. Development mode paths
+    // 1. Development mode paths (prefer the most recently modified build artifact)
+    const devCandidates = [
+        context.asAbsolutePath(path.join('..', 'server', 'build', 'Release', binaryName)),
+        context.asAbsolutePath(path.join('..', 'server', 'build', 'Debug', binaryName)),
+        context.asAbsolutePath(path.join('..', 'server', 'build', binaryName))
+    ];
+
     if (context.extensionMode === ExtensionMode.Development) {
-        candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', 'Debug', binaryName)));
-        candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', 'Release', binaryName)));
-        candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', binaryName)));
+        const existingDev = devCandidates
+            .filter(c => fs.existsSync(c))
+            .sort((a, b) => {
+                try {
+                    return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
+                } catch {
+                    return 0;
+                }
+            });
+
+        for (const c of existingDev) {
+            candidates.push(c);
+        }
+        for (const c of devCandidates) {
+            if (!candidates.includes(c)) {
+                candidates.push(c);
+            }
+        }
     }
 
     // 2. Primary production platform-architecture path: bin/${platform}-${architecture}/${binaryName}
@@ -377,9 +398,25 @@ function resolveServerBinary(context: ExtensionContext): ServerBinary {
     }
 
     // 5. Development / build fallback paths (e.g. when testing compiled extension against local build)
-    candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', 'Debug', binaryName)));
-    candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', 'Release', binaryName)));
-    candidates.push(context.asAbsolutePath(path.join('..', 'server', 'build', binaryName)));
+    const fallbackDev = devCandidates
+        .filter(c => fs.existsSync(c))
+        .sort((a, b) => {
+            try {
+                return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
+            } catch {
+                return 0;
+            }
+        });
+    for (const c of fallbackDev) {
+        if (!candidates.includes(c)) {
+            candidates.push(c);
+        }
+    }
+    for (const c of devCandidates) {
+        if (!candidates.includes(c)) {
+            candidates.push(c);
+        }
+    }
 
     for (const candidate of candidates) {
         if (fs.existsSync(candidate)) {
