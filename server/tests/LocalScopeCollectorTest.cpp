@@ -804,3 +804,76 @@ TEST_CASE("LOCALS_QUERY - a field and a local sharing a name stay distinct")
     CHECK(CountDefinitions(root.get(), "ammo", LocalDefinitionKind::Field) == 1);
     CHECK(CountDefinitions(root.get(), "ammo", LocalDefinitionKind::Variable) == 1);
 }
+
+TEST_CASE("ScopeTree - ScopeKind classification and FindEnclosingClosure")
+{
+    const std::string source =
+        "int g_var = 1;\n"
+        "class MyClass\n"
+        "{\n"
+        "    int field;\n"
+        "    void Method(int param)\n"
+        "    {\n"
+        "        int outerLocal = 10;\n"
+        "        auto cb = function(int lambdaParam) {\n"
+        "            int innerLocal = 20;\n"
+        "            return innerLocal + lambdaParam;\n"
+        "        };\n"
+        "    }\n"
+        "}\n";
+
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+    CHECK(root->kind == ScopeKind::Global);
+
+    SourcePos innerPos = FindPosition(source, "innerLocal + lambdaParam");
+    const Scope *innerScope = FindEnclosingScopeOrRoot(root.get(), innerPos.line, innerPos.character);
+    REQUIRE(innerScope != nullptr);
+
+    const Scope *closureScope = FindEnclosingClosure(innerScope);
+    REQUIRE(closureScope != nullptr);
+    CHECK(closureScope->kind == ScopeKind::Closure);
+
+    // FindEnclosingClosure outside closure returns nullptr
+    SourcePos methodPos = FindPosition(source, "outerLocal = 10");
+    const Scope *methodScope = FindEnclosingScopeOrRoot(root.get(), methodPos.line, methodPos.character);
+    REQUIRE(methodScope != nullptr);
+    CHECK(FindEnclosingClosure(methodScope) == nullptr);
+}
+
+TEST_CASE("ScopeTree - Closure barrier blocks outer local capture while allowing globals, members, and own locals")
+{
+    const std::string source =
+        "int g_var = 1;\n"
+        "class MyClass\n"
+        "{\n"
+        "    int field;\n"
+        "    void Method(int outerParam)\n"
+        "    {\n"
+        "        int outerLocal = 10;\n"
+        "        auto cb = function(int lambdaParam) {\n"
+        "            int innerLocal = 20;\n"
+        "            return innerLocal;\n"
+        "        };\n"
+        "    }\n"
+        "}\n";
+
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    SourcePos innerPos = FindPosition(source, "return innerLocal");
+    const Scope *innerScope = FindEnclosingScopeOrRoot(root.get(), innerPos.line, innerPos.character);
+    REQUIRE(innerScope != nullptr);
+
+    // 1. Inside closure: own local and parameter resolve
+    CHECK(ResolveInScope(innerScope, "innerLocal") != nullptr);
+    CHECK(ResolveInScope(innerScope, "lambdaParam") != nullptr);
+
+    // 2. Inside closure: outer local and parameter are blocked by closure barrier
+    CHECK(ResolveInScope(innerScope, "outerLocal") == nullptr);
+    CHECK(ResolveInScope(innerScope, "outerParam") == nullptr);
+
+    // 3. Inside closure: class field and global variable pass through barrier
+    CHECK(ResolveInScope(innerScope, "field") != nullptr);
+    CHECK(ResolveInScope(innerScope, "g_var") != nullptr);
+}

@@ -22,6 +22,10 @@ namespace angel_lsp::analysis
         m_symMemberExpression = ts_language_symbol_for_name(lang, "member_expression", static_cast<uint32_t>(strlen("member_expression")), true);
         m_symFuncDeclaration = ts_language_symbol_for_name(lang, "func_declaration", static_cast<uint32_t>(strlen("func_declaration")), true);
         m_symLambdaExpression = ts_language_symbol_for_name(lang, "lambda_expression", static_cast<uint32_t>(strlen("lambda_expression")), true);
+        m_symClassBody = ts_language_symbol_for_name(lang, "class_body", static_cast<uint32_t>(strlen("class_body")), true);
+        m_symInterfaceBody = ts_language_symbol_for_name(lang, "interface_body", static_cast<uint32_t>(strlen("interface_body")), true);
+        m_symNamespaceBody = ts_language_symbol_for_name(lang, "namespace_body", static_cast<uint32_t>(strlen("namespace_body")), true);
+        m_symScript = ts_language_symbol_for_name(lang, "script", static_cast<uint32_t>(strlen("script")), true);
         m_symVariableDeclarator = ts_language_symbol_for_name(lang, "variable_declarator", static_cast<uint32_t>(strlen("variable_declarator")), true);
         m_symParameter = ts_language_symbol_for_name(lang, "parameter", static_cast<uint32_t>(strlen("parameter")), true);
         m_symForeachVariable = ts_language_symbol_for_name(lang, "foreach_variable", static_cast<uint32_t>(strlen("foreach_variable")), true);
@@ -243,7 +247,36 @@ namespace angel_lsp::analysis
 
                 auto newScope = std::make_unique<Scope>();
                 TSSymbol scopeNodeSymbol = ts_node_symbol(capture.node);
-                newScope->isFunctionScope = (scopeNodeSymbol == m_symFuncDeclaration || scopeNodeSymbol == m_symLambdaExpression);
+                if (scopeNodeSymbol == m_symLambdaExpression)
+                {
+                    newScope->kind = ScopeKind::Closure;
+                    newScope->isFunctionScope = true;
+                }
+                else if (scopeNodeSymbol == m_symFuncDeclaration)
+                {
+                    newScope->kind = ScopeKind::Function;
+                    newScope->isFunctionScope = true;
+                }
+                else if (scopeNodeSymbol == m_symClassBody || scopeNodeSymbol == m_symInterfaceBody)
+                {
+                    newScope->kind = ScopeKind::Class;
+                    newScope->isFunctionScope = false;
+                }
+                else if (scopeNodeSymbol == m_symNamespaceBody)
+                {
+                    newScope->kind = ScopeKind::Namespace;
+                    newScope->isFunctionScope = false;
+                }
+                else if (scopeNodeSymbol == m_symScript)
+                {
+                    newScope->kind = ScopeKind::Global;
+                    newScope->isFunctionScope = false;
+                }
+                else
+                {
+                    newScope->kind = ScopeKind::Block;
+                    newScope->isFunctionScope = false;
+                }
                 newScope->startLine = startPt.row;
                 newScope->startCharacter = startPt.column;
                 newScope->endLine = endPt.row;

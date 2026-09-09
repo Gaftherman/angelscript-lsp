@@ -126,6 +126,17 @@ namespace angel_lsp::analysis
         bool isTypeSpecifier = false;
     };
 
+    /** @brief What kind of syntactic construct created this lexical scope. */
+    enum class ScopeKind
+    {
+        Block,
+        Function,
+        Closure,
+        Class,
+        Namespace,
+        Global
+    };
+
     /**
      * @brief One lexical scope (function body, statement block, loop header, class body, ...) in the
      *        tree built from a document's LOCALS_QUERY matches. Scopes nest by source range: every
@@ -138,6 +149,9 @@ namespace angel_lsp::analysis
         uint32_t startCharacter = 0;
         uint32_t endLine = 0;
         uint32_t endCharacter = 0;
+
+        /** @brief Syntactic classification of this scope. */
+        ScopeKind kind = ScopeKind::Block;
 
         /**
          * @brief True when this scope was opened by a func_declaration or lambda_expression (as
@@ -195,28 +209,22 @@ namespace angel_lsp::analysis
 
     /**
      * @brief Resolves name to the nearest enclosing definition starting from scope and walking up
-     *        through Scope::parent, returning the first match found in the closest scope. This is a
-     *        plain nearest-enclosing-scope lookup with no declare-before-use/hoisting rules - it is
-     *        the primitive a future language-aware resolver would build on, not a complete binder.
+     *        through Scope::parent, returning the first match found in the closest scope.
+     * @param scope Scope to start resolution from.
+     * @param name Name of symbol to resolve.
+     * @param owner Optional out-parameter receiving the Scope declaring the definition.
+     * @param respectClosureBarrier When true (default), closure scopes cannot capture outer local
+     *                              variables or parameters from enclosing functions/closures.
+     *                              Set to false for lexical editor features (e.g. DocumentHighlight)
+     *                              that map identifiers to their textually enclosing declaration.
      * @return The matching definition, or nullptr if no enclosing scope declares name.
      */
-    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name);
+    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name,
+                                          const Scope **owner = nullptr,
+                                          bool respectClosureBarrier = true);
 
-    /**
-     * @brief ResolveInScope, additionally reporting which scope held the definition.
-     *
-     * LOCALS_QUERY captures a module-level global and a function-body local under the identical
-     * LocalDefinitionKind::Variable, so the definition alone cannot tell them apart - only the
-     * scope that owns it can, through Scope::isFunctionScope. A caller that has to make that
-     * distinction (the lambda-closure rule does: a lambda may not read an outer *local*, but a
-     * global is not a capture and is perfectly legal) needs the owner, not just the definition.
-     *
-     * @param scope Scope to start from; the chain is walked outward through parents.
-     * @param name Identifier to resolve.
-     * @param owner Set to the scope holding the definition, or left untouched when nothing matched.
-     * @return The definition, or nullptr.
-     */
-    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name, const Scope **owner);
+    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name,
+                                          bool respectClosureBarrier);
 
     /**
      * @brief Finds the innermost Scope containing the given source line and character.
@@ -238,6 +246,13 @@ namespace angel_lsp::analysis
      * the copies were verified identical before being removed, so this is a move, not a rewrite.
      */
     const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character);
+
+    /**
+     * @brief Finds the innermost enclosing closure scope containing `scope`, if any.
+     * @param scope Scope to inspect; chain is traversed up through parents.
+     * @return The enclosing closure Scope, or nullptr if not within a closure.
+     */
+    const Scope *FindEnclosingClosure(const Scope *scope);
 
     /**
      * @brief Owns one Scope tree per open document, keyed by file URI. Mirrors SymbolTable's

@@ -1,5 +1,6 @@
 #include "analysis/AccessChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
 
@@ -438,70 +439,54 @@ namespace angel_lsp::analysis
                 return;
             }
 
-            // Check if identifier is inside a lambda_expression and accessing outer local variables/parameters (no closures)
-            TSNode p = parent;
-            TSNode lambdaNode{};
-            bool hasLambda = false;
-            while (!ts_node_is_null(p))
+            // Check if identifier is inside a closure and attempting to access outer local variables/parameters
+            const Scope *enclosingClosure = FindEnclosingClosure(scope);
+            if (enclosingClosure != nullptr)
             {
-                std::string_view pt = ts_node_type(p);
-                if (pt == "lambda_expression")
+                // Check if idText is declared within this closure (its own parameters or local variables)
+                bool declaredInClosure = false;
+                for (const Scope *s = scope; s != nullptr; s = s->parent)
                 {
-                    lambdaNode = p;
-                    hasLambda = true;
-                    break;
-                }
-                if (pt == "func_declaration")
-                {
-                    break;
-                }
-                p = ts_node_parent(p);
-            }
-
-            if (hasLambda)
-            {
-                const Scope *owner = nullptr;
-                const LocalDefinition *localDef = ResolveInScope(scope, idText, &owner);
-
-                // A lambda captures nothing, but a *global* is not a capture - it is still in
-                // scope, and the compiler accepts it:
-                //
-                //     int g = 5;
-                //     void Init() { CB@ cb = function() { g = 100; }; }   // compiles
-                //     void Init() { int l = 1; CB@ cb = function() { l = 2; }; }
-                //                                                    ^ No matching symbol 'l'
-                //
-                // LOCALS_QUERY records a module-level declaration under the same
-                // LocalDefinitionKind::Variable as a function-body local (its own comment says
-                // "Variables (locals and globals)"), so the definition alone cannot tell the two
-                // apart. Only the scope that holds it can. Without this test every legal global
-                // read inside a lambda was reported.
-                bool ownerIsFunctionNested = false;
-                for (const Scope *ancestor = owner; ancestor != nullptr; ancestor = ancestor->parent)
-                {
-                    if (ancestor->isFunctionScope)
+                    for (const auto &def : s->definitions)
                     {
-                        ownerIsFunctionNested = true;
+                        if (def.name == idText)
+                        {
+                            declaredInClosure = true;
+                            break;
+                        }
+                    }
+                    if (declaredInClosure || s == enclosingClosure)
+                    {
                         break;
                     }
                 }
 
-                if (localDef && ownerIsFunctionNested &&
-                    (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
+                if (!declaredInClosure)
                 {
-                    TSPoint lStart = ts_node_start_point(lambdaNode);
-                    TSPoint lEnd = ts_node_end_point(lambdaNode);
-                    bool isInsideLambda = false;
-                    if (localDef->startLine > lStart.row && localDef->startLine < lEnd.row)
+                    // Check if an outer function scope declared idText as a local variable or parameter
+                    bool isOuterLocalOrParam = false;
+                    for (const Scope *s = enclosingClosure->parent; s != nullptr; s = s->parent)
                     {
-                        isInsideLambda = true;
-                    }
-                    else if (localDef->startLine == lStart.row && localDef->startCharacter >= lStart.column)
-                    {
-                        isInsideLambda = true;
+                        if (s->kind == ScopeKind::Class || s->kind == ScopeKind::Namespace || s->kind == ScopeKind::Global)
+                        {
+                            break;
+                        }
+                        for (const auto &def : s->definitions)
+                        {
+                            if (def.name == idText &&
+                                (def.kind == LocalDefinitionKind::Variable || def.kind == LocalDefinitionKind::Parameter))
+                            {
+                                isOuterLocalOrParam = true;
+                                break;
+                            }
+                        }
+                        if (isOuterLocalOrParam)
+                        {
+                            break;
+                        }
                     }
 
-                    if (!isInsideLambda)
+                    if (isOuterLocalOrParam)
                     {
                         const TSPoint start = ts_node_start_point(node);
                         const TSPoint end = ts_node_end_point(node);

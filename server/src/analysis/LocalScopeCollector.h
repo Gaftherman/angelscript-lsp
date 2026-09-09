@@ -54,9 +54,13 @@ namespace angel_lsp::analysis
         /** @brief Cached grammar symbol for member_expression, used to flag a reference as a member access (see ScopeTree.h::LocalReference::isMemberAccess). */
         TSSymbol m_symMemberExpression = 0;
 
-        /** @brief Cached grammar symbols used to set Scope::isFunctionScope (see ScopeTree.h). */
+        /** @brief Cached grammar symbols used to set Scope::kind and Scope::isFunctionScope (see ScopeTree.h). */
         TSSymbol m_symFuncDeclaration = 0;
         TSSymbol m_symLambdaExpression = 0;
+        TSSymbol m_symClassBody = 0;
+        TSSymbol m_symInterfaceBody = 0;
+        TSSymbol m_symNamespaceBody = 0;
+        TSSymbol m_symScript = 0;
 
         /** @brief Cached grammar symbol used to confirm a Variable-kind definition came from a
          *         variable_declarator (as opposed to a foreach_variable, which shares

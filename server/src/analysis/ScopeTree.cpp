@@ -2,27 +2,77 @@
 
 namespace angel_lsp::analysis
 {
-    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name, const Scope **owner)
+    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name,
+                                          const Scope **owner, bool respectClosureBarrier)
     {
+        bool crossedClosure = false;
         for (const Scope *current = scope; current != nullptr; current = current->parent)
         {
             for (const LocalDefinition &def : current->definitions)
             {
                 if (def.name == name)
                 {
+                    if (crossedClosure && respectClosureBarrier)
+                    {
+                        // Closures cannot capture outer local variables or parameters from enclosing functions/closures.
+                        if (def.kind == LocalDefinitionKind::Parameter)
+                        {
+                            continue;
+                        }
+                        if (def.kind == LocalDefinitionKind::Variable)
+                        {
+                            bool isFunctionLocal = false;
+                            for (const Scope *s = current; s != nullptr; s = s->parent)
+                            {
+                                if (s->kind == ScopeKind::Function || s->kind == ScopeKind::Closure)
+                                {
+                                    isFunctionLocal = true;
+                                    break;
+                                }
+                                if (s->kind == ScopeKind::Class || s->kind == ScopeKind::Namespace || s->kind == ScopeKind::Global)
+                                {
+                                    break;
+                                }
+                            }
+                            if (isFunctionLocal)
+                            {
+                                continue;
+                            }
+                        }
+                    }
+
                     if (owner)
+                    {
                         *owner = current;
+                    }
                     return &def;
                 }
+            }
+
+            if (current->kind == ScopeKind::Closure)
+            {
+                crossedClosure = true;
             }
         }
 
         return nullptr;
     }
 
-    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name)
+    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name, bool respectClosureBarrier)
     {
-        return ResolveInScope(scope, name, nullptr);
+        return ResolveInScope(scope, name, nullptr, respectClosureBarrier);
+    }
+
+    const Scope *FindEnclosingClosure(const Scope *scope)
+    {
+        for (const Scope *current = scope; current != nullptr; current = current->parent)
+        {
+            if (current->kind == ScopeKind::Closure)
+            {
+                return current;
+            }
+        }
+        return nullptr;
     }
 
     const Scope *FindEnclosingScope(const Scope *root, uint32_t line, uint32_t character)

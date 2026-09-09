@@ -704,7 +704,7 @@ namespace angel_lsp::features
 
                 if (!matchedDef)
                 {
-                    matchedDef = analysis::ResolveInScope(innerScope, nodeText);
+                    matchedDef = analysis::ResolveInScope(innerScope, nodeText, nullptr, /*respectClosureBarrier=*/false);
                     if (matchedDef)
                     {
                         declScope = FindScopeDeclaringDefinition(rootScope.get(), *matchedDef);
@@ -999,7 +999,8 @@ namespace angel_lsp::features
                                         while (!ts_node_is_null(exprParent) && std::string_view(ts_node_type(exprParent)) != "member_expression")
                                         {
                                             if (std::string_view(ts_node_type(exprParent)) == "class_declaration" ||
-                                                std::string_view(ts_node_type(exprParent)) == "func_declaration")
+                                                std::string_view(ts_node_type(exprParent)) == "func_declaration" ||
+                                                std::string_view(ts_node_type(exprParent)) == "lambda_expression")
                                             {
                                                 exprParent = TSNode{};
                                                 break;
