@@ -1,5 +1,6 @@
 #include "features/implementation/ImplementationHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/rules/RuleIndex.h"
 
 #include <algorithm>
 #include <string_view>
@@ -64,6 +65,67 @@ namespace angel_lsp::features
          */
         std::vector<Symbol> CollectSubtypes(const std::string &rootType, const SymbolTable &table)
         {
+            const auto ruleIndex = table.GetRuleIndex();
+            if (ruleIndex)
+            {
+                std::string bareRoot = analysis::LastScopeSegment(rootType);
+                std::vector<std::string> frontier{ bareRoot };
+                if (bareRoot != rootType && !rootType.empty())
+                {
+                    frontier.push_back(rootType);
+                }
+                ankerl::unordered_dense::set<std::string> seen{ bareRoot, rootType };
+                std::vector<Symbol> subtypes;
+
+                while (!frontier.empty())
+                {
+                    std::vector<std::string> next;
+
+                    for (const auto &baseName : frontier)
+                    {
+                        const auto it = ruleIndex->derivedByBase.find(baseName);
+                        if (it == ruleIndex->derivedByBase.end())
+                        {
+                            continue;
+                        }
+
+                        for (const auto &derived : it->second)
+                        {
+                            const std::string bare = analysis::LastScopeSegment(derived.name);
+                            if (!seen.insert(bare).second)
+                            {
+                                continue;
+                            }
+                            if (!derived.qualifiedName.empty())
+                            {
+                                seen.insert(derived.qualifiedName);
+                            }
+
+                            next.push_back(bare);
+                            if (!derived.qualifiedName.empty() && derived.qualifiedName != bare)
+                            {
+                                next.push_back(derived.qualifiedName);
+                            }
+
+                            const auto symList = table.FindSymbolsPtr(derived.qualifiedName.empty() ? derived.name : derived.qualifiedName);
+                            if (symList)
+                            {
+                                for (const auto &s : *symList)
+                                {
+                                    if (s.type == SymbolType::Class || s.type == SymbolType::Interface)
+                                    {
+                                        subtypes.push_back(s);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    frontier = std::move(next);
+                }
+                return subtypes;
+            }
+
             std::vector<std::string> frontier{ analysis::LastScopeSegment(rootType) };
             std::vector<std::string> seen{ frontier.front() };
             std::vector<Symbol> subtypes;

@@ -113,107 +113,11 @@ namespace angel_lsp::features
                 {
                     std::string objText = GetNodeText(objNode, request.sourceCode);
                     std::string memText = GetNodeText(memNode, request.sourceCode);
-                    std::string receiverTypeName;
-
-                    if (objText == "this")
-                    {
-                        auto containers = analysis::GetEnclosingContainers(callNode, request.sourceCode);
-                        for (const auto &c : containers)
-                        {
-                            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-                            {
-                                receiverTypeName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-                                break;
-                            }
-                        }
-                    }
-                    else if (objText == "BaseClass")
-                    {
-                        auto containers = analysis::GetEnclosingContainers(callNode, request.sourceCode);
-                        for (const auto &c : containers)
-                        {
-                            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-                            {
-                                auto hier = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
-                                for (size_t i = 1; i < hier.size(); ++i)
-                                {
-                                    if (!analysis::IsMixinClass(hier[i], request.symbolTable))
-                                    {
-                                        receiverTypeName = hier[i];
-                                        break;
-                                    }
-                                }
-                                if (receiverTypeName.empty() && hier.size() > 1)
-                                {
-                                    receiverTypeName = hier[1];
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        auto rootScope = request.scopeIndex.GetRoot(request.uri);
-                        const analysis::Scope *scope = nullptr;
-                        if (rootScope)
-                        {
-                            TSPoint objPoint = ts_node_start_point(objNode);
-                            scope = FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column);
-                            if (scope)
-                            {
-                                const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, objText);
-                                if (def && !def->typeName.empty())
-                                {
-                                    receiverTypeName = analysis::CleanBaseType(def->typeName);
-                                }
-                            }
-                        }
-
-                        if (receiverTypeName.empty())
-                        {
-                            std::string resolved = analysis::ResolveExpressionType(
-                                objNode, scope, request.symbolTable, request.sourceCode, request.uri);
-                            if (!resolved.empty() && resolved != "void" && resolved != "unknown")
-                            {
-                                receiverTypeName = analysis::CleanBaseType(resolved);
-                            }
-                        }
-                    }
-
-                    if (receiverTypeName.empty())
-                    {
-                        auto globSyms = request.symbolTable.FindSymbols(objText);
-                        for (const auto &sym : globSyms)
-                        {
-                            if (sym.type == analysis::SymbolType::Variable)
-                            {
-                                const auto &var = sym.GetVariable();
-                                if (!var.typeName.empty())
-                                {
-                                    receiverTypeName = analysis::CleanBaseType(var.typeName);
-                                    break;
-                                }
-                            }
-                            else if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Namespace)
-                            {
-                                receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (receiverTypeName.empty())
-                    {
-                        auto shortMatches = request.symbolTable.FindTypeSymbolsByShortName(objText);
-                        for (const auto &sym : shortMatches)
-                        {
-                            if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Namespace)
-                            {
-                                receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                                break;
-                            }
-                        }
-                    }
+                    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+                    TSPoint objPoint = ts_node_start_point(objNode);
+                    const analysis::Scope *scope = rootScope ? FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column) : nullptr;
+                    std::string receiverTypeName = analysis::ResolveReceiverType(
+                        objNode, request.sourceCode, request.symbolTable, scope, "", request.uri);
 
                     if (receiverTypeName.empty())
                     {

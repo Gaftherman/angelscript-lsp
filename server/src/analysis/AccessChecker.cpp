@@ -428,8 +428,7 @@ namespace angel_lsp::analysis
             while (!idText.empty() && isspace(static_cast<unsigned char>(idText.front()))) idText.erase(idText.begin());
             while (!idText.empty() && isspace(static_cast<unsigned char>(idText.back()))) idText.pop_back();
 
-            if (idText.empty() || idText == "this" || idText == "super" || idText == "value" ||
-                idText == "true" || idText == "false" || idText == "null")
+            if (idText.empty() || IsKeyword(idText) || idText == "value")
             {
                 return;
             }

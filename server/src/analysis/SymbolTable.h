@@ -449,6 +449,35 @@ namespace angel_lsp::analysis
         /** @brief Checks if virtual mixin documents generation is currently enabled. */
         [[nodiscard]] bool IsVirtualMixinDocumentsEnabled() const;
 
+        /** @brief Number of header lines generated in a virtual mixin document (lines 0..2). */
+        static constexpr uint32_t kVirtualMixinHeaderLineCount = 3;
+
+        /**
+         * @brief Maps a virtual mixin document line number to the physical mixin declaration line number.
+         * @param virtualLine 0-indexed line number in the virtual mixin document.
+         * @param mixinStartLine 0-indexed line number where the mixin declaration begins in the physical file.
+         * @return 0-indexed line number in the physical file.
+         */
+        [[nodiscard]] static constexpr uint32_t VirtualToPhysicalLine(uint32_t virtualLine, uint32_t mixinStartLine) noexcept
+        {
+            return (virtualLine >= kVirtualMixinHeaderLineCount)
+                ? (mixinStartLine + (virtualLine - kVirtualMixinHeaderLineCount))
+                : mixinStartLine;
+        }
+
+        /**
+         * @brief Maps a physical mixin source line number to the virtual mixin document line number.
+         * @param physicalLine 0-indexed line number in the physical file.
+         * @param mixinStartLine 0-indexed line number where the mixin declaration begins in the physical file.
+         * @return 0-indexed line number in the virtual mixin document.
+         */
+        [[nodiscard]] static constexpr uint32_t PhysicalToVirtualLine(uint32_t physicalLine, uint32_t mixinStartLine) noexcept
+        {
+            return (physicalLine >= mixinStartLine)
+                ? (kVirtualMixinHeaderLineCount + (physicalLine - mixinStartLine))
+                : kVirtualMixinHeaderLineCount;
+        }
+
         /** @brief Constructs a virtual mixin URI for a host class and mixin name (e.g. angelscript-virtual://<host>/<mixin>.as). */
         [[nodiscard]] static std::string BuildVirtualMixinUri(std::string_view hostClass, std::string_view mixinName);
 

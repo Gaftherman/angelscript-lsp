@@ -379,7 +379,7 @@ namespace angel_lsp::features
         std::vector<RangeKey> rangeOrder;
         ankerl::unordered_dense::map<RangeKey, std::vector<analysis::Symbol>, RangeKeyHash> groups;
 
-        request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+        request.symbolTable.ForEachSymbolInFile(request.uri, [&](const std::string &, const std::vector<analysis::Symbol> &symbols)
         {
             for (const auto &sym : symbols)
             {

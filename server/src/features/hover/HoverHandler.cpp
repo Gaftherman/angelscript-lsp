@@ -824,8 +824,8 @@ namespace angel_lsp::features
             ? request.scopeIndex.GetRoot(virtualMixinSym->fileUri)
             : request.scopeIndex.GetRoot(request.uri);
 
-        uint32_t queryLine = (isVirtualDoc && virtualMixinSym && request.position.line >= 3)
-            ? (virtualMixinSym->startLine + (request.position.line - 3))
+        uint32_t queryLine = (isVirtualDoc && virtualMixinSym)
+            ? analysis::SymbolTable::VirtualToPhysicalLine(request.position.line, virtualMixinSym->startLine)
             : request.position.line;
 
         if (nodeText == "this")
@@ -886,100 +886,12 @@ namespace angel_lsp::features
                 return std::nullopt;
             }
 
-            std::string receiverTypeName;
-            if (rootScope)
+            const analysis::Scope *scope = rootScope ? FindInnermostScope(rootScope.get(), queryLine, request.position.character) : nullptr;
+            std::string receiverTypeName = analysis::ResolveReceiverType(
+                objectNode, request.sourceCode, request.symbolTable, scope, virtualHostClass, request.uri);
+            if (!receiverTypeName.empty() && request.config && !request.config->types.arrayTypeName.empty())
             {
-                const analysis::Scope *scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
-                receiverTypeName = analysis::ResolveExpressionType(objectNode, scope, request.symbolTable, request.sourceCode, request.uri);
-            }
-            else
-            {
-                receiverTypeName = analysis::ResolveExpressionType(objectNode, nullptr, request.symbolTable, request.sourceCode, request.uri);
-            }
-
-            if (!receiverTypeName.empty())
-            {
-                std::string arrayContainer = (request.config && !request.config->types.arrayTypeName.empty()) ? request.config->types.arrayTypeName : "array";
-                receiverTypeName = analysis::MemberOwnerType(receiverTypeName, arrayContainer);
-            }
-
-            if (receiverTypeName.empty())
-            {
-                uint32_t objStart = ts_node_start_byte(objectNode);
-                uint32_t objEnd = ts_node_end_byte(objectNode);
-                if (objStart < request.sourceCode.size() && objEnd <= request.sourceCode.size() && objStart < objEnd)
-                {
-                    std::string objText = request.sourceCode.substr(objStart, objEnd - objStart);
-
-                    if (objText == "this")
-                    {
-                        if (isVirtualDoc && !virtualHostClass.empty())
-                        {
-                            receiverTypeName = virtualHostClass;
-                        }
-                        else
-                        {
-                            // Look for enclosing class from AST containers first (O(depth) walk)
-                            auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
-                            for (const auto &c : containers)
-                            {
-                                if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-                                {
-                                    receiverTypeName = c.name;
-                                    break;
-                                }
-                            }
-                        }
-                        if (receiverTypeName.empty())
-                        {
-                            // Fallback to scoped lookup within this file only
-                            request.symbolTable.ForEachSymbolInFile(request.uri, [&](const std::string &, const std::vector<analysis::Symbol> &symbols)
-                            {
-                                for (const auto &sym : symbols)
-                                {
-                                    if ((sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface) &&
-                                        sym.fileUri == request.uri)
-                                    {
-                                        if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
-                                        {
-                                            receiverTypeName = sym.name;
-                                            return;
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                    }
-                    else if (rootScope)
-                    {
-                        const analysis::Scope *scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
-                        if (scope)
-                        {
-                            const analysis::LocalDefinition *objDef = analysis::ResolveInScope(scope, objText);
-                            if (objDef && !objDef->typeName.empty())
-                            {
-                                receiverTypeName = analysis::MemberOwnerType(objDef->typeName);
-                            }
-                        }
-                    }
-
-                    if (receiverTypeName.empty())
-                    {
-                        auto globSyms = request.symbolTable.FindSymbols(objText);
-                        for (const auto &sym : globSyms)
-                        {
-                            if (sym.type == analysis::SymbolType::Variable)
-                            {
-                                const auto &var = sym.GetVariable();
-                                if (!var.typeName.empty())
-                                {
-                                    receiverTypeName = analysis::CleanBaseType(var.typeName);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
+                receiverTypeName = analysis::MemberOwnerType(receiverTypeName, request.config->types.arrayTypeName);
             }
 
             if (!receiverTypeName.empty())
@@ -1045,7 +957,6 @@ namespace angel_lsp::features
 
                 if (!memberSymbols.empty())
                 {
-                    const analysis::Scope *scope = rootScope ? FindInnermostScope(rootScope.get(), queryLine, request.position.character) : nullptr;
                     if (auto best = ResolveCallOverload(node, memberSymbols, request, scope))
                     {
                         auto it = std::find_if(memberSymbols.begin(), memberSymbols.end(), [&](const analysis::Symbol &s) {

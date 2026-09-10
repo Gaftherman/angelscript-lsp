@@ -60,6 +60,11 @@ namespace angel_lsp::analysis
         return parser::keywords::IsReserved(name);
     }
 
+    bool IsKeyword(std::string_view word) noexcept
+    {
+        return parser::keywords::IsKeyword(word);
+    }
+
     bool IsPrimitiveTypeName(const std::string &name)
     {
         return IsCorePrimitive(name);
@@ -857,6 +862,27 @@ namespace angel_lsp::analysis
         return hierarchy;
     }
 
+    std::string ResolveBaseClass(std::string_view className, const SymbolTable &symbolTable)
+    {
+        if (className.empty())
+        {
+            return "";
+        }
+        auto hier = GetInheritedTypeHierarchy(std::string(className), symbolTable);
+        for (size_t i = 1; i < hier.size(); ++i)
+        {
+            if (!IsMixinClass(hier[i], symbolTable))
+            {
+                return hier[i];
+            }
+        }
+        if (hier.size() > 1)
+        {
+            return hier[1];
+        }
+        return "";
+    }
+
     bool HierarchyIsFullyVisible(const std::string &typeName, const SymbolTable &symbolTable)
     {
         for (const auto &ancestor : GetInheritedTypeHierarchy(typeName, symbolTable))
@@ -1613,13 +1639,10 @@ namespace angel_lsp::analysis
                 {
                     if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
                     {
-                        auto hier = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, symbolTable);
-                        for (size_t i = 1; i < hier.size(); ++i)
+                        std::string base = ResolveBaseClass(c.qualifiedName.empty() ? c.name : c.qualifiedName, symbolTable);
+                        if (!base.empty())
                         {
-                            if (!IsMixinClass(hier[i], symbolTable))
-                            {
-                                return CleanExpressionType(hier[i]);
-                            }
+                            return CleanExpressionType(base);
                         }
                         break;
                     }
@@ -2355,6 +2378,103 @@ namespace angel_lsp::analysis
                 return "{" + elemType + "}";
             }
             return "{}";
+        }
+
+        return "";
+    }
+
+    std::string ResolveReceiverType(
+        TSNode objNode,
+        std::string_view sourceCode,
+        const SymbolTable &symbolTable,
+        const Scope *scope,
+        std::string_view virtualHostClass,
+        std::string_view fileUri)
+    {
+        if (ts_node_is_null(objNode))
+        {
+            return "";
+        }
+
+        std::string objText = GetNodeText(objNode, sourceCode);
+        if (objText.empty())
+        {
+            return "";
+        }
+
+        if (objText == "this")
+        {
+            if (!virtualHostClass.empty())
+            {
+                return std::string(virtualHostClass);
+            }
+            auto containers = GetEnclosingContainers(objNode, sourceCode);
+            for (const auto &c : containers)
+            {
+                if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
+                {
+                    return c.qualifiedName.empty() ? c.name : c.qualifiedName;
+                }
+            }
+            return "";
+        }
+
+        if (objText == "BaseClass")
+        {
+            if (!virtualHostClass.empty())
+            {
+                return ResolveBaseClass(virtualHostClass, symbolTable);
+            }
+            auto containers = GetEnclosingContainers(objNode, sourceCode);
+            for (const auto &c : containers)
+            {
+                if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
+                {
+                    return ResolveBaseClass(c.qualifiedName.empty() ? c.name : c.qualifiedName, symbolTable);
+                }
+            }
+            return "";
+        }
+
+        if (scope)
+        {
+            const LocalDefinition *objDef = ResolveInScope(scope, objText);
+            if (objDef && !objDef->typeName.empty())
+            {
+                return MemberOwnerType(objDef->typeName);
+            }
+        }
+
+        std::string exprType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, fileUri);
+        if (!exprType.empty() && exprType != "void" && exprType != "unknown")
+        {
+            return MemberOwnerType(exprType);
+        }
+
+        auto globSyms = symbolTable.FindSymbols(objText);
+        for (const auto &sym : globSyms)
+        {
+            if (sym.type == SymbolType::Variable)
+            {
+                const auto &var = sym.GetVariable();
+                if (!var.typeName.empty())
+                {
+                    return MemberOwnerType(var.typeName);
+                }
+            }
+            else if (sym.type == SymbolType::Class || sym.type == SymbolType::Namespace)
+            {
+                return sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            }
+        }
+
+        auto shortMatches = symbolTable.FindTypeSymbolsByShortName(objText);
+        for (const auto &sym : shortMatches)
+        {
+            if (sym.type == SymbolType::Class || sym.type == SymbolType::Namespace)
+            {
+                return sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            }
         }
 
         return "";

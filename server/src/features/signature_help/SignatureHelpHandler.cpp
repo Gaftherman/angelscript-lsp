@@ -376,57 +376,10 @@ namespace angel_lsp::features
             {
                 std::string objText = request.sourceCode.substr(ts_node_start_byte(objNode), ts_node_end_byte(objNode) - ts_node_start_byte(objNode));
                 std::string memText = request.sourceCode.substr(ts_node_start_byte(memNode), ts_node_end_byte(memNode) - ts_node_start_byte(memNode));
-                std::string receiverTypeName;
-
-                if (objText == "this")
-                {
-                    request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
-                    {
-                        for (const auto &sym : symbols)
-                        {
-                            if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
-                            {
-                                if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
-                                {
-                                    receiverTypeName = sym.name;
-                                }
-                            }
-                        }
-                    });
-                }
-                else
-                {
-                    auto rootScope = request.scopeIndex.GetRoot(request.uri);
-                    if (rootScope)
-                    {
-                        const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
-                        if (scope)
-                        {
-                            const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, objText);
-                            if (def && !def->typeName.empty())
-                            {
-                                receiverTypeName = analysis::MemberOwnerType(def->typeName);
-                            }
-                        }
-                    }
-                }
-
-                if (receiverTypeName.empty())
-                {
-                    auto globSyms = request.symbolTable.FindSymbols(objText);
-                    for (const auto &sym : globSyms)
-                    {
-                        if (sym.type == analysis::SymbolType::Variable)
-                        {
-                            const auto &var = sym.GetVariable();
-                            if (!var.typeName.empty())
-                            {
-                                receiverTypeName = analysis::MemberOwnerType(var.typeName);
-                                break;
-                            }
-                        }
-                    }
-                }
+                auto rootScope = request.scopeIndex.GetRoot(request.uri);
+                const analysis::Scope *scope = rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
+                std::string receiverTypeName = analysis::ResolveReceiverType(
+                    objNode, request.sourceCode, request.symbolTable, scope, "", request.uri);
 
                 if (!receiverTypeName.empty())
                 {

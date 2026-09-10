@@ -802,7 +802,8 @@ namespace angel_lsp::features
         // 4. Context D: SymbolTable Symbol Lookup in current document
         if (target.kind == TargetKind::GlobalSymbol)
         {
-            request.symbolTable.ForEachSymbol(
+            request.symbolTable.ForEachSymbolInFile(
+                request.uri,
                 [&](const std::string &, const std::vector<analysis::Symbol> &symbols)
                 {
                     for (const auto &sym : symbols)
@@ -1195,7 +1196,8 @@ namespace angel_lsp::features
             if (rootScope)
             {
                 std::vector<std::pair<uint32_t, uint32_t>> nsRanges;
-                request.symbolTable.ForEachSymbol(
+                request.symbolTable.ForEachSymbolInFile(
+                    request.uri,
                     [&](const std::string &, const std::vector<analysis::Symbol> &sList)
                     {
                         for (const auto &s : sList)

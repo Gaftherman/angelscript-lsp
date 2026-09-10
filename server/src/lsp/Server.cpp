@@ -4802,7 +4802,8 @@ namespace angel_lsp
             }
         }
 
-        // Construct 3-line header (lines 0..2)
+        // Construct header (kVirtualMixinHeaderLineCount lines: 0..kVirtualMixinHeaderLineCount-1)
+        static_assert(angel_lsp::analysis::SymbolTable::kVirtualMixinHeaderLineCount == 3);
         std::string result;
         result += fmt::format("// Virtual expanded mixin {} for host class {}\n", mixinName, hostClass);
         result += fmt::format("// Origin: {}{}\n", mixinPhysicalFileUri, resolvedBaseClass);

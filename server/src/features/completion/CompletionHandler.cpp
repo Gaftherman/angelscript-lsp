@@ -852,48 +852,84 @@ namespace angel_lsp::features
         {
             std::string qualifier = scopeMatch[1].str();
 
-            // Collect all symbols under qualifier
-            request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symList)
+            // Collect enum members under qualifier
+            auto enumMatches = request.symbolTable.FindSymbols(qualifier);
+            if (enumMatches.empty() && qualifier.find("::") == std::string::npos)
             {
-                for (const auto &sym : symList)
+                enumMatches = request.symbolTable.FindTypeSymbolsByShortName(qualifier);
+            }
+            for (const auto &sym : enumMatches)
+            {
+                if (sym.type == analysis::SymbolType::Enum)
                 {
-                    if (sym.containerName == qualifier)
+                    const auto &eSig = sym.GetEnum();
+                    for (const auto &mem : eSig.members)
                     {
-                        lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
-                        std::string detail;
-                        if (sym.type == analysis::SymbolType::Function)
-                        {
-                            kind = lsp::CompletionItemKind::Function;
-                            const auto &fn = sym.GetFunction();
-                            detail = fn.returnType + " " + sym.name + "(...)";
-                        }
-                        else if (sym.type == analysis::SymbolType::Variable)
-                        {
-                            kind = lsp::CompletionItemKind::Variable;
-                            const auto &var = sym.GetVariable();
-                            detail = var.typeName;
-                        }
-                        else if (sym.type == analysis::SymbolType::Class)
-                        {
-                            kind = lsp::CompletionItemKind::Class;
-                        }
-                        else if (sym.type == analysis::SymbolType::Enum)
-                        {
-                            kind = lsp::CompletionItemKind::Enum;
-                        }
-
-                        AddItemIfNew(items, seenLabels, sym.name, kind, detail, "", sym.qualifiedName);
+                        AddItemIfNew(items, seenLabels, mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name);
                     }
-                    else if (sym.type == analysis::SymbolType::Enum && sym.name == qualifier)
+                }
+            }
+
+            // Collect container members under qualifier using RuleIndex
+            const auto ruleIndex = request.symbolTable.GetRuleIndex();
+            if (ruleIndex)
+            {
+                auto addMembersOf = [&](const std::string &container)
+                {
+                    const auto &cm = ruleIndex->Members(container);
+                    for (const auto &key : cm.memberKeys)
                     {
-                        const auto &eSig = sym.GetEnum();
-                        for (const auto &mem : eSig.members)
+                        const auto symList = request.symbolTable.FindSymbolsPtr(key);
+                        if (!symList)
                         {
-                            AddItemIfNew(items, seenLabels, mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name);
+                            continue;
+                        }
+                        for (const auto &sym : *symList)
+                        {
+                            if (sym.containerName == container || sym.containerName == qualifier)
+                            {
+                                lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
+                                std::string detail;
+                                if (sym.type == analysis::SymbolType::Function)
+                                {
+                                    kind = lsp::CompletionItemKind::Function;
+                                    const auto &fn = sym.GetFunction();
+                                    detail = fn.returnType + " " + sym.name + "(...)";
+                                }
+                                else if (sym.type == analysis::SymbolType::Variable)
+                                {
+                                    kind = lsp::CompletionItemKind::Variable;
+                                    const auto &var = sym.GetVariable();
+                                    detail = var.typeName;
+                                }
+                                else if (sym.type == analysis::SymbolType::Class)
+                                {
+                                    kind = lsp::CompletionItemKind::Class;
+                                }
+                                else if (sym.type == analysis::SymbolType::Enum)
+                                {
+                                    kind = lsp::CompletionItemKind::Enum;
+                                }
+
+                                AddItemIfNew(items, seenLabels, sym.name, kind, detail, "", sym.qualifiedName);
+                            }
+                        }
+                    }
+                };
+
+                addMembersOf(qualifier);
+                if (qualifier.find("::") == std::string::npos)
+                {
+                    auto qit = ruleIndex->qualifiedTypesByShortName.find(qualifier);
+                    if (qit != ruleIndex->qualifiedTypesByShortName.end())
+                    {
+                        for (const auto &q : qit->second)
+                        {
+                            addMembersOf(q);
                         }
                     }
                 }
-            });
+            }
 
             return items;
         }
@@ -954,19 +990,38 @@ namespace angel_lsp::features
                 const auto &seg0 = segments[0];
                 if (seg0.name == "this")
                 {
-                    request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+                    if (request.tree)
                     {
-                        for (const auto &sym : symbols)
+                        TSNode rootNode = ts_tree_root_node(request.tree);
+                        TSPoint pt{ request.position.line, request.position.character };
+                        TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+                        auto containers = analysis::GetEnclosingContainers(curNode, request.sourceCode);
+                        for (const auto &c : containers)
                         {
-                            if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
+                            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
                             {
-                                if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
-                                {
-                                    rawTypeName = sym.name;
-                                }
+                                rawTypeName = c.name;
+                                break;
                             }
                         }
-                    });
+                    }
+                    if (rawTypeName.empty())
+                    {
+                        request.symbolTable.ForEachSymbolInFile(request.uri, [&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+                        {
+                            for (const auto &sym : symbols)
+                            {
+                                if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
+                                {
+                                    if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
+                                    {
+                                        rawTypeName = sym.name;
+                                        return;
+                                    }
+                                }
+                            }
+                        });
+                    }
                 }
                 else if (innermostScope)
                 {
@@ -1273,34 +1328,63 @@ namespace angel_lsp::features
 
         // B. Enclosing class members (if cursor is inside a class method / body)
         std::string enclosingClassName;
-        request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+        if (request.tree)
         {
-            for (const auto &sym : symbols)
+            TSNode rootNode = ts_tree_root_node(request.tree);
+            TSPoint pt{ request.position.line, request.position.character };
+            TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+            auto containers = analysis::GetEnclosingContainers(curNode, request.sourceCode);
+            for (const auto &c : containers)
             {
-                if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
+                if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
                 {
-                    if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
-                    {
-                        enclosingClassName = sym.name;
-                    }
+                    enclosingClassName = c.name;
+                    break;
                 }
             }
-        });
-
-        if (!enclosingClassName.empty())
+        }
+        if (enclosingClassName.empty())
         {
-            request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symList)
+            request.symbolTable.ForEachSymbolInFile(request.uri, [&](const std::string &, const std::vector<analysis::Symbol> &symbols)
             {
-                for (const auto &sym : symList)
+                for (const auto &sym : symbols)
                 {
-                    if (sym.containerName == enclosingClassName)
+                    if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
                     {
-                        lsp::CompletionItemKind kind = (sym.type == analysis::SymbolType::Function) ?
-                            lsp::CompletionItemKind::Method : lsp::CompletionItemKind::Field;
-                        AddItemIfNew(items, seenLabels, sym.name, kind);
+                        if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
+                        {
+                            enclosingClassName = sym.name;
+                            return;
+                        }
                     }
                 }
             });
+        }
+
+        if (!enclosingClassName.empty())
+        {
+            const auto ruleIndex = request.symbolTable.GetRuleIndex();
+            if (ruleIndex)
+            {
+                const auto &cm = ruleIndex->Members(enclosingClassName);
+                for (const auto &key : cm.memberKeys)
+                {
+                    const auto symList = request.symbolTable.FindSymbolsPtr(key);
+                    if (!symList)
+                    {
+                        continue;
+                    }
+                    for (const auto &sym : *symList)
+                    {
+                        if (sym.containerName == enclosingClassName)
+                        {
+                            lsp::CompletionItemKind kind = (sym.type == analysis::SymbolType::Function) ?
+                                lsp::CompletionItemKind::Method : lsp::CompletionItemKind::Field;
+                            AddItemIfNew(items, seenLabels, sym.name, kind);
+                        }
+                    }
+                }
+            }
         }
 
         // C. Global Symbols from SymbolTable

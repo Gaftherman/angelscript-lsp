@@ -1,5 +1,6 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/rules/RuleIndex.h"
 
 #include <algorithm>
 #include <string_view>
@@ -200,25 +201,66 @@ namespace angel_lsp::features
         }
 
         std::vector<lsp::TypeHierarchyItem> items;
-        request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
+        const auto ruleIndex = request.symbolTable.GetRuleIndex();
+        if (ruleIndex)
         {
-            for (const auto &sym : symbols)
+            ankerl::unordered_dense::set<std::string> seen;
+            auto collectFrom = [&](const std::string &baseKey)
             {
-                if (!IsTypeSymbol(sym) || analysis::LastScopeSegment(sym.name) == target)
+                auto it = ruleIndex->derivedByBase.find(baseKey);
+                if (it == ruleIndex->derivedByBase.end())
                 {
-                    continue;
+                    return;
                 }
-
-                for (const auto &base : DeclaredBases(sym))
+                for (const auto &derived : it->second)
                 {
-                    if (analysis::LastScopeSegment(analysis::CleanBaseType(base)) == target)
+                    const std::string key = derived.qualifiedName.empty() ? derived.name : derived.qualifiedName;
+                    if (!seen.insert(key).second)
                     {
-                        items.push_back(ToItem(sym));
-                        break;
+                        continue;
+                    }
+                    const auto symList = request.symbolTable.FindSymbolsPtr(key);
+                    if (symList)
+                    {
+                        for (const auto &sym : *symList)
+                        {
+                            if (IsTypeSymbol(sym) && analysis::LastScopeSegment(sym.name) != target)
+                            {
+                                items.push_back(ToItem(sym));
+                            }
+                        }
                     }
                 }
+            };
+
+            collectFrom(target);
+            if (request.item.name != target)
+            {
+                collectFrom(request.item.name);
             }
-        });
+        }
+        else
+        {
+            request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
+            {
+                for (const auto &sym : symbols)
+                {
+                    if (!IsTypeSymbol(sym) || analysis::LastScopeSegment(sym.name) == target)
+                    {
+                        continue;
+                    }
+
+                    for (const auto &base : DeclaredBases(sym))
+                    {
+                        if (analysis::LastScopeSegment(analysis::CleanBaseType(base)) == target)
+                        {
+                            items.push_back(ToItem(sym));
+                            break;
+                        }
+                    }
+                }
+            });
+        }
 
         return items.empty() ? std::nullopt : std::optional{ items };
     }

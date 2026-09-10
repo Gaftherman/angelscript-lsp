@@ -94,6 +94,13 @@ namespace angel_lsp::analysis
     bool IsReservedKeyword(const std::string &name);
 
     /**
+     * @brief Checks whether the given word is any AngelScript keyword (reserved or contextual).
+     * @param word Word to check.
+     * @return True if word is a keyword.
+     */
+    [[nodiscard]] bool IsKeyword(std::string_view word) noexcept;
+
+    /**
      * @brief Immutable core AngelScript primitive types.
      */
     [[nodiscard]] constexpr bool IsCorePrimitive(std::string_view typeName) noexcept
@@ -356,6 +363,14 @@ namespace angel_lsp::analysis
     std::vector<std::string> GetInheritedTypeHierarchy(const std::string &className, const SymbolTable &symbolTable);
 
     /**
+     * @brief Resolves the direct non-mixin base class of a given class according to its inheritance hierarchy.
+     * @param className Qualified or unqualified name of the class.
+     * @param symbolTable Symbol table used to look up hierarchy and mixin information.
+     * @return Name of the direct base class, or empty string if none exists.
+     */
+    std::string ResolveBaseClass(std::string_view className, const SymbolTable &symbolTable);
+
+    /**
      * @brief The `get_X`/`set_X` methods, anywhere in a type's hierarchy, that stand for `X`.
      *
      * `class E { int get_Health() const property; void set_Health(int) property; }` gives `e.Health`
@@ -578,6 +593,24 @@ namespace angel_lsp::analysis
         std::string_view sourceCode,
         std::string_view uri = "",
         int depth = 0);
+
+    /**
+     * @brief Resolves the type name of a receiver object node in member or call expressions.
+     * @param objNode AST node representing the receiver / object expression.
+     * @param sourceCode Document source text.
+     * @param symbolTable Symbol table for type and member lookups.
+     * @param scope Optional lexical scope for local variable resolution.
+     * @param virtualHostClass Optional virtual mixin host class name.
+     * @param fileUri Optional document file URI.
+     * @return Resolved base type name, or empty string if unresolvable.
+     */
+    std::string ResolveReceiverType(
+        TSNode objNode,
+        std::string_view sourceCode,
+        const SymbolTable &symbolTable,
+        const Scope *scope = nullptr,
+        std::string_view virtualHostClass = {},
+        std::string_view fileUri = {});
 
     // --- A lambda against the funcdef it is being handed to ---------------------------------
     //

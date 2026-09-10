@@ -439,7 +439,7 @@ namespace angel_lsp::features
 
                 if (mSym && sym.fileUri == mSym->fileUri)
                 {
-                    uint32_t mappedStartLine = 3 + (sym.startLine >= mSym->startLine ? (sym.startLine - mSym->startLine) : sym.startLine);
+                    uint32_t mappedStartLine = analysis::SymbolTable::PhysicalToVirtualLine(sym.startLine, mSym->startLine);
                     uint32_t lineDiff = sym.endLine >= sym.startLine ? (sym.endLine - sym.startLine) : 0;
                     uint32_t mappedEndLine = mappedStartLine + lineDiff;
                     return lsp::Location{
@@ -608,8 +608,8 @@ namespace angel_lsp::features
             ? request.scopeIndex.GetRoot(virtualMixinSym->fileUri)
             : request.scopeIndex.GetRoot(request.uri);
 
-        uint32_t queryLine = (isVirtualDoc && virtualMixinSym && request.position.line >= 3)
-            ? (virtualMixinSym->startLine + (request.position.line - 3))
+        uint32_t queryLine = (isVirtualDoc && virtualMixinSym)
+            ? analysis::SymbolTable::VirtualToPhysicalLine(request.position.line, virtualMixinSym->startLine)
             : request.position.line;
 
         TSNode parent = ts_node_parent(node);
@@ -638,142 +638,9 @@ namespace angel_lsp::features
                 return std::nullopt;
             }
 
-            std::string receiverTypeName;
-            if (rootScope)
-            {
-                const analysis::Scope *scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
-                receiverTypeName = analysis::ResolveExpressionType(objectNode, scope, request.symbolTable, request.sourceCode, request.uri);
-            }
-            else
-            {
-                receiverTypeName = analysis::ResolveExpressionType(objectNode, nullptr, request.symbolTable, request.sourceCode, request.uri);
-            }
-
-            if (!receiverTypeName.empty())
-            {
-                receiverTypeName = analysis::MemberOwnerType(receiverTypeName);
-            }
-
-            if (receiverTypeName.empty())
-            {
-                uint32_t objStart = ts_node_start_byte(objectNode);
-                uint32_t objEnd = ts_node_end_byte(objectNode);
-                if (objStart < request.sourceCode.size() && objEnd <= request.sourceCode.size() && objStart < objEnd)
-                {
-                    std::string objText = request.sourceCode.substr(objStart, objEnd - objStart);
-
-                    if (objText == "this")
-                    {
-                        if (isVirtualDoc && !virtualHostClass.empty())
-                        {
-                            receiverTypeName = virtualHostClass;
-                        }
-                        else
-                        {
-                            auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
-                            for (const auto &c : containers)
-                            {
-                                if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-                                {
-                                    receiverTypeName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    else if (objText == "BaseClass")
-                    {
-                        std::string host = (isVirtualDoc && !virtualHostClass.empty()) ? virtualHostClass : "";
-                        if (!host.empty())
-                        {
-                            auto hier = analysis::GetInheritedTypeHierarchy(host, request.symbolTable);
-                            for (size_t i = 1; i < hier.size(); ++i)
-                            {
-                                if (!analysis::IsMixinClass(hier[i], request.symbolTable))
-                                {
-                                    receiverTypeName = hier[i];
-                                    break;
-                                }
-                            }
-                            if (receiverTypeName.empty() && hier.size() > 1)
-                            {
-                                receiverTypeName = hier[1];
-                            }
-                        }
-                        else
-                        {
-                            auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
-                            for (const auto &c : containers)
-                            {
-                                if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-                                {
-                                    auto hier = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
-                                    for (size_t i = 1; i < hier.size(); ++i)
-                                    {
-                                        if (!analysis::IsMixinClass(hier[i], request.symbolTable))
-                                        {
-                                            receiverTypeName = hier[i];
-                                            break;
-                                        }
-                                    }
-                                    if (receiverTypeName.empty() && hier.size() > 1)
-                                    {
-                                        receiverTypeName = hier[1];
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    else if (rootScope)
-                    {
-                        const analysis::Scope *scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
-                        if (scope)
-                        {
-                            const analysis::LocalDefinition *objDef = analysis::ResolveInScope(scope, objText);
-                            if (objDef && !objDef->typeName.empty())
-                            {
-                                receiverTypeName = analysis::CleanBaseType(objDef->typeName);
-                            }
-                        }
-                    }
-
-                    if (receiverTypeName.empty())
-                    {
-                        auto globSyms = request.symbolTable.FindSymbols(objText);
-                        for (const auto &sym : globSyms)
-                        {
-                            if (sym.type == analysis::SymbolType::Variable)
-                            {
-                                const auto &var = sym.GetVariable();
-                                if (!var.typeName.empty())
-                                {
-                                    receiverTypeName = analysis::CleanBaseType(var.typeName);
-                                    break;
-                                }
-                            }
-                            else if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Namespace)
-                            {
-                                receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (receiverTypeName.empty())
-                    {
-                        auto shortMatches = request.symbolTable.FindTypeSymbolsByShortName(objText);
-                        for (const auto &sym : shortMatches)
-                        {
-                            if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Namespace)
-                            {
-                                receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            const analysis::Scope *scope = rootScope ? FindInnermostScope(rootScope.get(), queryLine, request.position.character) : nullptr;
+            std::string receiverTypeName = analysis::ResolveReceiverType(
+                objectNode, request.sourceCode, request.symbolTable, scope, virtualHostClass, request.uri);
 
             if (!receiverTypeName.empty())
             {
@@ -825,11 +692,6 @@ namespace angel_lsp::features
                     }
                 }
 
-                const analysis::Scope *scope = nullptr;
-                if (rootScope)
-                {
-                    scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
-                }
                 memberSymbols = FilterOverloadsForCall(node, memberSymbols, request, scope);
 
                 std::vector<lsp::Location> memLocations;
@@ -888,10 +750,10 @@ namespace angel_lsp::features
                         uint32_t eLine = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndLine : def->endLine;
                         uint32_t eChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndCharacter : def->endCharacter;
 
-                        if (isVirtualDoc && virtualMixinSym && sLine >= virtualMixinSym->startLine)
+                        if (isVirtualDoc && virtualMixinSym)
                         {
-                            sLine = 3 + (sLine - virtualMixinSym->startLine);
-                            eLine = 3 + (eLine - virtualMixinSym->startLine);
+                            sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, virtualMixinSym->startLine);
+                            eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, virtualMixinSym->startLine);
                         }
 
                         locations.push_back(lsp::Location{
@@ -981,10 +843,10 @@ namespace angel_lsp::features
                     uint32_t eLine = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndLine : def->endLine;
                     uint32_t eChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndCharacter : def->endCharacter;
 
-                    if (isVirtualDoc && virtualMixinSym && sLine >= virtualMixinSym->startLine)
+                    if (isVirtualDoc && virtualMixinSym)
                     {
-                        sLine = 3 + (sLine - virtualMixinSym->startLine);
-                        eLine = 3 + (eLine - virtualMixinSym->startLine);
+                        sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, virtualMixinSym->startLine);
+                        eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, virtualMixinSym->startLine);
                     }
 
                     locations.push_back(lsp::Location{

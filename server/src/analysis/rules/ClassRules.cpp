@@ -419,15 +419,7 @@ namespace angel_lsp::analysis::rules
 
             auto hostHierarchy = GetInheritedTypeHierarchy(hostClassName, ctx.request.symbolTable);
 
-            std::string directSuperClass;
-            for (size_t i = 1; i < hostHierarchy.size(); ++i)
-            {
-                if (!IsMixinClass(hostHierarchy[i], ctx.request.symbolTable))
-                {
-                    directSuperClass = hostHierarchy[i];
-                    break;
-                }
-            }
+            std::string directSuperClass = ResolveBaseClass(hostClassName, ctx.request.symbolTable);
 
             std::vector<std::string> superHierarchy;
             if (!directSuperClass.empty())
@@ -768,33 +760,47 @@ namespace angel_lsp::analysis::rules
                         }
                         else if (curType == "scoped_identifier")
                         {
-                            std::string scFull = GetNodeText(cur, mixinSource);
-                            auto pos = scFull.rfind("::");
-                            if (pos != std::string::npos)
+                            TSNode scopeChild = GetChildByField(cur, "scope");
+                            TSNode nameChild = GetChildByField(cur, "name");
+                            std::string scPrefix;
+                            std::string nmText;
+
+                            if (!ts_node_is_null(scopeChild) && !ts_node_is_null(nameChild))
                             {
-                                std::string scPrefix = scFull.substr(0, pos);
-                                std::string nmText = scFull.substr(pos + 2);
-                                if (scPrefix == "BaseClass")
+                                scPrefix = GetNodeText(scopeChild, mixinSource);
+                                nmText = GetNodeText(nameChild, mixinSource);
+                            }
+                            else
+                            {
+                                std::string scFull = GetNodeText(cur, mixinSource);
+                                auto pos = scFull.rfind("::");
+                                if (pos != std::string::npos)
                                 {
-                                    if (!nmText.empty() &&
-                                        !superMembers.contains(nmText) &&
-                                        !reportedMissingMembers.contains(nmText))
-                                    {
-                                        reportedMissingMembers.insert(nmText);
-                                        TSPoint sPoint = ts_node_start_point(cur);
-                                        TSPoint ePoint = ts_node_end_point(cur);
+                                    scPrefix = scFull.substr(0, pos);
+                                    nmText = scFull.substr(pos + 2);
+                                }
+                            }
 
-                                        DiagnosticRelatedInformation rel;
-                                        rel.fileUri = mixinSym->fileUri;
-                                        rel.range = { sPoint.row, sPoint.column, ePoint.row, ePoint.column };
-                                        rel.message = fmt::format("In mixin '{}': Member '{}'", mixinSym->name, nmText);
+                            if (scPrefix == "BaseClass")
+                            {
+                                if (!nmText.empty() &&
+                                    !superMembers.contains(nmText) &&
+                                    !reportedMissingMembers.contains(nmText))
+                                {
+                                    reportedMissingMembers.insert(nmText);
+                                    TSPoint sPoint = ts_node_start_point(cur);
+                                    TSPoint ePoint = ts_node_end_point(cur);
 
-                                        ctx.EmitWithRelated(
-                                            hostIncStartLine, hostIncStartChar, hostIncEndLine, hostIncEndChar,
-                                            diagnostics::codes::MixinInstantiationMemberNotFound,
-                                            mixinSym->name, hostClassName, nmText, hostClassName,
-                                            rel, DiagnosticSeverity::Error);
-                                    }
+                                    DiagnosticRelatedInformation rel;
+                                    rel.fileUri = mixinSym->fileUri;
+                                    rel.range = { sPoint.row, sPoint.column, ePoint.row, ePoint.column };
+                                    rel.message = fmt::format("In mixin '{}': Member '{}'", mixinSym->name, nmText);
+
+                                    ctx.EmitWithRelated(
+                                        hostIncStartLine, hostIncStartChar, hostIncEndLine, hostIncEndChar,
+                                        diagnostics::codes::MixinInstantiationMemberNotFound,
+                                        mixinSym->name, hostClassName, nmText, hostClassName,
+                                        rel, DiagnosticSeverity::Error);
                                 }
                             }
                         }
@@ -813,9 +819,8 @@ namespace angel_lsp::analysis::rules
                                         !mixinSelfMembers.contains(fnName) &&
                                         !hostMembers.contains(fnName) &&
                                         !ctx.request.GetRuleIndex().allNames.contains(fnName) &&
-                                        !IsReservedKeyword(fnName) &&
+                                        !IsKeyword(fnName) &&
                                         !IsPrimitiveTypeName(fnName) &&
-                                        fnName != "this" && fnName != "super" && fnName != "cast" &&
                                         !reportedMissingMembers.contains(fnName))
                                     {
                                         reportedMissingMembers.insert(fnName);
