@@ -1428,6 +1428,36 @@ namespace angel_lsp::analysis
 
         std::string_view nodeType = ts_node_type(exprNode);
 
+        // Parenthesized expression (e.g. (expr))
+        if (nodeType == "parenthesized_expression")
+        {
+            const uint32_t namedCount = ts_node_named_child_count(exprNode);
+            for (uint32_t i = 0; i < namedCount; ++i)
+            {
+                TSNode child = ts_node_named_child(exprNode, i);
+                std::string res = ResolveExpressionType(child, scope, symbolTable, sourceCode, uri, depth + 1);
+                if (!res.empty())
+                {
+                    return res;
+                }
+            }
+            const uint32_t count = ts_node_child_count(exprNode);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(exprNode, i);
+                std::string_view cType = ts_node_type(child);
+                if (cType != "(" && cType != ")")
+                {
+                    std::string res = ResolveExpressionType(child, scope, symbolTable, sourceCode, uri, depth + 1);
+                    if (!res.empty())
+                    {
+                        return res;
+                    }
+                }
+            }
+            return "";
+        }
+
         // `this` expression
         if (nodeType == "this_expression")
         {
@@ -1783,6 +1813,13 @@ namespace angel_lsp::analysis
             // 3. Numeric promotions for primitives
             if (!cleanLeft.empty() && !cleanRight.empty())
             {
+                if (op == "/" &&
+                    (cleanLeft == "float" || cleanLeft == "double" || cleanLeft == "int" || cleanLeft == "uint") &&
+                    (cleanRight == "float" || cleanRight == "double" || cleanRight == "int" || cleanRight == "uint"))
+                {
+                    return "float";
+                }
+
                 if (cleanLeft == "double" || cleanRight == "double")
                 {
                     return "double";
@@ -2071,6 +2108,33 @@ namespace angel_lsp::analysis
                                     if (!overriddenLower)
                                     {
                                         candidates.push_back(sym);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Also check directly included mixins if not surfaced in hierarchy
+                        auto classSyms = symbolTable.FindSymbols(c.qualifiedName.empty() ? c.name : c.qualifiedName);
+                        for (const auto &cs : classSyms)
+                        {
+                            if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
+                            {
+                                for (const auto &mixin : cs.GetClass().includedMixins)
+                                {
+                                    auto mixinFound = symbolTable.FindSymbols(mixin + "::" + funcName);
+                                    for (const auto &sym : mixinFound)
+                                    {
+                                        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                                        {
+                                            bool overriddenLower = std::any_of(candidates.begin(), candidates.end(),
+                                                [&](const Symbol &kept) {
+                                                    return HasSameParameterList(kept, sym);
+                                                });
+                                            if (!overriddenLower)
+                                            {
+                                                candidates.push_back(sym);
+                                            }
+                                        }
                                     }
                                 }
                             }

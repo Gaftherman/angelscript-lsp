@@ -950,7 +950,10 @@ async function startClient(context: ExtensionContext): Promise<void> {
     };
 
     const clientOptions: LanguageClientOptions = {
-        documentSelector: [{ scheme: 'file', language: 'angelscript' }],
+        documentSelector: [
+            { scheme: 'file', language: 'angelscript' },
+            { scheme: 'angelscript-virtual', language: 'angelscript' }
+        ],
         // No `configurationSection` here on purpose. It installs a second configuration listener
         // inside the LanguageClient, and that one fired against a client this extension was already
         // restarting for the same event - which surfaced as "Sending notification

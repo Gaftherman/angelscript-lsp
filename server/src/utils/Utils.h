@@ -14,6 +14,12 @@ namespace angel_lsp::utils
     std::string UriToPath(const std::string &uri);
     std::string PathToUri(const std::string &filePath);
     /**
+     * @brief Decodes percent-encoded characters in a URI or URI component (e.g. %3A%3A -> ::, %20 -> space).
+     * @param in Input string containing percent-encoded sequences.
+     * @return Decoded string.
+     */
+    std::string UrlDecode(std::string_view in);
+    /**
      * @brief Converts an LSP position into a byte offset into the document text.
      * @param text Full document text (UTF-8).
      * @param line 0-indexed line number.

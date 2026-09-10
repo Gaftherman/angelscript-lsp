@@ -100,7 +100,7 @@ namespace angel_lsp::features
             const DefinitionRequest &request,
             const analysis::Scope *scope)
         {
-            if (candidates.size() <= 1)
+            if (candidates.empty())
             {
                 return candidates;
             }
@@ -188,6 +188,8 @@ namespace angel_lsp::features
                 }
             }
 
+            const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
+
             std::vector<analysis::Symbol> funcCandidates;
             for (const auto &sym : candidates)
             {
@@ -197,6 +199,97 @@ namespace angel_lsp::features
                 }
             }
 
+            // Check if any existing candidate matches this call's argument count
+            bool hasArityMatch = false;
+            for (const auto &sym : funcCandidates)
+            {
+                if (std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                {
+                    const auto &sig = sym.GetFunction();
+                    uint32_t requiredParams = 0;
+                    uint32_t maxParams = 0;
+                    bool isVariadic = false;
+                    for (const auto &param : sig.parameters)
+                    {
+                        if (param.rawText.find("...") != std::string::npos)
+                        {
+                            isVariadic = true;
+                            continue;
+                        }
+                        ++maxParams;
+                        if (param.defaultValue.empty())
+                        {
+                            ++requiredParams;
+                        }
+                    }
+                    if (argCount >= requiredParams && (isVariadic || argCount <= maxParams))
+                    {
+                        hasArityMatch = true;
+                        break;
+                    }
+                }
+            }
+
+            // If candidates don't have an arity match, look up overloads from enclosing class hierarchy & mixins
+            if (!hasArityMatch)
+            {
+                std::string targetMethodName = ts_node_is_null(node) ? "" : analysis::GetNodeText(node, request.sourceCode);
+                auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
+                for (const auto &c : containers)
+                {
+                    if (c.kind == analysis::ContainerKind::Class)
+                    {
+                        auto hierarchy = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
+                        for (const auto &cls : hierarchy)
+                        {
+                            auto found = request.symbolTable.FindSymbols(cls + "::" + targetMethodName);
+                            for (const auto &sym : found)
+                            {
+                                if (sym.type == analysis::SymbolType::Function && std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                                {
+                                    if (std::none_of(funcCandidates.begin(), funcCandidates.end(), [&](const analysis::Symbol &existing) {
+                                        return existing.qualifiedName == sym.qualifiedName && analysis::HasSameParameterList(existing, sym);
+                                    }))
+                                    {
+                                        funcCandidates.push_back(sym);
+                                    }
+                                }
+                            }
+                        }
+
+                        auto hostSyms = request.symbolTable.FindSymbols(c.qualifiedName.empty() ? c.name : c.qualifiedName);
+                        for (const auto &hs : hostSyms)
+                        {
+                            if (hs.type == analysis::SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(hs.signature))
+                            {
+                                for (const auto &mixinName : hs.GetClass().includedMixins)
+                                {
+                                    auto mixinMethods = request.symbolTable.FindSymbols(mixinName + "::" + targetMethodName);
+                                    for (const auto &sym : mixinMethods)
+                                    {
+                                        if (sym.type == analysis::SymbolType::Function && std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                                        {
+                                            if (std::none_of(funcCandidates.begin(), funcCandidates.end(), [&](const analysis::Symbol &existing) {
+                                                return existing.qualifiedName == sym.qualifiedName && analysis::HasSameParameterList(existing, sym);
+                                            }))
+                                            {
+                                                funcCandidates.push_back(sym);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if (funcCandidates.size() <= 1 && hasArityMatch)
+            {
+                return candidates;
+            }
+
             auto match = analysis::ResolveBestOverload(funcCandidates, argTypes, request.symbolTable);
             if (match.bestCandidate != nullptr)
             {
@@ -204,7 +297,6 @@ namespace angel_lsp::features
             }
 
             // Fallback: match by arity if an exact type match was not found
-            const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
             const analysis::Symbol *bestFallback = nullptr;
             int bestFallbackScore = -10000;
 
@@ -274,6 +366,18 @@ namespace angel_lsp::features
                 return { *bestFallback };
             }
 
+            // Secondary fallback: match any function candidate with exact parameter count
+            for (const auto &sym : funcCandidates)
+            {
+                if (std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                {
+                    if (sym.GetFunction().parameters.size() == argCount)
+                    {
+                        return { sym };
+                    }
+                }
+            }
+
             return candidates;
         }
 
@@ -285,6 +389,69 @@ namespace angel_lsp::features
          */
         lsp::Location MakeLocation(const analysis::Symbol &sym, const DefinitionRequest &request)
         {
+            if (request.uri.starts_with("angelscript-virtual:"))
+            {
+                std::string_view s = request.uri;
+                if (s.starts_with("angelscript-virtual://"))
+                {
+                    s.remove_prefix(22);
+                }
+                else if (s.starts_with("angelscript-virtual:"))
+                {
+                    s.remove_prefix(20);
+                }
+                auto slashPos = s.find('/');
+                std::string mixinPart = slashPos != std::string_view::npos ? std::string(s.substr(slashPos + 1)) : std::string(s);
+                if (mixinPart.ends_with(".as"))
+                {
+                    mixinPart = mixinPart.substr(0, mixinPart.size() - 3);
+                }
+                mixinPart = utils::UrlDecode(mixinPart);
+
+                const analysis::Symbol *mSym = nullptr;
+                auto cand = request.symbolTable.FindSymbols(mixinPart);
+                for (const auto &c : cand)
+                {
+                    if (c.type == analysis::SymbolType::Class)
+                    {
+                        mSym = &c;
+                        break;
+                    }
+                }
+                if (!mSym)
+                {
+                    std::string shortName = mixinPart;
+                    auto lastScope = shortName.rfind("::");
+                    if (lastScope != std::string::npos)
+                    {
+                        shortName = shortName.substr(lastScope + 2);
+                    }
+                    auto sCand = request.symbolTable.FindTypeSymbolsByShortName(shortName);
+                    for (const auto &c : sCand)
+                    {
+                        if (c.type == analysis::SymbolType::Class)
+                        {
+                            mSym = &c;
+                            break;
+                        }
+                    }
+                }
+
+                if (mSym && sym.fileUri == mSym->fileUri)
+                {
+                    uint32_t mappedStartLine = 3 + (sym.startLine >= mSym->startLine ? (sym.startLine - mSym->startLine) : sym.startLine);
+                    uint32_t lineDiff = sym.endLine >= sym.startLine ? (sym.endLine - sym.startLine) : 0;
+                    uint32_t mappedEndLine = mappedStartLine + lineDiff;
+                    return lsp::Location{
+                        lsp::DocumentUri::parse(request.uri),
+                        lsp::Range{
+                            lsp::Position{ mappedStartLine, sym.startCharacter },
+                            lsp::Position{ mappedEndLine, sym.endCharacter }
+                        }
+                    };
+                }
+            }
+
             if (sym.isSynthesized && request.symbolTable.IsVirtualMixinDocumentsEnabled() && !sym.virtualFileUri.empty())
             {
                 uint32_t mixinStartLine = 0;
@@ -398,8 +565,83 @@ namespace angel_lsp::features
 
         std::vector<lsp::Location> locations;
 
+        // Check if cursor is in a virtual mixin document
+        bool isVirtualDoc = request.uri.starts_with("angelscript-virtual:");
+        std::string virtualHostClass;
+        std::string virtualMixinName;
+        const analysis::Symbol *virtualMixinSym = nullptr;
+
+        if (isVirtualDoc)
+        {
+            std::string_view s = request.uri;
+            if (s.starts_with("angelscript-virtual://"))
+            {
+                s.remove_prefix(22);
+            }
+            else if (s.starts_with("angelscript-virtual:"))
+            {
+                s.remove_prefix(20);
+            }
+
+            auto slashPos = s.find('/');
+            if (slashPos != std::string_view::npos)
+            {
+                virtualHostClass = utils::UrlDecode(s.substr(0, slashPos));
+                std::string_view mixinPart = s.substr(slashPos + 1);
+                if (mixinPart.ends_with(".as"))
+                {
+                    mixinPart.remove_suffix(3);
+                }
+                virtualMixinName = utils::UrlDecode(mixinPart);
+            }
+            else
+            {
+                std::string_view mixinPart = s;
+                if (mixinPart.ends_with(".as"))
+                {
+                    mixinPart.remove_suffix(3);
+                }
+                virtualMixinName = utils::UrlDecode(mixinPart);
+            }
+
+            auto candidates = request.symbolTable.FindSymbols(virtualMixinName);
+            for (const auto &cand : candidates)
+            {
+                if (cand.type == analysis::SymbolType::Class)
+                {
+                    virtualMixinSym = &cand;
+                    break;
+                }
+            }
+            if (!virtualMixinSym)
+            {
+                std::string shortName = virtualMixinName;
+                auto lastScope = shortName.rfind("::");
+                if (lastScope != std::string::npos)
+                {
+                    shortName = shortName.substr(lastScope + 2);
+                }
+                auto shortCandidates = request.symbolTable.FindTypeSymbolsByShortName(shortName);
+                for (const auto &cand : shortCandidates)
+                {
+                    if (cand.type == analysis::SymbolType::Class)
+                    {
+                        virtualMixinSym = &cand;
+                        break;
+                    }
+                }
+            }
+        }
+
         // 1. Member Access vs Local Scope Precedence
-        auto rootScope = request.scopeIndex.GetRoot(request.uri);
+        auto rootScope = (isVirtualDoc && virtualMixinSym)
+            ? request.scopeIndex.GetRoot(virtualMixinSym->fileUri)
+            : request.scopeIndex.GetRoot(request.uri);
+
+        uint32_t queryLine = (isVirtualDoc && virtualMixinSym && request.position.line >= 3)
+            ? (virtualMixinSym->startLine + (request.position.line - 3))
+            : request.position.line;
+
         TSNode parent = ts_node_parent(node);
 
         // Check if cursor node is the member child of a member_expression (e.g. "prop" in "obj.prop")
@@ -429,7 +671,7 @@ namespace angel_lsp::features
             std::string receiverTypeName;
             if (rootScope)
             {
-                const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+                const analysis::Scope *scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
                 receiverTypeName = analysis::ResolveExpressionType(objectNode, scope, request.symbolTable, request.sourceCode, request.uri);
             }
             else
@@ -452,43 +694,70 @@ namespace angel_lsp::features
 
                     if (objText == "this")
                     {
-                        auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
-                        for (const auto &c : containers)
+                        if (isVirtualDoc && !virtualHostClass.empty())
                         {
-                            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+                            receiverTypeName = virtualHostClass;
+                        }
+                        else
+                        {
+                            auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
+                            for (const auto &c : containers)
                             {
-                                receiverTypeName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-                                break;
+                                if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+                                {
+                                    receiverTypeName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+                                    break;
+                                }
                             }
                         }
                     }
                     else if (objText == "BaseClass")
                     {
-                        auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
-                        for (const auto &c : containers)
+                        std::string host = (isVirtualDoc && !virtualHostClass.empty()) ? virtualHostClass : "";
+                        if (!host.empty())
                         {
-                            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+                            auto hier = analysis::GetInheritedTypeHierarchy(host, request.symbolTable);
+                            for (size_t i = 1; i < hier.size(); ++i)
                             {
-                                auto hier = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
-                                for (size_t i = 1; i < hier.size(); ++i)
+                                if (!analysis::IsMixinClass(hier[i], request.symbolTable))
                                 {
-                                    if (!analysis::IsMixinClass(hier[i], request.symbolTable))
+                                    receiverTypeName = hier[i];
+                                    break;
+                                }
+                            }
+                            if (receiverTypeName.empty() && hier.size() > 1)
+                            {
+                                receiverTypeName = hier[1];
+                            }
+                        }
+                        else
+                        {
+                            auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
+                            for (const auto &c : containers)
+                            {
+                                if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+                                {
+                                    auto hier = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
+                                    for (size_t i = 1; i < hier.size(); ++i)
                                     {
-                                        receiverTypeName = hier[i];
-                                        break;
+                                        if (!analysis::IsMixinClass(hier[i], request.symbolTable))
+                                        {
+                                            receiverTypeName = hier[i];
+                                            break;
+                                        }
                                     }
+                                    if (receiverTypeName.empty() && hier.size() > 1)
+                                    {
+                                        receiverTypeName = hier[1];
+                                    }
+                                    break;
                                 }
-                                if (receiverTypeName.empty() && hier.size() > 1)
-                                {
-                                    receiverTypeName = hier[1];
-                                }
-                                break;
                             }
                         }
                     }
                     else if (rootScope)
                     {
-                        const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+                        const analysis::Scope *scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
                         if (scope)
                         {
                             const analysis::LocalDefinition *objDef = analysis::ResolveInScope(scope, objText);
@@ -589,7 +858,7 @@ namespace angel_lsp::features
                 const analysis::Scope *scope = nullptr;
                 if (rootScope)
                 {
-                    scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+                    scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
                 }
                 memberSymbols = FilterOverloadsForCall(node, memberSymbols, request, scope);
 
@@ -624,7 +893,7 @@ namespace angel_lsp::features
         // 2. Local Scope Definition (Parameters and Variables in Function Scope)
         if (rootScope)
         {
-            const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+            const analysis::Scope *scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
             if (scope)
             {
                 const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, nodeText);
@@ -648,6 +917,12 @@ namespace angel_lsp::features
                         uint32_t sChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullStartCharacter : def->startCharacter;
                         uint32_t eLine = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndLine : def->endLine;
                         uint32_t eChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndCharacter : def->endCharacter;
+
+                        if (isVirtualDoc && virtualMixinSym && sLine >= virtualMixinSym->startLine)
+                        {
+                            sLine = 3 + (sLine - virtualMixinSym->startLine);
+                            eLine = 3 + (eLine - virtualMixinSym->startLine);
+                        }
 
                         locations.push_back(lsp::Location{
                             lsp::DocumentUri::parse(request.uri),
@@ -695,10 +970,37 @@ namespace angel_lsp::features
             symbols = analysis::FindGlobalPropertyAccessors(nodeText, request.symbolTable, false);
         }
 
+        // Fallback for virtual documents: lookup in host class hierarchy
+        if (symbols.empty() && isVirtualDoc && !virtualHostClass.empty())
+        {
+            auto hier = analysis::GetInheritedTypeHierarchy(virtualHostClass, request.symbolTable);
+            for (const auto &cls : hier)
+            {
+                auto found = request.symbolTable.FindSymbols(cls + "::" + nodeText);
+                if (!found.empty())
+                {
+                    symbols = std::move(found);
+                    break;
+                }
+            }
+            if (symbols.empty())
+            {
+                for (const auto &cls : hier)
+                {
+                    auto accessors = analysis::FindPropertyAccessors(cls, nodeText, request.symbolTable, false);
+                    if (!accessors.empty())
+                    {
+                        symbols = std::move(accessors);
+                        break;
+                    }
+                }
+            }
+        }
+
         // Fallback to local scope definition (e.g. Field or non-function scope definition) if not in SymbolTable
         if (symbols.empty() && rootScope)
         {
-            const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+            const analysis::Scope *scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
             if (scope)
             {
                 const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, nodeText);
@@ -708,6 +1010,12 @@ namespace angel_lsp::features
                     uint32_t sChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullStartCharacter : def->startCharacter;
                     uint32_t eLine = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndLine : def->endLine;
                     uint32_t eChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndCharacter : def->endCharacter;
+
+                    if (isVirtualDoc && virtualMixinSym && sLine >= virtualMixinSym->startLine)
+                    {
+                        sLine = 3 + (sLine - virtualMixinSym->startLine);
+                        eLine = 3 + (eLine - virtualMixinSym->startLine);
+                    }
 
                     locations.push_back(lsp::Location{
                         lsp::DocumentUri::parse(request.uri),
@@ -724,7 +1032,7 @@ namespace angel_lsp::features
         const analysis::Scope *scope = nullptr;
         if (rootScope)
         {
-            scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+            scope = FindInnermostScope(rootScope.get(), queryLine, request.position.character);
         }
         symbols = FilterOverloadsForCall(node, symbols, request, scope);
 

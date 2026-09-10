@@ -1,5 +1,6 @@
 #include "features/code_lens/CodeLensHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/GrammarNames.h"
 
 #include <algorithm>
 #include <string>
@@ -39,18 +40,46 @@ namespace angel_lsp::features
             }
         };
 
+        std::string GetEnclosingClassName(const analysis::SymbolTable &symbolTable, const std::string &uri, uint32_t line)
+        {
+            std::string enclosingClass;
+            symbolTable.ForEachSymbolInFile(
+                uri,
+                [&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+                {
+                    for (const auto &sym : symbols)
+                    {
+                        if ((sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface) &&
+                            sym.fileUri == uri)
+                        {
+                            if (line >= sym.startLine && line <= sym.endLine)
+                            {
+                                enclosingClass = sym.name;
+                            }
+                        }
+                    }
+                });
+            return enclosingClass;
+        }
+
         /**
          * @brief Recursively traverses lexical scopes to collect unique call-site references to a symbol group.
          * @param fileUri URI of document owning the scope tree.
          * @param scope Current scope to check.
          * @param targetName Symbol name to match.
          * @param group Symbols sharing this declaration range.
+         * @param compatibleClasses Set of class names compatible with the symbol group (for class members).
+         * @param symbolTable Global symbol table.
+         * @param request Immutable CodeLens request.
          * @param seenRefs Set of unique reference locations across documents.
          */
         void CollectReferencesInScope(const std::string &fileUri,
                                      const analysis::Scope *scope,
                                      const std::string &targetName,
                                      const std::vector<analysis::Symbol> &group,
+                                     const ankerl::unordered_dense::set<std::string> &compatibleClasses,
+                                     const analysis::SymbolTable &symbolTable,
+                                     const CodeLensRequest &request,
                                      ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> &seenRefs)
         {
             if (!scope)
@@ -95,6 +124,126 @@ namespace angel_lsp::features
                         continue;
                     }
 
+                    if (!compatibleClasses.empty())
+                    {
+                        if (!ref.isMemberAccess)
+                        {
+                            std::string encClass = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
+                            if (encClass.empty() || !compatibleClasses.contains(encClass))
+                            {
+                                continue;
+                            }
+
+                            const analysis::LocalDefinition *localShadow = analysis::ResolveInScope(scope, targetName);
+                            if (localShadow && (localShadow->kind == analysis::LocalDefinitionKind::Parameter || localShadow->kind == analysis::LocalDefinitionKind::Variable))
+                            {
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            std::string rType;
+                            if (fileUri == request.uri && request.tree && !request.sourceCode.empty())
+                            {
+                                TSNode rootNode = ts_tree_root_node(request.tree);
+                                TSPoint pt = { ref.startLine, ref.startCharacter };
+                                TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+                                if (!ts_node_is_null(refNode))
+                                {
+                                    TSNode exprParent = ts_node_parent(refNode);
+                                    if (!ts_node_is_null(exprParent) && std::string_view(ts_node_type(exprParent)) == "member_expression")
+                                    {
+                                        TSNode objNode = parser::GetChildByField(exprParent, parser::fields::Object);
+                                        if (!ts_node_is_null(objNode))
+                                        {
+                                            uint32_t oStart = ts_node_start_byte(objNode);
+                                            uint32_t oEnd = ts_node_end_byte(objNode);
+                                            if (oStart < request.sourceCode.size() && oEnd <= request.sourceCode.size() && oStart < oEnd)
+                                            {
+                                                std::string oText = request.sourceCode.substr(oStart, oEnd - oStart);
+                                                if (oText == "this")
+                                                {
+                                                    rType = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
+                                                }
+                                                else
+                                                {
+                                                    const analysis::LocalDefinition *oDef = analysis::ResolveInScope(scope, oText);
+                                                    if (oDef && !oDef->typeName.empty())
+                                                    {
+                                                        rType = analysis::CleanBaseType(oDef->typeName);
+                                                    }
+                                                    else
+                                                    {
+                                                        auto gSyms = symbolTable.FindSymbols(oText);
+                                                        for (const auto &gs : gSyms)
+                                                        {
+                                                            if (gs.type == analysis::SymbolType::Variable && !gs.GetVariable().typeName.empty())
+                                                            {
+                                                                rType = analysis::CleanBaseType(gs.GetVariable().typeName);
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (rType.empty())
+                            {
+                                for (const auto &candRef : scope->references)
+                                {
+                                    if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
+                                    {
+                                        if (candRef.name == "this")
+                                        {
+                                            rType = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
+                                        }
+                                        else
+                                        {
+                                            const analysis::LocalDefinition *oDef = analysis::ResolveInScope(scope, candRef.name);
+                                            if (oDef && !oDef->typeName.empty())
+                                            {
+                                                rType = analysis::CleanBaseType(oDef->typeName);
+                                            }
+                                            else
+                                            {
+                                                auto gSyms = symbolTable.FindSymbols(candRef.name);
+                                                for (const auto &gs : gSyms)
+                                                {
+                                                    if (gs.type == analysis::SymbolType::Variable && !gs.GetVariable().typeName.empty())
+                                                    {
+                                                        rType = analysis::CleanBaseType(gs.GetVariable().typeName);
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (rType.empty() || !compatibleClasses.contains(rType))
+                            {
+                                continue;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (ref.isMemberAccess)
+                        {
+                            continue;
+                        }
+                        const analysis::LocalDefinition *localShadow = analysis::ResolveInScope(scope, targetName);
+                        if (localShadow && (localShadow->kind == analysis::LocalDefinitionKind::Parameter || localShadow->kind == analysis::LocalDefinitionKind::Variable))
+                        {
+                            continue;
+                        }
+                    }
+
                     const uint64_t pos = (static_cast<uint64_t>(ref.startLine) << 32) | ref.startCharacter;
                     seenRefs.insert({ fileUri, pos });
                 }
@@ -102,7 +251,7 @@ namespace angel_lsp::features
 
             for (const auto &child : scope->children)
             {
-                CollectReferencesInScope(fileUri, child.get(), targetName, group, seenRefs);
+                CollectReferencesInScope(fileUri, child.get(), targetName, group, compatibleClasses, symbolTable, request, seenRefs);
             }
         }
     }
@@ -252,12 +401,67 @@ namespace angel_lsp::features
                 }
                 else
                 {
+                    ankerl::unordered_dense::set<std::string> compatibleClasses;
+                    for (const auto &s : symGroup)
+                    {
+                        if (!s.containerName.empty())
+                        {
+                            compatibleClasses.insert(s.containerName);
+                            auto lastColon = s.containerName.rfind("::");
+                            if (lastColon != std::string::npos)
+                            {
+                                compatibleClasses.insert(s.containerName.substr(lastColon + 2));
+                            }
+                            auto related = analysis::GetAllRelatedClasses(s.containerName, request.symbolTable);
+                            for (const auto &rel : related)
+                            {
+                                compatibleClasses.insert(rel);
+                                auto colon = rel.rfind("::");
+                                if (colon != std::string::npos)
+                                {
+                                    compatibleClasses.insert(rel.substr(colon + 2));
+                                }
+                            }
+                        }
+                    }
+
+                    if (!compatibleClasses.empty())
+                    {
+                        request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+                        {
+                            for (const auto &cand : symbols)
+                            {
+                                if (cand.type == analysis::SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(cand.signature))
+                                {
+                                    const auto &cls = cand.GetClass();
+                                    for (const auto &m : cls.includedMixins)
+                                    {
+                                        if (compatibleClasses.contains(m))
+                                        {
+                                            compatibleClasses.insert(cand.name);
+                                            if (!cand.qualifiedName.empty())
+                                            {
+                                                compatibleClasses.insert(cand.qualifiedName);
+                                            }
+                                            auto candRelated = analysis::GetAllRelatedClasses(cand.name, request.symbolTable);
+                                            for (const auto &rel : candRelated)
+                                            {
+                                                compatibleClasses.insert(rel);
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+
                     ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenRefs;
                     request.scopeIndex.ForEachScopeTree([&](const std::string &fileUri, const std::shared_ptr<const analysis::Scope> &root)
                     {
                         if (root)
                         {
-                            CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, seenRefs);
+                            CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, compatibleClasses, request.symbolTable, request, seenRefs);
                         }
                     });
 
@@ -313,7 +517,7 @@ namespace angel_lsp::features
                 {
                     if (root)
                     {
-                        CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, seenRefs);
+                        CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, {}, request.symbolTable, request, seenRefs);
                     }
                 });
 

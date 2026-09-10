@@ -4643,10 +4643,30 @@ namespace angel_lsp
     {
         const std::string key = DocumentKey(uriStr);
 
-        const auto docIt = m_openDocuments.find(key);
+        auto docIt = m_openDocuments.find(key);
         if (docIt == m_openDocuments.end())
         {
-            return std::nullopt;
+            if (key.starts_with("angelscript-virtual:") || uriStr.starts_with("angelscript-virtual:"))
+            {
+                std::string text = GenerateVirtualMixinDocument(key.starts_with("angelscript-virtual:") ? key : uriStr);
+                if (!text.empty())
+                {
+                    m_openDocuments[key] = text;
+                    if (m_parser)
+                    {
+                        m_documentTrees[key] = m_parser->Parse(text);
+                    }
+                    docIt = m_openDocuments.find(key);
+                }
+                else
+                {
+                    return std::nullopt;
+                }
+            }
+            else
+            {
+                return std::nullopt;
+            }
         }
 
         const auto treeIt = m_documentTrees.find(key);
@@ -4691,45 +4711,81 @@ namespace angel_lsp
         auto slashPos = s.find('/');
         if (slashPos != std::string_view::npos)
         {
-            hostClass = std::string(s.substr(0, slashPos));
+            hostClass = angel_lsp::utils::UrlDecode(s.substr(0, slashPos));
             std::string_view mixinPart = s.substr(slashPos + 1);
             if (mixinPart.ends_with(".as"))
             {
                 mixinPart.remove_suffix(3);
             }
-            mixinName = std::string(mixinPart);
+            mixinName = angel_lsp::utils::UrlDecode(mixinPart);
         }
         else
         {
-            mixinName = std::string(s);
-            if (mixinName.ends_with(".as"))
+            std::string_view mixinPart = s;
+            if (mixinPart.ends_with(".as"))
             {
-                mixinName = mixinName.substr(0, mixinName.size() - 3);
+                mixinPart.remove_suffix(3);
             }
+            mixinName = angel_lsp::utils::UrlDecode(mixinPart);
         }
 
         std::string mixinPhysicalFileUri;
         uint32_t mixinStartLine = 0;
         uint32_t mixinEndLine = 0;
         bool foundMixin = false;
+        std::string resolvedBaseClass;
 
+        const angel_lsp::analysis::Symbol *mixinSym = nullptr;
         auto candidates = m_symbolTable.FindSymbols(mixinName);
         for (const auto &cand : candidates)
         {
             if (cand.type == angel_lsp::analysis::SymbolType::Class)
             {
-                mixinPhysicalFileUri = cand.fileUri;
-                mixinStartLine = cand.startLine;
-                mixinEndLine = cand.fullRange.endLine > 0 ? cand.fullRange.endLine : cand.endLine;
-                foundMixin = true;
+                mixinSym = &cand;
                 break;
+            }
+        }
+
+        if (!mixinSym)
+        {
+            std::string shortName = mixinName;
+            auto lastScope = shortName.rfind("::");
+            if (lastScope != std::string::npos)
+            {
+                shortName = shortName.substr(lastScope + 2);
+            }
+            auto shortCandidates = m_symbolTable.FindTypeSymbolsByShortName(shortName);
+            for (const auto &cand : shortCandidates)
+            {
+                if (cand.type == angel_lsp::analysis::SymbolType::Class)
+                {
+                    mixinSym = &cand;
+                    break;
+                }
+            }
+        }
+
+        if (mixinSym)
+        {
+            mixinPhysicalFileUri = mixinSym->fileUri;
+            mixinStartLine = mixinSym->startLine;
+            mixinEndLine = mixinSym->fullRange.endLine > 0 ? mixinSym->fullRange.endLine : mixinSym->endLine;
+            foundMixin = true;
+
+            if (std::holds_alternative<angel_lsp::analysis::ClassSignature>(mixinSym->signature))
+            {
+                const auto &clsSig = std::get<angel_lsp::analysis::ClassSignature>(mixinSym->signature);
+                if (!clsSig.bases.empty())
+                {
+                    resolvedBaseClass = fmt::format(" | Base: {}", fmt::join(clsSig.bases, ", "));
+                }
             }
         }
 
         // Construct 3-line header (lines 0..2)
         std::string result;
         result += fmt::format("// Virtual expanded mixin {} for host class {}\n", mixinName, hostClass);
-        result += fmt::format("// Origin: {}\n", mixinPhysicalFileUri);
+        result += fmt::format("// Origin: {}{}\n", mixinPhysicalFileUri, resolvedBaseClass);
         result += "\n";
 
         std::string sourceText;

@@ -44,6 +44,35 @@ namespace angel_lsp::utils
         return "file:///" + normalized;
     }
 
+    std::string UrlDecode(std::string_view in)
+    {
+        std::string out;
+        out.reserve(in.size());
+        for (size_t i = 0; i < in.size(); ++i)
+        {
+            if (in[i] == '%' && i + 2 < in.size())
+            {
+                auto fromHex = [](char c) -> int
+                {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                    return -1;
+                };
+                int h1 = fromHex(in[i + 1]);
+                int h2 = fromHex(in[i + 2]);
+                if (h1 != -1 && h2 != -1)
+                {
+                    out.push_back(static_cast<char>((h1 << 4) | h2));
+                    i += 2;
+                    continue;
+                }
+            }
+            out.push_back(in[i]);
+        }
+        return out;
+    }
+
     size_t PositionToOffset(const std::string &text, uint32_t line, uint32_t character, PositionEncoding enc)
     {
         // character is in the negotiated encoding (UTF-16 code units unless the client agreed to
