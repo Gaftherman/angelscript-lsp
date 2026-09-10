@@ -461,6 +461,156 @@ namespace angel_lsp::features
         }
 
         /**
+         * @brief Resolves constructor parameters for a variable direct-initialization.
+         * @param declaredTypeName The type name written in the variable declaration.
+         * @param declaratorNode The variable_declarator AST node.
+         * @param request Inlay hint context request.
+         * @param numArgs Number of arguments passed in the initialization.
+         * @param args Parsed argument information.
+         * @return Vector of constructor parameter information matching the call.
+         */
+        std::vector<analysis::ParameterInformation> ResolveConstructorParameters(
+            const std::string &declaredTypeName,
+            TSNode declaratorNode,
+            const InlayHintRequest &request,
+            size_t numArgs,
+            const std::vector<ArgInfo> &args)
+        {
+            std::string baseName = analysis::CleanBaseType(declaredTypeName);
+            if (baseName.empty())
+            {
+                return {};
+            }
+
+            std::vector<analysis::Symbol> candidateSymbols;
+
+            // 1. Qualified constructor lookup: Type::Type (e.g. NetworkMessage::NetworkMessage or NS::Type::Type)
+            std::string ctorName;
+            size_t lastColon = baseName.rfind("::");
+            if (lastColon != std::string::npos)
+            {
+                ctorName = baseName + "::" + baseName.substr(lastColon + 2);
+            }
+            else
+            {
+                ctorName = baseName + "::" + baseName;
+            }
+
+            auto ctorSyms = request.symbolTable.FindSymbols(ctorName);
+            for (const auto &s : ctorSyms)
+            {
+                if (s.type == analysis::SymbolType::Function)
+                {
+                    candidateSymbols.push_back(s);
+                }
+            }
+
+            // 2. In-scope search if Type is namespaced or unqualified
+            if (candidateSymbols.empty())
+            {
+                auto scopeSyms = analysis::FindSymbolsInScope(baseName, declaratorNode, request.sourceCode, request.symbolTable);
+                for (const auto &s : scopeSyms)
+                {
+                    if (s.type == analysis::SymbolType::Class)
+                    {
+                        std::string qName = s.qualifiedName.empty() ? s.name : s.qualifiedName;
+                        auto qCtors = request.symbolTable.FindSymbols(qName + "::" + s.name);
+                        for (const auto &cs : qCtors)
+                        {
+                            if (cs.type == analysis::SymbolType::Function)
+                            {
+                                candidateSymbols.push_back(cs);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Fallback: Type as a function symbol
+            if (candidateSymbols.empty())
+            {
+                auto fnSyms = request.symbolTable.FindSymbols(baseName);
+                for (const auto &s : fnSyms)
+                {
+                    if (s.type == analysis::SymbolType::Function)
+                    {
+                        candidateSymbols.push_back(s);
+                    }
+                }
+            }
+
+            const analysis::Symbol *bestSym = nullptr;
+
+            if (candidateSymbols.size() > 1)
+            {
+                auto rootScope = request.scopeIndex.GetRoot(request.uri);
+                const analysis::Scope *scope = nullptr;
+                if (rootScope)
+                {
+                    TSPoint pt = ts_node_start_point(declaratorNode);
+                    scope = FindInnermostScope(rootScope.get(), pt.row, pt.column);
+                }
+
+                std::vector<std::string> argTypes;
+                argTypes.reserve(args.size());
+                for (const auto &arg : args)
+                {
+                    std::string aType = analysis::ResolveExpressionType(
+                        arg.exprNode, scope, request.symbolTable, request.sourceCode, request.uri);
+                    argTypes.push_back(std::move(aType));
+                }
+
+                auto match = analysis::ResolveBestOverload(candidateSymbols, argTypes, request.symbolTable);
+                if (match.bestCandidate != nullptr)
+                {
+                    bestSym = match.bestCandidate;
+                }
+            }
+
+            if (!bestSym)
+            {
+                for (const auto &sym : candidateSymbols)
+                {
+                    if (sym.type == analysis::SymbolType::Function)
+                    {
+                        const auto &fn = sym.GetFunction();
+                        if (fn.parameters.size() >= numArgs)
+                        {
+                            if (!bestSym || fn.parameters.size() == numArgs ||
+                                (bestSym->type == analysis::SymbolType::Function && bestSym->GetFunction().parameters.size() < numArgs))
+                            {
+                                bestSym = &sym;
+                                if (fn.parameters.size() == numArgs)
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!bestSym && !candidateSymbols.empty())
+            {
+                for (const auto &sym : candidateSymbols)
+                {
+                    if (sym.type == analysis::SymbolType::Function)
+                    {
+                        bestSym = &sym;
+                        break;
+                    }
+                }
+            }
+
+            if (bestSym && bestSym->type == analysis::SymbolType::Function)
+            {
+                return bestSym->GetFunction().parameters;
+            }
+
+            return {};
+        }
+
+        /**
          * @brief Forward declaration for type deduction helper.
          */
         std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest &request);
@@ -973,6 +1123,80 @@ namespace angel_lsp::features
                                             hint.paddingLeft = true;
                                             hint.paddingRight = false;
                                             hint.tooltip = "Deduced type: " + deduced;
+                                            hints.push_back(std::move(hint));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else if (!typeText.empty())
+                    {
+                        // 3. Process direct constructor initialisation:
+                        // NetworkMessage weapon( MSG_ONE, NetworkMessages::WeapPickup, pPlayer.edict() );
+                        uint32_t count = ts_node_child_count(node);
+                        for (uint32_t i = 0; i < count; ++i)
+                        {
+                            TSNode child = ts_node_child(node, i);
+                            if (std::string_view(ts_node_type(child)) == "variable_declarator")
+                            {
+                                TSNode argListNode = parser::GetChildByField(child, parser::fields::Arguments);
+                                if (ts_node_is_null(argListNode))
+                                {
+                                    uint32_t declaratorChildCount = ts_node_child_count(child);
+                                    for (uint32_t j = 0; j < declaratorChildCount; ++j)
+                                    {
+                                        TSNode grandChild = ts_node_child(child, j);
+                                        if (std::string_view(ts_node_type(grandChild)) == "argument_list")
+                                        {
+                                            argListNode = grandChild;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if (!ts_node_is_null(argListNode))
+                                {
+                                    auto args = ParseArguments(argListNode, request.sourceCode);
+                                    auto parameters = ResolveConstructorParameters(typeText, child, request, args.size(), args);
+
+                                    for (size_t k = 0; k < args.size() && k < parameters.size(); ++k)
+                                    {
+                                        const auto &param = parameters[k];
+                                        const auto &arg = args[k];
+
+                                        // Exclusion Rule 1: Already named in syntax
+                                        if (arg.isNamed)
+                                        {
+                                            continue;
+                                        }
+
+                                        // Exclusion Rule 2: Empty or varargs
+                                        if (param.name.empty() || param.name == "...")
+                                        {
+                                            continue;
+                                        }
+
+                                        // Exclusion Rule 3: Argument variable text matches parameter name exactly
+                                        if (arg.text == param.name)
+                                        {
+                                            continue;
+                                        }
+
+                                        if (IsPositionInRange(arg.hintPosition, request.range))
+                                        {
+                                            lsp::InlayHint hint;
+                                            hint.position = arg.hintPosition;
+                                            hint.label = param.name + ":";
+                                            hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
+                                            hint.paddingRight = true;
+                                            hint.paddingLeft = false;
+                                            std::string tooltip = "Parameter: " + param.typeName;
+                                            if (!param.name.empty())
+                                            {
+                                                tooltip += " " + param.name;
+                                            }
+                                            hint.tooltip = tooltip;
                                             hints.push_back(std::move(hint));
                                         }
                                     }

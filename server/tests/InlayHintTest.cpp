@@ -424,3 +424,90 @@ TEST_CASE("InlayHintHandler - Namespaced class this.Method parameter hints")
     CHECK(std::find(labels.begin(), labels.end(), "anim:") != labels.end());
     CHECK(std::find(labels.begin(), labels.end(), "body:") != labels.end());
 }
+
+TEST_CASE("InlayHintHandler - Constructor Direct-Initialization Parameter Hints")
+{
+    std::string code =
+        "class NetworkMessage {\n"
+        "    NetworkMessage(int msg_type, int svc_message, int pEdict) {}\n"
+        "}\n"
+        "void main() {\n"
+        "    int edict = 1;\n"
+        "    NetworkMessage weapon(100, 200, edict);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto &h : *hints)
+    {
+        if (std::holds_alternative<std::string>(h.label))
+        {
+            labels.push_back(std::get<std::string>(h.label));
+        }
+    }
+
+    CHECK(labels.size() == 3);
+    CHECK(labels[0] == "msg_type:");
+    CHECK(labels[1] == "svc_message:");
+    CHECK(labels[2] == "pEdict:");
+}
+
+TEST_CASE("InlayHintHandler - Mixin Method Parameter Hints")
+{
+    std::string code =
+        "mixin class PlayerMixin {\n"
+        "    void CommonAddToPlayer(int pPlayer) {}\n"
+        "}\n"
+        "class MyPlayer : PlayerMixin {\n"
+        "    void AddToPlayer() {\n"
+        "        CommonAddToPlayer(42);\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto &h : *hints)
+    {
+        if (std::holds_alternative<std::string>(h.label))
+        {
+            labels.push_back(std::get<std::string>(h.label));
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), "pPlayer:") != labels.end());
+}
+
+TEST_CASE("InlayHintHandler - Mixin Method Parameter Hints on Instance")
+{
+    std::string code =
+        "mixin class PlayerMixin {\n"
+        "    void CommonAddToPlayer(int pPlayer) {}\n"
+        "}\n"
+        "class MyPlayer : PlayerMixin {}\n"
+        "void main() {\n"
+        "    MyPlayer p;\n"
+        "    p.CommonAddToPlayer(42);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto &h : *hints)
+    {
+        if (std::holds_alternative<std::string>(h.label))
+        {
+            labels.push_back(std::get<std::string>(h.label));
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), "pPlayer:") != labels.end());
+}
+

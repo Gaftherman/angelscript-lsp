@@ -1,6 +1,7 @@
 #include "SymbolTable.h"
 #include "analysis/rules/RuleIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/OverloadResolver.h"
 #include "utils/LspLogger.h"
 #include "spdlog/fmt/fmt.h"
 
@@ -279,6 +280,14 @@ namespace angel_lsp::analysis
 
     void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::string> &classKeys)
     {
+        if (classKeys.empty())
+        {
+            return;
+        }
+
+        // 1. Resolve includedMixins on class signatures and collect which mixins are needed
+        ankerl::unordered_dense::set<std::string> neededMixins;
+
         for (const auto &key : classKeys)
         {
             auto it = m_symbols.find(key);
@@ -307,75 +316,182 @@ namespace angel_lsp::analysis
                                     cand.GetClass().modifiers.isMixin)
                                 {
                                     sig.includedMixins.push_back(clean);
+                                    neededMixins.insert(clean);
                                     break;
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // 2. Clean up previously synthesized symbols for these host classes
+        for (const auto &key : classKeys)
+        {
+            auto it = m_symbols.find(key);
+            if (it == m_symbols.end() || !it->second)
+            {
+                continue;
+            }
+            for (const auto &sym : *it->second)
+            {
+                if (sym.type == SymbolType::Class)
+                {
+                    const std::string hostQName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                    const auto fileIt = m_keysByFile.find(sym.fileUri);
+                    if (fileIt != m_keysByFile.end())
+                    {
+                        const std::string prefix = hostQName + "::";
+                        for (const auto &k : fileIt->second)
+                        {
+                            if (k.starts_with(prefix))
+                            {
+                                auto bIt = m_symbols.find(k);
+                                if (bIt != m_symbols.end() && bIt->second)
+                                {
+                                    auto &vec = MutableBucket(bIt->second);
+                                    std::erase_if(vec, [&](const Symbol &s)
+                                    {
+                                        return s.isSynthesized && s.fileUri == sym.fileUri;
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (neededMixins.empty())
+        {
+            return;
+        }
+
+        // 3. Collect non-synthesized member functions of the needed mixins
+        ankerl::unordered_dense::map<std::string, std::vector<Symbol>> mixinMembers;
+        for (const auto &[k, bucket] : m_symbols)
+        {
+            if (!bucket)
+            {
+                continue;
+            }
+            for (const auto &sym : *bucket)
+            {
+                if (!sym.isSynthesized && sym.type == SymbolType::Function &&
+                    !sym.containerName.empty() && neededMixins.contains(sym.containerName))
+                {
+                    mixinMembers[sym.containerName].push_back(sym);
+                }
+            }
+        }
+
+        // 4. Synthesize mixin member functions into each host class
+        for (const auto &key : classKeys)
+        {
+            auto it = m_symbols.find(key);
+            if (it == m_symbols.end() || !it->second)
+            {
+                continue;
+            }
+
+            for (const auto &classSym : *it->second)
+            {
+                if (classSym.type != SymbolType::Class || !std::holds_alternative<ClassSignature>(classSym.signature))
+                {
+                    continue;
+                }
+
+                const auto &sig = std::get<ClassSignature>(classSym.signature);
+                if (sig.includedMixins.empty())
+                {
+                    continue;
+                }
+
+                const std::string hostQName = classSym.qualifiedName.empty() ? classSym.name : classSym.qualifiedName;
+                const std::string &hostFileUri = classSym.fileUri;
+
+                for (const auto &mixinName : sig.includedMixins)
+                {
+                    auto mIt = mixinMembers.find(mixinName);
+                    if (mIt == mixinMembers.end())
+                    {
+                        continue;
+                    }
+
+                    for (const auto &mSym : mIt->second)
+                    {
+                        const std::string synthKey = hostQName + "::" + mSym.name;
+
+                        // Check if already declared or synthesized in host class
+                        auto existingBucketIt = m_symbols.find(synthKey);
+                        bool alreadyPresent = false;
+                        if (existingBucketIt != m_symbols.end() && existingBucketIt->second)
+                        {
+                            for (const auto &existingSym : *existingBucketIt->second)
+                            {
+                                if (mSym.type == SymbolType::Function && existingSym.type == SymbolType::Function)
+                                {
+                                    if (HasSameParameterList(existingSym, mSym))
+                                    {
+                                        alreadyPresent = true;
+                                        break;
+                                    }
+                                }
+                                else
+                                {
+                                    alreadyPresent = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (alreadyPresent)
+                        {
+                            continue;
+                        }
+
+                        Symbol synth = mSym;
+                        // Retain originating containerName so callers know original source
+                        synth.containerName = mSym.containerName.empty() ? mixinName : mSym.containerName;
+                        synth.qualifiedName = synthKey;
+                        synth.fileUri = hostFileUri;
+                        synth.isSynthesized = true;
+
+                        MutableBucket(m_symbols[synthKey]).push_back(std::move(synth));
+                        IndexKeyForFileLocked(hostFileUri, synthKey);
                     }
                 }
             }
         }
     }
 
-
     void SymbolTable::ResolveIncludedMixinsLocked()
     {
-        for (auto &[name, bucket] : m_symbols)
+        std::vector<std::string> classKeys;
+        for (const auto &[name, bucket] : m_symbols)
         {
             if (!bucket)
             {
                 continue;
             }
-
-            bool hasClass = false;
             for (const auto &sym : *bucket)
             {
                 if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
                 {
-                    hasClass = true;
+                    classKeys.push_back(name);
                     break;
                 }
             }
-
-            if (!hasClass)
-            {
-                continue;
-            }
-
-            std::vector<Symbol> &symbols = MutableBucket(bucket);
-            for (auto &sym : symbols)
-            {
-                if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
-                {
-                    auto &sig = std::get<ClassSignature>(sym.signature);
-                    sig.includedMixins.clear();
-                    for (const auto &b : sig.bases)
-                    {
-                        std::string clean = CleanBaseType(b);
-                        auto it = m_symbols.find(clean);
-                        if (it != m_symbols.end() && it->second)
-                        {
-                            for (const auto &cand : *it->second)
-                            {
-                                if (cand.type == SymbolType::Class &&
-                                    std::holds_alternative<ClassSignature>(cand.signature) &&
-                                    cand.GetClass().modifiers.isMixin)
-                                {
-                                    sig.includedMixins.push_back(clean);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
+        ResolveIncludedMixinsForKeysLocked(classKeys);
     }
 
     void SymbolTable::ResolveIncludedMixins()
     {
         std::unique_lock<std::shared_mutex> lock(m_mutex);
         ResolveIncludedMixinsLocked();
+        ++m_version;
     }
 
 
