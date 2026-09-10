@@ -2944,10 +2944,17 @@ namespace angel_lsp
 
     std::vector<angel_lsp::analysis::Diagnostic> Server::ReplaceSymbolsFromTree(const std::string &uriStr,
                                                                                  const std::string &text,
-                                                                                 TSTree *tree)
+                                                                                 TSTree *tree,
+                                                                                 bool *outInterfaceChanged)
     {
         angel_lsp::analysis::SymbolTable staging;
         auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, staging, m_i18n.get(), &m_config.types);
+        if (outInterfaceChanged)
+        {
+            const uint64_t oldHash = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
+            const uint64_t newHash = staging.ComputeDocumentInterfaceHash(uriStr);
+            *outInterfaceChanged = (oldHash != newHash);
+        }
         m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
         return diagnostics;
     }
@@ -3058,7 +3065,6 @@ namespace angel_lsp
             m_savedUris.insert(uriStr);
         }
 
-        m_symbolTable.ClearDocumentSymbols(uriStr);
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
 
@@ -3110,7 +3116,8 @@ namespace angel_lsp
         // need the same tree, and letting each of them parse the text again is pure waste.
         TSTree *savedTree = m_parser->Parse(text);
 
-        auto diagnostics = ReplaceSymbolsFromTree(uriStr, text, savedTree);
+        bool interfaceChanged = false;
+        auto diagnostics = ReplaceSymbolsFromTree(uriStr, text, savedTree, &interfaceChanged);
 
         // A save is the only point at which an edited #include line can change which module this
         // file belongs to, so the graph is patched here rather than on every keystroke.
@@ -3130,17 +3137,59 @@ namespace angel_lsp
 
         PublishDiagnostics(uriStr, diagnostics);
 
-        // The other half of the module design: a save re-analyses the whole module, so an error
-        // this edit introduced in a file nobody has opened still reaches the Problems panel. Not on
-        // every keystroke - a module of a few hundred files after each typing pause is a promise
-        // nobody has measured.
-        //
-        // Reading the members happens here, on the message loop; analysing them does not.
-        // ScheduleAnalysis queues, and the analysis thread publishes.
         if (!m_modules.empty())
         {
             WithdrawStaleModuleDiagnostics();
-            AnalyzeConfiguredModules();
+        }
+
+        // Restrict cascading analysis strictly to open documents.
+        // Fast path: if public declarations did not change (only function bodies edited),
+        // skip re-analyzing peer documents.
+        if (interfaceChanged)
+        {
+            const std::string savedPath = CanonicalPathFromUri(uriStr);
+            const ModuleClaim savedClaim = !savedPath.empty() ? ClaimFor(savedPath) : ModuleClaim{};
+            std::vector<std::string> closureFiles;
+            if (!savedPath.empty())
+            {
+                closureFiles = m_includeGraph.GetModuleClosure(savedPath);
+            }
+            ankerl::unordered_dense::set<std::string> closureSet(closureFiles.begin(), closureFiles.end());
+
+            for (const auto &[openUri, openText] : m_openDocuments)
+            {
+                if (openUri == uriStr)
+                {
+                    continue;
+                }
+
+                bool isDependent = false;
+                const std::string openPath = CanonicalPathFromUri(openUri);
+
+                if (savedClaim.owner != nullptr && !openPath.empty())
+                {
+                    const ModuleClaim openClaim = ClaimFor(openPath);
+                    if (openClaim.owner == savedClaim.owner)
+                    {
+                        isDependent = true;
+                    }
+                }
+
+                if (!isDependent && !openPath.empty() && closureSet.contains(openPath))
+                {
+                    isDependent = true;
+                }
+
+                if (isDependent)
+                {
+                    IndexModuleClosure(openUri);
+                    ScheduleAnalysis(openUri, openText);
+                }
+            }
+        }
+        else
+        {
+            m_logger->LogInfo(fmt::format("Save {}: public interface unchanged, skipping cascading re-analysis", uriStr));
         }
     }
 

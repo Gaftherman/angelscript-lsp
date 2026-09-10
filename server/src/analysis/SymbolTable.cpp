@@ -738,4 +738,211 @@ namespace angel_lsp::analysis
             }
         }
     }
+
+    namespace
+    {
+        inline void HashCombine(uint64_t &h, uint64_t val)
+        {
+            h ^= val + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        }
+
+        inline void HashString(uint64_t &h, std::string_view s)
+        {
+            uint64_t strHash = ankerl::unordered_dense::hash<std::string_view>{}(s);
+            HashCombine(h, strHash);
+        }
+
+        inline void HashModifiers(uint64_t &h, const SymbolModifiers &m)
+        {
+            uint32_t flags = static_cast<uint32_t>(m.access)
+                | (static_cast<uint32_t>(m.isConst) << 2)
+                | (static_cast<uint32_t>(m.isHandle) << 3)
+                | (static_cast<uint32_t>(m.isShared) << 4)
+                | (static_cast<uint32_t>(m.isMixin) << 5)
+                | (static_cast<uint32_t>(m.isAbstract) << 6)
+                | (static_cast<uint32_t>(m.isFinal) << 7)
+                | (static_cast<uint32_t>(m.isOverride) << 8)
+                | (static_cast<uint32_t>(m.isExplicit) << 9)
+                | (static_cast<uint32_t>(m.isProperty) << 10)
+                | (static_cast<uint32_t>(m.isDelete) << 11)
+                | (static_cast<uint32_t>(m.isExternal) << 12)
+                | (static_cast<uint32_t>(m.isReturnReference) << 13);
+            HashCombine(h, flags);
+        }
+
+        inline void HashParameter(uint64_t &h, const ParameterInformation &p)
+        {
+            HashString(h, p.name);
+            HashString(h, p.typeName);
+            HashCombine(h, static_cast<uint64_t>(p.typeKind));
+            uint32_t flags = (p.isArray ? 1 : 0)
+                | ((p.isConst ? 1 : 0) << 1)
+                | ((p.isReference ? 1 : 0) << 2)
+                | ((p.isHandle ? 1 : 0) << 3)
+                | (static_cast<uint32_t>(p.modifier) << 4);
+            HashCombine(h, flags);
+            HashString(h, p.defaultValue);
+        }
+
+        void HashSymbolInterface(uint64_t &h, const Symbol &sym)
+        {
+            HashCombine(h, static_cast<uint64_t>(sym.type));
+            HashString(h, sym.name);
+            HashString(h, sym.containerName);
+            HashString(h, sym.qualifiedName);
+
+            if (std::holds_alternative<FunctionSignature>(sym.signature))
+            {
+                const auto &fn = std::get<FunctionSignature>(sym.signature);
+                HashString(h, fn.returnType);
+                HashCombine(h, static_cast<uint64_t>(fn.returnTypeKind));
+                uint32_t fnFlags = (fn.returnIsArray ? 1 : 0)
+                    | ((fn.returnIsConst ? 1 : 0) << 1)
+                    | ((fn.isInterfaceMethod ? 1 : 0) << 2);
+                HashCombine(h, fnFlags);
+                HashModifiers(h, fn.modifiers);
+                HashCombine(h, fn.parameters.size());
+                for (const auto &p : fn.parameters)
+                {
+                    HashParameter(h, p);
+                }
+            }
+            else if (std::holds_alternative<VariableSignature>(sym.signature))
+            {
+                const auto &v = std::get<VariableSignature>(sym.signature);
+                HashString(h, v.typeName);
+                HashCombine(h, static_cast<uint64_t>(v.typeKind));
+                uint32_t vFlags = (v.isArray ? 1 : 0)
+                    | ((v.isVirtualProperty ? 1 : 0) << 1)
+                    | ((v.hasGet ? 1 : 0) << 2)
+                    | ((v.hasSet ? 1 : 0) << 3);
+                HashCombine(h, vFlags);
+                HashModifiers(h, v.modifiers);
+            }
+            else if (std::holds_alternative<ClassSignature>(sym.signature))
+            {
+                const auto &cls = std::get<ClassSignature>(sym.signature);
+                HashModifiers(h, cls.modifiers);
+                for (const auto &b : cls.bases)
+                {
+                    HashString(h, b);
+                }
+                for (const auto &m : cls.includedMixins)
+                {
+                    HashString(h, m);
+                }
+                for (const auto &t : cls.templateParams)
+                {
+                    HashString(h, t);
+                }
+            }
+            else if (std::holds_alternative<InterfaceSignature>(sym.signature))
+            {
+                const auto &iface = std::get<InterfaceSignature>(sym.signature);
+                HashModifiers(h, iface.modifiers);
+                for (const auto &b : iface.inheritedInterfaces)
+                {
+                    HashString(h, b);
+                }
+            }
+            else if (std::holds_alternative<EnumSignature>(sym.signature))
+            {
+                const auto &enm = std::get<EnumSignature>(sym.signature);
+                HashModifiers(h, enm.modifiers);
+                for (const auto &m : enm.members)
+                {
+                    HashString(h, m.name);
+                    HashString(h, m.value);
+                }
+            }
+            else if (std::holds_alternative<TypedefSignature>(sym.signature))
+            {
+                const auto &td = std::get<TypedefSignature>(sym.signature);
+                HashString(h, td.baseType);
+                HashCombine(h, static_cast<uint64_t>(td.typeKind));
+            }
+            else if (std::holds_alternative<FuncdefSignature>(sym.signature))
+            {
+                const auto &fd = std::get<FuncdefSignature>(sym.signature);
+                HashString(h, fd.returnType);
+                HashCombine(h, static_cast<uint64_t>(fd.returnTypeKind));
+                HashModifiers(h, fd.modifiers);
+                HashCombine(h, fd.parameters.size());
+                for (const auto &p : fd.parameters)
+                {
+                    HashParameter(h, p);
+                }
+            }
+        }
+    }
+
+    uint64_t SymbolTable::ComputeDocumentInterfaceHash(const std::string &fileUri) const
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        return ComputeDocumentInterfaceHashLocked(fileUri);
+    }
+
+    uint64_t SymbolTable::ComputeDocumentInterfaceHashLocked(const std::string &fileUri) const
+    {
+        const auto fileEntry = m_keysByFile.find(fileUri);
+        if (fileEntry == m_keysByFile.end())
+        {
+            return 0;
+        }
+
+        std::vector<std::string> keys = fileEntry->second;
+        std::sort(keys.begin(), keys.end());
+
+        uint64_t h = 0xcbf29ce484222325ULL;
+        for (const auto &key : keys)
+        {
+            const auto bucket = m_symbols.find(key);
+            if (bucket == m_symbols.end() || !bucket->second)
+            {
+                continue;
+            }
+
+            std::vector<const Symbol *> docSymbols;
+            for (const auto &sym : *bucket->second)
+            {
+                if (sym.fileUri == fileUri)
+                {
+                    docSymbols.push_back(&sym);
+                }
+            }
+
+            std::sort(docSymbols.begin(), docSymbols.end(), [](const Symbol *a, const Symbol *b)
+            {
+                if (a->type != b->type)
+                {
+                    return a->type < b->type;
+                }
+                if (std::holds_alternative<FunctionSignature>(a->signature) &&
+                    std::holds_alternative<FunctionSignature>(b->signature))
+                {
+                    const auto &fnA = std::get<FunctionSignature>(a->signature);
+                    const auto &fnB = std::get<FunctionSignature>(b->signature);
+                    if (fnA.parameters.size() != fnB.parameters.size())
+                    {
+                        return fnA.parameters.size() < fnB.parameters.size();
+                    }
+                    for (size_t i = 0; i < fnA.parameters.size(); ++i)
+                    {
+                        if (fnA.parameters[i].typeName != fnB.parameters[i].typeName)
+                        {
+                            return fnA.parameters[i].typeName < fnB.parameters[i].typeName;
+                        }
+                    }
+                }
+                return a->name < b->name;
+            });
+
+            for (const auto *sym : docSymbols)
+            {
+                HashSymbolInterface(h, *sym);
+            }
+        }
+
+        return h;
+    }
 }

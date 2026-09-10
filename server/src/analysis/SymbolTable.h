@@ -482,6 +482,14 @@ namespace angel_lsp::analysis
         void ForEachSymbolInFile(const std::string &fileUri,
                                  const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const;
 
+        /**
+         * @brief Computes a 64-bit hash of the document's public declarations (names, types, signatures, modifiers).
+         *        Excludes line numbers, comments, whitespace, and function bodies.
+         * @param fileUri Document whose declarations to hash.
+         * @return 64-bit interface hash, or 0 if no symbols exist for fileUri.
+         */
+        uint64_t ComputeDocumentInterfaceHash(const std::string &fileUri) const;
+
         /** @brief Counter bumped on every mutation, so a derived index can tell it is still current. */
         uint64_t Version() const;
 
@@ -507,6 +515,7 @@ namespace angel_lsp::analysis
         void PublishDocumentSymbols(const std::string &fileUri, std::vector<Symbol> &&fresh);
         void ResolveIncludedMixinsLocked();
         void ResolveIncludedMixinsForKeysLocked(const std::vector<std::string> &classKeys);
+        uint64_t ComputeDocumentInterfaceHashLocked(const std::string &fileUri) const;
 
         struct TransparentStringHash
         {

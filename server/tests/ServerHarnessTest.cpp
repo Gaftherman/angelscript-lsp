@@ -6039,5 +6039,75 @@ TEST_CASE("Telemetry - predefined stub bypasses checkers and publishes empty dia
     CHECK(output.find("Checkers: 0.00 ms") != std::string::npos);
 }
 
+TEST_CASE("Server - Saving an open file in a module does not re-analyze closed files or unchanged peers")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("scripts/weapons/weapon_base.as", "void BaseFunc() {}\n");
+    fixture.Write("scripts/weapons/weapon_closed.as", "void ClosedFunc() { BaseFunc(); }\n");
+    fixture.Write("scripts/weapons/weapon_open.as", "void OpenFunc() { BaseFunc(); }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    // Wait for initial module analysis of the closed files
+    stream.PushAction([&stream]()
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            if (CountPublishedFor(stream.Output(), "weapon_closed.as") >= 1)
+            {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    });
+
+    // Open weapon_open.as
+    const std::string openText = "void OpenFunc() { BaseFunc(); }\n";
+    stream.Push(DidOpenMessage(fixture.Uri("scripts/weapons/weapon_open.as"), openText));
+    stream.PushAction([&stream]()
+    {
+        WaitForCount(stream, "weapon_open.as", 1);
+    });
+
+    // Save weapon_open.as with modified body (public interface unchanged)
+    const std::string savedText = "void OpenFunc() {\n    BaseFunc();\n    int localVal = 42;\n}\n";
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
+                fixture.Uri("scripts/weapons/weapon_open.as") + R"("},"text":")" + JsonEscape(savedText) + R"("}})");
+
+    stream.PushAction([&stream]()
+    {
+        // Wait for save diagnostics on the saved file itself
+        WaitForCount(stream, "weapon_open.as", 2);
+        // Small grace period to ensure no unexpected cascading analysis occurs
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    serverConfig.modules = { { "Weapons", "", (fixture.dir / "scripts/weapons").generic_string() } };
+
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+
+    // weapon_open.as published 3 times: once during startup module indexing, once on open, once on save
+    CHECK(CountPublishedFor(output, "weapon_open.as") == 3);
+
+    // Closed files in the module MUST NOT be re-analyzed or published again on save!
+    // Exactly 1 publication occurred on startup indexing, 0 on save.
+    CHECK(CountPublishedFor(output, "weapon_closed.as") == 1);
+    CHECK(CountPublishedFor(output, "weapon_base.as") == 1);
+
+    // Verify fast-path interface-hash log
+    CHECK(output.find("public interface unchanged, skipping cascading re-analysis") != std::string::npos);
+}
+
+
 
 

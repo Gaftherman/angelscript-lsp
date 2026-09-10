@@ -719,7 +719,8 @@ namespace angel_lsp
          */
         std::vector<angel_lsp::analysis::Diagnostic> ReplaceSymbolsFromTree(const std::string &uriStr,
                                                                             const std::string &text,
-                                                                            TSTree *tree);
+                                                                            TSTree *tree,
+                                                                            bool *outInterfaceChanged = nullptr);
 
         /** @brief ReplaceSymbolsFromTree for a caller that has source text but no parsed tree. */
         std::vector<angel_lsp::analysis::Diagnostic> ReplaceSymbolsFromSource(const std::string &uriStr,

@@ -180,3 +180,87 @@ TEST_CASE("SymbolTable - The version moves on every write and holds still otherw
     table.ClearDocumentSymbols("file:///a.as");
     CHECK(table.Version() != afterAdd);
 }
+
+TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash reflects public signatures and ignores line numbers")
+{
+    SymbolTable table1;
+    Symbol s1 = MakeSymbol(SymbolType::Function, "Shoot", "file:///weapon.as");
+    s1.startLine = 10;
+    s1.endLine = 20;
+    auto &fn1 = s1.GetFunction();
+    fn1.returnType = "void";
+    fn1.parameters.push_back(ParameterInformation("count", "int"));
+    table1.AddSymbol(s1);
+
+    SymbolTable table2;
+    Symbol s2 = MakeSymbol(SymbolType::Function, "Shoot", "file:///weapon.as");
+    s2.startLine = 55;
+    s2.endLine = 75;
+    auto &fn2 = s2.GetFunction();
+    fn2.returnType = "void";
+    fn2.parameters.push_back(ParameterInformation("count", "int"));
+    table2.AddSymbol(s2);
+
+    const uint64_t hash1 = table1.ComputeDocumentInterfaceHash("file:///weapon.as");
+    const uint64_t hash2 = table2.ComputeDocumentInterfaceHash("file:///weapon.as");
+
+    CHECK(hash1 != 0);
+    CHECK(hash1 == hash2);
+}
+
+TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash detects signature changes")
+{
+    SymbolTable tableBase;
+    Symbol sBase = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
+    auto &fnBase = sBase.GetFunction();
+    fnBase.returnType = "bool";
+    fnBase.parameters.push_back(ParameterInformation("speed", "float"));
+    tableBase.AddSymbol(sBase);
+    const uint64_t baseHash = tableBase.ComputeDocumentInterfaceHash("file:///weapon.as");
+
+    // Case 1: Change return type
+    {
+        SymbolTable table;
+        Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
+        auto &fn = s.GetFunction();
+        fn.returnType = "void";
+        fn.parameters.push_back(ParameterInformation("speed", "float"));
+        table.AddSymbol(s);
+        CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+    }
+
+    // Case 2: Change parameter type
+    {
+        SymbolTable table;
+        Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
+        auto &fn = s.GetFunction();
+        fn.returnType = "bool";
+        fn.parameters.push_back(ParameterInformation("speed", "int"));
+        table.AddSymbol(s);
+        CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+    }
+
+    // Case 3: Add parameter
+    {
+        SymbolTable table;
+        Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
+        auto &fn = s.GetFunction();
+        fn.returnType = "bool";
+        fn.parameters.push_back(ParameterInformation("speed", "float"));
+        fn.parameters.push_back(ParameterInformation("forced", "bool"));
+        table.AddSymbol(s);
+        CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+    }
+
+    // Case 4: Add another symbol
+    {
+        SymbolTable table;
+        Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
+        auto &fn = s.GetFunction();
+        fn.returnType = "bool";
+        fn.parameters.push_back(ParameterInformation("speed", "float"));
+        table.AddSymbol(s);
+        table.AddSymbol(MakeSymbol(SymbolType::Variable, "m_ammo", "file:///weapon.as"));
+        CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
+    }
+}
