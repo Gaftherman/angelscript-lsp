@@ -6019,4 +6019,25 @@ TEST_CASE("Telemetry - emits high-resolution profiling messages for didOpen and 
     CHECK(output.find("[Hover Roundtrip]") != std::string::npos);
 }
 
+TEST_CASE("Telemetry - predefined stub bypasses checkers and publishes empty diagnostics")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("engine.as.predefined", "class Player { void Attack(); }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("engine.as.predefined"), "class Player { void Attack(); }\n"));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    const std::string output = RunScript(serverConfig, stream);
+
+    CHECK(output.find("[Open/Change Profile]") != std::string::npos);
+    CHECK(output.find("engine.as.predefined") != std::string::npos);
+    CHECK(output.find("Checkers: 0.00 ms") != std::string::npos);
+}
+
+
 
