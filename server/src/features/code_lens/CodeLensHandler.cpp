@@ -4,18 +4,54 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <utility>
+#include <ankerl/unordered_dense.h>
 
 namespace angel_lsp::features
 {
     namespace
     {
+        struct RangeKey
+        {
+            uint32_t startLine = 0;
+            uint32_t startCharacter = 0;
+            uint32_t endLine = 0;
+            uint32_t endCharacter = 0;
+
+            bool operator==(const RangeKey &other) const noexcept
+            {
+                return startLine == other.startLine &&
+                       startCharacter == other.startCharacter &&
+                       endLine == other.endLine &&
+                       endCharacter == other.endCharacter;
+            }
+        };
+
+        struct RangeKeyHash
+        {
+            size_t operator()(const RangeKey &k) const noexcept
+            {
+                size_t h = std::hash<uint32_t>{}(k.startLine);
+                h ^= std::hash<uint32_t>{}(k.startCharacter) + 0x9e3779b9 + (h << 6) + (h >> 2);
+                h ^= std::hash<uint32_t>{}(k.endLine) + 0x9e3779b9 + (h << 6) + (h >> 2);
+                h ^= std::hash<uint32_t>{}(k.endCharacter) + 0x9e3779b9 + (h << 6) + (h >> 2);
+                return h;
+            }
+        };
+
         /**
-         * @brief Recursively traverses lexical scopes to count references to a specific target symbol.
+         * @brief Recursively traverses lexical scopes to collect unique call-site references to a symbol group.
+         * @param fileUri URI of document owning the scope tree.
          * @param scope Current scope to check.
-         * @param targetSym Target symbol being counted.
-         * @param count Running count of references.
+         * @param targetName Symbol name to match.
+         * @param group Symbols sharing this declaration range.
+         * @param seenRefs Set of unique reference locations across documents.
          */
-        void CountReferencesInScope(const analysis::Scope *scope, const analysis::Symbol &targetSym, size_t &count)
+        void CollectReferencesInScope(const std::string &fileUri,
+                                     const analysis::Scope *scope,
+                                     const std::string &targetName,
+                                     const std::vector<analysis::Symbol> &group,
+                                     ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> &seenRefs)
         {
             if (!scope)
             {
@@ -24,11 +60,21 @@ namespace angel_lsp::features
 
             for (const auto &ref : scope->references)
             {
-                if (ref.name == targetSym.name)
+                if (ref.name == targetName)
                 {
-                    // Do not count the declaration site itself
-                    if (ref.startLine == targetSym.selectionRange.startLine &&
-                        ref.startCharacter == targetSym.selectionRange.startCharacter)
+                    // Do not count the declaration site of any symbol in the group
+                    bool isDecl = false;
+                    for (const auto &sym : group)
+                    {
+                        if (fileUri == sym.fileUri &&
+                            ref.startLine == sym.selectionRange.startLine &&
+                            ref.startCharacter == sym.selectionRange.startCharacter)
+                        {
+                            isDecl = true;
+                            break;
+                        }
+                    }
+                    if (isDecl)
                     {
                         continue;
                     }
@@ -36,7 +82,7 @@ namespace angel_lsp::features
                     bool isDef = false;
                     for (const auto &def : scope->definitions)
                     {
-                        if (def.name == targetSym.name &&
+                        if (def.name == targetName &&
                             def.startLine == ref.startLine &&
                             def.startCharacter == ref.startCharacter)
                         {
@@ -49,13 +95,14 @@ namespace angel_lsp::features
                         continue;
                     }
 
-                    count++;
+                    const uint64_t pos = (static_cast<uint64_t>(ref.startLine) << 32) | ref.startCharacter;
+                    seenRefs.insert({ fileUri, pos });
                 }
             }
 
             for (const auto &child : scope->children)
             {
-                CountReferencesInScope(child.get(), targetSym, count);
+                CollectReferencesInScope(fileUri, child.get(), targetName, group, seenRefs);
             }
         }
     }
@@ -67,7 +114,11 @@ namespace angel_lsp::features
             return std::nullopt;
         }
 
-        std::vector<lsp::CodeLens> lenses;
+        // 1. Group symbols declared in request.uri by their declaration range.
+        // Multiple host classes synthesizing methods from a mixin produce multiple symbols
+        // sharing the same declaration range. Grouping by range ensures strictly 1 CodeLens per range.
+        std::vector<RangeKey> rangeOrder;
+        ankerl::unordered_dense::map<RangeKey, std::vector<analysis::Symbol>, RangeKeyHash> groups;
 
         request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
         {
@@ -78,52 +129,105 @@ namespace angel_lsp::features
                     continue;
                 }
 
-                if (sym.type == analysis::SymbolType::Function)
+                const RangeKey key{ sym.startLine, sym.startCharacter, sym.endLine, sym.endCharacter };
+                auto [it, inserted] = groups.try_emplace(key, std::vector<analysis::Symbol>{});
+                if (inserted)
                 {
-                    bool isInterfaceMethod = false;
-                    if (!sym.containerName.empty())
+                    rangeOrder.push_back(key);
+                }
+                it->second.push_back(sym);
+            }
+        });
+
+        if (rangeOrder.empty())
+        {
+            return std::nullopt;
+        }
+
+        // Sort ranges so CodeLenses appear in top-down document order
+        std::sort(rangeOrder.begin(), rangeOrder.end(), [](const RangeKey &a, const RangeKey &b)
+        {
+            if (a.startLine != b.startLine)
+            {
+                return a.startLine < b.startLine;
+            }
+            return a.startCharacter < b.startCharacter;
+        });
+
+        std::vector<lsp::CodeLens> lenses;
+
+        for (const auto &key : rangeOrder)
+        {
+            auto groupIt = groups.find(key);
+            if (groupIt == groups.end() || groupIt->second.empty())
+            {
+                continue;
+            }
+
+            const auto &symGroup = groupIt->second;
+
+            // Pick primary symbol (prefer non-synthesized origin)
+            const analysis::Symbol *primarySym = nullptr;
+            for (const auto &s : symGroup)
+            {
+                if (!s.isSynthesized)
+                {
+                    primarySym = &s;
+                    break;
+                }
+            }
+            if (!primarySym)
+            {
+                primarySym = &symGroup.front();
+            }
+
+            const auto &sym = *primarySym;
+
+            if (sym.type == analysis::SymbolType::Function)
+            {
+                bool isInterfaceMethod = false;
+                if (!sym.containerName.empty())
+                {
+                    auto owners = request.symbolTable.FindSymbolsPtr(sym.containerName);
+                    if (owners)
                     {
-                        auto owners = request.symbolTable.FindSymbolsPtr(sym.containerName);
-                        if (owners)
+                        for (const auto &owner : *owners)
                         {
-                            for (const auto &owner : *owners)
+                            if (owner.type == analysis::SymbolType::Interface)
                             {
-                                if (owner.type == analysis::SymbolType::Interface)
-                                {
-                                    isInterfaceMethod = true;
-                                    break;
-                                }
+                                isInterfaceMethod = true;
+                                break;
                             }
                         }
                     }
+                }
 
-                    if (isInterfaceMethod)
+                if (isInterfaceMethod)
+                {
+                    size_t implCount = 0;
+                    request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &candidates)
                     {
-                        size_t implCount = 0;
-                        request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &candidates)
+                        for (const auto &cand : candidates)
                         {
-                            for (const auto &cand : candidates)
+                            if (cand.type == analysis::SymbolType::Function && cand.name == sym.name &&
+                                (cand.fileUri != sym.fileUri || cand.containerName != sym.containerName))
                             {
-                                if (cand.type == analysis::SymbolType::Function && cand.name == sym.name &&
-                                    (cand.fileUri != sym.fileUri || cand.containerName != sym.containerName))
+                                if (!cand.containerName.empty())
                                 {
-                                    if (!cand.containerName.empty())
+                                    auto candOwners = request.symbolTable.FindSymbolsPtr(cand.containerName);
+                                    if (candOwners)
                                     {
-                                        auto candOwners = request.symbolTable.FindSymbolsPtr(cand.containerName);
-                                        if (candOwners)
+                                        for (const auto &cOwner : *candOwners)
                                         {
-                                            for (const auto &cOwner : *candOwners)
+                                            if (cOwner.type == analysis::SymbolType::Class)
                                             {
-                                                if (cOwner.type == analysis::SymbolType::Class)
+                                                for (const auto &b : cOwner.GetClass().bases)
                                                 {
-                                                    for (const auto &b : cOwner.GetClass().bases)
+                                                    if (analysis::CleanBaseType(b) == sym.containerName)
                                                     {
-                                                        if (analysis::CleanBaseType(b) == sym.containerName)
+                                                        if (cand.GetFunction().parameters.size() == sym.GetFunction().parameters.size())
                                                         {
-                                                            if (cand.GetFunction().parameters.size() == sym.GetFunction().parameters.size())
-                                                            {
-                                                                implCount++;
-                                                            }
+                                                            implCount++;
                                                         }
                                                     }
                                                 }
@@ -132,67 +236,13 @@ namespace angel_lsp::features
                                     }
                                 }
                             }
-                        });
-
-                        lsp::CodeLens lens;
-                        lens.range = lsp::Range{
-                            lsp::Position{ sym.startLine, sym.startCharacter },
-                            lsp::Position{ sym.endLine, sym.endCharacter }
-                        };
-                        lsp::Command cmd;
-                        cmd.title = std::to_string(implCount) + (implCount == 1 ? " implementation" : " implementations");
-                        cmd.command = "";
-                        lens.command = std::move(cmd);
-                        lenses.push_back(std::move(lens));
-                    }
-                    else
-                    {
-                        size_t refCount = 0;
-                        request.scopeIndex.ForEachScopeTree([&](const std::string &, const std::shared_ptr<const analysis::Scope> &root)
-                        {
-                            if (root)
-                            {
-                                CountReferencesInScope(root.get(), sym, refCount);
-                            }
-                        });
-
-                        lsp::CodeLens lens;
-                        lens.range = lsp::Range{
-                            lsp::Position{ sym.startLine, sym.startCharacter },
-                            lsp::Position{ sym.endLine, sym.endCharacter }
-                        };
-                        lsp::Command cmd;
-                        cmd.title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
-                        cmd.command = "";
-                        lens.command = std::move(cmd);
-                        lenses.push_back(std::move(lens));
-                    }
-                }
-                else if (sym.type == analysis::SymbolType::Interface)
-                {
-                    size_t implCount = 0;
-                    request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &candidates)
-                    {
-                        for (const auto &cand : candidates)
-                        {
-                            if (cand.type == analysis::SymbolType::Class)
-                            {
-                                for (const auto &b : cand.GetClass().bases)
-                                {
-                                    if (analysis::CleanBaseType(b) == sym.name)
-                                    {
-                                        implCount++;
-                                        break;
-                                    }
-                                }
-                            }
                         }
                     });
 
                     lsp::CodeLens lens;
                     lens.range = lsp::Range{
-                        lsp::Position{ sym.startLine, sym.startCharacter },
-                        lsp::Position{ sym.endLine, sym.endCharacter }
+                        lsp::Position{ key.startLine, key.startCharacter },
+                        lsp::Position{ key.endLine, key.endCharacter }
                     };
                     lsp::Command cmd;
                     cmd.title = std::to_string(implCount) + (implCount == 1 ? " implementation" : " implementations");
@@ -200,21 +250,22 @@ namespace angel_lsp::features
                     lens.command = std::move(cmd);
                     lenses.push_back(std::move(lens));
                 }
-                else if (sym.type == analysis::SymbolType::Class)
+                else
                 {
-                    size_t refCount = 0;
-                    request.scopeIndex.ForEachScopeTree([&](const std::string &, const std::shared_ptr<const analysis::Scope> &root)
+                    ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenRefs;
+                    request.scopeIndex.ForEachScopeTree([&](const std::string &fileUri, const std::shared_ptr<const analysis::Scope> &root)
                     {
                         if (root)
                         {
-                            CountReferencesInScope(root.get(), sym, refCount);
+                            CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, seenRefs);
                         }
                     });
 
+                    const size_t refCount = seenRefs.size();
                     lsp::CodeLens lens;
                     lens.range = lsp::Range{
-                        lsp::Position{ sym.startLine, sym.startCharacter },
-                        lsp::Position{ sym.endLine, sym.endCharacter }
+                        lsp::Position{ key.startLine, key.startCharacter },
+                        lsp::Position{ key.endLine, key.endCharacter }
                     };
                     lsp::Command cmd;
                     cmd.title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
@@ -223,7 +274,62 @@ namespace angel_lsp::features
                     lenses.push_back(std::move(lens));
                 }
             }
-        });
+            else if (sym.type == analysis::SymbolType::Interface)
+            {
+                size_t implCount = 0;
+                request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &candidates)
+                {
+                    for (const auto &cand : candidates)
+                    {
+                        if (cand.type == analysis::SymbolType::Class)
+                        {
+                            for (const auto &b : cand.GetClass().bases)
+                            {
+                                if (analysis::CleanBaseType(b) == sym.name)
+                                {
+                                    implCount++;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                });
+
+                lsp::CodeLens lens;
+                lens.range = lsp::Range{
+                    lsp::Position{ key.startLine, key.startCharacter },
+                    lsp::Position{ key.endLine, key.endCharacter }
+                };
+                lsp::Command cmd;
+                cmd.title = std::to_string(implCount) + (implCount == 1 ? " implementation" : " implementations");
+                cmd.command = "";
+                lens.command = std::move(cmd);
+                lenses.push_back(std::move(lens));
+            }
+            else if (sym.type == analysis::SymbolType::Class)
+            {
+                ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenRefs;
+                request.scopeIndex.ForEachScopeTree([&](const std::string &fileUri, const std::shared_ptr<const analysis::Scope> &root)
+                {
+                    if (root)
+                    {
+                        CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, seenRefs);
+                    }
+                });
+
+                const size_t refCount = seenRefs.size();
+                lsp::CodeLens lens;
+                lens.range = lsp::Range{
+                    lsp::Position{ key.startLine, key.startCharacter },
+                    lsp::Position{ key.endLine, key.endCharacter }
+                };
+                lsp::Command cmd;
+                cmd.title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
+                cmd.command = "";
+                lens.command = std::move(cmd);
+                lenses.push_back(std::move(lens));
+            }
+        }
 
         if (lenses.empty())
         {

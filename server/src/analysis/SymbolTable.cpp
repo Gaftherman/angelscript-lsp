@@ -461,6 +461,10 @@ namespace angel_lsp::analysis
                         // Retain original mixin fileUri and ranges so Go-to-Definition navigates to the mixin source
                         synth.fileUri = mSym.fileUri;
                         synth.isSynthesized = true;
+                        if (m_virtualMixinDocumentsEnabled)
+                        {
+                            synth.virtualFileUri = BuildVirtualMixinUri(hostQName, mixinName);
+                        }
 
                         MutableBucket(m_symbols[synthKey]).push_back(std::move(synth));
                         IndexKeyForFileLocked(hostFileUri, synthKey);
@@ -496,6 +500,28 @@ namespace angel_lsp::analysis
         std::unique_lock<std::shared_mutex> lock(m_mutex);
         ResolveIncludedMixinsLocked();
         ++m_version;
+    }
+
+    void SymbolTable::SetVirtualMixinDocumentsEnabled(bool enabled)
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        m_virtualMixinDocumentsEnabled = enabled;
+    }
+
+    bool SymbolTable::IsVirtualMixinDocumentsEnabled() const
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        return m_virtualMixinDocumentsEnabled;
+    }
+
+    std::string SymbolTable::BuildVirtualMixinUri(std::string_view hostClass, std::string_view mixinName)
+    {
+        std::string mixinClean(mixinName);
+        if (mixinClean.ends_with(".as"))
+        {
+            return fmt::format("angelscript-virtual://{}/{}", hostClass, mixinClean);
+        }
+        return fmt::format("angelscript-virtual://{}/{}.as", hostClass, mixinClean);
     }
 
 

@@ -309,6 +309,7 @@ namespace angel_lsp::config
                   << "  --disable-folding-range                 Disable folding ranges\n"
                   << "  --enable-inlay-hints[=true|false]       Enable/disable inlay hints (default: true)\n"
                   << "  --disable-inlay-hints                   Disable inlay hints\n"
+                  << "  --inlay-hints-suppress-when-argument-matches-name[=true|false] Suppress inlay hints when arg matches param name (default: false)\n"
                   << "  --enable-code-action[=true|false]       Enable/disable code actions (default: true)\n"
                   << "  --disable-code-action                   Disable code actions\n"
                   << "  --disable-pull-diagnostics              Disable LSP 3.17 pull diagnostics\n"
@@ -327,7 +328,9 @@ namespace angel_lsp::config
                   << "  --enable-type-hierarchy[=true|false]    Enable/disable type hierarchy (default: true)\n"
                   << "  --disable-type-hierarchy                Disable type hierarchy\n"
                   << "  --enable-linked-editing[=true|false]    Enable/disable linked editing of locals (default: true)\n"
-                  << "  --disable-linked-editing                Disable linked editing\n\n"
+                  << "  --disable-linked-editing                Disable linked editing\n"
+                  << "  --enable-virtual-mixin-documents[=true|false] Enable/disable virtual mixin documents (default: false)\n"
+                  << "  --disable-virtual-mixin-documents       Disable virtual mixin documents\n\n"
                   << "Options:\n"
                   << "  --locale=<string>                       Set diagnostic language/locale (default: en)\n"
                   << "  -D, --define=<word>                     Treat <word> as defined for #if (repeatable).\n"
@@ -575,6 +578,12 @@ namespace angel_lsp::config
             {
                 config.features.inlayHintsSuppressWhenArgumentMatchesName = getBoolValue(true);
             }
+            else if (key == "--no-inlay-hints-suppress-when-argument-matches-name" ||
+                     key == "--disable-inlay-hints-suppress-when-argument-matches-name")
+            {
+                config.features.inlayHintsSuppressWhenArgumentMatchesName =
+                    inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
             else if (key == "--enable-code-action" || key == "--enable-codeaction")
             {
                 config.features.enableCodeAction = getBoolValue(true);
@@ -670,6 +679,15 @@ namespace angel_lsp::config
             else if (key == "--disable-on-type-formatting" || key == "--disable-ontypeformatting")
             {
                 config.features.enableOnTypeFormatting = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
+            }
+            else if (key == "--enable-virtual-mixin-documents" || key == "--enable-virtualmixindocuments")
+            {
+                config.features.enableVirtualMixinDocuments = getBoolValue(true);
+            }
+            else if (key == "--disable-virtual-mixin-documents" || key == "--disable-virtualmixindocuments")
+            {
+                config.features.enableVirtualMixinDocuments =
+                    inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
             else if (key == "--locale")
             {

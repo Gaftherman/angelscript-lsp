@@ -316,6 +316,7 @@ namespace angel_lsp::analysis
         SourceRange selectionRange;  ///< Source range of the identifier token itself (for DocumentSymbol/Rename).
 
         bool isSynthesized = false;  ///< True when synthesized into a host class (e.g. from an included mixin).
+        std::string virtualFileUri;  ///< Synthetic URI when virtual mixin documents are enabled (e.g. angelscript-virtual://<host_class>/<mixin>.as).
 
         std::variant<
             std::monostate,
@@ -442,6 +443,15 @@ namespace angel_lsp::analysis
         void ReplaceDocumentSymbols(const std::string &fileUri, SymbolTable &&staging);
         void ResolveIncludedMixins();
 
+        /** @brief Controls whether synthetic virtual mixin document URIs are generated during mixin resolution. */
+        void SetVirtualMixinDocumentsEnabled(bool enabled);
+
+        /** @brief Checks if virtual mixin documents generation is currently enabled. */
+        [[nodiscard]] bool IsVirtualMixinDocumentsEnabled() const;
+
+        /** @brief Constructs a virtual mixin URI for a host class and mixin name (e.g. angelscript-virtual://<host>/<mixin>.as). */
+        [[nodiscard]] static std::string BuildVirtualMixinUri(std::string_view hostClass, std::string_view mixinName);
+
         bool HasSymbol(const std::string &qualifiedName) const;
         bool HasSymbolAnywhere(const std::string &name) const;
 
@@ -546,6 +556,8 @@ namespace angel_lsp::analysis
         mutable std::mutex m_ruleIndexMutex;
         mutable std::shared_ptr<const rules::RuleIndex> m_ruleIndex;
         mutable uint64_t m_ruleIndexVersion = 0;
+
+        bool m_virtualMixinDocumentsEnabled = false;
     };
 
     /** @brief Converts SymbolType enum to lower/string representation. */

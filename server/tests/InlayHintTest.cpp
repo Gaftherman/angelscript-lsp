@@ -45,7 +45,7 @@ namespace
             }
         }
 
-        std::optional<std::vector<lsp::InlayHint>> InlayHints(lsp::Range range = lsp::Range{ {0, 0}, {0, 0} }, bool suppressWhenArgumentMatchesName = true)
+        std::optional<std::vector<lsp::InlayHint>> InlayHints(lsp::Range range = lsp::Range{ {0, 0}, {0, 0} }, bool suppressWhenArgumentMatchesName = false)
         {
             InlayHintRequest req{ uri, sourceCode, tree, range, symbolTable, scopeIndex, suppressWhenArgumentMatchesName };
             return GetInlayHints(req);
@@ -117,31 +117,58 @@ TEST_CASE("InlayHintHandler - Exclusion Rule: Same-Name Arguments")
         "}\n";
 
     TestEnvironment env(code);
-    auto hints = env.InlayHints();
 
-    REQUIRE(hints.has_value());
-    // 'width' matches parameter name 'width', so it must be suppressed.
-    // 'h' does not match 'height', so 'height:' should be emitted.
-    bool foundWidthHint = false;
-    bool foundHeightHint = false;
-
-    for (const auto &hint : *hints)
+    // By default (suppressWhenArgumentMatchesName = false), 'width:' should be emitted
     {
-        std::string l = std::holds_alternative<std::string>(hint.label)
-                            ? std::get<std::string>(hint.label)
-                            : "";
-        if (l == "width:")
+        auto hints = env.InlayHints();
+        REQUIRE(hints.has_value());
+        bool foundWidthHint = false;
+        bool foundHeightHint = false;
+
+        for (const auto &hint : *hints)
         {
-            foundWidthHint = true;
+            std::string l = std::holds_alternative<std::string>(hint.label)
+                                ? std::get<std::string>(hint.label)
+                                : "";
+            if (l == "width:")
+            {
+                foundWidthHint = true;
+            }
+            if (l == "height:")
+            {
+                foundHeightHint = true;
+            }
         }
-        if (l == "height:")
-        {
-            foundHeightHint = true;
-        }
+
+        CHECK(foundWidthHint);
+        CHECK(foundHeightHint);
     }
 
-    CHECK(!foundWidthHint);
-    CHECK(foundHeightHint);
+    // When explicitly suppressed (suppressWhenArgumentMatchesName = true), 'width:' must be suppressed
+    {
+        auto hints = env.InlayHints(lsp::Range{ {0, 0}, {0, 0} }, true);
+        REQUIRE(hints.has_value());
+        bool foundWidthHint = false;
+        bool foundHeightHint = false;
+
+        for (const auto &hint : *hints)
+        {
+            std::string l = std::holds_alternative<std::string>(hint.label)
+                                ? std::get<std::string>(hint.label)
+                                : "";
+            if (l == "width:")
+            {
+                foundWidthHint = true;
+            }
+            if (l == "height:")
+            {
+                foundHeightHint = true;
+            }
+        }
+
+        CHECK(!foundWidthHint);
+        CHECK(foundHeightHint);
+    }
 }
 
 TEST_CASE("InlayHintHandler - Class Method Call with Inheritance")
@@ -581,7 +608,7 @@ TEST_CASE("InlayHintHandler - Relaxed Parameter Name Matching Suppression")
         "}\n";
 
     TestEnvironment env(code);
-    // With default suppression (true), "value:" should be suppressed because arg.text == param.name
+    // With explicit suppression (true), "value:" should be suppressed because arg.text == param.name
     auto suppressedHints = env.InlayHints(lsp::Range{ {0, 0}, {0, 0} }, true);
     REQUIRE(suppressedHints.has_value());
     bool foundSuppressed = false;
@@ -606,6 +633,19 @@ TEST_CASE("InlayHintHandler - Relaxed Parameter Name Matching Suppression")
         }
     }
     CHECK(foundRelaxed);
+
+    // Default call without arguments also defaults to false (no suppression)
+    auto defaultHints = env.InlayHints();
+    REQUIRE(defaultHints.has_value());
+    bool foundDefault = false;
+    for (const auto &h : *defaultHints)
+    {
+        if (std::holds_alternative<std::string>(h.label) && std::get<std::string>(h.label) == "value:")
+        {
+            foundDefault = true;
+        }
+    }
+    CHECK(foundDefault);
 }
 
 

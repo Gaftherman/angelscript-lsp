@@ -132,3 +132,79 @@ TEST_CASE("CodeLens - Computes reference count for classes")
     }
     CHECK(foundClass);
 }
+
+TEST_CASE("CodeLens - Deduplicates mixin methods and aggregates references across host classes")
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{ nullptr };
+    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    const std::string mixinUri = "file:///mixin.as";
+    const std::string mixinCode =
+        "mixin class WeaponMixin {\n"
+        "    void Deploy() {}\n"
+        "}\n";
+
+    const std::string hostUri = "file:///weapons.as";
+    const std::string hostCode =
+        "class Rifle : WeaponMixin {}\n"
+        "class Pistol : WeaponMixin {}\n"
+        "void TestCalls(Rifle@ r, Pistol@ p)\n"
+        "{\n"
+        "    r.Deploy();\n"
+        "    p.Deploy();\n"
+        "}\n";
+
+    // Parse and collect mixin
+    TSTree *mixinTree = parser.Parse(mixinCode);
+    symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
+    auto mixinScope = scopeCollector.CollectScopes(mixinCode, parser);
+    if (mixinScope)
+    {
+        scopeIndex.SetScopeTree(mixinUri, std::move(mixinScope));
+    }
+
+    // Parse and collect hosts
+    TSTree *hostTree = parser.Parse(hostCode);
+    symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
+    auto hostScope = scopeCollector.CollectScopes(hostCode, parser);
+    if (hostScope)
+    {
+        scopeIndex.SetScopeTree(hostUri, std::move(hostScope));
+    }
+
+    // Resolve mixins into host classes
+    symbolTable.ResolveIncludedMixins();
+
+    // Query CodeLens on the mixin file
+    CodeLensRequest req{ mixinUri, mixinCode, mixinTree, symbolTable, scopeIndex };
+    const auto lenses = GetCodeLenses(req);
+    REQUIRE(lenses.has_value());
+
+    // Count lenses on Deploy() line (line 1)
+    size_t deployLensCount = 0;
+    std::string deployTitle;
+    for (const auto &lens : *lenses)
+    {
+        if (lens.range.start.line == 1 && lens.command.has_value())
+        {
+            deployLensCount++;
+            deployTitle = lens.command->title;
+        }
+    }
+
+    // Must be strictly 1 CodeLens for Deploy, and aggregated reference count should be 2
+    CHECK(deployLensCount == 1);
+    CHECK(deployTitle == "2 references");
+
+    if (mixinTree)
+    {
+        ts_tree_delete(mixinTree);
+    }
+    if (hostTree)
+    {
+        ts_tree_delete(hostTree);
+    }
+}

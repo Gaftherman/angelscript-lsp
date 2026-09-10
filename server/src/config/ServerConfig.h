@@ -28,7 +28,7 @@ namespace angel_lsp::config
         bool enableDocumentHighlight = true;
         bool enableFoldingRange = true;
         bool enableInlayHints = true;
-        bool inlayHintsSuppressWhenArgumentMatchesName = true;
+        bool inlayHintsSuppressWhenArgumentMatchesName = false;
         bool enableCodeAction = true;
         bool enableFormatting = true;
         bool enableDocumentLink = true;
@@ -41,6 +41,7 @@ namespace angel_lsp::config
         bool enableCodeLens = true;
         bool enableOnTypeFormatting = true;
         bool enablePullDiagnostics = true;
+        bool enableVirtualMixinDocuments = false;
     };
 
     /**

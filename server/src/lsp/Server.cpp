@@ -943,6 +943,7 @@ namespace angel_lsp
         result.capabilities.positionEncoding = useUtf8 ? lsp::PositionEncodingKind::UTF8
                                                        : lsp::PositionEncodingKind::UTF16;
         m_logger->LogInfo(fmt::format("Negotiated position encoding: {}", useUtf8 ? "utf-8" : "utf-16"));
+        m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
 
         lsp::TextDocumentSyncOptions sync;
         sync.openClose = true;
@@ -2142,6 +2143,20 @@ namespace angel_lsp
             ReanalyseOpenDocuments();
         }
 
+        if (const auto *featVal = section->find("features"); featVal && featVal->isObject())
+        {
+            if (const auto *vmd = featVal->object().find("enableVirtualMixinDocuments"); vmd && vmd->isBoolean())
+            {
+                m_config.features.enableVirtualMixinDocuments = vmd->boolean();
+                m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
+            }
+        }
+        else if (const auto *vmd = section->find("enableVirtualMixinDocuments"); vmd && vmd->isBoolean())
+        {
+            m_config.features.enableVirtualMixinDocuments = vmd->boolean();
+            m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
+        }
+
         // The stub selection rides the same rescan the engine profile does. With a working unload
         // path the rescan is enough: the stub that stops being active is dropped and the new one
         // collected, without restarting the server.
@@ -2802,8 +2817,21 @@ namespace angel_lsp
 
     void Server::ReanalyseOpenDocuments()
     {
+        const auto now = std::chrono::steady_clock::now();
         for (const auto &[openUri, text] : m_openDocuments)
         {
+            {
+                std::lock_guard<std::mutex> lock(m_peerDebounceMutex);
+                auto it = m_peerAnalysisTimestamps.find(openUri);
+                if (it != m_peerAnalysisTimestamps.end())
+                {
+                    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second) < k_peerAnalysisDebounceWindow)
+                    {
+                        continue;
+                    }
+                }
+                m_peerAnalysisTimestamps[openUri] = now;
+            }
             IndexModuleClosure(openUri);
             ScheduleAnalysis(openUri, text);
         }
@@ -3182,6 +3210,20 @@ namespace angel_lsp
 
                 if (isDependent)
                 {
+                    const auto now = std::chrono::steady_clock::now();
+                    {
+                        std::lock_guard<std::mutex> lock(m_peerDebounceMutex);
+                        auto it = m_peerAnalysisTimestamps.find(openUri);
+                        if (it != m_peerAnalysisTimestamps.end())
+                        {
+                            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second) < k_peerAnalysisDebounceWindow)
+                            {
+                                continue;
+                            }
+                        }
+                        m_peerAnalysisTimestamps[openUri] = now;
+                    }
+
                     IndexModuleClosure(openUri);
                     ScheduleAnalysis(openUri, openText);
                 }
@@ -3430,6 +3472,10 @@ namespace angel_lsp
         {
             std::lock_guard<std::mutex> lock(m_analysisMutex);
             m_savedUris.erase(uriStr);
+        }
+        {
+            std::lock_guard<std::mutex> lock(m_peerDebounceMutex);
+            m_peerAnalysisTimestamps.erase(uriStr);
         }
 
         // The cached token payload is only meaningful while the client still holds it. Dropping it

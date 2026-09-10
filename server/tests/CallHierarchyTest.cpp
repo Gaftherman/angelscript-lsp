@@ -355,3 +355,70 @@ TEST_CASE("CallHierarchy - A cursor on nothing callable opens no hierarchy")
 
     CHECK_FALSE(fixture.Prepare(0, 5).has_value());
 }
+
+TEST_CASE("CallHierarchy - Mixin methods across host classes")
+{
+    AngelScriptParser parser;
+    SymbolCollector collector{ nullptr };
+    SymbolTable table;
+    CallGraphIndex callGraph;
+
+    const std::string mixinUri = "file:///mixin.as";
+    const std::string mixinCode =
+        "void PlaySound() {}\n"
+        "mixin class WeaponMixin {\n"
+        "    void Deploy() { PlaySound(); }\n"
+        "}\n";
+
+    const std::string hostUri = "file:///weapon.as";
+    const std::string hostCode =
+        "class Garand : WeaponMixin {\n"
+        "    void Attack() { Deploy(); }\n"
+        "}\n";
+
+    TSTree *mixinTree = parser.Parse(mixinCode);
+    collector.CollectSymbols(mixinUri, mixinCode, parser, table);
+    if (mixinTree)
+    {
+        callGraph.SetDocumentCalls(mixinUri, CollectCalls(ts_tree_root_node(mixinTree), mixinCode));
+    }
+
+    TSTree *hostTree = parser.Parse(hostCode);
+    collector.CollectSymbols(hostUri, hostCode, parser, table);
+    if (hostTree)
+    {
+        callGraph.SetDocumentCalls(hostUri, CollectCalls(ts_tree_root_node(hostTree), hostCode));
+    }
+
+    table.ResolveIncludedMixins();
+
+    // Prepare on Deploy inside mixin (line 2, col 10)
+    const CallHierarchyPrepareRequest prepReq{
+        mixinUri, mixinCode, mixinTree, table, lsp::Position{ 2, 10 }
+    };
+    const auto items = PrepareCallHierarchy(prepReq);
+    REQUIRE(items.has_value());
+    REQUIRE(!items->empty());
+    // Strictly deduplicated to 1 item
+    CHECK(items->size() == 1);
+    CHECK((*items)[0].name == "Deploy");
+
+    // Incoming calls to Deploy() should find Garand::Attack
+    const auto incoming = GetIncomingCalls(CallHierarchyItemRequest{ table, callGraph, (*items)[0] });
+    REQUIRE(incoming.has_value());
+    CHECK(HasFrom(incoming, "Attack"));
+
+    // Outgoing calls from Deploy() should reach PlaySound
+    const auto outgoing = GetOutgoingCalls(CallHierarchyItemRequest{ table, callGraph, (*items)[0] });
+    REQUIRE(outgoing.has_value());
+    CHECK(HasTo(outgoing, "PlaySound"));
+
+    if (mixinTree)
+    {
+        ts_tree_delete(mixinTree);
+    }
+    if (hostTree)
+    {
+        ts_tree_delete(hostTree);
+    }
+}

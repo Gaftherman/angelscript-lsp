@@ -153,9 +153,10 @@ namespace angel_lsp::features
                 return "";
             }
 
-            for (const auto &container : analysis::GetEnclosingContainers(owner, sourceCode))
+            const auto containers = analysis::GetEnclosingContainers(owner, sourceCode);
+            if (!containers.empty())
             {
-                return container.qualifiedName.empty() ? name : container.qualifiedName + "::" + name;
+                return containers.front().qualifiedName.empty() ? name : containers.front().qualifiedName + "::" + name;
             }
             return name;
         }
@@ -209,9 +210,31 @@ namespace angel_lsp::features
             return std::nullopt;
         }
 
-        std::vector<lsp::CallHierarchyItem> items;
-        items.reserve(declarations.size());
+        // Deduplicate declarations that point to the exact same source range (e.g. mixin origin vs synthesized symbols)
+        std::vector<Symbol> uniqueDeclarations;
         for (const auto &sym : declarations)
+        {
+            auto it = std::find_if(uniqueDeclarations.begin(), uniqueDeclarations.end(),
+                                   [&sym](const Symbol &u)
+                                   {
+                                       return u.fileUri == sym.fileUri &&
+                                              u.startLine == sym.startLine &&
+                                              u.startCharacter == sym.startCharacter;
+                                   });
+            if (it == uniqueDeclarations.end())
+            {
+                uniqueDeclarations.push_back(sym);
+            }
+            else if (it->isSynthesized && !sym.isSynthesized)
+            {
+                // Prefer the non-synthesized original declaration
+                *it = sym;
+            }
+        }
+
+        std::vector<lsp::CallHierarchyItem> items;
+        items.reserve(uniqueDeclarations.size());
+        for (const auto &sym : uniqueDeclarations)
         {
             items.push_back(ToItem(sym));
         }
@@ -259,10 +282,24 @@ namespace angel_lsp::features
         {
             for (const auto &sym : FindByQualifiedName(caller, request.symbolTable))
             {
-                lsp::CallHierarchyIncomingCall entry;
-                entry.from = ToItem(sym);
-                entry.fromRanges = ranges;
-                incoming.push_back(std::move(entry));
+                bool exists = false;
+                for (const auto &inc : incoming)
+                {
+                    if (inc.from.uri.toString() == sym.fileUri &&
+                        inc.from.selectionRange.start.line == sym.selectionRange.startLine &&
+                        inc.from.selectionRange.start.character == sym.selectionRange.startCharacter)
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists)
+                {
+                    lsp::CallHierarchyIncomingCall entry;
+                    entry.from = ToItem(sym);
+                    entry.fromRanges = ranges;
+                    incoming.push_back(std::move(entry));
+                }
             }
         }
 
@@ -279,7 +316,29 @@ namespace angel_lsp::features
 
         std::vector<std::pair<std::string, std::vector<lsp::Range>>> byCallee;
 
-        for (const auto &document : request.callGraph.FindCallsFrom(caller))
+        auto calls = request.callGraph.FindCallsFrom(caller);
+        if (calls.empty())
+        {
+            // If caller is synthesized in a host class, locate calls recorded under the originating mixin method
+            auto symbols = request.symbolTable.FindSymbolsPtr(caller);
+            if (symbols)
+            {
+                for (const auto &sym : *symbols)
+                {
+                    if (sym.isSynthesized && !sym.containerName.empty())
+                    {
+                        const std::string originCaller = sym.containerName + "::" + sym.name;
+                        calls = request.callGraph.FindCallsFrom(originCaller);
+                        if (!calls.empty())
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        for (const auto &document : calls)
         {
             for (const auto &call : document.calls)
             {
@@ -303,10 +362,24 @@ namespace angel_lsp::features
             // nowhere to navigate to, so it is left out rather than offered as a dead entry.
             for (const auto &sym : FindByBareName(callee, request.symbolTable))
             {
-                lsp::CallHierarchyOutgoingCall entry;
-                entry.to = ToItem(sym);
-                entry.fromRanges = ranges;
-                outgoing.push_back(std::move(entry));
+                bool exists = false;
+                for (const auto &out : outgoing)
+                {
+                    if (out.to.uri.toString() == sym.fileUri &&
+                        out.to.selectionRange.start.line == sym.selectionRange.startLine &&
+                        out.to.selectionRange.start.character == sym.selectionRange.startCharacter)
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists)
+                {
+                    lsp::CallHierarchyOutgoingCall entry;
+                    entry.to = ToItem(sym);
+                    entry.fromRanges = ranges;
+                    outgoing.push_back(std::move(entry));
+                }
             }
         }
 

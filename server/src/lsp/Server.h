@@ -215,6 +215,12 @@ namespace angel_lsp
         uint64_t m_analysisRevision = 0;
         bool m_analysisStop = false;
 
+        // Debounce & coalescing tracker for cascading peer open document analysis passes
+        // (e.g. editing base.as affecting multiple open documents).
+        mutable std::mutex m_peerDebounceMutex;
+        ankerl::unordered_dense::map<std::string, std::chrono::steady_clock::time_point> m_peerAnalysisTimestamps;
+        static constexpr std::chrono::milliseconds k_peerAnalysisDebounceWindow{ 250 };
+
 
         // Files pulled in because some open document's #include module needs them, keyed by the URI
         // they were indexed under. Their text is kept so position conversion can reach them and so a
