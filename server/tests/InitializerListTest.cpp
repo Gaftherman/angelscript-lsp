@@ -647,8 +647,12 @@ TEST_CASE("InitializerList - generic user-defined aggregate struct initializatio
     const std::string plainVecStub = "class Vector3 { float x; float y; float z; };\n";
     const auto plainDiag = DiagnoseAll(plainVecStub + "void main() { Vector3 v = {1.0, 2.0, 3.0}; }\n");
     CHECK(HasAnyCode(plainDiag, "as-err-initializer-list-not-supported"));
+    const auto plainFewDiag = DiagnoseAll(plainVecStub + "void main() { Vector3 v = {1.0, 2.0}; }\n");
+    CHECK(HasAnyCode(plainFewDiag, "as-err-initializer-list-not-supported"));
+    const auto plainManyDiag = DiagnoseAll(plainVecStub + "void main() { Vector3 v = {1.0, 2.0, 3.0, 4.0}; }\n");
+    CHECK(HasAnyCode(plainManyDiag, "as-err-initializer-list-not-supported"));
 
-    // Struct declaring list constructor validates field counts and types
+    // Struct declaring single-parameter list constructor validates field counts and types
     const std::string vecStub = "class Vector3 { Vector3(const int &in); float x; float y; float z; };\n";
 
     // Exact count of fields passes
@@ -668,6 +672,13 @@ TEST_CASE("InitializerList - generic user-defined aggregate struct initializatio
     // Nested list inside primitive field is rejected
     CHECK(HasAnyCode(DiagnoseAll(vecStub + "void main() { Vector3 v = {{1.0}, 2.0, 3.0}; }\n"),
                      "as-err-initializer-list-not-supported"));
+
+    // Struct declaring two-parameter list constructor (asBEHAVE_LIST_CONSTRUCT: int &in, int &in)
+    const std::string vecStub2 = "class Vector3 { Vector3(int &in, int &in); float x; float y; float z; };\n";
+    const auto exactDiag2 = DiagnoseAll(vecStub2 + "void main() { Vector3 v = {1.0, 2.0, 3.0}; }\n");
+    CHECK_FALSE(HasAnyCode(exactDiag2, "as-err-initializer-list-too-many"));
+    CHECK_FALSE(HasAnyCode(exactDiag2, "as-err-initializer-list-too-few"));
+    CHECK_FALSE(HasAnyCode(exactDiag2, "as-err-initializer-list-not-supported"));
 
     const std::string rgbaStub = "class RGBA { RGBA(const int &in); int r; int g; int b; int a; };\n";
     CHECK_FALSE(HasAnyCode(DiagnoseAll(rgbaStub + "void main() { RGBA c = {255, 128, 64, 255}; }\n"),
