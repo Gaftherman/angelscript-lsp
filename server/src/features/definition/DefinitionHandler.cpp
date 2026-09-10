@@ -452,36 +452,6 @@ namespace angel_lsp::features
                 }
             }
 
-            if (sym.isSynthesized && request.symbolTable.IsVirtualMixinDocumentsEnabled() && !sym.virtualFileUri.empty())
-            {
-                uint32_t mixinStartLine = 0;
-                bool foundMixin = false;
-                if (!sym.containerName.empty())
-                {
-                    auto mixinSymbols = request.symbolTable.FindSymbols(sym.containerName);
-                    for (const auto &mClass : mixinSymbols)
-                    {
-                        if (mClass.type == analysis::SymbolType::Class && mClass.fileUri == sym.fileUri)
-                        {
-                            mixinStartLine = mClass.startLine;
-                            foundMixin = true;
-                            break;
-                        }
-                    }
-                }
-
-                uint32_t mappedStartLine = 3 + (foundMixin && sym.startLine >= mixinStartLine ? (sym.startLine - mixinStartLine) : sym.startLine);
-                uint32_t lineDiff = sym.endLine >= sym.startLine ? (sym.endLine - sym.startLine) : 0;
-                uint32_t mappedEndLine = mappedStartLine + lineDiff;
-
-                return lsp::Location{
-                    lsp::DocumentUri::parse(sym.virtualFileUri),
-                    lsp::Range{
-                        lsp::Position{ mappedStartLine, sym.startCharacter },
-                        lsp::Position{ mappedEndLine, sym.endCharacter }
-                    }
-                };
-            }
 
             return lsp::Location{
                 lsp::DocumentUri::parse(sym.fileUri),
@@ -692,7 +662,7 @@ namespace angel_lsp::features
                 {
                     std::string objText = request.sourceCode.substr(objStart, objEnd - objStart);
 
-                    if (objText == "this")
+                    if (objText == "this" || objText == "self")
                     {
                         if (isVirtualDoc && !virtualHostClass.empty())
                         {
@@ -1024,6 +994,43 @@ namespace angel_lsp::features
                             lsp::Position{ eLine, eChar }
                         }
                     });
+                    return locations;
+                }
+            }
+        }
+
+        if (nodeText == "this" || nodeText == "self")
+        {
+            std::string targetClass;
+            if (isVirtualDoc && !virtualHostClass.empty())
+            {
+                targetClass = virtualHostClass;
+            }
+            else
+            {
+                auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
+                for (const auto &c : containers)
+                {
+                    if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+                    {
+                        targetClass = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+                        break;
+                    }
+                }
+            }
+
+            if (!targetClass.empty())
+            {
+                auto cands = request.symbolTable.FindSymbols(targetClass);
+                for (const auto &c : cands)
+                {
+                    if (c.type == analysis::SymbolType::Class || c.type == analysis::SymbolType::Interface)
+                    {
+                        locations.push_back(MakeLocation(c, request));
+                    }
+                }
+                if (!locations.empty())
+                {
                     return locations;
                 }
             }

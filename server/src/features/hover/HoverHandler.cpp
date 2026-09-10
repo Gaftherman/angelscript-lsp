@@ -828,6 +828,35 @@ namespace angel_lsp::features
             ? (virtualMixinSym->startLine + (request.position.line - 3))
             : request.position.line;
 
+        if (nodeText == "this" || nodeText == "self")
+        {
+            std::string className;
+            if (isVirtualDoc && !virtualHostClass.empty())
+            {
+                className = virtualHostClass;
+            }
+            else
+            {
+                auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
+                for (const auto &c : containers)
+                {
+                    if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+                    {
+                        className = c.name;
+                        break;
+                    }
+                }
+            }
+
+            if (!className.empty())
+            {
+                utils::HighResTimer fmtTimer;
+                std::string md = fmt::format("```angelscript\n{} {}\n```", className, nodeText);
+                profiler.fmtMs += fmtTimer.ElapsedMs();
+                return lsp::Hover{ lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), md }, range };
+            }
+        }
+
         TSNode parent = ts_node_parent(node);
 
         // Check if cursor node is the member child of a member_expression (e.g. "prop" in "obj.prop")
@@ -882,7 +911,7 @@ namespace angel_lsp::features
                 {
                     std::string objText = request.sourceCode.substr(objStart, objEnd - objStart);
 
-                    if (objText == "this")
+                    if (objText == "this" || objText == "self")
                     {
                         if (isVirtualDoc && !virtualHostClass.empty())
                         {

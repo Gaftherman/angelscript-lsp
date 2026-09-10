@@ -120,7 +120,7 @@ TEST_CASE("VirtualMixinDocument - Definition Routing Physical vs Virtual")
         ts_tree_delete(tree);
     }
 
-    SUBCASE("Feature flag enabled: Go-to-Definition returns virtual mixin URI with mapped line offset")
+    SUBCASE("Feature flag enabled: Go-to-Definition returns physical mixin URI and line")
     {
         SymbolTable table;
         ScopeIndex scopeIndex;
@@ -145,11 +145,8 @@ TEST_CASE("VirtualMixinDocument - Definition Routing Physical vs Virtual")
         REQUIRE(defs.has_value());
         REQUIRE(!defs->empty());
 
-        CHECK((*defs)[0].uri.toString() == "angelscript-virtual://Rifle/WeaponMixin.as");
-        // Header is 3 lines (0, 1, 2). WeaponMixin starts at line 0 in mixin.as.
-        // Deploy is at line 1 in mixin.as.
-        // Mapped line = 3 + (1 - 0) = 4.
-        CHECK((*defs)[0].range.start.line == 4);
+        CHECK((*defs)[0].uri.toString() == mixinUri);
+        CHECK((*defs)[0].range.start.line == 1);
 
         ts_tree_delete(tree);
     }

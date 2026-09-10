@@ -4238,6 +4238,26 @@ namespace angel_lsp
             lspDiag.source = diag.source;
             lspDiag.code = diag.code;
 
+            if (!diag.relatedInformation.empty())
+            {
+                std::vector<lsp::DiagnosticRelatedInformation> relInfos;
+                relInfos.reserve(diag.relatedInformation.size());
+                for (const auto &rel : diag.relatedInformation)
+                {
+                    lsp::DiagnosticRelatedInformation lspRel;
+                    lspRel.message = rel.message;
+                    const auto clientRelUri = m_clientUriByKey.find(rel.fileUri);
+                    const std::string &relUri = clientRelUri != m_clientUriByKey.end() ? clientRelUri->second : rel.fileUri;
+                    lspRel.location.uri = lsp::DocumentUri(lsp::Uri::parse(relUri));
+                    lspRel.location.range.start.line = rel.range.start.line;
+                    lspRel.location.range.start.character = rel.range.start.character;
+                    lspRel.location.range.end.line = rel.range.end.line;
+                    lspRel.location.range.end.character = rel.range.end.character;
+                    relInfos.push_back(std::move(lspRel));
+                }
+                lspDiag.relatedInformation = std::move(relInfos);
+            }
+
             // An empty text means the server holds no copy of the document; leaving the byte
             // columns alone beats converting them against nothing, which would collapse every
             // range to column zero.

@@ -170,9 +170,9 @@ namespace angel_lsp::diagnostics::codes
     inline constexpr std::string_view MixinAbstract                        = "as-err-mixin-abstract";
     inline constexpr std::string_view MixinChildType                       = "as-err-mixin-child-type";
     inline constexpr std::string_view MixinConstructor                     = "as-err-mixin-constructor";
-    inline constexpr std::string_view MixinDestructor                      = "as-err-mixin-destructor";
     inline constexpr std::string_view MixinInheritClass                    = "as-err-mixin-inherit-class";
     inline constexpr std::string_view MixinVirtualProperty                 = "as-err-mixin-virtual-property";
+    inline constexpr std::string_view MixinInstantiationMemberNotFound     = "as-err-mixin-instantiation-member-not-found";
     inline constexpr std::string_view MultiClassInherit                    = "as-err-multi-class-inherit";
     inline constexpr std::string_view MultilineString                      = "as-err-multiline-string";
     inline constexpr std::string_view NameConflict                         = "as-err-name-conflict";

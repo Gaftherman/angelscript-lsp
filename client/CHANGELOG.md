@@ -4,6 +4,30 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.7-exp.6] - 2026-09-10
+
+### Added
+
+- Semantic Mixin Instantiation Checking:
+  - Deep AST-level validation of mixin member statements against host class scope and inheritance hierarchy.
+  - Emits diagnostic `as-err-mixin-instantiation-member-not-found` when mixin accesses unresolved host properties or methods.
+  - Attach LSP `relatedInformation` pointing to the host class declaration and mixin inclusion statement.
+  - Complete bilingual localization (EN / ES) for mixin instantiation diagnostics.
+- Dedicated Mixin UI Commands & CodeLens:
+  - Added `angelscript.viewMixinExpansion` command and editor context menu option to inspect synthesized mixin documents in split view.
+  - Added `angelscript.openPhysicalSource` command to return to physical mixin definitions from virtual documents.
+  - Added CodeLens on mixin inclusion lines (`[View Mixin Expansion: <MixinName>]`) to open the virtual expanded document.
+  - Added header CodeLens at top of virtual mixin documents (`[Jump to physical source in <filename>]`) to navigate back to physical code.
+  - Complete bilingual localization across client manifest (`package.nls.json`, `package.nls.es.json`) and runtime bundles (`bundle.l10n.json`, `bundle.l10n.es.json`).
+- Virtual Document Scope Resolution:
+  - Resolves `this` and `self` receiver accesses inside virtual mixin documents to the synthetic host class.
+  - Added hover tooltips and definition routing for `this` and `self` targeting host class declarations.
+
+### Fixed
+
+- Physical Go-to-Definition (F12) Restored:
+  - Standard F12 definition requests now reliably return the physical source file (`file://...`) where mixin templates are defined rather than virtual documents.
+
 ## [0.7.7-exp.4] - 2026-09-10
 
 ### Added

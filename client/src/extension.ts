@@ -5,7 +5,7 @@ import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
     StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n,
     TextEditorDecorationType, Range, TextEditor, WorkspaceEdit, TextDocumentContentProvider,
-    CancellationToken
+    CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType
 } from 'vscode';
 // Types only: erased at compile time, so naming them here costs nothing at runtime.
 import type {
@@ -124,6 +124,12 @@ const SET_MODULE_FOLDER_COMMAND = 'angelscript.setModuleFolder';
 
 /** @brief Command that gathers a predefined stub's scattered namespaces into one block each. */
 const FORMAT_STUB_COMMAND = 'angelscript.formatPredefinedStub';
+
+/** @brief Command that opens a synthesized virtual mixin document beside the active editor. */
+const VIEW_MIXIN_EXPANSION_COMMAND = 'angelscript.viewMixinExpansion';
+
+/** @brief Command that jumps from a synthesized virtual mixin document to the physical source. */
+const OPEN_PHYSICAL_SOURCE_COMMAND = 'angelscript.openPhysicalSource';
 
 /**
  * @brief Wording of the button on every failure notification.
@@ -1086,6 +1092,12 @@ export async function activate(context: ExtensionContext) {
 
         context.subscriptions.push(
             commands.registerCommand(FORMAT_STUB_COMMAND, (resource?: Uri) => formatPredefinedStub(resource)));
+
+        context.subscriptions.push(
+            commands.registerCommand(VIEW_MIXIN_EXPANSION_COMMAND, (args?: { hostClass?: string; mixinName?: string }) => viewMixinExpansion(args)));
+
+        context.subscriptions.push(
+            commands.registerCommand(OPEN_PHYSICAL_SOURCE_COMMAND, (args?: { fileUri?: string; line?: number; character?: number }) => openPhysicalSource(args)));
     });
 
     const virtualMixinProvider = new VirtualMixinContentProvider();
@@ -1836,6 +1848,52 @@ export async function setModuleFolder(resource?: Uri): Promise<void> {
     }
 
     await configureModule(resource, 'folder');
+}
+
+/**
+ * @brief Opens the physical source file at a specified line and character position.
+ * @param args Target file URI, line (0-indexed) and character (0-indexed).
+ */
+export async function openPhysicalSource(args?: { fileUri?: string; line?: number; character?: number }): Promise<void> {
+    if (!args?.fileUri) {
+        return;
+    }
+    const uri = Uri.parse(args.fileUri);
+    const doc = await workspace.openTextDocument(uri);
+    const line = Math.max(0, args.line ?? 0);
+    const character = Math.max(0, args.character ?? 0);
+    const pos = new Position(line, character);
+    const editor = await window.showTextDocument(doc, { preview: false });
+    editor.selection = new Selection(pos, pos);
+    editor.revealRange(new Range(pos, pos), TextEditorRevealType.InCenter);
+}
+
+/**
+ * @brief Opens the synthesized virtual mixin document beside the active editor.
+ * @param args The target host class and mixin name.
+ */
+export async function viewMixinExpansion(args?: { hostClass?: string; mixinName?: string }): Promise<void> {
+    let hostClass = args?.hostClass;
+    let mixinName = args?.mixinName;
+    if (!hostClass || !mixinName) {
+        hostClass = await window.showInputBox({
+            prompt: l10n.t('Enter host class name'),
+            placeHolder: 'e.g. MyPlayer'
+        });
+        if (!hostClass) {
+            return;
+        }
+        mixinName = await window.showInputBox({
+            prompt: l10n.t('Enter mixin name'),
+            placeHolder: 'e.g. HealthMixin'
+        });
+        if (!mixinName) {
+            return;
+        }
+    }
+    const uri = Uri.parse(`angelscript-virtual://${hostClass}/${mixinName}.as`);
+    const doc = await workspace.openTextDocument(uri);
+    await window.showTextDocument(doc, { preview: true, viewColumn: ViewColumn.Beside });
 }
 
 /**

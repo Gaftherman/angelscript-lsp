@@ -83,6 +83,16 @@
         "command": "angelscript.formatPredefinedStub",
         "title": "%command.formatPredefinedStub.title%",
         "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.viewMixinExpansion",
+        "title": "%command.viewMixinExpansion.title%",
+        "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.openPhysicalSource",
+        "title": "%command.openPhysicalSource.title%",
+        "category": "%command.selectPredefined.category%"
       }
     ],
     "menus": {
@@ -111,6 +121,10 @@
         {
           "command": "angelscript.setModuleFolder",
           "when": "false"
+        },
+        {
+          "command": "angelscript.openPhysicalSource",
+          "when": "false"
         }
       ],
       "editor/context": [
@@ -118,6 +132,11 @@
           "command": "angelscript.formatPredefinedStub",
           "when": "resourceExtname == .predefined",
           "group": "angelscript@1"
+        },
+        {
+          "command": "angelscript.viewMixinExpansion",
+          "when": "editorLangId == angelscript",
+          "group": "angelscript@2"
         }
       ]
     },

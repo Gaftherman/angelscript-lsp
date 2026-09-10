@@ -4,7 +4,7 @@ import { ConfigurationTarget, commands, extensions, workspace, Uri } from 'vscod
 
 import * as os from 'os';
 
-import { buildServerArgs, portableStubPath, VirtualMixinContentProvider } from '../extension';
+import { buildServerArgs, portableStubPath, VirtualMixinContentProvider, openPhysicalSource, viewMixinExpansion } from '../extension';
 
 // =====================================================================================
 // The client's settings-to-arguments mapping.
@@ -444,4 +444,20 @@ suite('VirtualMixinContentProvider', () => {
         assert.ok(content.length > 0);
     });
 });
+
+suite('Mixin Commands', () => {
+    test('openPhysicalSource returns cleanly when no fileUri provided', async () => {
+        await assert.doesNotReject(async () => {
+            await openPhysicalSource(undefined);
+            await openPhysicalSource({});
+        });
+    });
+
+    test('viewMixinExpansion opens virtual document beside', async () => {
+        await assert.doesNotReject(async () => {
+            await viewMixinExpansion({ hostClass: 'TestHost', mixinName: 'TestMixin' });
+        });
+    });
+});
+
 

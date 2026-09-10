@@ -38,5 +38,7 @@
   "The server did not return formatted text for this stub.": "El servidor no devolvió texto formateado para este stub.",
   "This stub is already formatted.": "Este stub ya está formateado.",
   "Formatted \"{0}\". Save it to keep the change.": "Se formateó \"{0}\". Guárdalo para conservar el cambio.",
-  "The edit that formats this stub was rejected.": "La edición que formatea este stub fue rechazada."
+  "The edit that formats this stub was rejected.": "La edición que formatea este stub fue rechazada.",
+  "Enter host class name": "Nombre de la clase anfitriona",
+  "Enter mixin name": "Nombre del mixin"
 }

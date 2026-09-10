@@ -1768,3 +1768,106 @@ TEST_CASE("EngineProperties - the warning mode moves every warning at once")
         CHECK(sawError);
     }
 }
+
+TEST_CASE("SemanticAnalyzer - Mixin Instantiation Checking")
+{
+    angel_lsp::i18n::I18n i18n("en");
+
+    SUBCASE("reports error when mixin accesses undeclared property on host")
+    {
+        const std::string code = R"(
+mixin class WeaponMixin
+{
+    void Shoot()
+    {
+        self.m_iClip = 10;
+    }
+}
+
+class WeaponHost : WeaponMixin
+{
+}
+)";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n, "file:///mixin_test.as");
+
+        bool foundDiagnostic = false;
+        for (const auto &d : diagnostics)
+        {
+            if (d.code == "as-err-mixin-instantiation-member-not-found")
+            {
+                foundDiagnostic = true;
+                CHECK(d.severity == DiagnosticSeverity::Error);
+                CHECK(d.message.find("m_iClip") != std::string::npos);
+                CHECK(d.message.find("WeaponMixin") != std::string::npos);
+                CHECK(d.message.find("WeaponHost") != std::string::npos);
+                REQUIRE(!d.relatedInformation.empty());
+                CHECK(d.relatedInformation[0].fileUri == "file:///mixin_test.as");
+                CHECK(d.relatedInformation[0].message.find("m_iClip") != std::string::npos);
+            }
+        }
+        CHECK(foundDiagnostic);
+    }
+
+    SUBCASE("does not report error when host declares the property")
+    {
+        const std::string code = R"(
+mixin class WeaponMixin
+{
+    void Shoot()
+    {
+        self.m_iClip = 10;
+    }
+}
+
+class WeaponHost : WeaponMixin
+{
+    int m_iClip;
+}
+)";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n, "file:///mixin_test_ok.as");
+
+        bool foundDiagnostic = false;
+        for (const auto &d : diagnostics)
+        {
+            if (d.code == "as-err-mixin-instantiation-member-not-found")
+            {
+                foundDiagnostic = true;
+            }
+        }
+        CHECK_FALSE(foundDiagnostic);
+    }
+
+    SUBCASE("reports error when mixin calls undeclared method on host")
+    {
+        const std::string code = R"(
+mixin class MovementMixin
+{
+    void Move()
+    {
+        PlaySound();
+    }
+}
+
+class Player : MovementMixin
+{
+}
+)";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n, "file:///mixin_method_test.as");
+
+        bool foundDiagnostic = false;
+        for (const auto &d : diagnostics)
+        {
+            if (d.code == "as-err-mixin-instantiation-member-not-found")
+            {
+                foundDiagnostic = true;
+                CHECK(d.severity == DiagnosticSeverity::Error);
+                CHECK(d.message.find("PlaySound") != std::string::npos);
+            }
+        }
+        CHECK(foundDiagnostic);
+    }
+}
+

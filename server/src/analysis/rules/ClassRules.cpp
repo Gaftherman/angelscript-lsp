@@ -1,7 +1,13 @@
 #include "analysis/rules/ClassRules.h"
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/AngelScriptParser.h"
+#include "utils/Utils.h"
+#include "spdlog/fmt/fmt.h"
 
 #include <algorithm>
+#include <fstream>
+#include <memory>
 #include <vector>
 
 namespace angel_lsp::analysis::rules
@@ -375,6 +381,483 @@ namespace angel_lsp::analysis::rules
                 }
             }
         }
+
+        static TSNode GetChildByField(TSNode node, const char *fieldName)
+        {
+            return ts_node_child_by_field_name(node, fieldName, static_cast<uint32_t>(strlen(fieldName)));
+        }
+
+        /**
+         * @brief Checks that internal statements of mixins instantiated in a host class resolve against the host.
+         */
+        void CheckMixinInstantiations(const Symbol &sym, const ClassSignature &sig, const DiagnosticContext &ctx)
+        {
+            if (sig.modifiers.isMixin)
+            {
+                return;
+            }
+
+            std::vector<std::string> includedMixins = sig.includedMixins;
+            for (const auto &b : sig.bases)
+            {
+                std::string clean = CleanBaseType(b);
+                if (!clean.empty() && IsMixinClass(clean, ctx.request.symbolTable))
+                {
+                    if (std::find(includedMixins.begin(), includedMixins.end(), clean) == includedMixins.end())
+                    {
+                        includedMixins.push_back(clean);
+                    }
+                }
+            }
+
+            if (includedMixins.empty())
+            {
+                return;
+            }
+
+            const std::string hostClassName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+
+            auto hostHierarchy = GetInheritedTypeHierarchy(hostClassName, ctx.request.symbolTable);
+
+            std::string directSuperClass;
+            for (size_t i = 1; i < hostHierarchy.size(); ++i)
+            {
+                if (!IsMixinClass(hostHierarchy[i], ctx.request.symbolTable))
+                {
+                    directSuperClass = hostHierarchy[i];
+                    break;
+                }
+            }
+
+            std::vector<std::string> superHierarchy;
+            if (!directSuperClass.empty())
+            {
+                superHierarchy = GetInheritedTypeHierarchy(directSuperClass, ctx.request.symbolTable);
+            }
+
+            ankerl::unordered_dense::set<std::string> hostMembers;
+            for (const auto &ancestor : hostHierarchy)
+            {
+                for (const auto &mName : ctx.request.GetRuleIndex().Members(ancestor).methodNames)
+                {
+                    hostMembers.insert(mName);
+                }
+                ctx.request.symbolTable.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &syms)
+                {
+                    if (qName.starts_with(ancestor + "::"))
+                    {
+                        for (const auto &s : syms)
+                        {
+                            hostMembers.insert(s.name);
+                        }
+                    }
+                });
+            }
+
+            ankerl::unordered_dense::set<std::string> superMembers;
+            for (const auto &ancestor : superHierarchy)
+            {
+                for (const auto &mName : ctx.request.GetRuleIndex().Members(ancestor).methodNames)
+                {
+                    superMembers.insert(mName);
+                }
+                ctx.request.symbolTable.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &syms)
+                {
+                    if (qName.starts_with(ancestor + "::"))
+                    {
+                        for (const auto &s : syms)
+                        {
+                            superMembers.insert(s.name);
+                        }
+                    }
+                });
+            }
+
+            for (const auto &mixinName : includedMixins)
+            {
+                const Symbol *mixinSym = nullptr;
+                auto candidates = ctx.request.symbolTable.FindSymbols(mixinName);
+                for (const auto &c : candidates)
+                {
+                    if (c.type == SymbolType::Class && c.GetClass().modifiers.isMixin)
+                    {
+                        mixinSym = &c;
+                        break;
+                    }
+                }
+                if (!mixinSym)
+                {
+                    std::string shortName = mixinName;
+                    auto lastScope = shortName.rfind("::");
+                    if (lastScope != std::string::npos)
+                    {
+                        shortName = shortName.substr(lastScope + 2);
+                    }
+                    auto shortCands = ctx.request.symbolTable.FindTypeSymbolsByShortName(shortName);
+                    for (const auto &c : shortCands)
+                    {
+                        if (c.type == SymbolType::Class && c.GetClass().modifiers.isMixin)
+                        {
+                            mixinSym = &c;
+                            break;
+                        }
+                    }
+                }
+
+                if (!mixinSym)
+                {
+                    continue;
+                }
+
+                ankerl::unordered_dense::set<std::string> mixinSelfMembers;
+                ctx.request.symbolTable.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &syms)
+                {
+                    if (qName.starts_with(mixinSym->qualifiedName + "::") || qName.starts_with(mixinSym->name + "::"))
+                    {
+                        for (const auto &s : syms)
+                        {
+                            mixinSelfMembers.insert(s.name);
+                        }
+                    }
+                });
+
+                std::string mixinSource;
+                if (mixinSym->fileUri == ctx.request.fileUri)
+                {
+                    mixinSource = ctx.request.sourceCode;
+                }
+                else
+                {
+                    std::string path = utils::UriToPath(mixinSym->fileUri);
+                    std::ifstream file(path, std::ios::binary);
+                    if (file.is_open())
+                    {
+                        mixinSource.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                    }
+                }
+
+                if (mixinSource.empty())
+                {
+                    continue;
+                }
+
+                TSTree *allocatedTree = nullptr;
+                const TSTree *mixinTree = nullptr;
+                std::unique_ptr<parser::AngelScriptParser> ownedParser;
+                if (mixinSym->fileUri == ctx.request.fileUri && ctx.request.tree)
+                {
+                    mixinTree = ctx.request.tree;
+                }
+                else
+                {
+                    ownedParser = std::make_unique<parser::AngelScriptParser>();
+                    allocatedTree = ownedParser->Parse(mixinSource);
+                    mixinTree = allocatedTree;
+                }
+
+                if (!mixinTree)
+                {
+                    continue;
+                }
+
+                TSNode rootNode = ts_tree_root_node(mixinTree);
+                TSPoint pt = { mixinSym->startLine, mixinSym->startCharacter };
+                TSNode mixinNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+                while (!ts_node_is_null(mixinNode) &&
+                       std::string_view(ts_node_type(mixinNode)) != "mixin_declaration" &&
+                       std::string_view(ts_node_type(mixinNode)) != "class_declaration")
+                {
+                    mixinNode = ts_node_parent(mixinNode);
+                }
+
+                if (ts_node_is_null(mixinNode))
+                {
+                    if (allocatedTree != nullptr)
+                    {
+                        ts_tree_delete(allocatedTree);
+                    }
+                    continue;
+                }
+
+                uint32_t hostIncStartLine = sym.startLine;
+                uint32_t hostIncStartChar = sym.startCharacter;
+                uint32_t hostIncEndLine = sym.endLine;
+                uint32_t hostIncEndChar = sym.endCharacter;
+
+                if (ctx.request.tree && !ctx.request.sourceCode.empty())
+                {
+                    TSNode hostRoot = ts_tree_root_node(ctx.request.tree);
+                    TSPoint hostPt = { sym.startLine, sym.startCharacter };
+                    TSNode hostNode = ts_node_descendant_for_point_range(hostRoot, hostPt, hostPt);
+                    while (!ts_node_is_null(hostNode) && std::string_view(ts_node_type(hostNode)) != "class_declaration")
+                    {
+                        hostNode = ts_node_parent(hostNode);
+                    }
+
+                    if (!ts_node_is_null(hostNode))
+                    {
+                        bool foundIncNode = false;
+                        uint32_t childCount = ts_node_child_count(hostNode);
+                        for (uint32_t c = 0; c < childCount; ++c)
+                        {
+                            TSNode child = ts_node_child(hostNode, c);
+                            if (std::string_view(ts_node_type(child)) == "base_class_list")
+                            {
+                                uint32_t bCount = ts_node_named_child_count(child);
+                                for (uint32_t b = 0; b < bCount; ++b)
+                                {
+                                    TSNode baseChild = ts_node_named_child(child, b);
+                                    std::string bText = GetNodeText(baseChild, ctx.request.sourceCode);
+                                    if (CleanBaseType(bText) == mixinName || bText == mixinSym->name || bText.ends_with("::" + mixinSym->name))
+                                    {
+                                        TSPoint sp = ts_node_start_point(baseChild);
+                                        TSPoint ep = ts_node_end_point(baseChild);
+                                        hostIncStartLine = sp.row;
+                                        hostIncStartChar = sp.column;
+                                        hostIncEndLine = ep.row;
+                                        hostIncEndChar = ep.column;
+                                        foundIncNode = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (foundIncNode) break;
+                        }
+
+                        if (!foundIncNode)
+                        {
+                            TSNode bodyNode = GetChildByField(hostNode, "body");
+                            if (!ts_node_is_null(bodyNode))
+                            {
+                                uint32_t mCount = ts_node_child_count(bodyNode);
+                                for (uint32_t m = 0; m < mCount; ++m)
+                                {
+                                    TSNode mNode = ts_node_child(bodyNode, m);
+                                    std::string mText = GetNodeText(mNode, ctx.request.sourceCode);
+                                    if (mText.find(mixinSym->name) != std::string::npos)
+                                    {
+                                        TSPoint sp = ts_node_start_point(mNode);
+                                        TSPoint ep = ts_node_end_point(mNode);
+                                        hostIncStartLine = sp.row;
+                                        hostIncStartChar = sp.column;
+                                        hostIncEndLine = ep.row;
+                                        hostIncEndChar = ep.column;
+                                        foundIncNode = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                TSNode bodyNode = GetChildByField(mixinNode, "body");
+                if (ts_node_is_null(bodyNode))
+                {
+                    if (allocatedTree != nullptr)
+                    {
+                        ts_tree_delete(allocatedTree);
+                    }
+                    continue;
+                }
+
+                ankerl::unordered_dense::set<std::string> reportedMissingMembers;
+
+                uint32_t memberCount = ts_node_child_count(bodyNode);
+                for (uint32_t m = 0; m < memberCount; ++m)
+                {
+                    TSNode mem = ts_node_child(bodyNode, m);
+                    if (std::string_view(ts_node_type(mem)) != "func_declaration")
+                    {
+                        continue;
+                    }
+
+                    ankerl::unordered_dense::set<std::string> localNames;
+                    TSNode paramsNode = GetChildByField(mem, "parameters");
+                    if (!ts_node_is_null(paramsNode))
+                    {
+                        uint32_t pCount = ts_node_named_child_count(paramsNode);
+                        for (uint32_t p = 0; p < pCount; ++p)
+                        {
+                            TSNode paramChild = ts_node_named_child(paramsNode, p);
+                            TSNode pName = GetChildByField(paramChild, "name");
+                            if (!ts_node_is_null(pName))
+                            {
+                                localNames.insert(GetNodeText(pName, mixinSource));
+                            }
+                        }
+                    }
+
+                    TSNode funcBody = GetChildByField(mem, "body");
+                    if (ts_node_is_null(funcBody))
+                    {
+                        continue;
+                    }
+
+                    std::vector<TSNode> stack;
+                    stack.push_back(funcBody);
+                    while (!stack.empty())
+                    {
+                        TSNode cur = stack.back();
+                        stack.pop_back();
+
+                        std::string_view curType = ts_node_type(cur);
+                        if (curType == "variable_declaration")
+                        {
+                            uint32_t vCount = ts_node_named_child_count(cur);
+                            for (uint32_t v = 0; v < vCount; ++v)
+                            {
+                                TSNode vChild = ts_node_named_child(cur, v);
+                                if (std::string_view(ts_node_type(vChild)) == "variable_declarator")
+                                {
+                                    TSNode vdName = GetChildByField(vChild, "name");
+                                    if (!ts_node_is_null(vdName))
+                                    {
+                                        localNames.insert(GetNodeText(vdName, mixinSource));
+                                    }
+                                }
+                            }
+                        }
+
+                        uint32_t cCount = ts_node_child_count(cur);
+                        for (uint32_t c = 0; c < cCount; ++c)
+                        {
+                            stack.push_back(ts_node_child(cur, c));
+                        }
+                    }
+
+                    stack.clear();
+                    stack.push_back(funcBody);
+                    while (!stack.empty())
+                    {
+                        TSNode cur = stack.back();
+                        stack.pop_back();
+
+                        std::string_view curType = ts_node_type(cur);
+
+                        if (curType == "member_expression")
+                        {
+                            TSNode objNode = GetChildByField(cur, "object");
+                            TSNode propNode = GetChildByField(cur, "member");
+                            if (ts_node_is_null(propNode))
+                            {
+                                propNode = GetChildByField(cur, "property");
+                            }
+                            if (!ts_node_is_null(objNode) && !ts_node_is_null(propNode))
+                            {
+                                std::string objName = GetNodeText(objNode, mixinSource);
+                                std::string propName = GetNodeText(propNode, mixinSource);
+
+                                if (objName == "self" || objName == "this")
+                                {
+                                    if (!propName.empty() &&
+                                        !hostMembers.contains(propName) &&
+                                        !mixinSelfMembers.contains(propName) &&
+                                        !reportedMissingMembers.contains(propName))
+                                    {
+                                        reportedMissingMembers.insert(propName);
+                                        TSPoint sPoint = ts_node_start_point(propNode);
+                                        TSPoint ePoint = ts_node_end_point(propNode);
+
+                                        DiagnosticRelatedInformation rel;
+                                        rel.fileUri = mixinSym->fileUri;
+                                        rel.range = { sPoint.row, sPoint.column, ePoint.row, ePoint.column };
+                                        rel.message = fmt::format("In mixin '{}': Member '{}'", mixinSym->name, propName);
+
+                                        ctx.EmitWithRelated(
+                                            hostIncStartLine, hostIncStartChar, hostIncEndLine, hostIncEndChar,
+                                            diagnostics::codes::MixinInstantiationMemberNotFound,
+                                            mixinSym->name, hostClassName, propName, hostClassName,
+                                            rel, DiagnosticSeverity::Error);
+                                    }
+                                }
+                            }
+                        }
+                        else if (curType == "scoped_identifier")
+                        {
+                            std::string scFull = GetNodeText(cur, mixinSource);
+                            auto pos = scFull.rfind("::");
+                            if (pos != std::string::npos)
+                            {
+                                std::string scPrefix = scFull.substr(0, pos);
+                                std::string nmText = scFull.substr(pos + 2);
+                                if (scPrefix == "BaseClass")
+                                {
+                                    if (!nmText.empty() &&
+                                        !superMembers.contains(nmText) &&
+                                        !reportedMissingMembers.contains(nmText))
+                                    {
+                                        reportedMissingMembers.insert(nmText);
+                                        TSPoint sPoint = ts_node_start_point(cur);
+                                        TSPoint ePoint = ts_node_end_point(cur);
+
+                                        DiagnosticRelatedInformation rel;
+                                        rel.fileUri = mixinSym->fileUri;
+                                        rel.range = { sPoint.row, sPoint.column, ePoint.row, ePoint.column };
+                                        rel.message = fmt::format("In mixin '{}': Member '{}'", mixinSym->name, nmText);
+
+                                        ctx.EmitWithRelated(
+                                            hostIncStartLine, hostIncStartChar, hostIncEndLine, hostIncEndChar,
+                                            diagnostics::codes::MixinInstantiationMemberNotFound,
+                                            mixinSym->name, hostClassName, nmText, hostClassName,
+                                            rel, DiagnosticSeverity::Error);
+                                    }
+                                }
+                            }
+                        }
+                        else if (curType == "call_expression")
+                        {
+                            TSNode fnNode = GetChildByField(cur, "function");
+                            if (!ts_node_is_null(fnNode))
+                            {
+                                std::string_view fnType = ts_node_type(fnNode);
+                                if (fnType == "identifier" || fnType == "scoped_identifier")
+                                {
+                                    std::string fnName = GetNodeText(fnNode, mixinSource);
+                                    if (fnName.find("::") == std::string::npos &&
+                                        !fnName.empty() &&
+                                        !localNames.contains(fnName) &&
+                                        !mixinSelfMembers.contains(fnName) &&
+                                        !hostMembers.contains(fnName) &&
+                                        !ctx.request.GetRuleIndex().allNames.contains(fnName) &&
+                                        !IsReservedKeyword(fnName) &&
+                                        !IsPrimitiveTypeName(fnName) &&
+                                        fnName != "self" && fnName != "this" && fnName != "super" && fnName != "cast" &&
+                                        !reportedMissingMembers.contains(fnName))
+                                    {
+                                        reportedMissingMembers.insert(fnName);
+                                        TSPoint sPoint = ts_node_start_point(fnNode);
+                                        TSPoint ePoint = ts_node_end_point(fnNode);
+
+                                        DiagnosticRelatedInformation rel;
+                                        rel.fileUri = mixinSym->fileUri;
+                                        rel.range = { sPoint.row, sPoint.column, ePoint.row, ePoint.column };
+                                        rel.message = fmt::format("In mixin '{}': Member '{}'", mixinSym->name, fnName);
+
+                                        ctx.EmitWithRelated(
+                                            hostIncStartLine, hostIncStartChar, hostIncEndLine, hostIncEndChar,
+                                            diagnostics::codes::MixinInstantiationMemberNotFound,
+                                            mixinSym->name, hostClassName, fnName, hostClassName,
+                                            rel, DiagnosticSeverity::Error);
+                                    }
+                                }
+                            }
+                        }
+
+                        uint32_t cCount = ts_node_child_count(cur);
+                        for (uint32_t c = 0; c < cCount; ++c)
+                        {
+                            stack.push_back(ts_node_child(cur, c));
+                        }
+                    }
+                }
+
+                if (allocatedTree != nullptr)
+                {
+                    ts_tree_delete(allocatedTree);
+                }
+            }
+        }
     }
 
     bool HasInheritanceCycle(const std::string &typeName, const SymbolTable &table)
@@ -520,5 +1003,6 @@ namespace angel_lsp::analysis::rules
         CheckFinalOverrides(sym, sig, ctx);
         CheckInterfaceImplementation(sym, sig, ctx);
         CheckPropertyAccessors(sym, sig, ctx);
+        CheckMixinInstantiations(sym, sig, ctx);
     }
 }

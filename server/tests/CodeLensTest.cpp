@@ -208,3 +208,79 @@ TEST_CASE("CodeLens - Deduplicates mixin methods and aggregates references acros
         ts_tree_delete(hostTree);
     }
 }
+
+TEST_CASE("CodeLens - Provides virtual document header lens to jump to physical source")
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{ nullptr };
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    const std::string mixinUri = "file:///mixin.as";
+    const std::string mixinCode =
+        "mixin class WeaponMixin {\n"
+        "    void Deploy() {}\n"
+        "}\n";
+
+    symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
+
+    const std::string virtualUri = "angelscript-virtual://Rifle/WeaponMixin.as";
+    const std::string virtualCode = "// synthesized virtual document\n";
+
+    CodeLensRequest req{ virtualUri, virtualCode, nullptr, symbolTable, scopeIndex };
+    const auto lenses = GetCodeLenses(req);
+    REQUIRE(lenses.has_value());
+    REQUIRE(!lenses->empty());
+
+    const auto &lens = (*lenses)[0];
+    CHECK(lens.range.start.line == 0);
+    REQUIRE(lens.command.has_value());
+    CHECK(lens.command->command == "angelscript.openPhysicalSource");
+    CHECK(lens.command->title.find("Jump to physical source in") != std::string::npos);
+}
+
+TEST_CASE("CodeLens - Provides View Mixin Expansion lens on class mixin inclusions")
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{ nullptr };
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    const std::string mixinUri = "file:///mixin.as";
+    const std::string mixinCode =
+        "mixin class WeaponMixin {\n"
+        "    void Deploy() {}\n"
+        "}\n";
+
+    const std::string hostUri = "file:///rifle.as";
+    const std::string hostCode =
+        "class Rifle : WeaponMixin {\n"
+        "    void Fire() {}\n"
+        "}\n";
+
+    TSTree *hostTree = parser.Parse(hostCode);
+    symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
+    symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
+    symbolTable.ResolveIncludedMixins();
+
+    CodeLensRequest req{ hostUri, hostCode, hostTree, symbolTable, scopeIndex };
+    const auto lenses = GetCodeLenses(req);
+    REQUIRE(lenses.has_value());
+
+    bool foundMixinLens = false;
+    for (const auto &lens : *lenses)
+    {
+        if (lens.command.has_value() && lens.command->command == "angelscript.viewMixinExpansion")
+        {
+            foundMixinLens = true;
+            CHECK(lens.command->title == "View Mixin Expansion: WeaponMixin");
+        }
+    }
+    CHECK(foundMixinLens);
+
+    if (hostTree)
+    {
+        ts_tree_delete(hostTree);
+    }
+}
+

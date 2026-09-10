@@ -98,5 +98,7 @@
   "config.inactiveRegionOpacity.description": "Cuánto se sigue viendo el código atenuado dentro de un bloque `#if` descartado. 1 es sin atenuar. Va con `#angelscript.dimInactiveRegions#`, que tiene que estar activo para que esto haga algo.",
   "command.formatPredefinedStub.title": "Formatear stub predefinido",
   "angelscript.enableVirtualMixinDocuments.description": "Habilita documentos de texto virtuales experimentales para clases mixin (angelscript-virtual://). Cuando está desactivado, se utiliza la síntesis de símbolos de alto rendimiento.",
-  "angelscript.inlayHints.suppressWhenArgumentMatchesName.description": "Suprime las sugerencias de nombres de parámetros cuando el texto del argumento coincide exactamente con el nombre del parámetro. El valor predeterminado es false."
+  "angelscript.inlayHints.suppressWhenArgumentMatchesName.description": "Suprime las sugerencias de nombres de parámetros cuando el texto del argumento coincide exactamente con el nombre del parámetro. El valor predeterminado es false.",
+  "command.viewMixinExpansion.title": "Ver expansion de mixin",
+  "command.openPhysicalSource.title": "Abrir archivo fisico"
 }

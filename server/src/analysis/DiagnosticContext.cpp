@@ -530,6 +530,50 @@ namespace angel_lsp::analysis
         Append(std::move(diag));
     }
 
+    void DiagnosticContext::EmitWithRelated(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter, std::string_view code, std::string_view arg1, std::string_view arg2, std::string_view arg3, std::string_view arg4, const DiagnosticRelatedInformation &related, DiagnosticSeverity severity) const
+    {
+        Diagnostic diag;
+        diag.range.start.line = startLine;
+        diag.range.start.character = startCharacter;
+        diag.range.end.line = endLine;
+        diag.range.end.character = endCharacter;
+        diag.severity = severity;
+
+        std::string codeStr(code);
+        if (request.severityOverrides)
+        {
+            auto it = request.severityOverrides->find(codeStr);
+            if (it != request.severityOverrides->end())
+            {
+                diag.severity = it->second;
+            }
+        }
+        diag.code = codeStr;
+        diag.source = "AngelScript";
+        diag.fileUri = request.fileUri;
+        std::string a1(arg1);
+        std::string a2(arg2);
+        std::string a3(arg3);
+        std::string a4(arg4);
+
+        if (request.i18n)
+        {
+            std::string pattern = request.i18n->GetMessage(codeStr);
+            if (!pattern.empty())
+            {
+                diag.message = fmt::format(fmt::runtime(pattern), a1, a2, a3, a4);
+            }
+        }
+        if (diag.message.empty() || diag.message.starts_with("["))
+        {
+            diag.message = "[" + codeStr + "] " + a1 + ", " + a2 + ", " + a3 + ", " + a4;
+        }
+
+        diag.relatedInformation.push_back(related);
+
+        Append(std::move(diag));
+    }
+
     void DiagnosticContext::LogRule(std::string_view ruleName, std::string_view code, const Symbol &sym) const
     {
         if (!logger)

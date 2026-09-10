@@ -1,17 +1,26 @@
 #include "features/code_lens/CodeLensHandler.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
+#include "parser/AngelScriptParser.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <string>
 #include <vector>
 #include <utility>
 #include <ankerl/unordered_dense.h>
+#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp::features
 {
     namespace
     {
+        TSNode GetChildByField(TSNode node, const char *fieldName)
+        {
+            return ts_node_child_by_field_name(node, fieldName, static_cast<uint32_t>(strlen(fieldName)));
+        }
+
         struct RangeKey
         {
             uint32_t startLine = 0;
@@ -258,6 +267,107 @@ namespace angel_lsp::features
 
     std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest &request)
     {
+        if (request.uri.starts_with("angelscript-virtual:") || request.uri.starts_with("angelscript-virtual://"))
+        {
+            std::string_view s = request.uri;
+            static constexpr std::string_view kVirtualSchemeFull = "angelscript-virtual://";
+            static constexpr std::string_view kVirtualSchemeShort = "angelscript-virtual:";
+
+            if (s.starts_with(kVirtualSchemeFull))
+            {
+                s.remove_prefix(kVirtualSchemeFull.size());
+            }
+            else if (s.starts_with(kVirtualSchemeShort))
+            {
+                s.remove_prefix(kVirtualSchemeShort.size());
+                while (!s.empty() && s.front() == '/')
+                {
+                    s.remove_prefix(1);
+                }
+            }
+
+            std::string mixinName;
+            auto slashPos = s.find('/');
+            if (slashPos != std::string_view::npos)
+            {
+                std::string_view mixinPart = s.substr(slashPos + 1);
+                if (mixinPart.ends_with(".as"))
+                {
+                    mixinPart.remove_suffix(3);
+                }
+                mixinName = utils::UrlDecode(mixinPart);
+            }
+            else
+            {
+                std::string_view mixinPart = s;
+                if (mixinPart.ends_with(".as"))
+                {
+                    mixinPart.remove_suffix(3);
+                }
+                mixinName = utils::UrlDecode(mixinPart);
+            }
+
+            const analysis::Symbol *mixinSym = nullptr;
+            auto candidates = request.symbolTable.FindSymbols(mixinName);
+            for (const auto &c : candidates)
+            {
+                if (c.type == analysis::SymbolType::Class && c.GetClass().modifiers.isMixin)
+                {
+                    mixinSym = &c;
+                    break;
+                }
+            }
+            if (!mixinSym)
+            {
+                std::string shortName = mixinName;
+                auto lastScope = shortName.rfind("::");
+                if (lastScope != std::string::npos)
+                {
+                    shortName = shortName.substr(lastScope + 2);
+                }
+                auto shortCands = request.symbolTable.FindTypeSymbolsByShortName(shortName);
+                for (const auto &c : shortCands)
+                {
+                    if (c.type == analysis::SymbolType::Class && c.GetClass().modifiers.isMixin)
+                    {
+                        mixinSym = &c;
+                        break;
+                    }
+                }
+            }
+
+            if (mixinSym && !mixinSym->fileUri.empty())
+            {
+                std::string physicalPath = utils::UriToPath(mixinSym->fileUri);
+                std::string filename = std::filesystem::path(physicalPath).filename().string();
+                if (filename.empty())
+                {
+                    filename = mixinSym->fileUri;
+                }
+
+                lsp::CodeLens lens;
+                lens.range = lsp::Range{
+                    lsp::Position{ 0, 0 },
+                    lsp::Position{ 0, 0 }
+                };
+                lsp::Command cmd;
+                cmd.title = fmt::format("Jump to physical source in {}", filename);
+                cmd.command = "angelscript.openPhysicalSource";
+
+                lsp::json::Array args;
+                lsp::json::Object argObj;
+                argObj["fileUri"] = lsp::json::Value(std::string(mixinSym->fileUri));
+                argObj["line"] = static_cast<lsp::json::Integer>(mixinSym->startLine);
+                argObj["character"] = static_cast<lsp::json::Integer>(mixinSym->startCharacter);
+                args.push_back(lsp::json::Value(std::move(argObj)));
+                cmd.arguments = std::move(args);
+
+                lens.command = std::move(cmd);
+                return std::vector<lsp::CodeLens>{ std::move(lens) };
+            }
+            return std::nullopt;
+        }
+
         if (request.sourceCode.empty())
         {
             return std::nullopt;
@@ -532,6 +642,120 @@ namespace angel_lsp::features
                 cmd.command = "";
                 lens.command = std::move(cmd);
                 lenses.push_back(std::move(lens));
+
+                if (std::holds_alternative<analysis::ClassSignature>(sym.signature))
+                {
+                    const auto &sig = sym.GetClass();
+                    if (!sig.modifiers.isMixin)
+                    {
+                        std::vector<std::string> includedMixins = sig.includedMixins;
+                        for (const auto &b : sig.bases)
+                        {
+                            std::string clean = analysis::CleanBaseType(b);
+                            if (!clean.empty() && analysis::IsMixinClass(clean, request.symbolTable))
+                            {
+                                if (std::find(includedMixins.begin(), includedMixins.end(), clean) == includedMixins.end())
+                                {
+                                    includedMixins.push_back(clean);
+                                }
+                            }
+                        }
+
+                        for (const auto &mixinName : includedMixins)
+                        {
+                            uint32_t incStartLine = sym.startLine;
+                            uint32_t incStartChar = sym.startCharacter;
+                            uint32_t incEndLine = sym.startLine;
+                            uint32_t incEndChar = sym.endCharacter;
+
+                            if (request.tree && !request.sourceCode.empty())
+                            {
+                                TSNode hostRoot = ts_tree_root_node(request.tree);
+                                TSPoint hostPt = { sym.startLine, sym.startCharacter };
+                                TSNode hostNode = ts_node_descendant_for_point_range(hostRoot, hostPt, hostPt);
+                                while (!ts_node_is_null(hostNode) && std::string_view(ts_node_type(hostNode)) != "class_declaration")
+                                {
+                                    hostNode = ts_node_parent(hostNode);
+                                }
+
+                                if (!ts_node_is_null(hostNode))
+                                {
+                                    bool foundInc = false;
+                                    uint32_t childCount = ts_node_child_count(hostNode);
+                                    for (uint32_t c = 0; c < childCount; ++c)
+                                    {
+                                        TSNode child = ts_node_child(hostNode, c);
+                                        if (std::string_view(ts_node_type(child)) == "base_class_list")
+                                        {
+                                            uint32_t bCount = ts_node_named_child_count(child);
+                                            for (uint32_t b = 0; b < bCount; ++b)
+                                            {
+                                                TSNode baseChild = ts_node_named_child(child, b);
+                                                std::string bText = std::string(parser::AngelScriptParser::GetNodeText(baseChild, request.sourceCode));
+                                                if (analysis::CleanBaseType(bText) == mixinName || bText == mixinName || bText.ends_with("::" + mixinName))
+                                                {
+                                                    TSPoint sp = ts_node_start_point(baseChild);
+                                                    TSPoint ep = ts_node_end_point(baseChild);
+                                                    incStartLine = sp.row;
+                                                    incStartChar = sp.column;
+                                                    incEndLine = ep.row;
+                                                    incEndChar = ep.column;
+                                                    foundInc = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if (foundInc) break;
+                                    }
+
+                                    if (!foundInc)
+                                    {
+                                        TSNode bodyNode = GetChildByField(hostNode, "body");
+                                        if (!ts_node_is_null(bodyNode))
+                                        {
+                                            uint32_t mCount = ts_node_child_count(bodyNode);
+                                            for (uint32_t m = 0; m < mCount; ++m)
+                                            {
+                                                TSNode mNode = ts_node_child(bodyNode, m);
+                                                std::string mText = std::string(parser::AngelScriptParser::GetNodeText(mNode, request.sourceCode));
+                                                if (mText.find(mixinName) != std::string::npos)
+                                                {
+                                                    TSPoint sp = ts_node_start_point(mNode);
+                                                    TSPoint ep = ts_node_end_point(mNode);
+                                                    incStartLine = sp.row;
+                                                    incStartChar = sp.column;
+                                                    incEndLine = ep.row;
+                                                    incEndChar = ep.column;
+                                                    foundInc = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            lsp::CodeLens mixinLens;
+                            mixinLens.range = lsp::Range{
+                                lsp::Position{ incStartLine, incStartChar },
+                                lsp::Position{ incEndLine, incEndChar }
+                            };
+                            lsp::Command mixinCmd;
+                            mixinCmd.title = fmt::format("View Mixin Expansion: {}", mixinName);
+                            mixinCmd.command = "angelscript.viewMixinExpansion";
+
+                            lsp::json::Array args;
+                            lsp::json::Object argObj;
+                            argObj["hostClass"] = lsp::json::Value(std::string(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName));
+                            argObj["mixinName"] = lsp::json::Value(std::string(mixinName));
+                            args.push_back(lsp::json::Value(std::move(argObj)));
+                            mixinCmd.arguments = std::move(args);
+
+                            mixinLens.command = std::move(mixinCmd);
+                            lenses.push_back(std::move(mixinLens));
+                        }
+                    }
+                }
             }
         }
 
