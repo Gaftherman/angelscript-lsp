@@ -157,7 +157,49 @@ TEST_SUITE("OverloadResolution")
         CHECK(match.bestCostVector[0] == 0);
         CHECK(match.bestCostVector[1] == 0);
     }
+
+    TEST_CASE("Handle to Reference Binding Exact Match")
+    {
+        std::string code =
+            "class CBaseEntity { }\n"
+            "void Process(CBaseEntity& inout e) { }\n"
+            "void Inspect(const CBaseEntity& in e) { }\n";
+
+        SymbolTable table;
+        auto candidates = CollectFunctionCandidates(code, "Process", table);
+        REQUIRE(candidates.size() == 1);
+
+        auto match = ResolveBestOverload(candidates, { "CBaseEntity@" }, table);
+        REQUIRE(match.bestCandidate != nullptr);
+        CHECK_FALSE(match.isAmbiguous);
+        REQUIRE(match.bestCostVector.size() == 1);
+        CHECK(match.bestCostVector[0] == 0); // Exact match
+
+        SymbolTable inspectTable;
+        auto inspectCandidates = CollectFunctionCandidates(code, "Inspect", inspectTable);
+        REQUIRE(inspectCandidates.size() == 1);
+        auto matchInspect = ResolveBestOverload(inspectCandidates, { "CBaseEntity@" }, inspectTable);
+        REQUIRE(matchInspect.bestCandidate != nullptr);
+        CHECK_FALSE(matchInspect.isAmbiguous);
+        REQUIRE(matchInspect.bestCostVector.size() == 1);
+        CHECK(matchInspect.bestCostVector[0] == 0); // Exact match
+    }
+
+    TEST_CASE("Const Handle to Mutable Reference is Incompatible")
+    {
+        std::string code =
+            "class CBaseEntity { }\n"
+            "void Process(CBaseEntity& inout e) { }\n";
+
+        SymbolTable table;
+        auto candidates = CollectFunctionCandidates(code, "Process", table);
+        REQUIRE(candidates.size() == 1);
+
+        auto match = ResolveBestOverload(candidates, { "const CBaseEntity@" }, table);
+        CHECK(match.bestCandidate == nullptr);
+    }
 }
+
 
 // =====================================================================================
 // `int32` / `uint32` are the explicit spellings of `int` / `uint`, and a source file may write

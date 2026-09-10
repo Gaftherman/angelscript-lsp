@@ -536,7 +536,13 @@ namespace angel_lsp::analysis
         // Mutable non-const reference parameter requires exact type and non-const lvalue
         if (isMutableRef)
         {
-            if (argIsHandle != paramIsHandle || argIsConst)
+            // In AngelScript, passing an object handle T@ to an object reference parameter
+            // (T&, T& inout, T& out) implicitly dereferences the handle and binds the reference.
+            const bool handleToObjectRef = argIsHandle && !paramIsHandle &&
+                                           (param.isReference || param.modifier == ParameterModifier::InOut ||
+                                            param.modifier == ParameterModifier::Out);
+
+            if ((argIsHandle != paramIsHandle && !handleToObjectRef) || argIsConst)
             {
                 return static_cast<int>(OverloadMatchPenalty::Incompatible);
             }
@@ -575,12 +581,29 @@ namespace angel_lsp::analysis
             return static_cast<int>(OverloadMatchPenalty::Incompatible);
         }
 
-        // 1. Exact match
-        if (isMatchingType(cleanArg, cleanParam) && argIsHandle == paramIsHandle)
+        // 1. Exact match and handle-to-reference binding
+        const bool isHandleToReferenceBinding = argIsHandle && !paramIsHandle &&
+            (param.isReference || param.modifier == ParameterModifier::In ||
+             param.modifier == ParameterModifier::InOut || param.modifier == ParameterModifier::Out);
+
+        if (isMatchingType(cleanArg, cleanParam))
         {
-            if (argIsConst == paramIsConst)
+            if (argIsHandle == paramIsHandle)
             {
-                return static_cast<int>(OverloadMatchPenalty::Exact);
+                if (argIsConst == paramIsConst)
+                {
+                    return static_cast<int>(OverloadMatchPenalty::Exact);
+                }
+                return static_cast<int>(OverloadMatchPenalty::ConstRef);
+            }
+            if (isHandleToReferenceBinding)
+            {
+                // In AngelScript, passing T@ to T&, T& in, T& inout, const T& in is standard zero-cost binding
+                if (paramIsConst || !argIsConst)
+                {
+                    return static_cast<int>(OverloadMatchPenalty::Exact);
+                }
+                return static_cast<int>(OverloadMatchPenalty::Incompatible);
             }
             return static_cast<int>(OverloadMatchPenalty::ConstRef);
         }
@@ -591,8 +614,8 @@ namespace angel_lsp::analysis
             return static_cast<int>(OverloadMatchPenalty::ConstRef);
         }
 
-        // 3. Inheritance / Subtype conversion (Derived -> Base, Derived -> Base@, Derived@ -> Base@)
-        if (argIsHandle == paramIsHandle || (paramIsHandle && !argIsHandle))
+        // 3. Inheritance / Subtype conversion (Derived -> Base, Derived -> Base@, Derived@ -> Base@, Derived@ -> const Base& in)
+        if (argIsHandle == paramIsHandle || (paramIsHandle && !argIsHandle) || isHandleToReferenceBinding)
         {
             auto hierarchy = GetInheritedTypeHierarchy(cleanArg, symbolTable);
             for (size_t dist = 0; dist < hierarchy.size(); ++dist)

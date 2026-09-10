@@ -1326,3 +1326,22 @@ TEST_CASE("CallChecker - Invalid argument flagged even when another argument is 
     auto diags = AnalyzeCallSnippet(code);
     CHECK(HasCode(diags, "as-err-no-implicit-conversion"));
 }
+
+TEST_CASE("CallChecker - Object handle T@ binding to reference parameters (T& inout, T& in, const T& in)")
+{
+    const std::string code =
+        "class CBaseEntity {}\n"
+        "bool CommonAddAmmo(CBaseEntity& inout pOther, int ammo) { return true; }\n"
+        "bool InspectEntity(const CBaseEntity& in pOther) { return true; }\n"
+        "bool AddAmmo(CBaseEntity@ pOther) {\n"
+        "    bool r1 = CommonAddAmmo(pOther, 10);\n"
+        "    bool r2 = InspectEntity(pOther);\n"
+        "    return r1 && r2;\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(!HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK(!HasCode(diags, "as-err-no-implicit-conversion"));
+}
+
+
