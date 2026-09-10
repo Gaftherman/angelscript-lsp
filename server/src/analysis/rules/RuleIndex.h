@@ -43,6 +43,12 @@ namespace angel_lsp::analysis::rules
         ankerl::unordered_dense::set<std::string> enumMemberNames;
 
         /**
+         * @brief Symbols of enums containing each member name.
+         * Allows fast O(1) lookup of enum symbols when resolving unqualified enum member references.
+         */
+        ankerl::unordered_dense::map<std::string, std::vector<Symbol>> enumSymbolsByMemberName;
+
+        /**
          * @brief Qualified names of types (classes, interfaces, enums, typedefs, funcdefs) keyed by short name.
          * Allows fast lookup of types when referenced without their enclosing namespace (e.g. CIns2Prop -> INS2PROP::CIns2Prop).
          */

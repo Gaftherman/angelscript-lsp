@@ -2985,6 +2985,13 @@ namespace angel_lsp
             return {};
         }
 
+        if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+        {
+            if (outScopeMs) *outScopeMs = 0.0;
+            if (outCheckMs) *outCheckMs = 0.0;
+            return {};
+        }
+
         // Held privately until analysis is done - see the header for why the order matters.
         std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot;
 
@@ -3084,15 +3091,12 @@ namespace angel_lsp
             // saved stub can announce that its `#define`s moved.
             const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
 
-            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, savedTree);
-            diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
-
             if (savedTree)
             {
                 ts_tree_delete(savedTree);
             }
 
-            PublishDiagnostics(uriStr, diagnostics);
+            PublishDiagnostics(uriStr, {});
 
             if (wordsChanged)
             {
@@ -3177,34 +3181,31 @@ namespace angel_lsp
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
             utils::HighResTimer colTimer;
-            std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
                 if (PredefinedStubContributes(uriStr))
                 {
                     ClaimPredefinedFile(uriStr, /*forceReload=*/true);
                     m_predefinedDocuments[uriStr] = analysisText;
-                    diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
-                    m_scopeIndex.ClearDocument(uriStr);
-                    m_callGraph.ClearDocument(uriStr);
-                    if (tree)
-                    {
-                        m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), analysisText));
-                        m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), analysisText));
-                    }
+                    ReplaceSymbolsFromTree(uriStr, analysisText, tree);
                 }
             }
             double colMs = colTimer.ElapsedMs();
 
-            const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
-
-            double scopeMs = 0.0;
+            utils::HighResTimer scopeTimer;
+            m_scopeIndex.ClearDocument(uriStr);
+            m_callGraph.ClearDocument(uriStr);
+            if (tree)
+            {
+                m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), analysisText));
+                m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), analysisText));
+            }
+            double scopeMs = scopeTimer.ElapsedMs();
             double checkMs = 0.0;
-            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree, &scopeMs, &checkMs);
-            diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
-            PublishDiagnostics(uriStr, diagnostics);
+            PublishDiagnostics(uriStr, {});
 
+            const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
             if (wordsChanged)
             {
                 ReanalyseOpenDocuments();
@@ -3644,39 +3645,36 @@ namespace angel_lsp
             double parseMs = parseTimer.ElapsedMs();
 
             utils::HighResTimer colTimer;
-            std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
                 if (PredefinedStubContributes(uriStr))
                 {
                     ClaimPredefinedFile(uriStr, /*forceReload=*/true);
                     m_predefinedDocuments[uriStr] = analysisText;
-                    diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
-                }
-                m_scopeIndex.ClearDocument(uriStr);
-                m_callGraph.ClearDocument(uriStr);
-                if (tree)
-                {
-                    m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), analysisText));
-                    m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), analysisText));
+                    ReplaceSymbolsFromTree(uriStr, analysisText, tree);
                 }
             }
             double colMs = colTimer.ElapsedMs();
 
-            const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
-
-            double scopeMs = 0.0;
+            utils::HighResTimer scopeTimer;
+            m_scopeIndex.ClearDocument(uriStr);
+            m_callGraph.ClearDocument(uriStr);
+            if (tree)
+            {
+                m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), analysisText));
+                m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), analysisText));
+            }
+            double scopeMs = scopeTimer.ElapsedMs();
             double checkMs = 0.0;
-            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree, &scopeMs, &checkMs);
-            diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
             if (tree)
             {
                 ts_tree_delete(tree);
             }
 
-            PublishDiagnostics(uriStr, text, diagnostics);
+            PublishDiagnostics(uriStr, text, {});
 
+            const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
             if (wordsChanged)
             {
                 ReanalyseOpenDocuments();

@@ -3,6 +3,7 @@
 #include "analysis/OverloadResolver.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/DiagnosticContext.h"
+#include "analysis/rules/RuleIndex.h"
 #include "utils/Utils.h"
 #include "parser/Keywords.h"
 
@@ -1332,30 +1333,14 @@ namespace angel_lsp::analysis
             }
         }
 
-        // 4. Enum member fallback
-        std::vector<Symbol> enumMembers;
-        symbolTable.ForEachSymbol(
-            [&](const std::string &, const std::vector<Symbol> &symList)
-            {
-                for (const auto &sym : symList)
-                {
-                    if (sym.type == SymbolType::Enum)
-                    {
-                        const auto &en = sym.GetEnum();
-                        for (const auto &m : en.members)
-                        {
-                            if (m.name == name)
-                            {
-                                enumMembers.push_back(sym);
-                                break;
-                            }
-                        }
-                    }
-                }
-            });
-        if (!enumMembers.empty())
+        // 4. Enum member fallback via cached RuleIndex (O(1) lookup instead of full table scan)
+        if (const auto ruleIndex = symbolTable.GetRuleIndex())
         {
-            return enumMembers;
+            auto it = ruleIndex->enumSymbolsByMemberName.find(name);
+            if (it != ruleIndex->enumSymbolsByMemberName.end())
+            {
+                return it->second;
+            }
         }
 
         // 5. Short-name type fallback (e.g. CIns2Prop -> INS2PROP::CIns2Prop)
@@ -2529,23 +2514,15 @@ namespace angel_lsp::analysis
         }
 
         const std::string bare = LastSegmentOf(typeName);
-        std::optional<Symbol> found;
-        table.ForEachSymbol([&](const std::string &qualifiedName, const std::vector<Symbol> &symbols)
+        const auto matches = table.FindTypeSymbolsByShortName(bare);
+        for (const auto &sym : matches)
         {
-            if (found || (qualifiedName != bare && LastSegmentOf(qualifiedName) != bare))
+            if (sym.type == SymbolType::Funcdef)
             {
-                return;
+                return sym;
             }
-            for (const auto &sym : symbols)
-            {
-                if (sym.type == SymbolType::Funcdef)
-                {
-                    found = sym;
-                    return;
-                }
-            }
-        });
-        return found;
+        }
+        return std::nullopt;
     }
 
     /**

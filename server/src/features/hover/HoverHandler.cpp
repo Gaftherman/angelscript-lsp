@@ -809,20 +809,35 @@ namespace angel_lsp::features
 
                     if (objText == "this")
                     {
-                        // Look for enclosing class from symbols
-                        request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+                        // Look for enclosing class from AST containers first (O(depth) walk)
+                        auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
+                        for (const auto &c : containers)
                         {
-                            for (const auto &sym : symbols)
+                            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
                             {
-                                if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
+                                receiverTypeName = c.name;
+                                break;
+                            }
+                        }
+                        if (receiverTypeName.empty())
+                        {
+                            // Fallback to scoped lookup within this file only
+                            request.symbolTable.ForEachSymbolInFile(request.uri, [&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+                            {
+                                for (const auto &sym : symbols)
                                 {
-                                    if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
+                                    if ((sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface) &&
+                                        sym.fileUri == request.uri)
                                     {
-                                        receiverTypeName = sym.name;
+                                        if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
+                                        {
+                                            receiverTypeName = sym.name;
+                                            return;
+                                        }
                                     }
                                 }
-                            }
-                        });
+                            });
+                        }
                     }
                     else if (rootScope)
                     {

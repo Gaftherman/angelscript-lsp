@@ -125,22 +125,17 @@ namespace angel_lsp::analysis
             }
 
             const std::string bare = LastScopeSegment(typeName);
-            table.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &symbols)
+            const auto matches = table.FindTypeSymbolsByShortName(bare);
+            for (const auto &sym : matches)
             {
-                if (!info.found && (qName == bare || LastScopeSegment(qName) == bare))
+                if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
                 {
-                    for (const auto &sym : symbols)
-                    {
-                        if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
-                        {
-                            info.found = true;
-                            info.isClass = sym.type == SymbolType::Class;
-                            info.isTemplate = info.isClass && sym.GetClass().isTemplate;
-                            return;
-                        }
-                    }
+                    info.found = true;
+                    info.isClass = sym.type == SymbolType::Class;
+                    info.isTemplate = info.isClass && sym.GetClass().isTemplate;
+                    return info;
                 }
-            });
+            }
 
             return info;
         }
@@ -275,21 +270,19 @@ namespace angel_lsp::analysis
             // stray `Hook` function somewhere else does not.
             if (!stopped && !sawAny)
             {
-                const std::string suffix = "::" + bare + "::" + bare;
-                table.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &symbols)
+                auto shortMatches = table.FindTypeSymbolsByShortName(bare);
+                for (const auto &cSym : shortMatches)
                 {
-                    if (stopped || !qName.ends_with(suffix))
+                    if (cSym.type == SymbolType::Class)
                     {
-                        return;
-                    }
-                    for (const auto &sym : symbols)
-                    {
-                        if (visit(sym))
+                        const std::string qCls = cSym.qualifiedName.empty() ? cSym.name : cSym.qualifiedName;
+                        ForEachSymbolNamed(qCls + "::" + bare, table, visit);
+                        if (stopped || sawAny)
                         {
-                            return;
+                            break;
                         }
                     }
-                });
+                }
             }
         }
 
@@ -1647,20 +1640,14 @@ namespace angel_lsp::analysis
                 return result;
             }
             const std::string bare = LastScopeSegment(name);
-            table.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &symbols)
+            const auto matches = table.FindTypeSymbolsByShortName(bare);
+            for (const auto &sym : matches)
             {
-                if (!result && (qName == bare || LastScopeSegment(qName) == bare))
+                if (sym.type == SymbolType::Funcdef)
                 {
-                    for (const auto &sym : symbols)
-                    {
-                        if (sym.type == SymbolType::Funcdef)
-                        {
-                            result = sym;
-                            return;
-                        }
-                    }
+                    return sym;
                 }
-            });
+            }
             return result;
         }
 
@@ -2012,32 +1999,70 @@ namespace angel_lsp::analysis
             bool hasImplicit = false;
             bool hasExplicit = false;
 
-            table.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
+            auto checkClassMethods = [&](const std::string &cls)
             {
-                for (const auto &sym : symbols)
+                if (auto ptr = table.FindSymbolsPtr(cls + "::" + implicitName))
                 {
-                    if (sym.type == SymbolType::Class && sym.name == typeName)
+                    for (const auto &sym : *ptr)
+                    {
+                        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                        {
+                            if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                            {
+                                hasImplicit = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (auto ptr = table.FindSymbolsPtr(cls + "::" + explicitName))
+                {
+                    for (const auto &sym : *ptr)
+                    {
+                        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                        {
+                            if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                            {
+                                hasExplicit = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            };
+
+            if (auto ptr = table.FindSymbolsPtr(typeName))
+            {
+                for (const auto &sym : *ptr)
+                {
+                    if (sym.type == SymbolType::Class)
                     {
                         typeIsVisible = true;
+                        break;
                     }
-
-                    if (sym.type != SymbolType::Function || sym.containerName != typeName)
-                        continue;
-
-                    if (!std::holds_alternative<FunctionSignature>(sym.signature))
-                        continue;
-
-                    // Only a bool-returning one converts to a condition. `int opConv()` is a
-                    // conversion to something else entirely.
-                    if (CleanBaseType(sym.GetFunction().returnType) != "bool")
-                        continue;
-
-                    if (sym.name == implicitName)
-                        hasImplicit = true;
-                    else if (sym.name == explicitName)
-                        hasExplicit = true;
                 }
-            });
+            }
+            if (typeIsVisible)
+            {
+                checkClassMethods(typeName);
+            }
+            else
+            {
+                auto shortTypes = table.FindTypeSymbolsByShortName(typeName);
+                for (const auto &sym : shortTypes)
+                {
+                    if (sym.type == SymbolType::Class)
+                    {
+                        typeIsVisible = true;
+                        const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                        checkClassMethods(qName);
+                        if (hasImplicit || hasExplicit)
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
 
             if (!typeIsVisible)
                 return nullptr;
@@ -2994,37 +3019,53 @@ namespace angel_lsp::analysis
         }
 
         // classes declaring opImplConv or opConv to bool -> true
-        bool hasConversion = false;
-        table.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
+        auto checkConv = [&](const std::string &cls) -> bool
         {
-            if (hasConversion)
+            if (auto ptr = table.FindSymbolsPtr(cls + "::opImplConv"))
             {
-                return;
-            }
-            for (const auto &sym : symbols)
-            {
-                if (sym.type != SymbolType::Function || sym.containerName != clean)
+                for (const auto &sym : *ptr)
                 {
-                    continue;
-                }
-                if (!std::holds_alternative<FunctionSignature>(sym.signature))
-                {
-                    continue;
-                }
-                if (sym.name == "opImplConv" || sym.name == "opConv")
-                {
-                    if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                    if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
                     {
-                        hasConversion = true;
-                        return;
+                        if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                        {
+                            return true;
+                        }
                     }
                 }
             }
-        });
+            if (auto ptr = table.FindSymbolsPtr(cls + "::opConv"))
+            {
+                for (const auto &sym : *ptr)
+                {
+                    if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                    {
+                        if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        };
 
-        if (hasConversion)
+        if (checkConv(clean))
         {
             return true;
+        }
+
+        auto shortMatches = table.FindTypeSymbolsByShortName(clean);
+        for (const auto &sym : shortMatches)
+        {
+            if (sym.type == SymbolType::Class)
+            {
+                const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                if (checkConv(qName))
+                {
+                    return true;
+                }
+            }
         }
 
         // all other types -> false

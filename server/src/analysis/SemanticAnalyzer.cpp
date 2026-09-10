@@ -18,6 +18,7 @@
 #include "analysis/rules/VariableRules.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
+#include "utils/Timer.h"
 #include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
@@ -29,6 +30,7 @@ namespace angel_lsp::analysis
 
     std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest &request) const
     {
+        utils::HighResTimer totalTimer;
         std::vector<Diagnostic> diagnostics;
 
         // A dump of the document's own symbols, at Debug because that is what it is - the client's
@@ -65,14 +67,18 @@ namespace angel_lsp::analysis
                 });
         }
 
+        utils::HighResTimer declRulesTimer;
         {
             DiagnosticContext ctx{request, diagnostics, m_logger};
             CheckNullAssignedToNonHandle(request.symbolTable, ctx);
             CheckDeclarationRules(request.symbolTable, ctx);
         }
+        double declRulesMs = declRulesTimer.ElapsedMs();
 
+        double scopeRulesMs = 0.0;
         if (request.scopeRoot)
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
 
             // Taken from the version-cached index rather than rebuilt here. The set has to hold
@@ -87,22 +93,28 @@ namespace angel_lsp::analysis
 
             CheckNullAssignedToNonHandleInScope(request.scopeRoot.get(), ctx);
             CheckLocalVariableDeclarations(request.scopeRoot.get(), ctx);
+            scopeRulesMs = timer.ElapsedMs();
         }
 
         // Statements, not declarations: whether a break sits inside a loop or a path falls off the
         // end of a function is nowhere in the symbol table.
+        double controlFlowMs = 0.0;
         if (request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const ControlFlowCheckRequest flowRequest{ts_tree_root_node(request.tree), request.sourceCode};
             CheckControlFlow(flowRequest, ctx);
             rules::ValidateStandaloneLambda(ts_tree_root_node(request.tree), ctx);
+            controlFlowMs = timer.ElapsedMs();
         }
 
         // The one pass that judges a use rather than a declaration, so it needs both the tree that
         // holds the expression and the table that holds what the expression reaches.
+        double accessMs = 0.0;
         if (request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const AccessCheckRequest accessRequest{
                 ts_tree_root_node(request.tree),
@@ -110,10 +122,13 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckMemberAccess(accessRequest, ctx);
+            accessMs = timer.ElapsedMs();
         }
 
+        double constMs = 0.0;
         if (request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const ConstCheckRequest constRequest{
                 ts_tree_root_node(request.tree),
@@ -121,10 +136,13 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckConstCorrectness(constRequest, ctx);
+            constMs = timer.ElapsedMs();
         }
 
+        double lvalueMs = 0.0;
         if (request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const LValueCheckRequest lvalueRequest{
                 ts_tree_root_node(request.tree),
@@ -132,10 +150,13 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckLValues(lvalueRequest, ctx);
+            lvalueMs = timer.ElapsedMs();
         }
 
+        double callMs = 0.0;
         if (request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const CallCheckRequest callRequest{
                 ts_tree_root_node(request.tree),
@@ -143,10 +164,13 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckCallArguments(callRequest, ctx);
+            callMs = timer.ElapsedMs();
         }
 
+        double assignMs = 0.0;
         if (request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const DefiniteAssignmentCheckRequest assignRequest{
                 ts_tree_root_node(request.tree),
@@ -155,12 +179,15 @@ namespace angel_lsp::analysis
             };
             CheckDefiniteAssignment(assignRequest, ctx);
             CheckEngineDialectRules(ts_tree_root_node(request.tree), ctx);
+            assignMs = timer.ElapsedMs();
         }
 
         // Needs the tree, not just the symbol table: an initializer or a cast is an expression, and
         // expressions are exactly what the symbol table does not record.
+        double typeConvMs = 0.0;
         if (request.enableTypeConversionChecks && request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const TypeConversionCheckRequest conversionRequest{
                 ts_tree_root_node(request.tree),
@@ -169,10 +196,13 @@ namespace angel_lsp::analysis
                 request.mutableScopeRoot
             };
             CheckTypeConversions(conversionRequest, ctx);
+            typeConvMs = timer.ElapsedMs();
         }
 
+        double isolationMs = 0.0;
         if (request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const IsolationCheckRequest isolationRequest{
                 ts_tree_root_node(request.tree),
@@ -180,19 +210,26 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckSharedIsolation(isolationRequest, ctx);
+            isolationMs = timer.ElapsedMs();
         }
 
+        double namespaceMs = 0.0;
         if (request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             CheckNamespacesAndScopes(NamespaceCheckRequest{ ts_tree_root_node(request.tree), request.sourceCode }, ctx);
+            namespaceMs = timer.ElapsedMs();
         }
 
+        double initListMs = 0.0;
         if (request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             CheckInitializerLists(InitializerListCheckRequest{ ts_tree_root_node(request.tree), request.sourceCode,
                                                               request.scopeRoot.get() }, ctx);
+            initListMs = timer.ElapsedMs();
         }
 
         // Directives the add-on does not recognise. A Warning rather than an Error even though the
@@ -271,6 +308,14 @@ namespace angel_lsp::analysis
         {
             std::erase_if(diagnostics, [&request](const Diagnostic &d)
                           { return utils::IsLineExcluded(request.excludedLineRanges, d.range.start.line); });
+        }
+
+        double totalMs = totalTimer.ElapsedMs();
+        if (m_logger && totalMs > 30.0)
+        {
+            m_logger->LogInfo(fmt::format(
+                "[Checker Breakdown] File: {} | Total: {:.2f} ms (DeclRules: {:.2f} ms, ScopeRules: {:.2f} ms, ControlFlow: {:.2f} ms, Access: {:.2f} ms, Const: {:.2f} ms, LValue: {:.2f} ms, Call: {:.2f} ms, Assign: {:.2f} ms, TypeConv: {:.2f} ms, Isolation: {:.2f} ms, Namespace: {:.2f} ms, InitList: {:.2f} ms)",
+                request.fileUri, totalMs, declRulesMs, scopeRulesMs, controlFlowMs, accessMs, constMs, lvalueMs, callMs, assignMs, typeConvMs, isolationMs, namespaceMs, initListMs));
         }
 
         return diagnostics;

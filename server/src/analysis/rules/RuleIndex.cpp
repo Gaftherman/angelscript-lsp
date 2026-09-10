@@ -70,6 +70,7 @@ namespace angel_lsp::analysis::rules
                         for (const auto &member : sym.GetEnum().members)
                         {
                             index->enumMemberNames.insert(member.name);
+                            index->enumSymbolsByMemberName[member.name].push_back(sym);
                         }
                     }
 

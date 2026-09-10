@@ -82,7 +82,8 @@ namespace angel_lsp::features
         std::string GetEnclosingClassName(const analysis::SymbolTable &symbolTable, const std::string &uri, uint32_t line, const std::string &excludeName = "")
         {
             std::string enclosingClass;
-            symbolTable.ForEachSymbol(
+            symbolTable.ForEachSymbolInFile(
+                uri,
                 [&](const std::string &, const std::vector<analysis::Symbol> &symbols)
                 {
                     for (const auto &sym : symbols)
