@@ -863,6 +863,11 @@ export function buildServerArgs(): string[] {
         args.push('--enable-virtual-mixin-documents=true');
     }
 
+    const suppressWhenMatches = config.get<boolean>('inlayHints.suppressWhenArgumentMatchesName', false);
+    if (suppressWhenMatches) {
+        args.push('--inlay-hints-suppress-when-argument-matches-name');
+    }
+
     // The server localises its diagnostics; align them with the editor's display language.
     if (env.language) {
         args.push(`--locale=${env.language}`);

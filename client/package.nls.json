@@ -96,5 +96,7 @@
   "config.statusBar.alignment.right": "With the language mode and the editor indicators.",
   "config.dimInactiveRegions.description": "Dim the code inside a `#if` block the preprocessor drops, the way the C++ extension dims its inactive regions. A decoration rather than a colour: it dims whatever the syntax highlighting produced, brackets included, which a semantic token cannot do - the editor paints `(`, `{` and `[` from its own bracket-pair feature.",
   "config.inactiveRegionOpacity.description": "How visible the dimmed code inside a dropped `#if` block stays. 1 is no dimming at all. Matches `#angelscript.dimInactiveRegions#`, which has to be on for this to do anything.",
-  "command.formatPredefinedStub.title": "Format Predefined Stub"
+  "command.formatPredefinedStub.title": "Format Predefined Stub",
+  "angelscript.enableVirtualMixinDocuments.description": "Enables experimental virtual text documents for mixin classes (angelscript-virtual://). When disabled, high-performance symbol synthesis is used.",
+  "angelscript.inlayHints.suppressWhenArgumentMatchesName.description": "Suppress parameter name hints when the argument expression text matches the parameter name exactly. Default is false."
 }

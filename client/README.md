@@ -75,6 +75,8 @@ absolute path, and the two can be mixed in one workspace.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
+| `angelscript.enableVirtualMixinDocuments` | `false` | Enables experimental virtual text documents for mixin classes (`angelscript-virtual://`). When disabled, high-performance symbol synthesis is used. |
+| `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suppress parameter name hints when the argument expression text matches the parameter name exactly. |
 | `angelscript.searchDirectories` | `[]` | Extra directories for resolving `#include "path.as"`. |
 | `angelscript.predefined.active` | `""` | The one stub to load, when the workspace holds several. `"all"` merges them. |
 | `angelscript.statusBar.alignment` | `left` | Which side of the status bar the AngelScript item sits on. |

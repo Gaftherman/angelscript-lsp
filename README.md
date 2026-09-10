@@ -3,11 +3,23 @@
 AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) implementation for the [AngelScript](https://www.angelcode.com/angelscript/) programming language (`.as` files). Built with C++20, it features a 100% pure **Tree-Sitter** & **SymbolTable** analysis architecture for instant response times and low memory footprint, paired with a Visual Studio Code extension client.
 
 > [!WARNING]
-> ### ⚠️ Project Status: Work in Progress (WIP)
+> ### Project Status: Work in Progress (WIP)
 > **AngelLSP is currently under active, heavy development and experimental validation.** While it already provides rich language intelligence, high-performance AST analysis, and continuous parity verification against the reference compiler, certain language constructs, edge cases, and diagnostics are still evolving.
 >
-> 💡 **Recommended Alternative for Production:**  
+> **Recommended Alternative for Production:**  
 > If you need a battle-tested, mature language server for daily production work or mission-critical AngelScript projects right now, we **strongly and wholeheartedly recommend** using [**sashi0034/angel-lsp**](https://github.com/sashi0034/angel-lsp).
+
+---
+
+## What's New & Architectural Advancements (v0.7.7-exp.* Milestone)
+
+- **High-Performance Symbol Synthesis for Mixins**: Host classes synthesize methods and properties directly from `mixin class` definitions without physical script concatenation. CodeLens deduplicates declarations to present a single aggregated reference count across all host classes, and client-side scaffolding is available for experimental virtual mixin documents (`angelscript-virtual://<host_class>/<mixin>.as`).
+- **ABI-Based Incremental Save Analysis**: Incremental document saves utilize a 64-bit FNV-1a interface fingerprint. When an edit affects only function bodies without modifying public interface ABI hashes, cascading re-analysis across open documents is bypassed.
+- **Cascading Peer Open-Document Debouncing**: Introduces a 250ms coalescing window in `Server.cpp` preventing repetitive re-analysis storms across open peer files (such as `base.as`).
+- **Sub-Millisecond Hover & Reference Latency**: Eradication of linear `symbolTable.ForEachSymbol` scans in favor of keyed spatial bucket indexes and direct symbol resolution lookups.
+- **LSP Call Hierarchy Provider**: Full implementation of `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, and `callHierarchy/outgoingCalls`, seamlessly mapping calls through synthesized mixin members back to their origin definitions.
+- **Overload-Aware Navigation**: Go-to-Definition (`FilterOverloadsForCall`) matches argument types and arity against candidate overloads, jumping accurately to the exact function or mixin declaration rather than defaulting to the first match.
+- **Native Compiler Parity Verification**: Integrated `asharness.exe` test suite continuously validates parser behavior and isolated expression statement semantics (`null;`, literals) against reference AngelScript compiler binaries.
 
 ---
 
@@ -69,12 +81,14 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
   - **Syntax Pass**: Instant syntax error detection (`TSNode` error/missing node catching).
   - **Semantic Pass**: Workspace and document-level symbol resolution diagnostics.
 - **Hover Information (`textDocument/hover`)**: Rich Markdown tooltips displaying function signatures, variable types, class properties, and parsed Doxygen documentation.
-- **Go to Definition & Type Definition (`textDocument/definition`, `textDocument/typeDefinition`)**: Precise symbol lookup across documents, namespaces, classes, and global scopes with inheritance traversal.
+- **Go to Definition & Type Definition (`textDocument/definition`, `textDocument/typeDefinition`)**: Precise symbol lookup across documents, namespaces, classes, and global scopes with inheritance traversal. Features overload-aware resolution (`FilterOverloadsForCall`) matching callee argument types and arity, and preserves mixin origin declaration source files and line ranges.
 - **Go to Declaration (`textDocument/declaration`)**: The same answer as Go to Definition, deliberately. AngelScript has no declaration/definition split - no headers, no prototypes - so the two questions are one, and the editor's second navigation key should not be inert.
 - **Go to Implementation (`textDocument/implementation`)**: The opposite direction. From an interface or a base class, the types that derive from it transitively; from a method declared in one, that method as each subtype declares it.
 - **Expand Selection (`textDocument/selectionRange`)**: Grows the selection one syntactic step at a time, straight off the parse tree.
-- **Call Hierarchy (`textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls`)**: Who calls this function, and what it calls in turn, from a workspace-wide call index held beside the symbol table rather than inside it.
+- **Call Hierarchy (`textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls`)**: Explores incoming and outgoing calls for functions, class methods, and mixins from a workspace-wide call index, resolving synthesized caller methods back to mixin origin bodies.
 - **Type Hierarchy (`textDocument/prepareTypeHierarchy`, `typeHierarchy/supertypes`, `typeHierarchy/subtypes`)**: The bases a class or interface declares, and the types that declare it as theirs, one level at a time.
+- **CodeLens (`textDocument/codeLens`)**: Actionable inline reference counts above declarations, deduplicating identical declaration ranges for mixin methods and aggregating all call-site references across host classes.
+- **Inlay Hints (`textDocument/inlayHint`)**: Inline parameter-name hints for standard calls, constructor direct-initializations (`Type var(arg1, arg2);`), `BaseClass` methods, and utility objects (`Math.MakeVectors`), with configurable argument-matching suppression.
 - **Linked Editing (`textDocument/linkedEditingRange`)**: Retype a local variable or a parameter and its uses together, live. Offered only for names a lexical scope keeps inside one file; anything at file scope goes through Rename, which looks across documents.
 - **Auto-Completion (`textDocument/completion`)**: Context-aware completion suggestions for global symbols, class member functions/properties, and namespace scopes.
 - **Semantic Tokens (`textDocument/semanticTokens/full`)**: Full semantic syntax highlighting for keywords, types, functions, variables, parameters, and enum members.
@@ -564,6 +578,9 @@ The `angel_lsp` executable accepts command-line arguments to enable or disable i
 | `--disable-folding-range` | Explicitly disable folding ranges. | - |
 | `--enable-inlay-hints[=true\|false]` | Enable or disable parameter-name and `auto` type hints. | `true` |
 | `--disable-inlay-hints` | Explicitly disable inlay hints. | - |
+| `--inlay-hints-suppress-when-argument-matches-name[=true\|false]` | Suppress parameter inlay hints when the argument expression text matches the parameter name. | `false` |
+| `--enable-virtual-mixin-documents[=true\|false]` | Enable or disable experimental virtual text documents for mixins (`angelscript-virtual://`). When disabled, symbol synthesis is used. | `false` |
+| `--disable-virtual-mixin-documents` | Explicitly disable virtual mixin documents. | - |
 | `--enable-code-action[=true\|false]` | Enable or disable quick fixes. | `true` |
 | `--disable-code-action` | Explicitly disable code actions. | - |
 | `--enable-formatting[=true\|false]` | Enable or disable document and range formatting. | `true` |
@@ -598,6 +615,24 @@ The `angel_lsp` executable accepts command-line arguments to enable or disable i
 | `--array-like-type=<name>` | Name a template whose initializer list repeats its element type. Shorthand for a `@listpattern {repeat T}` tag — see below. Repeatable. | - |
 | `-h`, `--help` | Show command-line help message and exit. | - |
 | `-v`, `--version` | Show server version and exit. | - |
+
+## VS Code Extension Configuration Settings
+
+The following settings are configurable in Visual Studio Code (`settings.json` or Settings UI `Ctrl + ,`):
+
+| Setting | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `angelscript.enableVirtualMixinDocuments` | `boolean` | `false` | Enables experimental virtual text documents for mixin classes (`angelscript-virtual://`). When disabled, high-performance symbol synthesis is used. |
+| `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `boolean` | `false` | Suppress parameter name hints when the argument expression text matches the parameter name exactly. |
+| `angelscript.searchDirectories` | `string[]` | `[]` | Extra directory search paths for resolving included script files (`#include "path.as"`). |
+| `angelscript.predefined.active` | `string` | `""` | The active predefined stub loaded by the workspace scan. Set to `"all"` to load all discovered stubs. |
+| `angelscript.predefinedFiles` | `string[]` | `[]` | Predefined stub files declaring the host application's API, loaded by path. |
+| `angelscript.predefinedExtension` | `string` | `".as.predefined"` | Filename suffix that marks a file in the workspace as a predefined stub. |
+| `angelscript.include.implicitExtension` | `boolean` | `false` | Allows `#include "helper"` to find `helper.as` without explicit extension (Sven Co-op dialect). |
+| `angelscript.modules` | `object[]` | `[]` | The script compilation modules for this workspace (`name`, `entry`, or `folder`). |
+| `angelscript.fileExtension` | `string` | `".as"` | Filename suffix of AngelScript source files for include graph scanning. |
+| `angelscript.diagnosticSeverity` | `object` | `{}` | Per-diagnostic severity overrides, keyed by diagnostic code (e.g. `{"as-warn-unused-variable": "hint"}`). |
+| `angelscript.features.*` | `boolean` | `true` | Individual toggles for LSP features (`hover`, `definition`, `completion`, `signatureHelp`, `semanticTokens`, `inlayHints`, `codeLens`, `callHierarchy`, etc.). |
 
 ### Building against a local grammar checkout
 

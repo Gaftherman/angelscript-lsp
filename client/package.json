@@ -299,7 +299,7 @@
           "type": "boolean",
           "default": false,
           "scope": "resource",
-          "description": "Enables experimental virtual text documents for mixin classes (angelscript-virtual://). When disabled, high-performance symbol synthesis is used."
+          "markdownDescription": "%angelscript.enableVirtualMixinDocuments.description%"
         },
         "angelscript.features.hover": {
           "type": "boolean",
@@ -365,6 +365,12 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "%config.features.inlayHints.description%"
+        },
+        "angelscript.inlayHints.suppressWhenArgumentMatchesName": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "markdownDescription": "%angelscript.inlayHints.suppressWhenArgumentMatchesName.description%"
         },
         "angelscript.features.codeAction": {
           "type": "boolean",
