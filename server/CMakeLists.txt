@@ -12,29 +12,54 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.14)
 # drift unrepresentable, which is better. The manifest wins because it is the file that reaches
 # users. Parsed with a regex rather than string(JSON) so this keeps working on CMake 3.14; the
 # manifest is ours and its shape is not going to surprise us.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../client/package.json" ANGELLSP_MANIFEST)
-string(REGEX MATCH "\"version\"[ \t]*:[ \t]*\"([^\"]+)\"" ANGELLSP_VERSION_MATCH "${ANGELLSP_MANIFEST}")
-set(ANGELLSP_VERSION "${CMAKE_MATCH_1}")
-
-if(NOT ANGELLSP_VERSION)
-    message(FATAL_ERROR
-        "Could not read \"version\" from client/package.json. The server takes its version from the "
-        "extension manifest so the two can never disagree, and building the server without the "
-        "client tree beside it is not a supported configuration.")
+# Determine version: check git tag first, fallback to client/package.json
+find_package(Git QUIET)
+set(ANGELLSP_GIT_TAG "")
+if(GIT_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" describe --tags --match "v*" --exact-match
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE ANGELLSP_GIT_TAG
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(NOT ANGELLSP_GIT_TAG)
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" describe --tags --exact-match
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE ANGELLSP_GIT_TAG
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+    endif()
 endif()
 
-# project() takes only the numeric part, so a pre-release suffix like 0.1.0-rc.1 does not break the
-# configure. The server still reports the full string, suffix and all.
-string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" ANGELLSP_VERSION_NUMERIC "${ANGELLSP_VERSION}")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../client/package.json" ANGELLSP_MANIFEST)
+string(REGEX MATCH "\"version\"[ \t]*:[ \t]*\"([^\"]+)\"" ANGELLSP_VERSION_MATCH "${ANGELLSP_MANIFEST}")
+set(ANGELLSP_MANIFEST_VERSION "${CMAKE_MATCH_1}")
 
-message(STATUS "AngelLSP version: ${ANGELLSP_VERSION} (from client/package.json)")
+if(ANGELLSP_GIT_TAG)
+    set(ANGELLSP_VERSION "${ANGELLSP_GIT_TAG}")
+    message(STATUS "AngelLSP version: ${ANGELLSP_VERSION} (from git tag)")
+elseif(ANGELLSP_MANIFEST_VERSION)
+    set(ANGELLSP_VERSION "${ANGELLSP_MANIFEST_VERSION}")
+    message(STATUS "AngelLSP version: ${ANGELLSP_VERSION} (from client/package.json)")
+else()
+    message(FATAL_ERROR
+        "Could not read version from git tag or client/package.json.")
+endif()
 
-# Read at configure time, so without this an incremental build after a version bump keeps compiling
-# the old number in - which is exactly when it matters, because a version bump is the last thing
-# that happens before a release is tagged. Measured: bumping to 0.2.0 and rebuilding still printed
-# 0.1.0 from --version.
+# project() takes only the numeric part, so a pre-release suffix like 0.1.0-rc.1 or v0.7.4-exp.1 does not break configure.
+string(REGEX REPLACE "^v" "" ANGELLSP_VERSION_CLEAN "${ANGELLSP_VERSION}")
+string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" ANGELLSP_VERSION_NUMERIC "${ANGELLSP_VERSION_CLEAN}")
+if(NOT ANGELLSP_VERSION_NUMERIC)
+    set(ANGELLSP_VERSION_NUMERIC "0.0.0")
+endif()
+
+# Read at configure time so version changes trigger rebuilds
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-             "${CMAKE_CURRENT_SOURCE_DIR}/../client/package.json")
+             "${CMAKE_CURRENT_SOURCE_DIR}/../client/package.json"
+             "${CMAKE_CURRENT_SOURCE_DIR}/../.git/HEAD")
 
 project(AngelLSP VERSION ${ANGELLSP_VERSION_NUMERIC})
 
@@ -181,6 +206,18 @@ if(WIN32)
     add_custom_command(TARGET angel_lsp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${LSP_DEPLOY_ROOT}/win32-x64"
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_ROOT}/win32-x64/$<TARGET_FILE_NAME:angel_lsp>"
+    )
+endif()
+
+if(ANGELLSP_GIT_TAG)
+    if(WIN32)
+        set(BIN_SUFFIX ".exe")
+    else()
+        set(BIN_SUFFIX "")
+    endif()
+    add_custom_command(TARGET angel_lsp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp> "${LSP_DEPLOY_ROOT}/angel_lsp-${ANGELLSP_GIT_TAG}${BIN_SUFFIX}"
+        COMMENT "Creating tagged LSP server binary copy: angel_lsp-${ANGELLSP_GIT_TAG}${BIN_SUFFIX}"
     )
 endif()
 

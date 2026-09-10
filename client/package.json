@@ -671,6 +671,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile && npm run bundle",
+    "package": "node scripts/package-vsix.mjs",
     "compile": "tsc -p ./",
     "bundle": "node esbuild.mjs",
     "watch": "tsc -watch -p ./",

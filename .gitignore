@@ -47,6 +47,7 @@ test_disc*.as
 # packaging the .vsix, so nothing about the released extension depends on them being committed.
 # Running from a source checkout still works: getServerPath() falls back to server/build/.
 client/bin/
+*.vsix
 build/
 server/build/
 # A second, optimised build tree. The corpus audits walk 1,061 files and are ten to twenty
