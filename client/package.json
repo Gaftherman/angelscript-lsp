@@ -295,6 +295,12 @@
           },
           "markdownDescription": "%config.diagnosticSeverity.description%"
         },
+        "angelscript.enableVirtualMixinDocuments": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Enables experimental virtual text documents for mixin classes (angelscript-virtual://). When disabled, high-performance symbol synthesis is used."
+        },
         "angelscript.features.hover": {
           "type": "boolean",
           "default": true,

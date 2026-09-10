@@ -138,6 +138,18 @@ suite('buildServerArgs', () => {
                   `expected the override in ${args.join(' ')}`);
     });
 
+    test('enableVirtualMixinDocuments forwards --enable-virtual-mixin-documents=true when enabled', async () => {
+        const args = await withSetting('enableVirtualMixinDocuments', true, buildServerArgs);
+        assert.ok(args.includes('--enable-virtual-mixin-documents=true'),
+                  `expected --enable-virtual-mixin-documents=true in ${args.join(' ')}`);
+    });
+
+    test('enableVirtualMixinDocuments does not forward flag when disabled', async () => {
+        const args = await withSetting('enableVirtualMixinDocuments', false, buildServerArgs);
+        assert.ok(!args.some(arg => arg.includes('virtual-mixin')),
+                  `unexpected virtual-mixin flag in ${args.join(' ')}`);
+    });
+
     test('the editor language is always forwarded', () => {
         // The server localises its diagnostics and has no other way to learn which language to use.
         const args = buildServerArgs();

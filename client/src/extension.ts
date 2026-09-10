@@ -858,6 +858,11 @@ export function buildServerArgs(): string[] {
         }
     }
 
+    const enableVirtualMixin = config.get<boolean>('enableVirtualMixinDocuments', false);
+    if (enableVirtualMixin) {
+        args.push('--enable-virtual-mixin-documents=true');
+    }
+
     // The server localises its diagnostics; align them with the editor's display language.
     if (env.language) {
         args.push(`--locale=${env.language}`);
