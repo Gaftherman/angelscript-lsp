@@ -3,6 +3,7 @@
 #include "utils/PreprocessorRegions.h"
 #include "utils/WorkspaceScan.h"
 #include "utils/Constants.h"
+#include "utils/Timer.h"
 #include "lsp/PositionCodec.h"
 #include "features/hover/HoverHandler.h"
 #include "features/definition/DefinitionHandler.h"
@@ -2963,7 +2964,9 @@ namespace angel_lsp
 
     std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(const std::string &uriStr,
                                                                                  const std::string &text,
-                                                                                 const TSTree *tree)
+                                                                                 const TSTree *tree,
+                                                                                 double *outScopeMs,
+                                                                                 double *outCheckMs)
     {
         // A language server's input is whatever the user opens, and parts of the analysis are
         // superlinear, so an enormous document is a way to hang the session rather than just slow
@@ -2977,12 +2980,15 @@ namespace angel_lsp
 
             m_scopeIndex.ClearDocument(uriStr);
             m_callGraph.ClearDocument(uriStr);
+            if (outScopeMs) *outScopeMs = 0.0;
+            if (outCheckMs) *outCheckMs = 0.0;
             return {};
         }
 
         // Held privately until analysis is done - see the header for why the order matters.
         std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot;
 
+        utils::HighResTimer scopeTimer;
         if (tree)
         {
             const TSNode root = ts_tree_root_node(tree);
@@ -2994,6 +3000,10 @@ namespace angel_lsp
             m_scopeIndex.ClearDocument(uriStr);
             m_callGraph.ClearDocument(uriStr);
         }
+        if (outScopeMs)
+        {
+            *outScopeMs = scopeTimer.ElapsedMs();
+        }
 
         auto request = BuildAnalysisRequest(uriStr, text, tree);
 
@@ -3003,7 +3013,12 @@ namespace angel_lsp
         request.scopeRoot = scopeRoot;
         request.mutableScopeRoot = scopeRoot.get();
 
+        utils::HighResTimer checkTimer;
         auto diagnostics = m_semanticAnalyzer->Analyze(request);
+        if (outCheckMs)
+        {
+            *outCheckMs = checkTimer.ElapsedMs();
+        }
 
         if (scopeRoot)
             m_scopeIndex.SetScopeTree(uriStr, std::shared_ptr<const angel_lsp::analysis::Scope>(std::move(scopeRoot)));
@@ -3136,6 +3151,7 @@ namespace angel_lsp
 
     void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params)
     {
+        utils::HighResTimer totalTimer;
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
         // Remembered so diagnostics go back out under the client's own spelling - see
         // m_clientUriByKey. Recorded on every notification that carries a document, because the
@@ -3152,11 +3168,15 @@ namespace angel_lsp
                 ts_tree_delete(treeIt->second);
         }
         const std::string analysisText = AnalysisTextFor(uriStr, text);
+
+        utils::HighResTimer parseTimer;
         TSTree *tree = m_parser->Parse(analysisText);
+        double parseMs = parseTimer.ElapsedMs();
         m_documentTrees[uriStr] = tree;
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
+            utils::HighResTimer colTimer;
             std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
@@ -3174,10 +3194,13 @@ namespace angel_lsp
                     }
                 }
             }
+            double colMs = colTimer.ElapsedMs();
 
             const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
 
-            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree);
+            double scopeMs = 0.0;
+            double checkMs = 0.0;
+            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree, &scopeMs, &checkMs);
             diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
             PublishDiagnostics(uriStr, diagnostics);
@@ -3187,10 +3210,17 @@ namespace angel_lsp
                 ReanalyseOpenDocuments();
             }
 
+            double totalMs = totalTimer.ElapsedMs();
+            m_logger->LogInfo(fmt::format(
+                "[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
+                uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
+
             return;
         }
 
+        utils::HighResTimer colTimer;
         auto diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
+        double colMs = colTimer.ElapsedMs();
 
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
@@ -3199,12 +3229,19 @@ namespace angel_lsp
         // file legitimately uses, and without them every one of them would be reported undeclared.
         IndexModuleClosure(uriStr);
 
-        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree);
+        double scopeMs = 0.0;
+        double checkMs = 0.0;
+        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree, &scopeMs, &checkMs);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
         AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
 
         PublishDiagnostics(uriStr, diagnostics);
+
+        double totalMs = totalTimer.ElapsedMs();
+        m_logger->LogInfo(fmt::format(
+            "[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
+            uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
     }
 
     void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params)
@@ -3305,6 +3342,7 @@ namespace angel_lsp
 
         const std::string analysisText = AnalysisTextFor(uriStr, buffer);
 
+        utils::HighResTimer parseTimer;
         // For a predefined stub, reparse cleanly without reusing incremental state.
         TSTree *oldTree = isPredefined ? nullptr : tree;
         TSTree *newTree = m_parser->Parse(analysisText, oldTree);
@@ -3313,6 +3351,8 @@ namespace angel_lsp
             ts_tree_delete(tree);
         }
         m_documentTrees[uriStr] = newTree;
+        double parseMs = parseTimer.ElapsedMs();
+        m_logger->LogInfo(fmt::format("[DidChange Incremental Parse] File: {} | Parse: {:.2f} ms", uriStr, parseMs));
 
         if (isPredefined)
         {
@@ -3594,11 +3634,16 @@ namespace angel_lsp
     void Server::AnalyzeDocument(const std::string &uriStr, const std::string &text,
                                  angel_lsp::parser::AngelScriptParser &parser)
     {
+        utils::HighResTimer totalTimer;
         const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
         if (isPredefined)
         {
             const std::string analysisText = AnalysisTextFor(uriStr, text);
+            utils::HighResTimer parseTimer;
             TSTree *tree = parser.Parse(analysisText);
+            double parseMs = parseTimer.ElapsedMs();
+
+            utils::HighResTimer colTimer;
             std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
@@ -3616,10 +3661,13 @@ namespace angel_lsp
                     m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), analysisText));
                 }
             }
+            double colMs = colTimer.ElapsedMs();
 
             const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
 
-            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree);
+            double scopeMs = 0.0;
+            double checkMs = 0.0;
+            auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree, &scopeMs, &checkMs);
             diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
             if (tree)
@@ -3634,6 +3682,11 @@ namespace angel_lsp
                 ReanalyseOpenDocuments();
             }
 
+            double totalMs = totalTimer.ElapsedMs();
+            m_logger->LogInfo(fmt::format(
+                "[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
+                uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
+
             return;
         }
 
@@ -3647,17 +3700,23 @@ namespace angel_lsp
         // Ensure module closure files are indexed for this open document
         IndexModuleClosure(uriStr);
 
+        utils::HighResTimer parseTimer;
         TSTree *tree = parser.Parse(text);
+        double parseMs = parseTimer.ElapsedMs();
 
         // Collected into a staging table and swapped in one step, so a reader on the message loop
         // never catches this document mid-rebuild with no symbols at all.
+        utils::HighResTimer colTimer;
         angel_lsp::analysis::SymbolTable staging;
         auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, staging, m_i18n.get(), &m_config.types);
         m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
+        double colMs = colTimer.ElapsedMs();
 
         // Analysed before the tree below is deleted, not after: the conversion rules read
         // expressions straight out of it, and it is the only tree this thread is allowed to touch.
-        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, tree);
+        double scopeMs = 0.0;
+        double checkMs = 0.0;
+        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, tree, &scopeMs, &checkMs);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
         if (tree)
@@ -3666,6 +3725,11 @@ namespace angel_lsp
         AppendIncludeDiagnostics(uriStr, text, diagnostics);
 
         PublishDiagnostics(uriStr, text, diagnostics);
+
+        double totalMs = totalTimer.ElapsedMs();
+        m_logger->LogInfo(fmt::format(
+            "[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
+            uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
     }
 
     void Server::AppendIncludeDiagnostics(const std::string &uriStr, const std::string &text, std::vector<angel_lsp::analysis::Diagnostic> &diagnostics) const
@@ -4623,6 +4687,7 @@ namespace angel_lsp
         m_messageHandler->add<lsp::requests::TextDocument_Hover>(
             [this](lsp::requests::TextDocument_Hover::Params &&req) -> lsp::requests::TextDocument_Hover::Result
             {
+                utils::HighResTimer roundtripTimer;
                 if (!m_config.features.enableHover)
                 {
                     return lsp::Null{};
@@ -4649,9 +4714,15 @@ namespace angel_lsp
                         return angel_lsp::utils::IncludeResolver::ResolveIncludePath(
                             rawPath, CanonicalPathFromUri(uriStr), *SearchDirectories(),
                             IncludeAllowedRoots(), ImplicitIncludeExtension());
-                    }
+                    },
+                    m_logger.get()
                 };
                 auto hover = features::GetHover(hr);
+                double roundtripMs = roundtripTimer.ElapsedMs();
+                m_logger->LogInfo(fmt::format(
+                    "[Hover Roundtrip] Total: {:.2f} ms for {} at {}:{}",
+                    roundtripMs, doc->uri, req.position.line, req.position.character));
+
                 if (hover.has_value())
                 {
                     EncodeIn(*doc->text, hover.value());

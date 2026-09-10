@@ -10,6 +10,11 @@
 #include <string>
 #include <optional>
 
+namespace angel_lsp::utils
+{
+    class LspLogger;
+}
+
 namespace angel_lsp::features
 {
     /**
@@ -67,6 +72,11 @@ namespace angel_lsp::features
          * directory in order, and the answer is not guessable from the line itself.
          */
         std::function<std::string(const std::string &rawPath)> resolveInclude = {};
+
+        /**
+         * @brief Optional LSP logger for performance profiling telemetry.
+         */
+        angel_lsp::utils::LspLogger *logger = nullptr;
     };
 
     /**

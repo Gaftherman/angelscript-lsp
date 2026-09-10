@@ -217,3 +217,16 @@ TEST_CASE("SanitizePredefinedContent - sanitizes arbitrary list patterns without
     CHECK(sanitized.find("Vector3(float x, float y, float z);") != std::string::npos);
 }
 
+#include "utils/Timer.h"
+#include <thread>
+
+TEST_CASE("HighResTimer - measures elapsed time in ms and us")
+{
+    HighResTimer timer;
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    CHECK(timer.ElapsedMs() >= 1.0);
+    CHECK(timer.ElapsedUs() >= 1000);
+    timer.Reset();
+    CHECK(timer.ElapsedMs() >= 0.0);
+}
+

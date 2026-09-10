@@ -5984,3 +5984,39 @@ TEST_CASE("Server - Saving document suppresses duplicate background analysis")
     CHECK(savedPublished.find(R"("diagnostics":[])") != std::string::npos);
 }
 
+TEST_CASE("Telemetry - emits high-resolution profiling messages for didOpen and hover")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "int x = 42;\nvoid main() { int y = x; }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), "int x = 42;\nvoid main() { int y = x; }\n"));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"position":{"line":0,"character":4}}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "Hover Profile", 1); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.features.enableHover = true;
+    const std::string output = RunScript(serverConfig, stream);
+
+    CHECK(output.find("[Open/Change Profile]") != std::string::npos);
+    CHECK(output.find("(Parse:") != std::string::npos);
+    CHECK(output.find("Collector:") != std::string::npos);
+    CHECK(output.find("Scopes:") != std::string::npos);
+    CHECK(output.find("Checkers:") != std::string::npos);
+
+    CHECK(output.find("[Hover Profile]") != std::string::npos);
+    CHECK(output.find("NodeLookup:") != std::string::npos);
+    CHECK(output.find("SymbolResolve:") != std::string::npos);
+    CHECK(output.find("Formatting:") != std::string::npos);
+
+    CHECK(output.find("[Hover Roundtrip]") != std::string::npos);
+}
+
+

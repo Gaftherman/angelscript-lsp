@@ -746,7 +746,9 @@ namespace angel_lsp
          */
         std::vector<angel_lsp::analysis::Diagnostic> CollectScopesAndAnalyze(const std::string &uriStr,
                                                                              const std::string &text,
-                                                                             const TSTree *tree);
+                                                                             const TSTree *tree,
+                                                                             double *outScopeMs = nullptr,
+                                                                             double *outCheckMs = nullptr);
 
         /**
          * @brief Claims a predefined stub file for the given URI, releasing any earlier spelling.

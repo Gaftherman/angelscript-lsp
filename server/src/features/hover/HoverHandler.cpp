@@ -4,6 +4,8 @@
 #include "analysis/DocComment.h"
 #include "analysis/OverloadResolver.h"
 #include "utils/Utils.h"
+#include "utils/LspLogger.h"
+#include "utils/Timer.h"
 #include <sstream>
 #include <vector>
 #include <algorithm>
@@ -678,6 +680,35 @@ namespace angel_lsp::features
 
             return std::nullopt;
         }
+
+        struct HoverProfiler
+        {
+            utils::HighResTimer totalTimer;
+            angel_lsp::utils::LspLogger *m_logger = nullptr;
+            uint32_t line = 0;
+            uint32_t character = 0;
+            double nodeMs = 0.0;
+            double symMs = 0.0;
+            double fmtMs = 0.0;
+            bool emitted = false;
+
+            void Emit()
+            {
+                if (!emitted && m_logger)
+                {
+                    emitted = true;
+                    double totalMs = totalTimer.ElapsedMs();
+                    m_logger->LogInfo(fmt::format(
+                        "[Hover Profile] Total: {:.2f} ms (NodeLookup: {:.2f} ms, SymbolResolve: {:.2f} ms, Formatting: {:.2f} ms) at {}:{}",
+                        totalMs, nodeMs, symMs, fmtMs, line, character));
+                }
+            }
+
+            ~HoverProfiler()
+            {
+                Emit();
+            }
+        };
     }
 
     std::optional<lsp::Hover> GetHover(const HoverRequest &request)
@@ -686,6 +717,8 @@ namespace angel_lsp::features
         {
             return std::nullopt;
         }
+
+        HoverProfiler profiler{ {}, request.logger, request.position.line, request.position.character };
 
         // Before the tree is consulted at all. A directive is not part of the AST - the grammar
         // gives the whole line one `preproc_directive` node with no structure inside it - so there
@@ -700,15 +733,22 @@ namespace angel_lsp::features
         std::string nodeText;
         lsp::Range range{};
 
-        if (!ExtractHoverNode(rootNode, request.sourceCode, request.position.line, request.position.character, node, nodeText, range))
         {
-            return std::nullopt;
+            utils::HighResTimer nodeTimer;
+            if (!ExtractHoverNode(rootNode, request.sourceCode, request.position.line, request.position.character, node, nodeText, range))
+            {
+                profiler.nodeMs = nodeTimer.ElapsedMs();
+                return std::nullopt;
+            }
+            profiler.nodeMs = nodeTimer.ElapsedMs();
         }
 
         // 1. Primitive type check
         if (analysis::IsPrimitiveTypeName(nodeText))
         {
+            utils::HighResTimer fmtTimer;
             std::string md = "```angelscript\n(primitive type) " + nodeText + "\n```";
+            profiler.fmtMs += fmtTimer.ElapsedMs();
             return lsp::Hover{ lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), md }, range };
         }
 
@@ -728,14 +768,17 @@ namespace angel_lsp::features
 
         auto resolveMemberAccess = [&]() -> std::optional<lsp::Hover>
         {
+            utils::HighResTimer symTimer;
             if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "member_expression")
             {
+                profiler.symMs += symTimer.ElapsedMs();
                 return std::nullopt;
             }
 
             TSNode objectNode = parser::GetChildByField(parent, parser::fields::Object);
             if (ts_node_is_null(objectNode))
             {
+                profiler.symMs += symTimer.ElapsedMs();
                 return std::nullopt;
             }
 
@@ -889,7 +932,9 @@ namespace angel_lsp::features
                     }
 
                     RemoveDuplicateSymbols(memberSymbols);
+                    profiler.symMs += symTimer.ElapsedMs();
 
+                    utils::HighResTimer fmtTimer;
                     std::ostringstream oss;
                     oss << "```angelscript\n";
 
@@ -923,10 +968,12 @@ namespace angel_lsp::features
                         oss << "\n\n" << d;
                     }
 
+                    profiler.fmtMs += fmtTimer.ElapsedMs();
                     return lsp::Hover{ lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str() }, range };
                 }
             }
 
+            profiler.symMs += symTimer.ElapsedMs();
             return std::nullopt;
         };
 
@@ -943,6 +990,7 @@ namespace angel_lsp::features
         // 2. Local Scope Resolution (Variables and Parameters in Function Body)
         if (rootScope)
         {
+            utils::HighResTimer symTimer;
             const analysis::Scope *scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
             if (scope)
             {
@@ -989,6 +1037,8 @@ namespace angel_lsp::features
                         }
                     }
 
+                    profiler.symMs += symTimer.ElapsedMs();
+                    utils::HighResTimer fmtTimer;
                     std::ostringstream oss;
                     oss << "```angelscript\n";
                     switch (def->kind)
@@ -1113,9 +1163,11 @@ namespace angel_lsp::features
                         oss << "\n\n" << doc;
                     }
 
+                    profiler.fmtMs += fmtTimer.ElapsedMs();
                     return lsp::Hover{ lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str() }, range };
                 }
             }
+            profiler.symMs += symTimer.ElapsedMs();
         }
 
         // 3. Fallback Member Access Resolution if not already resolved
@@ -1129,6 +1181,7 @@ namespace angel_lsp::features
         }
 
         // 4. Container / Scoped / Global Symbol Lookup
+        utils::HighResTimer symTimer;
         std::vector<analysis::Symbol> symbols;
         if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "scoped_identifier")
         {
@@ -1189,6 +1242,8 @@ namespace angel_lsp::features
                 const analysis::LocalDefinition *def = analysis::ResolveInScope(scope, nodeText);
                 if (def)
                 {
+                    profiler.symMs += symTimer.ElapsedMs();
+                    utils::HighResTimer fmtTimer;
                     std::ostringstream oss;
                     oss << "```angelscript\n";
                     if (def->kind == analysis::LocalDefinitionKind::Field)
@@ -1205,6 +1260,7 @@ namespace angel_lsp::features
                     {
                         oss << "\n\n" << doc;
                     }
+                    profiler.fmtMs += fmtTimer.ElapsedMs();
                     return lsp::Hover{ lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str() }, range };
                 }
             }
@@ -1225,6 +1281,7 @@ namespace angel_lsp::features
 
         if (symbols.empty())
         {
+            profiler.symMs += symTimer.ElapsedMs();
             return std::nullopt;
         }
 
@@ -1241,7 +1298,9 @@ namespace angel_lsp::features
         }
 
         RemoveDuplicateSymbols(symbols);
+        profiler.symMs += symTimer.ElapsedMs();
 
+        utils::HighResTimer fmtTimer;
         std::ostringstream oss;
         oss << "```angelscript\n";
 
@@ -1274,6 +1333,7 @@ namespace angel_lsp::features
             oss << "\n\n" << d;
         }
 
+        profiler.fmtMs += fmtTimer.ElapsedMs();
         return lsp::Hover{ lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str() }, range };
     }
 }
