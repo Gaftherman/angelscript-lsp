@@ -1780,7 +1780,7 @@ mixin class WeaponMixin
 {
     void Shoot()
     {
-        self.m_iClip = 10;
+        this.m_iClip = 10;
     }
 }
 
@@ -1816,7 +1816,7 @@ mixin class WeaponMixin
 {
     void Shoot()
     {
-        self.m_iClip = 10;
+        this.m_iClip = 10;
     }
 }
 
@@ -1827,6 +1827,41 @@ class WeaponHost : WeaponMixin
 )";
         SymbolTable table;
         const auto diagnostics = AnalyzeSource(code, table, i18n, "file:///mixin_test_ok.as");
+
+        bool foundDiagnostic = false;
+        for (const auto &d : diagnostics)
+        {
+            if (d.code == "as-err-mixin-instantiation-member-not-found")
+            {
+                foundDiagnostic = true;
+            }
+        }
+        CHECK_FALSE(foundDiagnostic);
+    }
+
+    SUBCASE("self is treated as a regular identifier handle and not conflated with this")
+    {
+        const std::string code = R"(
+class CBasePlayerWeapon
+{
+    int m_iClip;
+}
+
+mixin class WeaponMixin
+{
+    void Shoot()
+    {
+        self.m_iClip = 10;
+    }
+}
+
+class WeaponHost : WeaponMixin
+{
+    CBasePlayerWeapon@ self;
+}
+)";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n, "file:///mixin_self_var.as");
 
         bool foundDiagnostic = false;
         for (const auto &d : diagnostics)

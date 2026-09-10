@@ -14,6 +14,7 @@ namespace angel_lsp::analysis::rules
     {
         ankerl::unordered_dense::set<std::string> methodNames;
         ankerl::unordered_dense::set<std::string> finalMethodNames;
+        ankerl::unordered_dense::set<std::string> allMemberNames;
         bool hasNestedType = false;
 
         /**

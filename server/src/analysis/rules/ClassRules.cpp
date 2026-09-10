@@ -435,42 +435,40 @@ namespace angel_lsp::analysis::rules
                 superHierarchy = GetInheritedTypeHierarchy(directSuperClass, ctx.request.symbolTable);
             }
 
+            auto collectContainerMembers = [&](const std::string &containerName, ankerl::unordered_dense::set<std::string> &outMembers)
+            {
+                const auto &ruleIndex = ctx.request.GetRuleIndex();
+                const auto &cm = ruleIndex.Members(containerName);
+                outMembers.insert(cm.allMemberNames.begin(), cm.allMemberNames.end());
+
+                auto lastScope = containerName.rfind("::");
+                if (lastScope != std::string::npos)
+                {
+                    const auto &cmShort = ruleIndex.Members(containerName.substr(lastScope + 2));
+                    outMembers.insert(cmShort.allMemberNames.begin(), cmShort.allMemberNames.end());
+                }
+
+                auto it = ruleIndex.qualifiedTypesByShortName.find(containerName);
+                if (it != ruleIndex.qualifiedTypesByShortName.end())
+                {
+                    for (const auto &qName : it->second)
+                    {
+                        const auto &cmQ = ruleIndex.Members(qName);
+                        outMembers.insert(cmQ.allMemberNames.begin(), cmQ.allMemberNames.end());
+                    }
+                }
+            };
+
             ankerl::unordered_dense::set<std::string> hostMembers;
             for (const auto &ancestor : hostHierarchy)
             {
-                for (const auto &mName : ctx.request.GetRuleIndex().Members(ancestor).methodNames)
-                {
-                    hostMembers.insert(mName);
-                }
-                ctx.request.symbolTable.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &syms)
-                {
-                    if (qName.starts_with(ancestor + "::"))
-                    {
-                        for (const auto &s : syms)
-                        {
-                            hostMembers.insert(s.name);
-                        }
-                    }
-                });
+                collectContainerMembers(ancestor, hostMembers);
             }
 
             ankerl::unordered_dense::set<std::string> superMembers;
             for (const auto &ancestor : superHierarchy)
             {
-                for (const auto &mName : ctx.request.GetRuleIndex().Members(ancestor).methodNames)
-                {
-                    superMembers.insert(mName);
-                }
-                ctx.request.symbolTable.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &syms)
-                {
-                    if (qName.starts_with(ancestor + "::"))
-                    {
-                        for (const auto &s : syms)
-                        {
-                            superMembers.insert(s.name);
-                        }
-                    }
-                });
+                collectContainerMembers(ancestor, superMembers);
             }
 
             for (const auto &mixinName : includedMixins)
@@ -510,16 +508,11 @@ namespace angel_lsp::analysis::rules
                 }
 
                 ankerl::unordered_dense::set<std::string> mixinSelfMembers;
-                ctx.request.symbolTable.ForEachSymbol([&](const std::string &qName, const std::vector<Symbol> &syms)
+                collectContainerMembers(mixinSym->qualifiedName, mixinSelfMembers);
+                if (mixinSym->name != mixinSym->qualifiedName)
                 {
-                    if (qName.starts_with(mixinSym->qualifiedName + "::") || qName.starts_with(mixinSym->name + "::"))
-                    {
-                        for (const auto &s : syms)
-                        {
-                            mixinSelfMembers.insert(s.name);
-                        }
-                    }
-                });
+                    collectContainerMembers(mixinSym->name, mixinSelfMembers);
+                }
 
                 std::string mixinSource;
                 if (mixinSym->fileUri == ctx.request.fileUri)
@@ -748,7 +741,7 @@ namespace angel_lsp::analysis::rules
                                 std::string objName = GetNodeText(objNode, mixinSource);
                                 std::string propName = GetNodeText(propNode, mixinSource);
 
-                                if (objName == "self" || objName == "this")
+                                if (objName == "this")
                                 {
                                     if (!propName.empty() &&
                                         !hostMembers.contains(propName) &&
@@ -822,7 +815,7 @@ namespace angel_lsp::analysis::rules
                                         !ctx.request.GetRuleIndex().allNames.contains(fnName) &&
                                         !IsReservedKeyword(fnName) &&
                                         !IsPrimitiveTypeName(fnName) &&
-                                        fnName != "self" && fnName != "this" && fnName != "super" && fnName != "cast" &&
+                                        fnName != "this" && fnName != "super" && fnName != "cast" &&
                                         !reportedMissingMembers.contains(fnName))
                                     {
                                         reportedMissingMembers.insert(fnName);

@@ -828,7 +828,7 @@ namespace angel_lsp::features
             ? (virtualMixinSym->startLine + (request.position.line - 3))
             : request.position.line;
 
-        if (nodeText == "this" || nodeText == "self")
+        if (nodeText == "this")
         {
             std::string className;
             if (isVirtualDoc && !virtualHostClass.empty())
@@ -911,7 +911,7 @@ namespace angel_lsp::features
                 {
                     std::string objText = request.sourceCode.substr(objStart, objEnd - objStart);
 
-                    if (objText == "this" || objText == "self")
+                    if (objText == "this")
                     {
                         if (isVirtualDoc && !virtualHostClass.empty())
                         {

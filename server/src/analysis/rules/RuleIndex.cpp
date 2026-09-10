@@ -156,6 +156,7 @@ namespace angel_lsp::analysis::rules
                     }
 
                     ContainerMembers &members = index->byContainer[sym.containerName];
+                    members.allMemberNames.insert(sym.name);
 
                     // Keyed the same way the table keys its buckets, so a consumer can go straight
                     // to FindSymbolsPtr instead of scanning every bucket for a matching container.
