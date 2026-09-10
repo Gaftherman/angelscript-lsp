@@ -210,11 +210,50 @@ namespace angel_lsp::analysis
     {
         std::unique_lock<std::shared_mutex> lock(m_mutex);
 
+        // Check if the document being erased contains any mixin classes
+        bool erasedMixin = false;
+        const auto fileEntry = m_keysByFile.find(fileUri);
+        if (fileEntry != m_keysByFile.end())
+        {
+            for (const auto &key : fileEntry->second)
+            {
+                const auto bucket = m_symbols.find(key);
+                if (bucket != m_symbols.end() && bucket->second)
+                {
+                    for (const auto &sym : *bucket->second)
+                    {
+                        if (sym.fileUri == fileUri && sym.type == SymbolType::Class &&
+                            std::holds_alternative<ClassSignature>(sym.signature) &&
+                            sym.GetClass().modifiers.isMixin)
+                        {
+                            erasedMixin = true;
+                            break;
+                        }
+                    }
+                }
+                if (erasedMixin)
+                {
+                    break;
+                }
+            }
+        }
+
         EraseDocumentLocked(fileUri);
 
+        bool addedMixin = false;
+        std::vector<std::string> freshClassKeys;
         for (auto &symbol : fresh)
         {
             const std::string &key = symbol.qualifiedName.empty() ? symbol.name : symbol.qualifiedName;
+
+            if (symbol.type == SymbolType::Class && std::holds_alternative<ClassSignature>(symbol.signature))
+            {
+                if (symbol.GetClass().modifiers.isMixin)
+                {
+                    addedMixin = true;
+                }
+                freshClassKeys.push_back(key);
+            }
 
             // Indexed before the move, not after: the index is keyed by the symbol's own file, not
             // by the argument - a symbol filed under a different URI would otherwise be indexed
@@ -224,9 +263,60 @@ namespace angel_lsp::analysis
             MutableBucket(m_symbols[key]).push_back(std::move(symbol));
         }
 
-        ResolveIncludedMixinsLocked();
+        if (erasedMixin || addedMixin)
+        {
+            // A mixin class was added or removed; existing classes across the entire workspace might be affected
+            ResolveIncludedMixinsLocked();
+        }
+        else if (!freshClassKeys.empty())
+        {
+            // Only resolve included mixins for the classes declared in this document
+            ResolveIncludedMixinsForKeysLocked(freshClassKeys);
+        }
+
         ++m_version;
     }
+
+    void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::string> &classKeys)
+    {
+        for (const auto &key : classKeys)
+        {
+            auto it = m_symbols.find(key);
+            if (it == m_symbols.end() || !it->second)
+            {
+                continue;
+            }
+
+            std::vector<Symbol> &symbols = MutableBucket(it->second);
+            for (auto &sym : symbols)
+            {
+                if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+                {
+                    auto &sig = std::get<ClassSignature>(sym.signature);
+                    sig.includedMixins.clear();
+                    for (const auto &b : sig.bases)
+                    {
+                        std::string clean = CleanBaseType(b);
+                        auto baseIt = m_symbols.find(clean);
+                        if (baseIt != m_symbols.end() && baseIt->second)
+                        {
+                            for (const auto &cand : *baseIt->second)
+                            {
+                                if (cand.type == SymbolType::Class &&
+                                    std::holds_alternative<ClassSignature>(cand.signature) &&
+                                    cand.GetClass().modifiers.isMixin)
+                                {
+                                    sig.includedMixins.push_back(clean);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 
     void SymbolTable::ResolveIncludedMixinsLocked()
     {

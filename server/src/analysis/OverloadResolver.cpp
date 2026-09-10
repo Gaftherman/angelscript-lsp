@@ -833,47 +833,76 @@ namespace angel_lsp::analysis
             return result;
         }
 
-        // Pareto dominance check:
-        // Candidate A is strictly better than B if for all i, costA[i] <= costB[i],
-        // and either costA[j] < costB[j] for some j, or (costA == costB and defaultArgsA < defaultArgsB).
-        auto isStrictlyBetter = [](const EvaluatedCandidate &a, const EvaluatedCandidate &b) -> bool
+        if (evaluated.size() == 1)
         {
-            bool hasStrictlyBetterArg = false;
-            for (size_t i = 0; i < a.costVector.size(); ++i)
-            {
-                if (a.costVector[i] > b.costVector[i])
-                {
-                    return false;
-                }
-                if (a.costVector[i] < b.costVector[i])
-                {
-                    hasStrictlyBetterArg = true;
-                }
-            }
-            if (hasStrictlyBetterArg)
-            {
-                return true;
-            }
-            return (a.costVector == b.costVector && a.defaultArgs < b.defaultArgs);
-        };
+            result.bestCandidate = evaluated.front().symbol;
+            result.bestScore = evaluated.front().totalCost;
+            result.bestCostVector = std::move(evaluated.front().costVector);
+            return result;
+        }
 
-        std::vector<EvaluatedCandidate> nonDominated;
+        // Fast path: any candidate with totalCost == 0 and defaultArgs == 0 has minimum
+        // possible cost (0 for every argument) and 0 defaults. Mathematically, it strictly dominates
+        // any candidate with totalCost > 0, and ties with any other candidate with cost 0 and 0 defaults.
+        std::vector<EvaluatedCandidate> exactMatches;
         for (const auto &cand : evaluated)
         {
-            bool dominated = false;
-            for (const auto &other : evaluated)
+            if (cand.totalCost == 0 && cand.defaultArgs == 0)
             {
-                if (&cand != &other && isStrictlyBetter(other, cand))
-                {
-                    dominated = true;
-                    break;
-                }
-            }
-            if (!dominated)
-            {
-                nonDominated.push_back(cand);
+                exactMatches.push_back(cand);
             }
         }
+
+        std::vector<EvaluatedCandidate> nonDominated;
+        if (!exactMatches.empty())
+        {
+            nonDominated = std::move(exactMatches);
+        }
+        else
+        {
+            // Pareto dominance check:
+            // Candidate A is strictly better than B if for all i, costA[i] <= costB[i],
+            // and either costA[j] < costB[j] for some j, or (costA == costB and defaultArgsA < defaultArgsB).
+            // A necessary condition for A to dominate B is that a.totalCost < b.totalCost.
+            auto isStrictlyBetter = [](const EvaluatedCandidate &a, const EvaluatedCandidate &b) -> bool
+            {
+                bool hasStrictlyBetterArg = false;
+                for (size_t i = 0; i < a.costVector.size(); ++i)
+                {
+                    if (a.costVector[i] > b.costVector[i])
+                    {
+                        return false;
+                    }
+                    if (a.costVector[i] < b.costVector[i])
+                    {
+                        hasStrictlyBetterArg = true;
+                    }
+                }
+                if (hasStrictlyBetterArg)
+                {
+                    return true;
+                }
+                return (a.costVector == b.costVector && a.defaultArgs < b.defaultArgs);
+            };
+
+            for (const auto &cand : evaluated)
+            {
+                bool dominated = false;
+                for (const auto &other : evaluated)
+                {
+                    if (&cand != &other && other.totalCost < cand.totalCost && isStrictlyBetter(other, cand))
+                    {
+                        dominated = true;
+                        break;
+                    }
+                }
+                if (!dominated)
+                {
+                    nonDominated.push_back(cand);
+                }
+            }
+        }
+
 
         if (nonDominated.empty())
         {

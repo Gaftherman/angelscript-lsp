@@ -9,6 +9,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <ankerl/unordered_dense.h>
 #include "parser/GrammarNames.h"
 
 namespace angel_lsp::analysis
@@ -575,17 +576,27 @@ namespace angel_lsp::analysis
             std::vector<StructFieldInfo> fields;
         };
 
+        using StructLayoutCache = ankerl::unordered_dense::map<std::string, AggregateStructInfo>;
+
         /**
          * @brief Dynamically extracts member properties in declaration order for an aggregate struct/class.
          */
         AggregateStructInfo InspectAggregateStruct(const TemplateSpelling &spelling,
-                                                   const DiagnosticContext &ctx)
+                                                   const DiagnosticContext &ctx,
+                                                   StructLayoutCache &cache)
         {
-            AggregateStructInfo info;
             if (spelling.name.empty())
             {
-                return info;
+                return {};
             }
+
+            const auto it = cache.find(spelling.name);
+            if (it != cache.end())
+            {
+                return it->second;
+            }
+
+            AggregateStructInfo info;
 
             if (ctx.request.IsRegisteredSymbol(spelling.name))
             {
@@ -695,6 +706,7 @@ namespace angel_lsp::analysis
                                           }),
                               info.fields.end());
 
+            cache.emplace(spelling.name, info);
             return info;
         }
 
@@ -703,7 +715,8 @@ namespace angel_lsp::analysis
                           DiagnosticContext &ctx,
                           const ElementContext &elements,
                           const std::unordered_set<std::string> &arrayLikeTemplates,
-                          int depth);
+                          int depth,
+                          StructLayoutCache &cache);
 
         /**
          * @brief Validates elements of a sequence or multi-dimensional container recursively.
@@ -714,7 +727,8 @@ namespace angel_lsp::analysis
                                                DiagnosticContext &ctx,
                                                const ElementContext &elements,
                                                const std::unordered_set<std::string> &arrayLikeTemplates,
-                                               int depth)
+                                               int depth,
+                                               StructLayoutCache &cache)
         {
             if (depth >= k_maxAstDepth || ts_node_is_null(node))
             {
@@ -734,14 +748,14 @@ namespace angel_lsp::analysis
                     else
                     {
                         ValidateMultiDimensionalContainer(child, dimension - 1, elemType,
-                                                          ctx, elements, arrayLikeTemplates, depth + 1);
+                                                          ctx, elements, arrayLikeTemplates, depth + 1, cache);
                     }
                 }
                 else
                 {
                     if (NodeType(child) == "initializer_list")
                     {
-                        ValidateList(child, elemType, ctx, elements, arrayLikeTemplates, depth + 1);
+                        ValidateList(child, elemType, ctx, elements, arrayLikeTemplates, depth + 1, cache);
                     }
                     else
                     {
@@ -756,7 +770,8 @@ namespace angel_lsp::analysis
                           DiagnosticContext &ctx,
                           const ElementContext &elements,
                           const std::unordered_set<std::string> &arrayLikeTemplates,
-                          int depth)
+                          int depth,
+                          StructLayoutCache &cache)
         {
             if (depth >= k_maxAstDepth || ts_node_is_null(listNode))
             {
@@ -835,12 +850,12 @@ namespace angel_lsp::analysis
             if (containerInfo.isContainer)
             {
                 ValidateMultiDimensionalContainer(listNode, containerInfo.dimensions, containerInfo.elementType,
-                                                  ctx, elements, arrayLikeTemplates, depth);
+                                                  ctx, elements, arrayLikeTemplates, depth, cache);
                 return;
             }
 
             // 3. Class / Struct Aggregates
-            const AggregateStructInfo structInfo = InspectAggregateStruct(spelling, ctx);
+            const AggregateStructInfo structInfo = InspectAggregateStruct(spelling, ctx, cache);
             if (!structInfo.fields.empty())
             {
                 if (!structInfo.hasListSupport)
@@ -868,7 +883,7 @@ namespace angel_lsp::analysis
                     TSNode elem = ts_node_named_child(listNode, i);
                     if (NodeType(elem) == "initializer_list")
                     {
-                        ValidateList(elem, structInfo.fields[i].type, ctx, elements, arrayLikeTemplates, depth + 1);
+                        ValidateList(elem, structInfo.fields[i].type, ctx, elements, arrayLikeTemplates, depth + 1, cache);
                     }
                     else
                     {
@@ -896,19 +911,23 @@ namespace angel_lsp::analysis
                                          const Scope *scope,
                                          DiagnosticContext &ctx)
     {
+        StructLayoutCache cache;
         ValidateList(listNode, targetType, ctx, ElementContext{ sourceCode, scope },
-                     ctx.request.GetArrayLikeTemplateNames(), 0);
+                     ctx.request.GetArrayLikeTemplateNames(), 0, cache);
     }
 
     void ValidateInitializerList(TSNode listNode, const std::string &expectedType, DiagnosticContext &ctx)
     {
         ElementContext elements{ ctx.request.sourceCode, ctx.request.scopeRoot.get() };
-        ValidateList(listNode, expectedType, ctx, elements, ctx.request.GetArrayLikeTemplateNames(), 0);
+        StructLayoutCache cache;
+        ValidateList(listNode, expectedType, ctx, elements, ctx.request.GetArrayLikeTemplateNames(), 0, cache);
     }
+
 
     void CheckInitializerLists(const InitializerListCheckRequest &request, DiagnosticContext &ctx)
     {
         const std::unordered_set<std::string> arrayLikeTemplates = ctx.request.GetArrayLikeTemplateNames();
+        StructLayoutCache structCache;
 
         // The scope the list sits in, not the document's root. Resolving a name walks a scope chain
         // *upwards*, so a root handed to a list inside a function resolves globals and nothing else:
@@ -945,7 +964,7 @@ namespace angel_lsp::analysis
                 if (!ts_node_is_null(typeNode) && !ts_node_is_null(valueNode))
                 {
                     ValidateList(valueNode, GetNodeText(typeNode, request.sourceCode), ctx,
-                                 elementsAt(valueNode), arrayLikeTemplates, 0);
+                                 elementsAt(valueNode), arrayLikeTemplates, 0, structCache);
                 }
             }
             else if (nodeType == "assignment_expression")
@@ -968,7 +987,7 @@ namespace angel_lsp::analysis
                             request.sourceCode, ctx.request.fileUri);
                         if (!targetType.empty())
                         {
-                            ValidateList(value, targetType, ctx, elements, arrayLikeTemplates, 0);
+                            ValidateList(value, targetType, ctx, elements, arrayLikeTemplates, 0, structCache);
                         }
                     }
                 }
@@ -986,7 +1005,7 @@ namespace angel_lsp::analysis
                         if (!returnType.empty())
                         {
                             ValidateList(value, returnType, ctx, elementsAt(value),
-                                         arrayLikeTemplates, 0);
+                                         arrayLikeTemplates, 0, structCache);
                         }
                     }
                 }
@@ -1020,11 +1039,12 @@ namespace angel_lsp::analysis
                         if (!ts_node_is_null(valueNode) && NodeType(valueNode) == "initializer_list")
                         {
                             ValidateList(valueNode, declaredType, ctx, elementsAt(valueNode),
-                                         arrayLikeTemplates, 0);
+                                         arrayLikeTemplates, 0, structCache);
                         }
                     }
                 }
             }
+
 
             const uint32_t count = ts_node_child_count(node);
             for (uint32_t i = 0; i < count; ++i)

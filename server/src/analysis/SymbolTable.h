@@ -506,6 +506,7 @@ namespace angel_lsp::analysis
         /** @brief The half both ReplaceDocumentSymbols overloads share: take the write lock, swap the file's symbols for these. */
         void PublishDocumentSymbols(const std::string &fileUri, std::vector<Symbol> &&fresh);
         void ResolveIncludedMixinsLocked();
+        void ResolveIncludedMixinsForKeysLocked(const std::vector<std::string> &classKeys);
 
         struct TransparentStringHash
         {
