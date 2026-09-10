@@ -94,6 +94,78 @@ namespace angel_lsp::utils
         return fileUri.ends_with(extension) || fileUri.ends_with(fmt::format("/{}", extension));
     }
 
+    std::string SanitizePredefinedContent(std::string_view source)
+    {
+        if (source.empty())
+        {
+            return {};
+        }
+
+        // Quick check: inline list patterns only occur on factory/constructor lines
+        // where a parameter list is followed by `{...};`.
+        if (source.find('{') == std::string_view::npos ||
+            (source.find(") {") == std::string_view::npos &&
+             source.find("){") == std::string_view::npos &&
+             source.find(")\t{") == std::string_view::npos &&
+             source.find("repeat") == std::string_view::npos))
+        {
+            return std::string(source);
+        }
+
+        std::string out;
+        out.reserve(source.size());
+
+        size_t lineStart = 0;
+        while (lineStart < source.size())
+        {
+            size_t lineEnd = source.find('\n', lineStart);
+            const bool last = (lineEnd == std::string_view::npos);
+            if (last)
+            {
+                lineEnd = source.size();
+            }
+
+            std::string_view line = source.substr(lineStart, lineEnd - lineStart);
+
+            // The pattern sits between the `)` that closes parameters and the `;` that ends
+            // the declaration. Both must be on this line, with a `{...}` between.
+            const size_t closeParen = line.rfind(')');
+            const size_t open = (closeParen == std::string_view::npos)
+                                    ? std::string_view::npos
+                                    : line.find('{', closeParen);
+            const size_t close = (open == std::string_view::npos)
+                                     ? std::string_view::npos
+                                     : line.rfind('}');
+            const size_t semi = (close == std::string_view::npos)
+                                    ? std::string_view::npos
+                                    : line.find(';', close);
+
+            const bool hasPattern = (open != std::string_view::npos && close > open &&
+                                     semi != std::string_view::npos);
+
+            if (!hasPattern)
+            {
+                out.append(line);
+            }
+            else
+            {
+                // Blank the inline pattern { ... } with spaces, preserving exact byte count and column numbers.
+                out.append(line.substr(0, open));
+                out.append(close - open + 1, ' ');
+                out.append(line.substr(close + 1));
+            }
+
+            if (last)
+            {
+                break;
+            }
+            out.push_back('\n');
+            lineStart = lineEnd + 1;
+        }
+
+        return out;
+    }
+
     bool IsPrimitiveType(const std::string &typeName)
     {
         return parser::primitives::IsPrimitive(typeName);

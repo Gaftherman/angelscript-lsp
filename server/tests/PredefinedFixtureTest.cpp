@@ -8,6 +8,7 @@
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -441,4 +442,37 @@ TEST_CASE("PredefinedFixture - The declared list patterns are enforced")
     // complex is `{float, float}` - a fixed pair, not a repeat.
     CHECK(errorsIn("void main() { complex c = {1, 2}; }\n").empty());
     CHECK(errorsIn("void main() { complex c = {{1}, 2}; }\n").size() == 1);
+}
+
+TEST_CASE("PredefinedFixture - dictionary retains all member methods when defined with list pattern")
+{
+    const std::string stubWithPattern =
+        "class dictionaryValue {}\n"
+        "class dictionary {\n"
+        "    dictionary();\n"
+        "    dictionary(int &in type, int &in list) {repeat {string, ?}};\n"
+        "    void deleteAll();\n"
+        "    bool exists(const string &in) const;\n"
+        "    void set(const string &in, const ? &in);\n"
+        "    dictionaryValue& opIndex(const string &in);\n"
+        "}\n";
+
+    const std::string sanitized = angel_lsp::utils::SanitizePredefinedContent(stubWithPattern);
+
+    AngelScriptParser parser;
+    TSTree *tree = parser.Parse(sanitized);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{ nullptr };
+    SymbolTable table;
+    std::vector<Diagnostic> diags = collector.CollectSymbolsWithTree("file:///as.predefined", sanitized, tree, table, nullptr, nullptr);
+    CHECK(diags.empty());
+
+    // Verify all member methods exist in the symbol table
+    CHECK(table.HasSymbol("dictionary::deleteAll"));
+    CHECK(table.HasSymbol("dictionary::exists"));
+    CHECK(table.HasSymbol("dictionary::set"));
+    CHECK(table.HasSymbol("dictionary::opIndex"));
+
+    ts_tree_delete(tree);
 }

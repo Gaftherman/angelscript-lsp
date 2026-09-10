@@ -168,3 +168,36 @@ TEST_CASE("Utils - A directory is pruned when a pattern reaches into it")
     // An empty list excludes nothing, which is what every caller that passes no globs relies on.
     CHECK_FALSE(IsExcludedDirectory("C:/work/project/build", {}));
 }
+
+TEST_CASE("SanitizePredefinedContent - blanks inline list patterns and preserves byte offsets")
+{
+    const std::string input =
+        "class dictionary {\n"
+        "\tdictionary();\t// asBEHAVE_FACTORY;\n"
+        "\tdictionary(int &in type, int &in list) {repeat {string, ?}};\t// asBEHAVE_LIST_FACTORY\n"
+        "\tvoid deleteAll();\n"
+        "}\n";
+
+    const std::string sanitized = SanitizePredefinedContent(input);
+    CHECK(sanitized.size() == input.size());
+    CHECK(sanitized.find("{repeat {string, ?}}") == std::string::npos);
+    CHECK(sanitized.find("dictionary(int &in type, int &in list)") != std::string::npos);
+    CHECK(sanitized.find(";\t// asBEHAVE_LIST_FACTORY") != std::string::npos);
+    CHECK(sanitized.find("void deleteAll();") != std::string::npos);
+}
+
+TEST_CASE("SanitizePredefinedContent - handles multiple patterns in one file")
+{
+    const std::string input =
+        "class array<T> {\n"
+        "\tarray(int &in type, int &in list) {repeat T};\n"
+        "}\n"
+        "class complex {\n"
+        "\tcomplex(const int &in) {float, float};\n"
+        "}\n";
+
+    const std::string sanitized = SanitizePredefinedContent(input);
+    CHECK(sanitized.size() == input.size());
+    CHECK(sanitized.find("{repeat T}") == std::string::npos);
+    CHECK(sanitized.find("{float, float}") == std::string::npos);
+}

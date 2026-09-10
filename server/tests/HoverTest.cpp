@@ -6,6 +6,7 @@
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
+#include "utils/Utils.h"
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;
@@ -801,11 +802,11 @@ TEST_CASE("Hover - Predefined stub with inline list pattern allows hover on subs
     const std::string stub =
         "class array<T>\n"
         "{\n"
-        "    array(); // asBEHAVE_LIST_FACTORY\n"
+        "    array(int &in type, int &in list) {repeat T}; // asBEHAVE_LIST_FACTORY\n"
         "    T& opIndex(uint index);\n"
         "}\n";
 
-    const std::string &rewritten = stub;
+    const std::string rewritten = angel_lsp::utils::SanitizePredefinedContent(stub);
 
     AngelScriptParser parser;
     SymbolCollector symbolCollector{ nullptr };

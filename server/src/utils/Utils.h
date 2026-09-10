@@ -48,6 +48,22 @@ namespace angel_lsp::utils
     bool IsPredefinedFile(const std::string_view &fileUri, const std::string_view extension);
 
     /**
+     * @brief Sanitizes predefined stub content before parsing by blanking inline list patterns.
+     *
+     * Native AngelScript stubs (.predefined files) can contain documentation notation for list factories:
+     *     array(int &in type, int &in list) {repeat T};
+     *     dictionary(int &in type, int &in list) {repeat {string, ?}};
+     * Tree-Sitter grammar cannot parse `{repeat ...}` tokens inside class bodies and reports syntax errors,
+     * which causes the AST parser to drop whole classes (e.g. dictionary).
+     * Blanking the `{...}` pattern between `)` and `;` with spaces preserves exact line and column numbers
+     * without shifting offsets, allowing Tree-Sitter to parse valid method declarations cleanly.
+     *
+     * @param source The stub's full text.
+     * @return Sanitized text where inline patterns are replaced by spaces.
+     */
+    std::string SanitizePredefinedContent(std::string_view source);
+
+    /**
      * @brief Glob match over a `/`-separated path.
      *
      * `?` matches one character, `*` matches within a single segment, and `**` spans any number of

@@ -1954,6 +1954,7 @@ namespace angel_lsp
         }
 
         std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        content = angel_lsp::utils::SanitizePredefinedContent(content);
 
         // Claim and collect under one lock: didOpen may be claiming the very same stub under the
         // client's URI spelling on the message loop, and a claim that lands mid-collect would purge
@@ -3124,8 +3125,12 @@ namespace angel_lsp
         }
     }
 
-    std::string Server::AnalysisTextFor(const std::string & /*uriStr*/, const std::string &text) const
+    std::string Server::AnalysisTextFor(const std::string &uriStr, const std::string &text) const
     {
+        if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+        {
+            return angel_lsp::utils::SanitizePredefinedContent(text);
+        }
         return text;
     }
 
