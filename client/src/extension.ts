@@ -4,7 +4,8 @@ import * as fs from 'fs';
 import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
     StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n,
-    TextEditorDecorationType, Range, TextEditor, WorkspaceEdit
+    TextEditorDecorationType, Range, TextEditor, WorkspaceEdit, TextDocumentContentProvider,
+    CancellationToken
 } from 'vscode';
 // Types only: erased at compile time, so naming them here costs nothing at runtime.
 import type {
@@ -1023,6 +1024,31 @@ async function startClient(context: ExtensionContext): Promise<void> {
 
 
 /**
+ * @brief Provides read-only text content for synthesized virtual mixin documents.
+ *
+ * Requests virtual document content from the language server via the custom
+ * JSON-RPC method `angelscript/virtualDocumentContent`.
+ */
+export class VirtualMixinContentProvider implements TextDocumentContentProvider {
+    async provideTextDocumentContent(uri: Uri, _token?: CancellationToken): Promise<string> {
+        const clientInstance = activeClient();
+        if (!clientInstance) {
+            return '// Language server is not running.';
+        }
+
+        try {
+            const response = await clientInstance.sendRequest<{ content: string }>(
+                'angelscript/virtualDocumentContent',
+                { uri: uri.toString() }
+            );
+            return response?.content ?? '// Virtual mixin document content is unavailable.';
+        } catch (error) {
+            return `// Failed to retrieve virtual mixin document: ${error instanceof Error ? error.message : String(error)}`;
+        }
+    }
+}
+
+/**
  * @brief Activates the AngelScript Language Client extension interface handlers.
  * @param context The extension context provided by VS Code.
  */
@@ -1058,6 +1084,10 @@ export async function activate(context: ExtensionContext) {
         context.subscriptions.push(
             commands.registerCommand(FORMAT_STUB_COMMAND, (resource?: Uri) => formatPredefinedStub(resource)));
     });
+
+    const virtualMixinProvider = new VirtualMixinContentProvider();
+    context.subscriptions.push(
+        workspace.registerTextDocumentContentProvider('angelscript-virtual', virtualMixinProvider));
 
     // An editor can appear after the notification that described its document - a second group, or
     // a tab returned to - and there is nothing to recompute from at that point, so the last thing

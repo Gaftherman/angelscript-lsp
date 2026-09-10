@@ -976,6 +976,20 @@ namespace angel_lsp
         lsp::requests::Workspace_ExecuteCommand::Result HandleRequestsWorkspace_ExecuteCommand(lsp::requests::Workspace_ExecuteCommand::Params &&params);
 
         /**
+         * @brief Generates virtual mixin document content for an angelscript-virtual URI.
+         * @param uri The synthetic virtual URI (e.g. angelscript-virtual://HostClass/MixinName.as).
+         * @return Synthesized AngelScript document text.
+         */
+        std::string GenerateVirtualMixinDocument(std::string_view uri);
+
+        /**
+         * @brief Handles custom JSON-RPC request for angelscript/virtualDocumentContent.
+         * @param params JSON parameter containing the URI.
+         * @return JSON object with { "content": "..." }.
+         */
+        lsp::json::Value HandleRequestsVirtualDocumentContent(lsp::json::Value &&params);
+
+        /**
          * @brief Full text of an indexed document, or nullptr when the server holds none.
          *
          * Needed by every position conversion: translating a Tree-sitter byte column into the

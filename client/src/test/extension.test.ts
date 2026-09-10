@@ -1,10 +1,10 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import { ConfigurationTarget, commands, extensions, workspace } from 'vscode';
+import { ConfigurationTarget, commands, extensions, workspace, Uri } from 'vscode';
 
 import * as os from 'os';
 
-import { buildServerArgs, portableStubPath } from '../extension';
+import { buildServerArgs, portableStubPath, VirtualMixinContentProvider } from '../extension';
 
 // =====================================================================================
 // The client's settings-to-arguments mapping.
@@ -434,3 +434,14 @@ suite('activation timings', () => {
                   JSON.stringify(timings));
     });
 });
+
+suite('VirtualMixinContentProvider', () => {
+    test('instantiates and provides fallback message when client is inactive', async () => {
+        const provider = new VirtualMixinContentProvider();
+        const dummyUri = Uri.parse('angelscript-virtual://TestHost/TestMixin.as');
+        const content = await provider.provideTextDocumentContent(dummyUri);
+        assert.ok(typeof content === 'string');
+        assert.ok(content.length > 0);
+    });
+});
+

@@ -1179,7 +1179,12 @@ namespace angel_lsp
         // unopenable, which makes every "unknown type" impossible to check by hand.
         {
             lsp::TextDocumentContentOptions contentOpts;
-            contentOpts.schemes = lsp::Array<lsp::String>{ "angelscript-predefined" };
+            lsp::Array<lsp::String> schemes{ "angelscript-predefined" };
+            if (m_config.features.enableVirtualMixinDocuments)
+            {
+                schemes.push_back("angelscript-virtual");
+            }
+            contentOpts.schemes = schemes;
             workspaceOpts.textDocumentContent = contentOpts;
         }
 
@@ -4661,6 +4666,167 @@ namespace angel_lsp
                              treeIt == m_documentTrees.end() ? nullptr : treeIt->second };
     }
 
+    std::string Server::GenerateVirtualMixinDocument(std::string_view uri)
+    {
+        // Expected format: angelscript-virtual://<host_class>/<mixin>.as
+        std::string_view s = uri;
+        static constexpr std::string_view kVirtualSchemeFull = "angelscript-virtual://";
+        static constexpr std::string_view kVirtualSchemeShort = "angelscript-virtual:";
+
+        if (s.starts_with(kVirtualSchemeFull))
+        {
+            s.remove_prefix(kVirtualSchemeFull.size());
+        }
+        else if (s.starts_with(kVirtualSchemeShort))
+        {
+            s.remove_prefix(kVirtualSchemeShort.size());
+            while (!s.empty() && s.front() == '/')
+            {
+                s.remove_prefix(1);
+            }
+        }
+
+        std::string hostClass;
+        std::string mixinName;
+        auto slashPos = s.find('/');
+        if (slashPos != std::string_view::npos)
+        {
+            hostClass = std::string(s.substr(0, slashPos));
+            std::string_view mixinPart = s.substr(slashPos + 1);
+            if (mixinPart.ends_with(".as"))
+            {
+                mixinPart.remove_suffix(3);
+            }
+            mixinName = std::string(mixinPart);
+        }
+        else
+        {
+            mixinName = std::string(s);
+            if (mixinName.ends_with(".as"))
+            {
+                mixinName = mixinName.substr(0, mixinName.size() - 3);
+            }
+        }
+
+        std::string mixinPhysicalFileUri;
+        uint32_t mixinStartLine = 0;
+        uint32_t mixinEndLine = 0;
+        bool foundMixin = false;
+
+        auto candidates = m_symbolTable.FindSymbols(mixinName);
+        for (const auto &cand : candidates)
+        {
+            if (cand.type == angel_lsp::analysis::SymbolType::Class)
+            {
+                mixinPhysicalFileUri = cand.fileUri;
+                mixinStartLine = cand.startLine;
+                mixinEndLine = cand.fullRange.endLine > 0 ? cand.fullRange.endLine : cand.endLine;
+                foundMixin = true;
+                break;
+            }
+        }
+
+        // Construct 3-line header (lines 0..2)
+        std::string result;
+        result += fmt::format("// Virtual expanded mixin {} for host class {}\n", mixinName, hostClass);
+        result += fmt::format("// Origin: {}\n", mixinPhysicalFileUri);
+        result += "\n";
+
+        std::string sourceText;
+        if (!mixinPhysicalFileUri.empty())
+        {
+            if (const std::string *docText = FindDocumentText(mixinPhysicalFileUri))
+            {
+                sourceText = *docText;
+            }
+            else
+            {
+                std::string filePath = angel_lsp::utils::UriToPath(mixinPhysicalFileUri);
+                std::ifstream file(filePath, std::ios::binary);
+                if (file.is_open())
+                {
+                    sourceText.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                }
+            }
+        }
+
+        if (foundMixin && !sourceText.empty())
+        {
+            std::vector<std::string_view> lines;
+            size_t start = 0;
+            while (start < sourceText.size())
+            {
+                size_t end = sourceText.find('\n', start);
+                if (end == std::string_view::npos)
+                {
+                    lines.push_back(std::string_view(sourceText).substr(start));
+                    break;
+                }
+                std::string_view line = std::string_view(sourceText).substr(start, end - start);
+                if (!line.empty() && line.back() == '\r')
+                {
+                    line.remove_suffix(1);
+                }
+                lines.push_back(line);
+                start = end + 1;
+            }
+
+            if (mixinStartLine < lines.size())
+            {
+                size_t effectiveEndLine = std::max<size_t>(mixinStartLine, mixinEndLine);
+                size_t clampEnd = std::min<size_t>(effectiveEndLine, lines.size() - 1);
+                for (size_t i = mixinStartLine; i <= clampEnd; ++i)
+                {
+                    result.append(lines[i]);
+                    result.push_back('\n');
+                }
+            }
+        }
+        else
+        {
+            // Fallback synthesis if physical source is unavailable
+            result += fmt::format("mixin class {}\n{{\n", mixinName);
+            for (const auto &cand : candidates)
+            {
+                if (cand.type == angel_lsp::analysis::SymbolType::Function && cand.containerName == mixinName)
+                {
+                    result += fmt::format("    void {}();\n", cand.name);
+                }
+            }
+            result += "}\n";
+        }
+
+        return result;
+    }
+
+    lsp::json::Value Server::HandleRequestsVirtualDocumentContent(lsp::json::Value &&params)
+    {
+        std::string uriStr;
+        if (params.isObject())
+        {
+            const auto &obj = params.object();
+            if (const auto *val = obj.find("uri"); val && val->isString())
+            {
+                uriStr = val->string();
+            }
+        }
+        else if (params.isString())
+        {
+            uriStr = params.string();
+        }
+
+        if (uriStr.empty())
+        {
+            throw lsp::RequestError(lsp::MessageError::InvalidParams, "Missing 'uri' parameter");
+        }
+
+        std::string content = GenerateVirtualMixinDocument(uriStr);
+
+        lsp::json::Object answer;
+        answer["content"] = lsp::json::Value(std::move(content));
+        return lsp::json::Value(std::move(answer));
+    }
+
     void Server::InitHandles()
     {
         m_messageHandler->add<lsp::requests::Initialize>(
@@ -4940,6 +5106,14 @@ namespace angel_lsp
                 // "unknown type" impossible to check by hand.
                 const std::string requested = req.uri.toString();
                 static constexpr std::string_view k_scheme = "angelscript-predefined:";
+                static constexpr std::string_view k_virtual_scheme = "angelscript-virtual:";
+
+                if (requested.starts_with(k_virtual_scheme))
+                {
+                    lsp::TextDocumentContentResult result;
+                    result.text = GenerateVirtualMixinDocument(requested);
+                    return result;
+                }
 
                 if (!requested.starts_with(k_scheme))
                 {
@@ -4982,6 +5156,12 @@ namespace angel_lsp
                 lsp::TextDocumentContentResult result;
                 result.text.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
                 return result;
+            });
+
+        m_messageHandler->add("angelscript/virtualDocumentContent",
+            [this](lsp::json::Value &&params) -> lsp::json::Value
+            {
+                return this->HandleRequestsVirtualDocumentContent(std::move(params));
             });
 
         m_messageHandler->add<lsp::notifications::CancelRequest>(

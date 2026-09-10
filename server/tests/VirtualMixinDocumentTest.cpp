@@ -1,7 +1,10 @@
-﻿#include <doctest/doctest.h>
+#include <doctest/doctest.h>
 
 #include "analysis/SymbolTable.h"
 #include "analysis/SymbolCollector.h"
+#include "analysis/LocalScopeCollector.h"
+#include "analysis/ScopeTree.h"
+#include "features/definition/DefinitionHandler.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -65,3 +68,90 @@ TEST_CASE("VirtualMixinDocument - Toggle Feature Flag and Synthetic URIs")
         CHECK(symbols[0].virtualFileUri == "angelscript-virtual://Rifle/WeaponMixin.as");
     }
 }
+
+TEST_CASE("VirtualMixinDocument - Definition Routing Physical vs Virtual")
+{
+    AngelScriptParser parser;
+    SymbolCollector collector{ nullptr };
+    LocalScopeCollector scopeCollector{ nullptr };
+
+    std::string mixinUri = "file:///mixin.as";
+    std::string mixinCode =
+        "mixin class WeaponMixin {\n"
+        "    void Deploy(int speed) {}\n"
+        "}\n";
+
+    std::string callerUri = "file:///caller.as";
+    std::string callerCode =
+        "class Rifle : WeaponMixin {}\n"
+        "void Main() {\n"
+        "    Rifle r;\n"
+        "    r.Deploy(42);\n"
+        "}\n";
+
+    SUBCASE("Feature flag disabled: Go-to-Definition returns physical mixin URI and line")
+    {
+        SymbolTable table;
+        ScopeIndex scopeIndex;
+        table.SetVirtualMixinDocumentsEnabled(false);
+
+        collector.CollectSymbols(mixinUri, mixinCode, parser, table);
+        collector.CollectSymbols(callerUri, callerCode, parser, table);
+        table.ResolveIncludedMixins();
+
+        auto rootScope = scopeCollector.CollectScopes(callerCode, parser);
+        if (rootScope)
+        {
+            scopeIndex.SetScopeTree(callerUri, std::move(rootScope));
+        }
+
+        TSTree *tree = parser.Parse(callerCode);
+        REQUIRE(tree != nullptr);
+
+        // Cursor on "Deploy" at line 3, character 6
+        features::DefinitionRequest req{ callerUri, callerCode, tree, table, scopeIndex, lsp::Position{ 3, 6 } };
+        auto defs = features::GetDefinition(req);
+        REQUIRE(defs.has_value());
+        REQUIRE(!defs->empty());
+
+        CHECK((*defs)[0].uri.toString() == mixinUri);
+        CHECK((*defs)[0].range.start.line == 1);
+
+        ts_tree_delete(tree);
+    }
+
+    SUBCASE("Feature flag enabled: Go-to-Definition returns virtual mixin URI with mapped line offset")
+    {
+        SymbolTable table;
+        ScopeIndex scopeIndex;
+        table.SetVirtualMixinDocumentsEnabled(true);
+
+        collector.CollectSymbols(mixinUri, mixinCode, parser, table);
+        collector.CollectSymbols(callerUri, callerCode, parser, table);
+        table.ResolveIncludedMixins();
+
+        auto rootScope = scopeCollector.CollectScopes(callerCode, parser);
+        if (rootScope)
+        {
+            scopeIndex.SetScopeTree(callerUri, std::move(rootScope));
+        }
+
+        TSTree *tree = parser.Parse(callerCode);
+        REQUIRE(tree != nullptr);
+
+        // Cursor on "Deploy" at line 3, character 6
+        features::DefinitionRequest req{ callerUri, callerCode, tree, table, scopeIndex, lsp::Position{ 3, 6 } };
+        auto defs = features::GetDefinition(req);
+        REQUIRE(defs.has_value());
+        REQUIRE(!defs->empty());
+
+        CHECK((*defs)[0].uri.toString() == "angelscript-virtual://Rifle/WeaponMixin.as");
+        // Header is 3 lines (0, 1, 2). WeaponMixin starts at line 0 in mixin.as.
+        // Deploy is at line 1 in mixin.as.
+        // Mapped line = 3 + (1 - 0) = 4.
+        CHECK((*defs)[0].range.start.line == 4);
+
+        ts_tree_delete(tree);
+    }
+}
+

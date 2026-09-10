@@ -276,6 +276,54 @@ namespace angel_lsp::features
 
             return candidates;
         }
+
+        /**
+         * @brief Converts a Symbol into an LSP Location, routing to virtual mixin documents if enabled.
+         * @param sym Resolved symbol.
+         * @param request Definition context containing the symbol table.
+         * @return Formatted LSP Location with appropriate URI and mapped line range.
+         */
+        lsp::Location MakeLocation(const analysis::Symbol &sym, const DefinitionRequest &request)
+        {
+            if (sym.isSynthesized && request.symbolTable.IsVirtualMixinDocumentsEnabled() && !sym.virtualFileUri.empty())
+            {
+                uint32_t mixinStartLine = 0;
+                bool foundMixin = false;
+                if (!sym.containerName.empty())
+                {
+                    auto mixinSymbols = request.symbolTable.FindSymbols(sym.containerName);
+                    for (const auto &mClass : mixinSymbols)
+                    {
+                        if (mClass.type == analysis::SymbolType::Class && mClass.fileUri == sym.fileUri)
+                        {
+                            mixinStartLine = mClass.startLine;
+                            foundMixin = true;
+                            break;
+                        }
+                    }
+                }
+
+                uint32_t mappedStartLine = 3 + (foundMixin && sym.startLine >= mixinStartLine ? (sym.startLine - mixinStartLine) : sym.startLine);
+                uint32_t lineDiff = sym.endLine >= sym.startLine ? (sym.endLine - sym.startLine) : 0;
+                uint32_t mappedEndLine = mappedStartLine + lineDiff;
+
+                return lsp::Location{
+                    lsp::DocumentUri::parse(sym.virtualFileUri),
+                    lsp::Range{
+                        lsp::Position{ mappedStartLine, sym.startCharacter },
+                        lsp::Position{ mappedEndLine, sym.endCharacter }
+                    }
+                };
+            }
+
+            return lsp::Location{
+                lsp::DocumentUri::parse(sym.fileUri),
+                lsp::Range{
+                    lsp::Position{ sym.startLine, sym.startCharacter },
+                    lsp::Position{ sym.endLine, sym.endCharacter }
+                }
+            };
+        }
     }
 
     std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest &request)
@@ -550,13 +598,7 @@ namespace angel_lsp::features
                 {
                     if (sym.type != analysis::SymbolType::CallReference)
                     {
-                        memLocations.push_back(lsp::Location{
-                            lsp::DocumentUri::parse(sym.fileUri),
-                            lsp::Range{
-                                lsp::Position{ sym.startLine, sym.startCharacter },
-                                lsp::Position{ sym.endLine, sym.endCharacter }
-                            }
-                        });
+                        memLocations.push_back(MakeLocation(sym, request));
                     }
                 }
 
@@ -690,13 +732,7 @@ namespace angel_lsp::features
         {
             if (sym.type != analysis::SymbolType::CallReference)
             {
-                locations.push_back(lsp::Location{
-                    lsp::DocumentUri::parse(sym.fileUri),
-                    lsp::Range{
-                        lsp::Position{ sym.startLine, sym.startCharacter },
-                        lsp::Position{ sym.endLine, sym.endCharacter }
-                    }
-                });
+                locations.push_back(MakeLocation(sym, request));
             }
         }
 
@@ -792,13 +828,7 @@ namespace angel_lsp::features
                 sym.type == analysis::SymbolType::Typedef ||
                 sym.type == analysis::SymbolType::Funcdef)
             {
-                locations.push_back(lsp::Location{
-                    lsp::DocumentUri::parse(sym.fileUri),
-                    lsp::Range{
-                        lsp::Position{ sym.startLine, sym.startCharacter },
-                        lsp::Position{ sym.endLine, sym.endCharacter }
-                    }
-                });
+                locations.push_back(MakeLocation(sym, request));
             }
         }
 
