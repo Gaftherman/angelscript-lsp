@@ -630,3 +630,53 @@ TEST_CASE("ListPattern - an omitted element counts as a value")
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-too-few"));
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-too-many"));
 }
+
+TEST_CASE("InitializerList - generic user-defined aggregate struct initialization")
+{
+    const std::string vecStub = "class Vector3 { float x; float y; float z; };\n";
+
+    // Exact count of fields passes
+    CHECK_FALSE(HasAnyCode(DiagnoseAll(vecStub + "void main() { Vector3 v = {1.0, 2.0, 3.0}; }\n"),
+                           "as-err-initializer-list-too-many"));
+    CHECK_FALSE(HasAnyCode(DiagnoseAll(vecStub + "void main() { Vector3 v = {1.0, 2.0, 3.0}; }\n"),
+                           "as-err-initializer-list-too-few"));
+
+    // Too few values
+    CHECK(HasAnyCode(DiagnoseAll(vecStub + "void main() { Vector3 v = {1.0, 2.0}; }\n"),
+                     "as-err-initializer-list-too-few"));
+
+    // Too many values
+    CHECK(HasAnyCode(DiagnoseAll(vecStub + "void main() { Vector3 v = {1.0, 2.0, 3.0, 4.0}; }\n"),
+                     "as-err-initializer-list-too-many"));
+
+    // Nested list inside primitive field is rejected
+    CHECK(HasAnyCode(DiagnoseAll(vecStub + "void main() { Vector3 v = {{1.0}, 2.0, 3.0}; }\n"),
+                     "as-err-initializer-list-not-supported"));
+
+    const std::string rgbaStub = "class RGBA { int r; int g; int b; int a; };\n";
+    CHECK_FALSE(HasAnyCode(DiagnoseAll(rgbaStub + "void main() { RGBA c = {255, 128, 64, 255}; }\n"),
+                           "as-err-initializer-list-too-many"));
+    CHECK(HasAnyCode(DiagnoseAll(rgbaStub + "void main() { RGBA c = {255, 128}; }\n"),
+                     "as-err-initializer-list-too-few"));
+}
+
+TEST_CASE("InitializerList - generic multi-dimensional container resolution via opIndex")
+{
+    const std::string matrixStub =
+        "class Matrix<T>\n"
+        "{\n"
+        "    T& opIndex(uint row, uint col);\n"
+        "    const T& opIndex(uint row, uint col) const;\n"
+        "};\n";
+
+    // 2D rows of elements
+    CHECK(Diagnose(matrixStub + "void main() { Matrix<int> m = {{1, 2}, {3, 4}}; }\n").empty());
+
+    // Flat list where row list is expected
+    const auto flat = Diagnose(matrixStub + "void main() { Matrix<int> m = {1, 2}; }\n");
+    CHECK(HasAnyCode(flat, "as-err-initializer-list-expected"));
+
+    // Nested list where scalar element is expected
+    const auto badCell = Diagnose(matrixStub + "void main() { Matrix<int> m = {{1, {2}}}; }\n");
+    CHECK(HasAnyCode(badCell, "as-err-initializer-list-not-supported"));
+}

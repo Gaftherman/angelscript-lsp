@@ -231,29 +231,415 @@ namespace angel_lsp::analysis
             }
         }
 
-        struct ArrayTypeInfo
+        /**
+         * @brief Container structure and dimensionality information.
+         */
+        struct ContainerInfo
         {
-            bool isArray = false;
+            bool isContainer = false;
+            uint32_t dimensions = 1;
             std::string elementType;
         };
 
-        ArrayTypeInfo InspectArrayType(const std::string &type,
+        /**
+         * @brief Inspects whether a type represents a sequence or multi-dimensional container.
+         *
+         * Identifies containers via:
+         * 1. Syntax arrays: `T[]`.
+         * 2. Engine-configured array type or `arrayLikeTemplates`.
+         * 3. SymbolTable registration with multi-index `opIndex` (e.g. 2D grid/matrix) or list constructors.
+         */
+        ContainerInfo InspectContainer(const std::string &type,
                                        const TemplateSpelling &spelling,
                                        const DiagnosticContext &ctx,
                                        const std::unordered_set<std::string> &arrayLikeTemplates)
         {
             if (type.ends_with("[]"))
             {
-                return { true, type.substr(0, type.size() - 2) };
+                return { true, 1, type.substr(0, type.size() - 2) };
             }
+
+            const std::string_view configuredArray = ctx.request.GetArrayTypeName();
             if (spelling.name == "array" ||
-                spelling.name == ctx.request.GetArrayTypeName() ||
+                (!configuredArray.empty() && spelling.name == configuredArray) ||
                 arrayLikeTemplates.contains(spelling.name))
             {
                 std::string elem = spelling.arguments.empty() ? "auto" : spelling.arguments[0];
-                return { true, std::move(elem) };
+                return { true, 1, std::move(elem) };
             }
-            return { false, "" };
+
+            if (!spelling.name.empty())
+            {
+                std::vector<Symbol> typeSymbols;
+                if (const auto syms = ctx.request.symbolTable.FindSymbolsPtr(spelling.name))
+                {
+                    typeSymbols = *syms;
+                }
+                else
+                {
+                    typeSymbols = ctx.request.symbolTable.FindTypeSymbolsByShortName(spelling.name);
+                }
+
+                for (const auto &sym : typeSymbols)
+                {
+                    if (sym.type != SymbolType::Class)
+                    {
+                        continue;
+                    }
+
+                    uint32_t maxIndexParams = 0;
+                    std::string indexReturnType;
+                    bool hasListConstructor = false;
+
+                    std::vector<std::string> containers;
+                    if (!sym.qualifiedName.empty())
+                    {
+                        containers.push_back(sym.qualifiedName);
+                    }
+                    if (!sym.name.empty() && sym.name != sym.qualifiedName)
+                    {
+                        containers.push_back(sym.name);
+                    }
+                    if (!spelling.name.empty() && spelling.name != sym.name && spelling.name != sym.qualifiedName)
+                    {
+                        containers.push_back(spelling.name);
+                    }
+
+                    for (const auto &containerKey : containers)
+                    {
+                        const auto &members = ctx.request.GetRuleIndex().Members(containerKey);
+                        for (const auto &key : members.memberKeys)
+                        {
+                            if (const auto mSyms = ctx.request.symbolTable.FindSymbolsPtr(key))
+                            {
+                                for (const auto &m : *mSyms)
+                                {
+                                    if (m.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(m.signature))
+                                    {
+                                        const auto &fn = m.GetFunction();
+                                        if (m.name == "opIndex")
+                                        {
+                                            if (fn.parameters.size() > maxIndexParams)
+                                            {
+                                                maxIndexParams = static_cast<uint32_t>(fn.parameters.size());
+                                                indexReturnType = fn.returnBaseTypeName.empty()
+                                                    ? fn.returnType
+                                                    : fn.returnBaseTypeName;
+                                            }
+                                        }
+                                        else if (m.name == sym.name)
+                                        {
+                                            if ((fn.parameters.size() == 2 && fn.parameters[1].name == "list") ||
+                                                (fn.parameters.size() == 2 && fn.parameters[0].modifier == ParameterModifier::In &&
+                                                 fn.parameters[1].modifier == ParameterModifier::In) ||
+                                                (fn.parameters.size() == 1 && fn.parameters[0].modifier == ParameterModifier::In &&
+                                                 fn.parameters[0].typeName.find("int") != std::string::npos))
+                                            {
+                                                hasListConstructor = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (maxIndexParams >= 2)
+                    {
+                        std::string elem = !spelling.arguments.empty()
+                            ? spelling.arguments[0]
+                            : StripDecorations(indexReturnType);
+                        if (elem.empty())
+                        {
+                            elem = "auto";
+                        }
+                        return { true, maxIndexParams, std::move(elem) };
+                    }
+
+                    if (hasListConstructor && (!spelling.arguments.empty() || maxIndexParams == 1))
+                    {
+                        std::string elem = !spelling.arguments.empty()
+                            ? spelling.arguments[0]
+                            : StripDecorations(indexReturnType);
+                        if (elem.empty())
+                        {
+                            elem = "auto";
+                        }
+                        return { true, 1, std::move(elem) };
+                    }
+                }
+            }
+
+            return { false, 1, "" };
+        }
+
+        /**
+         * @brief Dictionary container key and value type information.
+         */
+        struct DictInfo
+        {
+            bool isDict = false;
+            std::string keyType;
+            std::string valType;
+        };
+
+        /**
+         * @brief Inspects whether a type represents a dictionary container and resolves its key and value types.
+         */
+        DictInfo InspectDictionary(const TemplateSpelling &spelling,
+                                  const DiagnosticContext &ctx)
+        {
+            if (spelling.name != "dictionary" && spelling.name != "dict")
+            {
+                return { false, "", "" };
+            }
+
+            std::string keyType;
+            std::string valType;
+
+            if (spelling.arguments.size() >= 2)
+            {
+                keyType = spelling.arguments[0];
+                valType = spelling.arguments[1];
+                return { true, std::move(keyType), std::move(valType) };
+            }
+            if (spelling.arguments.size() == 1)
+            {
+                keyType = spelling.arguments[0];
+                valType = "?";
+                return { true, std::move(keyType), std::move(valType) };
+            }
+
+            std::vector<Symbol> typeSymbols;
+            if (const auto syms = ctx.request.symbolTable.FindSymbolsPtr(spelling.name))
+            {
+                typeSymbols = *syms;
+            }
+            else
+            {
+                typeSymbols = ctx.request.symbolTable.FindTypeSymbolsByShortName(spelling.name);
+            }
+
+            for (const auto &sym : typeSymbols)
+            {
+                if (sym.type != SymbolType::Class)
+                {
+                    continue;
+                }
+
+                std::vector<std::string> containers;
+                if (!sym.qualifiedName.empty())
+                {
+                    containers.push_back(sym.qualifiedName);
+                }
+                if (!sym.name.empty() && sym.name != sym.qualifiedName)
+                {
+                    containers.push_back(sym.name);
+                }
+                if (!spelling.name.empty() && spelling.name != sym.name && spelling.name != sym.qualifiedName)
+                {
+                    containers.push_back(spelling.name);
+                }
+
+                for (const auto &containerKey : containers)
+                {
+                    const auto &members = ctx.request.GetRuleIndex().Members(containerKey);
+                    for (const auto &key : members.memberKeys)
+                    {
+                        if (const auto mSyms = ctx.request.symbolTable.FindSymbolsPtr(key))
+                        {
+                            for (const auto &m : *mSyms)
+                            {
+                                if (m.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(m.signature))
+                                {
+                                    const auto &fn = m.GetFunction();
+                                    if (m.name == "set" && fn.parameters.size() >= 2)
+                                    {
+                                        if (keyType.empty())
+                                        {
+                                            keyType = fn.parameters[0].baseTypeName.empty()
+                                                ? fn.parameters[0].typeName
+                                                : fn.parameters[0].baseTypeName;
+                                        }
+                                        if (valType.empty())
+                                        {
+                                            valType = fn.parameters[1].baseTypeName.empty()
+                                                ? fn.parameters[1].typeName
+                                                : fn.parameters[1].baseTypeName;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (keyType.empty())
+            {
+                keyType = "string";
+            }
+            if (valType.empty())
+            {
+                valType = "?";
+            }
+
+            return { true, StripDecorations(keyType), StripDecorations(valType) };
+        }
+
+        /**
+         * @brief Field information for aggregate struct member properties.
+         */
+        struct StructFieldInfo
+        {
+            std::string name;
+            std::string type;
+            uint32_t line = 0;
+            uint32_t col = 0;
+        };
+
+        /**
+         * @brief Dynamically extracts member properties in declaration order for an aggregate struct/class.
+         */
+        std::vector<StructFieldInfo> InspectAggregateStruct(const TemplateSpelling &spelling,
+                                                           const DiagnosticContext &ctx)
+        {
+            std::vector<StructFieldInfo> fields;
+            std::vector<Symbol> typeSymbols;
+            if (const auto syms = ctx.request.symbolTable.FindSymbolsPtr(spelling.name))
+            {
+                typeSymbols = *syms;
+            }
+            else
+            {
+                typeSymbols = ctx.request.symbolTable.FindTypeSymbolsByShortName(spelling.name);
+            }
+
+            for (const auto &sym : typeSymbols)
+            {
+                if (sym.type != SymbolType::Class)
+                {
+                    continue;
+                }
+
+                std::vector<std::string> candidateContainers;
+                if (!sym.qualifiedName.empty())
+                {
+                    candidateContainers.push_back(sym.qualifiedName);
+                }
+                if (!sym.name.empty() && sym.name != sym.qualifiedName)
+                {
+                    candidateContainers.push_back(sym.name);
+                }
+                if (!spelling.name.empty() && spelling.name != sym.name && spelling.name != sym.qualifiedName)
+                {
+                    candidateContainers.push_back(spelling.name);
+                }
+
+                for (const auto &container : candidateContainers)
+                {
+                    const auto &members = ctx.request.GetRuleIndex().Members(container);
+                    for (const auto &key : members.memberKeys)
+                    {
+                        if (const auto mSyms = ctx.request.symbolTable.FindSymbolsPtr(key))
+                        {
+                            for (const auto &s : *mSyms)
+                            {
+                                if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+                                {
+                                    if (std::holds_alternative<VariableSignature>(s.signature))
+                                    {
+                                        const auto &varSig = s.GetVariable();
+                                        if (!varSig.isVirtualProperty)
+                                        {
+                                            std::string fType = varSig.baseTypeName.empty()
+                                                ? varSig.typeName
+                                                : varSig.baseTypeName;
+                                            fields.push_back({ s.name, StripDecorations(fType), s.startLine, s.startCharacter });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            std::sort(fields.begin(), fields.end(),
+                      [](const StructFieldInfo &a, const StructFieldInfo &b)
+                      {
+                          if (a.line != b.line)
+                          {
+                              return a.line < b.line;
+                          }
+                          if (a.col != b.col)
+                          {
+                              return a.col < b.col;
+                          }
+                          return a.name < b.name;
+                      });
+
+            fields.erase(std::unique(fields.begin(), fields.end(),
+                                     [](const StructFieldInfo &a, const StructFieldInfo &b)
+                                     {
+                                         return a.name == b.name && a.line == b.line && a.col == b.col;
+                                     }),
+                         fields.end());
+
+            return fields;
+        }
+
+        void ValidateList(TSNode listNode,
+                          const std::string &targetType,
+                          DiagnosticContext &ctx,
+                          const ElementContext &elements,
+                          const std::unordered_set<std::string> &arrayLikeTemplates,
+                          int depth);
+
+        /**
+         * @brief Validates elements of a sequence or multi-dimensional container recursively.
+         */
+        void ValidateMultiDimensionalContainer(TSNode node,
+                                               uint32_t dimension,
+                                               const std::string &elemType,
+                                               DiagnosticContext &ctx,
+                                               const ElementContext &elements,
+                                               const std::unordered_set<std::string> &arrayLikeTemplates,
+                                               int depth)
+        {
+            if (depth >= k_maxAstDepth || ts_node_is_null(node))
+            {
+                return;
+            }
+
+            const uint32_t count = ts_node_named_child_count(node);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_named_child(node, i);
+                if (dimension > 1)
+                {
+                    if (NodeType(child) != "initializer_list")
+                    {
+                        EmitAtNode(child, ctx, "as-err-initializer-list-expected", "");
+                    }
+                    else
+                    {
+                        ValidateMultiDimensionalContainer(child, dimension - 1, elemType,
+                                                          ctx, elements, arrayLikeTemplates, depth + 1);
+                    }
+                }
+                else
+                {
+                    if (NodeType(child) == "initializer_list")
+                    {
+                        ValidateList(child, elemType, ctx, elements, arrayLikeTemplates, depth + 1);
+                    }
+                    else
+                    {
+                        CheckElementValue(child, elemType, ctx, elements);
+                    }
+                }
+            }
         }
 
         void ValidateList(TSNode listNode,
@@ -282,28 +668,9 @@ namespace angel_lsp::analysis
 
             const TemplateSpelling spelling = ReadTemplateSpelling(type);
 
-            // 1. Array types
-            const ArrayTypeInfo arrayInfo = InspectArrayType(type, spelling, ctx, arrayLikeTemplates);
-            if (arrayInfo.isArray)
-            {
-                const uint32_t count = ts_node_named_child_count(listNode);
-                for (uint32_t i = 0; i < count; ++i)
-                {
-                    TSNode child = ts_node_named_child(listNode, i);
-                    if (NodeType(child) == "initializer_list")
-                    {
-                        ValidateList(child, arrayInfo.elementType, ctx, elements, arrayLikeTemplates, depth + 1);
-                    }
-                    else
-                    {
-                        CheckElementValue(child, arrayInfo.elementType, ctx, elements);
-                    }
-                }
-                return;
-            }
-
-            // 2. Dictionary types
-            if (spelling.name == "dictionary" || spelling.name == "dict")
+            // 1. Dictionary types
+            const DictInfo dictInfo = InspectDictionary(spelling, ctx);
+            if (dictInfo.isDict)
             {
                 const uint32_t count = ts_node_named_child_count(listNode);
                 for (uint32_t i = 0; i < count; ++i)
@@ -331,11 +698,11 @@ namespace angel_lsp::analysis
                         TSNode keyNode = ts_node_named_child(child, 0);
                         if (NodeType(keyNode) == "initializer_list")
                         {
-                            EmitAtNode(keyNode, ctx, "as-err-initializer-list-not-supported", "string");
+                            EmitAtNode(keyNode, ctx, "as-err-initializer-list-not-supported", dictInfo.keyType);
                         }
                         else
                         {
-                            CheckElementValue(keyNode, "string", ctx, elements);
+                            CheckElementValue(keyNode, dictInfo.keyType, ctx, elements);
                         }
                     }
                     if (pairCount > 1)
@@ -343,121 +710,67 @@ namespace angel_lsp::analysis
                         TSNode valNode = ts_node_named_child(child, 1);
                         if (NodeType(valNode) == "initializer_list")
                         {
-                            EmitAtNode(valNode, ctx, "as-err-initializer-list-not-supported", "?");
+                            EmitAtNode(valNode, ctx, "as-err-initializer-list-not-supported", dictInfo.valType);
                         }
                         else
                         {
-                            CheckElementValue(valNode, "?", ctx, elements);
+                            CheckElementValue(valNode, dictInfo.valType, ctx, elements);
                         }
                     }
                 }
                 return;
             }
 
-            // 3. 2D grid
-            if (spelling.name == "grid")
+            // 2. Sequence & multi-dimensional container types
+            const ContainerInfo containerInfo = InspectContainer(type, spelling, ctx, arrayLikeTemplates);
+            if (containerInfo.isContainer)
             {
-                const std::string elemType = spelling.arguments.empty() ? "auto" : spelling.arguments[0];
-                const uint32_t count = ts_node_named_child_count(listNode);
-                for (uint32_t i = 0; i < count; ++i)
+                ValidateMultiDimensionalContainer(listNode, containerInfo.dimensions, containerInfo.elementType,
+                                                  ctx, elements, arrayLikeTemplates, depth);
+                return;
+            }
+
+            // 3. Class / Struct Aggregates
+            const std::vector<StructFieldInfo> fields = InspectAggregateStruct(spelling, ctx);
+            if (!fields.empty())
+            {
+                const uint32_t written = ListValueCount(listNode);
+                const auto expected = static_cast<uint32_t>(fields.size());
+                if (written < expected)
                 {
-                    TSNode child = ts_node_named_child(listNode, i);
-                    if (NodeType(child) != "initializer_list")
+                    EmitAtNode(listNode, ctx, "as-err-initializer-list-too-few", "");
+                    return;
+                }
+                if (written > expected)
+                {
+                    EmitAtNode(listNode, ctx, "as-err-initializer-list-too-many", "");
+                    return;
+                }
+
+                const uint32_t childCount = ts_node_named_child_count(listNode);
+                for (uint32_t i = 0; i < childCount && i < fields.size(); ++i)
+                {
+                    TSNode elem = ts_node_named_child(listNode, i);
+                    if (NodeType(elem) == "initializer_list")
                     {
-                        EmitAtNode(child, ctx, "as-err-initializer-list-expected", "");
+                        ValidateList(elem, fields[i].type, ctx, elements, arrayLikeTemplates, depth + 1);
                     }
                     else
                     {
-                        const uint32_t colCount = ts_node_named_child_count(child);
-                        for (uint32_t j = 0; j < colCount; ++j)
-                        {
-                            TSNode cell = ts_node_named_child(child, j);
-                            if (NodeType(cell) == "initializer_list")
-                            {
-                                ValidateList(cell, elemType, ctx, elements, arrayLikeTemplates, depth + 1);
-                            }
-                            else
-                            {
-                                CheckElementValue(cell, elemType, ctx, elements);
-                            }
-                        }
+                        CheckElementValue(elem, fields[i].type, ctx, elements);
                     }
                 }
                 return;
             }
 
-            // 4. Class / Struct Aggregates
-            const auto symbols = ctx.request.symbolTable.FindSymbolsPtr(spelling.name);
-            if (symbols)
+            // A class with no member fields or list pattern
+            if (depth == 0 && ctx.request.symbolTable.HasSymbolAnywhere(type) &&
+                !ctx.request.IsRegisteredSymbol(type))
             {
-                for (const auto &sym : *symbols)
-                {
-                    if (sym.type == SymbolType::Class)
-                    {
-                        std::vector<std::pair<std::string, std::string>> fields;
-                        const auto &members = ctx.request.GetRuleIndex().Members(spelling.name);
-                        for (const auto &key : members.memberKeys)
-                        {
-                            if (const auto syms = ctx.request.symbolTable.FindSymbolsPtr(key))
-                            {
-                                for (const auto &s : *syms)
-                                {
-                                    if (s.type == SymbolType::Variable)
-                                    {
-                                        fields.push_back({ s.name, s.GetVariable().baseTypeName });
-                                    }
-                                }
-                            }
-                        }
-
-                        if (fields.empty() && (spelling.name == "complex" || sym.name == "complex"))
-                        {
-                            fields = { { "r", "float" }, { "i", "float" } };
-                        }
-
-                        if (!fields.empty())
-                        {
-                            const uint32_t written = ListValueCount(listNode);
-                            const auto expected = static_cast<uint32_t>(fields.size());
-                            if (written < expected)
-                            {
-                                EmitAtNode(listNode, ctx, "as-err-initializer-list-too-few", "");
-                                return;
-                            }
-                            if (written > expected)
-                            {
-                                EmitAtNode(listNode, ctx, "as-err-initializer-list-too-many", "");
-                                return;
-                            }
-
-                            const uint32_t childCount = ts_node_named_child_count(listNode);
-                            for (uint32_t i = 0; i < childCount && i < fields.size(); ++i)
-                            {
-                                TSNode elem = ts_node_named_child(listNode, i);
-                                if (NodeType(elem) == "initializer_list")
-                                {
-                                    ValidateList(elem, fields[i].second, ctx, elements, arrayLikeTemplates, depth + 1);
-                                }
-                                else
-                                {
-                                    CheckElementValue(elem, fields[i].second, ctx, elements);
-                                }
-                            }
-                            return;
-                        }
-
-                        // A class with no member fields or list pattern
-                        if (depth == 0 && ctx.request.symbolTable.HasSymbolAnywhere(type) &&
-                            !ctx.request.IsRegisteredSymbol(type))
-                        {
-                            const TSPoint start = ts_node_start_point(listNode);
-                            const TSPoint end = ts_node_end_point(listNode);
-                            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
-                                            "as-hint-list-pattern-unknown", type, DiagnosticSeverity::Hint);
-                        }
-                        return;
-                    }
-                }
+                const TSPoint start = ts_node_start_point(listNode);
+                const TSPoint end = ts_node_end_point(listNode);
+                ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                "as-hint-list-pattern-unknown", type, DiagnosticSeverity::Hint);
             }
         }
     }
