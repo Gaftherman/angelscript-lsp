@@ -336,7 +336,7 @@ TEST_CASE("InitializerList - A dictionary element type makes a nested list corre
     // and `dict` in turn accepts the inner one. Nesting is only wrong where the element type
     // accepts no list, which is what makes this the same rule as the primitive case.
     const std::string code =
-        "class dict {}\n"
+        "class dict { void set(const string &in, const ? &in); bool exists(const string &in) const; };\n"
         "void main() { array<dict> a = {{{'a', 1}}}; }\n";
     CHECK(Diagnose(code).empty());
 }
@@ -581,7 +581,11 @@ namespace
 {
     /** @brief The dictionary declaration. */
     const std::string k_dictStub =
-        "class dict {}\n";
+        "class dict\n"
+        "{\n"
+        "    void set(const string &in, const ? &in);\n"
+        "    bool exists(const string &in) const;\n"
+        "};\n";
 }
 
 TEST_CASE("InitializerList - a fixed dictionary pair wants exactly its own number of values")
@@ -608,7 +612,13 @@ TEST_CASE("InitializerList - an array repeat has no count to check")
 
 TEST_CASE("InitializerList - a fixed aggregate struct at the top level is counted too")
 {
-    const std::string stub = "class complex { float r; float i; };\n";
+    const std::string stub =
+        "class complex\n"
+        "{\n"
+        "    complex(const int &in);\n"
+        "    float r;\n"
+        "    float i;\n"
+        "};\n";
 
     CHECK(HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1, 2, 3}; }\n"),
                      "as-err-initializer-list-too-many"));
@@ -633,13 +643,19 @@ TEST_CASE("ListPattern - an omitted element counts as a value")
 
 TEST_CASE("InitializerList - generic user-defined aggregate struct initialization")
 {
-    const std::string vecStub = "class Vector3 { float x; float y; float z; };\n";
+    // Plain script class without list constructor is rejected (asharness parity)
+    const std::string plainVecStub = "class Vector3 { float x; float y; float z; };\n";
+    const auto plainDiag = DiagnoseAll(plainVecStub + "void main() { Vector3 v = {1.0, 2.0, 3.0}; }\n");
+    CHECK(HasAnyCode(plainDiag, "as-err-initializer-list-not-supported"));
+
+    // Struct declaring list constructor validates field counts and types
+    const std::string vecStub = "class Vector3 { Vector3(const int &in); float x; float y; float z; };\n";
 
     // Exact count of fields passes
-    CHECK_FALSE(HasAnyCode(DiagnoseAll(vecStub + "void main() { Vector3 v = {1.0, 2.0, 3.0}; }\n"),
-                           "as-err-initializer-list-too-many"));
-    CHECK_FALSE(HasAnyCode(DiagnoseAll(vecStub + "void main() { Vector3 v = {1.0, 2.0, 3.0}; }\n"),
-                           "as-err-initializer-list-too-few"));
+    const auto exactDiag = DiagnoseAll(vecStub + "void main() { Vector3 v = {1.0, 2.0, 3.0}; }\n");
+    CHECK_FALSE(HasAnyCode(exactDiag, "as-err-initializer-list-too-many"));
+    CHECK_FALSE(HasAnyCode(exactDiag, "as-err-initializer-list-too-few"));
+    CHECK_FALSE(HasAnyCode(exactDiag, "as-err-initializer-list-not-supported"));
 
     // Too few values
     CHECK(HasAnyCode(DiagnoseAll(vecStub + "void main() { Vector3 v = {1.0, 2.0}; }\n"),
@@ -653,7 +669,7 @@ TEST_CASE("InitializerList - generic user-defined aggregate struct initializatio
     CHECK(HasAnyCode(DiagnoseAll(vecStub + "void main() { Vector3 v = {{1.0}, 2.0, 3.0}; }\n"),
                      "as-err-initializer-list-not-supported"));
 
-    const std::string rgbaStub = "class RGBA { int r; int g; int b; int a; };\n";
+    const std::string rgbaStub = "class RGBA { RGBA(const int &in); int r; int g; int b; int a; };\n";
     CHECK_FALSE(HasAnyCode(DiagnoseAll(rgbaStub + "void main() { RGBA c = {255, 128, 64, 255}; }\n"),
                            "as-err-initializer-list-too-many"));
     CHECK(HasAnyCode(DiagnoseAll(rgbaStub + "void main() { RGBA c = {255, 128}; }\n"),

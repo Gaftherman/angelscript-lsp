@@ -384,30 +384,28 @@ namespace angel_lsp::analysis
         };
 
         /**
-         * @brief Inspects whether a type represents a dictionary container and resolves its key and value types.
+         * @brief Inspects whether a type represents an associative container and resolves its key and value types.
          */
         DictInfo InspectDictionary(const TemplateSpelling &spelling,
-                                  const DiagnosticContext &ctx)
+                                   const DiagnosticContext &ctx)
         {
-            if (spelling.name != "dictionary" && spelling.name != "dict")
+            if (spelling.name.empty())
             {
                 return { false, "", "" };
             }
 
             std::string keyType;
             std::string valType;
+            bool isAssociative = false;
 
             if (spelling.arguments.size() >= 2)
             {
                 keyType = spelling.arguments[0];
                 valType = spelling.arguments[1];
-                return { true, std::move(keyType), std::move(valType) };
             }
-            if (spelling.arguments.size() == 1)
+            else if (spelling.arguments.size() == 1)
             {
-                keyType = spelling.arguments[0];
-                valType = "?";
-                return { true, std::move(keyType), std::move(valType) };
+                valType = spelling.arguments[0];
             }
 
             std::vector<Symbol> typeSymbols;
@@ -444,6 +442,18 @@ namespace angel_lsp::analysis
                 for (const auto &containerKey : containers)
                 {
                     const auto &members = ctx.request.GetRuleIndex().Members(containerKey);
+                    if (members.methodNames.contains("exists"))
+                    {
+                        isAssociative = true;
+                    }
+
+                    if (spelling.arguments.size() >= 2 &&
+                        (members.methodNames.contains("insert") || members.methodNames.contains("opIndex") ||
+                         members.methodNames.contains("find") || members.methodNames.contains("set")))
+                    {
+                        isAssociative = true;
+                    }
+
                     for (const auto &key : members.memberKeys)
                     {
                         if (const auto mSyms = ctx.request.symbolTable.FindSymbolsPtr(key))
@@ -455,6 +465,33 @@ namespace angel_lsp::analysis
                                     const auto &fn = m.GetFunction();
                                     if (m.name == "set" && fn.parameters.size() >= 2)
                                     {
+                                        isAssociative = true;
+                                        if (keyType.empty())
+                                        {
+                                            keyType = fn.parameters[0].baseTypeName.empty()
+                                                ? fn.parameters[0].typeName
+                                                : fn.parameters[0].baseTypeName;
+                                        }
+                                        if (valType.empty())
+                                        {
+                                            valType = fn.parameters[1].baseTypeName.empty()
+                                                ? fn.parameters[1].typeName
+                                                : fn.parameters[1].baseTypeName;
+                                        }
+                                    }
+                                    else if (m.name == "exists" && !fn.parameters.empty())
+                                    {
+                                        isAssociative = true;
+                                        if (keyType.empty())
+                                        {
+                                            keyType = fn.parameters[0].baseTypeName.empty()
+                                                ? fn.parameters[0].typeName
+                                                : fn.parameters[0].baseTypeName;
+                                        }
+                                    }
+                                    else if (m.name == "get" && fn.parameters.size() >= 2)
+                                    {
+                                        isAssociative = true;
                                         if (keyType.empty())
                                         {
                                             keyType = fn.parameters[0].baseTypeName.empty()
@@ -473,6 +510,11 @@ namespace angel_lsp::analysis
                         }
                     }
                 }
+            }
+
+            if (!isAssociative)
+            {
+                return { false, "", "" };
             }
 
             if (keyType.empty())
@@ -499,12 +541,31 @@ namespace angel_lsp::analysis
         };
 
         /**
+         * @brief Aggregate struct fields and list initialization capability.
+         */
+        struct AggregateStructInfo
+        {
+            bool hasListSupport = false;
+            std::vector<StructFieldInfo> fields;
+        };
+
+        /**
          * @brief Dynamically extracts member properties in declaration order for an aggregate struct/class.
          */
-        std::vector<StructFieldInfo> InspectAggregateStruct(const TemplateSpelling &spelling,
-                                                           const DiagnosticContext &ctx)
+        AggregateStructInfo InspectAggregateStruct(const TemplateSpelling &spelling,
+                                                   const DiagnosticContext &ctx)
         {
-            std::vector<StructFieldInfo> fields;
+            AggregateStructInfo info;
+            if (spelling.name.empty())
+            {
+                return info;
+            }
+
+            if (ctx.request.IsRegisteredSymbol(spelling.name))
+            {
+                info.hasListSupport = true;
+            }
+
             std::vector<Symbol> typeSymbols;
             if (const auto syms = ctx.request.symbolTable.FindSymbolsPtr(spelling.name))
             {
@@ -520,6 +581,17 @@ namespace angel_lsp::analysis
                 if (sym.type != SymbolType::Class)
                 {
                     continue;
+                }
+
+                if (ctx.request.IsRegisteredSymbol(sym.name) ||
+                    (!sym.qualifiedName.empty() && ctx.request.IsRegisteredSymbol(sym.qualifiedName)))
+                {
+                    info.hasListSupport = true;
+                }
+
+                if (IsFromPredefinedStub(sym, ctx))
+                {
+                    info.hasListSupport = true;
                 }
 
                 std::vector<std::string> candidateContainers;
@@ -555,7 +627,22 @@ namespace angel_lsp::analysis
                                             std::string fType = varSig.baseTypeName.empty()
                                                 ? varSig.typeName
                                                 : varSig.baseTypeName;
-                                            fields.push_back({ s.name, StripDecorations(fType), s.startLine, s.startCharacter });
+                                            info.fields.push_back({ s.name, StripDecorations(fType), s.startLine, s.startCharacter });
+                                        }
+                                    }
+                                }
+                                else if (s.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(s.signature))
+                                {
+                                    if (s.name == sym.name)
+                                    {
+                                        const auto &fn = s.GetFunction();
+                                        if ((fn.parameters.size() == 2 && fn.parameters[1].name == "list") ||
+                                            (fn.parameters.size() == 2 && fn.parameters[0].modifier == ParameterModifier::In &&
+                                             fn.parameters[1].modifier == ParameterModifier::In) ||
+                                            (fn.parameters.size() == 1 && fn.parameters[0].modifier == ParameterModifier::In &&
+                                             fn.parameters[0].typeName.find("int") != std::string::npos))
+                                        {
+                                            info.hasListSupport = true;
                                         }
                                     }
                                 }
@@ -565,7 +652,7 @@ namespace angel_lsp::analysis
                 }
             }
 
-            std::sort(fields.begin(), fields.end(),
+            std::sort(info.fields.begin(), info.fields.end(),
                       [](const StructFieldInfo &a, const StructFieldInfo &b)
                       {
                           if (a.line != b.line)
@@ -579,14 +666,14 @@ namespace angel_lsp::analysis
                           return a.name < b.name;
                       });
 
-            fields.erase(std::unique(fields.begin(), fields.end(),
-                                     [](const StructFieldInfo &a, const StructFieldInfo &b)
-                                     {
-                                         return a.name == b.name && a.line == b.line && a.col == b.col;
-                                     }),
-                         fields.end());
+            info.fields.erase(std::unique(info.fields.begin(), info.fields.end(),
+                                          [](const StructFieldInfo &a, const StructFieldInfo &b)
+                                          {
+                                              return a.name == b.name && a.line == b.line && a.col == b.col;
+                                          }),
+                              info.fields.end());
 
-            return fields;
+            return info;
         }
 
         void ValidateList(TSNode listNode,
@@ -731,11 +818,17 @@ namespace angel_lsp::analysis
             }
 
             // 3. Class / Struct Aggregates
-            const std::vector<StructFieldInfo> fields = InspectAggregateStruct(spelling, ctx);
-            if (!fields.empty())
+            const AggregateStructInfo structInfo = InspectAggregateStruct(spelling, ctx);
+            if (!structInfo.fields.empty())
             {
+                if (!structInfo.hasListSupport)
+                {
+                    EmitAtNode(listNode, ctx, "as-err-initializer-list-not-supported", type);
+                    return;
+                }
+
                 const uint32_t written = ListValueCount(listNode);
-                const auto expected = static_cast<uint32_t>(fields.size());
+                const auto expected = static_cast<uint32_t>(structInfo.fields.size());
                 if (written < expected)
                 {
                     EmitAtNode(listNode, ctx, "as-err-initializer-list-too-few", "");
@@ -748,16 +841,16 @@ namespace angel_lsp::analysis
                 }
 
                 const uint32_t childCount = ts_node_named_child_count(listNode);
-                for (uint32_t i = 0; i < childCount && i < fields.size(); ++i)
+                for (uint32_t i = 0; i < childCount && i < structInfo.fields.size(); ++i)
                 {
                     TSNode elem = ts_node_named_child(listNode, i);
                     if (NodeType(elem) == "initializer_list")
                     {
-                        ValidateList(elem, fields[i].type, ctx, elements, arrayLikeTemplates, depth + 1);
+                        ValidateList(elem, structInfo.fields[i].type, ctx, elements, arrayLikeTemplates, depth + 1);
                     }
                     else
                     {
-                        CheckElementValue(elem, fields[i].type, ctx, elements);
+                        CheckElementValue(elem, structInfo.fields[i].type, ctx, elements);
                     }
                 }
                 return;
