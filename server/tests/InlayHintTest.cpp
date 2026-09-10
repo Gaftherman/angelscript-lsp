@@ -45,9 +45,9 @@ namespace
             }
         }
 
-        std::optional<std::vector<lsp::InlayHint>> InlayHints(lsp::Range range = lsp::Range{ {0, 0}, {0, 0} })
+        std::optional<std::vector<lsp::InlayHint>> InlayHints(lsp::Range range = lsp::Range{ {0, 0}, {0, 0} }, bool suppressWhenArgumentMatchesName = true)
         {
-            InlayHintRequest req{ uri, sourceCode, tree, range, symbolTable, scopeIndex };
+            InlayHintRequest req{ uri, sourceCode, tree, range, symbolTable, scopeIndex, suppressWhenArgumentMatchesName };
             return GetInlayHints(req);
         }
     };
@@ -510,4 +510,102 @@ TEST_CASE("InlayHintHandler - Mixin Method Parameter Hints on Instance")
 
     CHECK(std::find(labels.begin(), labels.end(), "pPlayer:") != labels.end());
 }
+
+TEST_CASE("InlayHintHandler - BaseClass Method Parameter Hints with Mixin in Hierarchy")
+{
+    std::string code =
+        "mixin class WeaponMixin {\n"
+        "    void MixinMethod() {}\n"
+        "}\n"
+        "class BasePlayerWeapon {\n"
+        "    void Holster(int pPlayer) {}\n"
+        "}\n"
+        "class MyWeapon : BasePlayerWeapon, WeaponMixin {\n"
+        "    void Holster() {\n"
+        "        BaseClass.Holster(42);\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto &h : *hints)
+    {
+        if (std::holds_alternative<std::string>(h.label))
+        {
+            labels.push_back(std::get<std::string>(h.label));
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), "pPlayer:") != labels.end());
+}
+
+TEST_CASE("InlayHintHandler - Math Utility Object Parameter Hints")
+{
+    std::string code =
+        "class Math {\n"
+        "    void MakeVectors(float pitch, float yaw, float roll) {}\n"
+        "}\n"
+        "void main() {\n"
+        "    Math math;\n"
+        "    math.MakeVectors(10.0f, 20.0f, 30.0f);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto &h : *hints)
+    {
+        if (std::holds_alternative<std::string>(h.label))
+        {
+            labels.push_back(std::get<std::string>(h.label));
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), "pitch:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "yaw:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "roll:") != labels.end());
+}
+
+TEST_CASE("InlayHintHandler - Relaxed Parameter Name Matching Suppression")
+{
+    std::string code =
+        "void DoSomething(int value) {}\n"
+        "void main() {\n"
+        "    int value = 5;\n"
+        "    DoSomething(value);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    // With default suppression (true), "value:" should be suppressed because arg.text == param.name
+    auto suppressedHints = env.InlayHints(lsp::Range{ {0, 0}, {0, 0} }, true);
+    REQUIRE(suppressedHints.has_value());
+    bool foundSuppressed = false;
+    for (const auto &h : *suppressedHints)
+    {
+        if (std::holds_alternative<std::string>(h.label) && std::get<std::string>(h.label) == "value:")
+        {
+            foundSuppressed = true;
+        }
+    }
+    CHECK(!foundSuppressed);
+
+    // With relaxed suppression (false), "value:" hint should be provided
+    auto relaxedHints = env.InlayHints(lsp::Range{ {0, 0}, {0, 0} }, false);
+    REQUIRE(relaxedHints.has_value());
+    bool foundRelaxed = false;
+    for (const auto &h : *relaxedHints)
+    {
+        if (std::holds_alternative<std::string>(h.label) && std::get<std::string>(h.label) == "value:")
+        {
+            foundRelaxed = true;
+        }
+    }
+    CHECK(foundRelaxed);
+}
+
 

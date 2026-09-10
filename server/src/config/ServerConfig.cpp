@@ -571,6 +571,10 @@ namespace angel_lsp::config
             {
                 config.features.enableInlayHints = inlineVal.has_value() ? !ParseBoolValue(*inlineVal, true) : false;
             }
+            else if (key == "--inlay-hints-suppress-when-argument-matches-name")
+            {
+                config.features.inlayHintsSuppressWhenArgumentMatchesName = getBoolValue(true);
+            }
             else if (key == "--enable-code-action" || key == "--enable-codeaction")
             {
                 config.features.enableCodeAction = getBoolValue(true);

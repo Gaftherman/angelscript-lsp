@@ -22,6 +22,7 @@ namespace angel_lsp::features
         lsp::Range range;
         const analysis::SymbolTable &symbolTable;
         const analysis::ScopeIndex &scopeIndex;
+        bool suppressWhenArgumentMatchesName = true;
     };
 
     /**

@@ -1,5 +1,6 @@
 #include "features/definition/DefinitionHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/OverloadResolver.h"
 #include "utils/Utils.h"
 #include <unordered_set>
 #include <vector>
@@ -87,6 +88,193 @@ namespace angel_lsp::features
             }
 
             return nullptr;
+        }
+
+        /**
+         * @brief If candidate symbols contain multiple functions and the cursor is on a call's callee,
+         * uses overload resolution to filter candidates down to the best matching function.
+         */
+        std::vector<analysis::Symbol> FilterOverloadsForCall(
+            TSNode node,
+            const std::vector<analysis::Symbol> &candidates,
+            const DefinitionRequest &request,
+            const analysis::Scope *scope)
+        {
+            if (candidates.size() <= 1)
+            {
+                return candidates;
+            }
+
+            bool hasFunction = false;
+            for (const auto &sym : candidates)
+            {
+                if (sym.type == analysis::SymbolType::Function)
+                {
+                    hasFunction = true;
+                    break;
+                }
+            }
+            if (!hasFunction)
+            {
+                return candidates;
+            }
+
+            TSNode callNode{};
+            TSNode parent = ts_node_parent(node);
+            if (!ts_node_is_null(parent))
+            {
+                std::string_view pType = ts_node_type(parent);
+                if (pType == "call_expression")
+                {
+                    TSNode fn = parser::GetChildByField(parent, parser::fields::Function);
+                    if (!ts_node_is_null(fn) && (ts_node_eq(fn, node) || ts_node_start_byte(fn) == ts_node_start_byte(node)))
+                    {
+                        callNode = parent;
+                    }
+                }
+                else if (pType == "member_expression" || pType == "scoped_identifier")
+                {
+                    TSNode grandParent = ts_node_parent(parent);
+                    if (!ts_node_is_null(grandParent) && std::string_view(ts_node_type(grandParent)) == "call_expression")
+                    {
+                        TSNode fn = parser::GetChildByField(grandParent, parser::fields::Function);
+                        if (!ts_node_is_null(fn) && (ts_node_eq(fn, parent) || ts_node_start_byte(fn) == ts_node_start_byte(parent)))
+                        {
+                            callNode = grandParent;
+                        }
+                    }
+                }
+            }
+
+            if (ts_node_is_null(callNode))
+            {
+                return candidates;
+            }
+
+            TSNode argListNode = parser::GetChildByField(callNode, parser::fields::Arguments);
+            if (ts_node_is_null(argListNode))
+            {
+                for (uint32_t i = 0; i < ts_node_child_count(callNode); ++i)
+                {
+                    TSNode ch = ts_node_child(callNode, i);
+                    if (std::string_view(ts_node_type(ch)) == "argument_list")
+                    {
+                        argListNode = ch;
+                        break;
+                    }
+                }
+            }
+
+            std::vector<std::string> argTypes;
+            if (!ts_node_is_null(argListNode))
+            {
+                uint32_t count = ts_node_child_count(argListNode);
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    TSNode ch = ts_node_child(argListNode, i);
+                    std::string_view ct = ts_node_type(ch);
+                    if (ct == "(" || ct == ")" || ct == "," || ct == "comment" || ct == ":")
+                    {
+                        continue;
+                    }
+                    const char *fieldName = ts_node_field_name_for_child(argListNode, i);
+                    if (fieldName && std::string_view(fieldName) == "arg_name")
+                    {
+                        continue;
+                    }
+                    std::string aType = analysis::ResolveExpressionType(
+                        ch, scope, request.symbolTable, request.sourceCode, request.uri);
+                    argTypes.push_back(std::move(aType));
+                }
+            }
+
+            std::vector<analysis::Symbol> funcCandidates;
+            for (const auto &sym : candidates)
+            {
+                if (sym.type == analysis::SymbolType::Function)
+                {
+                    funcCandidates.push_back(sym);
+                }
+            }
+
+            auto match = analysis::ResolveBestOverload(funcCandidates, argTypes, request.symbolTable);
+            if (match.bestCandidate != nullptr)
+            {
+                return { *match.bestCandidate };
+            }
+
+            // Fallback: match by arity if an exact type match was not found
+            const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
+            const analysis::Symbol *bestFallback = nullptr;
+            int bestFallbackScore = -10000;
+
+            for (const auto &sym : funcCandidates)
+            {
+                if (!std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                {
+                    continue;
+                }
+
+                const auto &sig = sym.GetFunction();
+                uint32_t requiredParams = 0;
+                uint32_t maxParams = 0;
+                bool isVariadic = false;
+
+                for (const auto &param : sig.parameters)
+                {
+                    if (param.rawText.find("...") != std::string::npos)
+                    {
+                        isVariadic = true;
+                        continue;
+                    }
+                    ++maxParams;
+                    if (param.defaultValue.empty())
+                    {
+                        ++requiredParams;
+                    }
+                }
+
+                int score = 0;
+                bool arityMatches = (argCount >= requiredParams) && (isVariadic || argCount <= maxParams);
+                if (arityMatches)
+                {
+                    score += 100;
+                    if (argCount == sig.parameters.size())
+                    {
+                        score += 50;
+                    }
+                }
+                else
+                {
+                    int diff = std::abs(static_cast<int>(argCount) - static_cast<int>(sig.parameters.size()));
+                    score -= diff * 20;
+                }
+
+                for (size_t i = 0; i < argTypes.size() && i < sig.parameters.size(); ++i)
+                {
+                    if (!argTypes[i].empty())
+                    {
+                        int pScore = analysis::ScoreArgumentMatch(argTypes[i], sig.parameters[i], request.symbolTable);
+                        if (pScore < 999)
+                        {
+                            score += 10;
+                        }
+                    }
+                }
+
+                if (score > bestFallbackScore)
+                {
+                    bestFallbackScore = score;
+                    bestFallback = &sym;
+                }
+            }
+
+            if (bestFallback != nullptr && bestFallbackScore > 0)
+            {
+                return { *bestFallback };
+            }
+
+            return candidates;
         }
     }
 
@@ -216,19 +404,39 @@ namespace angel_lsp::features
 
                     if (objText == "this")
                     {
-                        request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
+                        auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
+                        for (const auto &c : containers)
                         {
-                            for (const auto &sym : symbols)
+                            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
                             {
-                                if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
+                                receiverTypeName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+                                break;
+                            }
+                        }
+                    }
+                    else if (objText == "BaseClass")
+                    {
+                        auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
+                        for (const auto &c : containers)
+                        {
+                            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+                            {
+                                auto hier = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
+                                for (size_t i = 1; i < hier.size(); ++i)
                                 {
-                                    if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
+                                    if (!analysis::IsMixinClass(hier[i], request.symbolTable))
                                     {
-                                        receiverTypeName = sym.name;
+                                        receiverTypeName = hier[i];
+                                        break;
                                     }
                                 }
+                                if (receiverTypeName.empty() && hier.size() > 1)
+                                {
+                                    receiverTypeName = hier[1];
+                                }
+                                break;
                             }
-                        });
+                        }
                     }
                     else if (rootScope)
                     {
@@ -256,6 +464,24 @@ namespace angel_lsp::features
                                     receiverTypeName = analysis::CleanBaseType(var.typeName);
                                     break;
                                 }
+                            }
+                            else if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Namespace)
+                            {
+                                receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (receiverTypeName.empty())
+                    {
+                        auto shortMatches = request.symbolTable.FindTypeSymbolsByShortName(objText);
+                        for (const auto &sym : shortMatches)
+                        {
+                            if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Namespace)
+                            {
+                                receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                                break;
                             }
                         }
                     }
@@ -302,6 +528,22 @@ namespace angel_lsp::features
                         }
                     }
                 }
+
+                if (memberSymbols.empty())
+                {
+                    auto directMatches = request.symbolTable.FindSymbols(receiverTypeName + "::" + nodeText);
+                    if (!directMatches.empty())
+                    {
+                        memberSymbols = std::move(directMatches);
+                    }
+                }
+
+                const analysis::Scope *scope = nullptr;
+                if (rootScope)
+                {
+                    scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+                }
+                memberSymbols = FilterOverloadsForCall(node, memberSymbols, request, scope);
 
                 std::vector<lsp::Location> memLocations;
                 for (const auto &sym : memberSymbols)
@@ -436,6 +678,13 @@ namespace angel_lsp::features
                 }
             }
         }
+
+        const analysis::Scope *scope = nullptr;
+        if (rootScope)
+        {
+            scope = FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+        }
+        symbols = FilterOverloadsForCall(node, symbols, request, scope);
 
         for (const auto &sym : symbols)
         {

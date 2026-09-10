@@ -135,7 +135,15 @@ namespace angel_lsp::features
                             if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
                             {
                                 auto hier = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
-                                if (hier.size() > 1)
+                                for (size_t i = 1; i < hier.size(); ++i)
+                                {
+                                    if (!analysis::IsMixinClass(hier[i], request.symbolTable))
+                                    {
+                                        receiverTypeName = hier[i];
+                                        break;
+                                    }
+                                }
+                                if (receiverTypeName.empty() && hier.size() > 1)
                                 {
                                     receiverTypeName = hier[1];
                                 }
@@ -186,6 +194,33 @@ namespace angel_lsp::features
                                     break;
                                 }
                             }
+                            else if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Namespace)
+                            {
+                                receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (receiverTypeName.empty())
+                    {
+                        auto shortMatches = request.symbolTable.FindTypeSymbolsByShortName(objText);
+                        for (const auto &sym : shortMatches)
+                        {
+                            if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Namespace)
+                            {
+                                receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (receiverTypeName.empty())
+                    {
+                        auto directCandidates = request.symbolTable.FindSymbols(objText + "::" + memText);
+                        for (const auto &sym : directCandidates)
+                        {
+                            candidateSymbols.push_back(sym);
                         }
                     }
 
@@ -1031,7 +1066,7 @@ namespace angel_lsp::features
                         }
 
                         // Exclusion Rule 3: Argument variable text matches parameter name exactly
-                        if (arg.text == param.name)
+                        if (request.suppressWhenArgumentMatchesName && arg.text == param.name)
                         {
                             continue;
                         }
@@ -1178,7 +1213,7 @@ namespace angel_lsp::features
                                         }
 
                                         // Exclusion Rule 3: Argument variable text matches parameter name exactly
-                                        if (arg.text == param.name)
+                                        if (request.suppressWhenArgumentMatchesName && arg.text == param.name)
                                         {
                                             continue;
                                         }

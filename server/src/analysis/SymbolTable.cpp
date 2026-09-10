@@ -144,7 +144,10 @@ namespace angel_lsp::analysis
             }
 
             auto &vec = MutableBucket(bucket->second);
-            std::erase_if(vec, [&fileUri](const Symbol &sym) { return sym.fileUri == fileUri; });
+            std::erase_if(vec, [&fileUri](const Symbol &sym)
+            {
+                return sym.fileUri == fileUri || sym.isSynthesized;
+            });
 
             if (vec.empty())
             {
@@ -353,7 +356,7 @@ namespace angel_lsp::analysis
                                     auto &vec = MutableBucket(bIt->second);
                                     std::erase_if(vec, [&](const Symbol &s)
                                     {
-                                        return s.isSynthesized && s.fileUri == sym.fileUri;
+                                        return s.isSynthesized;
                                     });
                                 }
                             }
@@ -455,7 +458,8 @@ namespace angel_lsp::analysis
                         // Retain originating containerName so callers know original source
                         synth.containerName = mSym.containerName.empty() ? mixinName : mSym.containerName;
                         synth.qualifiedName = synthKey;
-                        synth.fileUri = hostFileUri;
+                        // Retain original mixin fileUri and ranges so Go-to-Definition navigates to the mixin source
+                        synth.fileUri = mSym.fileUri;
                         synth.isSynthesized = true;
 
                         MutableBucket(m_symbols[synthKey]).push_back(std::move(synth));

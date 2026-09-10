@@ -373,3 +373,65 @@ TEST_CASE("DefinitionHandler - Member access on class member variable of unquali
     CHECK((*defs)[0].range.start.line == 2);
 }
 
+TEST_CASE("DefinitionHandler - Overload-aware definition jumps to mixin origin file and line")
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{ nullptr };
+    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    const std::string mixinUri = "file:///mixin.as";
+    const std::string mixinCode =
+        "mixin class WeaponBase {\n"
+        "    void Deploy(string vModel, string pModel, int iAnim, string pAnim, int iBodygroup, float flDeployTime) {}\n"
+        "}\n";
+
+    const std::string weaponUri = "file:///weapon.as";
+    const std::string weaponCode =
+        "class weapon_ak47 : WeaponBase {\n"
+        "    bool Deploy() {\n"
+        "        return Deploy(\"v\", \"p\", 1, \"m16\", 0, 1.0f);\n"
+        "    }\n"
+        "}\n"
+        "void main() {\n"
+        "    weapon_ak47 w;\n"
+        "    w.Deploy();\n"
+        "}\n";
+
+    // 1. Collect mixin symbols in its file
+    TSTree *mixinTree = parser.Parse(mixinCode);
+    symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
+
+    // 2. Collect host class symbols in its file
+    TSTree *weaponTree = parser.Parse(weaponCode);
+    symbolCollector.CollectSymbols(weaponUri, weaponCode, parser, symbolTable);
+    auto rootScope = scopeCollector.CollectScopes(weaponCode, parser);
+    if (rootScope)
+    {
+        scopeIndex.SetScopeTree(weaponUri, std::move(rootScope));
+    }
+
+    // Line 2: "        return Deploy(\"v\", \"p\", 1, \"m16\", 0, 1.0f);" -> col 17 is on "Deploy"
+    DefinitionRequest reqMixinCall{ weaponUri, weaponCode, weaponTree, symbolTable, scopeIndex, lsp::Position{ 2, 17 } };
+    auto defsMixin = GetDefinition(reqMixinCall);
+    REQUIRE(defsMixin.has_value());
+    REQUIRE(!defsMixin->empty());
+    // Must resolve to the 6-arg Deploy in the mixin file, NOT the 0-arg Deploy in weapon.as!
+    CHECK((*defsMixin)[0].uri.toString() == mixinUri);
+    CHECK((*defsMixin)[0].range.start.line == 1);
+
+    // Line 7: "    w.Deploy();" -> col 7 is on "Deploy"
+    DefinitionRequest reqZeroArgCall{ weaponUri, weaponCode, weaponTree, symbolTable, scopeIndex, lsp::Position{ 7, 7 } };
+    auto defsZeroArg = GetDefinition(reqZeroArgCall);
+    REQUIRE(defsZeroArg.has_value());
+    REQUIRE(!defsZeroArg->empty());
+    // Must resolve to the 0-arg Deploy in weapon.as!
+    CHECK((*defsZeroArg)[0].uri.toString() == weaponUri);
+    CHECK((*defsZeroArg)[0].range.start.line == 1);
+
+    ts_tree_delete(mixinTree);
+    ts_tree_delete(weaponTree);
+}
+
+

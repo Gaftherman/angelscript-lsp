@@ -5529,7 +5529,15 @@ namespace angel_lsp
                 if (!doc)
                     return lsp::Null{};
 
-                features::InlayHintRequest ihr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.range), m_symbolTable, m_scopeIndex };
+                features::InlayHintRequest ihr{
+                    doc->uri,
+                    *doc->text,
+                    doc->tree,
+                    codec::Decode(*doc->text, m_positionEncoding, req.range),
+                    m_symbolTable,
+                    m_scopeIndex,
+                    m_config.features.inlayHintsSuppressWhenArgumentMatchesName
+                };
                 auto hints = features::GetInlayHints(ihr);
                 if (hints.has_value())
                 {

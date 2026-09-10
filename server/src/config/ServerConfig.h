@@ -28,6 +28,7 @@ namespace angel_lsp::config
         bool enableDocumentHighlight = true;
         bool enableFoldingRange = true;
         bool enableInlayHints = true;
+        bool inlayHintsSuppressWhenArgumentMatchesName = true;
         bool enableCodeAction = true;
         bool enableFormatting = true;
         bool enableDocumentLink = true;
