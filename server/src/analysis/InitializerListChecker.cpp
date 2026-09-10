@@ -242,6 +242,36 @@ namespace angel_lsp::analysis
         };
 
         /**
+         * @brief Checks whether a constructor function matches AngelScript's list behavior signature.
+         *
+         * Conforming to `asBEHAVE_LIST_CONSTRUCT` / `asBEHAVE_LIST_FACTORY`:
+         * - Single parameter: integer reference with in modifier (e.g. `const int &in` or `int &in`).
+         * - Two parameters: both integer references with in modifier (e.g. `int &in, int &in`).
+         */
+        bool IsListConstructorSignature(const FunctionSignature &fn)
+        {
+            if (fn.parameters.size() == 1)
+            {
+                return fn.parameters[0].modifier == ParameterModifier::In &&
+                       (fn.parameters[0].typeName.find("int") != std::string::npos ||
+                        fn.parameters[0].baseTypeName == "int" ||
+                        fn.parameters[0].baseTypeName == "uint");
+            }
+            if (fn.parameters.size() == 2)
+            {
+                return fn.parameters[0].modifier == ParameterModifier::In &&
+                       fn.parameters[1].modifier == ParameterModifier::In &&
+                       (fn.parameters[0].typeName.find("int") != std::string::npos ||
+                        fn.parameters[0].baseTypeName == "int" ||
+                        fn.parameters[0].baseTypeName == "uint") &&
+                       (fn.parameters[1].typeName.find("int") != std::string::npos ||
+                        fn.parameters[1].baseTypeName == "int" ||
+                        fn.parameters[1].baseTypeName == "uint");
+            }
+            return false;
+        }
+
+        /**
          * @brief Inspects whether a type represents a sequence or multi-dimensional container.
          *
          * Identifies containers via:
@@ -329,11 +359,7 @@ namespace angel_lsp::analysis
                                         }
                                         else if (m.name == sym.name)
                                         {
-                                            if ((fn.parameters.size() == 2 && fn.parameters[1].name == "list") ||
-                                                (fn.parameters.size() == 2 && fn.parameters[0].modifier == ParameterModifier::In &&
-                                                 fn.parameters[1].modifier == ParameterModifier::In) ||
-                                                (fn.parameters.size() == 1 && fn.parameters[0].modifier == ParameterModifier::In &&
-                                                 fn.parameters[0].typeName.find("int") != std::string::npos))
+                                            if (IsListConstructorSignature(fn))
                                             {
                                                 hasListConstructor = true;
                                             }
@@ -636,11 +662,7 @@ namespace angel_lsp::analysis
                                     if (s.name == sym.name)
                                     {
                                         const auto &fn = s.GetFunction();
-                                        if ((fn.parameters.size() == 2 && fn.parameters[1].name == "list") ||
-                                            (fn.parameters.size() == 2 && fn.parameters[0].modifier == ParameterModifier::In &&
-                                             fn.parameters[1].modifier == ParameterModifier::In) ||
-                                            (fn.parameters.size() == 1 && fn.parameters[0].modifier == ParameterModifier::In &&
-                                             fn.parameters[0].typeName.find("int") != std::string::npos))
+                                        if (IsListConstructorSignature(fn))
                                         {
                                             info.hasListSupport = true;
                                         }
