@@ -198,7 +198,29 @@ TEST_SUITE("OverloadResolution")
         auto match = ResolveBestOverload(candidates, { "const CBaseEntity@" }, table);
         CHECK(match.bestCandidate == nullptr);
     }
+
+    TEST_CASE("Competing Handle vs Reference Overload is Ambiguous (asharness parity)")
+    {
+        std::string code =
+            "class Foo { }\n"
+            "void Process(Foo@ h) { }\n"
+            "void Process(Foo& inout r) { }\n";
+
+        SymbolTable table;
+        auto candidates = CollectFunctionCandidates(code, "Process", table);
+        REQUIRE(candidates.size() == 2);
+
+        // In native AngelScript (verified via asharness.exe), passing Foo@ to competing
+        // overloads Process(Foo@) and Process(Foo& inout) ties with cost 0 and is reported ambiguous.
+        auto matchHandle = ResolveBestOverload(candidates, { "Foo@" }, table);
+        CHECK(matchHandle.isAmbiguous);
+
+        // Similarly, passing Foo instance / reference also ties with cost 0 and is reported ambiguous.
+        auto matchRef = ResolveBestOverload(candidates, { "Foo" }, table);
+        CHECK(matchRef.isAmbiguous);
+    }
 }
+
 
 
 // =====================================================================================

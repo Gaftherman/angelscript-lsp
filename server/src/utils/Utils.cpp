@@ -101,70 +101,94 @@ namespace angel_lsp::utils
             return {};
         }
 
-        // Quick check: inline list patterns only occur on factory/constructor lines
-        // where a parameter list is followed by `{...};`.
+        // Quick check: inline list patterns require '{', ')', and ';' to be present.
         if (source.find('{') == std::string_view::npos ||
-            (source.find(") {") == std::string_view::npos &&
-             source.find("){") == std::string_view::npos &&
-             source.find(")\t{") == std::string_view::npos &&
-             source.find("repeat") == std::string_view::npos))
+            source.find(')') == std::string_view::npos ||
+            source.find(';') == std::string_view::npos)
         {
             return std::string(source);
         }
 
-        std::string out;
-        out.reserve(source.size());
+        std::string result(source);
+        const size_t n = result.size();
 
-        size_t lineStart = 0;
-        while (lineStart < source.size())
+        size_t i = 0;
+        while (i < n)
         {
-            size_t lineEnd = source.find('\n', lineStart);
-            const bool last = (lineEnd == std::string_view::npos);
-            if (last)
+            // Look for ')' closing a function or constructor parameter list
+            if (result[i] == ')')
             {
-                lineEnd = source.size();
+                size_t j = i + 1;
+                while (j < n && (result[j] == ' ' || result[j] == '\t' || result[j] == '\r' || result[j] == '\n'))
+                {
+                    ++j;
+                }
+
+                // Optional method qualifiers such as 'const'
+                if (j + 5 < n && result.compare(j, 5, "const") == 0 &&
+                    (result[j + 5] == ' ' || result[j + 5] == '\t' || result[j + 5] == '\r' || result[j + 5] == '\n' || result[j + 5] == '{'))
+                {
+                    j += 5;
+                    while (j < n && (result[j] == ' ' || result[j] == '\t' || result[j] == '\r' || result[j] == '\n'))
+                    {
+                        ++j;
+                    }
+                }
+
+                if (j < n && result[j] == '{')
+                {
+                    const size_t openBrace = j;
+                    int depth = 1;
+                    size_t k = j + 1;
+                    while (k < n && depth > 0)
+                    {
+                        if (result[k] == '{')
+                        {
+                            ++depth;
+                        }
+                        else if (result[k] == '}')
+                        {
+                            --depth;
+                        }
+                        if (depth > 0)
+                        {
+                            ++k;
+                        }
+                    }
+
+                    if (depth == 0 && k < n && result[k] == '}')
+                    {
+                        const size_t closeBrace = k;
+                        size_t afterClose = closeBrace + 1;
+                        while (afterClose < n && (result[afterClose] == ' ' || result[afterClose] == '\t' ||
+                                                  result[afterClose] == '\r' || result[afterClose] == '\n'))
+                        {
+                            ++afterClose;
+                        }
+
+                        // Must be followed by a semicolon terminating the declaration
+                        if (afterClose < n && result[afterClose] == ';')
+                        {
+                            // Blank from openBrace to closeBrace (inclusive) with spaces, preserving newlines
+                            for (size_t b = openBrace; b <= closeBrace; ++b)
+                            {
+                                if (result[b] != '\r' && result[b] != '\n')
+                                {
+                                    result[b] = ' ';
+                                }
+                            }
+                            i = afterClose;
+                            continue;
+                        }
+                    }
+                }
             }
-
-            std::string_view line = source.substr(lineStart, lineEnd - lineStart);
-
-            // The pattern sits between the `)` that closes parameters and the `;` that ends
-            // the declaration. Both must be on this line, with a `{...}` between.
-            const size_t closeParen = line.rfind(')');
-            const size_t open = (closeParen == std::string_view::npos)
-                                    ? std::string_view::npos
-                                    : line.find('{', closeParen);
-            const size_t close = (open == std::string_view::npos)
-                                     ? std::string_view::npos
-                                     : line.rfind('}');
-            const size_t semi = (close == std::string_view::npos)
-                                    ? std::string_view::npos
-                                    : line.find(';', close);
-
-            const bool hasPattern = (open != std::string_view::npos && close > open &&
-                                     semi != std::string_view::npos);
-
-            if (!hasPattern)
-            {
-                out.append(line);
-            }
-            else
-            {
-                // Blank the inline pattern { ... } with spaces, preserving exact byte count and column numbers.
-                out.append(line.substr(0, open));
-                out.append(close - open + 1, ' ');
-                out.append(line.substr(close + 1));
-            }
-
-            if (last)
-            {
-                break;
-            }
-            out.push_back('\n');
-            lineStart = lineEnd + 1;
+            ++i;
         }
 
-        return out;
+        return result;
     }
+
 
     bool IsPrimitiveType(const std::string &typeName)
     {

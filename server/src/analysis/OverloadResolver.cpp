@@ -581,10 +581,11 @@ namespace angel_lsp::analysis
             return static_cast<int>(OverloadMatchPenalty::Incompatible);
         }
 
-        // 1. Exact match and handle-to-reference binding
+        // 1. Exact match, handle-to-reference, and value-to-handle binding
         const bool isHandleToReferenceBinding = argIsHandle && !paramIsHandle &&
             (param.isReference || param.modifier == ParameterModifier::In ||
              param.modifier == ParameterModifier::InOut || param.modifier == ParameterModifier::Out);
+        const bool isValueToHandleBinding = !argIsHandle && paramIsHandle;
 
         if (isMatchingType(cleanArg, cleanParam))
         {
@@ -596,9 +597,9 @@ namespace angel_lsp::analysis
                 }
                 return static_cast<int>(OverloadMatchPenalty::ConstRef);
             }
-            if (isHandleToReferenceBinding)
+            if (isHandleToReferenceBinding || isValueToHandleBinding)
             {
-                // In AngelScript, passing T@ to T&, T& in, T& inout, const T& in is standard zero-cost binding
+                // In AngelScript, passing T@ to T& (or T to T@) is standard zero-cost binding
                 if (paramIsConst || !argIsConst)
                 {
                     return static_cast<int>(OverloadMatchPenalty::Exact);
@@ -607,6 +608,7 @@ namespace angel_lsp::analysis
             }
             return static_cast<int>(OverloadMatchPenalty::ConstRef);
         }
+
 
         // 2. Same base type with const / handle qualification differences
         if (isMatchingType(cleanArg, cleanParam))

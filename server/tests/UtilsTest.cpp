@@ -201,3 +201,19 @@ TEST_CASE("SanitizePredefinedContent - handles multiple patterns in one file")
     CHECK(sanitized.find("{repeat T}") == std::string::npos);
     CHECK(sanitized.find("{float, float}") == std::string::npos);
 }
+
+TEST_CASE("SanitizePredefinedContent - sanitizes arbitrary list patterns without repeat keyword")
+{
+    const std::string input =
+        "class Vector3 {\n"
+        "\tVector3(int &in) {float, float, float};\n"
+        "\tVector3(float x, float y, float z);\n"
+        "}\n";
+
+    const std::string sanitized = SanitizePredefinedContent(input);
+    CHECK(sanitized.size() == input.size());
+    CHECK(sanitized.find("{float, float, float}") == std::string::npos);
+    CHECK(sanitized.find("Vector3(int &in)") != std::string::npos);
+    CHECK(sanitized.find("Vector3(float x, float y, float z);") != std::string::npos);
+}
+

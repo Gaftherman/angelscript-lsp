@@ -590,7 +590,31 @@ namespace angel_lsp::analysis
                 return {};
             }
 
-            const auto it = cache.find(spelling.name);
+            std::vector<Symbol> typeSymbols;
+            if (const auto syms = ctx.request.symbolTable.FindSymbolsPtr(spelling.name))
+            {
+                typeSymbols = *syms;
+            }
+            else
+            {
+                typeSymbols = ctx.request.symbolTable.FindTypeSymbolsByShortName(spelling.name);
+            }
+
+            const Symbol *classSym = nullptr;
+            for (const auto &sym : typeSymbols)
+            {
+                if (sym.type == SymbolType::Class)
+                {
+                    classSym = &sym;
+                    break;
+                }
+            }
+
+            const std::string cacheKey = classSym
+                ? (classSym->qualifiedName.empty() ? classSym->name : classSym->qualifiedName)
+                : spelling.name;
+
+            const auto it = cache.find(cacheKey);
             if (it != cache.end())
             {
                 return it->second;
@@ -603,22 +627,13 @@ namespace angel_lsp::analysis
                 info.hasListSupport = true;
             }
 
-            std::vector<Symbol> typeSymbols;
-            if (const auto syms = ctx.request.symbolTable.FindSymbolsPtr(spelling.name))
-            {
-                typeSymbols = *syms;
-            }
-            else
-            {
-                typeSymbols = ctx.request.symbolTable.FindTypeSymbolsByShortName(spelling.name);
-            }
-
             for (const auto &sym : typeSymbols)
             {
                 if (sym.type != SymbolType::Class)
                 {
                     continue;
                 }
+
 
                 if (ctx.request.IsRegisteredSymbol(sym.name) ||
                     (!sym.qualifiedName.empty() && ctx.request.IsRegisteredSymbol(sym.qualifiedName)))
@@ -706,7 +721,7 @@ namespace angel_lsp::analysis
                                           }),
                               info.fields.end());
 
-            cache.emplace(spelling.name, info);
+            cache.emplace(cacheKey, info);
             return info;
         }
 

@@ -1344,4 +1344,20 @@ TEST_CASE("CallChecker - Object handle T@ binding to reference parameters (T& in
     CHECK(!HasCode(diags, "as-err-no-implicit-conversion"));
 }
 
+TEST_CASE("CallChecker - Competing Handle vs Reference Overload produces ambiguity error (asharness parity)")
+{
+    const std::string code =
+        "class Foo {}\n"
+        "void Process(Foo@ h) {}\n"
+        "void Process(Foo& inout r) {}\n"
+        "void main() {\n"
+        "    Foo@ obj;\n"
+        "    Process(obj);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-call-ambiguous"));
+}
+
+
 

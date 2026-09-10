@@ -707,3 +707,30 @@ TEST_CASE("InitializerList - generic multi-dimensional container resolution via 
     const auto badCell = Diagnose(matrixStub + "void main() { Matrix<int> m = {{1, {2}}}; }\n");
     CHECK(HasAnyCode(badCell, "as-err-initializer-list-not-supported"));
 }
+
+TEST_CASE("InitializerList - distinct types with identical names across namespaces do not collide in layout cache")
+{
+    const std::string code =
+        "namespace Alpha {\n"
+        "    class Config {\n"
+        "        Config(const int &in);\n"
+        "        int id;\n"
+        "    };\n"
+        "}\n"
+        "namespace Beta {\n"
+        "    class Config {\n"
+        "        Config(const int &in);\n"
+        "        int r; int g; int b;\n"
+        "    };\n"
+        "}\n"
+        "void main() {\n"
+        "    Alpha::Config a = { 10 };\n"
+        "    Beta::Config b = { 1, 2, 3 };\n"
+        "}\n";
+
+    const auto diags = DiagnoseAll(code);
+    CHECK_FALSE(HasAnyCode(diags, "as-err-initializer-list-too-many"));
+    CHECK_FALSE(HasAnyCode(diags, "as-err-initializer-list-too-few"));
+    CHECK_FALSE(HasAnyCode(diags, "as-err-initializer-list-not-supported"));
+}
+
