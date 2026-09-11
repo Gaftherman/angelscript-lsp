@@ -57,8 +57,7 @@ namespace angel_lsp::analysis
                 result.pop_back();
             }
 
-            if (result == "int32") { return "int"; }
-            if (result == "uint32") { return "uint"; }
+            result = CanonicalizeType(result);
 
             // `T[]` and `array<T>` are two spellings of one type - the language's bracket syntax is
             // sugar for whatever the engine registered as its default array - so they have to

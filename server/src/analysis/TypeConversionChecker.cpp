@@ -76,7 +76,9 @@ namespace angel_lsp::analysis
 
         bool IsSameType(const std::string &a, const std::string &b)
         {
-            return a == b || LastScopeSegment(a) == LastScopeSegment(b);
+            const std::string ca = CanonicalizeType(a);
+            const std::string cb = CanonicalizeType(b);
+            return ca == cb || LastScopeSegment(ca) == LastScopeSegment(cb);
         }
 
         /** @brief Visits every symbol registered under a qualified name without copying the bucket.
@@ -510,6 +512,19 @@ namespace angel_lsp::analysis
                 return true;
             }
 
+            const std::string normFrom = CanonicalizeType(from);
+            const std::string normTo = CanonicalizeType(to);
+            if (normFrom == normTo)
+            {
+                return true;
+            }
+
+            // Implicit widening from enum to integer primitives (int, uint, int64, etc.)
+            if (ResolvesToEnum(from, table) && parser::primitives::IsInteger(normTo))
+            {
+                return true;
+            }
+
             const bool fromBuiltIn = IsBuiltInValueType(from, ctx);
             const bool toBuiltIn = IsBuiltInValueType(to, ctx);
             if (fromBuiltIn && toBuiltIn)
@@ -590,7 +605,8 @@ namespace angel_lsp::analysis
 
             // An unresolved name is an engine-registered type as far as this analyzer knows, and
             // engine types carry conversions that appear nowhere in the source.
-            if ((!fromBuiltIn && !fromDecl.found) || (!toBuiltIn && !toDecl.found))
+            if ((!fromBuiltIn && !fromDecl.found && !ResolvesToEnum(from, table)) ||
+                (!toBuiltIn && !toDecl.found && !ResolvesToEnum(to, table)))
             {
                 return true;
             }
@@ -2280,8 +2296,8 @@ namespace angel_lsp::analysis
                     const std::string t2 = ResolveExpressionType(
                         alternative, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
 
-                    const std::string clean1 = CleanExpressionType(t1);
-                    const std::string clean2 = CleanExpressionType(t2);
+                    const std::string clean1 = CanonicalizeType(CleanExpressionType(t1));
+                    const std::string clean2 = CanonicalizeType(CleanExpressionType(t2));
 
                     if (!clean1.empty() && !clean2.empty() &&
                         clean1 != "auto" && clean2 != "auto" &&

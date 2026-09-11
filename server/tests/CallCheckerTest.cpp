@@ -1411,5 +1411,48 @@ TEST_CASE("CallChecker - Incompatible enums in ternary expression emit no implic
     CHECK(HasCode(diags, "as-err-no-implicit-conversion"));
 }
 
+TEST_CASE("CallChecker - Calling function taking int with enum argument is accepted")
+{
+    const std::string code =
+        "enum MyEnum { Val1 = 1 }\n"
+        "void TakeInt(int a) {}\n"
+        "void main() {\n"
+        "    TakeInt(MyEnum::Val1);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - Calling function taking int with int32 argument is accepted")
+{
+    const std::string code =
+        "void TakeInt(int a) {}\n"
+        "void main() {\n"
+        "    int32 x = 42;\n"
+        "    TakeInt(x);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - Calling function with same-type ternary Vector argument is accepted")
+{
+    const std::string code =
+        "class Vector { float x, y, z; Vector() {} Vector(float _x, float _y, float _z) {} }\n"
+        "void ShootProp(const Vector &in dir) {}\n"
+        "void main() {\n"
+        "    bool ads = true;\n"
+        "    ShootProp(ads ? Vector(1.0f, 0.0f, 0.0f) : Vector(0.0f, 1.0f, 0.0f));\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
 
 

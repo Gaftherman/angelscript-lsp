@@ -339,6 +339,21 @@ namespace angel_lsp::analysis
     std::string CanonicalizeArrayType(std::string_view typeName, std::string_view arrayTypeName = "array");
 
     /**
+     * @brief Normalizes primitive type aliases to their canonical spelling (e.g. `int32` -> `int`, `uint32` -> `uint`, `short` -> `int16`, `ushort` -> `uint16`).
+     * @param typeName Raw or cleaned type name string.
+     * @return Canonicalized type name.
+     */
+    [[nodiscard]] std::string CanonicalizeType(std::string_view typeName);
+
+    /**
+     * @brief Checks whether the given type name denotes an enum in the symbol table.
+     * @param typeName Name of the type to inspect.
+     * @param table Symbol table to query.
+     * @return True if the type name resolves to an enum symbol.
+     */
+    [[nodiscard]] bool ResolvesToEnum(std::string_view typeName, const SymbolTable &table);
+
+    /**
      * @brief The type whose members a `.` on a value of this type reaches.
      *
      * `int[]` and `array<int>` both answer `array`, `Foo@` answers `Foo`, `int` answers `int`.

@@ -536,6 +536,56 @@ namespace angel_lsp::analysis
         return CleanBaseType(canonical);
     }
 
+    std::string CanonicalizeType(std::string_view typeName)
+    {
+        std::string clean = CleanExpressionType(typeName);
+        if (clean == "int32")
+        {
+            return "int";
+        }
+        if (clean == "uint32")
+        {
+            return "uint";
+        }
+        if (clean == "short")
+        {
+            return "int16";
+        }
+        if (clean == "ushort")
+        {
+            return "uint16";
+        }
+        return clean;
+    }
+
+    bool ResolvesToEnum(std::string_view typeName, const SymbolTable &table)
+    {
+        if (typeName.empty())
+        {
+            return false;
+        }
+        std::string bare = LastScopeSegment(std::string(typeName));
+        for (const auto &candidate : { std::string(typeName), bare })
+        {
+            const auto bucket = table.FindSymbolsPtr(candidate);
+            if (bucket)
+            {
+                for (const auto &sym : *bucket)
+                {
+                    if (sym.type == SymbolType::Enum)
+                    {
+                        return true;
+                    }
+                }
+            }
+            if (bare == typeName)
+            {
+                break;
+            }
+        }
+        return false;
+    }
+
     std::string SubstituteTypeParam(std::string_view typeStr, std::string_view paramName, std::string_view concreteType)
     {
         if (typeStr.empty() || paramName.empty())
@@ -2207,16 +2257,29 @@ namespace angel_lsp::analysis
             }
             std::string t1 = ResolveExpressionType(consequence, scope, symbolTable, sourceCode, uri, depth + 1);
             std::string t2 = ResolveExpressionType(alternative, scope, symbolTable, sourceCode, uri, depth + 1);
-            if (t1 == t2)
+            if (t1.empty())
+            {
+                return t2;
+            }
+            if (t2.empty())
             {
                 return t1;
             }
-            if (t1.empty()) return t2;
-            if (t2.empty()) return t1;
 
-            std::string c1 = CleanBaseType(t1);
-            std::string c2 = CleanBaseType(t2);
+            std::string c1 = CanonicalizeType(CleanBaseType(t1));
+            std::string c2 = CanonicalizeType(CleanBaseType(t2));
 
+            // Identity rule: identical types (including complex classes like Vector) resolve to c1
+            if (!c1.empty() && c1 == c2)
+            {
+                if (t1.ends_with("@") && t2.ends_with("@"))
+                {
+                    return c1 + "@";
+                }
+                return c1;
+            }
+
+            // Numeric promotion
             if (IsNumericPrimitive(c1) && IsNumericPrimitive(c2))
             {
                 if (c1 == "double" || c2 == "double")
@@ -2242,11 +2305,21 @@ namespace angel_lsp::analysis
                 return "int";
             }
 
+            // Enum to integer promotion in ternary
+            if (ResolvesToEnum(c1, symbolTable) && IsIntegerPrimitive(c2))
+            {
+                return c2;
+            }
+            if (ResolvesToEnum(c2, symbolTable) && IsIntegerPrimitive(c1))
+            {
+                return c1;
+            }
+
             // Inheritance check (derived vs base)
             auto h1 = GetInheritedTypeHierarchy(c1, symbolTable);
             for (const auto &b : h1)
             {
-                if (CleanBaseType(b) == c2)
+                if (CanonicalizeType(CleanBaseType(b)) == c2)
                 {
                     return t2;
                 }
@@ -2254,7 +2327,7 @@ namespace angel_lsp::analysis
             auto h2 = GetInheritedTypeHierarchy(c2, symbolTable);
             for (const auto &b : h2)
             {
-                if (CleanBaseType(b) == c1)
+                if (CanonicalizeType(CleanBaseType(b)) == c1)
                 {
                     return t1;
                 }
@@ -2569,9 +2642,28 @@ namespace angel_lsp::analysis
                     auto match = ResolveBestOverload(candidates, argTypes, symbolTable);
                     if (match.bestCandidate && std::holds_alternative<FunctionSignature>(match.bestCandidate->signature))
                     {
-                        return CleanExpressionType(match.bestCandidate->GetFunction().returnType);
+                        std::string ret = CleanExpressionType(match.bestCandidate->GetFunction().returnType);
+                        if (ret.empty() && match.bestCandidate->name == match.bestCandidate->containerName)
+                        {
+                            return match.bestCandidate->name;
+                        }
+                        return ret;
                     }
-                    return CleanExpressionType(candidates[0].GetFunction().returnType);
+                    std::string ret = CleanExpressionType(candidates[0].GetFunction().returnType);
+                    if (ret.empty() && candidates[0].name == candidates[0].containerName)
+                    {
+                        return candidates[0].name;
+                    }
+                    return ret;
+                }
+
+                auto globalFound = symbolTable.FindSymbols(funcName);
+                for (const auto &sym : globalFound)
+                {
+                    if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+                    {
+                        return sym.name;
+                    }
                 }
             }
 
@@ -2977,13 +3069,6 @@ namespace angel_lsp::analysis
 
     namespace
     {
-        /** @brief `int32` and `uint32` are the explicit spellings of `int` and `uint`. */
-        std::string_view CanonicalPrimitiveSpelling(std::string_view typeName) noexcept
-        {
-            if (typeName == "int32") return "int";
-            if (typeName == "uint32") return "uint";
-            return typeName;
-        }
 
         std::string LastSegmentOf(const std::string &name)
         {
@@ -3111,9 +3196,9 @@ namespace angel_lsp::analysis
             // writes qualified - or the other way round - is the same name. That costs the
             // `A::Foo` against `B::Foo` case, which is a rejection this misses rather than a legal
             // program it reports.
-            const std::string writtenBase(CanonicalPrimitiveSpelling(LastSegmentOf(written.typeName)));
+            const std::string writtenBase(CanonicalizeType(LastSegmentOf(written.typeName)));
             const std::string expectedBase(
-                CanonicalPrimitiveSpelling(LastSegmentOf(CleanBaseType(expected.typeName))));
+                CanonicalizeType(LastSegmentOf(CleanBaseType(expected.typeName))));
 
             if (writtenBase.empty() || expectedBase.empty() || writtenBase == expectedBase)
             {

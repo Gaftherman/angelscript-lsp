@@ -4,6 +4,22 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.7-exp.14] - 2026-09-11
+
+### Fixed
+
+- Ternary Expression Same-Type Deduction for Complex Classes:
+  - Resolved false-positive type deduction failure where ternary expressions with identical complex classes (e.g. Vector) evaluated to unknown ("").
+  - Added identity type matching in ResolveExpressionType for ternary expressions after type canonicalization.
+  - Corrected constructor call return type resolution in ResolveExpressionType for class and interface types.
+- Primitive Integer Alias Canonicalization:
+  - Unified integer alias canonicalization (int32 -> int, uint32 -> uint, short -> int16, ushort -> uint16) across SemanticHelpers, TypeConversionChecker, and OverloadResolver.
+  - Updated IsSameType and IsConvertible in TypeConversionChecker to treat aliased integer types as equivalent, eliminating spurious conversion diagnostics in variable initializations, assignments, and calls.
+- Implicit Enum-to-Integer Conversions:
+  - Allowed implicit conversion from enum types to integer primitives in TypeConversionChecker and SemanticHelpers.
+  - Prevented registered or local enum declarations from being misclassified as unresolved engine-level types.
+  - Permitted ternary expressions combining enum and integer values to promote to integer types without emitting false-positive conversion diagnostics.
+
 ## [0.7.7-exp.13] - 2026-09-11
 
 ### Added

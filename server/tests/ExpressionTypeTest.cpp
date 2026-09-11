@@ -258,6 +258,47 @@ TEST_SUITE("ExpressionTypeDeduction")
             "    true ? d : a;\n"
             "}\n";
         CHECK(DeduceTypeInMain(classCode) == "Animal@");
+
+        std::string vectorCode =
+            "class Vector\n"
+            "{\n"
+            "    float x, y, z;\n"
+            "    Vector() {}\n"
+            "    Vector(float _x, float _y, float _z) {}\n"
+            "}\n"
+            "void main()\n"
+            "{\n"
+            "    bool cond = true;\n"
+            "    cond ? Vector(1.0f, 2.0f, 3.0f) : Vector(0.0f, 0.0f, 0.0f);\n"
+            "}\n";
+        CHECK(DeduceTypeInMain(vectorCode) == "Vector");
+
+        std::string vectorVarCode =
+            "class Vector { float x, y, z; }\n"
+            "void main()\n"
+            "{\n"
+            "    Vector v1;\n"
+            "    Vector v2;\n"
+            "    true ? v1 : v2;\n"
+            "}\n";
+        CHECK(DeduceTypeInMain(vectorVarCode) == "Vector");
+
+        std::string enumIntCode =
+            "enum WeaponState { Idle, Firing }\n"
+            "void main()\n"
+            "{\n"
+            "    true ? WeaponState::Idle : 0;\n"
+            "}\n";
+        CHECK(DeduceTypeInMain(enumIntCode) == "int");
+
+        std::string aliasCode =
+            "void main()\n"
+            "{\n"
+            "    int32 a = 1;\n"
+            "    int b = 2;\n"
+            "    true ? a : b;\n"
+            "}\n";
+        CHECK(DeduceTypeInMain(aliasCode) == "int");
     }
 
     TEST_CASE("Bare type name in expression context is not a value (asharness parity)")

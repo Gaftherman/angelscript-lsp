@@ -2302,4 +2302,92 @@ TEST_CASE("TypeConversion - Ternary expression branch mismatch emits diagnostic"
                       }));
 }
 
+TEST_CASE("TypeConversion - Ternary same complex class deduction emits 0 diagnostics")
+{
+    const std::string code =
+        "class Vector\n"
+        "{\n"
+        "    float x, y, z;\n"
+        "    Vector() {}\n"
+        "    Vector(float _x, float _y, float _z) {}\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    bool cond = true;\n"
+        "    Vector v = cond ? Vector(1.0f, 2.0f, 3.0f) : Vector(0.0f, 0.0f, 0.0f);\n"
+        "}\n";
+
+    CHECK(ConversionDiagnostics(code).empty());
+}
+
+TEST_CASE("TypeConversion - Integer primitive aliases produce 0 conversion diagnostics")
+{
+    const std::string code =
+        "void main()\n"
+        "{\n"
+        "    int32 a = 10;\n"
+        "    int b = a;\n"
+        "    int32 c = b;\n"
+        "    uint32 u1 = 20;\n"
+        "    uint u2 = u1;\n"
+        "    uint32 u3 = u2;\n"
+        "}\n";
+
+    CHECK(ConversionDiagnostics(code).empty());
+}
+
+TEST_CASE("TypeConversion - Enum values implicitly widen to integer types")
+{
+    const std::string code =
+        "enum MyEnum { ValueA = 1, ValueB = 2 }\n"
+        "void main()\n"
+        "{\n"
+        "    int a = MyEnum::ValueA;\n"
+        "    int32 a32 = MyEnum::ValueA;\n"
+        "    uint b = MyEnum::ValueB;\n"
+        "    uint32 b32 = MyEnum::ValueB;\n"
+        "    int64 c = MyEnum::ValueA;\n"
+        "    uint64 d = MyEnum::ValueB;\n"
+        "    int16 e = MyEnum::ValueA;\n"
+        "}\n";
+
+    CHECK(ConversionDiagnostics(code).empty());
+}
+
+TEST_CASE("TypeConversion - Incompatible ternary branches with enum emit diagnostic")
+{
+    const std::string enumStringCode =
+        "enum MyEnum { ValueA, ValueB }\n"
+        "void main()\n"
+        "{\n"
+        "    bool cond = true;\n"
+        "    auto x = cond ? MyEnum::ValueA : \"str\";\n"
+        "}\n";
+
+    const auto diags1 = ConversionDiagnostics(enumStringCode);
+    CHECK_FALSE(diags1.empty());
+    CHECK(std::any_of(diags1.begin(), diags1.end(),
+                      [](const Diagnostic &d)
+                      {
+                          return d.code == "as-err-no-implicit-conversion";
+                      }));
+
+    const std::string enumMismatchCode =
+        "enum EnumA { A1, A2 }\n"
+        "enum EnumB { B1, B2 }\n"
+        "void main()\n"
+        "{\n"
+        "    bool cond = true;\n"
+        "    auto x = cond ? EnumA::A1 : EnumB::B1;\n"
+        "}\n";
+
+    const auto diags2 = ConversionDiagnostics(enumMismatchCode);
+    CHECK_FALSE(diags2.empty());
+    CHECK(std::any_of(diags2.begin(), diags2.end(),
+                      [](const Diagnostic &d)
+                      {
+                          return d.code == "as-err-no-implicit-conversion";
+                      }));
+}
+
 
