@@ -2,7 +2,7 @@
   "name": "angelscript-lsp",
   "displayName": "%configuration.title%",
   "description": "%extension.description%",
-  "version": "0.7.3",
+  "version": "0.7.7-exp.7",
   "publisher": "Gaftherman",
   "license": "MIT",
   "engines": {
@@ -90,6 +90,11 @@
         "category": "%command.selectPredefined.category%"
       },
       {
+        "command": "angelscript.peekMixinInline",
+        "title": "%command.peekMixinInline.title%",
+        "category": "%command.selectPredefined.category%"
+      },
+      {
         "command": "angelscript.openPhysicalSource",
         "title": "%command.openPhysicalSource.title%",
         "category": "%command.selectPredefined.category%"
@@ -124,6 +129,10 @@
         },
         {
           "command": "angelscript.openPhysicalSource",
+          "when": "false"
+        },
+        {
+          "command": "angelscript.peekMixinInline",
           "when": "false"
         }
       ],

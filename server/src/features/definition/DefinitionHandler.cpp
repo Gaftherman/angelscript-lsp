@@ -389,24 +389,9 @@ namespace angel_lsp::features
          */
         lsp::Location MakeLocation(const analysis::Symbol &sym, const DefinitionRequest &request)
         {
-            if (request.uri.starts_with("angelscript-virtual:"))
+            if (request.uri.starts_with("angelscript-virtual:") || request.uri.starts_with("angelscript-virtual://"))
             {
-                std::string_view s = request.uri;
-                if (s.starts_with("angelscript-virtual://"))
-                {
-                    s.remove_prefix(22);
-                }
-                else if (s.starts_with("angelscript-virtual:"))
-                {
-                    s.remove_prefix(20);
-                }
-                auto slashPos = s.find('/');
-                std::string mixinPart = slashPos != std::string_view::npos ? std::string(s.substr(slashPos + 1)) : std::string(s);
-                if (mixinPart.ends_with(".as"))
-                {
-                    mixinPart = mixinPart.substr(0, mixinPart.size() - 3);
-                }
-                mixinPart = utils::UrlDecode(mixinPart);
+                std::string mixinPart = analysis::SymbolTable::ExtractVirtualMixinName(request.uri);
 
                 const analysis::Symbol *mSym = nullptr;
                 auto cand = request.symbolTable.FindSymbols(mixinPart);
@@ -536,43 +521,15 @@ namespace angel_lsp::features
         std::vector<lsp::Location> locations;
 
         // Check if cursor is in a virtual mixin document
-        bool isVirtualDoc = request.uri.starts_with("angelscript-virtual:");
+        bool isVirtualDoc = request.uri.starts_with("angelscript-virtual:") || request.uri.starts_with("angelscript-virtual://");
         std::string virtualHostClass;
         std::string virtualMixinName;
         const analysis::Symbol *virtualMixinSym = nullptr;
 
         if (isVirtualDoc)
         {
-            std::string_view s = request.uri;
-            if (s.starts_with("angelscript-virtual://"))
-            {
-                s.remove_prefix(22);
-            }
-            else if (s.starts_with("angelscript-virtual:"))
-            {
-                s.remove_prefix(20);
-            }
-
-            auto slashPos = s.find('/');
-            if (slashPos != std::string_view::npos)
-            {
-                virtualHostClass = utils::UrlDecode(s.substr(0, slashPos));
-                std::string_view mixinPart = s.substr(slashPos + 1);
-                if (mixinPart.ends_with(".as"))
-                {
-                    mixinPart.remove_suffix(3);
-                }
-                virtualMixinName = utils::UrlDecode(mixinPart);
-            }
-            else
-            {
-                std::string_view mixinPart = s;
-                if (mixinPart.ends_with(".as"))
-                {
-                    mixinPart.remove_suffix(3);
-                }
-                virtualMixinName = utils::UrlDecode(mixinPart);
-            }
+            virtualHostClass = analysis::SymbolTable::ExtractVirtualHostClass(request.uri);
+            virtualMixinName = analysis::SymbolTable::ExtractVirtualMixinName(request.uri);
 
             auto candidates = request.symbolTable.FindSymbols(virtualMixinName);
             for (const auto &cand : candidates)
@@ -802,28 +759,53 @@ namespace angel_lsp::features
             symbols = analysis::FindGlobalPropertyAccessors(nodeText, request.symbolTable, false);
         }
 
-        // Fallback for virtual documents: lookup in host class hierarchy
-        if (symbols.empty() && isVirtualDoc && !virtualHostClass.empty())
+        // Host class hierarchy lookup for virtual documents
+        if (isVirtualDoc && !virtualHostClass.empty())
         {
+            std::vector<analysis::Symbol> hostSymbols;
             auto hier = analysis::GetInheritedTypeHierarchy(virtualHostClass, request.symbolTable);
             for (const auto &cls : hier)
             {
                 auto found = request.symbolTable.FindSymbols(cls + "::" + nodeText);
                 if (!found.empty())
                 {
-                    symbols = std::move(found);
+                    hostSymbols = std::move(found);
                     break;
                 }
             }
-            if (symbols.empty())
+            if (hostSymbols.empty())
             {
                 for (const auto &cls : hier)
                 {
                     auto accessors = analysis::FindPropertyAccessors(cls, nodeText, request.symbolTable, false);
                     if (!accessors.empty())
                     {
-                        symbols = std::move(accessors);
+                        hostSymbols = std::move(accessors);
                         break;
+                    }
+                }
+            }
+
+            if (!hostSymbols.empty())
+            {
+                std::vector<analysis::Symbol> containerSymbols;
+                for (const auto &s : symbols)
+                {
+                    if (!s.containerName.empty() || s.fileUri == request.uri)
+                    {
+                        containerSymbols.push_back(s);
+                    }
+                }
+                symbols = std::move(containerSymbols);
+
+                for (auto &hs : hostSymbols)
+                {
+                    bool present = std::any_of(symbols.begin(), symbols.end(), [&](const analysis::Symbol &s) {
+                        return s.name == hs.name && analysis::HasSameParameterList(s, hs);
+                    });
+                    if (!present)
+                    {
+                        symbols.push_back(std::move(hs));
                     }
                 }
             }

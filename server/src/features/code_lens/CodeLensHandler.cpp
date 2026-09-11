@@ -748,6 +748,24 @@ namespace angel_lsp::features
                             lsp::json::Object argObj;
                             argObj["hostClass"] = lsp::json::Value(std::string(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName));
                             argObj["mixinName"] = lsp::json::Value(std::string(mixinName));
+                            argObj["hostUri"] = lsp::json::Value(std::string(request.uri));
+                            argObj["line"] = lsp::json::Value(static_cast<lsp::json::Integer>(incStartLine));
+                            argObj["character"] = lsp::json::Value(static_cast<lsp::json::Integer>(incStartChar));
+
+                            if (auto symsPtr = request.symbolTable.FindSymbolsPtr(mixinName))
+                            {
+                                for (const auto &s : *symsPtr)
+                                {
+                                    if (s.type == analysis::SymbolType::Class && s.GetClass().modifiers.isMixin)
+                                    {
+                                        argObj["targetUri"] = lsp::json::Value(std::string(s.fileUri));
+                                        argObj["targetLine"] = lsp::json::Value(static_cast<lsp::json::Integer>(s.startLine));
+                                        argObj["targetCharacter"] = lsp::json::Value(static_cast<lsp::json::Integer>(s.startCharacter));
+                                        break;
+                                    }
+                                }
+                            }
+
                             args.push_back(lsp::json::Value(std::move(argObj)));
                             mixinCmd.arguments = std::move(args);
 

@@ -5,6 +5,7 @@
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
 #include "features/definition/DefinitionHandler.h"
+#include "features/hover/HoverHandler.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -151,4 +152,105 @@ TEST_CASE("VirtualMixinDocument - Definition Routing Physical vs Virtual")
         ts_tree_delete(tree);
     }
 }
+
+TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
+{
+    AngelScriptParser parser;
+    SymbolCollector collector{ nullptr };
+    LocalScopeCollector scopeCollector{ nullptr };
+
+    std::string mixinUri = "file:///mixin.as";
+    std::string mixinCode =
+        "mixin class WeaponMixin {\n"
+        "    void Attack() {\n"
+        "        self.FireWeapon();\n"
+        "        m_flNextAttack = 1.0f;\n"
+        "    }\n"
+        "}\n";
+
+    std::string hostUri = "file:///host.as";
+    std::string hostCode =
+        "class CBasePlayerWeapon {\n"
+        "    float m_flNextAttack;\n"
+        "    void FireWeapon() {}\n"
+        "}\n"
+        "class MyRifle : CBasePlayerWeapon, WeaponMixin {\n"
+        "    CBasePlayerWeapon@ self;\n"
+        "}\n";
+
+    SymbolTable table;
+    ScopeIndex scopeIndex;
+    table.SetVirtualMixinDocumentsEnabled(true);
+
+    collector.CollectSymbols(mixinUri, mixinCode, parser, table);
+    collector.CollectSymbols(hostUri, hostCode, parser, table);
+    table.ResolveIncludedMixins();
+
+    std::string virtualUri = "angelscript-virtual://MyRifle/WeaponMixin.as";
+    TSTree *tree = parser.Parse(mixinCode);
+    REQUIRE(tree != nullptr);
+
+    auto rootScope = scopeCollector.CollectScopes(mixinCode, parser);
+    if (rootScope)
+    {
+        scopeIndex.SetScopeTree(virtualUri, std::move(rootScope));
+    }
+
+    SUBCASE("Hover on 'self' in virtual document resolves host property signature")
+    {
+        // Cursor on "self" at line 2, character 9
+        features::HoverRequest req{ virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{ 2, 9 } };
+        auto hover = features::GetHover(req);
+        REQUIRE(hover.has_value());
+        const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+        CHECK(markup.value.find("self") != std::string::npos);
+        CHECK(markup.value.find("CBasePlayerWeapon") != std::string::npos);
+    }
+
+    SUBCASE("Hover on host member 'FireWeapon' in virtual document resolves host method signature")
+    {
+        // Cursor on "FireWeapon" at line 2, character 15
+        features::HoverRequest req{ virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{ 2, 15 } };
+        auto hover = features::GetHover(req);
+        REQUIRE(hover.has_value());
+        const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+        CHECK(markup.value.find("FireWeapon") != std::string::npos);
+    }
+
+    SUBCASE("Hover on host inherited property 'm_flNextAttack' resolves float type")
+    {
+        // Cursor on "m_flNextAttack" at line 3, character 10
+        features::HoverRequest req{ virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{ 3, 10 } };
+        auto hover = features::GetHover(req);
+        REQUIRE(hover.has_value());
+        const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+        CHECK(markup.value.find("m_flNextAttack") != std::string::npos);
+        CHECK(markup.value.find("float") != std::string::npos);
+    }
+
+    SUBCASE("Go-to-Definition on 'self' in virtual document navigates to host declaration")
+    {
+        // Cursor on "self" at line 2, character 9
+        features::DefinitionRequest req{ virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{ 2, 9 } };
+        auto defs = features::GetDefinition(req);
+        REQUIRE(defs.has_value());
+        REQUIRE(!defs->empty());
+        CHECK((*defs)[0].uri.toString() == hostUri);
+        CHECK((*defs)[0].range.start.line == 5);
+    }
+
+    SUBCASE("Go-to-Definition on host member 'FireWeapon' in virtual document navigates to host declaration")
+    {
+        // Cursor on "FireWeapon" at line 2, character 15
+        features::DefinitionRequest req{ virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{ 2, 15 } };
+        auto defs = features::GetDefinition(req);
+        REQUIRE(defs.has_value());
+        REQUIRE(!defs->empty());
+        CHECK((*defs)[0].uri.toString() == hostUri);
+        CHECK((*defs)[0].range.start.line == 2);
+    }
+
+    ts_tree_delete(tree);
+}
+
 

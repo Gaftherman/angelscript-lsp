@@ -211,7 +211,11 @@ namespace angel_lsp::features
          *  @param role Prefix shown to the user, e.g. "(property) " or "(global variable) ". */
         std::string FormatVariableSignature(const analysis::Symbol &sym, const char *role)
         {
-            if (sym.type != analysis::SymbolType::Variable)
+            if (sym.type != analysis::SymbolType::Variable && sym.type != analysis::SymbolType::Property)
+            {
+                return std::string(role) + sym.name;
+            }
+            if (!std::holds_alternative<analysis::VariableSignature>(sym.signature))
             {
                 return std::string(role) + sym.name;
             }
@@ -272,6 +276,10 @@ namespace angel_lsp::features
             case analysis::SymbolType::Namespace:
                 return "namespace " + sym.name;
             case analysis::SymbolType::Property:
+                if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
+                {
+                    return FormatVariableSignature(sym, "(property) ");
+                }
                 return "(property) " + sym.name;
             default:
                 return sym.name;
@@ -753,43 +761,15 @@ namespace angel_lsp::features
         }
 
         // Check if cursor is in a virtual mixin document
-        bool isVirtualDoc = request.uri.starts_with("angelscript-virtual:");
+        bool isVirtualDoc = request.uri.starts_with("angelscript-virtual:") || request.uri.starts_with("angelscript-virtual://");
         std::string virtualHostClass;
         std::string virtualMixinName;
         const analysis::Symbol *virtualMixinSym = nullptr;
 
         if (isVirtualDoc)
         {
-            std::string_view s = request.uri;
-            if (s.starts_with("angelscript-virtual://"))
-            {
-                s.remove_prefix(22);
-            }
-            else if (s.starts_with("angelscript-virtual:"))
-            {
-                s.remove_prefix(20);
-            }
-
-            auto slashPos = s.find('/');
-            if (slashPos != std::string_view::npos)
-            {
-                virtualHostClass = utils::UrlDecode(s.substr(0, slashPos));
-                std::string_view mixinPart = s.substr(slashPos + 1);
-                if (mixinPart.ends_with(".as"))
-                {
-                    mixinPart.remove_suffix(3);
-                }
-                virtualMixinName = utils::UrlDecode(mixinPart);
-            }
-            else
-            {
-                std::string_view mixinPart = s;
-                if (mixinPart.ends_with(".as"))
-                {
-                    mixinPart.remove_suffix(3);
-                }
-                virtualMixinName = utils::UrlDecode(mixinPart);
-            }
+            virtualHostClass = analysis::SymbolTable::ExtractVirtualHostClass(request.uri);
+            virtualMixinName = analysis::SymbolTable::ExtractVirtualMixinName(request.uri);
 
             auto candidates = request.symbolTable.FindSymbols(virtualMixinName);
             for (const auto &cand : candidates)
@@ -1271,8 +1251,10 @@ namespace angel_lsp::features
             }
         }
 
+        std::string accessorPropertyType;
         if (isVirtualDoc && !virtualHostClass.empty())
         {
+            std::vector<analysis::Symbol> hostSymbols;
             auto hierarchy = analysis::GetInheritedTypeHierarchy(virtualHostClass, request.symbolTable);
             for (const auto &typeName : hierarchy)
             {
@@ -1281,18 +1263,58 @@ namespace angel_lsp::features
                 {
                     if (sym.type == analysis::SymbolType::Function)
                     {
-                        bool overriddenLower = std::any_of(symbols.begin(), symbols.end(),
+                        bool overriddenLower = std::any_of(hostSymbols.begin(), hostSymbols.end(),
                             [&](const analysis::Symbol &kept) {
                                 return analysis::HasSameParameterList(kept, sym);
                             });
                         if (!overriddenLower)
                         {
-                            symbols.push_back(sym);
+                            hostSymbols.push_back(sym);
                         }
                     }
-                    else if (sym.type == analysis::SymbolType::Variable)
+                    else if (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property)
                     {
-                        symbols.push_back(sym);
+                        hostSymbols.push_back(sym);
+                    }
+                }
+            }
+
+            if (hostSymbols.empty())
+            {
+                for (const auto &typeName : hierarchy)
+                {
+                    auto accessors = analysis::FindPropertyAccessors(typeName, nodeText, request.symbolTable, false);
+                    if (!accessors.empty())
+                    {
+                        hostSymbols = std::move(accessors);
+                        accessorPropertyType = analysis::PropertyTypeFromAccessors(hostSymbols);
+                        break;
+                    }
+                }
+            }
+
+            if (!hostSymbols.empty())
+            {
+                // Container members from mixin take precedence over host class overloads;
+                // host class members take precedence over global identifiers.
+                std::vector<analysis::Symbol> containerSymbols;
+                for (const auto &s : symbols)
+                {
+                    if (!s.containerName.empty() || s.fileUri == request.uri)
+                    {
+                        containerSymbols.push_back(s);
+                    }
+                }
+                symbols = std::move(containerSymbols);
+
+                for (auto &hs : hostSymbols)
+                {
+                    bool present = std::any_of(symbols.begin(), symbols.end(), [&](const analysis::Symbol &s) {
+                        return s.name == hs.name && analysis::HasSameParameterList(s, hs);
+                    });
+                    if (!present)
+                    {
+                        symbols.push_back(std::move(hs));
                     }
                 }
             }
@@ -1331,8 +1353,7 @@ namespace angel_lsp::features
             }
         }
 
-        std::string accessorPropertyType;
-        if (symbols.empty())
+        if (symbols.empty() && accessorPropertyType.empty())
         {
             const int accessorMode =
                 request.config ? request.config->engine.propertyAccessorMode : 2;

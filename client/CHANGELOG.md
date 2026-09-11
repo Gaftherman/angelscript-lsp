@@ -4,6 +4,24 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.7-exp.7] - 2026-09-10
+
+### Added
+
+- Native Inline Peek Inspection:
+  - CodeLens above mixin inclusion lines now triggers VS Code's native inline peek widget (`editor.action.peekLocations`) pointing directly to the mixin declaration site without altering editor split layout.
+  - Added dedicated command `angelscript.peekMixinInline` with fallback to virtual document split view in headless environments.
+- Host-Scope Fallback Resolution in Virtual Documents:
+  - Hover tooltips and Go-to-Definition in virtual documents (`angelscript-virtual://<host>/<mixin>.as`) now seamlessly resolve host members, properties, methods, and base class inherited members (such as `self`, `m_pPlayer`, and weapon state accessors).
+  - Variable and property signature formatting enhanced to show full type annotations for class properties (`(property) CBasePlayerWeapon@ self`).
+  - Added full test coverage for virtual document host-scoped hover and definition resolution in `VirtualMixinDocumentTest.cpp`.
+
+### Optimized
+
+- Cold Document-Open Latency:
+  - Debounced synchronous semantic analysis and module closure indexing during `textDocument/didOpen` when document symbols are already indexed or an analysis pass is pending.
+  - Quick local scope and AST parse pass provides instantaneous navigation and syntax diagnostics while full semantic checking runs asynchronously.
+
 ## [0.7.7-exp.6] - 2026-09-10
 
 ### Added

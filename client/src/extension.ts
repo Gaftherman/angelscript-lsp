@@ -5,7 +5,7 @@ import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
     StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n,
     TextEditorDecorationType, Range, TextEditor, WorkspaceEdit, TextDocumentContentProvider,
-    CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType
+    CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType, Location
 } from 'vscode';
 // Types only: erased at compile time, so naming them here costs nothing at runtime.
 import type {
@@ -127,6 +127,9 @@ const FORMAT_STUB_COMMAND = 'angelscript.formatPredefinedStub';
 
 /** @brief Command that opens a synthesized virtual mixin document beside the active editor. */
 const VIEW_MIXIN_EXPANSION_COMMAND = 'angelscript.viewMixinExpansion';
+
+/** @brief Command that peeks a mixin inline at its declaration site. */
+const PEEK_MIXIN_INLINE_COMMAND = 'angelscript.peekMixinInline';
 
 /** @brief Command that jumps from a synthesized virtual mixin document to the physical source. */
 const OPEN_PHYSICAL_SOURCE_COMMAND = 'angelscript.openPhysicalSource';
@@ -1094,7 +1097,10 @@ export async function activate(context: ExtensionContext) {
             commands.registerCommand(FORMAT_STUB_COMMAND, (resource?: Uri) => formatPredefinedStub(resource)));
 
         context.subscriptions.push(
-            commands.registerCommand(VIEW_MIXIN_EXPANSION_COMMAND, (args?: { hostClass?: string; mixinName?: string }) => viewMixinExpansion(args)));
+            commands.registerCommand(VIEW_MIXIN_EXPANSION_COMMAND, (args?: { hostClass?: string; mixinName?: string; hostUri?: string; line?: number; character?: number; targetUri?: string; targetLine?: number; targetCharacter?: number }) => viewMixinExpansion(args)));
+
+        context.subscriptions.push(
+            commands.registerCommand(PEEK_MIXIN_INLINE_COMMAND, (args?: { hostClass?: string; mixinName?: string; hostUri?: string; line?: number; character?: number; targetUri?: string; targetLine?: number; targetCharacter?: number }) => viewMixinExpansion(args)));
 
         context.subscriptions.push(
             commands.registerCommand(OPEN_PHYSICAL_SOURCE_COMMAND, (args?: { fileUri?: string; line?: number; character?: number }) => openPhysicalSource(args)));
@@ -1869,10 +1875,19 @@ export async function openPhysicalSource(args?: { fileUri?: string; line?: numbe
 }
 
 /**
- * @brief Opens the synthesized virtual mixin document beside the active editor.
- * @param args The target host class and mixin name.
+ * @brief Opens the inline peek widget or synthesized virtual mixin document beside the active editor.
+ * @param args The target host class, mixin name, and optional source locations.
  */
-export async function viewMixinExpansion(args?: { hostClass?: string; mixinName?: string }): Promise<void> {
+export async function viewMixinExpansion(args?: {
+    hostClass?: string;
+    mixinName?: string;
+    hostUri?: string;
+    line?: number;
+    character?: number;
+    targetUri?: string;
+    targetLine?: number;
+    targetCharacter?: number;
+}): Promise<void> {
     let hostClass = args?.hostClass;
     let mixinName = args?.mixinName;
     if (!hostClass || !mixinName) {
@@ -1891,6 +1906,28 @@ export async function viewMixinExpansion(args?: { hostClass?: string; mixinName?
             return;
         }
     }
+
+    if (args?.targetUri) {
+        try {
+            const originUri = args.hostUri
+                ? (args.hostUri.startsWith('file:') || args.hostUri.includes('://') ? Uri.parse(args.hostUri) : Uri.file(args.hostUri))
+                : window.activeTextEditor?.document.uri;
+            const targetUri = args.targetUri.startsWith('file:') || args.targetUri.includes('://')
+                ? Uri.parse(args.targetUri)
+                : Uri.file(args.targetUri);
+
+            if (originUri && targetUri) {
+                const originPos = new Position(args.line ?? 0, args.character ?? 0);
+                const targetPos = new Position(args.targetLine ?? 0, args.targetCharacter ?? 0);
+                const targetLoc = new Location(targetUri, targetPos);
+                await commands.executeCommand('editor.action.peekLocations', originUri, originPos, [targetLoc], 'peek');
+                return;
+            }
+        } catch {
+            // Fall back to opening virtual document beside if peek is unsupported or headless
+        }
+    }
+
     const uri = Uri.parse(`angelscript-virtual://${hostClass}/${mixinName}.as`);
     const doc = await workspace.openTextDocument(uri);
     await window.showTextDocument(doc, { preview: true, viewColumn: ViewColumn.Beside });

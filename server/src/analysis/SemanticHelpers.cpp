@@ -1623,6 +1623,14 @@ namespace angel_lsp::analysis
             std::string name = GetNodeText(exprNode, sourceCode);
             if (name == "this")
             {
+                if (uri.starts_with("angelscript-virtual:") || uri.starts_with("angelscript-virtual://"))
+                {
+                    std::string hostClass = SymbolTable::ExtractVirtualHostClass(uri);
+                    if (!hostClass.empty())
+                    {
+                        return CleanExpressionType(hostClass);
+                    }
+                }
                 auto containers = GetEnclosingContainers(exprNode, sourceCode);
                 for (const auto &c : containers)
                 {
@@ -1634,6 +1642,18 @@ namespace angel_lsp::analysis
             }
             if (name == "BaseClass")
             {
+                if (uri.starts_with("angelscript-virtual:") || uri.starts_with("angelscript-virtual://"))
+                {
+                    std::string hostClass = SymbolTable::ExtractVirtualHostClass(uri);
+                    if (!hostClass.empty())
+                    {
+                        std::string base = ResolveBaseClass(hostClass, symbolTable);
+                        if (!base.empty())
+                        {
+                            return CleanExpressionType(base);
+                        }
+                    }
+                }
                 auto containers = GetEnclosingContainers(exprNode, sourceCode);
                 for (const auto &c : containers)
                 {
@@ -1680,6 +1700,38 @@ namespace angel_lsp::analysis
                             }
                         }
                         break;
+                    }
+                }
+            }
+            if (syms.empty() && (uri.starts_with("angelscript-virtual:") || uri.starts_with("angelscript-virtual://")))
+            {
+                std::string hostClass = SymbolTable::ExtractVirtualHostClass(uri);
+                if (!hostClass.empty())
+                {
+                    auto hierarchy = GetInheritedTypeHierarchy(hostClass, symbolTable);
+                    for (const auto &cls : hierarchy)
+                    {
+                        auto found = symbolTable.FindSymbols(cls + "::" + name);
+                        if (!found.empty())
+                        {
+                            syms = std::move(found);
+                            break;
+                        }
+                    }
+                    if (syms.empty())
+                    {
+                        for (const auto &cls : hierarchy)
+                        {
+                            auto accessors = FindPropertyAccessors(cls, name, symbolTable, false);
+                            if (!accessors.empty())
+                            {
+                                std::string pType = PropertyTypeFromAccessors(accessors);
+                                if (!pType.empty())
+                                {
+                                    return CleanExpressionType(pType);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2402,11 +2454,17 @@ namespace angel_lsp::analysis
             return "";
         }
 
+        std::string effectiveHostClass = std::string(virtualHostClass);
+        if (effectiveHostClass.empty() && (fileUri.starts_with("angelscript-virtual:") || fileUri.starts_with("angelscript-virtual://")))
+        {
+            effectiveHostClass = SymbolTable::ExtractVirtualHostClass(fileUri);
+        }
+
         if (objText == "this")
         {
-            if (!virtualHostClass.empty())
+            if (!effectiveHostClass.empty())
             {
-                return std::string(virtualHostClass);
+                return effectiveHostClass;
             }
             auto containers = GetEnclosingContainers(objNode, sourceCode);
             for (const auto &c : containers)
@@ -2421,9 +2479,9 @@ namespace angel_lsp::analysis
 
         if (objText == "BaseClass")
         {
-            if (!virtualHostClass.empty())
+            if (!effectiveHostClass.empty())
             {
-                return ResolveBaseClass(virtualHostClass, symbolTable);
+                return ResolveBaseClass(effectiveHostClass, symbolTable);
             }
             auto containers = GetEnclosingContainers(objNode, sourceCode);
             for (const auto &c : containers)
@@ -2445,6 +2503,90 @@ namespace angel_lsp::analysis
             }
         }
 
+        if (!effectiveHostClass.empty())
+        {
+            auto hier = GetInheritedTypeHierarchy(effectiveHostClass, symbolTable);
+            for (const auto &cls : hier)
+            {
+                auto memberSyms = symbolTable.FindSymbols(cls + "::" + objText);
+                for (const auto &sym : memberSyms)
+                {
+                    if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                        std::holds_alternative<VariableSignature>(sym.signature))
+                    {
+                        const auto &var = sym.GetVariable();
+                        if (!var.typeName.empty())
+                        {
+                            return MemberOwnerType(var.typeName);
+                        }
+                    }
+                    else if (sym.type == SymbolType::Function &&
+                             std::holds_alternative<FunctionSignature>(sym.signature))
+                    {
+                        const auto &fn = sym.GetFunction();
+                        if (!fn.returnType.empty() && fn.returnType != "void")
+                        {
+                            return MemberOwnerType(fn.returnType);
+                        }
+                    }
+                }
+                auto accessors = FindPropertyAccessors(cls, objText, symbolTable, false);
+                if (!accessors.empty())
+                {
+                    std::string pType = PropertyTypeFromAccessors(accessors);
+                    if (!pType.empty())
+                    {
+                        return MemberOwnerType(pType);
+                    }
+                }
+            }
+        }
+
+        auto containers = GetEnclosingContainers(objNode, sourceCode);
+        for (const auto &c : containers)
+        {
+            if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
+            {
+                std::string enclosing = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+                auto hier = GetInheritedTypeHierarchy(enclosing, symbolTable);
+                for (const auto &cls : hier)
+                {
+                    auto memberSyms = symbolTable.FindSymbols(cls + "::" + objText);
+                    for (const auto &sym : memberSyms)
+                    {
+                        if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                            std::holds_alternative<VariableSignature>(sym.signature))
+                        {
+                            const auto &var = sym.GetVariable();
+                            if (!var.typeName.empty())
+                            {
+                                return MemberOwnerType(var.typeName);
+                            }
+                        }
+                        else if (sym.type == SymbolType::Function &&
+                                 std::holds_alternative<FunctionSignature>(sym.signature))
+                        {
+                            const auto &fn = sym.GetFunction();
+                            if (!fn.returnType.empty() && fn.returnType != "void")
+                            {
+                                return MemberOwnerType(fn.returnType);
+                            }
+                        }
+                    }
+                    auto accessors = FindPropertyAccessors(cls, objText, symbolTable, false);
+                    if (!accessors.empty())
+                    {
+                        std::string pType = PropertyTypeFromAccessors(accessors);
+                        if (!pType.empty())
+                        {
+                            return MemberOwnerType(pType);
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
         std::string exprType = ResolveExpressionType(objNode, scope, symbolTable, sourceCode, fileUri);
         if (!exprType.empty() && exprType != "void" && exprType != "unknown")
         {
@@ -2454,7 +2596,8 @@ namespace angel_lsp::analysis
         auto globSyms = symbolTable.FindSymbols(objText);
         for (const auto &sym : globSyms)
         {
-            if (sym.type == SymbolType::Variable)
+            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                std::holds_alternative<VariableSignature>(sym.signature))
             {
                 const auto &var = sym.GetVariable();
                 if (!var.typeName.empty())

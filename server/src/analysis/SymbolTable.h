@@ -481,6 +481,15 @@ namespace angel_lsp::analysis
         /** @brief Constructs a virtual mixin URI for a host class and mixin name (e.g. angelscript-virtual://<host>/<mixin>.as). */
         [[nodiscard]] static std::string BuildVirtualMixinUri(std::string_view hostClass, std::string_view mixinName);
 
+        /** @brief Extracts the host class from a virtual mixin URI (e.g. "Rifle" from angelscript-virtual://Rifle/WeaponMixin.as). */
+        [[nodiscard]] static std::string ExtractVirtualHostClass(std::string_view uri);
+
+        /** @brief Extracts the mixin name from a virtual mixin URI (e.g. "WeaponMixin" from angelscript-virtual://Rifle/WeaponMixin.as). */
+        [[nodiscard]] static std::string ExtractVirtualMixinName(std::string_view uri);
+
+        /** @brief Returns true if the symbol table holds any symbols collected from fileUri. */
+        [[nodiscard]] bool HasDocumentSymbols(const std::string &fileUri) const;
+
         bool HasSymbol(const std::string &qualifiedName) const;
         bool HasSymbolAnywhere(const std::string &name) const;
 

@@ -100,5 +100,6 @@
   "angelscript.enableVirtualMixinDocuments.description": "Enables experimental virtual text documents for mixin classes (angelscript-virtual://). When disabled, high-performance symbol synthesis is used.",
   "angelscript.inlayHints.suppressWhenArgumentMatchesName.description": "Suppress parameter name hints when the argument expression text matches the parameter name exactly. Default is false.",
   "command.viewMixinExpansion.title": "View Mixin Expansion",
+  "command.peekMixinInline.title": "Peek Mixin Inline",
   "command.openPhysicalSource.title": "Open Physical Source"
 }

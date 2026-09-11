@@ -3,6 +3,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/OverloadResolver.h"
 #include "utils/LspLogger.h"
+#include "utils/Utils.h"
 #include "spdlog/fmt/fmt.h"
 
 #include <algorithm>
@@ -522,6 +523,62 @@ namespace angel_lsp::analysis
             return fmt::format("angelscript-virtual://{}/{}", hostClass, mixinClean);
         }
         return fmt::format("angelscript-virtual://{}/{}.as", hostClass, mixinClean);
+    }
+
+    std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
+    {
+        if (!uri.starts_with("angelscript-virtual:") && !uri.starts_with("angelscript-virtual://"))
+        {
+            return "";
+        }
+        std::string_view s = uri;
+        if (s.starts_with("angelscript-virtual://"))
+        {
+            s.remove_prefix(22);
+        }
+        else if (s.starts_with("angelscript-virtual:"))
+        {
+            s.remove_prefix(20);
+        }
+
+        auto slashPos = s.find('/');
+        if (slashPos == std::string_view::npos)
+        {
+            return "";
+        }
+        return utils::UrlDecode(s.substr(0, slashPos));
+    }
+
+    std::string SymbolTable::ExtractVirtualMixinName(std::string_view uri)
+    {
+        if (!uri.starts_with("angelscript-virtual:") && !uri.starts_with("angelscript-virtual://"))
+        {
+            return "";
+        }
+        std::string_view s = uri;
+        if (s.starts_with("angelscript-virtual://"))
+        {
+            s.remove_prefix(22);
+        }
+        else if (s.starts_with("angelscript-virtual:"))
+        {
+            s.remove_prefix(20);
+        }
+
+        auto slashPos = s.find('/');
+        std::string_view mixinPart = (slashPos != std::string_view::npos) ? s.substr(slashPos + 1) : s;
+        if (mixinPart.ends_with(".as"))
+        {
+            mixinPart.remove_suffix(3);
+        }
+        return utils::UrlDecode(mixinPart);
+    }
+
+    bool SymbolTable::HasDocumentSymbols(const std::string &fileUri) const
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        auto it = m_keysByFile.find(fileUri);
+        return it != m_keysByFile.end() && !it->second.empty();
     }
 
 
