@@ -11,6 +11,7 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <lsp/json/json.h>
 #include <string>
 #include <utility>
