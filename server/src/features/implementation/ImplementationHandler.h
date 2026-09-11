@@ -10,6 +10,11 @@
 #include <string>
 #include <vector>
 
+namespace angel_lsp::utils
+{
+    class LspLogger;
+}
+
 namespace angel_lsp::features
 {
     /**
@@ -22,6 +27,7 @@ namespace angel_lsp::features
         TSTree *tree = nullptr;
         const analysis::SymbolTable &symbolTable;
         lsp::Position position;
+        angel_lsp::utils::LspLogger *logger = nullptr;
     };
 
     /**

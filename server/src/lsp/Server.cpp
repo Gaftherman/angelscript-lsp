@@ -5296,7 +5296,7 @@ namespace angel_lsp
                 if (!doc)
                     return lsp::Null{};
 
-                features::ImplementationRequest ir{ doc->uri, *doc->text, doc->tree, m_symbolTable, codec::Decode(*doc->text, m_positionEncoding, req.position) };
+                features::ImplementationRequest ir{ doc->uri, *doc->text, doc->tree, m_symbolTable, codec::Decode(*doc->text, m_positionEncoding, req.position), m_logger.get() };
                 auto impls = features::GetImplementations(ir);
                 if (impls.has_value() && !impls->empty())
                 {
@@ -5715,7 +5715,7 @@ namespace angel_lsp
                 if (!doc)
                     return lsp::Null{};
 
-                features::ReferencesRequest rr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.position), req.context.includeDeclaration, m_symbolTable, m_scopeIndex };
+                features::ReferencesRequest rr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.position), req.context.includeDeclaration, m_symbolTable, m_scopeIndex, m_logger.get() };
                 auto refs = features::GetReferences(rr);
                 if (refs.has_value())
                 {
@@ -5742,7 +5742,7 @@ namespace angel_lsp
                     predefinedUris.insert(m_predefinedUris.begin(), m_predefinedUris.end());
                 }
 
-                features::PrepareRenameRequest pr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.position), m_symbolTable, m_scopeIndex, predefinedUris };
+                features::PrepareRenameRequest pr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.position), m_symbolTable, m_scopeIndex, predefinedUris, m_logger.get() };
                 auto prep = features::PrepareRename(pr);
                 if (prep.has_value())
                 {
@@ -5769,7 +5769,7 @@ namespace angel_lsp
                     predefinedUris.insert(m_predefinedUris.begin(), m_predefinedUris.end());
                 }
 
-                features::RenameRequest rr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.position), req.newName, m_symbolTable, m_scopeIndex, predefinedUris };
+                features::RenameRequest rr{ doc->uri, *doc->text, doc->tree, codec::Decode(*doc->text, m_positionEncoding, req.position), req.newName, m_symbolTable, m_scopeIndex, predefinedUris, m_logger.get() };
                 auto edit = features::Rename(rr);
                 if (edit.has_value())
                 {
@@ -5839,7 +5839,8 @@ namespace angel_lsp
                     codec::Decode(*doc->text, m_positionEncoding, req.range),
                     m_symbolTable,
                     m_scopeIndex,
-                    m_config.features.inlayHintsSuppressWhenArgumentMatchesName
+                    m_config.features.inlayHintsSuppressWhenArgumentMatchesName,
+                    m_logger.get()
                 };
                 auto hints = features::GetInlayHints(ihr);
                 if (hints.has_value())
@@ -6015,7 +6016,7 @@ namespace angel_lsp
                 if (!doc)
                     return lsp::Null{};
 
-                features::CodeLensRequest clr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex };
+                features::CodeLensRequest clr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex, m_logger.get() };
                 auto lenses = features::GetCodeLenses(clr);
                 if (lenses.has_value())
                 {
@@ -6033,7 +6034,7 @@ namespace angel_lsp
                     return req;
                 }
 
-                features::CodeLensResolveRequest clrr{ req, m_symbolTable, m_scopeIndex };
+                features::CodeLensResolveRequest clrr{ req, m_symbolTable, m_scopeIndex, m_logger.get() };
                 auto resolved = features::ResolveCodeLens(clrr);
                 return resolved.value_or(std::move(req));
             });

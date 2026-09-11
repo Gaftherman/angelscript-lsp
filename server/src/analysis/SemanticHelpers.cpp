@@ -9,6 +9,8 @@
 
 #include <optional>
 #include "parser/GrammarNames.h"
+#include "utils/LspLogger.h"
+#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp::analysis
 {
@@ -266,6 +268,10 @@ namespace angel_lsp::analysis
 
     bool IsKnownType(const std::string &baseName, const DiagnosticContext &ctx)
     {
+        if (ctx.logger && ctx.logger->IsTraceEnabled())
+        {
+            ctx.logger->LogTrace(fmt::format("[SemanticHelpers] IsKnownType: checking '{}'", baseName));
+        }
         if (baseName.empty()) return true;
         if (IsCorePrimitive(baseName)) return true;
         if (!ctx.request.GetStringTypeName().empty() && baseName == ctx.request.GetStringTypeName()) return true;

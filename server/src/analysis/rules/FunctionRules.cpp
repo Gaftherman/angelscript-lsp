@@ -396,8 +396,8 @@ namespace angel_lsp::analysis::rules
         {
             if (fctx.isMixin && fctx.isConstructor)
             {
-                ctx.LogRule("CheckConstructorDestructor", "as-err-mixin-constructor", sym);
-                ctx.Emit(sym, "as-err-mixin-constructor", sym.containerName);
+                ctx.LogRule("CheckConstructorDestructor", diagnostics::codes::MixinConstructor, sym);
+                ctx.Emit(sym, diagnostics::codes::MixinConstructor, sym.containerName);
             }
 
             if (!fctx.isDestructor)
@@ -407,20 +407,20 @@ namespace angel_lsp::analysis::rules
 
             if (fctx.isMixin)
             {
-                ctx.LogRule("CheckConstructorDestructor", "as-err-mixin-destructor", sym);
-                ctx.Emit(sym, "as-err-mixin-destructor", sym.containerName);
+                ctx.LogRule("CheckConstructorDestructor", diagnostics::codes::MixinDestructor, sym);
+                ctx.Emit(sym, diagnostics::codes::MixinDestructor, sym.containerName);
             }
 
             if (!sig.parameters.empty())
             {
-                ctx.LogRule("CheckConstructorDestructor", "as-err-destructor-param", sym);
-                ctx.Emit(sym, "as-err-destructor-param", sym.name);
+                ctx.LogRule("CheckConstructorDestructor", diagnostics::codes::DestructorParam, sym);
+                ctx.Emit(sym, diagnostics::codes::DestructorParam, sym.name);
             }
 
             if (!sig.returnType.empty())
             {
-                ctx.LogRule("CheckConstructorDestructor", "as-err-destructor-return-type", sym);
-                ctx.Emit(sym, "as-err-destructor-return-type", sym.name);
+                ctx.LogRule("CheckConstructorDestructor", diagnostics::codes::DestructorReturnType, sym);
+                ctx.Emit(sym, diagnostics::codes::DestructorReturnType, sym.name);
             }
 
             if (sig.modifiers.isDelete)

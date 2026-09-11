@@ -2,6 +2,8 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/GrammarNames.h"
+#include "utils/LspLogger.h"
+#include <spdlog/fmt/fmt.h>
 
 #include <algorithm>
 #include <string_view>
@@ -219,6 +221,12 @@ namespace angel_lsp::features
         if (name.empty())
         {
             return std::nullopt;
+        }
+
+        if (request.logger && request.logger->IsDebugEnabled())
+        {
+            request.logger->LogDebug(fmt::format("[Implementation] Resolving implementations for '{}' at {}:{} in {}",
+                name, request.position.line, request.position.character, request.uri));
         }
 
         const SymbolTable &table = request.symbolTable;

@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <unordered_set>
 #include "parser/GrammarNames.h"
+#include "utils/LspLogger.h"
+#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp::features
 {
@@ -1205,6 +1207,11 @@ namespace angel_lsp::features
             return std::nullopt;
         }
 
+        if (request.logger && request.logger->IsDebugEnabled())
+        {
+            request.logger->LogDebug(fmt::format("[InlayHint] Computing inlay hints for URI: {}", request.uri));
+        }
+
         TSNode rootNode = ts_tree_root_node(request.tree);
         if (ts_node_is_null(rootNode))
         {
@@ -1223,6 +1230,11 @@ namespace angel_lsp::features
             }
             return a.position.character < b.position.character;
         });
+
+        if (request.logger && request.logger->IsTraceEnabled())
+        {
+            request.logger->LogTrace(fmt::format("[InlayHint] Computed {} hints for URI: {}", hints.size(), request.uri));
+        }
 
         return hints;
     }

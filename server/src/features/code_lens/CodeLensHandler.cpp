@@ -3,6 +3,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/Utils.h"
+#include "utils/LspLogger.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -333,6 +334,11 @@ namespace angel_lsp::features
 
     std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest &request)
     {
+        if (request.logger && request.logger->IsDebugEnabled())
+        {
+            request.logger->LogDebug(fmt::format("[CodeLens] Computing code lenses for URI: {}", request.uri));
+        }
+
         if (request.uri.starts_with("angelscript-virtual:") || request.uri.starts_with("angelscript-virtual://"))
         {
             std::string_view s = request.uri;
@@ -903,11 +909,20 @@ namespace angel_lsp::features
             return std::nullopt;
         }
 
+        if (request.logger && request.logger->IsTraceEnabled())
+        {
+            request.logger->LogTrace(fmt::format("[CodeLens] Generated {} code lenses for URI: {}", lenses.size(), request.uri));
+        }
+
         return lenses;
     }
 
     std::optional<lsp::CodeLens> ResolveCodeLens(const CodeLensResolveRequest &request)
     {
+        if (request.logger && request.logger->IsTraceEnabled())
+        {
+            request.logger->LogTrace("[CodeLens] Resolving code lens");
+        }
         return request.codeLens;
     }
 }

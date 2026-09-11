@@ -10,6 +10,8 @@
 #include <unordered_set>
 #include <vector>
 #include "parser/GrammarNames.h"
+#include "utils/LspLogger.h"
+#include <spdlog/fmt/fmt.h>
 
 // Moved here verbatim from RenameHandler.cpp, where find-references had a second copy of
 // the same ~780 lines. See SymbolResolution.h for why that mattered and what pins it.
@@ -227,8 +229,15 @@ namespace angel_lsp::features::resolution
         lsp::Position position,
         const analysis::SymbolTable &symbolTable,
         const analysis::ScopeIndex &scopeIndex,
-        TSNode &outNode)
+        TSNode &outNode,
+        angel_lsp::utils::LspLogger *logger)
     {
+        if (logger && logger->IsDebugEnabled())
+        {
+            logger->LogDebug(fmt::format("[SymbolResolution] ResolveTargetSymbol at {}:{} in URI: {}",
+                position.line, position.character, uri));
+        }
+
         std::string nodeText = GetNodeTextAt(sourceCode, tree, position, outNode);
         if (nodeText.empty() || ts_node_is_null(outNode))
         {
@@ -769,8 +778,15 @@ namespace angel_lsp::features::resolution
         TSTree *tree,
         const analysis::SymbolTable &symbolTable,
         const analysis::ScopeIndex &scopeIndex,
-        bool includeDeclaration)
+        bool includeDeclaration,
+        angel_lsp::utils::LspLogger *logger)
     {
+        if (logger && logger->IsDebugEnabled())
+        {
+            logger->LogDebug(fmt::format("[SymbolResolution] CollectOccurrences for target '{}' (kind={}) in {}",
+                target.name, static_cast<int>(target.kind), currentUri));
+        }
+
         std::vector<lsp::Location> results;
         std::set<std::tuple<std::string, uint32_t, uint32_t>> seen;
         std::set<std::tuple<std::string, uint32_t, uint32_t>> declRanges;
@@ -1479,6 +1495,13 @@ namespace angel_lsp::features::resolution
                 scanScopes(docScopeRoot.get());
             }
         }
+
+        if (logger && logger->IsTraceEnabled())
+        {
+            logger->LogTrace(fmt::format("[SymbolResolution] Found {} occurrences for target '{}'",
+                results.size(), target.name));
+        }
+
         return results;
     }
 }

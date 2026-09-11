@@ -10,6 +10,11 @@
 #include <string>
 #include <vector>
 
+namespace angel_lsp::utils
+{
+    class LspLogger;
+}
+
 namespace angel_lsp::features::resolution
 {
     /** @brief What kind of thing the cursor is on, which decides where its occurrences can be. */
@@ -64,7 +69,8 @@ namespace angel_lsp::features::resolution
         lsp::Position position,
         const analysis::SymbolTable &symbolTable,
         const analysis::ScopeIndex &scopeIndex,
-        TSNode &outNode);
+        TSNode &outNode,
+        angel_lsp::utils::LspLogger *logger = nullptr);
 
     /**
      * @brief Every place the resolved target appears, across every indexed document.
@@ -95,5 +101,6 @@ namespace angel_lsp::features::resolution
         TSTree *tree,
         const analysis::SymbolTable &symbolTable,
         const analysis::ScopeIndex &scopeIndex,
-        bool includeDeclaration = true);
+        bool includeDeclaration = true,
+        angel_lsp::utils::LspLogger *logger = nullptr);
 }

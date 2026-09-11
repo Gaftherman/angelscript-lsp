@@ -10,6 +10,11 @@
 #include <optional>
 #include <unordered_set>
 
+namespace angel_lsp::utils
+{
+    class LspLogger;
+}
+
 namespace angel_lsp::features
 {
     /**
@@ -24,6 +29,7 @@ namespace angel_lsp::features
         const analysis::SymbolTable &symbolTable;
         const analysis::ScopeIndex &scopeIndex;
         const std::unordered_set<std::string> &predefinedUris;
+        angel_lsp::utils::LspLogger *logger = nullptr;
     };
 
     /**
@@ -39,6 +45,7 @@ namespace angel_lsp::features
         const analysis::SymbolTable &symbolTable;
         const analysis::ScopeIndex &scopeIndex;
         const std::unordered_set<std::string> &predefinedUris;
+        angel_lsp::utils::LspLogger *logger = nullptr;
     };
 
     /**

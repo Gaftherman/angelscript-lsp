@@ -9,6 +9,11 @@
 #include <vector>
 #include <optional>
 
+namespace angel_lsp::utils
+{
+    class LspLogger;
+}
+
 namespace angel_lsp::features
 {
     /**
@@ -23,6 +28,7 @@ namespace angel_lsp::features
         const analysis::SymbolTable &symbolTable;
         const analysis::ScopeIndex &scopeIndex;
         bool suppressWhenArgumentMatchesName = false;
+        angel_lsp::utils::LspLogger *logger = nullptr;
     };
 
     /**

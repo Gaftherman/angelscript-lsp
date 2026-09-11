@@ -8,6 +8,8 @@
 #include <vector>
 #include "parser/Primitives.h"
 #include "parser/GrammarNames.h"
+#include "utils/LspLogger.h"
+#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp::analysis
 {
@@ -3114,6 +3116,16 @@ namespace angel_lsp::analysis
             return;
         }
 
+        if (ctx.logger && ctx.logger->IsDebugEnabled())
+        {
+            ctx.logger->LogDebug(fmt::format("[TypeConversionChecker] Running CheckTypeConversions for URI: {}", ctx.request.fileUri));
+        }
+
         VisitNode(request.root, request, ctx);
+
+        if (ctx.logger && ctx.logger->IsTraceEnabled())
+        {
+            ctx.logger->LogTrace(fmt::format("[TypeConversionChecker] Finished CheckTypeConversions for URI: {}", ctx.request.fileUri));
+        }
     }
 }

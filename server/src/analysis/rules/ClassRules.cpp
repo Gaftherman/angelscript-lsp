@@ -724,10 +724,6 @@ namespace angel_lsp::analysis::rules
                         {
                             TSNode objNode = GetChildByField(cur, "object");
                             TSNode propNode = GetChildByField(cur, "member");
-                            if (ts_node_is_null(propNode))
-                            {
-                                propNode = GetChildByField(cur, "property");
-                            }
                             if (!ts_node_is_null(objNode) && !ts_node_is_null(propNode))
                             {
                                 std::string objName = GetNodeText(objNode, mixinSource);
@@ -760,13 +756,13 @@ namespace angel_lsp::analysis::rules
                         }
                         else if (curType == "scoped_identifier")
                         {
-                            TSNode scopeChild = GetChildByField(cur, "scope");
-                            TSNode nameChild = GetChildByField(cur, "name");
                             std::string scPrefix;
                             std::string nmText;
-
-                            if (!ts_node_is_null(scopeChild) && !ts_node_is_null(nameChild))
+                            uint32_t namedCount = ts_node_named_child_count(cur);
+                            if (namedCount >= 2)
                             {
+                                TSNode scopeChild = ts_node_named_child(cur, 0);
+                                TSNode nameChild = ts_node_named_child(cur, namedCount - 1);
                                 scPrefix = GetNodeText(scopeChild, mixinSource);
                                 nmText = GetNodeText(nameChild, mixinSource);
                             }

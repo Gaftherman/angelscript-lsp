@@ -31,7 +31,8 @@ namespace angel_lsp::features
             request.position,
             request.symbolTable,
             request.scopeIndex,
-            node);
+            node,
+            request.logger);
 
         if (!target.has_value() || ts_node_is_null(node))
         {
@@ -126,7 +127,8 @@ namespace angel_lsp::features
             request.position,
             request.symbolTable,
             request.scopeIndex,
-            node);
+            node,
+            request.logger);
 
         if (!target.has_value() || ts_node_is_null(node))
         {
@@ -194,7 +196,9 @@ namespace angel_lsp::features
             request.sourceCode,
             request.tree,
             request.symbolTable,
-            request.scopeIndex);
+            request.scopeIndex,
+            true,
+            request.logger);
 
         if (occurrences.empty())
         {
