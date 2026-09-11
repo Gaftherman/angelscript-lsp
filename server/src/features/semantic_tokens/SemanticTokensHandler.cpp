@@ -186,6 +186,66 @@ namespace angel_lsp::features
         }
 
         /**
+         * @brief Trims leading and trailing ASCII whitespace from a string view.
+         */
+        [[nodiscard]] inline std::string_view TrimWhitespace(std::string_view text) noexcept
+        {
+            while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '\r' || text.front() == '\n'))
+            {
+                text.remove_prefix(1);
+            }
+            while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r' || text.back() == '\n'))
+            {
+                text.remove_suffix(1);
+            }
+            return text;
+        }
+
+        /**
+         * @brief Checks whether the given text is a punctuation or bracket token that must never be an operator.
+         */
+        [[nodiscard]] inline bool IsPunctuationOrBracket(std::string_view text) noexcept
+        {
+            text = TrimWhitespace(text);
+            if (text.empty())
+            {
+                return false;
+            }
+            return text == "{" || text == "}" || text == "(" || text == ")" ||
+                   text == "[" || text == "]" || text == ";" || text == ",";
+        }
+
+        /**
+         * @brief Checks whether the given text is a genuine AngelScript operator.
+         */
+        [[nodiscard]] inline bool IsGenuineOperator(std::string_view text) noexcept
+        {
+            text = TrimWhitespace(text);
+            static const ankerl::unordered_dense::set<std::string_view> s_operators = {
+                // Arithmetic
+                "+", "-", "*", "/", "%",
+                // Increment / Decrement
+                "++", "--",
+                // Comparison / Relational
+                "==", "!=", "<", "<=", ">", ">=",
+                // Logical
+                "&&", "||", "!", "^^",
+                // Assignment and Compound Assignment
+                "=", "+=", "-=", "*=", "/=", "%=",
+                "&=", "|=", "^=", "<<=", ">>=", ">>>=",
+                // Bitwise
+                "&", "|", "^", "~", "<<", ">>", ">>>",
+                // Conditional (ternary)
+                "?", ":",
+                // Handle Assignment
+                "@=",
+                // Word operators (in case they reach operator classification)
+                "and", "or", "xor", "not", "is", "!is"
+            };
+            return s_operators.contains(text);
+        }
+
+        /**
          * @brief Upgrades coarse token types for identifier declarations from syntax tree position.
          *
          * A declaration has no reference to resolve, which is why the scope-tree pass cannot answer
@@ -536,10 +596,27 @@ namespace angel_lsp::features
                 tokenType = Type_TemplatePunctuation;
                 priority = 4;
             }
-            else if (captureName == "operator" || captureName == "punctuation.special" || captureName == "punctuation.bracket")
+            else if (captureName == "operator" || captureName == "punctuation.special")
             {
-                tokenType = Type_Operator;
-                priority = 4;
+                const uint32_t sb = ts_node_start_byte(node);
+                const uint32_t eb = ts_node_end_byte(node);
+                if (sb < eb && eb <= request.sourceCode.size())
+                {
+                    std::string_view text(request.sourceCode.data() + sb, eb - sb);
+                    if (IsPunctuationOrBracket(text) || !IsGenuineOperator(text))
+                    {
+                        valid = false;
+                    }
+                    else
+                    {
+                        tokenType = Type_Operator;
+                        priority = 4;
+                    }
+                }
+                else
+                {
+                    valid = false;
+                }
             }
             else
             {
@@ -795,6 +872,24 @@ namespace angel_lsp::features
                         tokenType = Type_TemplatePunctuation;
                     }
 
+                    if (tokenType == Type_Operator)
+                    {
+                        const uint32_t sb = ts_node_start_byte(node);
+                        const uint32_t eb = ts_node_end_byte(node);
+                        if (sb < eb && eb <= request.sourceCode.size())
+                        {
+                            std::string_view tokText(request.sourceCode.data() + sb, eb - sb);
+                            if (IsPunctuationOrBracket(tokText) || !IsGenuineOperator(tokText))
+                            {
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            continue;
+                        }
+                    }
+
                     rawTokens.push_back(RawToken{
                         startPoint.row,
                         startPoint.column,
@@ -807,6 +902,11 @@ namespace angel_lsp::features
             }
             else
             {
+                if (tokenType == Type_Operator)
+                {
+                    continue;
+                }
+
                 // Multi-line token: split line by line
                 for (uint32_t r = startPoint.row; r <= endPoint.row; ++r)
                 {
@@ -1036,6 +1136,24 @@ namespace angel_lsp::features
             });
         }
 
+        // Post-filter safety: ensure no brackets, punctuation, or non-operators ever get emitted as Type_Operator
+        std::erase_if(filteredTokens, [&sourceLines](const RawToken &tok)
+        {
+            if (tok.tokenType == Type_Operator)
+            {
+                if (tok.line >= sourceLines.size() || tok.startChar + tok.length > sourceLines[tok.line].size())
+                {
+                    return true;
+                }
+                std::string_view slice(sourceLines[tok.line].data() + tok.startChar, tok.length);
+                if (IsPunctuationOrBracket(slice) || !IsGenuineOperator(slice))
+                {
+                    return true;
+                }
+            }
+            return false;
+        });
+
         // Delta Encode 5-tuple
         std::vector<lsp::uint> data;
         data.reserve(filteredTokens.size() * 5);
@@ -1069,21 +1187,36 @@ namespace angel_lsp::features
             return {};
         }
 
-        // Longest common prefix, then longest common suffix over what is left. One splice between
-        // the two describes the change, which is what an edit confined to a few lines actually is.
+        // Both previous and current must be valid 5-tuple streams.
+        if (previous.size() % 5 != 0 || current.size() % 5 != 0)
+        {
+            lsp::SemanticTokensEdit edit;
+            edit.start = 0;
+            edit.deleteCount = static_cast<lsp::uint>(previous.size());
+            if (!current.empty())
+            {
+                edit.data = lsp::Array<lsp::uint>(current.begin(), current.end());
+            }
+            return { std::move(edit) };
+        }
+
+        // Longest common prefix, aligned down to a multiple of 5 (whole tokens).
         size_t prefix = 0;
         const size_t shortest = std::min(previous.size(), current.size());
         while (prefix < shortest && previous[prefix] == current[prefix])
         {
             ++prefix;
         }
+        prefix = prefix - (prefix % 5);
 
+        // Longest common suffix over what is left, aligned down to a multiple of 5 (whole tokens).
         size_t suffix = 0;
         while (suffix < shortest - prefix &&
                previous[previous.size() - 1 - suffix] == current[current.size() - 1 - suffix])
         {
             ++suffix;
         }
+        suffix = suffix - (suffix % 5);
 
         lsp::SemanticTokensEdit edit;
         edit.start = static_cast<lsp::uint>(prefix);

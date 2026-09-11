@@ -297,13 +297,12 @@ TEST_CASE("SemanticTokensHandler - A delta splices only the run that changed")
     const auto edits = ComputeSemanticTokensDelta(previous, current);
     REQUIRE(edits.size() == 1);
 
-    // Only the one changed integer is resent: the untouched runs on either side are what the
-    // prefix/suffix scan is for.
-    CHECK(edits[0].start == 7);
-    CHECK(edits[0].deleteCount == 1);
+    // The edit must be strictly aligned to 5-tuples (whole tokens) to prevent modulo-5 desync.
+    CHECK(edits[0].start == 5);
+    CHECK(edits[0].deleteCount == 5);
     REQUIRE(edits[0].data.has_value());
-    REQUIRE(edits[0].data->size() == 1);
-    CHECK((*edits[0].data)[0] == 7);
+    REQUIRE(edits[0].data->size() == 5);
+    CHECK((*edits[0].data)[2] == 7);
 }
 
 TEST_CASE("SemanticTokensHandler - A delta describes an appended token")
@@ -1143,4 +1142,181 @@ TEST_CASE("SemanticTokensHandler - Punctuation operators stay operators")
         REQUIRE(token != nullptr);
         CHECK(token->type == k_operator);
     }
+}
+
+TEST_CASE("SemanticTokensHandler - Braces and punctuation delimiters never receive operator token type")
+{
+    const std::string source =
+        "void BracketTest(int a, int b)\n"
+        "{\n"
+        "    int[] arr = { 1, 2 };\n"
+        "    if (a > b)\n"
+        "    {\n"
+        "        arr[0] = (a + b);\n"
+        "    }\n"
+        "}\n";
+
+    const auto swept = SweepTokens(source);
+    constexpr uint32_t k_operator = 21;
+
+    // Check opening and closing braces on lines 1, 2, 4, 6, 7
+    for (uint32_t line : { 1u, 2u, 4u, 6u, 7u })
+    {
+        for (const auto &token : swept)
+        {
+            if (token.line == line)
+            {
+                // If any token exists on this line, ensure it is not an operator pointing at a brace or delimiter
+                if (token.type == k_operator)
+                {
+                    // Look at the source slice
+                    const std::string lineStr = source.substr(0, source.find('\n', 0));
+                    // Check that operator is none of {, }, (, ), [, ], ;, ,
+                    FAIL_CHECK("Operator token emitted unexpectedly on line " << line);
+                }
+            }
+        }
+    }
+
+    // Verify all tokens across the entire document: no bracket or delimiter can ever be an operator
+    std::vector<std::string> lines;
+    {
+        std::istringstream ss(source);
+        std::string line;
+        while (std::getline(ss, line))
+        {
+            lines.push_back(line);
+        }
+    }
+
+    for (const auto &tok : swept)
+    {
+        if (tok.type == k_operator)
+        {
+            REQUIRE(tok.line < lines.size());
+            std::string_view slice(lines[tok.line].data() + tok.startCol, tok.length);
+            CHECK_FALSE(slice == "{");
+            CHECK_FALSE(slice == "}");
+            CHECK_FALSE(slice == "(");
+            CHECK_FALSE(slice == ")");
+            CHECK_FALSE(slice == "[");
+            CHECK_FALSE(slice == "]");
+            CHECK_FALSE(slice == ";");
+            CHECK_FALSE(slice == ",");
+        }
+    }
+}
+
+TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integrity and 5-tuple alignment")
+{
+    // Step 1: Valid function with ternary expression and braces
+    const std::string step1Valid =
+        "void TestFunction()\n"
+        "{\n"
+        "    string status = true ? \"READY\" : \"DRYFIRE\";\n"
+        "}\n";
+
+    // Step 2: Introduce syntax error (unclosed quote DRYFIRE")
+    const std::string step2SyntaxError =
+        "void TestFunction()\n"
+        "{\n"
+        "    string status = true ? \"READY\" : DRYFIRE\";\n"
+        "}\n";
+
+    // Step 3: Remove quote back to DRYFIRE
+    const std::string step3Recovered =
+        "void TestFunction()\n"
+        "{\n"
+        "    string status = true ? \"READY\" : DRYFIRE;\n"
+        "}\n";
+
+    AngelScriptParser parser;
+    SymbolTable table;
+
+    // Step 1
+    TSTree *tree1 = parser.Parse(step1Valid);
+    REQUIRE(tree1 != nullptr);
+    CHECK_FALSE(ts_node_has_error(ts_tree_root_node(tree1)));
+    SemanticTokensRequest req1{ "file:///test.as", step1Valid, tree1, table };
+    const auto tokens1 = GetSemanticTokens(req1);
+    ts_tree_delete(tree1);
+
+    REQUIRE(tokens1.data.size() % 5 == 0);
+    REQUIRE(!tokens1.data.empty());
+
+    // Step 2
+    TSTree *tree2 = parser.Parse(step2SyntaxError);
+    REQUIRE(tree2 != nullptr);
+    CHECK(ts_node_has_error(ts_tree_root_node(tree2)));
+    SemanticTokensRequest req2{ "file:///test.as", step2SyntaxError, tree2, table };
+    const auto tokens2 = GetSemanticTokens(req2);
+    ts_tree_delete(tree2);
+
+    REQUIRE(tokens2.data.size() % 5 == 0);
+
+    // Step 3
+    TSTree *tree3 = parser.Parse(step3Recovered);
+    REQUIRE(tree3 != nullptr);
+    CHECK_FALSE(ts_node_has_error(ts_tree_root_node(tree3)));
+    SemanticTokensRequest req3{ "file:///test.as", step3Recovered, tree3, table };
+    const auto tokens3 = GetSemanticTokens(req3);
+    ts_tree_delete(tree3);
+
+    REQUIRE(tokens3.data.size() % 5 == 0);
+    REQUIRE(!tokens3.data.empty());
+
+    // Assert that { and } have no operator token type assigned
+    const auto swept3 = SweepTokens(step3Recovered);
+    constexpr uint32_t k_operator = 21;
+
+    for (const auto &tok : swept3)
+    {
+        if (tok.type == k_operator)
+        {
+            // Ternary operators ? and : are allowed
+            CHECK((tok.line == 2 && (tok.startCol == ColumnOf(step3Recovered, 2, "?") ||
+                                     tok.startCol == ColumnOf(step3Recovered, 2, ":"))));
+        }
+    }
+
+    // Verify { and } on lines 1 and 3 never receive Type_Operator
+    const uint32_t openBraceCol = ColumnOf(step3Recovered, 1, "{");
+    const SweptToken *openBraceToken = TokenAt(swept3, 1, openBraceCol);
+    if (openBraceToken != nullptr)
+    {
+        CHECK(openBraceToken->type != k_operator);
+    }
+
+    const uint32_t closeBraceCol = ColumnOf(step3Recovered, 3, "}");
+    const SweptToken *closeBraceToken = TokenAt(swept3, 3, closeBraceCol);
+    if (closeBraceToken != nullptr)
+    {
+        CHECK(closeBraceToken->type != k_operator);
+    }
+
+    // Assert that delta edits between step 2 and step 3 strictly obey 5-tuple alignment
+    const auto edits = ComputeSemanticTokensDelta(tokens2.data, tokens3.data);
+    for (const auto &edit : edits)
+    {
+        CHECK(edit.start % 5 == 0);
+        CHECK(edit.deleteCount % 5 == 0);
+        if (edit.data.has_value())
+        {
+            CHECK(edit.data->size() % 5 == 0);
+        }
+    }
+
+    // Assert that applying edits reproduces step 3 stream exactly
+    auto applied = tokens2.data;
+    for (const auto &edit : edits)
+    {
+        const auto first = applied.begin() + static_cast<std::ptrdiff_t>(edit.start);
+        applied.erase(first, first + static_cast<std::ptrdiff_t>(edit.deleteCount));
+        if (edit.data.has_value())
+        {
+            applied.insert(applied.begin() + static_cast<std::ptrdiff_t>(edit.start),
+                           edit.data->begin(), edit.data->end());
+        }
+    }
+    CHECK(applied == tokens3.data);
 }

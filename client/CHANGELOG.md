@@ -4,6 +4,21 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.7-exp.15] - 2026-09-11
+
+### Fixed
+
+- Invalidate Semantic Tokens Delta Cache on Syntax Error Transitions:
+  - Added syntax error state tracking in `Server::SemanticTokensSnapshot`.
+  - When transitioning into or out of syntax error recovery states (`ts_node_has_error`), `TextDocument_SemanticTokens_Full_Delta` returns full `SemanticTokens` directly, resetting the client's token buffer and preventing desynchronization.
+- Enforce Strictly Aligned 5-Tuple Edits in `ComputeSemanticTokensDelta`:
+  - Enforced that prefix, suffix, start offset, delete count, and replacement data slices in `ComputeSemanticTokensDelta` are strictly aligned to multiples of 5 integers (whole tokens).
+  - Eliminated sub-token splicing bugs that caused modulo-5 misalignment and permanently shifted token types into length and offset fields.
+- Strict Operator Semantic Token Classification and Punctuation Exclusion:
+  - Removed `punctuation.bracket` mapping to operator tokens, preventing `{`, `}`, `(`, `)`, `[`, `]` from ever receiving `Type_Operator`.
+  - Added strict operator validation (`IsGenuineOperator` and `IsPunctuationOrBracket`), ensuring brackets and delimiters (`{`, `}`, `(`, `)`, `[`, `]`, `;`, `,`) can never be tagged as operators even during AST fallback traversal.
+  - Added a safety post-filter on filtered semantic tokens to guarantee no non-operator node is ever emitted as an operator.
+
 ## [0.7.7-exp.14] - 2026-09-11
 
 ### Fixed

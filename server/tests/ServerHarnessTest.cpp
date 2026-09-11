@@ -141,6 +141,13 @@ namespace
                JsonEscape(text) + R"("}}})";
     }
 
+    std::string DidChangeMessage(const std::string &uri, int version, const std::string &text)
+    {
+        return R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{)"
+               R"("uri":")" + uri + R"(","version":)" + std::to_string(version) +
+               R"(},"contentChanges":[{"text":")" + JsonEscape(text) + R"("}]}})";
+    }
+
     /**
      * @brief Opens one document and returns everything the server wrote back.
      *
@@ -617,6 +624,56 @@ TEST_CASE("Server - Falls back to a full stream when the delta base is unknown")
     const std::string r2 = stream.ResponseFor(2);
     CHECK(r2.find("\"data\"") != std::string::npos);
     CHECK(r2.find("\"edits\"") == std::string::npos);
+}
+
+TEST_CASE("Server - Invalidates delta cache on syntax error transition")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() { int a = 1; }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), "void main() { int a = 1; }\n"));
+
+    // 1. Initial full tokens request
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full","params":{)"
+                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("}}})");
+
+    // 2. Client introduces syntax error (unclosed quote)
+    stream.Push(DidChangeMessage(fixture.Uri("main.as"), 2, "void main() { int a = \"unclosed; }\n"));
+
+    // 3. Delta request while AST has syntax error -> falls back to full tokens (data, no edits)
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta","params":{)"
+                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"previousResultId":"1"}})");
+
+    // 4. Client fixes syntax error
+    stream.Push(DidChangeMessage(fixture.Uri("main.as"), 3, "void main() { int a = 2; }\n"));
+
+    // 5. Delta request after recovering from syntax error -> falls back to full tokens (data, no edits)
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/semanticTokens/full/delta","params":{)"
+                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"previousResultId":"2"}})");
+
+    stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string r2 = stream.ResponseFor(2);
+    CHECK(r2.find("\"data\"") != std::string::npos);
+    CHECK(r2.find("\"resultId\":\"1\"") != std::string::npos);
+
+    // Request 3: transitioned into syntax error -> full tokens
+    const std::string r3 = stream.ResponseFor(3);
+    CHECK(r3.find("\"data\"") != std::string::npos);
+    CHECK(r3.find("\"edits\"") == std::string::npos);
+    CHECK(r3.find("\"resultId\":\"2\"") != std::string::npos);
+
+    // Request 4: transitioned out of syntax error (recovery) -> full tokens, no corrupted edits
+    const std::string r4 = stream.ResponseFor(4);
+    CHECK(r4.find("\"data\"") != std::string::npos);
+    CHECK(r4.find("\"edits\"") == std::string::npos);
+    CHECK(r4.find("\"resultId\":\"3\"") != std::string::npos);
 }
 
 // =====================================================================================

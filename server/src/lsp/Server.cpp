@@ -2309,10 +2309,12 @@ namespace angel_lsp
         lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
         codec::EncodeSemanticTokens(text, m_positionEncoding, tokens.data);
 
+        const bool hasError = tree != nullptr && ts_node_has_error(ts_tree_root_node(tree));
+
         // Cached after encoding, so a delta is computed against exactly the bytes the client holds.
         const std::string resultId = std::to_string(++m_semanticTokensRevision);
         tokens.resultId = resultId;
-        m_semanticTokensCache[uriStr] = SemanticTokensSnapshot{ resultId, tokens.data };
+        m_semanticTokensCache[uriStr] = SemanticTokensSnapshot{ resultId, tokens.data, hasError };
 
         return tokens;
     }
@@ -5644,12 +5646,35 @@ namespace angel_lsp
                     return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
                 }
 
+                const bool prevHadError = cached->second.hasError;
+                const bool currHasError = doc->tree != nullptr && ts_node_has_error(ts_tree_root_node(doc->tree));
+
+                // When transitioning into or out of a syntax error state, tree-sitter error recovery
+                // perturbs node boundaries and tokens. Computing a delta across error recovery boundaries
+                // risks desynchronization. Return full SemanticTokens directly, which cleanly resets the
+                // client state.
+                if (prevHadError || currHasError)
+                {
+                    return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
+                }
+
                 const std::vector<lsp::uint> previous = cached->second.data;
                 lsp::SemanticTokens tokens = ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
 
                 lsp::SemanticTokensDelta delta;
                 delta.resultId = tokens.resultId;
                 delta.edits = features::ComputeSemanticTokensDelta(previous, tokens.data);
+
+                // Ensure every edit is strictly 5-tuple aligned. If any edit is unaligned, fallback to full tokens.
+                for (const auto &edit : delta.edits)
+                {
+                    if (edit.start % 5 != 0 || edit.deleteCount % 5 != 0 ||
+                        (edit.data.has_value() && edit.data->size() % 5 != 0))
+                    {
+                        return tokens;
+                    }
+                }
+
                 return delta;
             });
 
