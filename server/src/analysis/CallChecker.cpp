@@ -1,5 +1,6 @@
 #include "analysis/CallChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/InitializerListChecker.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
@@ -828,6 +829,18 @@ namespace angel_lsp::analysis
 
             for (const auto &argNode : argNodes)
             {
+                std::string dataTypeName;
+                if (IsBareDataType(argNode, scope, table, request.sourceCode, dataTypeName))
+                {
+                    const TSPoint aStart = ts_node_start_point(argNode);
+                    const TSPoint aEnd = ts_node_end_point(argNode);
+                    ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                    diagnostics::codes::ExpressionIsDataType, dataTypeName);
+                    allArgsResolved = false;
+                    argTypes.push_back("");
+                    continue;
+                }
+
                 std::string argType = ResolveExpressionType(argNode, scope, table, request.sourceCode, ctx.request.fileUri);
                 if (argType.empty())
                 {
@@ -893,6 +906,42 @@ namespace angel_lsp::analysis
             {
                 CheckLambdaArguments(argNodes, matchingArityCandidates, callee, arguments,
                                      reportedName, table, request.sourceCode, ctx);
+            }
+
+            // Malformed ternary expression argument without a unified type
+            for (size_t i = 0; i < argNodes.size() && i < argTypes.size(); ++i)
+            {
+                if (std::string_view(ts_node_type(argNodes[i])) == parser::nodes::TernaryExpression && argTypes[i].empty())
+                {
+                    if (!matchingArityCandidates.empty())
+                    {
+                        const auto &fn = matchingArityCandidates[0].GetFunction();
+                        if (i < fn.parameters.size())
+                        {
+                            const std::string expected = fn.parameters[i].typeName;
+                            TSNode consequence = parser::GetChildByField(argNodes[i], parser::fields::Consequence);
+                            TSNode alternative = parser::GetChildByField(argNodes[i], parser::fields::Alternative);
+                            std::string t1 = ResolveExpressionType(consequence, scope, table, request.sourceCode, ctx.request.fileUri);
+                            std::string t2 = ResolveExpressionType(alternative, scope, table, request.sourceCode, ctx.request.fileUri);
+
+                            std::string badType = (!t1.empty() && t1 != expected) ? t1 : t2;
+                            if (badType.empty())
+                            {
+                                badType = (!t2.empty() ? t2 : t1);
+                            }
+                            if (badType.empty())
+                            {
+                                badType = "unknown";
+                            }
+
+                            const TSPoint aStart = ts_node_start_point(argNodes[i]);
+                            const TSPoint aEnd = ts_node_end_point(argNodes[i]);
+                            ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                            "as-err-no-implicit-conversion",
+                                            badType, expected);
+                        }
+                    }
+                }
             }
 
             if (!argTypes.empty() || candidatesAreFreeFunctions)

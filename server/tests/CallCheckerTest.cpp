@@ -1359,5 +1359,57 @@ TEST_CASE("CallChecker - Competing Handle vs Reference Overload produces ambigui
     CHECK(HasCode(diags, "as-err-call-ambiguous"));
 }
 
+TEST_CASE("CallChecker - Bare type name passed as argument emits ExpressionIsDataType (asharness parity)")
+{
+    const std::string code =
+        "class Vector {}\n"
+        "void TakeVector(Vector v) {}\n"
+        "void main() {\n"
+        "    TakeVector(Vector);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-expression-is-data-type"));
+}
+
+TEST_CASE("CallChecker - Bare type name in statement emits ExpressionIsDataType (asharness parity)")
+{
+    const std::string code =
+        "class Vector {}\n"
+        "void main() {\n"
+        "    Vector;\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-expression-is-data-type"));
+}
+
+TEST_CASE("CallChecker - Malformed ternary expression argument emits parameter type mismatch")
+{
+    const std::string code =
+        "void TakeInt(int a) {}\n"
+        "void main() {\n"
+        "    bool c = true;\n"
+        "    TakeInt(c ? \"hello\" : 5);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - Incompatible enums in ternary expression emit no implicit conversion")
+{
+    const std::string code =
+        "enum EnumA { A1 = 1 }\n"
+        "enum EnumB { B1 = 1 }\n"
+        "void main() {\n"
+        "    bool c = true;\n"
+        "    auto x = c ? EnumA::A1 : EnumB::B1;\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-no-implicit-conversion"));
+}
+
 
 

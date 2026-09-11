@@ -86,41 +86,50 @@ namespace angel_lsp::features
 
                     for (const auto &baseName : frontier)
                     {
-                        const auto it = ruleIndex->derivedByBase.find(baseName);
-                        if (it == ruleIndex->derivedByBase.end())
+                        auto processDerived = [&](const auto &derivedList)
                         {
-                            continue;
-                        }
-
-                        for (const auto &derived : it->second)
-                        {
-                            const std::string bare = analysis::LastScopeSegment(derived.name);
-                            if (!seen.insert(bare).second)
+                            for (const auto &derived : derivedList)
                             {
-                                continue;
-                            }
-                            if (!derived.qualifiedName.empty())
-                            {
-                                seen.insert(derived.qualifiedName);
-                            }
-
-                            next.push_back(bare);
-                            if (!derived.qualifiedName.empty() && derived.qualifiedName != bare)
-                            {
-                                next.push_back(derived.qualifiedName);
-                            }
-
-                            const auto symList = table.FindSymbolsPtr(derived.qualifiedName.empty() ? derived.name : derived.qualifiedName);
-                            if (symList)
-                            {
-                                for (const auto &s : *symList)
+                                const std::string bare = analysis::LastScopeSegment(derived.name);
+                                if (!seen.insert(bare).second)
                                 {
-                                    if (s.type == SymbolType::Class || s.type == SymbolType::Interface)
+                                    continue;
+                                }
+                                if (!derived.qualifiedName.empty())
+                                {
+                                    seen.insert(derived.qualifiedName);
+                                }
+
+                                next.push_back(bare);
+                                if (!derived.qualifiedName.empty() && derived.qualifiedName != bare)
+                                {
+                                    next.push_back(derived.qualifiedName);
+                                }
+
+                                const auto symList = table.FindSymbolsPtr(derived.qualifiedName.empty() ? derived.name : derived.qualifiedName);
+                                if (symList)
+                                {
+                                    for (const Symbol &s : *symList)
                                     {
-                                        subtypes.push_back(s);
+                                        if (s.type == SymbolType::Class || s.type == SymbolType::Interface)
+                                        {
+                                            subtypes.push_back(s);
+                                        }
                                     }
                                 }
                             }
+                        };
+
+                        const auto it = ruleIndex->derivedByBase.find(baseName);
+                        if (it != ruleIndex->derivedByBase.end())
+                        {
+                            processDerived(it->second);
+                        }
+
+                        const auto itHost = ruleIndex->hostClassesByMixin.find(baseName);
+                        if (itHost != ruleIndex->hostClassesByMixin.end())
+                        {
+                            processDerived(itHost->second);
                         }
                     }
 
@@ -152,18 +161,33 @@ namespace angel_lsp::features
                             continue;
                         }
 
+                        bool foundMatch = false;
                         for (const auto &base : DeclaredBases(sym))
                         {
                             const std::string baseName = analysis::LastScopeSegment(analysis::CleanBaseType(base));
-                            if (std::find(frontier.begin(), frontier.end(), baseName) == frontier.end())
+                            if (std::find(frontier.begin(), frontier.end(), baseName) != frontier.end())
                             {
-                                continue;
+                                seen.push_back(bare);
+                                next.push_back(bare);
+                                subtypes.push_back(sym);
+                                foundMatch = true;
+                                break;
                             }
+                        }
 
-                            seen.push_back(bare);
-                            next.push_back(bare);
-                            subtypes.push_back(sym);
-                            break;
+                        if (!foundMatch && sym.type == SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(sym.signature))
+                        {
+                            for (const auto &m : sym.GetClass().includedMixins)
+                            {
+                                const std::string mName = analysis::LastScopeSegment(m);
+                                if (std::find(frontier.begin(), frontier.end(), mName) != frontier.end())
+                                {
+                                    seen.push_back(bare);
+                                    next.push_back(bare);
+                                    subtypes.push_back(sym);
+                                    break;
+                                }
+                            }
                         }
                     }
                 });
@@ -386,45 +410,51 @@ namespace angel_lsp::features
                     }
                 };
 
+                bool isMixinOwner = analysis::IsMixinClass(owner, table) ||
+                                    (bareOwner != owner && analysis::IsMixinClass(bareOwner, table));
+                if (!isMixinOwner)
+                {
+                    const auto ruleIndex = table.GetRuleIndex();
+                    if (ruleIndex && (ruleIndex->hostClassesByMixin.contains(owner) || ruleIndex->hostClassesByMixin.contains(bareOwner)))
+                    {
+                        isMixinOwner = true;
+                    }
+                }
+
                 for (const auto &subtype : CollectSubtypes(owner, table))
                 {
                     const auto members = table.FindSymbolsPtr(analysis::LastScopeSegment(subtype.name) + "::" + name);
+                    bool hasExplicitOverride = false;
                     if (members && !members->empty())
                     {
                         for (const auto &member : *members)
                         {
-                            addLoc(member);
+                            if (!member.isSynthesized)
+                            {
+                                addLoc(member);
+                                hasExplicitOverride = true;
+                            }
+                            else if (!isMixinOwner)
+                            {
+                                addLoc(member);
+                                hasExplicitOverride = true;
+                            }
                         }
                     }
-                    else if (subtype.type == SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(subtype.signature))
+                    if (!hasExplicitOverride && isMixinOwner)
                     {
-                        const auto &cls = subtype.GetClass();
-                        for (const auto &m : cls.includedMixins)
-                        {
-                            const auto mixinMembers = table.FindSymbolsPtr(analysis::LastScopeSegment(m) + "::" + name);
-                            if (mixinMembers)
-                            {
-                                for (const auto &mixMember : *mixinMembers)
-                                {
-                                    addLoc(mixMember);
-                                }
-                            }
-                        }
-                        for (const auto &b : cls.bases)
-                        {
-                            std::string cleanB = analysis::CleanBaseType(b);
-                            const auto mixinMembers = table.FindSymbolsPtr(analysis::LastScopeSegment(cleanB) + "::" + name);
-                            if (mixinMembers)
-                            {
-                                for (const auto &mixMember : *mixinMembers)
-                                {
-                                    addLoc(mixMember);
-                                }
-                            }
-                        }
+                        addLoc(subtype);
                     }
                 }
-                if (locations.empty())
+
+                if (isMixinOwner)
+                {
+                    for (const auto &member : *memberSyms)
+                    {
+                        addLoc(member);
+                    }
+                }
+                else if (locations.empty())
                 {
                     // Fallback to definition of target member when no overrides/subtypes exist
                     for (const auto &member : *memberSyms)

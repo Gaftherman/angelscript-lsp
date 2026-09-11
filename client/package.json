@@ -2,7 +2,7 @@
   "name": "angelscript-lsp",
   "displayName": "%configuration.title%",
   "description": "%extension.description%",
-  "version": "0.7.7-exp.12",
+  "version": "0.7.7-exp.13",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -377,6 +377,25 @@
           "default": false,
           "scope": "resource",
           "markdownDescription": "%angelscript.enableVirtualMixinDocuments.description%"
+        },
+        "angelscript.server.logLevel": {
+          "type": "string",
+          "default": "debug",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "markdownDescription": "%config.server.logLevel.description%",
+          "markdownEnumDescriptions": [
+            "%config.server.logLevel.error%",
+            "%config.server.logLevel.warn%",
+            "%config.server.logLevel.info%",
+            "%config.server.logLevel.debug%",
+            "%config.server.logLevel.trace%"
+          ]
         },
         "angelscript.features.hover": {
           "type": "boolean",

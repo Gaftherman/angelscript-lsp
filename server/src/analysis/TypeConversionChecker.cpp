@@ -1,5 +1,6 @@
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
 
 #include <algorithm>
@@ -2286,12 +2287,27 @@ namespace angel_lsp::analysis
                         clean1 != "auto" && clean2 != "auto" &&
                         clean1 != "void" && clean2 != "void")
                     {
-                        bool isStringNumericMismatch = (IsStringType(clean1, ctx) && IsNumericPrimitive(clean2)) ||
-                                                       (IsStringType(clean2, ctx) && IsNumericPrimitive(clean1));
-                        if (isStringNumericMismatch || (!IsConvertible(clean1, clean2, ctx) && !IsConvertible(clean2, clean1, ctx)))
+                        bool isStringMismatch = (IsStringType(clean1, ctx) != IsStringType(clean2, ctx));
+                        bool isEnumMismatch = ResolvesToEnum(clean1, ctx.request.symbolTable) &&
+                                              ResolvesToEnum(clean2, ctx.request.symbolTable) &&
+                                              clean1 != clean2;
+                        if (isStringMismatch || isEnumMismatch || (!IsConvertible(clean1, clean2, ctx) && !IsConvertible(clean2, clean1, ctx)))
                         {
                             EmitAtNode(alternative, ctx, "as-err-no-implicit-conversion", clean2, clean1);
                         }
+                    }
+                }
+            }
+
+            if (nodeType == "expression_statement")
+            {
+                TSNode expr = ts_node_named_child(node, 0);
+                if (!ts_node_is_null(expr))
+                {
+                    std::string dataTypeName;
+                    if (IsBareDataType(expr, scopeAt(), ctx.request.symbolTable, request.sourceCode, dataTypeName))
+                    {
+                        EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, dataTypeName);
                     }
                 }
             }

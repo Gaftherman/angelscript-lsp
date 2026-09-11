@@ -115,6 +115,20 @@ namespace angel_lsp::analysis::rules
                         {
                             for (const auto &base : sym.GetClass().bases)
                                 recordBase(base);
+
+                            for (const auto &mixinName : sym.GetClass().includedMixins)
+                            {
+                                const std::string cleanMixin = CleanBaseType(mixinName);
+                                if (!cleanMixin.empty())
+                                {
+                                    index->hostClassesByMixin[cleanMixin].push_back(derived);
+                                    const std::string bareMixin = LastScopeSegment(cleanMixin);
+                                    if (bareMixin != cleanMixin)
+                                    {
+                                        index->hostClassesByMixin[bareMixin].push_back(derived);
+                                    }
+                                }
+                            }
                         }
                         else if (sym.type == SymbolType::Interface && std::holds_alternative<InterfaceSignature>(sym.signature))
                         {

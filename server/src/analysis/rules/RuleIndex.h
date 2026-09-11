@@ -106,6 +106,11 @@ namespace angel_lsp::analysis::rules
 
         ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> derivedByBase;
 
+        /**
+         * @brief Reverse mixin inclusion edges: mixin type name -> host classes that include it.
+         */
+        ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> hostClassesByMixin;
+
         /** @brief Members of one container, or an empty set of them when it declares none. */
         const ContainerMembers &Members(const std::string &containerName) const;
 

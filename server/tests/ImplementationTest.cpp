@@ -277,4 +277,28 @@ TEST_CASE("Implementation - Unqualified call in class with included mixin falls 
     CHECK(HasLine(locs, 2));
 }
 
+TEST_CASE("Implementation - Mixin method declaration queries host classes and overrides")
+{
+    Fixture fixture(
+        "mixin class WeaponCommon\n"
+        "{\n"
+        "    void AddToPlayer() { }\n"
+        "}\n"
+        "class Knife : WeaponCommon\n"
+        "{\n"
+        "}\n"
+        "class Gun : WeaponCommon\n"
+        "{\n"
+        "    void AddToPlayer() { }\n"
+        "}\n");
+
+    // Query on AddToPlayer declaration in mixin class (line 2, col 9)
+    const auto locs = fixture.At(2, 9);
+    REQUIRE(locs.has_value());
+    // Knife does not override: Knife class itself is returned (line 4)
+    CHECK(HasLine(locs, 4));
+    // Gun overrides: Gun::AddToPlayer is returned (line 9)
+    CHECK(HasLine(locs, 9));
+}
+
 

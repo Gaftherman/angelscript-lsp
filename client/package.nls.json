@@ -101,5 +101,11 @@
   "angelscript.inlayHints.suppressWhenArgumentMatchesName.description": "Suppress parameter name hints when the argument expression text matches the parameter name exactly. Default is false.",
   "command.viewMixinExpansion.title": "View Mixin Expansion",
   "command.peekMixinInline.title": "Peek Mixin Inline",
-  "command.openPhysicalSource.title": "Open Physical Source"
+  "command.openPhysicalSource.title": "Open Physical Source",
+  "config.server.logLevel.description": "Specifies the verbosity level for language server logging output.",
+  "config.server.logLevel.error": "Log only severe error conditions.",
+  "config.server.logLevel.warn": "Log warnings and errors.",
+  "config.server.logLevel.info": "Log informational operational events, warnings, and errors.",
+  "config.server.logLevel.debug": "Log detailed diagnostic and timing information for debugging.",
+  "config.server.logLevel.trace": "Log highly verbose message protocol and parsing traces."
 }

@@ -137,6 +137,7 @@ namespace angel_lsp::diagnostics::codes
     inline constexpr std::string_view EmptyListElement                     = "as-err-empty-list-element";
     inline constexpr std::string_view EnumInvalidInitializer               = "as-err-enum-invalid-initializer";
     inline constexpr std::string_view ExplicitNotMember                    = "as-err-explicit-not-member";
+    inline constexpr std::string_view ExpressionIsDataType                 = "as-err-expression-is-data-type";
     inline constexpr std::string_view ForeachUnsupported                   = "as-err-foreach-unsupported";
     inline constexpr std::string_view FuncdefAttribute                     = "as-err-funcdef-attribute";
     inline constexpr std::string_view FuncdefNotHandle                     = "as-err-funcdef-not-handle";

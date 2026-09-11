@@ -23,10 +23,10 @@ try {
     }
 }
 
-// Fallback to package.json version if no git tag
-if (!tagName) {
-    const pkg = JSON.parse(readFileSync(path.join(clientRoot, 'package.json'), 'utf-8'));
-    tagName = `v${pkg.version}`;
+const pkg = JSON.parse(readFileSync(path.join(clientRoot, 'package.json'), 'utf-8'));
+const expectedTag = `v${pkg.version}`;
+if (!tagName || tagName !== expectedTag) {
+    tagName = expectedTag;
 }
 
 const outFile = `angelscript-lsp-${tagName}.vsix`;

@@ -336,7 +336,7 @@ namespace angel_lsp::config
                   << "  -D, --define=<word>                     Treat <word> as defined for #if (repeatable).\n"
                   << "                                          Mirrors CScriptBuilder::DefineWord. With none set,\n"
                   << "                                          every #if block is excluded, as the builder does.\n"
-                  << "  --log-level=<level>                     error|warning|info|debug (default: info).\n"
+                  << "  --log-level=<level>                     error|warn|info|debug|trace (default: info).\n"
                   << "                                          debug logs every symbol on every analysis and\n"
                   << "                                          costs real throughput; it is not free.\n"
                   << "  --file-ext=<string>                     Set script file extension (default: .as)\n"

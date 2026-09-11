@@ -878,6 +878,11 @@ export function buildServerArgs(): string[] {
         args.push('--inlay-hints-suppress-when-argument-matches-name');
     }
 
+    const logLevel = config.get<string>('server.logLevel', 'debug').trim();
+    if (logLevel.length > 0) {
+        args.push(`--log-level=${logLevel}`);
+    }
+
     // The server localises its diagnostics; align them with the editor's display language.
     if (env.language) {
         args.push(`--locale=${env.language}`);

@@ -265,6 +265,22 @@ namespace angel_lsp::analysis
      */
     bool NamesAFunctionNotAType(std::string_view name, const class SymbolTable &table);
 
+    /**
+     * @brief Checks whether an AST node is a bare data type identifier used in a value expression context.
+     * @param node AST node to examine.
+     * @param scope Local scope at the node, or nullptr.
+     * @param symbolTable Symbol table for type and value lookup.
+     * @param sourceCode Source text of the document.
+     * @param outTypeName Receives the resolved data type name if true.
+     * @return True if the node is an identifier resolving to a data type without value semantics.
+     */
+    bool IsBareDataType(
+        TSNode node,
+        const struct Scope *scope,
+        const class SymbolTable &symbolTable,
+        std::string_view sourceCode,
+        std::string &outTypeName);
+
     /** @brief What a type is when it cannot be instantiated, for the message that says so. */
     enum class NonInstantiableKind
     {

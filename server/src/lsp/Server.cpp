@@ -1963,6 +1963,7 @@ namespace angel_lsp
 
     void Server::ParserPredefined(const std::string &filePath, angel_lsp::parser::AngelScriptParser &parser, bool forceReload)
     {
+        utils::HighResTimer totalTimer;
         std::string uri = UriFromPath(filePath);
 
         std::ifstream file(filePath, std::ios::binary);
@@ -1991,10 +1992,15 @@ namespace angel_lsp
         // it themselves, which on a 646 KB stub is 33 ms spent twice on identical bytes for an
         // identical tree. Both already have an overload that borrows a tree; this is the caller
         // that had never been changed to use them.
+        utils::HighResTimer parseTimer;
         TSTree *tree = parser.Parse(content);
+        int64_t parseUs = parseTimer.ElapsedUs();
 
+        utils::HighResTimer symTimer;
         ReplaceSymbolsFromTree(uri, content, tree);
+        int64_t symUs = symTimer.ElapsedUs();
 
+        utils::HighResTimer scopeTimer;
         m_scopeIndex.ClearDocument(uri);
         m_callGraph.ClearDocument(uri);
         if (tree)
@@ -2003,25 +2009,19 @@ namespace angel_lsp
                 m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), content));
             ts_tree_delete(tree);
         }
+        int64_t scopeUs = scopeTimer.ElapsedUs();
 
         // `#define FOO` in a stub means "the host calls builder.DefineWord(\"FOO\")" - the stub is
         // this server's description of the host's engine setup and is never compiled by AngelScript
         // itself, so it is the one place the word can be written down. See PreprocessorRegions.h.
-        //
-        // Keyed by the *normalised* path so reloading one stub replaces only its own words. The
-        // spelling this function is handed varies by caller - a directory walk's, a configured
-        // setting's, a URI's - and keying on it raw meant the same stub could contribute its words
-        // twice under two spellings, with only one of them ever erased again.
-        //
-        // Recording only: reanalysis is the caller's business. This runs under m_predefinedMutex,
-        // and ReanalyseOpenDocuments walks m_openDocuments and schedules work, so calling it from
-        // here would hold a lock across the whole fan-out. The watched-file path already sets
-        // graphChanged and reanalyses once for the whole batch, which is also the right count when
-        // a workspace holds several stubs.
         if (SetDefinedWordsFrom(angel_lsp::utils::IncludeResolver::NormalizePath(filePath),
                                 angel_lsp::utils::ScanDefinedWords(content)))
             LogInfo(fmt::format("Defined words changed after loading: {}", filePath));
 
+        int64_t totalUs = totalTimer.ElapsedUs();
+        LogInfo(fmt::format(
+            "[ParserPredefined Profile] File: {} | Total: {} us (Parse: {} us, Symbols: {} us, Scopes: {} us)",
+            filePath, totalUs, parseUs, symUs, scopeUs));
         LogInfo(fmt::format("Loaded predefined file: {}", filePath));
     }
 
@@ -3292,6 +3292,26 @@ namespace angel_lsp
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
+            bool contentUnchanged = false;
+            {
+                std::lock_guard<std::mutex> lock(m_predefinedMutex);
+                auto it = m_predefinedDocuments.find(uriStr);
+                if (it != m_predefinedDocuments.end() && it->second == analysisText)
+                {
+                    contentUnchanged = true;
+                }
+            }
+
+            if (contentUnchanged)
+            {
+                PublishDiagnostics(uriStr, {});
+                double totalMs = totalTimer.ElapsedMs();
+                LogInfo(fmt::format(
+                    "[Predefined Fast Path] File: {} content unchanged; bypassed re-indexing. Elapsed: {:.2f} ms",
+                    uriStr, totalMs));
+                return;
+            }
+
             utils::HighResTimer colTimer;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);

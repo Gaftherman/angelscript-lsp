@@ -900,6 +900,63 @@ namespace angel_lsp::features
             return locations;
         }
 
+        // Fallback: If cursor is on a declaration node, return its own definition range
+        // so editor highlights the symbol rather than showing "No definition found".
+        if (!ts_node_is_null(node))
+        {
+            TSNode p = ts_node_parent(node);
+            if (!ts_node_is_null(p))
+            {
+                std::string_view pType = ts_node_type(p);
+                if (pType == parser::nodes::ScopedIdentifier)
+                {
+                    TSNode gp = ts_node_parent(p);
+                    if (!ts_node_is_null(gp))
+                    {
+                        p = gp;
+                        pType = ts_node_type(p);
+                    }
+                }
+
+                if (pType == parser::nodes::FuncDeclaration ||
+                    pType == parser::nodes::VariableDeclarator ||
+                    pType == parser::nodes::Parameter ||
+                    pType == parser::nodes::ClassDeclaration ||
+                    pType == parser::nodes::InterfaceDeclaration ||
+                    pType == parser::nodes::InterfaceMethod ||
+                    pType == parser::nodes::EnumDeclaration ||
+                    pType == parser::nodes::EnumMember ||
+                    pType == parser::nodes::FuncdefDeclaration ||
+                    pType == parser::nodes::NamespaceDeclaration ||
+                    pType == parser::nodes::ForeachVariable ||
+                    pType == parser::nodes::VirtualProperty ||
+                    pType == parser::nodes::MixinDeclaration)
+                {
+                    TSPoint s = ts_node_start_point(node);
+                    TSPoint e = ts_node_end_point(node);
+                    uint32_t sLine = s.row;
+                    uint32_t sChar = s.column;
+                    uint32_t eLine = e.row;
+                    uint32_t eChar = e.column;
+
+                    if (isVirtualDoc && virtualMixinSym.has_value())
+                    {
+                        sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, virtualMixinSym->startLine);
+                        eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, virtualMixinSym->startLine);
+                    }
+
+                    locations.push_back(lsp::Location{
+                        lsp::DocumentUri::parse(request.uri),
+                        lsp::Range{
+                            lsp::Position{ sLine, sChar },
+                            lsp::Position{ eLine, eChar }
+                        }
+                    });
+                    return locations;
+                }
+            }
+        }
+
         return std::nullopt;
     }
 

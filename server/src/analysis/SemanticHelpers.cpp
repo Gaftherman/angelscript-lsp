@@ -208,6 +208,106 @@ namespace angel_lsp::analysis
         return isFunction;
     }
 
+    bool IsBareDataType(
+        TSNode node,
+        const Scope *scope,
+        const SymbolTable &symbolTable,
+        std::string_view sourceCode,
+        std::string &outTypeName)
+    {
+        if (ts_node_is_null(node))
+        {
+            return false;
+        }
+
+        std::string_view nodeType = ts_node_type(node);
+        if (nodeType != parser::nodes::Identifier && nodeType != parser::nodes::ScopedIdentifier)
+        {
+            return false;
+        }
+
+        std::string name = GetNodeText(node, sourceCode);
+        while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
+        {
+            name.erase(name.begin());
+        }
+        while (!name.empty() && isspace(static_cast<unsigned char>(name.back())))
+        {
+            name.pop_back();
+        }
+        if (name.empty())
+        {
+            return false;
+        }
+
+        if (IsPrimitiveTypeName(name))
+        {
+            outTypeName = name;
+            return true;
+        }
+
+        if (scope)
+        {
+            if (const LocalDefinition *def = ResolveInScope(scope, name))
+            {
+                if (def->kind == LocalDefinitionKind::Type)
+                {
+                    outTypeName = name;
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        auto syms = symbolTable.FindSymbols(name);
+        if (syms.empty())
+        {
+            std::string shortName = LastScopeSegment(name);
+            if (shortName != name)
+            {
+                syms = symbolTable.FindSymbols(shortName);
+            }
+        }
+        if (syms.empty())
+        {
+            auto typeSyms = symbolTable.FindTypeSymbolsByShortName(LastScopeSegment(name));
+            if (!typeSyms.empty())
+            {
+                syms = std::move(typeSyms);
+            }
+        }
+
+        if (syms.empty())
+        {
+            return false;
+        }
+
+        for (const auto &s : syms)
+        {
+            if (s.type == SymbolType::Variable ||
+                s.type == SymbolType::Function ||
+                s.type == SymbolType::Property)
+            {
+                return false;
+            }
+        }
+
+        for (const auto &s : syms)
+        {
+            if (s.type == SymbolType::Class ||
+                s.type == SymbolType::Interface ||
+                s.type == SymbolType::Enum ||
+                s.type == SymbolType::Typedef ||
+                s.type == SymbolType::Funcdef)
+            {
+                outTypeName = name;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     bool IsMixinClass(std::string_view baseTypeName, const SymbolTable &table)
     {
         if (baseTypeName.empty())
@@ -1774,14 +1874,6 @@ namespace angel_lsp::analysis
                         return CleanExpressionType(sym.GetFunction().returnType);
                     }
                 }
-                for (const auto &sym : wholeSyms)
-                {
-                    if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
-                        sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef)
-                    {
-                        return CleanExpressionType(sym.name);
-                    }
-                }
             }
 
             return ts_node_is_null(lastIdentifier)
@@ -1917,20 +2009,6 @@ namespace angel_lsp::analysis
                 {
                     return CleanExpressionType(sym.GetFunction().returnType);
                 }
-            }
-
-            for (const auto &sym : syms)
-            {
-                if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
-                    sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef)
-                {
-                    return CleanExpressionType(sym.name);
-                }
-            }
-
-            if (IsCorePrimitive(name))
-            {
-                return name;
             }
 
             for (const auto &prefix : { "get_", "set_" })

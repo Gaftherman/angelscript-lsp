@@ -434,4 +434,19 @@ TEST_CASE("DefinitionHandler - Overload-aware definition jumps to mixin origin f
     ts_tree_delete(weaponTree);
 }
 
+TEST_CASE("Definition - F12 on declaration node returns its own definition range")
+{
+    TestEnvironment env(
+        "mixin class WeaponMixin\n"
+        "{\n"
+        "    void CommonAddToPlayer() { }\n"
+        "}\n");
+
+    // Line 2: "    void CommonAddToPlayer() { }" -> col 12 is on "CommonAddToPlayer"
+    auto defs = env.DefAt(2, 12);
+    REQUIRE(defs.has_value());
+    REQUIRE(!defs->empty());
+    CHECK((*defs)[0].range.start.line == 2);
+}
+
 

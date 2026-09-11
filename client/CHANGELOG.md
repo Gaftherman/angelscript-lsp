@@ -4,6 +4,28 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.7-exp.13] - 2026-09-11
+
+### Added
+
+- Engine Parity via asharness: Bare Type Names in Expression Contexts:
+  - Added diagnostic `as-err-expression-is-data-type` (`ExpressionIsDataType`) in English and Spanish.
+  - Reject bare data type names (classes, interfaces, enums, typedefs, funcdefs, primitive types) passed as function call arguments or used as stand-alone expressions.
+  - Implemented `IsBareDataType` helper distinguishing value expressions from bare type symbols.
+- Go-to-Definition (F12) and Implementation (Ctrl+F12) inside Mixin Declarations:
+  - F12 Go-to-Definition on declaration node returns its own definition range to highlight the symbol.
+  - Indexed `RuleIndex::hostClassesByMixin` to track host classes including each mixin.
+  - Ctrl+F12 on mixin method declarations queries all host classes, reporting explicit overrides when declared and the host class declaration when not overridden.
+- Client Configurable Debug Log Level:
+  - Added `angelscript.server.logLevel` setting (`error`, `warn`, `info`, `debug`, `trace`, default `debug`) in client configuration with English and Spanish translations.
+  - Wired `--log-level=${level}` server startup argument in `extension.ts`.
+- Ternary Expression Type Mismatch and Call Parameter Validation:
+  - Ensured incompatible branches (string vs non-string, conflicting enum types) in ternary expressions emit `as-err-no-implicit-conversion`.
+  - Emitted parameter type mismatch diagnostics in `CallChecker` when call arguments contain malformed ternary expressions.
+- Predefined Stub Re-indexing Latency Optimizations:
+  - Added microsecond timing probes across `ParserPredefined`.
+  - Added fast-path bypass in `didOpen` for unchanged `.as.predefined` stub content to avoid redundant include-graph rebuilds and workspace-wide re-analysis.
+
 ## [0.7.7-exp.12] - 2026-09-11
 
 ### Added

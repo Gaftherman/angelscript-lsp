@@ -260,7 +260,7 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain(classCode) == "Animal@");
     }
 
-    TEST_CASE("Bare type name resolves to type name")
+    TEST_CASE("Bare type name in expression context is not a value (asharness parity)")
     {
         std::string code =
             "class Vector {}\n"
@@ -268,7 +268,7 @@ TEST_SUITE("ExpressionTypeDeduction")
             "{\n"
             "    Vector;\n"
             "}\n";
-        CHECK(DeduceTypeInMain(code) == "Vector");
+        CHECK(DeduceTypeInMain(code) == "");
     }
 }
 
