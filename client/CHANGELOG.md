@@ -4,6 +4,25 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.7-exp.8] - 2026-09-11
+
+### Added
+
+- Strict Scope Isolation in Reference Resolution & CodeLens:
+  - Added `GetDerivedClasses` and `GetCompatibleMemberClasses` in `SemanticHelpers` to enforce object-oriented access boundaries and inheritance constraints across classes and interfaces.
+  - Sibling class isolation: Sibling classes sharing a common base class (such as weapon entities deriving from `ScriptBasePlayerWeaponEntity`) no longer leak references or inflate CodeLens counts.
+  - Strict access modifier enforcement:
+    - `private` members are strictly isolated to the declaring class AST scope; sibling classes, subclasses, and superclasses are excluded.
+    - `protected` members are restricted to the declaring class and its direct/indirect derived classes; sibling classes sharing a base class are excluded.
+    - `public` members resolve to the highest ancestor declaring the member; sibling classes that independently declare same-named members without a common ancestor declaration are treated as distinct symbols.
+  - `TargetDescriptor` now carries `analysis::AccessModifier access` resolved dynamically from the symbol definition or inheritance hierarchy.
+  - Member access reference resolution now uses backward scope scanning in addition to active AST parsing to accurately determine receiver types across files without full re-parsing.
+  - Comprehensive unit regression tests added to `ReferencesTest.cpp` and `CodeLensTest.cpp`.
+- Anti-Hardcoding Audit on Virtual Document URI Extraction:
+  - Modernized `ExtractVirtualHostClass` and `ExtractVirtualMixinName` in `SymbolTable.cpp` using robust, scheme-agnostic token parsing.
+  - Eliminated hardcoded string offset constants, safely supporting arbitrary scheme representations (`angelscript-virtual:`, `angelscript-virtual://`, `angelscript-virtual:///`) and arbitrary namespace nesting (such as `Game::Weapons::Rifle` and URL-encoded variants).
+  - Confirmed zero linear `ForEachSymbol` iterations introduced in URI extraction and reference collection hot paths.
+
 ## [0.7.7-exp.7] - 2026-09-10
 
 ### Added
@@ -45,6 +64,16 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 - Physical Go-to-Definition (F12) Restored:
   - Standard F12 definition requests now reliably return the physical source file (`file://...`) where mixin templates are defined rather than virtual documents.
+
+## [0.7.7-exp.5] - 2026-09-10
+
+### Added
+
+- Virtual Mixin Document Inspection:
+  - Full mixin code expansion in virtual documents.
+  - Client virtual document selector and integration.
+  - Overload fallback heuristic scoring when callee parameter types are partially known.
+  - Scoped CodeLens references on synthesized mixin declarations.
 
 ## [0.7.7-exp.4] - 2026-09-10
 

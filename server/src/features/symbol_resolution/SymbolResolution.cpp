@@ -301,7 +301,6 @@ namespace angel_lsp::features::resolution
                         {
                             target.kind = TargetKind::ClassMember;
                             target.declaringClass = receiverTypeName;
-                            target.relatedClasses = analysis::GetAllRelatedClasses(receiverTypeName, symbolTable);
                         }
                     }
                 }
@@ -365,7 +364,6 @@ namespace angel_lsp::features::resolution
                         {
                             target.kind = TargetKind::ClassMember;
                             target.declaringClass = enclosingClass;
-                            target.relatedClasses = analysis::GetAllRelatedClasses(enclosingClass, symbolTable);
                         }
                     }
                 }
@@ -379,14 +377,13 @@ namespace angel_lsp::features::resolution
             {
                 if (container.kind == analysis::ContainerKind::Class || container.kind == analysis::ContainerKind::Interface)
                 {
-                    auto hierarchy = analysis::GetAllRelatedClasses(container.qualifiedName, symbolTable);
+                    auto hierarchy = analysis::GetInheritedTypeHierarchy(container.qualifiedName, symbolTable);
                     for (const auto &cls : hierarchy)
                     {
                         if (symbolTable.HasSymbol(cls + "::" + nodeText))
                         {
                             target.kind = TargetKind::ClassMember;
                             target.declaringClass = cls;
-                            target.relatedClasses = std::move(hierarchy);
                             break;
                         }
                     }
@@ -442,7 +439,6 @@ namespace angel_lsp::features::resolution
                                 {
                                     target.kind = TargetKind::ClassMember;
                                     target.declaringClass = sym.containerName;
-                                    target.relatedClasses = analysis::GetAllRelatedClasses(sym.containerName, symbolTable);
                                     return;
                                 }
                                 else if (isNamespaceContainer)
@@ -456,6 +452,66 @@ namespace angel_lsp::features::resolution
                         }
                     }
                 });
+        }
+
+        if (target.kind == TargetKind::ClassMember)
+        {
+            analysis::AccessModifier resolvedAccess = analysis::AccessModifier::Public;
+            bool foundAccess = false;
+
+            // 1. Check if cursor is directly on the member declaration
+            auto localSyms = symbolTable.FindSymbols(target.name);
+            for (const auto &s : localSyms)
+            {
+                if (s.fileUri == uri && position.line >= s.startLine && position.line <= s.endLine)
+                {
+                    if (std::holds_alternative<analysis::FunctionSignature>(s.signature))
+                    {
+                        resolvedAccess = s.GetFunction().modifiers.access;
+                        foundAccess = true;
+                        break;
+                    }
+                    else if (std::holds_alternative<analysis::VariableSignature>(s.signature))
+                    {
+                        resolvedAccess = s.GetVariable().modifiers.access;
+                        foundAccess = true;
+                        break;
+                    }
+                }
+            }
+
+            // 2. If not at declaration, look up in declaring class hierarchy
+            if (!foundAccess)
+            {
+                auto hier = analysis::GetInheritedTypeHierarchy(target.declaringClass, symbolTable);
+                for (const auto &owner : hier)
+                {
+                    auto syms = symbolTable.FindSymbols(owner + "::" + target.name);
+                    for (const auto &s : syms)
+                    {
+                        if (std::holds_alternative<analysis::FunctionSignature>(s.signature))
+                        {
+                            resolvedAccess = s.GetFunction().modifiers.access;
+                            foundAccess = true;
+                            break;
+                        }
+                        else if (std::holds_alternative<analysis::VariableSignature>(s.signature))
+                        {
+                            resolvedAccess = s.GetVariable().modifiers.access;
+                            foundAccess = true;
+                            break;
+                        }
+                    }
+                    if (foundAccess)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            target.access = resolvedAccess;
+            target.relatedClasses = analysis::GetCompatibleMemberClasses(
+                target.declaringClass, target.name, target.access, symbolTable);
         }
 
         return target;
@@ -618,10 +674,23 @@ namespace angel_lsp::features::resolution
                                 }
                             }
 
+                            // Access modifier checks:
+                            // Private & Protected members cannot be accessed outside relatedSet.
+                            if (target.access == analysis::AccessModifier::Private ||
+                                target.access == analysis::AccessModifier::Protected)
+                            {
+                                std::string encClass = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
+                                if (encClass.empty() || !relatedSet.contains(encClass))
+                                {
+                                    continue;
+                                }
+                            }
+
                             bool isMatch = false;
 
                             if (ref.isMemberAccess)
                             {
+                                std::string rType;
                                 // If this is the current file with active AST
                                 if (fileUri == currentUri && tree)
                                 {
@@ -641,7 +710,6 @@ namespace angel_lsp::features::resolution
                                                 if (oStart < sourceCode.size() && oEnd <= sourceCode.size())
                                                 {
                                                     std::string oText = sourceCode.substr(oStart, oEnd - oStart);
-                                                    std::string rType;
                                                     if (oText == "this")
                                                     {
                                                         rType = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
@@ -663,23 +731,73 @@ namespace angel_lsp::features::resolution
                                                                     rType = analysis::CleanBaseType(gs.GetVariable().typeName);
                                                                     break;
                                                                 }
+                                                                else if (gs.type == analysis::SymbolType::Function && !gs.GetFunction().returnType.empty())
+                                                                {
+                                                                    rType = analysis::CleanBaseType(gs.GetFunction().returnType);
+                                                                    break;
+                                                                }
                                                             }
                                                         }
-                                                    }
-
-                                                    if (relatedSet.contains(rType))
-                                                    {
-                                                        isMatch = true;
                                                     }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                else
+
+                                if (rType.empty())
                                 {
-                                    // Cross-file member reference fallback: match if not in unrelated context
-                                    isMatch = true;
+                                    for (const auto &candRef : s->references)
+                                    {
+                                        if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
+                                        {
+                                            if (candRef.name == "this")
+                                            {
+                                                rType = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
+                                            }
+                                            else
+                                            {
+                                                const analysis::LocalDefinition *oDef = analysis::ResolveInScope(s, candRef.name);
+                                                if (oDef && !oDef->typeName.empty())
+                                                {
+                                                    rType = analysis::CleanBaseType(oDef->typeName);
+                                                }
+                                                else
+                                                {
+                                                    auto gSyms = symbolTable.FindSymbols(candRef.name);
+                                                    for (const auto &gs : gSyms)
+                                                    {
+                                                        if (gs.type == analysis::SymbolType::Variable && !gs.GetVariable().typeName.empty())
+                                                        {
+                                                            rType = analysis::CleanBaseType(gs.GetVariable().typeName);
+                                                            break;
+                                                        }
+                                                        else if (gs.type == analysis::SymbolType::Function && !gs.GetFunction().returnType.empty())
+                                                        {
+                                                            rType = analysis::CleanBaseType(gs.GetFunction().returnType);
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (!rType.empty())
+                                {
+                                    if (relatedSet.contains(rType))
+                                    {
+                                        isMatch = true;
+                                    }
+                                }
+                                else if (fileUri != currentUri)
+                                {
+                                    std::string encClass = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
+                                    if (encClass.empty() || relatedSet.contains(encClass))
+                                    {
+                                        isMatch = true;
+                                    }
                                 }
                             }
                             else

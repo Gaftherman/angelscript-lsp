@@ -18,6 +18,37 @@ TEST_CASE("VirtualMixinDocument - URI Building and Formatting")
           "angelscript-virtual://CWeaponIns2Garand/CASWeaponMixin.as");
     CHECK(SymbolTable::BuildVirtualMixinUri("CWeaponIns2Garand", "CASWeaponMixin.as") ==
           "angelscript-virtual://CWeaponIns2Garand/CASWeaponMixin.as");
+
+    SUBCASE("Robust URI extraction without hardcoded offsets")
+    {
+        // Double slash
+        CHECK(SymbolTable::ExtractVirtualHostClass("angelscript-virtual://HostClass/Mixin.as") == "HostClass");
+        CHECK(SymbolTable::ExtractVirtualMixinName("angelscript-virtual://HostClass/Mixin.as") == "Mixin");
+
+        // Single slash
+        CHECK(SymbolTable::ExtractVirtualHostClass("angelscript-virtual:/HostClass/Mixin.as") == "HostClass");
+        CHECK(SymbolTable::ExtractVirtualMixinName("angelscript-virtual:/HostClass/Mixin.as") == "Mixin");
+
+        // Triple slash
+        CHECK(SymbolTable::ExtractVirtualHostClass("angelscript-virtual:///HostClass/Mixin.as") == "HostClass");
+        CHECK(SymbolTable::ExtractVirtualMixinName("angelscript-virtual:///HostClass/Mixin.as") == "Mixin");
+
+        // Colon without slash
+        CHECK(SymbolTable::ExtractVirtualHostClass("angelscript-virtual:HostClass/Mixin.as") == "HostClass");
+        CHECK(SymbolTable::ExtractVirtualMixinName("angelscript-virtual:HostClass/Mixin.as") == "Mixin");
+
+        // Namespaced host classes
+        CHECK(SymbolTable::ExtractVirtualHostClass("angelscript-virtual://Game::Weapons::Rifle/WeaponMixin.as") == "Game::Weapons::Rifle");
+        CHECK(SymbolTable::ExtractVirtualMixinName("angelscript-virtual://Game::Weapons::Rifle/WeaponMixin.as") == "WeaponMixin");
+
+        // URL-encoded namespaces
+        CHECK(SymbolTable::ExtractVirtualHostClass("angelscript-virtual://Game%3A%3AWeapons%3A%3ARifle/WeaponMixin.as") == "Game::Weapons::Rifle");
+        CHECK(SymbolTable::ExtractVirtualMixinName("angelscript-virtual://Game%3A%3AWeapons%3A%3ARifle/WeaponMixin.as") == "WeaponMixin");
+
+        // Invalid schemes return empty
+        CHECK(SymbolTable::ExtractVirtualHostClass("file:///test.as").empty());
+        CHECK(SymbolTable::ExtractVirtualMixinName("file:///test.as").empty());
+    }
 }
 
 TEST_CASE("VirtualMixinDocument - Toggle Feature Flag and Synthetic URIs")

@@ -87,6 +87,7 @@ namespace angel_lsp::features
                                      const std::string &targetName,
                                      const std::vector<analysis::Symbol> &group,
                                      const ankerl::unordered_dense::set<std::string> &compatibleClasses,
+                                     analysis::AccessModifier targetAccess,
                                      const analysis::SymbolTable &symbolTable,
                                      const CodeLensRequest &request,
                                      ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> &seenRefs)
@@ -135,6 +136,16 @@ namespace angel_lsp::features
 
                     if (!compatibleClasses.empty())
                     {
+                        if (targetAccess == analysis::AccessModifier::Private ||
+                            targetAccess == analysis::AccessModifier::Protected)
+                        {
+                            std::string encClass = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
+                            if (encClass.empty() || !compatibleClasses.contains(encClass))
+                            {
+                                continue;
+                            }
+                        }
+
                         if (!ref.isMemberAccess)
                         {
                             std::string encClass = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
@@ -260,7 +271,7 @@ namespace angel_lsp::features
 
             for (const auto &child : scope->children)
             {
-                CollectReferencesInScope(fileUri, child.get(), targetName, group, compatibleClasses, symbolTable, request, seenRefs);
+                CollectReferencesInScope(fileUri, child.get(), targetName, group, compatibleClasses, targetAccess, symbolTable, request, seenRefs);
             }
         }
     }
@@ -511,6 +522,16 @@ namespace angel_lsp::features
                 }
                 else
                 {
+                    analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
+                    if (std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                    {
+                        targetAccess = sym.GetFunction().modifiers.access;
+                    }
+                    else if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
+                    {
+                        targetAccess = sym.GetVariable().modifiers.access;
+                    }
+
                     ankerl::unordered_dense::set<std::string> compatibleClasses;
                     for (const auto &s : symGroup)
                     {
@@ -522,20 +543,15 @@ namespace angel_lsp::features
                             {
                                 compatibleClasses.insert(s.containerName.substr(lastColon + 2));
                             }
-                            auto related = analysis::GetAllRelatedClasses(s.containerName, request.symbolTable);
-                            for (const auto &rel : related)
+                            auto comp = analysis::GetCompatibleMemberClasses(s.containerName, sym.name, targetAccess, request.symbolTable);
+                            for (const auto &c : comp)
                             {
-                                compatibleClasses.insert(rel);
-                                auto colon = rel.rfind("::");
-                                if (colon != std::string::npos)
-                                {
-                                    compatibleClasses.insert(rel.substr(colon + 2));
-                                }
+                                compatibleClasses.insert(c);
                             }
                         }
                     }
 
-                    if (!compatibleClasses.empty())
+                    if (!compatibleClasses.empty() && targetAccess != analysis::AccessModifier::Private)
                     {
                         request.symbolTable.ForEachSymbol([&](const std::string &, const std::vector<analysis::Symbol> &symbols)
                         {
@@ -553,8 +569,8 @@ namespace angel_lsp::features
                                             {
                                                 compatibleClasses.insert(cand.qualifiedName);
                                             }
-                                            auto candRelated = analysis::GetAllRelatedClasses(cand.name, request.symbolTable);
-                                            for (const auto &rel : candRelated)
+                                            auto candDerived = analysis::GetDerivedClasses(cand.name, request.symbolTable);
+                                            for (const auto &rel : candDerived)
                                             {
                                                 compatibleClasses.insert(rel);
                                             }
@@ -571,7 +587,7 @@ namespace angel_lsp::features
                     {
                         if (root)
                         {
-                            CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, compatibleClasses, request.symbolTable, request, seenRefs);
+                            CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, compatibleClasses, targetAccess, request.symbolTable, request, seenRefs);
                         }
                     });
 
@@ -627,7 +643,7 @@ namespace angel_lsp::features
                 {
                     if (root)
                     {
-                        CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, {}, request.symbolTable, request, seenRefs);
+                        CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, {}, analysis::AccessModifier::Public, request.symbolTable, request, seenRefs);
                     }
                 });
 

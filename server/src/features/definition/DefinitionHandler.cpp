@@ -524,7 +524,7 @@ namespace angel_lsp::features
         bool isVirtualDoc = request.uri.starts_with("angelscript-virtual:") || request.uri.starts_with("angelscript-virtual://");
         std::string virtualHostClass;
         std::string virtualMixinName;
-        const analysis::Symbol *virtualMixinSym = nullptr;
+        std::optional<analysis::Symbol> virtualMixinSym;
 
         if (isVirtualDoc)
         {
@@ -536,11 +536,11 @@ namespace angel_lsp::features
             {
                 if (cand.type == analysis::SymbolType::Class)
                 {
-                    virtualMixinSym = &cand;
+                    virtualMixinSym = cand;
                     break;
                 }
             }
-            if (!virtualMixinSym)
+            if (!virtualMixinSym.has_value())
             {
                 std::string shortName = virtualMixinName;
                 auto lastScope = shortName.rfind("::");
@@ -553,7 +553,7 @@ namespace angel_lsp::features
                 {
                     if (cand.type == analysis::SymbolType::Class)
                     {
-                        virtualMixinSym = &cand;
+                        virtualMixinSym = cand;
                         break;
                     }
                 }
@@ -561,11 +561,11 @@ namespace angel_lsp::features
         }
 
         // 1. Member Access vs Local Scope Precedence
-        auto rootScope = (isVirtualDoc && virtualMixinSym)
+        auto rootScope = (isVirtualDoc && virtualMixinSym.has_value())
             ? request.scopeIndex.GetRoot(virtualMixinSym->fileUri)
             : request.scopeIndex.GetRoot(request.uri);
 
-        uint32_t queryLine = (isVirtualDoc && virtualMixinSym)
+        uint32_t queryLine = (isVirtualDoc && virtualMixinSym.has_value())
             ? analysis::SymbolTable::VirtualToPhysicalLine(request.position.line, virtualMixinSym->startLine)
             : request.position.line;
 
@@ -707,7 +707,7 @@ namespace angel_lsp::features
                         uint32_t eLine = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndLine : def->endLine;
                         uint32_t eChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndCharacter : def->endCharacter;
 
-                        if (isVirtualDoc && virtualMixinSym)
+                        if (isVirtualDoc && virtualMixinSym.has_value())
                         {
                             sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, virtualMixinSym->startLine);
                             eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, virtualMixinSym->startLine);
@@ -825,7 +825,7 @@ namespace angel_lsp::features
                     uint32_t eLine = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndLine : def->endLine;
                     uint32_t eChar = (def->fullEndLine > 0 || def->fullEndCharacter > 0) ? def->fullEndCharacter : def->endCharacter;
 
-                    if (isVirtualDoc && virtualMixinSym)
+                    if (isVirtualDoc && virtualMixinSym.has_value())
                     {
                         sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, virtualMixinSym->startLine);
                         eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, virtualMixinSym->startLine);

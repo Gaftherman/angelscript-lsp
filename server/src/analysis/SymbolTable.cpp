@@ -527,50 +527,60 @@ namespace angel_lsp::analysis
 
     std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
     {
-        if (!uri.starts_with("angelscript-virtual:") && !uri.starts_with("angelscript-virtual://"))
+        const auto colonPos = uri.find(':');
+        if (colonPos == std::string_view::npos)
         {
             return "";
         }
-        std::string_view s = uri;
-        if (s.starts_with("angelscript-virtual://"))
+
+        std::string_view scheme = uri.substr(0, colonPos);
+        if (scheme != "angelscript-virtual")
         {
-            s.remove_prefix(22);
-        }
-        else if (s.starts_with("angelscript-virtual:"))
-        {
-            s.remove_prefix(20);
+            return "";
         }
 
-        auto slashPos = s.find('/');
+        std::string_view rest = uri.substr(colonPos + 1);
+        while (!rest.empty() && rest.front() == '/')
+        {
+            rest.remove_prefix(1);
+        }
+
+        auto slashPos = rest.find('/');
         if (slashPos == std::string_view::npos)
         {
             return "";
         }
-        return utils::UrlDecode(s.substr(0, slashPos));
+
+        return utils::UrlDecode(rest.substr(0, slashPos));
     }
 
     std::string SymbolTable::ExtractVirtualMixinName(std::string_view uri)
     {
-        if (!uri.starts_with("angelscript-virtual:") && !uri.starts_with("angelscript-virtual://"))
+        const auto colonPos = uri.find(':');
+        if (colonPos == std::string_view::npos)
         {
             return "";
         }
-        std::string_view s = uri;
-        if (s.starts_with("angelscript-virtual://"))
+
+        std::string_view scheme = uri.substr(0, colonPos);
+        if (scheme != "angelscript-virtual")
         {
-            s.remove_prefix(22);
-        }
-        else if (s.starts_with("angelscript-virtual:"))
-        {
-            s.remove_prefix(20);
+            return "";
         }
 
-        auto slashPos = s.find('/');
-        std::string_view mixinPart = (slashPos != std::string_view::npos) ? s.substr(slashPos + 1) : s;
+        std::string_view rest = uri.substr(colonPos + 1);
+        while (!rest.empty() && rest.front() == '/')
+        {
+            rest.remove_prefix(1);
+        }
+
+        auto slashPos = rest.find('/');
+        std::string_view mixinPart = (slashPos != std::string_view::npos) ? rest.substr(slashPos + 1) : rest;
         if (mixinPart.ends_with(".as"))
         {
             mixinPart.remove_suffix(3);
         }
+
         return utils::UrlDecode(mixinPart);
     }
 

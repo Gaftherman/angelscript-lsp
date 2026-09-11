@@ -11,8 +11,89 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
 
 ---
 
+## Minimalist Quickstart
+
+### 1. Build and Run Server
+
+Prerequisites: CMake 3.22+ and a C++20 compiler (MSVC 2022 v143 on Windows, GCC 13+ or Clang 16+ on Linux).
+
+```powershell
+# Windows (PowerShell)
+cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release
+cmake --build server/build --config Release
+
+# Run test suite
+cd server/build
+ctest -C Release --output-on-failure
+```
+
+```bash
+# Linux / macOS (Bash)
+cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release
+cmake --build server/build --config Release
+
+# Run test suite
+cd server/build
+ctest -C Release --output-on-failure
+```
+
+### 2. VS Code Extension Setup
+
+```powershell
+cd client
+npm install
+npm run compile
+npm run package
+```
+
+Install the generated `.vsix` file in VS Code (`Extensions -> ... -> Install from VSIX...`).
+
+### 3. Basic Workspace Configuration
+
+Create or update `.vscode/settings.json` in your workspace:
+
+```jsonc
+{
+  "angelscript.searchDirectories": [
+    "${workspaceFolder}/scripts"
+  ],
+  "angelscript.predefinedFiles": [
+    "${workspaceFolder}/stubs/as.predefined"
+  ]
+}
+```
+
+---
+
+## Feature Status & Reliability Checklist
+
+| Feature / LSP Method | Status | Reliability Notes | Configuration Flag |
+| :--- | :--- | :--- | :--- |
+| **Diagnostics**<br>`textDocument/publishDiagnostics` | Stable / Production-Ready | Dual-pass (syntax + semantic) validation oracle. Fast AST error detection with debounced background semantic pass. FNV-1a 64-bit ABI fingerprinting prevents cascading save storms when public interfaces are untouched. | `--enable-type-conversion-checks` |
+| **Hover**<br>`textDocument/hover` | Stable / Production-Ready | Sub-millisecond keyed spatial lookup (zero linear table scans). Full Doxygen docstring parser (`@brief`, `@param`, `@return`, `@see`), property accessors, and virtual document host scope fallback. | `--enable-hover` |
+| **Definition & Declaration**<br>`textDocument/definition`<br>`textDocument/declaration`<br>`textDocument/typeDefinition` | Stable / Production-Ready | Precise cross-file symbol lookup. Overload-aware callee argument scoring (`FilterOverloadsForCall`), mixin origin source mapping (jumps to template declaration range), and base/interface traversal. | `--enable-definition` |
+| **References**<br>`textDocument/references` | Stable / Production-Ready | Strict scope isolation across inheritance boundaries: private members isolated to declaring class AST; protected restricted to derived classes; public resolved to highest declaring ancestor. Eliminates sibling class leakage. | `--enable-references` |
+| **Rename**<br>`textDocument/prepareRename`<br>`textDocument/rename` | Stable / Production-Ready | Multi-file `WorkspaceEdit` generation. Safe identifier renaming protected against lexical shadowing and keyword collisions; guaranteed occurrence parity with Find References. | `--enable-rename` |
+| **Completion**<br>`textDocument/completion` | Stable / Production-Ready | Scope-aware suggestions for locals, parameters, class members (`.`, `->`), namespace members (`::`), and keywords. Parameter placeholders and auto-expanding snippets for control structures. | `--enable-completion` |
+| **Signature Help**<br>`textDocument/signatureHelp` | Stable / Production-Ready | Active parameter index tracking during call expressions. Overload candidate preview and associated documentation formatting. | `--enable-signature-help` |
+| **Semantic Tokens**<br>`textDocument/semanticTokens/full`<br>`textDocument/semanticTokens/range` | Stable / Production-Ready | Zero-allocation delta integer streams with standard LSP legend. Distinguishes parameters, member properties, locals, and enum constants through symbol table resolution. Supports inactive preprocessor range dimming. | `--enable-semantic-tokens` |
+| **Document Symbols**<br>`textDocument/documentSymbol` | Stable / Production-Ready | Hierarchical symbol tree (classes, methods, fields, enums, namespaces) powering the VS Code Outline view and breadcrumb navigation. | `--enable-document-symbols` |
+| **Workspace Symbols**<br>`workspace/symbol` | Stable / Production-Ready | Multi-tiered fuzzy search, scoring, and ranking across all indexed project scripts and predefined host stubs (`Ctrl+T`). | `--enable-workspace-symbols` |
+| **Inlay Hints**<br>`textDocument/inlayHint` | Stable / Production-Ready | Inline parameter name hints for standard calls, constructor direct-initializations, `BaseClass` methods, and utility objects. Configurable suppression when argument text matches parameter name. | `--enable-inlay-hints` |
+| **CodeLens**<br>`textDocument/codeLens` | Stable / Production-Ready | Inline actionable reference counts above declarations. Deduplicates identical mixin declaration ranges and aggregates reference counts across synthesized host classes without leakage. | `angelscript.features.codeLens` |
+| **Call Hierarchy**<br>`textDocument/prepareCallHierarchy`<br>`callHierarchy/incomingCalls`<br>`callHierarchy/outgoingCalls` | Stable / Production-Ready | Workspace-wide call indexing for functions, methods, and mixins. Synthesized host class caller methods resolve back to originating mixin bodies to locate inbound and outbound calls accurately. | `--enable-call-hierarchy` |
+| **Type Hierarchy**<br>`textDocument/prepareTypeHierarchy`<br>`typeHierarchy/supertypes`<br>`typeHierarchy/subtypes` | Stable / Production-Ready | Bi-directional class and interface inheritance hierarchy exploration with strict LSP range containment verification. | `--enable-type-hierarchy` |
+| **Formatting**<br>`textDocument/formatting`<br>`textDocument/rangeFormatting` | Stable / Production-Ready | Document and range formatting supporting Allman and K&R brace placement styles. Guaranteed token safety verified against 213 compiler parity test scripts. | `--enable-formatting` |
+| **Virtual Mixin Documents**<br>`angelscript-virtual://<host>/<mixin>.as` | Experimental / Opt-in | Synthetic document provider enabling full AST mixin expansion. Native inline peek inspection (`angelscript.peekMixinInline`) and host-scope fallback for members like `self` and `m_pPlayer`. | `--enable-virtual-mixin-documents` |
+| **Predefined Stubs**<br>Host API Loader (`as.predefined`) | Stable / Production-Ready | High-performance background loader bypassing diagnostic checker overhead (>95% speedup). Native `@listpattern` and `{repeat T}` initializer list support. Integrated stub consolidation formatter. | `--enable-predefined-loader` |
+| **Module System**<br>Multi-Module Compilation | Stable / Production-Ready | Entry-point and folder-based module configurations. Dynamic hot-reloading via configuration changes, unconfigured closure cache purging, and strict validation of `external shared` declarations. | `angelscript.modules` |
+
+---
+
 ## What's New & Architectural Advancements (v0.7.7-exp.* Milestone)
 
+- **Strict Scope Isolation in Reference Resolution & CodeLens**: Dynamic `AccessModifier` tracking and inheritance tree filtering (`GetCompatibleMemberClasses`, `GetDerivedClasses`) ensure private members are strictly isolated to their declaring class scope and protected members to direct descendants. Sibling classes sharing a common base class (such as weapon entities deriving from `ScriptBasePlayerWeaponEntity`) no longer leak references or inflate CodeLens counts.
+- **Scheme-Agnostic Virtual Document URI Extraction**: Modernized `ExtractVirtualHostClass` and `ExtractVirtualMixinName` using robust tokenization, eliminating hardcoded string offsets and supporting arbitrary URI schemes, multiple slashes, and complex namespace hierarchies with zero linear table scans.
 - **High-Performance Symbol Synthesis for Mixins**: Host classes synthesize methods and properties directly from `mixin class` definitions without physical script concatenation. CodeLens deduplicates declarations to present a single aggregated reference count across all host classes, and client-side scaffolding is available for experimental virtual mixin documents (`angelscript-virtual://<host_class>/<mixin>.as`).
 - **ABI-Based Incremental Save Analysis**: Incremental document saves utilize a 64-bit FNV-1a interface fingerprint. When an edit affects only function bodies without modifying public interface ABI hashes, cascading re-analysis across open documents is bypassed.
 - **Cascading Peer Open-Document Debouncing**: Introduces a 250ms coalescing window in `Server.cpp` preventing repetitive re-analysis storms across open peer files (such as `base.as`).
@@ -74,32 +155,12 @@ AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) imple
 
 ---
 
-## Features
+## Extended Capabilities & Engine Support
 
-- **Pure Tree-Sitter Analysis Engine**: Complete AST parsing without native C++ engine binding callbacks or physical script concatenation.
-- **Dual-Pass Diagnostics (`ValidationOracle`)**: 
-  - **Syntax Pass**: Instant syntax error detection (`TSNode` error/missing node catching).
-  - **Semantic Pass**: Workspace and document-level symbol resolution diagnostics.
-- **Hover Information (`textDocument/hover`)**: Rich Markdown tooltips displaying function signatures, variable types, class properties, and parsed Doxygen documentation.
-- **Go to Definition & Type Definition (`textDocument/definition`, `textDocument/typeDefinition`)**: Precise symbol lookup across documents, namespaces, classes, and global scopes with inheritance traversal. Features overload-aware resolution (`FilterOverloadsForCall`) matching callee argument types and arity, and preserves mixin origin declaration source files and line ranges.
-- **Go to Declaration (`textDocument/declaration`)**: The same answer as Go to Definition, deliberately. AngelScript has no declaration/definition split - no headers, no prototypes - so the two questions are one, and the editor's second navigation key should not be inert.
-- **Go to Implementation (`textDocument/implementation`)**: The opposite direction. From an interface or a base class, the types that derive from it transitively; from a method declared in one, that method as each subtype declares it.
-- **Expand Selection (`textDocument/selectionRange`)**: Grows the selection one syntactic step at a time, straight off the parse tree.
-- **Call Hierarchy (`textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls`)**: Explores incoming and outgoing calls for functions, class methods, and mixins from a workspace-wide call index, resolving synthesized caller methods back to mixin origin bodies.
-- **Type Hierarchy (`textDocument/prepareTypeHierarchy`, `typeHierarchy/supertypes`, `typeHierarchy/subtypes`)**: The bases a class or interface declares, and the types that declare it as theirs, one level at a time.
-- **CodeLens (`textDocument/codeLens`)**: Actionable inline reference counts above declarations, deduplicating identical declaration ranges for mixin methods and aggregating all call-site references across host classes.
-- **Inlay Hints (`textDocument/inlayHint`)**: Inline parameter-name hints for standard calls, constructor direct-initializations (`Type var(arg1, arg2);`), `BaseClass` methods, and utility objects (`Math.MakeVectors`), with configurable argument-matching suppression.
-- **Linked Editing (`textDocument/linkedEditingRange`)**: Retype a local variable or a parameter and its uses together, live. Offered only for names a lexical scope keeps inside one file; anything at file scope goes through Rename, which looks across documents.
-- **Auto-Completion (`textDocument/completion`)**: Context-aware completion suggestions for global symbols, class member functions/properties, and namespace scopes.
-- **Semantic Tokens (`textDocument/semanticTokens/full`)**: Full semantic syntax highlighting for keywords, types, functions, variables, parameters, and enum members.
-- **Signature Help (`textDocument/signatureHelp`)**: Active parameter highlight and signature preview for function calls.
-- **Document Symbols Outline (`textDocument/documentSymbol`)**: Hierarchical symbol tree for classes, methods, fields, enums, and namespaces powering VS Code Outline and Breadcrumbs.
-- **Workspace Symbol Search (`workspace/symbol`)**: Multi-tiered fuzzy search across all translation units and predefined headers for fast `Ctrl+T` symbol navigation.
-- **Find References (`textDocument/references`)**: Project-wide reference lookup for local variables, parameters, class members, and global declarations with shadowing protection.
-- **Symbol Rename (`textDocument/prepareRename`, `textDocument/rename`)**: Safe identifier refactoring generating accurate multi-file `WorkspaceEdit` blocks.
-- **Include Directive Resolution (`#include`)**: Preprocessor include extraction and resolution with search path configuration and cyclic dependency guards.
-- **Workspace Predefined Loader (`as.predefined`)**: Native Tree-Sitter parsing of host application declarations (`as.predefined` or `.as` files).
-- **Diagnostic Localization (`i18n`)**: Multi-language diagnostic error reporting supporting English (`en-US`) and Spanish (`es-ES`).
+- **Go to Declaration (`textDocument/declaration`)**: Matches Go to Definition semantics, reflecting AngelScript's unified declaration/definition model.
+- **Go to Implementation (`textDocument/implementation`)**: Resolves interface implementations and base class virtual method overrides across derived types.
+- **Expand Selection (`textDocument/selectionRange`)**: Syntactic selection expansion directly guided by the Tree-Sitter parse tree.
+- **Linked Editing (`textDocument/linkedEditingRange`)**: Live simultaneous rename of local variables and parameters within local lexical file scope.
 - **Protected JSON-RPC Stream**: Internal server logging routes strictly to `stderr` (`spdlog::stderr_color_mt`) and `window/logMessage` notifications, ensuring `stdout` is 100% clean for VS Code JSON-RPC streams.
 - **Configurable Preprocessor**: `#if`/`#endif` matching `CScriptBuilder` exactly, with `#else`, `#elif`, `#ifdef` and in-script `#define` available as opt-in switches for hosts that patched the add-on. Words come from `--define`, from the `angelscript.define` setting, or from a `#define` line in a predefined stub.
 - **Active Predefined Stub**: One active predefined stub per workspace, chosen from a picker, with every other discovered stub ignored. The engine profile still loads underneath.

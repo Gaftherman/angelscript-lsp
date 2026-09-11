@@ -416,3 +416,97 @@ TEST_CASE("ReferencesHandler - Namespace Function References")
     CHECK((*refs)[1].range.start.line == 3);
     CHECK((*refs)[2].range.start.line == 7);
 }
+
+TEST_CASE("ReferencesHandler - Strict Scope Isolation for Sibling Classes with Private Methods")
+{
+    MultiFileTestEnv env;
+
+    std::string baseCode =
+        "class ScriptBasePlayerWeaponEntity {\n"
+        "    void Spawn() {}\n"
+        "}\n";
+
+    std::string weaponACode =
+        "class weapon_ins2m40a1 : ScriptBasePlayerWeaponEntity {\n"
+        "    private int GetBodygroup() { return 1; }\n" // line 1
+        "    void PrimaryAttack() {\n"
+        "        GetBodygroup();\n"                      // line 3
+        "        this.GetBodygroup();\n"                 // line 4
+        "    }\n"
+        "}\n";
+
+    std::string weaponBCode =
+        "class weapon_ins2ak47 : ScriptBasePlayerWeaponEntity {\n"
+        "    private int GetBodygroup() { return 2; }\n" // line 1
+        "    void PrimaryAttack() {\n"
+        "        GetBodygroup();\n"                      // line 3
+        "    }\n"
+        "}\n";
+
+    env.AddFile("file:///base.as", baseCode);
+    env.AddFile("file:///weapon_a.as", weaponACode);
+    env.AddFile("file:///weapon_b.as", weaponBCode);
+
+    // References on weapon_ins2m40a1's private GetBodygroup declaration (line 1, col 16)
+    auto refsA = env.RefsAt("file:///weapon_a.as", 1, 16, true);
+    REQUIRE(refsA.has_value());
+    REQUIRE(refsA->size() == 3);
+    for (const auto &ref : *refsA)
+    {
+        CHECK(ref.uri.toString() == "file:///weapon_a.as");
+    }
+    CHECK((*refsA)[0].range.start.line == 1);
+    CHECK((*refsA)[1].range.start.line == 3);
+    CHECK((*refsA)[2].range.start.line == 4);
+
+    // References on weapon_ins2ak47's private GetBodygroup declaration (line 1, col 16)
+    auto refsB = env.RefsAt("file:///weapon_b.as", 1, 16, true);
+    REQUIRE(refsB.has_value());
+    REQUIRE(refsB->size() == 2);
+    for (const auto &ref : *refsB)
+    {
+        CHECK(ref.uri.toString() == "file:///weapon_b.as");
+    }
+    CHECK((*refsB)[0].range.start.line == 1);
+    CHECK((*refsB)[1].range.start.line == 3);
+}
+
+TEST_CASE("ReferencesHandler - Sibling Classes with Coincidental Public Methods Not in Base")
+{
+    MultiFileTestEnv env;
+
+    std::string baseCode =
+        "class BaseWeapon {\n"
+        "    void Fire() {}\n"
+        "}\n";
+
+    std::string weaponACode =
+        "class WeaponA : BaseWeapon {\n"
+        "    void CustomZoom() {}\n" // line 1
+        "    void Fire() {\n"
+        "        CustomZoom();\n"    // line 3
+        "    }\n"
+        "}\n";
+
+    std::string weaponBCode =
+        "class WeaponB : BaseWeapon {\n"
+        "    void CustomZoom() {}\n" // line 1
+        "    void Fire() {\n"
+        "        CustomZoom();\n"    // line 3
+        "    }\n"
+        "}\n";
+
+    env.AddFile("file:///base.as", baseCode);
+    env.AddFile("file:///weapon_a.as", weaponACode);
+    env.AddFile("file:///weapon_b.as", weaponBCode);
+
+    auto refsA = env.RefsAt("file:///weapon_a.as", 1, 9, true);
+    REQUIRE(refsA.has_value());
+    REQUIRE(refsA->size() == 2);
+    for (const auto &ref : *refsA)
+    {
+        CHECK(ref.uri.toString() == "file:///weapon_a.as");
+    }
+    CHECK((*refsA)[0].range.start.line == 1);
+    CHECK((*refsA)[1].range.start.line == 3);
+}

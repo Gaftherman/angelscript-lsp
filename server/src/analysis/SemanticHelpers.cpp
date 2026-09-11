@@ -1013,6 +1013,163 @@ namespace angel_lsp::analysis
         return related;
     }
 
+    std::vector<std::string> GetDerivedClasses(const std::string &className, const SymbolTable &symbolTable)
+    {
+        std::vector<std::string> derivedClasses;
+        std::string rootType = CleanBaseType(className);
+        if (rootType.empty())
+        {
+            return derivedClasses;
+        }
+
+        ankerl::unordered_dense::set<std::string> visited;
+        visited.insert(rootType);
+
+        const auto ruleIndex = symbolTable.GetRuleIndex();
+        if (!ruleIndex)
+        {
+            return derivedClasses;
+        }
+
+        std::vector<std::string> frontier;
+        frontier.push_back(rootType);
+
+        while (!frontier.empty())
+        {
+            std::vector<std::string> next;
+            for (const auto &baseName : frontier)
+            {
+                const auto it = ruleIndex->derivedByBase.find(baseName);
+                if (it == ruleIndex->derivedByBase.end())
+                {
+                    continue;
+                }
+
+                for (const auto &derived : it->second)
+                {
+                    if (visited.insert(derived.qualifiedName).second)
+                    {
+                        derivedClasses.push_back(derived.qualifiedName);
+                        next.push_back(derived.qualifiedName);
+                    }
+
+                    if (!derived.name.empty() && derived.name != derived.qualifiedName &&
+                        visited.insert(derived.name).second)
+                    {
+                        derivedClasses.push_back(derived.name);
+                        next.push_back(derived.name);
+                    }
+                }
+            }
+
+            frontier = std::move(next);
+        }
+
+        return derivedClasses;
+    }
+
+    std::vector<std::string> GetCompatibleMemberClasses(
+        const std::string &className,
+        const std::string &memberName,
+        AccessModifier access,
+        const SymbolTable &symbolTable)
+    {
+        std::vector<std::string> result;
+        ankerl::unordered_dense::set<std::string> visited;
+
+        auto addClass = [&](const std::string &c)
+        {
+            if (!c.empty() && visited.insert(c).second)
+            {
+                result.push_back(c);
+                auto colon = c.rfind("::");
+                if (colon != std::string::npos)
+                {
+                    std::string shortName = c.substr(colon + 2);
+                    if (visited.insert(shortName).second)
+                    {
+                        result.push_back(shortName);
+                    }
+                }
+            }
+        };
+
+        std::string cleanClass = CleanBaseType(className);
+        if (cleanClass.empty())
+        {
+            return result;
+        }
+
+        if (access == AccessModifier::Private)
+        {
+            addClass(cleanClass);
+            if (cleanClass.find("::") == std::string::npos)
+            {
+                auto typeSyms = symbolTable.FindTypeSymbolsByShortName(cleanClass);
+                for (const auto &ts : typeSyms)
+                {
+                    if ((ts.type == SymbolType::Class || ts.type == SymbolType::Interface) && !ts.qualifiedName.empty())
+                    {
+                        addClass(ts.qualifiedName);
+                    }
+                }
+            }
+            return result;
+        }
+
+        // For Protected and Public: check if memberName is declared on an ancestor class or interface.
+        std::string rootClass = cleanClass;
+        auto hierarchy = GetInheritedTypeHierarchy(cleanClass, symbolTable);
+        for (size_t i = 1; i < hierarchy.size(); ++i)
+        {
+            const auto &ancestor = hierarchy[i];
+            auto syms = symbolTable.FindSymbols(ancestor + "::" + memberName);
+            bool hasNonPrivate = false;
+            for (const auto &s : syms)
+            {
+                AccessModifier a = AccessModifier::Public;
+                if (std::holds_alternative<FunctionSignature>(s.signature))
+                {
+                    a = s.GetFunction().modifiers.access;
+                }
+                else if (std::holds_alternative<VariableSignature>(s.signature))
+                {
+                    a = s.GetVariable().modifiers.access;
+                }
+
+                if (a != AccessModifier::Private)
+                {
+                    hasNonPrivate = true;
+                    break;
+                }
+            }
+
+            if (hasNonPrivate)
+            {
+                rootClass = ancestor;
+            }
+        }
+
+        addClass(rootClass);
+
+        auto derived = GetDerivedClasses(rootClass, symbolTable);
+        for (const auto &d : derived)
+        {
+            addClass(d);
+        }
+
+        if (access == AccessModifier::Public && rootClass != cleanClass)
+        {
+            auto rootHierarchy = GetInheritedTypeHierarchy(rootClass, symbolTable);
+            for (const auto &base : rootHierarchy)
+            {
+                addClass(base);
+            }
+        }
+
+        return result;
+    }
+
     bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
     {
         if (ts_node_is_null(node))

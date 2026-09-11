@@ -34,6 +34,7 @@ namespace angel_lsp::features::resolution
 
         std::string declaringClass;
         std::vector<std::string> relatedClasses;
+        analysis::AccessModifier access = analysis::AccessModifier::Public;
 
         std::string declaringNamespace;
     };

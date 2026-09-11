@@ -284,3 +284,109 @@ TEST_CASE("CodeLens - Provides View Mixin Expansion lens on class mixin inclusio
     }
 }
 
+TEST_CASE("CodeLens - Scope isolation prevents reference leakage between sibling classes")
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{ nullptr };
+    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    const std::string baseUri = "file:///base.as";
+    const std::string baseCode =
+        "class ScriptBasePlayerWeaponEntity {\n"
+        "    void Spawn() {}\n"
+        "}\n";
+
+    const std::string uriA = "file:///weapon_a.as";
+    const std::string codeA =
+        "class weapon_ins2m40a1 : ScriptBasePlayerWeaponEntity {\n"
+        "    private int GetBodygroup() { return 1; }\n" // line 1
+        "    void PrimaryAttack() {\n"
+        "        GetBodygroup();\n"                      // line 3
+        "        this.GetBodygroup();\n"                 // line 4
+        "    }\n"
+        "}\n";
+
+    const std::string uriB = "file:///weapon_b.as";
+    const std::string codeB =
+        "class weapon_ins2ak47 : ScriptBasePlayerWeaponEntity {\n"
+        "    private int GetBodygroup() { return 2; }\n" // line 1
+        "    void PrimaryAttack() {\n"
+        "        GetBodygroup();\n"                      // line 3
+        "    }\n"
+        "}\n";
+
+    TSTree *baseTree = parser.Parse(baseCode);
+    TSTree *treeA = parser.Parse(codeA);
+    TSTree *treeB = parser.Parse(codeB);
+
+    symbolCollector.CollectSymbols(baseUri, baseCode, parser, symbolTable);
+    symbolCollector.CollectSymbols(uriA, codeA, parser, symbolTable);
+    symbolCollector.CollectSymbols(uriB, codeB, parser, symbolTable);
+
+    auto baseScope = scopeCollector.CollectScopes(baseCode, parser);
+    if (baseScope)
+    {
+        scopeIndex.SetScopeTree(baseUri, std::move(baseScope));
+    }
+
+    auto scopeA = scopeCollector.CollectScopes(codeA, parser);
+    if (scopeA)
+    {
+        scopeIndex.SetScopeTree(uriA, std::move(scopeA));
+    }
+
+    auto scopeB = scopeCollector.CollectScopes(codeB, parser);
+    if (scopeB)
+    {
+        scopeIndex.SetScopeTree(uriB, std::move(scopeB));
+    }
+
+    // Request lenses for weapon_a.as
+    CodeLensRequest reqA{ uriA, codeA, treeA, symbolTable, scopeIndex };
+    auto lensesA = GetCodeLenses(reqA);
+    REQUIRE(lensesA.has_value());
+
+    bool foundBodygroupA = false;
+    for (const auto &lens : *lensesA)
+    {
+        if (lens.range.start.line == 1 && lens.command.has_value())
+        {
+            // Must be strictly 2 references (PrimaryAttack internal calls), NOT leaking weapon_b's call
+            CHECK(lens.command->title == "2 references");
+            foundBodygroupA = true;
+        }
+    }
+    CHECK(foundBodygroupA);
+
+    // Request lenses for weapon_b.as
+    CodeLensRequest reqB{ uriB, codeB, treeB, symbolTable, scopeIndex };
+    auto lensesB = GetCodeLenses(reqB);
+    REQUIRE(lensesB.has_value());
+
+    bool foundBodygroupB = false;
+    for (const auto &lens : *lensesB)
+    {
+        if (lens.range.start.line == 1 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            foundBodygroupB = true;
+        }
+    }
+    CHECK(foundBodygroupB);
+
+    if (baseTree)
+    {
+        ts_tree_delete(baseTree);
+    }
+    if (treeA)
+    {
+        ts_tree_delete(treeA);
+    }
+    if (treeB)
+    {
+        ts_tree_delete(treeB);
+    }
+}
+

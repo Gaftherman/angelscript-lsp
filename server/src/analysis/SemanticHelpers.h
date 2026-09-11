@@ -440,6 +440,38 @@ namespace angel_lsp::analysis
     std::vector<std::string> GetAllRelatedClasses(const std::string &className, const SymbolTable &symbolTable);
 
     /**
+     * @brief Discovers all direct and indirect derived classes of a given class.
+     *
+     * Traverses downwards through the reverse inheritance index (RuleIndex::derivedByBase)
+     * starting strictly from className, excluding base classes and sibling classes.
+     *
+     * @param className The root class name.
+     * @param symbolTable The symbol table containing class definitions and rule index.
+     * @return Vector of derived class names (including qualified and unqualified forms).
+     */
+    std::vector<std::string> GetDerivedClasses(const std::string &className, const SymbolTable &symbolTable);
+
+    /**
+     * @brief Computes the set of classes compatible with a member based on access rules.
+     *
+     * - Private members: strictly isolated to declaring class (siblings, subclasses, superclasses excluded).
+     * - Protected members: declaring class and its direct/indirect derived classes.
+     * - Public members: root declaring class in hierarchy and its derived classes. Sibling classes
+     *   that independently declare a member of the same name without an ancestor declaration are excluded.
+     *
+     * @param className The class name containing or declaring the member.
+     * @param memberName The member name.
+     * @param access The member's access modifier (Private, Protected, Public).
+     * @param symbolTable Global symbol table.
+     * @return Vector of compatible class names.
+     */
+    std::vector<std::string> GetCompatibleMemberClasses(
+        const std::string &className,
+        const std::string &memberName,
+        AccessModifier access,
+        const SymbolTable &symbolTable);
+
+    /**
      * @brief Extracts all enclosing container scopes (classes, interfaces, namespaces) for a given AST node.
      * @param node The AST node from which to trace enclosing containers.
      * @param sourceCode Document source text.
