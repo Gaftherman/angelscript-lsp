@@ -4835,8 +4835,7 @@ namespace angel_lsp
                 const auto &clsSig = std::get<angel_lsp::analysis::ClassSignature>(mixinSym->signature);
                 if (!clsSig.bases.empty())
                 {
-                    const auto baseList = clsSig.bases;
-                    resolvedBaseClass = fmt::format(" | Base: {}", fmt::join(baseList, ", "));
+                    resolvedBaseClass = fmt::format(" | Base: {}", fmt::join(clsSig.bases, ", "));
                 }
             }
         }

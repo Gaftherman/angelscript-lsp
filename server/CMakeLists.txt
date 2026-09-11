@@ -118,9 +118,8 @@ else()
     else()
         list(APPEND ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:-Wimplicit-fallthrough=3>)
     endif()
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
-        list(APPEND ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:-Wdangling-reference>)
-    endif()
+    # Note: -Wdangling-reference is deliberately omitted on GCC 13+ due to known false positives
+    # with bundled fmt v9 (spdlog) join_view inside fmt::format (GCC bug 109640 / 107532).
 endif()
 
 option(ANGELLSP_WERROR "Treat warnings in angel_lsp's own code as errors" OFF)
