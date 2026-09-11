@@ -152,6 +152,54 @@ TEST_CASE("ControlFlow - Distinct case values are accepted")
     CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
 }
 
+TEST_CASE("ControlFlow - Duplicate case values with enum constants are reported")
+{
+    const std::string code =
+        "enum Mode { ModeA = 1, ModeB = 1 }\n"
+        "void Think(Mode mode)\n"
+        "{\n"
+        "    switch (mode)\n"
+        "    {\n"
+        "        case ModeA: break;\n"
+        "        case ModeB: break;\n"
+        "    }\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+}
+
+TEST_CASE("ControlFlow - Duplicate case value with enum and literal is reported")
+{
+    const std::string code =
+        "enum Mode { ModeA = 1 }\n"
+        "void Think(int mode)\n"
+        "{\n"
+        "    switch (mode)\n"
+        "    {\n"
+        "        case ModeA: break;\n"
+        "        case 1: break;\n"
+        "    }\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+}
+
+TEST_CASE("ControlFlow - Duplicate case value with qualified enum is reported")
+{
+    const std::string code =
+        "enum Mode { ModeA = 2 }\n"
+        "void Think(int mode)\n"
+        "{\n"
+        "    switch (mode)\n"
+        "    {\n"
+        "        case Mode::ModeA: break;\n"
+        "        case 2: break;\n"
+        "    }\n"
+        "}\n";
+
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+}
+
 TEST_CASE("ControlFlow - Reports a case value that cannot be a label")
 {
     const std::string code =

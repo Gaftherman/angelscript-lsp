@@ -41,11 +41,6 @@ namespace angel_lsp::analysis
             return std::string(sourceCode.substr(start, end - start));
         }
 
-        constexpr uint32_t k_functionFieldLength = 8;  ///< "function"
-        constexpr uint32_t k_argumentsFieldLength = 9; ///< "arguments"
-        constexpr uint32_t k_objectFieldLength = 6;    ///< "object"
-        constexpr uint32_t k_memberFieldLength = 6;    ///< "member"
-
         /**
          * @brief Counts the arguments written between one call's parentheses.
          *

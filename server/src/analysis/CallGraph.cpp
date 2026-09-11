@@ -34,10 +34,6 @@ namespace angel_lsp::analysis
             return std::string(sourceCode.substr(start, end - start));
         }
 
-        constexpr uint32_t k_functionFieldLength = 8; ///< "function"
-        constexpr uint32_t k_memberFieldLength = 6;   ///< "member"
-        constexpr uint32_t k_nameFieldLength = 4;     ///< "name"
-
         SourceRange ToSourceRange(TSNode node)
         {
             const TSPoint start = ts_node_start_point(node);

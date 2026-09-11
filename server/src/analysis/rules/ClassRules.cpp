@@ -742,7 +742,7 @@ namespace angel_lsp::analysis::rules
 
                                         DiagnosticRelatedInformation rel;
                                         rel.fileUri = mixinSym->fileUri;
-                                        rel.range = { sPoint.row, sPoint.column, ePoint.row, ePoint.column };
+                                        rel.range = { { sPoint.row, sPoint.column }, { ePoint.row, ePoint.column } };
                                         rel.message = fmt::format("In mixin '{}': Member '{}'", mixinSym->name, propName);
 
                                         ctx.EmitWithRelated(
@@ -789,7 +789,7 @@ namespace angel_lsp::analysis::rules
 
                                     DiagnosticRelatedInformation rel;
                                     rel.fileUri = mixinSym->fileUri;
-                                    rel.range = { sPoint.row, sPoint.column, ePoint.row, ePoint.column };
+                                    rel.range = { { sPoint.row, sPoint.column }, { ePoint.row, ePoint.column } };
                                     rel.message = fmt::format("In mixin '{}': Member '{}'", mixinSym->name, nmText);
 
                                     ctx.EmitWithRelated(
@@ -825,7 +825,7 @@ namespace angel_lsp::analysis::rules
 
                                         DiagnosticRelatedInformation rel;
                                         rel.fileUri = mixinSym->fileUri;
-                                        rel.range = { sPoint.row, sPoint.column, ePoint.row, ePoint.column };
+                                        rel.range = { { sPoint.row, sPoint.column }, { ePoint.row, ePoint.column } };
                                         rel.message = fmt::format("In mixin '{}': Member '{}'", mixinSym->name, fnName);
 
                                         ctx.EmitWithRelated(

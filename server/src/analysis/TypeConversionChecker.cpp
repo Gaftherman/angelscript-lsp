@@ -41,15 +41,6 @@ namespace angel_lsp::analysis
             return std::string(sourceCode.substr(start, end - start));
         }
 
-        constexpr uint32_t k_typeFieldLength = 4;      ///< "type"
-        constexpr uint32_t k_valueFieldLength = 5;     ///< "value"
-        constexpr uint32_t k_argsFieldLength = 9;      ///< "arguments"
-        constexpr uint32_t k_functionFieldLength = 8;  ///< "function"
-        constexpr uint32_t k_operandFieldLength = 7;   ///< "operand"
-        constexpr uint32_t k_operatorFieldLength = 8;  ///< "operator"
-        constexpr uint32_t k_varTypeFieldLength = 8;   ///< "var_type"
-        constexpr uint32_t k_nameFieldLength = 4;      ///< "name"
-
         /** @brief What a resolved expression is worth to this pass. */
         struct ExpressionType
         {

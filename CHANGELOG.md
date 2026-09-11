@@ -4,6 +4,17 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.7-exp.16] - 2026-09-11
+
+### Fixed
+
+- Compiler Warnings and Cross-Platform Diagnostics:
+  - Added missing `NonInstantiableKind::Mixin` case in `VariableRules.cpp` to resolve GCC/Clang `-Wswitch` warnings.
+  - Corrected nested aggregate initialization for `lsp::Range` subobjects in `ClassRules.cpp` to eliminate `-Wmissing-braces` warnings.
+  - Eliminated dead file-scope `k_...FieldLength` constants across analysis and feature handlers (`AccessChecker`, `CallChecker`, `CallGraph`, `ConstChecker`, `ControlFlowChecker`, `InitializerListChecker`, `TypeConversionChecker`, `CallHierarchyHandler`) to resolve `-Wunused-const-variable` warnings.
+  - Removed unused lambda captures in `Server.cpp` and `ServerHarnessTest.cpp`.
+  - Stored base class collection in local variable before `fmt::join` formatting in `Server.cpp` to prevent GCC `-Wdangling-reference` warnings.
+
 ## [0.7.7-exp.15] - 2026-09-11
 
 ### Fixed

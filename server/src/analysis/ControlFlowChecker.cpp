@@ -2,6 +2,7 @@
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/rules/RuleIndex.h"
 
 #include <algorithm>
 #include <cctype>
@@ -16,13 +17,6 @@ namespace angel_lsp::analysis
 {
     namespace
     {
-        constexpr uint32_t k_bodyFieldLength = 4;         ///< "body"
-        constexpr uint32_t k_nameFieldLength = 4;         ///< "name"
-        constexpr uint32_t k_conditionFieldLength = 9;    ///< "condition"
-        constexpr uint32_t k_returnTypeFieldLength = 11;  ///< "return_type"
-        constexpr uint32_t k_alternativeFieldLength = 11; ///< "alternative"
-        constexpr uint32_t k_consequenceFieldLength = 11; ///< "consequence"
-
         std::string_view NodeType(TSNode node)
         {
             return ts_node_is_null(node) ? std::string_view{} : std::string_view(ts_node_type(node));
@@ -311,17 +305,16 @@ namespace angel_lsp::analysis
          *
          * `enum E { A = 1, B = 1 }` gives two names to one number, and a switch dispatches on the
          * number - so `case A:` and `case B:` are the same label twice and the compiler says so:
-         * "Duplicate switch case", measured. Comparing the labels as written never sees it.
+         * @brief Resolve an enumerator's integer value from the cached RuleIndex.
          *
-         * Narrow on purpose. Only a member whose value is written as a plain decimal integer is
-         * resolved; an implicit value (`enum E { A, B }` counts up from zero), an expression
-         * (`1 << 2`), or a hex literal returns nothing and the caller falls back to comparing the
-         * text. Getting this wrong in the other direction would mean reporting a duplicate that is
+         * Switch-case duplicate detection needs this so that two cases written with different
+         * enumerator names that evaluate to the same number are caught, without falsely flagging
+         * an enumerator and a literal, or two enumerators whose value we cannot resolve or that are
          * not one, on code that compiles.
          *
          * Accepts both `A` and `E::A`; the qualifier is dropped before the lookup.
          */
-        std::optional<long long> EnumeratorValue(std::string_view label, const SymbolTable &table)
+        std::optional<long long> EnumeratorValue(std::string_view label, const rules::RuleIndex &ruleIndex)
         {
             // `meta_api::json::Type::Undefined` -> enum `Type`, member `Undefined`. The qualifier is
             // not decoration: matching on the member name alone reported a duplicate in four real
@@ -341,57 +334,65 @@ namespace angel_lsp::analysis
             if (label.empty())
                 return std::nullopt;
 
+            const auto it = ruleIndex.enumSymbolsByMemberName.find(std::string(label));
+            if (it == ruleIndex.enumSymbolsByMemberName.end())
+                return std::nullopt;
+
             std::optional<long long> found;
             size_t declaringEnums = 0;
 
-            table.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
+            for (const auto &sym : it->second)
             {
-                for (const auto &sym : symbols)
+                if (sym.type != SymbolType::Enum || !std::holds_alternative<EnumSignature>(sym.signature))
+                    continue;
+
+                // Written with a qualifier: only the enum it names may answer.
+                if (!enumName.empty() && sym.name != enumName)
+                    continue;
+
+                for (const auto &member : sym.GetEnum().members)
                 {
-                    if (sym.type != SymbolType::Enum || !std::holds_alternative<EnumSignature>(sym.signature))
+                    if (member.name != label)
                         continue;
 
-                    // Written with a qualifier: only the enum it names may answer.
-                    if (!enumName.empty() && sym.name != enumName)
-                        continue;
+                    ++declaringEnums;
 
-                    for (const auto &member : sym.GetEnum().members)
+                    // No value written means the compiler counts it up from the previous one.
+                    // Following that count is possible and is not done here: the value then
+                    // depends on every member before it, and a wrong number would mean claiming
+                    // a duplicate that is not one.
+                    if (member.value.empty())
+                        break;
+
+                    const std::string_view text(member.value);
+                    size_t index = 0;
+                    bool negative = false;
+                    if (text[index] == '-' || text[index] == '+')
                     {
-                        if (member.name != label)
-                            continue;
+                        negative = text[index] == '-';
+                        ++index;
+                    }
+                    if (index >= text.size())
+                        break;
 
-                        ++declaringEnums;
-
-                        // No value written means the compiler counts it up from the previous one.
-                        // Following that count is possible and is not done here: the value then
-                        // depends on every member before it, and a wrong number would mean claiming
-                        // a duplicate that is not one.
-                        if (member.value.empty())
-                            return;
-
-                        const std::string_view text(member.value);
-                        size_t index = 0;
-                        bool negative = false;
-                        if (text[index] == '-' || text[index] == '+')
+                    long long parsed = 0;
+                    bool ok = true;
+                    for (; index < text.size(); ++index)
+                    {
+                        if (text[index] < '0' || text[index] > '9')
                         {
-                            negative = text[index] == '-';
-                            ++index;
+                            ok = false;
+                            break;
                         }
-                        if (index >= text.size())
-                            return;
+                        parsed = parsed * 10 + (text[index] - '0');
+                    }
 
-                        long long parsed = 0;
-                        for (; index < text.size(); ++index)
-                        {
-                            if (text[index] < '0' || text[index] > '9')
-                                return;
-                            parsed = parsed * 10 + (text[index] - '0');
-                        }
-
+                    if (ok)
+                    {
                         found = negative ? -parsed : parsed;
                     }
                 }
-            });
+            }
 
             // Written without a qualifier and declared by more than one enum: which one this label
             // means is the compiler's business and not knowable from here.
@@ -517,7 +518,7 @@ namespace angel_lsp::analysis
                     // The key carries a marker so a label spelled `1` and a label named `A` that
                     // happens to be 1 collide - which they do, in the compiler.
                     std::string key = text;
-                    if (const auto resolved = EnumeratorValue(text, ctx.request.symbolTable))
+                    if (const auto resolved = EnumeratorValue(text, ctx.request.GetRuleIndex()))
                         key = "#" + std::to_string(*resolved);
                     else if (text.find_first_not_of("-+0123456789") == std::string::npos)
                         key = "#" + std::to_string(std::stoll(text));

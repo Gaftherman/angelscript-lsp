@@ -670,7 +670,7 @@ namespace angel_lsp
         // index: symbols change on every keystroke while the index only changes when an #include
         // does.
         m_symbolTable.ForEachSymbol(
-            [this, owning, &context](const std::string &name, const std::vector<angel_lsp::analysis::Symbol> &symbols)
+            [owning, &context](const std::string &name, const std::vector<angel_lsp::analysis::Symbol> &symbols)
             {
                 for (const auto &symbol : symbols)
                 {
@@ -4835,7 +4835,8 @@ namespace angel_lsp
                 const auto &clsSig = std::get<angel_lsp::analysis::ClassSignature>(mixinSym->signature);
                 if (!clsSig.bases.empty())
                 {
-                    resolvedBaseClass = fmt::format(" | Base: {}", fmt::join(clsSig.bases, ", "));
+                    const auto baseList = clsSig.bases;
+                    resolvedBaseClass = fmt::format(" | Base: {}", fmt::join(baseList, ", "));
                 }
             }
         }

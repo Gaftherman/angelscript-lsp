@@ -15,8 +15,6 @@ namespace angel_lsp::features
         using analysis::SymbolTable;
         using analysis::SymbolType;
 
-        constexpr uint32_t k_nameFieldLength = 4; ///< "name"
-
         std::string NodeText(TSNode node, std::string_view sourceCode)
         {
             if (ts_node_is_null(node))

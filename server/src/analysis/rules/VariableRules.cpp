@@ -166,6 +166,10 @@ namespace angel_lsp::analysis::rules
                         ctx.LogRule("CheckDeclaredType", "as-err-interface-instantiated", sym);
                         ctx.Emit(sym, "as-err-interface-instantiated", baseType, baseType);
                         break;
+                    case NonInstantiableKind::Mixin:
+                        ctx.LogRule("CheckDeclaredType", "as-err-mixin-not-a-type", sym);
+                        ctx.Emit(sym, "as-err-mixin-not-a-type", baseType);
+                        break;
                     case NonInstantiableKind::None:
                         break;
                 }

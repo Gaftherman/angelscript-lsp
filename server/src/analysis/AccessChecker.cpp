@@ -39,9 +39,6 @@ namespace angel_lsp::analysis
             return std::string(sourceCode.substr(start, end - start));
         }
 
-        constexpr uint32_t k_objectFieldLength = 6; ///< "object"
-        constexpr uint32_t k_memberFieldLength = 6; ///< "member"
-
         /** @brief Compares two type names by their last segment, so a qualification cannot hide a match. */
         bool IsSameType(const std::string &a, const std::string &b)
         {

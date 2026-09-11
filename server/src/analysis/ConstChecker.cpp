@@ -38,11 +38,6 @@ namespace angel_lsp::analysis
             return std::string(sourceCode.substr(start, end - start));
         }
 
-        constexpr uint32_t k_objectFieldLength = 6;   ///< "object"
-        constexpr uint32_t k_memberFieldLength = 6;   ///< "member"
-        constexpr uint32_t k_leftFieldLength = 4;     ///< "left"
-        constexpr uint32_t k_functionFieldLength = 8; ///< "function"
-
         /**
          * @brief True when a declared type's written form begins with `const`.
          *

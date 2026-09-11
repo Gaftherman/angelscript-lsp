@@ -16,10 +16,6 @@ namespace angel_lsp::analysis
 {
     namespace
     {
-        constexpr uint32_t k_varTypeFieldLength = 8;   ///< "var_type"
-        constexpr uint32_t k_typeFieldLength = 4;      ///< "type"
-        constexpr uint32_t k_valueFieldLength = 5;     ///< "value"
-
         std::string Trimmed(std::string text)
         {
             while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))

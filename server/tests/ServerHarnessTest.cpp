@@ -4208,7 +4208,7 @@ TEST_CASE("Server - What it says while the code is still being written")
                         R"(,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
                         fixture.Uri("main.as") + R"("}}})");
 
-            stream.PushAction([&stream, &published, &publishesBefore, index, &fixture]()
+            stream.PushAction([&stream, &published, &publishesBefore, index]()
             {
                 // Two conditions, and the first one is the fix. Waiting only for the stream to go
                 // quiet reads "nothing has been written lately", which is true both when the server
