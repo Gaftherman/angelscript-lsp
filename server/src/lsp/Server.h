@@ -1231,5 +1231,47 @@ namespace angel_lsp
          */
         void EncodeRangesIn(const std::string &uri, std::vector<lsp::Range> &ranges) const;
 
+        /**
+         * @brief Null-safe logging forwarding helpers.
+         */
+        void LogInfo(std::string_view message) const
+        {
+            if (m_logger)
+            {
+                m_logger->LogInfo(message);
+            }
+        }
+
+        void LogWarning(std::string_view message) const
+        {
+            if (m_logger)
+            {
+                m_logger->LogWarning(message);
+            }
+        }
+
+        void LogError(std::string_view message) const
+        {
+            if (m_logger)
+            {
+                m_logger->LogError(message);
+            }
+        }
+
+        void LogDebug(std::string_view message) const
+        {
+            if (m_logger)
+            {
+                m_logger->LogDebug(message);
+            }
+        }
+
+        void LogTrace(std::string_view message) const
+        {
+            if (m_logger)
+            {
+                m_logger->LogTrace(message);
+            }
+        }
     };
 }

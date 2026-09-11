@@ -104,7 +104,10 @@ namespace angel_lsp
         m_running = true;
 
         m_logger = std::make_unique<angel_lsp::utils::LspLogger>(m_messageHandler.get());
-        m_logger->SetLevel(angel_lsp::utils::ParseLogLevel(m_config.info.logLevel, angel_lsp::utils::LogLevel::Info));
+        if (m_logger)
+        {
+            m_logger->SetLevel(angel_lsp::utils::ParseLogLevel(m_config.info.logLevel, angel_lsp::utils::LogLevel::Info));
+        }
 
         m_parser = std::make_unique<angel_lsp::parser::AngelScriptParser>(m_logger.get());
 
@@ -194,7 +197,7 @@ namespace angel_lsp
         // module whose rules found nothing to say look identical from the outside, and this
         // project has confused the two twice.
         const auto tellUser = [this](const std::string &text) {
-            m_logger->LogError(text);
+            LogError(text);
 
             lsp::notifications::Window_ShowMessage::Params params;
             params.type = lsp::MessageType::Warning;
@@ -282,7 +285,7 @@ namespace angel_lsp
                 view.memberPaths.insert(view.entryPath);
             }
 
-            m_logger->LogInfo(fmt::format(
+            LogInfo(fmt::format(
                 "Module '{}': {} file(s){}{}", view.name, view.memberPaths.size(),
                 view.folderPath.empty() ? std::string() : fmt::format(" under {}", view.folderPath),
                 view.entryPath.empty() ? std::string() : fmt::format(" from {}", view.entryPath)));
@@ -389,14 +392,23 @@ namespace angel_lsp
             std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
             open.reserve(m_openSnapshot.size());
             for (const auto &[uriStr, text] : m_openSnapshot)
+            {
+                if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+                {
+                    continue;
+                }
                 open.emplace_back(uriStr, text);
+            }
         }
 
         for (const auto &[uriStr, text] : open)
             ScheduleAnalysis(uriStr, text, /*force=*/true);
 
-        m_logger->LogInfo(fmt::format(
-            "Re-analysing {} open document(s) now the workspace is indexed", open.size()));
+        if (m_logger)
+        {
+            LogInfo(fmt::format(
+                "Re-analysing {} open document(s) now the workspace is indexed", open.size()));
+        }
     }
 
     std::string Server::ResolveConfiguredPath(const std::string &configured) const
@@ -512,7 +524,7 @@ namespace angel_lsp
 
         if (!stale.empty())
         {
-            m_logger->LogInfo(fmt::format("Withdrew module diagnostics for {} file(s)", stale.size()));
+            LogInfo(fmt::format("Withdrew module diagnostics for {} file(s)", stale.size()));
         }
     }
 
@@ -585,7 +597,7 @@ namespace angel_lsp
 
         if (!toPurge.empty())
         {
-            m_logger->LogInfo(fmt::format(
+            LogInfo(fmt::format(
                 "Purged {} stale closure file(s) no longer in any module or open closure", toPurge.size()));
         }
     }
@@ -788,37 +800,37 @@ namespace angel_lsp
             }
             catch (const lsp::ConnectionError &e)
             {
-                m_logger->LogInfo(fmt::format("Connection closed: {}", e.what()));
+                LogInfo(fmt::format("Connection closed: {}", e.what()));
                 m_running = false;
                 continue;
             }
             catch (const lsp::io::Error &e)
             {
-                m_logger->LogInfo(fmt::format("Transport closed: {}", e.what()));
+                LogInfo(fmt::format("Transport closed: {}", e.what()));
                 m_running = false;
                 continue;
             }
             catch (const lsp::json::ParseError &e)
             {
-                m_logger->LogError(fmt::format("Malformed JSON-RPC message discarded: {}", e.what()));
+                LogError(fmt::format("Malformed JSON-RPC message discarded: {}", e.what()));
             }
             catch (const lsp::jsonrpc::ProtocolError &e)
             {
-                m_logger->LogError(fmt::format("Protocol error, message discarded: {}", e.what()));
+                LogError(fmt::format("Protocol error, message discarded: {}", e.what()));
             }
             catch (const std::exception &e)
             {
                 // A bug in one handler is not a reason to drop the session. The transport wraps
                 // everything it does not recognise into ConnectionError, so anything arriving here
                 // came from message dispatch, not from the stream.
-                m_logger->LogError(fmt::format("Unhandled exception handling message: {}", e.what()));
+                LogError(fmt::format("Unhandled exception handling message: {}", e.what()));
             }
 
             // Guard against a stream that fails the same way forever - recovering from a frame we
             // cannot consume would spin this loop at full tilt with no way out.
             if (++consecutiveErrors >= k_maxConsecutiveMessageErrors)
             {
-                m_logger->LogError(fmt::format("Giving up after {} consecutive message errors; closing the session.",
+                LogError(fmt::format("Giving up after {} consecutive message errors; closing the session.",
                                                consecutiveErrors));
                 m_running = false;
             }
@@ -942,7 +954,7 @@ namespace angel_lsp
         const bool useUtf8 = m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8;
         result.capabilities.positionEncoding = useUtf8 ? lsp::PositionEncodingKind::UTF8
                                                        : lsp::PositionEncodingKind::UTF16;
-        m_logger->LogInfo(fmt::format("Negotiated position encoding: {}", useUtf8 ? "utf-8" : "utf-16"));
+        LogInfo(fmt::format("Negotiated position encoding: {}", useUtf8 ? "utf-8" : "utf-16"));
         m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
 
         lsp::TextDocumentSyncOptions sync;
@@ -1492,7 +1504,7 @@ namespace angel_lsp
             }
             catch (const std::exception &e)
             {
-                m_logger->LogError(fmt::format("Error reading workspace files: {}", e.what()));
+                LogError(fmt::format("Error reading workspace files: {}", e.what()));
             }
 
             if (stopToken.stop_requested())
@@ -1518,7 +1530,7 @@ namespace angel_lsp
             return;
         }
 
-        m_logger->LogInfo(fmt::format("Include graph built: {} script file(s)", m_includeGraph.FileCount()));
+        LogInfo(fmt::format("Include graph built: {} script file(s)", m_includeGraph.FileCount()));
 
         // Which files a module contains is a question about the graph, so it is answered here and
         // nowhere else - every path that rebuilds the graph passes through this line.
@@ -1633,7 +1645,7 @@ namespace angel_lsp
             for (const auto &uri : stale)
             {
                 UnloadPredefinedUri(uri);
-                m_logger->LogInfo(fmt::format("Unloaded built-in engine profile: {}", uri));
+                LogInfo(fmt::format("Unloaded built-in engine profile: {}", uri));
             }
         }
 
@@ -1666,7 +1678,7 @@ namespace angel_lsp
             m_callGraph.ClearDocument(syntheticUri);
             m_scopeIndex.SetScopeTree(syntheticUri, m_localScopeCollector->CollectScopes(std::string(stubSource), parser));
 
-            m_logger->LogInfo(fmt::format("Loaded built-in engine profile: {}", angel_lsp::analysis::EngineProfileKindToString(pKind)));
+            LogInfo(fmt::format("Loaded built-in engine profile: {}", angel_lsp::analysis::EngineProfileKindToString(pKind)));
         }
     }
 
@@ -1713,7 +1725,7 @@ namespace angel_lsp
 
             if (!loaded)
             {
-                m_logger->LogError(fmt::format("Configured predefined file not found: {}", entry));
+                LogError(fmt::format("Configured predefined file not found: {}", entry));
             }
         }
 
@@ -1761,7 +1773,7 @@ namespace angel_lsp
         for (const auto &uri : stale)
         {
             if (UnloadPredefinedUri(uri))
-                m_logger->LogInfo(fmt::format("Unloaded predefined stub that is no longer selected: {}", uri));
+                LogInfo(fmt::format("Unloaded predefined stub that is no longer selected: {}", uri));
         }
     }
 
@@ -1835,7 +1847,7 @@ namespace angel_lsp
         // the stub list after the scan and raises its own notification, with a button on it.
         if (mergeAll)
         {
-            m_logger->LogInfo(
+            LogInfo(
                 fmt::format("AngelScript: {} predefined stubs loaded together ({}). Declarations "
                             "they share will resolve more than once.",
                             discovered.size(), list));
@@ -1845,7 +1857,7 @@ namespace angel_lsp
         // One stub is in force and the rest were passed over. The safe choice is already made, so
         // this only records which - the offer to change it belongs where there is something to
         // click.
-        m_logger->LogInfo(
+        LogInfo(
             fmt::format("AngelScript: using {} of {} predefined stubs found ({}). Set "
                         "angelscript.predefined.active to choose another, or to \"all\" to load "
                         "them together.",
@@ -1941,7 +1953,7 @@ namespace angel_lsp
             const std::string previous = owner->second;
             UnloadPredefinedUri(previous);
 
-            m_logger->LogInfo(fmt::format("Predefined file re-indexed under {} (was {})", uriStr, previous));
+            LogInfo(fmt::format("Predefined file re-indexed under {} (was {})", uriStr, previous));
         }
 
         m_predefinedUriByPath[path] = uriStr;
@@ -1956,7 +1968,7 @@ namespace angel_lsp
         std::ifstream file(filePath, std::ios::binary);
         if (!file.is_open())
         {
-            m_logger->LogError(fmt::format("Cannot open predefined file: {}", filePath));
+            LogError(fmt::format("Cannot open predefined file: {}", filePath));
             return;
         }
 
@@ -2008,9 +2020,9 @@ namespace angel_lsp
         // a workspace holds several stubs.
         if (SetDefinedWordsFrom(angel_lsp::utils::IncludeResolver::NormalizePath(filePath),
                                 angel_lsp::utils::ScanDefinedWords(content)))
-            m_logger->LogInfo(fmt::format("Defined words changed after loading: {}", filePath));
+            LogInfo(fmt::format("Defined words changed after loading: {}", filePath));
 
-        m_logger->LogInfo(fmt::format("Loaded predefined file: {}", filePath));
+        LogInfo(fmt::format("Loaded predefined file: {}", filePath));
     }
 
     auto Server::HandleRequestsShutdown()
@@ -2052,7 +2064,7 @@ namespace angel_lsp
                 const bool wantsKR = BraceStyleIsKR(styleVal->string());
                 if (wantsKR != m_formatBraceStyleKR.exchange(wantsKR, std::memory_order_relaxed))
                 {
-                    m_logger->LogInfo(fmt::format("Format brace style changed to '{}'", styleVal->string()));
+                    LogInfo(fmt::format("Format brace style changed to '{}'", styleVal->string()));
                 }
             }
         }
@@ -2202,7 +2214,7 @@ namespace angel_lsp
             if (changed)
             {
                 m_config.modules = std::move(parsed);
-                m_logger->LogInfo(fmt::format("Modules changed ({} configured); rescanning",
+                LogInfo(fmt::format("Modules changed ({} configured); rescanning",
                                               m_config.modules.size()));
                 shouldRescan = true;
             }
@@ -2216,7 +2228,7 @@ namespace angel_lsp
                 if (implicitVal->boolean() != m_config.implicitIncludeExtension)
                 {
                     m_config.implicitIncludeExtension = implicitVal->boolean();
-                    m_logger->LogInfo(fmt::format("Implicit include extension {}; rebuilding the include graph",
+                    LogInfo(fmt::format("Implicit include extension {}; rebuilding the include graph",
                                                   m_config.implicitIncludeExtension ? "on" : "off"));
                     shouldRescan = true;
                 }
@@ -2231,7 +2243,7 @@ namespace angel_lsp
                 if (activeVal->string() != m_config.activePredefined)
                 {
                     m_config.activePredefined = activeVal->string();
-                    m_logger->LogInfo(fmt::format("Active predefined stub changed to '{}'; rescanning",
+                    LogInfo(fmt::format("Active predefined stub changed to '{}'; rescanning",
                                                   m_config.activePredefined.empty()
                                                       ? std::string("<all>")
                                                       : m_config.activePredefined));
@@ -2248,7 +2260,7 @@ namespace angel_lsp
                     std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
                     m_engineProfile = profileVal->string();
                 }
-                m_logger->LogInfo(fmt::format("Engine profile changed to '{}'; reloading predefineds", profileVal->string()));
+                LogInfo(fmt::format("Engine profile changed to '{}'; reloading predefineds", profileVal->string()));
                 shouldRescan = true;
             }
         }
@@ -2275,7 +2287,7 @@ namespace angel_lsp
                     m_searchDirectories = std::make_shared<const std::vector<std::string>>(std::move(updated));
                 }
 
-                m_logger->LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", count));
+                LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", count));
                 shouldRescan = true;
             }
         }
@@ -2345,7 +2357,7 @@ namespace angel_lsp
             rootCount = m_workspacesRoot.size();
         }
 
-        m_logger->LogInfo(fmt::format("Workspace folders changed (+{} -{}); now {} root(s), rescanning",
+        LogInfo(fmt::format("Workspace folders changed (+{} -{}); now {} root(s), rescanning",
                                       params.event.added.size(), params.event.removed.size(), rootCount));
 
         // A rescan rather than an incremental patch: the include graph is rebuilt wholesale by
@@ -2499,7 +2511,7 @@ namespace angel_lsp
 
             if (!replacement.empty())
             {
-                m_logger->LogInfo(fmt::format(
+                LogInfo(fmt::format(
                     "The predefined stub in force was deleted; using {} instead",
                     std::filesystem::path(replacement).filename().string()));
 
@@ -2509,7 +2521,7 @@ namespace angel_lsp
             }
             else
             {
-                m_logger->LogInfo("The predefined stub in force was deleted, and no other was found");
+                LogInfo("The predefined stub in force was deleted, and no other was found");
             }
 
             graphChanged = true;
@@ -2825,6 +2837,10 @@ namespace angel_lsp
         const auto now = std::chrono::steady_clock::now();
         for (const auto &[openUri, text] : m_openDocuments)
         {
+            if (angel_lsp::utils::IsPredefinedFile(openUri, m_config.info.predefinedFileExtension))
+            {
+                continue;
+            }
             {
                 std::lock_guard<std::mutex> lock(m_peerDebounceMutex);
                 auto it = m_peerAnalysisTimestamps.find(openUri);
@@ -2857,12 +2873,12 @@ namespace angel_lsp
             else if (severityName == "hint")
                 m_diagnosticSeverities[code] = angel_lsp::analysis::DiagnosticSeverity::Hint;
             else
-                m_logger->LogError(fmt::format("Unknown diagnostic severity '{}' for '{}'; ignored", severityName, code));
+                LogError(fmt::format("Unknown diagnostic severity '{}' for '{}'; ignored", severityName, code));
         }
 
         if (!m_diagnosticSeverities.empty())
         {
-            m_logger->LogInfo(fmt::format("Diagnostic severity overrides active: {}", m_diagnosticSeverities.size()));
+            LogInfo(fmt::format("Diagnostic severity overrides active: {}", m_diagnosticSeverities.size()));
         }
 
         // Engine options are reported only when they differ from AngelScript's own defaults. They
@@ -2909,7 +2925,7 @@ namespace angel_lsp
 
         if (!changed.empty())
         {
-            m_logger->LogInfo(fmt::format("Engine properties differing from the defaults: {}", changed));
+            LogInfo(fmt::format("Engine properties differing from the defaults: {}", changed));
         }
     }
 
@@ -3014,7 +3030,7 @@ namespace angel_lsp
         // analysed. Degrading is better than freezing, and better than a size the user cannot see.
         if (text.size() > angel_lsp::constants::limits::MaxAnalysedDocumentBytes)
         {
-            m_logger->LogWarning(fmt::format(
+            LogWarning(fmt::format(
                 "Skipping analysis of {}: {} bytes exceeds the {} byte limit. Navigation still works.",
                 uriStr, text.size(), angel_lsp::constants::limits::MaxAnalysedDocumentBytes));
 
@@ -3236,7 +3252,7 @@ namespace angel_lsp
         }
         else
         {
-            m_logger->LogInfo(fmt::format("Save {}: public interface unchanged, skipping cascading re-analysis", uriStr));
+            LogInfo(fmt::format("Save {}: public interface unchanged, skipping cascading re-analysis", uriStr));
         }
     }
 
@@ -3308,7 +3324,7 @@ namespace angel_lsp
             }
 
             double totalMs = totalTimer.ElapsedMs();
-            m_logger->LogInfo(fmt::format(
+            LogInfo(fmt::format(
                 "[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
                 uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
 
@@ -3336,7 +3352,7 @@ namespace angel_lsp
         PublishDiagnostics(uriStr, diagnostics);
 
         double totalMs = totalTimer.ElapsedMs();
-        m_logger->LogInfo(fmt::format(
+        LogInfo(fmt::format(
             "[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
             uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
     }
@@ -3449,7 +3465,7 @@ namespace angel_lsp
         }
         m_documentTrees[uriStr] = newTree;
         double parseMs = parseTimer.ElapsedMs();
-        m_logger->LogInfo(fmt::format("[DidChange Incremental Parse] File: {} | Parse: {:.2f} ms", uriStr, parseMs));
+        LogInfo(fmt::format("[DidChange Incremental Parse] File: {} | Parse: {:.2f} ms", uriStr, parseMs));
 
         if (isPredefined)
         {
@@ -3781,7 +3797,7 @@ namespace angel_lsp
             }
 
             double totalMs = totalTimer.ElapsedMs();
-            m_logger->LogInfo(fmt::format(
+            LogInfo(fmt::format(
                 "[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
                 uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
 
@@ -3825,7 +3841,7 @@ namespace angel_lsp
         PublishDiagnostics(uriStr, text, diagnostics);
 
         double totalMs = totalTimer.ElapsedMs();
-        m_logger->LogInfo(fmt::format(
+        LogInfo(fmt::format(
             "[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
             uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
     }
@@ -3924,7 +3940,7 @@ namespace angel_lsp
 
         if (newlyIndexed > 0)
         {
-            m_logger->LogInfo(fmt::format("Indexed {} file(s) from the #include module of {}", newlyIndexed, openUriStr));
+            LogInfo(fmt::format("Indexed {} file(s) from the #include module of {}", newlyIndexed, openUriStr));
         }
 
         m_openDocumentClosures[openUriStr] = std::move(indexed);
@@ -4585,7 +4601,7 @@ namespace angel_lsp
             // the command ran, with no editor to undo it in if the stub was not open.
             if (!params.arguments || params.arguments->empty() || !params.arguments->front().isString())
             {
-                m_logger->LogError("angelscript.formatPredefinedStub needs the stub's URI as its argument");
+                LogError("angelscript.formatPredefinedStub needs the stub's URI as its argument");
                 return lsp::Null{};
             }
 
@@ -4602,7 +4618,7 @@ namespace angel_lsp
                 std::ifstream file(path, std::ios::binary);
                 if (!file.is_open())
                 {
-                    m_logger->LogError(fmt::format("Cannot open predefined file to format: {}", path));
+                    LogError(fmt::format("Cannot open predefined file to format: {}", path));
                     return lsp::Null{};
                 }
                 text.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -4615,7 +4631,7 @@ namespace angel_lsp
                 angel_lsp::features::formatting::FormatPredefinedStub(text, formatterParser);
 
             const bool changed = formatted != text;
-            m_logger->LogInfo(fmt::format("Formatted predefined stub {}: {}",
+            LogInfo(fmt::format("Formatted predefined stub {}: {}",
                                           uriStr, changed ? "rewritten" : "already formatted"));
 
             lsp::json::Object answer;
@@ -5055,7 +5071,7 @@ namespace angel_lsp
                 };
                 auto hover = features::GetHover(hr);
                 double roundtripMs = roundtripTimer.ElapsedMs();
-                m_logger->LogInfo(fmt::format(
+                LogInfo(fmt::format(
                     "[Hover Roundtrip] Total: {:.2f} ms for {} at {}:{}",
                     roundtripMs, doc->uri, req.position.line, req.position.character));
 

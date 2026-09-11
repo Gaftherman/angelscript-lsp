@@ -197,7 +197,7 @@ namespace angel_lsp::features
                 if (container.kind == analysis::ContainerKind::Class ||
                     container.kind == analysis::ContainerKind::Interface)
                 {
-                    return container.name;
+                    return container.qualifiedName.empty() ? container.name : container.qualifiedName;
                 }
             }
             return "";
@@ -274,45 +274,99 @@ namespace angel_lsp::features
 
         if (!owner.empty())
         {
-            auto memberSyms = table.FindSymbolsPtr(owner + "::" + name);
+            std::string bareOwner = analysis::LastScopeSegment(owner);
+            std::shared_ptr<const std::vector<Symbol>> memberSyms = table.FindSymbolsPtr(owner + "::" + name);
+            if ((!memberSyms || memberSyms->empty()) && bareOwner != owner)
+            {
+                memberSyms = table.FindSymbolsPtr(bareOwner + "::" + name);
+            }
+
             if (!memberSyms || memberSyms->empty())
             {
-                auto ownerSyms = table.FindSymbolsPtr(owner);
-                if (ownerSyms)
+                auto hierarchy = analysis::GetInheritedTypeHierarchy(owner, table);
+                if (hierarchy.empty())
                 {
-                    for (const auto &os : *ownerSyms)
+                    hierarchy.push_back(owner);
+                    if (bareOwner != owner)
                     {
-                        if (os.type == SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(os.signature))
+                        hierarchy.push_back(bareOwner);
+                    }
+                }
+
+                for (const auto &clsName : hierarchy)
+                {
+                    memberSyms = table.FindSymbolsPtr(clsName + "::" + name);
+                    if (memberSyms && !memberSyms->empty())
+                    {
+                        break;
+                    }
+
+                    std::string bareCls = analysis::LastScopeSegment(clsName);
+                    if (bareCls != clsName)
+                    {
+                        memberSyms = table.FindSymbolsPtr(bareCls + "::" + name);
+                        if (memberSyms && !memberSyms->empty())
                         {
-                            const auto &cls = os.GetClass();
-                            for (const auto &m : cls.includedMixins)
+                            break;
+                        }
+                    }
+
+                    auto ownerSyms = table.FindSymbolsPtr(clsName);
+                    if (!ownerSyms || ownerSyms->empty())
+                    {
+                        ownerSyms = table.FindSymbolsPtr(bareCls);
+                    }
+
+                    if (ownerSyms)
+                    {
+                        for (const auto &os : *ownerSyms)
+                        {
+                            if (os.type == SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(os.signature))
                             {
-                                auto mSyms = table.FindSymbolsPtr(analysis::LastScopeSegment(m) + "::" + name);
-                                if (mSyms && !mSyms->empty())
+                                const auto &cls = os.GetClass();
+                                for (const auto &m : cls.includedMixins)
                                 {
-                                    memberSyms = mSyms;
+                                    auto mSyms = table.FindSymbolsPtr(m + "::" + name);
+                                    if (!mSyms || mSyms->empty())
+                                    {
+                                        mSyms = table.FindSymbolsPtr(analysis::LastScopeSegment(m) + "::" + name);
+                                    }
+                                    if (mSyms && !mSyms->empty())
+                                    {
+                                        memberSyms = mSyms;
+                                        break;
+                                    }
+                                }
+                                if (memberSyms && !memberSyms->empty())
+                                {
                                     break;
                                 }
-                            }
-                            if (memberSyms && !memberSyms->empty())
-                            {
-                                break;
-                            }
-                            for (const auto &b : cls.bases)
-                            {
-                                std::string cleanB = analysis::CleanBaseType(b);
-                                auto mSyms = table.FindSymbolsPtr(analysis::LastScopeSegment(cleanB) + "::" + name);
-                                if (mSyms && !mSyms->empty())
+
+                                for (const auto &b : cls.bases)
                                 {
-                                    memberSyms = mSyms;
+                                    std::string cleanB = analysis::CleanBaseType(b);
+                                    auto mSyms = table.FindSymbolsPtr(cleanB + "::" + name);
+                                    if (!mSyms || mSyms->empty())
+                                    {
+                                        mSyms = table.FindSymbolsPtr(analysis::LastScopeSegment(cleanB) + "::" + name);
+                                    }
+                                    if (mSyms && !mSyms->empty())
+                                    {
+                                        memberSyms = mSyms;
+                                        break;
+                                    }
+                                }
+                                if (memberSyms && !memberSyms->empty())
+                                {
                                     break;
                                 }
-                            }
-                            if (memberSyms && !memberSyms->empty())
-                            {
-                                break;
                             }
                         }
+                    }
+
+                    if (memberSyms && !memberSyms->empty())
+                    {
+                        break;
                     }
                 }
             }

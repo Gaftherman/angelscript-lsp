@@ -259,6 +259,18 @@ TEST_SUITE("ExpressionTypeDeduction")
             "}\n";
         CHECK(DeduceTypeInMain(classCode) == "Animal@");
     }
+
+    TEST_CASE("Bare type name resolves to type name")
+    {
+        std::string code =
+            "class Vector {}\n"
+            "void main()\n"
+            "{\n"
+            "    Vector;\n"
+            "}\n";
+        CHECK(DeduceTypeInMain(code) == "Vector");
+    }
 }
+
 
 

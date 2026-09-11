@@ -256,3 +256,25 @@ TEST_CASE("Implementation - Mixin implementation fallback and interface implemen
     CHECK(HasLine(mixinLocs, 6));
 }
 
+TEST_CASE("Implementation - Unqualified call in class with included mixin falls back to mixin definition")
+{
+    Fixture fixture(
+        "mixin class PlayerWeaponCommon\n"
+        "{\n"
+        "    void CommonAddToPlayer() { }\n"
+        "}\n"
+        "class WeaponPython : PlayerWeaponCommon\n"
+        "{\n"
+        "    void Deploy()\n"
+        "    {\n"
+        "        CommonAddToPlayer();\n"
+        "    }\n"
+        "}\n");
+
+    // Query on CommonAddToPlayer(); call at line 8, col 10
+    const auto locs = fixture.At(8, 10);
+    REQUIRE(locs.has_value());
+    CHECK(HasLine(locs, 2));
+}
+
+

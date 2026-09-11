@@ -1761,7 +1761,8 @@ namespace angel_lsp::analysis
             if (qualified)
             {
                 const std::string whole = GetNodeText(exprNode, sourceCode);
-                for (const auto &sym : symbolTable.FindSymbols(whole))
+                const auto wholeSyms = symbolTable.FindSymbols(whole);
+                for (const auto &sym : wholeSyms)
                 {
                     if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
                         !sym.GetVariable().typeName.empty())
@@ -1771,6 +1772,14 @@ namespace angel_lsp::analysis
                     if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
                     {
                         return CleanExpressionType(sym.GetFunction().returnType);
+                    }
+                }
+                for (const auto &sym : wholeSyms)
+                {
+                    if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
+                        sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef)
+                    {
+                        return CleanExpressionType(sym.name);
                     }
                 }
             }
@@ -1908,6 +1917,20 @@ namespace angel_lsp::analysis
                 {
                     return CleanExpressionType(sym.GetFunction().returnType);
                 }
+            }
+
+            for (const auto &sym : syms)
+            {
+                if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
+                    sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef)
+                {
+                    return CleanExpressionType(sym.name);
+                }
+            }
+
+            if (IsCorePrimitive(name))
+            {
+                return name;
             }
 
             for (const auto &prefix : { "get_", "set_" })

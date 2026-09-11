@@ -576,7 +576,7 @@ namespace angel_lsp::analysis
 
     void DiagnosticContext::LogRule(std::string_view ruleName, std::string_view code, const Symbol &sym) const
     {
-        if (!logger)
+        if (!logger || !logger->IsDebugEnabled())
         {
             return;
         }
@@ -587,7 +587,7 @@ namespace angel_lsp::analysis
 
     void DiagnosticContext::LogParam(std::string_view ruleName, std::string_view code, const ParameterInformation &param, const Symbol &parentSym) const
     {
-        if (!logger)
+        if (!logger || !logger->IsDebugEnabled())
         {
             return;
         }

@@ -739,6 +739,32 @@ TEST_CASE("InlayHintHandler - Call With Default Parameters Retains All Provided 
     CHECK(label2 == "fullscreen:");
 }
 
+TEST_CASE("InlayHintHandler - Parameter labels are never truncated")
+{
+    std::string code =
+        "void ConfigureLogger(bool shouldTrace, string longParameterIdentifier) {}\n"
+        "void main() {\n"
+        "    ConfigureLogger(true, \"test\");\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+
+    REQUIRE(hints.has_value());
+    REQUIRE(hints->size() == 2);
+
+    std::string label0 = std::holds_alternative<std::string>(hints->at(0).label)
+                             ? std::get<std::string>(hints->at(0).label)
+                             : "";
+    std::string label1 = std::holds_alternative<std::string>(hints->at(1).label)
+                             ? std::get<std::string>(hints->at(1).label)
+                             : "";
+
+    CHECK(label0 == "shouldTrace:");
+    CHECK(label1 == "longParameterIdentifier:");
+}
+
+
 
 
 

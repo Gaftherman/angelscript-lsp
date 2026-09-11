@@ -4,6 +4,23 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.7-exp.12] - 2026-09-11
+
+### Added
+
+- Null-Safe Server Logging and Predefined Stub Analysis Guards:
+  - Added null-safe forwarding log helpers (`LogInfo`, `LogWarning`, `LogError`, `LogDebug`, `LogTrace`) in `Server.h` and `Server.cpp`, preventing crashes when handlers or background tasks log without an active logger instance.
+  - Early-returned in `LogRule` and `LogParam` in `DiagnosticContext.cpp` when `logger` is null or debug logging is disabled.
+  - Guarded `ReanalyseOpenDocuments` and `ScheduleOpenDocumentsForReanalysis` to skip `.as.predefined` stub files, breaking circular re-analysis loops on stub modification.
+- Bare Type Temporaries in Expression Type Deduction:
+  - Extended `ResolveExpressionType` in `SemanticHelpers.cpp` to resolve bare type identifiers (classes, interfaces, enums, typedefs, and core primitives) as their type name (e.g. `Vector` resolves to `"Vector"`).
+  - Eliminates false positive argument type mismatch errors when using default constructor syntax without explicit parenthesized instantiation.
+- Full InlayHint Parameter Label Preservation:
+  - Verified and ensured parameter hint labels are never artificially truncated, maintaining full descriptive identifiers (e.g. `shouldTrace:`).
+- Mixin Go-to-Implementation Navigation Fallback:
+  - Enhanced `ImplementationHandler.cpp` to inspect enclosing class `includedMixins` across the full inheritance hierarchy on unqualified member calls.
+  - Falls back to the physical declaration site in `sym.fileUri` when no derived class overrides exist.
+
 ## [0.7.7-exp.9] - 2026-09-11
 
 ### Added
