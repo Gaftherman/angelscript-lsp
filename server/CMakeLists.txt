@@ -93,11 +93,34 @@ endif()
 # Warning level for this project's own targets (never for vendored dependencies).
 # ------------------------------------------------------------------------------
 if(MSVC)
-    set(ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:/W4>)
+    set(ANGELLSP_WARNING_FLAGS
+        $<$<COMPILE_LANGUAGE:CXX>:/W4>
+        $<$<COMPILE_LANGUAGE:CXX>:/permissive->
+        $<$<COMPILE_LANGUAGE:CXX>:/w14263>
+        $<$<COMPILE_LANGUAGE:CXX>:/w14265>
+        $<$<COMPILE_LANGUAGE:CXX>:/w14296>
+    )
 else()
-    set(ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:-Wall>
-                               $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
-                               $<$<COMPILE_LANGUAGE:CXX>:-Wmisleading-indentation>)
+    set(ANGELLSP_WARNING_FLAGS
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wextra>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wmisleading-indentation>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wshadow>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
+        $<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wnull-dereference>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wpessimizing-move>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wredundant-move>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wunused-const-variable>
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        list(APPEND ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:-Wimplicit-fallthrough>)
+    else()
+        list(APPEND ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:-Wimplicit-fallthrough=3>)
+    endif()
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
+        list(APPEND ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:-Wdangling-reference>)
+    endif()
 endif()
 
 option(ANGELLSP_WERROR "Treat warnings in angel_lsp's own code as errors" OFF)

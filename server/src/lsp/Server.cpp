@@ -4498,7 +4498,7 @@ namespace angel_lsp
     {
         if (!m_config.features.enableDocumentLink)
         {
-            return params;
+            return std::move(params);
         }
 
         // Document links are resolved eagerly during textDocument/documentLink, so the link
@@ -4512,7 +4512,7 @@ namespace angel_lsp
     {
         if (!m_config.features.enableInlayHints)
         {
-            return params;
+            return std::move(params);
         }
 
         // Inlay hints are produced complete in textDocument/inlayHint, with all labels,
@@ -4525,7 +4525,7 @@ namespace angel_lsp
     {
         if (!m_config.features.enableWorkspaceSymbols)
         {
-            return params;
+            return std::move(params);
         }
 
         // Workspace symbols are indexed and returned with their full container and location
