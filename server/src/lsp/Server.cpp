@@ -3311,6 +3311,9 @@ namespace angel_lsp
                 LogInfo(fmt::format(
                     "[Predefined Fast Path] File: {} content unchanged; bypassed re-indexing. Elapsed: {:.2f} ms",
                     uriStr, totalMs));
+                LogInfo(fmt::format(
+                    "[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
+                    uriStr, totalMs, parseMs, 0.0, 0.0, 0.0));
                 return;
             }
 
