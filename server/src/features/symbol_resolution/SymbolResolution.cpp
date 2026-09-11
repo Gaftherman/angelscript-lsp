@@ -454,13 +454,84 @@ namespace angel_lsp::features::resolution
                 });
         }
 
+        // Check if cursor is on a call expression and count arguments
+        bool cursorOnCall = false;
+        size_t callArgCount = 0;
+        TSNode walk = outNode;
+        TSNode walkP = ts_node_parent(outNode);
+        while (!ts_node_is_null(walkP))
+        {
+            std::string_view wpType = ts_node_type(walkP);
+            if (wpType == "call_expression")
+            {
+                TSNode funcChild = parser::GetChildByField(walkP, parser::fields::Function);
+                if (ts_node_is_null(funcChild) && ts_node_child_count(walkP) > 0)
+                {
+                    funcChild = ts_node_child(walkP, 0);
+                }
+                if (!ts_node_is_null(funcChild) &&
+                    (ts_node_eq(funcChild, walk) || ts_node_start_byte(funcChild) == ts_node_start_byte(walk)))
+                {
+                    cursorOnCall = true;
+                    TSNode argsChild = parser::GetChildByField(walkP, parser::fields::Arguments);
+                    if (ts_node_is_null(argsChild))
+                    {
+                        uint32_t cc = ts_node_child_count(walkP);
+                        for (uint32_t ci = 0; ci < cc; ++ci)
+                        {
+                            TSNode c = ts_node_child(walkP, ci);
+                            if (std::string_view(ts_node_type(c)) == "argument_list")
+                            {
+                                argsChild = c;
+                                break;
+                            }
+                        }
+                    }
+                    if (!ts_node_is_null(argsChild))
+                    {
+                        uint32_t argChildCount = ts_node_child_count(argsChild);
+                        for (uint32_t ai = 0; ai < argChildCount; ++ai)
+                        {
+                            TSNode ac = ts_node_child(argsChild, ai);
+                            std::string_view act = ts_node_type(ac);
+                            if (act == "(" || act == ")" || act == "," || act == ":" || act == "comment")
+                            {
+                                continue;
+                            }
+                            const char *fn = ts_node_field_name_for_child(argsChild, ai);
+                            if (fn && std::string_view(fn) == "arg_name")
+                            {
+                                continue;
+                            }
+                            callArgCount++;
+                        }
+                    }
+                }
+                break;
+            }
+            else if (wpType == "member_expression" || wpType == "scoped_identifier")
+            {
+                walk = walkP;
+                walkP = ts_node_parent(walkP);
+            }
+            else
+            {
+                break;
+            }
+        }
+
         if (target.kind == TargetKind::ClassMember)
         {
             analysis::AccessModifier resolvedAccess = analysis::AccessModifier::Public;
             bool foundAccess = false;
 
             // 1. Check if cursor is directly on the member declaration
-            auto localSyms = symbolTable.FindSymbols(target.name);
+            std::string qMember = target.declaringClass.empty() ? target.name : (target.declaringClass + "::" + target.name);
+            auto localSyms = symbolTable.FindSymbols(qMember);
+            if (localSyms.empty() && !target.declaringClass.empty())
+            {
+                localSyms = symbolTable.FindSymbols(target.name);
+            }
             for (const auto &s : localSyms)
             {
                 if (s.fileUri == uri && position.line >= s.startLine && position.line <= s.endLine)
@@ -469,6 +540,17 @@ namespace angel_lsp::features::resolution
                     {
                         resolvedAccess = s.GetFunction().modifiers.access;
                         foundAccess = true;
+                        target.isFunction = true;
+                        const auto &fn = s.GetFunction();
+                        target.maxArgs = fn.parameters.size();
+                        target.minArgs = 0;
+                        for (const auto &p : fn.parameters)
+                        {
+                            if (p.defaultValue.empty())
+                            {
+                                target.minArgs++;
+                            }
+                        }
                         break;
                     }
                     else if (std::holds_alternative<analysis::VariableSignature>(s.signature))
@@ -484,16 +566,40 @@ namespace angel_lsp::features::resolution
             if (!foundAccess)
             {
                 auto hier = analysis::GetInheritedTypeHierarchy(target.declaringClass, symbolTable);
+                std::optional<analysis::FunctionSignature> matchedFn;
                 for (const auto &owner : hier)
                 {
-                    auto syms = symbolTable.FindSymbols(owner + "::" + target.name);
-                    for (const auto &s : syms)
+                    auto symsPtr = symbolTable.FindSymbolsPtr(owner + "::" + target.name);
+                    if (!symsPtr)
+                    {
+                        continue;
+                    }
+                    for (const auto &s : *symsPtr)
                     {
                         if (std::holds_alternative<analysis::FunctionSignature>(s.signature))
                         {
-                            resolvedAccess = s.GetFunction().modifiers.access;
-                            foundAccess = true;
-                            break;
+                            const auto &fn = s.GetFunction();
+                            size_t maxP = fn.parameters.size();
+                            size_t minP = 0;
+                            for (const auto &p : fn.parameters)
+                            {
+                                if (p.defaultValue.empty())
+                                {
+                                    minP++;
+                                }
+                            }
+                            if (cursorOnCall)
+                            {
+                                if (callArgCount >= minP && callArgCount <= maxP)
+                                {
+                                    matchedFn = fn;
+                                    break;
+                                }
+                            }
+                            else if (!matchedFn)
+                            {
+                                matchedFn = fn;
+                            }
                         }
                         else if (std::holds_alternative<analysis::VariableSignature>(s.signature))
                         {
@@ -502,9 +608,23 @@ namespace angel_lsp::features::resolution
                             break;
                         }
                     }
-                    if (foundAccess)
+                    if (matchedFn || foundAccess)
                     {
                         break;
+                    }
+                }
+                if (matchedFn)
+                {
+                    resolvedAccess = matchedFn->modifiers.access;
+                    target.isFunction = true;
+                    target.maxArgs = matchedFn->parameters.size();
+                    target.minArgs = 0;
+                    for (const auto &p : matchedFn->parameters)
+                    {
+                        if (p.defaultValue.empty())
+                        {
+                            target.minArgs++;
+                        }
                     }
                 }
             }
@@ -512,6 +632,128 @@ namespace angel_lsp::features::resolution
             target.access = resolvedAccess;
             target.relatedClasses = analysis::GetCompatibleMemberClasses(
                 target.declaringClass, target.name, target.access, symbolTable);
+        }
+        else if (target.kind == TargetKind::NamespaceSymbol)
+        {
+            auto symsPtr = symbolTable.FindSymbolsPtr(target.qualifiedName);
+            if (symsPtr)
+            {
+                std::optional<analysis::FunctionSignature> matchedFn;
+                for (const auto &s : *symsPtr)
+                {
+                    if (s.fileUri == uri && position.line >= s.startLine && position.line <= s.endLine &&
+                        std::holds_alternative<analysis::FunctionSignature>(s.signature))
+                    {
+                        matchedFn = s.GetFunction();
+                        break;
+                    }
+                }
+                if (!matchedFn)
+                {
+                    for (const auto &s : *symsPtr)
+                    {
+                        if (std::holds_alternative<analysis::FunctionSignature>(s.signature))
+                        {
+                            const auto &fn = s.GetFunction();
+                            size_t maxP = fn.parameters.size();
+                            size_t minP = 0;
+                            for (const auto &p : fn.parameters)
+                            {
+                                if (p.defaultValue.empty())
+                                {
+                                    minP++;
+                                }
+                            }
+                            if (cursorOnCall)
+                            {
+                                if (callArgCount >= minP && callArgCount <= maxP)
+                                {
+                                    matchedFn = fn;
+                                    break;
+                                }
+                            }
+                            else if (!matchedFn)
+                            {
+                                matchedFn = fn;
+                            }
+                        }
+                    }
+                }
+                if (matchedFn)
+                {
+                    target.isFunction = true;
+                    target.maxArgs = matchedFn->parameters.size();
+                    target.minArgs = 0;
+                    for (const auto &p : matchedFn->parameters)
+                    {
+                        if (p.defaultValue.empty())
+                        {
+                            target.minArgs++;
+                        }
+                    }
+                }
+            }
+        }
+        else if (target.kind == TargetKind::GlobalSymbol)
+        {
+            auto symsPtr = symbolTable.FindSymbolsPtr(target.name);
+            if (symsPtr)
+            {
+                std::optional<analysis::FunctionSignature> matchedFn;
+                for (const auto &s : *symsPtr)
+                {
+                    if (s.fileUri == uri && position.line >= s.startLine && position.line <= s.endLine &&
+                        std::holds_alternative<analysis::FunctionSignature>(s.signature))
+                    {
+                        matchedFn = s.GetFunction();
+                        break;
+                    }
+                }
+                if (!matchedFn)
+                {
+                    for (const auto &s : *symsPtr)
+                    {
+                        if (std::holds_alternative<analysis::FunctionSignature>(s.signature))
+                        {
+                            const auto &fn = s.GetFunction();
+                            size_t maxP = fn.parameters.size();
+                            size_t minP = 0;
+                            for (const auto &p : fn.parameters)
+                            {
+                                if (p.defaultValue.empty())
+                                {
+                                    minP++;
+                                }
+                            }
+                            if (cursorOnCall)
+                            {
+                                if (callArgCount >= minP && callArgCount <= maxP)
+                                {
+                                    matchedFn = fn;
+                                    break;
+                                }
+                            }
+                            else if (!matchedFn)
+                            {
+                                matchedFn = fn;
+                            }
+                        }
+                    }
+                }
+                if (matchedFn)
+                {
+                    target.isFunction = true;
+                    target.maxArgs = matchedFn->parameters.size();
+                    target.minArgs = 0;
+                    for (const auto &p : matchedFn->parameters)
+                    {
+                        if (p.defaultValue.empty())
+                        {
+                            target.minArgs++;
+                        }
+                    }
+                }
+            }
         }
 
         return target;
@@ -610,6 +852,7 @@ namespace angel_lsp::features::resolution
             }
 
             // 1. Collect declarations from SymbolTable across related classes
+            std::set<std::tuple<std::string, uint32_t, uint32_t>> allDeclRanges;
             for (const auto &clsName : relatedSet)
             {
                 std::string qualifiedName = clsName + "::" + target.name;
@@ -622,6 +865,30 @@ namespace angel_lsp::features::resolution
                         uint32_t sC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.startCharacter : sym.startCharacter;
                         uint32_t eL = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.endLine : sym.endLine;
                         uint32_t eC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.endCharacter : sym.endCharacter;
+
+                        allDeclRanges.insert({ sym.fileUri, sL, sC });
+
+                        if (target.isFunction)
+                        {
+                            if (!std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                            {
+                                continue;
+                            }
+                            const auto &fn = sym.GetFunction();
+                            size_t minP = 0;
+                            for (const auto &p : fn.parameters)
+                            {
+                                if (p.defaultValue.empty())
+                                {
+                                    minP++;
+                                }
+                            }
+                            size_t maxP = fn.parameters.size();
+                            if (target.maxArgs < minP || target.minArgs > maxP)
+                            {
+                                continue;
+                            }
+                        }
 
                         declRanges.insert({ sym.fileUri, sL, sC });
                         if (includeDeclaration)
@@ -666,9 +933,18 @@ namespace angel_lsp::features::resolution
                                 continue;
                             }
 
-                            if (declRanges.contains({ fileUri, ref.startLine, ref.startCharacter }))
+                            if (allDeclRanges.contains({ fileUri, ref.startLine, ref.startCharacter }))
                             {
-                                if (!includeDeclaration)
+                                continue;
+                            }
+
+                            if (target.isFunction)
+                            {
+                                if (!ref.isCall)
+                                {
+                                    continue;
+                                }
+                                if (ref.argumentCount < target.minArgs || ref.argumentCount > target.maxArgs)
                                 {
                                     continue;
                                 }
@@ -841,6 +1117,7 @@ namespace angel_lsp::features::resolution
         else if (target.kind == TargetKind::NamespaceSymbol)
         {
             // 1. Collect declarations from SymbolTable
+            std::set<std::tuple<std::string, uint32_t, uint32_t>> allDeclRanges;
             auto syms = symbolTable.FindSymbols(target.qualifiedName);
             for (const auto &sym : syms)
             {
@@ -850,6 +1127,30 @@ namespace angel_lsp::features::resolution
                     uint32_t sC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.startCharacter : sym.startCharacter;
                     uint32_t eL = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.endLine : sym.endLine;
                     uint32_t eC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.endCharacter : sym.endCharacter;
+
+                    allDeclRanges.insert({ sym.fileUri, sL, sC });
+
+                    if (target.isFunction)
+                    {
+                        if (!std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                        {
+                            continue;
+                        }
+                        const auto &fn = sym.GetFunction();
+                        size_t minP = 0;
+                        for (const auto &p : fn.parameters)
+                        {
+                            if (p.defaultValue.empty())
+                            {
+                                minP++;
+                            }
+                        }
+                        size_t maxP = fn.parameters.size();
+                        if (target.maxArgs < minP || target.minArgs > maxP)
+                        {
+                            continue;
+                        }
+                    }
 
                     declRanges.insert({ sym.fileUri, sL, sC });
                     if (includeDeclaration)
@@ -908,9 +1209,18 @@ namespace angel_lsp::features::resolution
                                 continue;
                             }
 
-                            if (declRanges.contains({ fileUri, ref.startLine, ref.startCharacter }))
+                            if (allDeclRanges.contains({ fileUri, ref.startLine, ref.startCharacter }))
                             {
-                                if (!includeDeclaration)
+                                continue;
+                            }
+
+                            if (target.isFunction)
+                            {
+                                if (!ref.isCall)
+                                {
+                                    continue;
+                                }
+                                if (ref.argumentCount < target.minArgs || ref.argumentCount > target.maxArgs)
                                 {
                                     continue;
                                 }
@@ -993,6 +1303,7 @@ namespace angel_lsp::features::resolution
         else // TargetKind::GlobalSymbol
         {
             // 1. Collect declarations
+            std::set<std::tuple<std::string, uint32_t, uint32_t>> allDeclRanges;
             auto syms = symbolTable.FindSymbols(target.name);
             for (const auto &sym : syms)
             {
@@ -1002,6 +1313,30 @@ namespace angel_lsp::features::resolution
                     uint32_t sC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.startCharacter : sym.startCharacter;
                     uint32_t eL = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.endLine : sym.endLine;
                     uint32_t eC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.endCharacter : sym.endCharacter;
+
+                    allDeclRanges.insert({ sym.fileUri, sL, sC });
+
+                    if (target.isFunction)
+                    {
+                        if (!std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                        {
+                            continue;
+                        }
+                        const auto &sig = std::get<analysis::FunctionSignature>(sym.signature);
+                        size_t symMinArgs = 0;
+                        size_t symMaxArgs = sig.parameters.size();
+                        for (const auto &param : sig.parameters)
+                        {
+                            if (param.defaultValue.empty())
+                            {
+                                symMinArgs++;
+                            }
+                        }
+                        if (target.minArgs > symMaxArgs || target.maxArgs < symMinArgs)
+                        {
+                            continue;
+                        }
+                    }
 
                     declRanges.insert({ sym.fileUri, sL, sC });
                     if (includeDeclaration)
@@ -1045,9 +1380,18 @@ namespace angel_lsp::features::resolution
                                 continue;
                             }
 
-                            if (declRanges.contains({ fileUri, ref.startLine, ref.startCharacter }))
+                            if (allDeclRanges.contains({ fileUri, ref.startLine, ref.startCharacter }))
                             {
-                                if (!includeDeclaration)
+                                continue;
+                            }
+
+                            if (target.isFunction)
+                            {
+                                if (!ref.isCall)
+                                {
+                                    continue;
+                                }
+                                if (ref.argumentCount < target.minArgs || ref.argumentCount > target.maxArgs)
                                 {
                                     continue;
                                 }

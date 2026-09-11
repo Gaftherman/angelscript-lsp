@@ -211,7 +211,7 @@ function applyInactiveRegions(editor: TextEditor): void {
         return;
     }
 
-    if (editor.document.languageId !== 'angelscript') {
+    if (editor.document.languageId !== 'angelscript' && editor.document.languageId !== 'angelscript-predefined') {
         return;
     }
 
@@ -961,6 +961,7 @@ async function startClient(context: ExtensionContext): Promise<void> {
     const clientOptions: LanguageClientOptions = {
         documentSelector: [
             { scheme: 'file', language: 'angelscript' },
+            { scheme: 'file', language: 'angelscript-predefined' },
             { scheme: 'angelscript-virtual', language: 'angelscript' }
         ],
         // No `configurationSection` here on purpose. It installs a second configuration listener

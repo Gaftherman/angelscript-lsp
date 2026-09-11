@@ -648,4 +648,67 @@ TEST_CASE("InlayHintHandler - Relaxed Parameter Name Matching Suppression")
     CHECK(foundDefault);
 }
 
+TEST_CASE("InlayHintHandler - Complex Call Involving Namespace Member and Overload Resolution")
+{
+    std::string code =
+        "namespace Math {\n"
+        "    int RandomLong(int low, int high) { return low; }\n"
+        "}\n"
+        "void EmitSoundDyn(int channel, string sample, float volume, float attenuation, int flags, int pitch) {}\n"
+        "void main() {\n"
+        "    EmitSoundDyn(1, \"sound.wav\", 1.0f, 0.8f, 0, Math::RandomLong(90, 110));\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+
+    REQUIRE(hints.has_value());
+    std::vector<std::string> labels;
+    for (const auto &h : *hints)
+    {
+        if (std::holds_alternative<std::string>(h.label))
+        {
+            labels.push_back(std::get<std::string>(h.label));
+        }
+    }
+    CHECK(std::find(labels.begin(), labels.end(), "channel:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "sample:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "volume:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "attenuation:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "flags:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "pitch:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "low:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "high:") != labels.end());
+}
+
+TEST_CASE("InlayHintHandler - Complex Call Involving Dot-Accessed Namespace Method")
+{
+    std::string code =
+        "namespace Math {\n"
+        "    int RandomLong(int low, int high) { return low; }\n"
+        "}\n"
+        "void EmitSoundDyn(int channel, string sample, float volume, float attenuation, int flags, int pitch) {}\n"
+        "void main() {\n"
+        "    EmitSoundDyn(1, \"sound.wav\", 1.0f, 0.8f, 0, Math.RandomLong(90, 110));\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+
+    REQUIRE(hints.has_value());
+    std::vector<std::string> labels;
+    for (const auto &h : *hints)
+    {
+        if (std::holds_alternative<std::string>(h.label))
+        {
+            labels.push_back(std::get<std::string>(h.label));
+        }
+    }
+    CHECK(std::find(labels.begin(), labels.end(), "channel:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "pitch:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "low:") != labels.end());
+    CHECK(std::find(labels.begin(), labels.end(), "high:") != labels.end());
+}
+
+
 

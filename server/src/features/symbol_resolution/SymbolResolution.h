@@ -37,6 +37,10 @@ namespace angel_lsp::features::resolution
         analysis::AccessModifier access = analysis::AccessModifier::Public;
 
         std::string declaringNamespace;
+ 
+        bool isFunction = false;
+        size_t minArgs = 0;
+        size_t maxArgs = 0;
     };
 
     /**

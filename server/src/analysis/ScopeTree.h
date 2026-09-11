@@ -124,6 +124,16 @@ namespace angel_lsp::analysis
          *        (as-warn-undeclared-identifier).
          */
         bool isTypeSpecifier = false;
+
+        /**
+         * @brief True when this reference is the callee of a call_expression.
+         */
+        bool isCall = false;
+
+        /**
+         * @brief Number of arguments passed at the call site when isCall is true.
+         */
+        uint32_t argumentCount = 0;
     };
 
     /** @brief What kind of syntactic construct created this lexical scope. */

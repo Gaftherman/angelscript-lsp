@@ -4,6 +4,30 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.7-exp.9] - 2026-09-11
+
+### Added
+
+- Method Overload Arity and Signature Isolation in References and CodeLens:
+  - Added call tracking and argument counting (`isCall`, `argumentCount`) to `LocalReference` during lexical scope collection (`LocalScopeCollector.cpp`).
+  - Added function signature metadata (`isFunction`, `minArgs`, `maxArgs`) to `TargetDescriptor` in `SymbolResolution.h`.
+  - Implemented safe extraction of `FunctionSignature` in `SymbolResolution.cpp` without dangling pointers or lifetime hazards during overload resolution.
+  - Applied strict argument arity filtering on call references across class members, namespace symbols, and global functions.
+  - Sifted out non-matching overload declarations by gathering all declaration line ranges across `SymbolResolution.cpp` and `scanScopes`, preventing distinct overloads from being misclassified as call sites.
+  - Updated `CodeLensHandler.cpp` to filter reference counts by function arity constraints.
+  - Completely eliminated reference overcounting across overloads (e.g. `Deploy()` 0-arg overload cleanly separated from 6-arg overloads).
+- Go-to-Implementation Definition Fallback:
+  - Added fallback to symbol definition when 0 implementations or derived overrides exist for types (`Class`, `Interface`), member methods/properties, and free functions in `ImplementationHandler.cpp`.
+  - Conforms to standard LSP navigation behaviors implemented by clangd and TypeScript language service.
+- InlayHint Argument Cutoff Resolution on Complex Calls:
+  - Added receiver object text fallback in `ResolveExpressionType` (`SemanticHelpers.cpp`) for dot-accessed namespace and static class invocations (`Math.RandomLong`).
+  - Updated `ScoreArgumentMatch` in `OverloadResolver.cpp` to return `OverloadMatchPenalty::UnknownTypes` when argument types cannot be statically deduced, preventing viable overloads from being dropped.
+  - Added fallback candidate selection by highest parameter count in `InlayHintHandler.cpp` (`ResolveCalleeParameters`), ensuring complete parameter name hints on complex nested calls (`EmitSoundDyn`, `Math.RandomLong`).
+- Native Assets and Package Branding:
+  - Generated crisp 128x128 RGBA extension icon (`client/assets/icon.png`).
+  - Created scalable SVG file icons for AngelScript files and predefined headers (`client/assets/as-file-icon.svg`, `client/assets/as-predefined-icon.svg`).
+  - Registered extension icon and file icons in `client/package.json`.
+
 ## [0.7.7-exp.8] - 2026-09-11
 
 ### Added
@@ -23,7 +47,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
   - Eliminated hardcoded string offset constants, safely supporting arbitrary scheme representations (`angelscript-virtual:`, `angelscript-virtual://`, `angelscript-virtual:///`) and arbitrary namespace nesting (such as `Game::Weapons::Rifle` and URL-encoded variants).
   - Confirmed zero linear `ForEachSymbol` iterations introduced in URI extraction and reference collection hot paths.
 
-## [0.7.7-exp.7] - 2026-09-10
+## [0.7.7-exp.7] - 2026-09-11
 
 ### Added
 
@@ -86,7 +110,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Changed
 
-- Updated client setting wiring validation (`check-settings-wired.mjs`) to enforce 100% translation key alignment and argument verification across all 72 configuration options.
+- Updated client setting wiring validation (`check-settings-wired.mjs`) to enforce 100% translation key alignment and argument verification across all configuration options.
 
 ## [0.7.7-exp.3] - 2026-09-10
 
@@ -139,39 +163,150 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Native compiler parity verified via `asharness.exe` for isolated expression statements (`null;`, integer literals, floating-point literals, and boolean literals).
 - Predefined stub parsing robustness and handle-to-reference binding resolution.
 
-## [0.2.0]
+## [0.7.6-exp.1] - 2026-09-10
 
-### Fixed
+### Tested
 
-- Diagnostics refresh while you type again. A pull request that found no answer for the text in
-  hand queued the document and told the editor to ask again, and queueing restarted the analysis
-  debounce - so an editor polling faster than that held the analysis off indefinitely and the file
-  only refreshed when it was saved.
-- Toggling a setting no longer reports "Sending notification workspace/didChangeConfiguration
-  failed". Two listeners were watching the same event and one restarted the server while the other
-  was still pushing configuration into it. Restarts also queue instead of racing.
-- `as-err-null-non-handle` is reported as an error, which is what the compiler calls `int x = null`.
-  `as-err-undeclared-identifier` is renamed `as-warn-undeclared-identifier`: the hedge behind it is
-  real, and the name was the wrong half to keep.
-- A property backed by `get_X`/`set_X` accessors is offered by completion and described by hover
-  under the name that compiles, honouring `asEP_PROPERTY_ACCESSOR_MODE`.
-- The notification about several predefined stubs now carries a button that opens the picker,
-  instead of naming a command to go and find.
+- Parity audit and reinforcement for `InitializerListChecker` against reference AngelScript compiler harness (`asharness`).
+- Verified list pattern edge cases for multidimensional and nested container constructors.
+
+## [0.7.5-exp.1] - 2026-09-10
+
+### Refactored
+
+- Dynamic `SymbolTable` aggregate inspection replacing ad-hoc type names (`grid`, `complex`, `vector`).
+- Eliminated explicit dictionary string checks, unifying list pattern validation with engine behaviour.
+- Verified initializer list parity against test corpus.
+
+## [0.7.4-exp.1] - 2026-09-09
 
 ### Added
 
-- A workspace with several `as.predefined` stubs loads one - the first in path order - and says
-  which, rather than merging them all and warning about the duplicate declarations that follow.
-  `angelscript.predefined.active` set to `all` restores the merge.
-- The settings UI and every message the extension shows are localised; Spanish ships with it.
-- Clicking the status bar item offers the server log, a restart, and the stub picker.
-- Accessor portability, accessor disabled and bool conversion hints are on by default.
+- Multi-argument overload cost scoring vector with Pareto dominance resolution.
+- Lexical scope barrier for closures (`ScopeKind::Closure`) isolating local captures.
+- Unified boolean truthiness validation in control flow conditions via `IsTruthyCondition`.
+- First-principles mixin class semantics and deferred interface method checking.
+- Automated git tag-based naming for VSIX packages and server binaries.
+
+## [0.7.3] - 2026-09-09
+
+### Fixed
+
+- Method overload resolution across multi-level class inheritance hierarchies.
+- Hover tooltips and inlay hints for inherited properties and methods.
+- Duplicate diagnostic reporting on file save events.
+
+## [0.7.2] - 2026-09-09
+
+### Fixed
+
+- Receiver type resolution for chained member expressions (`a.b.c`).
+- Population of default values for enum constants and parameters in hover tooltips.
+- Prioritization of scoped identifiers (`Namespace::Symbol`) over local shadowing.
+
+## [0.7.1] - 2026-09-09
+
+### Refactored
+
+- Removed hardcoded container names and ad-hoc fallback heuristics across semantic analysis passes.
+- Standardized container inspection using dynamic symbol table definitions.
+
+## [0.7.0] - 2026-09-09
+
+### Added
+
+- Global virtual property accessor support (`get_`/`set_`).
+- Chained member auto-completion suggestions.
+
+### Fixed
+
+- Doxygen doc-comment parsing with newline preservation and trailing comment extraction.
+- Prioritized release server binaries during client launcher discovery.
+- Eliminated performance lag and false-positive diagnostics when parsing large `.predefined` stubs.
+- Restricted wildcard `?` type exemptions strictly to predefined stubs.
+
+## [0.6.2] - 2026-09-09
+
+### Fixed
+
+- Hot-reloading of workspace module configuration changes.
+- Automatic purging of stale unconfigured closure files from server cache.
+
+## [0.6.1] - 2026-09-08
+
+### Added
+
+- Folder-based module configuration support in client settings.
+- Server-side closure cache retention across edits.
+
+## [0.6.0] - 2026-09-08
+
+### Fixed
+
+- Analysis pipeline concurrency: unified document mutations through a serialized queue funnel to prevent background thread races.
+- List pattern validation handling when opening `.predefined` stubs as active editor documents.
+
+## [0.5.0] - 2026-09-08
+
+### Added
+
+- Enhanced auto-completion shapes: function signatures with interactive argument placeholders.
+- Keyword completion for `class`, `interface`, and control statements.
+- Semantic diagnostic: standalone anonymous function expressions reported as compiler errors.
+- Preprocessor line highlighting with precise directive tokenization.
+
+## [0.4.0] - 2026-08-30
+
+### Added
+
+- Clangd-style Doxygen Markdown rendering in hover tooltips (`@brief`, `@param`, `@return`, `@see`).
+- Support for folder-based script modules (`folder` setting) and workspace-wide `#include` script resolution.
+- Variable expansion support (`${workspaceFolder}`, `${env:VAR}`) in client path settings.
+- Operator overload resolution covering all 52 AngelScript operator signatures and `cast<T>()`.
+- Add-on types declared in standard engine profiles.
+
+### Fixed
+
+- L-value assignment checking for conditional ternary expressions.
+- Enum member qualification in namespace scopes.
+
+## [0.3.0] - 2026-08-27
+
+### Added
+
+- Language Server Protocol pull diagnostics support (`textDocument/diagnostic`).
+- Type checking: condition expressions must evaluate to boolean types.
+- Reporting of duplicate case labels and unrecognized engine profile configurations.
+- Predefined stub name indicator in status bar.
+- Snippet completions for anonymous functions.
+
+### Fixed
+
+- Unlinked `#if` directive dimming matching standard C++ preprocessor visuals.
+- Semantic token colors aligned across eleven AST node categories.
+- Namespace collision detection when reopened across multiple module files.
+
+## [0.2.0] - 2026-08-24
+
+### Fixed
+
+- Real-time diagnostic refresh during active typing.
+- Server restart queuing to eliminate race conditions when toggling extension settings.
+- Diagnostic codes aligned with compiler error names: `as-err-null-non-handle`, `as-warn-undeclared-identifier`.
+- Property completion and hover respecting `asEP_PROPERTY_ACCESSOR_MODE`.
+
+### Added
+
+- Predefined stub selection picker with notification action button.
+- Bilingual localization (English and Spanish) across all settings and UI messages.
+- Status bar item with quick access to server logs, restart command, and stub picker.
 
 ### Changed
 
-- The extension is bundled into a single file and no longer waits for the language server handshake
-  before finishing activation: 126 module loads became 1.
+- Extension client bundled into a single distribution file using esbuild.
 
-## [0.1.0]
+## [0.1.0] - 2026-08-20
 
-- Initial release
+- Initial release of AngelScript Language Server.
+- Native C++20 backend utilizing Tree-Sitter for AST parsing.
+- Core LSP features: diagnostics, hover, definition, completion, semantic tokens, signature help, and document symbols.

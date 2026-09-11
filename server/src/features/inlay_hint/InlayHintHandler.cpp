@@ -311,12 +311,22 @@ namespace angel_lsp::features
 
             if (!bestSym && !candidateSymbols.empty())
             {
+                size_t maxParams = 0;
                 for (const auto &sym : candidateSymbols)
                 {
-                    if (sym.type == analysis::SymbolType::Function || sym.type == analysis::SymbolType::Funcdef)
+                    size_t pCount = 0;
+                    if (sym.type == analysis::SymbolType::Function && std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                    {
+                        pCount = sym.GetFunction().parameters.size();
+                    }
+                    else if (sym.type == analysis::SymbolType::Funcdef && std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                    {
+                        pCount = sym.GetFuncdef().parameters.size();
+                    }
+                    if (!bestSym || pCount > maxParams)
                     {
                         bestSym = &sym;
-                        break;
+                        maxParams = pCount;
                     }
                 }
             }
@@ -736,9 +746,18 @@ namespace angel_lsp::features
                                 }
                             }
 
+                            if (receiverType.empty())
+                            {
+                                receiverType = objText;
+                            }
+
                             if (!receiverType.empty())
                             {
                                 auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverType, request.symbolTable);
+                                if (hierarchy.empty())
+                                {
+                                    hierarchy.push_back(receiverType);
+                                }
                                 for (const auto &typeName : hierarchy)
                                 {
                                     std::string qualifiedName = typeName + "::" + memText;

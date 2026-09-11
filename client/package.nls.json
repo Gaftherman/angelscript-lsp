@@ -90,7 +90,7 @@
   "command.setModuleFolder.title": "Set as Module Folder",
   "command.selectPredefined.title": "Select Predefined Stub",
   "command.selectPredefined.category": "AngelScript",
-  "extension.description": "Language support for AngelScript: hover, go to definition, completion, semantic highlighting, diagnostics, formatting and refactoring, powered by a native C++ Tree-sitter engine.",
+  "extension.description": "High-performance AngelScript language support powered by Tree-sitter C++.",
   "config.statusBar.alignment.description": "Which side of the status bar the AngelScript item sits on. It is the way to reach the server log, a restart and the stub picker, so the left is the default: that is where the problem counts are, and where the eye already is when a diagnostic sends you looking.",
   "config.statusBar.alignment.left": "Next to the problem counts.",
   "config.statusBar.alignment.right": "With the language mode and the editor indicators.",

@@ -2146,6 +2146,19 @@ namespace angel_lsp::analysis
             std::string cleanObj = CleanBaseType(objType);
             if (cleanObj.empty())
             {
+                std::string rawObj = GetNodeText(objNode, sourceCode);
+                while (!rawObj.empty() && isspace(static_cast<unsigned char>(rawObj.front())))
+                {
+                    rawObj.erase(rawObj.begin());
+                }
+                while (!rawObj.empty() && isspace(static_cast<unsigned char>(rawObj.back())))
+                {
+                    rawObj.pop_back();
+                }
+                cleanObj = rawObj;
+            }
+            if (cleanObj.empty())
+            {
                 return "";
             }
 
@@ -2153,6 +2166,10 @@ namespace angel_lsp::analysis
             while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front()))) memName.erase(memName.begin());
             while (!memName.empty() && isspace(static_cast<unsigned char>(memName.back()))) memName.pop_back();
             auto hierarchy = GetInheritedTypeHierarchy(cleanObj, symbolTable);
+            if (hierarchy.empty() && !cleanObj.empty())
+            {
+                hierarchy.push_back(cleanObj);
+            }
             std::vector<std::string> propSearchOrder;
             if (!hierarchy.empty())
             {
@@ -2265,9 +2282,26 @@ namespace angel_lsp::analysis
                     {
                         ownerType = CleanExpressionType(objType);
                     }
+                    if (ownerType.empty())
+                    {
+                        std::string rawObj = GetNodeText(objNode, sourceCode);
+                        while (!rawObj.empty() && isspace(static_cast<unsigned char>(rawObj.front())))
+                        {
+                            rawObj.erase(rawObj.begin());
+                        }
+                        while (!rawObj.empty() && isspace(static_cast<unsigned char>(rawObj.back())))
+                        {
+                            rawObj.pop_back();
+                        }
+                        ownerType = rawObj;
+                    }
 
                     std::vector<Symbol> candidates;
                     auto hierarchy = GetInheritedTypeHierarchy(ownerType, symbolTable);
+                    if (hierarchy.empty() && !ownerType.empty())
+                    {
+                        hierarchy.push_back(ownerType);
+                    }
                     for (const auto &typeName : hierarchy)
                     {
                         auto found = symbolTable.FindSymbols(typeName + "::" + memName);

@@ -88,6 +88,9 @@ namespace angel_lsp::features
                                      const std::vector<analysis::Symbol> &group,
                                      const ankerl::unordered_dense::set<std::string> &compatibleClasses,
                                      analysis::AccessModifier targetAccess,
+                                     bool isFunction,
+                                     size_t minArgs,
+                                     size_t maxArgs,
                                      const analysis::SymbolTable &symbolTable,
                                      const CodeLensRequest &request,
                                      ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> &seenRefs)
@@ -132,6 +135,18 @@ namespace angel_lsp::features
                     if (isDef)
                     {
                         continue;
+                    }
+
+                    if (isFunction)
+                    {
+                        if (!ref.isCall)
+                        {
+                            continue;
+                        }
+                        if (ref.argumentCount < minArgs || ref.argumentCount > maxArgs)
+                        {
+                            continue;
+                        }
                     }
 
                     if (!compatibleClasses.empty())
@@ -271,7 +286,7 @@ namespace angel_lsp::features
 
             for (const auto &child : scope->children)
             {
-                CollectReferencesInScope(fileUri, child.get(), targetName, group, compatibleClasses, targetAccess, symbolTable, request, seenRefs);
+                CollectReferencesInScope(fileUri, child.get(), targetName, group, compatibleClasses, targetAccess, isFunction, minArgs, maxArgs, symbolTable, request, seenRefs);
             }
         }
     }
@@ -523,9 +538,22 @@ namespace angel_lsp::features
                 else
                 {
                     analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
+                    bool isFunction = false;
+                    size_t minArgs = 0;
+                    size_t maxArgs = 0;
                     if (std::holds_alternative<analysis::FunctionSignature>(sym.signature))
                     {
                         targetAccess = sym.GetFunction().modifiers.access;
+                        isFunction = true;
+                        const auto &fn = sym.GetFunction();
+                        maxArgs = fn.parameters.size();
+                        for (const auto &p : fn.parameters)
+                        {
+                            if (p.defaultValue.empty())
+                            {
+                                minArgs++;
+                            }
+                        }
                     }
                     else if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
                     {
@@ -587,7 +615,7 @@ namespace angel_lsp::features
                     {
                         if (root)
                         {
-                            CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, compatibleClasses, targetAccess, request.symbolTable, request, seenRefs);
+                            CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, compatibleClasses, targetAccess, isFunction, minArgs, maxArgs, request.symbolTable, request, seenRefs);
                         }
                     });
 
@@ -643,7 +671,7 @@ namespace angel_lsp::features
                 {
                     if (root)
                     {
-                        CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, {}, analysis::AccessModifier::Public, request.symbolTable, request, seenRefs);
+                        CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, {}, analysis::AccessModifier::Public, false, 0, 0, request.symbolTable, request, seenRefs);
                     }
                 });
 

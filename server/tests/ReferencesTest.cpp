@@ -510,3 +510,34 @@ TEST_CASE("ReferencesHandler - Sibling Classes with Coincidental Public Methods 
     CHECK((*refsA)[0].range.start.line == 1);
     CHECK((*refsA)[1].range.start.line == 3);
 }
+
+TEST_CASE("ReferencesHandler - Function and Method Overload Arity Isolation")
+{
+    MultiFileTestEnv env;
+
+    std::string code =
+        "class Knuckles {\n"
+        "    bool Deploy() { return true; }\n"
+        "    bool Deploy(string a, string b, int c, string d, float e, bool f) { return false; }\n"
+        "    void Test() {\n"
+        "        Deploy();\n"
+        "        Deploy(\"a\", \"b\", 1, \"d\", 2.0f, true);\n"
+        "    }\n"
+        "}\n";
+
+    env.AddFile("file:///knuckles.as", code);
+
+    // References on Deploy() (0 args) declaration at line 1, col 9
+    auto refs0 = env.RefsAt("file:///knuckles.as", 1, 9, true);
+    REQUIRE(refs0.has_value());
+    CHECK(refs0->size() == 2);
+    CHECK((*refs0)[0].range.start.line == 1);
+    CHECK((*refs0)[1].range.start.line == 4);
+
+    // References on Deploy(...) (6 args) declaration at line 2, col 9
+    auto refs6 = env.RefsAt("file:///knuckles.as", 2, 9, true);
+    REQUIRE(refs6.has_value());
+    CHECK(refs6->size() == 2);
+    CHECK((*refs6)[0].range.start.line == 2);
+    CHECK((*refs6)[1].range.start.line == 5);
+}

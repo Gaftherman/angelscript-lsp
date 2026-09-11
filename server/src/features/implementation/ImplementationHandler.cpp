@@ -1,6 +1,7 @@
 #include "features/implementation/ImplementationHandler.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
+#include "parser/GrammarNames.h"
 
 #include <algorithm>
 #include <string_view>
@@ -172,11 +173,16 @@ namespace angel_lsp::features
 
         lsp::Location ToLocation(const Symbol &sym)
         {
+            uint32_t sL = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.startLine : sym.startLine;
+            uint32_t sC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.startCharacter : sym.startCharacter;
+            uint32_t eL = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.endLine : sym.endLine;
+            uint32_t eC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.endCharacter : sym.endCharacter;
+
             return lsp::Location{
                 lsp::DocumentUri::parse(sym.fileUri),
                 lsp::Range{
-                    lsp::Position{ sym.startLine, sym.startCharacter },
-                    lsp::Position{ sym.endLine, sym.endCharacter }
+                    lsp::Position{ sL, sC },
+                    lsp::Position{ eL, eC }
                 }
             };
         }
@@ -217,7 +223,7 @@ namespace angel_lsp::features
 
         const SymbolTable &table = request.symbolTable;
 
-        // The cursor on a type's own name: answer with what derives from it.
+        // 1. The cursor on a type's own name: answer with what derives from it, falling back to definition.
         if (IsTypeName(name, table))
         {
             std::vector<lsp::Location> locations;
@@ -225,31 +231,87 @@ namespace angel_lsp::features
             {
                 locations.push_back(ToLocation(sym));
             }
+            if (locations.empty())
+            {
+                const auto typeSyms = table.FindSymbolsPtr(name);
+                if (typeSyms)
+                {
+                    for (const auto &sym : *typeSyms)
+                    {
+                        if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+                        {
+                            locations.push_back(ToLocation(sym));
+                        }
+                    }
+                }
+            }
             return locations.empty() ? std::nullopt : std::optional{ locations };
         }
 
-        // Otherwise the cursor may be on a member of one, in which case the answer is that member
-        // as each subtype declares it. Anything else - a local, a global, a call to a free
-        // function - has no implementations to speak of, and nullopt says so.
-        const std::string owner = EnclosingType(node, request.sourceCode);
-        if (owner.empty() || !table.FindSymbolsPtr(owner + "::" + name))
+        // 2. Member method or field
+        std::string owner = EnclosingType(node, request.sourceCode);
+        if (owner.empty())
         {
-            return std::nullopt;
+            TSNode p = ts_node_parent(node);
+            if (!ts_node_is_null(p) && std::string_view(ts_node_type(p)) == "member_expression")
+            {
+                TSNode objNode = parser::GetChildByField(p, parser::fields::Object);
+                if (!ts_node_is_null(objNode))
+                {
+                    std::string objType = analysis::ResolveExpressionType(objNode, nullptr, table, request.sourceCode, request.uri);
+                    owner = analysis::CleanBaseType(objType);
+                }
+            }
         }
 
-        std::vector<lsp::Location> locations;
-        for (const auto &subtype : CollectSubtypes(owner, table))
+        if (!owner.empty())
         {
-            const auto members = table.FindSymbolsPtr(analysis::LastScopeSegment(subtype.name) + "::" + name);
-            if (!members)
+            const auto memberSyms = table.FindSymbolsPtr(owner + "::" + name);
+            if (memberSyms && !memberSyms->empty())
             {
-                continue;
-            }
-            for (const auto &member : *members)
-            {
-                locations.push_back(ToLocation(member));
+                std::vector<lsp::Location> locations;
+                for (const auto &subtype : CollectSubtypes(owner, table))
+                {
+                    const auto members = table.FindSymbolsPtr(analysis::LastScopeSegment(subtype.name) + "::" + name);
+                    if (!members)
+                    {
+                        continue;
+                    }
+                    for (const auto &member : *members)
+                    {
+                        locations.push_back(ToLocation(member));
+                    }
+                }
+                if (locations.empty())
+                {
+                    // Fallback to definition of target member when no overrides/subtypes exist
+                    for (const auto &member : *memberSyms)
+                    {
+                        locations.push_back(ToLocation(member));
+                    }
+                }
+                return locations.empty() ? std::nullopt : std::optional{ locations };
             }
         }
-        return locations.empty() ? std::nullopt : std::optional{ locations };
+
+        // 3. Free function fallback
+        const auto globalSyms = table.FindSymbolsPtr(name);
+        if (globalSyms && !globalSyms->empty())
+        {
+            std::vector<lsp::Location> locations;
+            for (const auto &sym : *globalSyms)
+            {
+                if (sym.type == SymbolType::Function)
+                {
+                    locations.push_back(ToLocation(sym));
+                }
+            }
+            if (!locations.empty())
+            {
+                return locations;
+            }
+        }
+
+        return std::nullopt;
     }
 }

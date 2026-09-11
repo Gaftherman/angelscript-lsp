@@ -157,13 +157,13 @@ TEST_CASE("Implementation - An overridden method answers with its overrides")
     CHECK(HasLine(locations, 6));
 }
 
-TEST_CASE("Implementation - A type nothing derives from answers with nothing")
+TEST_CASE("Implementation - A type nothing derives from answers with definition fallback")
 {
-    // Not with itself: a list holding only the declaration the cursor is already on makes the
-    // editor jump and change nothing, which reads as a bug rather than as an empty answer.
     Fixture fixture("class Lonely { void Think() { } }\n");
 
-    CHECK_FALSE(fixture.At(0, 8).has_value());
+    const auto locations = fixture.At(0, 8);
+    REQUIRE(locations.has_value());
+    CHECK(HasLine(locations, 0));
 }
 
 TEST_CASE("Implementation - A name with no implementations to speak of answers with nothing")
@@ -176,8 +176,23 @@ TEST_CASE("Implementation - A name with no implementations to speak of answers w
         "}\n");
 
     CHECK_FALSE(fixture.At(0, 5).has_value());
-    CHECK_FALSE(fixture.At(1, 6).has_value());
+    const auto locations = fixture.At(1, 6);
+    REQUIRE(locations.has_value());
+    CHECK(HasLine(locations, 1));
     CHECK_FALSE(fixture.At(3, 9).has_value());
+}
+
+TEST_CASE("Implementation - Method with no overrides falls back to definition")
+{
+    Fixture fixture(
+        "class Knuckles\n"
+        "{\n"
+        "    bool Deploy() { return true; }\n"
+        "}\n");
+
+    const auto locations = fixture.At(2, 10);
+    REQUIRE(locations.has_value());
+    CHECK(HasLine(locations, 2));
 }
 
 TEST_CASE("Implementation - A cursor that is not on an identifier answers with nothing")

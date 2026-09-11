@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="asPreGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#7e22ce"/>
+    </linearGradient>
+    <linearGradient id="asPreFoldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e9d5ff"/>
+      <stop offset="100%" stop-color="#d8b4fe"/>
+    </linearGradient>
+  </defs>
+  <path d="M6 3C4.895 3 4 3.895 4 5V27C4 28.105 4.895 29 6 29H26C27.105 29 28 28.105 28 27V11L20 3H6Z" fill="url(#asPreGrad)"/>
+  <path d="M20 3V9C20 10.105 20.895 11 22 11H28L20 3Z" fill="url(#asPreFoldGrad)"/>
+  <circle cx="11" cy="16" r="3" fill="#facc15"/>
+  <path d="M10 14.5L12 16L10 17.5" stroke="#7e22ce" stroke-width="1" fill="none"/>
+  <text x="15" y="24" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="8" font-weight="900" fill="#ffffff" letter-spacing="-0.5">PRE</text>
+</svg>

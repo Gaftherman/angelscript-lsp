@@ -1,9 +1,6 @@
 # AngelScript Language Server
 
-Language support for [AngelScript](https://www.angelcode.com/angelscript/) (`.as`), backed by a
-native C++ language server that parses with Tree-sitter rather than by embedding the AngelScript
-engine. No script concatenation, no engine callbacks — the whole workspace is analysed from its
-syntax trees.
+Language support for [AngelScript](https://www.angelcode.com/angelscript/) (`.as`), backed by a native C++ language server that parses with Tree-sitter and licensed under the [MIT License](LICENSE). The whole workspace is analysed directly from syntax trees without script concatenation or engine callbacks.
 
 ---
 
@@ -13,7 +10,7 @@ syntax trees.
 
 Install the extension from the VS Code Marketplace or install the packaged `.vsix` directly:
 - Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and run `Extensions: Install from VSIX...`.
-- Select `angelscript-lsp-0.7.7-exp.8.vsix`.
+- Select `angelscript-lsp-v0.7.7-exp.9.vsix`.
 
 ### 2. Workspace Configuration
 
@@ -47,14 +44,15 @@ If your host engine supports implicit file extensions (such as Sven Co-op's `#in
 | **Diagnostics**<br>`textDocument/publishDiagnostics` | Stable / Production-Ready | Dual-pass (syntax + semantic) validation oracle. Fast AST error detection with debounced background semantic pass. FNV-1a 64-bit ABI fingerprinting prevents cascading save storms when public interfaces are untouched. | `--enable-type-conversion-checks` |
 | **Hover**<br>`textDocument/hover` | Stable / Production-Ready | Sub-millisecond keyed spatial lookup (zero linear table scans). Full Doxygen docstring parser (`@brief`, `@param`, `@return`, `@see`), property accessors, and virtual document host scope fallback. | `--enable-hover` |
 | **Definition & Declaration**<br>`textDocument/definition`<br>`textDocument/declaration`<br>`textDocument/typeDefinition` | Stable / Production-Ready | Precise cross-file symbol lookup. Overload-aware callee argument scoring (`FilterOverloadsForCall`), mixin origin source mapping (jumps to template declaration range), and base/interface traversal. | `--enable-definition` |
-| **References**<br>`textDocument/references` | Stable / Production-Ready | Strict scope isolation across inheritance boundaries: private members isolated to declaring class AST; protected restricted to derived classes; public resolved to highest declaring ancestor. Eliminates sibling class leakage. | `--enable-references` |
+| **Implementation**<br>`textDocument/implementation` | Stable / Production-Ready | Resolves interface implementations and base class virtual method overrides across derived types. Automatically falls back to definition when no derived overrides exist. | `--enable-implementation` |
+| **References**<br>`textDocument/references` | Stable / Production-Ready | Strict scope isolation across inheritance boundaries and method overload arity isolation: private members isolated to declaring class AST; protected restricted to derived classes; public resolved to highest declaring ancestor. Method overloads isolated by arity constraints, eliminating cross-overload reference overcounting. | `--enable-references` |
 | **Rename**<br>`textDocument/prepareRename`<br>`textDocument/rename` | Stable / Production-Ready | Multi-file `WorkspaceEdit` generation. Safe identifier renaming protected against lexical shadowing and keyword collisions; guaranteed occurrence parity with Find References. | `--enable-rename` |
 | **Completion**<br>`textDocument/completion` | Stable / Production-Ready | Scope-aware suggestions for locals, parameters, class members (`.`, `->`), namespace members (`::`), and keywords. Parameter placeholders and auto-expanding snippets for control structures. | `--enable-completion` |
 | **Signature Help**<br>`textDocument/signatureHelp` | Stable / Production-Ready | Active parameter index tracking during call expressions. Overload candidate preview and associated documentation formatting. | `--enable-signature-help` |
 | **Semantic Tokens**<br>`textDocument/semanticTokens/full`<br>`textDocument/semanticTokens/range` | Stable / Production-Ready | Zero-allocation delta integer streams with standard LSP legend. Distinguishes parameters, member properties, locals, and enum constants through symbol table resolution. Supports inactive preprocessor range dimming. | `--enable-semantic-tokens` |
 | **Document Symbols**<br>`textDocument/documentSymbol` | Stable / Production-Ready | Hierarchical symbol tree (classes, methods, fields, enums, namespaces) powering the VS Code Outline view and breadcrumb navigation. | `--enable-document-symbols` |
 | **Workspace Symbols**<br>`workspace/symbol` | Stable / Production-Ready | Multi-tiered fuzzy search, scoring, and ranking across all indexed project scripts and predefined host stubs (`Ctrl+T`). | `--enable-workspace-symbols` |
-| **Inlay Hints**<br>`textDocument/inlayHint` | Stable / Production-Ready | Inline parameter name hints for standard calls, constructor direct-initializations, `BaseClass` methods, and utility objects. Configurable suppression when argument text matches parameter name. | `--enable-inlay-hints` |
+| **Inlay Hints**<br>`textDocument/inlayHint` | Stable / Production-Ready | Inline parameter name hints for standard calls, constructor direct-initializations, `BaseClass` methods, and utility objects. Robust type deduction on nested and namespace member calls without argument cutoff. Configurable suppression when argument text matches parameter name. | `--enable-inlay-hints` |
 | **CodeLens**<br>`textDocument/codeLens` | Stable / Production-Ready | Inline actionable reference counts above declarations. Deduplicates identical mixin declaration ranges and aggregates reference counts across synthesized host classes without leakage. | `angelscript.features.codeLens` |
 | **Call Hierarchy**<br>`textDocument/prepareCallHierarchy`<br>`callHierarchy/incomingCalls`<br>`callHierarchy/outgoingCalls` | Stable / Production-Ready | Workspace-wide call indexing for functions, methods, and mixins. Synthesized host class caller methods resolve back to originating mixin bodies to locate inbound and outbound calls accurately. | `--enable-call-hierarchy` |
 | **Type Hierarchy**<br>`textDocument/prepareTypeHierarchy`<br>`typeHierarchy/supertypes`<br>`typeHierarchy/subtypes` | Stable / Production-Ready | Bi-directional class and interface inheritance hierarchy exploration with strict LSP range containment verification. | `--enable-type-hierarchy` |

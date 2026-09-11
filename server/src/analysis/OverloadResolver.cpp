@@ -526,6 +526,10 @@ namespace angel_lsp::analysis
 
         const std::string cleanArg = UnwrapTypedef(NormalizeType(argType), symbolTable);
         const std::string cleanParam = UnwrapTypedef(NormalizeType(param.typeName), symbolTable);
+        if (cleanArg.empty() || cleanParam.empty())
+        {
+            return static_cast<int>(OverloadMatchPenalty::UnknownTypes);
+        }
         const bool argIsHandle = HasHandleModifier(argType);
         const bool argIsConst = HasConstModifier(argType);
         const auto isMatchingType = [](const std::string &a, const std::string &b)

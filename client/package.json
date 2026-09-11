@@ -2,9 +2,10 @@
   "name": "angelscript-lsp",
   "displayName": "%configuration.title%",
   "description": "%extension.description%",
-  "version": "0.7.7-exp.8",
+  "version": "0.7.7-exp.9",
   "publisher": "Gaftherman",
   "license": "MIT",
+  "icon": "assets/icon.png",
   "engines": {
     "vscode": "^1.120.0"
   },
@@ -33,18 +34,32 @@
     "languages": [
       {
         "id": "angelscript",
+        "extensions": [
+          ".as"
+        ],
         "aliases": [
-          "%command.showServerLog.category%",
+          "AngelScript",
           "angelscript"
         ],
+        "icon": {
+          "light": "./assets/as-file-icon.svg",
+          "dark": "./assets/as-file-icon.svg"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "angelscript-predefined",
         "extensions": [
-          ".as",
-          ".angelscript",
+          ".as.predefined",
           ".predefined"
         ],
-        "filenames": [
-          "as.predefined"
+        "aliases": [
+          "AngelScript Predefined Stubs"
         ],
+        "icon": {
+          "light": "./assets/as-predefined-icon.svg",
+          "dark": "./assets/as-predefined-icon.svg"
+        },
         "configuration": "./language-configuration.json"
       }
     ],
@@ -52,12 +67,12 @@
       {
         "command": "angelscript.showServerLog",
         "title": "%command.showServerLog.title%",
-        "category": "%command.restartServer.category%"
+        "category": "%command.showServerLog.category%"
       },
       {
         "command": "angelscript.restartServer",
         "title": "%command.restartServer.title%",
-        "category": "%command.selectPredefined.category%"
+        "category": "%command.restartServer.category%"
       },
       {
         "command": "angelscript.selectPredefined",
@@ -154,6 +169,11 @@
         "language": "angelscript",
         "scopeName": "source.angelscript",
         "path": "./syntaxes/angelscript.tmLanguage.json"
+      },
+      {
+        "language": "angelscript-predefined",
+        "scopeName": "source.angelscript",
+        "path": "./syntaxes/angelscript.tmLanguage.json"
       }
     ],
     "semanticTokenTypes": [
@@ -177,16 +197,45 @@
             "storage.type"
           ]
         }
+      },
+      {
+        "language": "angelscript-predefined",
+        "scopes": {
+          "templatePunctuation": [
+            "punctuation.definition.typeparameters.angelscript",
+            "punctuation.definition.typeparameters.begin.ts",
+            "meta.type.parameters"
+          ],
+          "type.defaultLibrary": [
+            "storage.type.built-in.primitive.angelscript",
+            "storage.type.built-in",
+            "storage.type"
+          ]
+        }
       }
     ],
     "snippets": [
       {
         "language": "angelscript",
         "path": "./snippets/angelscript.json"
+      },
+      {
+        "language": "angelscript-predefined",
+        "path": "./snippets/angelscript.json"
       }
     ],
     "configurationDefaults": {
       "[angelscript]": {
+        "editor.quickSuggestions": {
+          "other": "on",
+          "comments": "off",
+          "strings": "off"
+        },
+        "editor.suggestOnTriggerCharacters": true,
+        "editor.wordBasedSuggestions": "off",
+        "editor.semanticHighlighting.enabled": true
+      },
+      "[angelscript-predefined]": {
         "editor.quickSuggestions": {
           "other": "on",
           "comments": "off",

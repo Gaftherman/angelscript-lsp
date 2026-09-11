@@ -387,6 +387,72 @@ namespace angel_lsp::analysis
                         ref.isMemberAccess = ts_node_eq(memberField, capture.node) ||
                             (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(capture.node));
                     }
+
+                    // Check if this reference is the callee of a call_expression
+                    TSNode walk = capture.node;
+                    TSNode walkParent = parent;
+                    while (!ts_node_is_null(walkParent))
+                    {
+                        std::string_view wpType = ts_node_type(walkParent);
+                        if (wpType == "call_expression")
+                        {
+                            TSNode funcChild = parser::GetChildByField(walkParent, parser::fields::Function);
+                            if (ts_node_is_null(funcChild) && ts_node_child_count(walkParent) > 0)
+                            {
+                                funcChild = ts_node_child(walkParent, 0);
+                            }
+                            if (!ts_node_is_null(funcChild) &&
+                                (ts_node_eq(funcChild, walk) || ts_node_start_byte(funcChild) == ts_node_start_byte(walk)))
+                            {
+                                ref.isCall = true;
+                                TSNode argsChild = parser::GetChildByField(walkParent, parser::fields::Arguments);
+                                if (ts_node_is_null(argsChild))
+                                {
+                                    uint32_t cc = ts_node_child_count(walkParent);
+                                    for (uint32_t ci = 0; ci < cc; ++ci)
+                                    {
+                                        TSNode c = ts_node_child(walkParent, ci);
+                                        if (std::string_view(ts_node_type(c)) == "argument_list")
+                                        {
+                                            argsChild = c;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!ts_node_is_null(argsChild))
+                                {
+                                    uint32_t argChildCount = ts_node_child_count(argsChild);
+                                    uint32_t actualArgs = 0;
+                                    for (uint32_t ai = 0; ai < argChildCount; ++ai)
+                                    {
+                                        TSNode ac = ts_node_child(argsChild, ai);
+                                        std::string_view act = ts_node_type(ac);
+                                        if (act == "(" || act == ")" || act == "," || act == ":" || act == "comment")
+                                        {
+                                            continue;
+                                        }
+                                        const char *fn = ts_node_field_name_for_child(argsChild, ai);
+                                        if (fn && std::string_view(fn) == "arg_name")
+                                        {
+                                            continue;
+                                        }
+                                        actualArgs++;
+                                    }
+                                    ref.argumentCount = actualArgs;
+                                }
+                            }
+                            break;
+                        }
+                        else if (wpType == "member_expression" || wpType == "scoped_identifier")
+                        {
+                            walk = walkParent;
+                            walkParent = ts_node_parent(walkParent);
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
                 }
 
                 current->references.push_back(std::move(ref));

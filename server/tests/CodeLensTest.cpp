@@ -390,3 +390,41 @@ TEST_CASE("CodeLens - Scope isolation prevents reference leakage between sibling
     }
 }
 
+TEST_CASE("CodeLens - Method Overload Arity Isolation")
+{
+    CodeLensFixture fixture(
+        "class Knuckles\n"
+        "{\n"
+        "    bool Deploy() { return true; }\n"
+        "    bool Deploy(string a, string b, int c, string d, float e, bool f) { return false; }\n"
+        "    void Test()\n"
+        "    {\n"
+        "        Deploy();\n"
+        "        Deploy(\"a\", \"b\", 1, \"d\", 2.0f, true);\n"
+        "    }\n"
+        "}\n"
+    );
+
+    const auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+    REQUIRE(!lenses->empty());
+
+    bool foundDeploy0 = false;
+    bool foundDeploy6 = false;
+    for (const auto &lens : *lenses)
+    {
+        if (lens.range.start.line == 2 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            foundDeploy0 = true;
+        }
+        else if (lens.range.start.line == 3 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            foundDeploy6 = true;
+        }
+    }
+    CHECK(foundDeploy0);
+    CHECK(foundDeploy6);
+}
+

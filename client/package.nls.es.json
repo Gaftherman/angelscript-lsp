@@ -90,7 +90,7 @@
   "command.setModuleFolder.title": "Definir como carpeta del módulo",
   "command.selectPredefined.title": "Seleccionar stub predefinido",
   "command.selectPredefined.category": "AngelScript",
-  "extension.description": "Soporte de lenguaje para AngelScript: información al pasar el cursor, ir a definición, autocompletado, resaltado semántico, diagnósticos, formateo y refactorización, impulsado por un motor nativo C++ de Tree-sitter.",
+  "extension.description": "Soporte de lenguaje AngelScript de alto rendimiento impulsado por Tree-sitter C++.",
   "config.statusBar.alignment.description": "De qué lado de la barra de estado se coloca el elemento de AngelScript. Es la vía para llegar al registro del servidor, al reinicio y al selector de stub, así que la izquierda es el valor por defecto: ahí están los contadores de problemas, y ahí es donde ya está la vista cuando un diagnóstico te manda a mirar.",
   "config.statusBar.alignment.left": "Junto a los contadores de problemas.",
   "config.statusBar.alignment.right": "Con el modo de lenguaje y los indicadores del editor.",
