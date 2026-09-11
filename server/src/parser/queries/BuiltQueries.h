@@ -2,7 +2,7 @@
 
 namespace angel_lsp::parser::queries
 {
-    constexpr const char *HIGHLIGHTS_QUERY = R"SCM(
+    [[maybe_unused]] inline constexpr const char *HIGHLIGHTS_QUERY = R"SCM(
 ; Highlights for AngelScript
 
 ; Comments
@@ -204,7 +204,7 @@ namespace angel_lsp::parser::queries
 (index_expression index_name: (identifier) @variable.parameter)
 )SCM";
 
-    constexpr const char *LOCALS_QUERY = R"SCM(
+    [[maybe_unused]] inline constexpr const char *LOCALS_QUERY = R"SCM(
 ; Locals for AngelScript
 ; Scope tracking: definitions, references, and scopes for editors and
 ; downstream tools (local variable highlighting, smart rename).
@@ -350,7 +350,7 @@ namespace angel_lsp::parser::queries
 (identifier) @local.reference
 )SCM";
 
-    constexpr const char *TAGS_QUERY = R"SCM(
+    [[maybe_unused]] inline constexpr const char *TAGS_QUERY = R"SCM(
 ; Tags for code navigation (e.g. :GoToSymbol in editors)
 
 ; Functions

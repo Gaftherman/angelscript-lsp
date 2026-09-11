@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <sstream>
 #include <memory>
 #include <vector>
 
@@ -517,7 +518,9 @@ namespace angel_lsp::analysis::rules
                     std::ifstream file(path, std::ios::binary);
                     if (file.is_open())
                     {
-                        mixinSource.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                        std::ostringstream buffer;
+                        buffer << file.rdbuf();
+                        mixinSource = buffer.str();
                     }
                 }
 

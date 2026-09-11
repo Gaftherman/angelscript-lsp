@@ -596,7 +596,9 @@ namespace
         std::ifstream file(path, std::ios::binary);
         REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
 
-        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        std::ostringstream ss;
+        ss << file.rdbuf();
+        const std::string text = ss.str();
         lsp::json::Value parsed = lsp::json::parse(text);
         REQUIRE(parsed.isObject());
 

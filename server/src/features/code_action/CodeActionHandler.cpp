@@ -934,8 +934,8 @@ namespace angel_lsp::features
                             }
                         }
 
-                        uint32_t childCount = ts_node_child_count(curr);
-                        for (uint32_t i = 0; i < childCount; ++i)
+                        uint32_t nodeChildCount = ts_node_child_count(curr);
+                        for (uint32_t i = 0; i < nodeChildCount; ++i)
                         {
                             stack.push_back(ts_node_child(curr, i));
                         }
