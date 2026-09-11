@@ -241,5 +241,24 @@ TEST_SUITE("ExpressionTypeDeduction")
             "}\n";
         CHECK(DeduceTypeInMain(code4) == "int");
     }
+
+    TEST_CASE("Ternary conditional expressions")
+    {
+        CHECK(DeduceTypeInMain("void main() { true ? 10 : 20; }") == "int");
+        CHECK(DeduceTypeInMain("void main() { true ? 10 : 2.5f; }") == "float");
+        CHECK(DeduceTypeInMain("void main() { true ? 10 : \"str\"; }") == "");
+
+        std::string classCode =
+            "class Animal {}\n"
+            "class Dog : Animal {}\n"
+            "void main()\n"
+            "{\n"
+            "    Dog@ d;\n"
+            "    Animal@ a;\n"
+            "    true ? d : a;\n"
+            "}\n";
+        CHECK(DeduceTypeInMain(classCode) == "Animal@");
+    }
 }
+
 

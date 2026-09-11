@@ -311,9 +311,9 @@ namespace angel_lsp::analysis
         }
 
         double totalMs = totalTimer.ElapsedMs();
-        if (m_logger && totalMs > 30.0)
+        if (m_logger && m_logger->IsDebugEnabled() && totalMs > 30.0)
         {
-            m_logger->LogInfo(fmt::format(
+            m_logger->LogDebug(fmt::format(
                 "[Checker Breakdown] File: {} | Total: {:.2f} ms (DeclRules: {:.2f} ms, ScopeRules: {:.2f} ms, ControlFlow: {:.2f} ms, Access: {:.2f} ms, Const: {:.2f} ms, LValue: {:.2f} ms, Call: {:.2f} ms, Assign: {:.2f} ms, TypeConv: {:.2f} ms, Isolation: {:.2f} ms, Namespace: {:.2f} ms, InitList: {:.2f} ms)",
                 request.fileUri, totalMs, declRulesMs, scopeRulesMs, controlFlowMs, accessMs, constMs, lvalueMs, callMs, assignMs, typeConvMs, isolationMs, namespaceMs, initListMs));
         }

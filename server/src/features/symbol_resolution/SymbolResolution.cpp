@@ -893,7 +893,27 @@ namespace angel_lsp::features::resolution
                         declRanges.insert({ sym.fileUri, sL, sC });
                         if (includeDeclaration)
                         {
-                            if (seen.insert({ sym.fileUri, sL, sC }).second)
+                            bool includeThisDecl = false;
+                            std::string cleanCls = analysis::CleanBaseType(clsName);
+                            std::string cleanDecl = analysis::CleanBaseType(target.declaringClass);
+                            if (cleanCls == cleanDecl || cleanDecl.empty())
+                            {
+                                includeThisDecl = true;
+                            }
+                            else
+                            {
+                                auto hier = analysis::GetInheritedTypeHierarchy(cleanCls, symbolTable);
+                                for (const auto &anc : hier)
+                                {
+                                    if (analysis::CleanBaseType(anc) == cleanDecl)
+                                    {
+                                        includeThisDecl = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (includeThisDecl && seen.insert({ sym.fileUri, sL, sC }).second)
                             {
                                 results.push_back(lsp::Location{
                                     lsp::DocumentUri::parse(sym.fileUri),
@@ -904,6 +924,7 @@ namespace angel_lsp::features::resolution
                                 });
                             }
                         }
+
                     }
                 }
             }
@@ -940,13 +961,12 @@ namespace angel_lsp::features::resolution
 
                             if (target.isFunction)
                             {
-                                if (!ref.isCall)
+                                if (ref.isCall)
                                 {
-                                    continue;
-                                }
-                                if (ref.argumentCount < target.minArgs || ref.argumentCount > target.maxArgs)
-                                {
-                                    continue;
+                                    if (ref.argumentCount < target.minArgs || ref.argumentCount > target.maxArgs)
+                                    {
+                                        continue;
+                                    }
                                 }
                             }
 
@@ -1080,12 +1100,39 @@ namespace angel_lsp::features::resolution
                             {
                                 // Implicit member access inside class method: check enclosing class and not shadowed by local var
                                 std::string encClass = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
-                                if (relatedSet.contains(encClass))
+                                if (!encClass.empty() && relatedSet.contains(encClass))
                                 {
-                                    const analysis::LocalDefinition *localShadow = analysis::ResolveInScope(s, target.name);
-                                    if (!localShadow || localShadow->kind == analysis::LocalDefinitionKind::Field || localShadow->kind == analysis::LocalDefinitionKind::Method)
+                                    bool inTargetHierarchy = false;
+                                    std::string cleanEnc = analysis::CleanBaseType(encClass);
+                                    std::string cleanDecl = analysis::CleanBaseType(target.declaringClass);
+                                    if (cleanEnc == cleanDecl)
                                     {
-                                        isMatch = true;
+                                        inTargetHierarchy = true;
+                                    }
+                                    else if (!cleanDecl.empty())
+                                    {
+                                        auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanEnc, symbolTable);
+                                        for (const auto &ancestor : hierarchy)
+                                        {
+                                            if (analysis::CleanBaseType(ancestor) == cleanDecl)
+                                            {
+                                                inTargetHierarchy = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        inTargetHierarchy = true;
+                                    }
+
+                                    if (inTargetHierarchy)
+                                    {
+                                        const analysis::LocalDefinition *localShadow = analysis::ResolveInScope(s, target.name);
+                                        if (!localShadow || localShadow->kind == analysis::LocalDefinitionKind::Field || localShadow->kind == analysis::LocalDefinitionKind::Method)
+                                        {
+                                            isMatch = true;
+                                        }
                                     }
                                 }
                             }
@@ -1216,13 +1263,12 @@ namespace angel_lsp::features::resolution
 
                             if (target.isFunction)
                             {
-                                if (!ref.isCall)
+                                if (ref.isCall)
                                 {
-                                    continue;
-                                }
-                                if (ref.argumentCount < target.minArgs || ref.argumentCount > target.maxArgs)
-                                {
-                                    continue;
+                                    if (ref.argumentCount < target.minArgs || ref.argumentCount > target.maxArgs)
+                                    {
+                                        continue;
+                                    }
                                 }
                             }
 
@@ -1387,13 +1433,12 @@ namespace angel_lsp::features::resolution
 
                             if (target.isFunction)
                             {
-                                if (!ref.isCall)
+                                if (ref.isCall)
                                 {
-                                    continue;
-                                }
-                                if (ref.argumentCount < target.minArgs || ref.argumentCount > target.maxArgs)
-                                {
-                                    continue;
+                                    if (ref.argumentCount < target.minArgs || ref.argumentCount > target.maxArgs)
+                                    {
+                                        continue;
+                                    }
                                 }
                             }
 

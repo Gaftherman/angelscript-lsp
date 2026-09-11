@@ -87,6 +87,7 @@ namespace angel_lsp::features
                                      const std::string &targetName,
                                      const std::vector<analysis::Symbol> &group,
                                      const ankerl::unordered_dense::set<std::string> &compatibleClasses,
+                                     const ankerl::unordered_dense::set<std::tuple<std::string, uint32_t, uint32_t>> &allDeclRanges,
                                      analysis::AccessModifier targetAccess,
                                      bool isFunction,
                                      size_t minArgs,
@@ -104,6 +105,11 @@ namespace angel_lsp::features
             {
                 if (ref.name == targetName)
                 {
+                    if (allDeclRanges.contains({ fileUri, ref.startLine, ref.startCharacter }))
+                    {
+                        continue;
+                    }
+
                     // Do not count the declaration site of any symbol in the group
                     bool isDecl = false;
                     for (const auto &sym : group)
@@ -137,15 +143,15 @@ namespace angel_lsp::features
                         continue;
                     }
 
+
                     if (isFunction)
                     {
-                        if (!ref.isCall)
+                        if (ref.isCall)
                         {
-                            continue;
-                        }
-                        if (ref.argumentCount < minArgs || ref.argumentCount > maxArgs)
-                        {
-                            continue;
+                            if (ref.argumentCount < minArgs || ref.argumentCount > maxArgs)
+                            {
+                                continue;
+                            }
                         }
                     }
 
@@ -165,6 +171,39 @@ namespace angel_lsp::features
                         {
                             std::string encClass = GetEnclosingClassName(symbolTable, fileUri, ref.startLine);
                             if (encClass.empty() || !compatibleClasses.contains(encClass))
+                            {
+                                continue;
+                            }
+
+                            bool inTargetHierarchy = false;
+                            std::string cleanEnc = analysis::CleanBaseType(encClass);
+                            for (const auto &s : group)
+                            {
+                                if (s.containerName.empty())
+                                {
+                                    continue;
+                                }
+                                std::string cleanDecl = analysis::CleanBaseType(s.containerName);
+                                if (cleanEnc == cleanDecl)
+                                {
+                                    inTargetHierarchy = true;
+                                    break;
+                                }
+                                auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanEnc, symbolTable);
+                                for (const auto &ancestor : hierarchy)
+                                {
+                                    if (analysis::CleanBaseType(ancestor) == cleanDecl)
+                                    {
+                                        inTargetHierarchy = true;
+                                        break;
+                                    }
+                                }
+                                if (inTargetHierarchy)
+                                {
+                                    break;
+                                }
+                            }
+                            if (!inTargetHierarchy)
                             {
                                 continue;
                             }
@@ -286,8 +325,9 @@ namespace angel_lsp::features
 
             for (const auto &child : scope->children)
             {
-                CollectReferencesInScope(fileUri, child.get(), targetName, group, compatibleClasses, targetAccess, isFunction, minArgs, maxArgs, symbolTable, request, seenRefs);
+                CollectReferencesInScope(fileUri, child.get(), targetName, group, compatibleClasses, allDeclRanges, targetAccess, isFunction, minArgs, maxArgs, symbolTable, request, seenRefs);
             }
+
         }
     }
 
@@ -610,14 +650,42 @@ namespace angel_lsp::features
                         });
                     }
 
+                    ankerl::unordered_dense::set<std::tuple<std::string, uint32_t, uint32_t>> allDeclRanges;
+                    auto addDecls = [&](const std::string &qName)
+                    {
+                        auto syms = request.symbolTable.FindSymbols(qName);
+                        for (const auto &s : syms)
+                        {
+                            if (s.type != analysis::SymbolType::CallReference)
+                            {
+                                uint32_t sL = (s.selectionRange.endLine > 0 || s.selectionRange.endCharacter > 0) ? s.selectionRange.startLine : s.startLine;
+                                uint32_t sC = (s.selectionRange.endLine > 0 || s.selectionRange.endCharacter > 0) ? s.selectionRange.startCharacter : s.startCharacter;
+                                allDeclRanges.insert({ s.fileUri, sL, sC });
+                            }
+                        }
+                    };
+
+                    addDecls(sym.name);
+                    for (const auto &c : compatibleClasses)
+                    {
+                        addDecls(c + "::" + sym.name);
+                    }
+                    for (const auto &s : symGroup)
+                    {
+                        uint32_t sL = (s.selectionRange.endLine > 0 || s.selectionRange.endCharacter > 0) ? s.selectionRange.startLine : s.startLine;
+                        uint32_t sC = (s.selectionRange.endLine > 0 || s.selectionRange.endCharacter > 0) ? s.selectionRange.startCharacter : s.startCharacter;
+                        allDeclRanges.insert({ s.fileUri, sL, sC });
+                    }
+
                     ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenRefs;
                     request.scopeIndex.ForEachScopeTree([&](const std::string &fileUri, const std::shared_ptr<const analysis::Scope> &root)
                     {
                         if (root)
                         {
-                            CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, compatibleClasses, targetAccess, isFunction, minArgs, maxArgs, request.symbolTable, request, seenRefs);
+                            CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, compatibleClasses, allDeclRanges, targetAccess, isFunction, minArgs, maxArgs, request.symbolTable, request, seenRefs);
                         }
                     });
+
 
                     const size_t refCount = seenRefs.size();
                     lsp::CodeLens lens;
@@ -666,14 +734,23 @@ namespace angel_lsp::features
             }
             else if (sym.type == analysis::SymbolType::Class)
             {
+                ankerl::unordered_dense::set<std::tuple<std::string, uint32_t, uint32_t>> allDeclRanges;
+                for (const auto &s : symGroup)
+                {
+                    uint32_t sL = (s.selectionRange.endLine > 0 || s.selectionRange.endCharacter > 0) ? s.selectionRange.startLine : s.startLine;
+                    uint32_t sC = (s.selectionRange.endLine > 0 || s.selectionRange.endCharacter > 0) ? s.selectionRange.startCharacter : s.startCharacter;
+                    allDeclRanges.insert({ s.fileUri, sL, sC });
+                }
+
                 ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenRefs;
                 request.scopeIndex.ForEachScopeTree([&](const std::string &fileUri, const std::shared_ptr<const analysis::Scope> &root)
                 {
                     if (root)
                     {
-                        CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, {}, analysis::AccessModifier::Public, false, 0, 0, request.symbolTable, request, seenRefs);
+                        CollectReferencesInScope(fileUri, root.get(), sym.name, symGroup, {}, allDeclRanges, analysis::AccessModifier::Public, false, 0, 0, request.symbolTable, request, seenRefs);
                     }
                 });
+
 
                 const size_t refCount = seenRefs.size();
                 lsp::CodeLens lens;

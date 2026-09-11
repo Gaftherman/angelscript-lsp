@@ -2266,6 +2266,35 @@ namespace angel_lsp::analysis
                 }
             }
 
+            if (nodeType == "ternary_expression")
+            {
+                TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
+                TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
+                if (!ts_node_is_null(consequence) && !ts_node_is_null(alternative))
+                {
+                    const std::string t1 = ResolveExpressionType(
+                        consequence, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+                    const std::string t2 = ResolveExpressionType(
+                        alternative, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+
+                    const std::string clean1 = CleanExpressionType(t1);
+                    const std::string clean2 = CleanExpressionType(t2);
+
+                    if (!clean1.empty() && !clean2.empty() &&
+                        clean1 != "auto" && clean2 != "auto" &&
+                        clean1 != "void" && clean2 != "void")
+                    {
+                        bool isStringNumericMismatch = (IsStringType(clean1, ctx) && IsNumericPrimitive(clean2)) ||
+                                                       (IsStringType(clean2, ctx) && IsNumericPrimitive(clean1));
+                        if (isStringNumericMismatch || (!IsConvertible(clean1, clean2, ctx) && !IsConvertible(clean2, clean1, ctx)))
+                        {
+                            EmitAtNode(alternative, ctx, "as-err-no-implicit-conversion", clean2, clean1);
+                        }
+                    }
+                }
+            }
+
+
             // `foreach (auto value : container)` writes `auto` and nothing else, so without this
             // the loop variable reached every consumer typeless: no hover, no completion after
             // `value.`, nothing for the expression resolver behind the access and const passes.

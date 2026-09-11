@@ -2110,26 +2110,50 @@ namespace angel_lsp::analysis
             std::string c1 = CleanBaseType(t1);
             std::string c2 = CleanBaseType(t2);
 
-            if (c1 == "double" || c2 == "double") return "double";
-            if (c1 == "float" || c2 == "float") return "float";
-            if (c1 == "int64" || c2 == "int64") return "int64";
-            if (c1 == "uint64" || c2 == "uint64") return "uint64";
-            if (c1 == "uint" || c2 == "uint") return "uint";
-            if (IsPrimitiveTypeName(c1) && IsPrimitiveTypeName(c2)) return "int";
+            if (IsNumericPrimitive(c1) && IsNumericPrimitive(c2))
+            {
+                if (c1 == "double" || c2 == "double")
+                {
+                    return "double";
+                }
+                if (c1 == "float" || c2 == "float")
+                {
+                    return "float";
+                }
+                if (c1 == "int64" || c2 == "int64")
+                {
+                    return "int64";
+                }
+                if (c1 == "uint64" || c2 == "uint64")
+                {
+                    return "uint64";
+                }
+                if (c1 == "uint" || c2 == "uint")
+                {
+                    return "uint";
+                }
+                return "int";
+            }
 
             // Inheritance check (derived vs base)
             auto h1 = GetInheritedTypeHierarchy(c1, symbolTable);
             for (const auto &b : h1)
             {
-                if (CleanBaseType(b) == c2) return t2;
+                if (CleanBaseType(b) == c2)
+                {
+                    return t2;
+                }
             }
             auto h2 = GetInheritedTypeHierarchy(c2, symbolTable);
             for (const auto &b : h2)
             {
-                if (CleanBaseType(b) == c1) return t1;
+                if (CleanBaseType(b) == c1)
+                {
+                    return t1;
+                }
             }
 
-            return t1;
+            return "";
         }
 
         // Member expression (e.g. obj.member)

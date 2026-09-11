@@ -17,7 +17,8 @@ namespace angel_lsp::utils
         Error = 0,
         Warning = 1,
         Info = 2,
-        Debug = 3
+        Debug = 3,
+        Trace = 4
     };
 
     /**
@@ -61,11 +62,13 @@ namespace angel_lsp::utils
 
         /** @brief Shorthand for the check that guards the hot paths. */
         bool IsDebugEnabled() const noexcept { return IsEnabled(LogLevel::Debug); }
+        bool IsTraceEnabled() const noexcept { return IsEnabled(LogLevel::Trace); }
 
         void LogWarning(std::string_view message);
         void LogInfo(std::string_view message);
         void LogError(std::string_view message);
         void LogDebug(std::string_view message);
+        void LogTrace(std::string_view message);
     };
 
     /**

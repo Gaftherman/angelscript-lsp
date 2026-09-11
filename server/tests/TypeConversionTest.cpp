@@ -2285,3 +2285,21 @@ TEST_CASE("TypeConversion - IsTruthyCondition first-principles verification")
     CHECK_FALSE(IsTruthyCondition("", table));
 }
 
+TEST_CASE("TypeConversion - Ternary expression branch mismatch emits diagnostic")
+{
+    const std::string code =
+        "void main()\n"
+        "{\n"
+        "    int x = true ? 10 : \"hello\";\n"
+        "}\n";
+
+    const auto diagnostics = ConversionDiagnostics(code);
+    REQUIRE(!diagnostics.empty());
+    CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
+                      [](const Diagnostic &d)
+                      {
+                          return d.code == "as-err-no-implicit-conversion";
+                      }));
+}
+
+

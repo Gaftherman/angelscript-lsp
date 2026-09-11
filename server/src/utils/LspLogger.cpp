@@ -58,6 +58,15 @@ namespace angel_lsp::utils
         Send(m_messageHandler, lsp::MessageType::Debug, message);
     }
 
+    void LspLogger::LogTrace(std::string_view message)
+    {
+        if (!IsEnabled(LogLevel::Trace))
+            return;
+
+        std::lock_guard<std::mutex> lock(m_logMutex);
+        Send(m_messageHandler, lsp::MessageType::Log, message);
+    }
+
     LogLevel ParseLogLevel(std::string_view name, LogLevel fallback)
     {
         std::string lowered;
@@ -69,6 +78,7 @@ namespace angel_lsp::utils
         if (lowered == "warning" || lowered == "warn") return LogLevel::Warning;
         if (lowered == "info")    return LogLevel::Info;
         if (lowered == "debug" || lowered == "verbose") return LogLevel::Debug;
+        if (lowered == "trace")   return LogLevel::Trace;
 
         return fallback;
     }

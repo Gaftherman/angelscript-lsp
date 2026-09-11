@@ -277,7 +277,15 @@ namespace angel_lsp::features
                     if (sym.type == analysis::SymbolType::Function)
                     {
                         const auto &fn = sym.GetFunction();
-                        if (fn.parameters.size() >= numArgs)
+                        size_t minRequiredArgs = 0;
+                        for (const auto &p : fn.parameters)
+                        {
+                            if (p.defaultValue.empty() && p.rawText.find("...") == std::string::npos)
+                            {
+                                minRequiredArgs++;
+                            }
+                        }
+                        if (numArgs >= minRequiredArgs && numArgs <= fn.parameters.size())
                         {
                             if (!bestSym || fn.parameters.size() == numArgs ||
                                 (bestSym->type == analysis::SymbolType::Function && bestSym->GetFunction().parameters.size() < numArgs))
@@ -293,7 +301,15 @@ namespace angel_lsp::features
                     else if (sym.type == analysis::SymbolType::Funcdef)
                     {
                         const auto &fn = sym.GetFuncdef();
-                        if (fn.parameters.size() >= numArgs)
+                        size_t minRequiredArgs = 0;
+                        for (const auto &p : fn.parameters)
+                        {
+                            if (p.defaultValue.empty() && p.rawText.find("...") == std::string::npos)
+                            {
+                                minRequiredArgs++;
+                            }
+                        }
+                        if (numArgs >= minRequiredArgs && numArgs <= fn.parameters.size())
                         {
                             if (!bestSym || fn.parameters.size() == numArgs ||
                                 (bestSym->type == analysis::SymbolType::Funcdef && bestSym->GetFuncdef().parameters.size() < numArgs))
@@ -523,7 +539,15 @@ namespace angel_lsp::features
                     if (sym.type == analysis::SymbolType::Function)
                     {
                         const auto &fn = sym.GetFunction();
-                        if (fn.parameters.size() >= numArgs)
+                        size_t minRequiredArgs = 0;
+                        for (const auto &p : fn.parameters)
+                        {
+                            if (p.defaultValue.empty() && p.rawText.find("...") == std::string::npos)
+                            {
+                                minRequiredArgs++;
+                            }
+                        }
+                        if (numArgs >= minRequiredArgs && numArgs <= fn.parameters.size())
                         {
                             if (!bestSym || fn.parameters.size() == numArgs ||
                                 (bestSym->type == analysis::SymbolType::Function && bestSym->GetFunction().parameters.size() < numArgs))

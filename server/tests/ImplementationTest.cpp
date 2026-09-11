@@ -229,3 +229,30 @@ TEST_CASE("Implementation - A cycle in the declared bases does not hang the requ
     const auto locations = fixture.At(0, 6);
     CHECK(locations.has_value());
 }
+
+TEST_CASE("Implementation - Mixin implementation fallback and interface implementation via mixin")
+{
+    Fixture fixture(
+        "interface IWalkable\n"
+        "{\n"
+        "    void Walk();\n"
+        "}\n"
+        "mixin class MWalk\n"
+        "{\n"
+        "    void Walk() { }\n"
+        "}\n"
+        "class Human : IWalkable, MWalk\n"
+        "{\n"
+        "}\n");
+
+    // Query on IWalkable::Walk at line 2, col 9
+    const auto locs = fixture.At(2, 9);
+    REQUIRE(locs.has_value());
+    CHECK(HasLine(locs, 6));
+
+    // Query on MWalk::Walk fallback at line 6, col 9
+    const auto mixinLocs = fixture.At(6, 9);
+    REQUIRE(mixinLocs.has_value());
+    CHECK(HasLine(mixinLocs, 6));
+}
+

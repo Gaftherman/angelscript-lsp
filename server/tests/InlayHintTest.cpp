@@ -710,5 +710,35 @@ TEST_CASE("InlayHintHandler - Complex Call Involving Dot-Accessed Namespace Meth
     CHECK(std::find(labels.begin(), labels.end(), "high:") != labels.end());
 }
 
+TEST_CASE("InlayHintHandler - Call With Default Parameters Retains All Provided Argument Hints")
+{
+    std::string code =
+        "void SetProperties(int width, int height, bool fullscreen = false, int refreshRate = 60) {}\n"
+        "void main() {\n"
+        "    SetProperties(1920, 1080, true);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+
+    REQUIRE(hints.has_value());
+    REQUIRE(hints->size() == 3);
+
+    std::string label0 = std::holds_alternative<std::string>(hints->at(0).label)
+                             ? std::get<std::string>(hints->at(0).label)
+                             : "";
+    std::string label1 = std::holds_alternative<std::string>(hints->at(1).label)
+                             ? std::get<std::string>(hints->at(1).label)
+                             : "";
+    std::string label2 = std::holds_alternative<std::string>(hints->at(2).label)
+                             ? std::get<std::string>(hints->at(2).label)
+                             : "";
+
+    CHECK(label0 == "width:");
+    CHECK(label1 == "height:");
+    CHECK(label2 == "fullscreen:");
+}
+
+
 
 

@@ -1,17 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <defs>
-    <linearGradient id="asFileGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#0284c7"/>
-    </linearGradient>
-    <linearGradient id="asFoldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#bae6fd"/>
-      <stop offset="100%" stop-color="#7dd3fc"/>
-    </linearGradient>
-  </defs>
-  <path d="M6 3C4.895 3 4 3.895 4 5V27C4 28.105 4.895 29 6 29H26C27.105 29 28 28.105 28 27V11L20 3H6Z" fill="url(#asFileGrad)"/>
-  <path d="M20 3V9C20 10.105 20.895 11 22 11H28L20 3Z" fill="url(#asFoldGrad)"/>
-  <path d="M8 15C10 13 13 13 15 15C13 17 10 18 8 18C7.5 18 7.5 16 8 15Z" fill="#fef08a" opacity="0.9"/>
-  <path d="M9 18C11 16 14 16 16 18C14 20 11 21 9 21C8.5 21 8.5 19 9 18Z" fill="#facc15" opacity="0.9"/>
-  <text x="17" y="24" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="9" font-weight="900" fill="#ffffff" letter-spacing="-0.5">AS</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960"><path fill="#3794ff" d="M560-160v-80h120q17 0 28.5-11.5T720-280v-80q0-38 22-69t58-44v-14q-36-13-58-44t-22-69v-80q0-17-11.5-28.5T680-720H560v-80h120q50 0 85 35t35 85v80q0 17 11.5 28.5T840-560h40v160h-40q-17 0-28.5 11.5T800-360v80q0 50-35 85t-85 35zm-280 0q-50 0-85-35t-35-85v-80q0-17-11.5-28.5T120-400H80v-160h40q17 0 28.5-11.5T160-600v-80q0-50 35-85t85-35h120v80H280q-17 0-28.5 11.5T240-680v80q0 38-22 69t-58 44v14q36 13 58 44t22 69v80q0 17 11.5 28.5T280-240h120v80z"/><path fill="#3794ff" d="M360-600h80v40h-80zm80 240h40v-200h-40v80h-80v-80h-40v200h40v-80h80zm200-200v-40H530a10 10 0 0 0-10 10v100a10 10 0 0 0 10 10h70v80h-80v40h110a10 10 0 0 0 10-10v-140a10 10 0 0 0-10-10h-70v-40z"/></svg>

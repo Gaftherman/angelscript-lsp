@@ -266,20 +266,100 @@ namespace angel_lsp::features
 
         if (!owner.empty())
         {
-            const auto memberSyms = table.FindSymbolsPtr(owner + "::" + name);
+            auto memberSyms = table.FindSymbolsPtr(owner + "::" + name);
+            if (!memberSyms || memberSyms->empty())
+            {
+                auto ownerSyms = table.FindSymbolsPtr(owner);
+                if (ownerSyms)
+                {
+                    for (const auto &os : *ownerSyms)
+                    {
+                        if (os.type == SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(os.signature))
+                        {
+                            const auto &cls = os.GetClass();
+                            for (const auto &m : cls.includedMixins)
+                            {
+                                auto mSyms = table.FindSymbolsPtr(analysis::LastScopeSegment(m) + "::" + name);
+                                if (mSyms && !mSyms->empty())
+                                {
+                                    memberSyms = mSyms;
+                                    break;
+                                }
+                            }
+                            if (memberSyms && !memberSyms->empty())
+                            {
+                                break;
+                            }
+                            for (const auto &b : cls.bases)
+                            {
+                                std::string cleanB = analysis::CleanBaseType(b);
+                                auto mSyms = table.FindSymbolsPtr(analysis::LastScopeSegment(cleanB) + "::" + name);
+                                if (mSyms && !mSyms->empty())
+                                {
+                                    memberSyms = mSyms;
+                                    break;
+                                }
+                            }
+                            if (memberSyms && !memberSyms->empty())
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             if (memberSyms && !memberSyms->empty())
             {
                 std::vector<lsp::Location> locations;
+                ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenLocs;
+                auto addLoc = [&](const Symbol &sym)
+                {
+                    uint32_t sL = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.startLine : sym.startLine;
+                    uint32_t sC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.startCharacter : sym.startCharacter;
+                    uint64_t key = (static_cast<uint64_t>(sL) << 32) | sC;
+                    if (seenLocs.insert({ sym.fileUri, key }).second)
+                    {
+                        locations.push_back(ToLocation(sym));
+                    }
+                };
+
                 for (const auto &subtype : CollectSubtypes(owner, table))
                 {
                     const auto members = table.FindSymbolsPtr(analysis::LastScopeSegment(subtype.name) + "::" + name);
-                    if (!members)
+                    if (members && !members->empty())
                     {
-                        continue;
+                        for (const auto &member : *members)
+                        {
+                            addLoc(member);
+                        }
                     }
-                    for (const auto &member : *members)
+                    else if (subtype.type == SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(subtype.signature))
                     {
-                        locations.push_back(ToLocation(member));
+                        const auto &cls = subtype.GetClass();
+                        for (const auto &m : cls.includedMixins)
+                        {
+                            const auto mixinMembers = table.FindSymbolsPtr(analysis::LastScopeSegment(m) + "::" + name);
+                            if (mixinMembers)
+                            {
+                                for (const auto &mixMember : *mixinMembers)
+                                {
+                                    addLoc(mixMember);
+                                }
+                            }
+                        }
+                        for (const auto &b : cls.bases)
+                        {
+                            std::string cleanB = analysis::CleanBaseType(b);
+                            const auto mixinMembers = table.FindSymbolsPtr(analysis::LastScopeSegment(cleanB) + "::" + name);
+                            if (mixinMembers)
+                            {
+                                for (const auto &mixMember : *mixinMembers)
+                                {
+                                    addLoc(mixMember);
+                                }
+                            }
+                        }
                     }
                 }
                 if (locations.empty())
@@ -287,7 +367,7 @@ namespace angel_lsp::features
                     // Fallback to definition of target member when no overrides/subtypes exist
                     for (const auto &member : *memberSyms)
                     {
-                        locations.push_back(ToLocation(member));
+                        addLoc(member);
                     }
                 }
                 return locations.empty() ? std::nullopt : std::optional{ locations };

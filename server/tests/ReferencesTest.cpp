@@ -541,3 +541,73 @@ TEST_CASE("ReferencesHandler - Function and Method Overload Arity Isolation")
     CHECK((*refs6)[0].range.start.line == 2);
     CHECK((*refs6)[1].range.start.line == 5);
 }
+
+TEST_CASE("ReferencesHandler - Function Delegate References")
+{
+    MultiFileTestEnv env;
+
+    std::string code =
+        "funcdef void ThinkFunc();\n"
+        "class Monster {\n"
+        "    void DoHeavyAttack() {}\n"
+        "    void Setup() {\n"
+        "        SetThink(this.DoHeavyAttack);\n"
+        "        SetThink(DoHeavyAttack);\n"
+        "        DoHeavyAttack();\n"
+        "    }\n"
+        "    void SetThink(ThinkFunc@ fn) {}\n"
+        "}\n";
+
+    env.AddFile("file:///monster.as", code);
+
+    // References on DoHeavyAttack declaration at line 2, col 9
+    auto refs = env.RefsAt("file:///monster.as", 2, 9, true);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 4);
+    CHECK((*refs)[0].range.start.line == 2);
+    CHECK((*refs)[1].range.start.line == 4);
+    CHECK((*refs)[2].range.start.line == 5);
+    CHECK((*refs)[3].range.start.line == 6);
+}
+
+TEST_CASE("ReferencesHandler - Sibling Method Isolation on Overridden Virtual Hook")
+{
+    MultiFileTestEnv env;
+
+    std::string baseCode =
+        "class BaseWeapon {\n"
+        "    void PrimaryAttack() {}\n"
+        "}\n";
+
+    std::string weaponACode =
+        "class WeaponA : BaseWeapon {\n"
+        "    void PrimaryAttack() override {}\n"
+        "    void Attack() {\n"
+        "        PrimaryAttack();\n"
+        "    }\n"
+        "}\n";
+
+    std::string weaponBCode =
+        "class WeaponB : BaseWeapon {\n"
+        "    void PrimaryAttack() override {}\n"
+        "    void Attack() {\n"
+        "        PrimaryAttack();\n"
+        "    }\n"
+        "}\n";
+
+    env.AddFile("file:///base.as", baseCode);
+    env.AddFile("file:///weapon_a.as", weaponACode);
+    env.AddFile("file:///weapon_b.as", weaponBCode);
+
+    // References on WeaponA's PrimaryAttack override at line 1, col 9
+    auto refsA = env.RefsAt("file:///weapon_a.as", 1, 9, true);
+    REQUIRE(refsA.has_value());
+    REQUIRE(refsA->size() == 2);
+    for (const auto &ref : *refsA)
+    {
+        CHECK(ref.uri.toString() == "file:///weapon_a.as");
+    }
+    CHECK((*refsA)[0].range.start.line == 1);
+    CHECK((*refsA)[1].range.start.line == 3);
+}
+
