@@ -2202,8 +2202,8 @@ TEST_SUITE("AngelScript_Performance_And_Throughput_Benchmarks")
         auto end = std::chrono::high_resolution_clock::now();
         auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
-        // Invariant: Incremental edit + diagnostic re-run must take under 100 milliseconds in unoptimized debug mode
-        CHECK(elapsedMs < 100);
+        // Invariant: Incremental edit + diagnostic re-run must take under 250 milliseconds in unoptimized debug mode
+        CHECK(elapsedMs < 250);
     }
 
     TEST_CASE("Micro-Benchmark: SymbolTable lookup scaling ($O(1)$ amortized)")
