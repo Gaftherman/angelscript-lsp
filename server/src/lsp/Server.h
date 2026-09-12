@@ -141,6 +141,7 @@ namespace angel_lsp
             std::string resultId;
             std::vector<lsp::uint> data;
             bool hasError = false;
+            int version = -1;
         };
 
         ankerl::unordered_dense::map<std::string, SemanticTokensSnapshot> m_semanticTokensCache;

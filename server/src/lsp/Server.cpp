@@ -2304,6 +2304,12 @@ namespace angel_lsp
     {
         TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
 
+        int currentVersion = -1;
+        if (auto it = m_documentVersions.find(uriStr); it != m_documentVersions.end())
+        {
+            currentVersion = it->second;
+        }
+
         features::SemanticTokensRequest request{ uriStr, text, tree, m_symbolTable, m_scopeIndex.GetRoot(uriStr) };
         request.excludedLineRanges = ExcludedLineRanges(text);
         lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
@@ -2314,7 +2320,7 @@ namespace angel_lsp
         // Cached after encoding, so a delta is computed against exactly the bytes the client holds.
         const std::string resultId = std::to_string(++m_semanticTokensRevision);
         tokens.resultId = resultId;
-        m_semanticTokensCache[uriStr] = SemanticTokensSnapshot{ resultId, tokens.data, hasError };
+        m_semanticTokensCache[uriStr] = SemanticTokensSnapshot{ resultId, tokens.data, hasError, currentVersion };
 
         return tokens;
     }
@@ -5765,7 +5771,25 @@ namespace angel_lsp
                     return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
                 }
 
-                const std::vector<lsp::uint> previous = cached->second.data;
+                int currentVersion = -1;
+                if (auto it = m_documentVersions.find(doc->uri); it != m_documentVersions.end())
+                {
+                    currentVersion = it->second;
+                }
+
+                // If document version has not changed, tree is unchanged and error-free -> return empty delta immediately!
+                if (currentVersion >= 0 && cached->second.version >= 0 &&
+                    cached->second.version == currentVersion && !currHasError)
+                {
+                    const std::string newResultId = std::to_string(++m_semanticTokensRevision);
+                    cached->second.resultId = newResultId;
+                    lsp::SemanticTokensDelta delta;
+                    delta.resultId = newResultId;
+                    delta.edits = {};
+                    return delta;
+                }
+
+                const std::vector<lsp::uint> previous = std::move(cached->second.data);
                 lsp::SemanticTokens tokens = ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
 
                 lsp::SemanticTokensDelta delta;

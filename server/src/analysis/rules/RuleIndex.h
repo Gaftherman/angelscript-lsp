@@ -33,7 +33,7 @@ namespace angel_lsp::analysis::rules
         std::vector<std::string> memberKeys;
 
         /** @brief O(1) set of member keys for fast containment checks. */
-        ankerl::unordered_dense::set<std::string> memberKeySet;
+        ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> memberKeySet;
 
         // Refcounts for incremental maintenance
         ankerl::unordered_dense::map<std::string, uint32_t> methodCounts;

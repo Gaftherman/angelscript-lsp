@@ -1376,3 +1376,57 @@ TEST_CASE("SemanticTokensHandler - Member accesses on objects are tokenized as p
     ts_tree_delete(tree);
 }
 
+TEST_CASE("SemanticTokensHandler - Golden Test: Bit-for-bit identity across NodeIndex and Fallback")
+{
+    std::string code =
+        "enum State { Idle, Running, Stopped }\n"
+        "class Entity\n"
+        "{\n"
+        "    int id;\n"
+        "    State state;\n"
+        "    void update(float dt)\n"
+        "    {\n"
+        "        id = 42;\n"
+        "        state = State::Running;\n"
+        "        this.id += 1;\n"
+        "    }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Entity e;\n"
+        "    e.update(0.16f);\n"
+        "    auto lambda = function(int a, float b) { return a + int(b); };\n"
+        "}\n";
+
+    AngelScriptParser parser;
+    TSTree *tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{ nullptr };
+    SymbolTable table;
+    collector.CollectSymbols("file:///golden.as", code, parser, table);
+
+    LocalScopeCollector scopeCollector{ nullptr };
+    std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(code, parser);
+
+    // Request 1: Without pre-supplied NodeIndex (internal NodeIndex built automatically)
+    SemanticTokensRequest reqFallback{ "file:///golden.as", code, tree, table, scopeRoot };
+    auto tokensFallback = GetSemanticTokens(reqFallback);
+
+    // Request 2: With explicit pre-supplied NodeIndex
+    analysis::NodeIndex preIndex(ts_tree_root_node(tree));
+    SemanticTokensRequest reqWithIndex{ "file:///golden.as", code, tree, table, scopeRoot, std::nullopt, &preIndex };
+    auto tokensWithIndex = GetSemanticTokens(reqWithIndex);
+
+    // Assert bit-for-bit identity
+    REQUIRE(tokensFallback.data.size() == tokensWithIndex.data.size());
+    REQUIRE(!tokensFallback.data.empty());
+    CHECK(tokensFallback.data == tokensWithIndex.data);
+
+    // Test delta computation stability: unchanged token sequence gives empty delta
+    auto deltaEdits = ComputeSemanticTokensDelta(tokensFallback.data, tokensWithIndex.data);
+    CHECK(deltaEdits.empty());
+
+    ts_tree_delete(tree);
+}
+

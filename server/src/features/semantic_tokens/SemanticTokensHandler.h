@@ -2,6 +2,7 @@
 
 #include "analysis/SymbolTable.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/NodeIndex.h"
 #include "utils/PreprocessorRegions.h"
 #include <lsp/messages.h>
 #include <lsp/types.h>
@@ -22,13 +23,15 @@ namespace angel_lsp::features
                               TSTree *t,
                               const analysis::SymbolTable &st,
                               std::shared_ptr<const analysis::Scope> sr = nullptr,
-                              std::optional<lsp::Range> r = std::nullopt)
-            : uri(u), sourceCode(sc), tree(t), symbolTable(st), scopeRoot(std::move(sr)), range(std::move(r)) {}
+                              std::optional<lsp::Range> r = std::nullopt,
+                              const analysis::NodeIndex *ni = nullptr)
+            : uri(u), sourceCode(sc), tree(t), symbolTable(st), scopeRoot(std::move(sr)), range(std::move(r)), nodeIndex(ni) {}
 
         const std::string &uri;
         const std::string &sourceCode;
         TSTree *tree = nullptr;
         const analysis::SymbolTable &symbolTable;
+        const analysis::NodeIndex *nodeIndex = nullptr;
 
         /**
          * @brief Scope tree of the document, used to tell what an identifier reference refers to.

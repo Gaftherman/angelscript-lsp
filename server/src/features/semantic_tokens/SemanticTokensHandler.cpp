@@ -1,6 +1,7 @@
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "parser/queries/BuiltQueries.h"
 #include "analysis/rules/RuleIndex.h"
+#include "analysis/NodeIndex.h"
 #include <algorithm>
 #include <cstring>
 #include <ankerl/unordered_dense.h>
@@ -148,6 +149,69 @@ namespace angel_lsp::features
             return lines;
         }
 
+        struct GrammarSymbols
+        {
+            TSSymbol symTemplateTypeList = 0;
+            TSSymbol symCastExpression = 0;
+            TSSymbol symTemplateParameterList = 0;
+            TSSymbol symBinaryExpression = 0;
+            TSSymbol symAssignmentExpression = 0;
+            TSSymbol symUnaryExpression = 0;
+            TSSymbol symPostfixExpression = 0;
+            TSSymbol symStatementBlock = 0;
+            TSSymbol symLambdaExpression = 0;
+            TSSymbol symParameter = 0;
+            TSSymbol symInterfaceMethod = 0;
+            TSSymbol symFuncDeclaration = 0;
+            TSSymbol symVariableDeclaration = 0;
+            TSSymbol symClassBody = 0;
+            TSSymbol symInterfaceBody = 0;
+            TSSymbol symEnumDeclaration = 0;
+            TSSymbol symEnumMember = 0;
+            TSSymbol symScopedIdentifier = 0;
+            TSSymbol symClassDeclaration = 0;
+            TSSymbol symMemberExpression = 0;
+            TSSymbol symIdentifier = 0;
+            TSSymbol symLambdaParameterList = 0;
+        };
+
+        const GrammarSymbols &GetGrammarSymbols()
+        {
+            static const GrammarSymbols s_symbols = []()
+            {
+                const TSLanguage *lang = tree_sitter_angelscript();
+                auto symFor = [lang](std::string_view name) -> TSSymbol
+                {
+                    return ts_language_symbol_for_name(lang, name.data(), static_cast<uint32_t>(name.size()), true);
+                };
+                GrammarSymbols gs;
+                gs.symTemplateTypeList = symFor(parser::nodes::TemplateTypeList);
+                gs.symCastExpression = symFor(parser::nodes::CastExpression);
+                gs.symTemplateParameterList = symFor(parser::nodes::TemplateParameterList);
+                gs.symBinaryExpression = symFor(parser::nodes::BinaryExpression);
+                gs.symAssignmentExpression = symFor(parser::nodes::AssignmentExpression);
+                gs.symUnaryExpression = symFor(parser::nodes::UnaryExpression);
+                gs.symPostfixExpression = symFor(parser::nodes::PostfixExpression);
+                gs.symStatementBlock = symFor(parser::nodes::StatementBlock);
+                gs.symLambdaExpression = symFor(parser::nodes::LambdaExpression);
+                gs.symParameter = symFor(parser::nodes::Parameter);
+                gs.symInterfaceMethod = symFor(parser::nodes::InterfaceMethod);
+                gs.symFuncDeclaration = symFor(parser::nodes::FuncDeclaration);
+                gs.symVariableDeclaration = symFor(parser::nodes::VariableDeclaration);
+                gs.symClassBody = symFor(parser::nodes::ClassBody);
+                gs.symInterfaceBody = symFor(parser::nodes::InterfaceBody);
+                gs.symEnumDeclaration = symFor(parser::nodes::EnumDeclaration);
+                gs.symEnumMember = symFor(parser::nodes::EnumMember);
+                gs.symScopedIdentifier = symFor(parser::nodes::ScopedIdentifier);
+                gs.symClassDeclaration = symFor(parser::nodes::ClassDeclaration);
+                gs.symMemberExpression = symFor(parser::nodes::MemberExpression);
+                gs.symIdentifier = symFor(parser::nodes::Identifier);
+                gs.symLambdaParameterList = symFor(parser::nodes::LambdaParameterList);
+                return gs;
+            }();
+            return s_symbols;
+        }
+
         [[nodiscard]] inline bool IsTemplatePunctuationNode(TSNode node) noexcept
         {
             TSNode parent = ts_node_parent(node);
@@ -156,10 +220,11 @@ namespace angel_lsp::features
                 return false;
             }
 
-            std::string_view parentType = ts_node_type(parent);
-            if (parentType == "template_type_list" ||
-                parentType == "cast_expression" ||
-                parentType == "template_parameter_list")
+            const auto &syms = GetGrammarSymbols();
+            const TSSymbol parentSym = ts_node_symbol(parent);
+            if (parentSym == syms.symTemplateTypeList ||
+                parentSym == syms.symCastExpression ||
+                parentSym == syms.symTemplateParameterList)
             {
                 return true;
             }
@@ -167,15 +232,15 @@ namespace angel_lsp::features
             TSNode grandParent = ts_node_parent(parent);
             if (!ts_node_is_null(grandParent))
             {
-                std::string_view grandParentType = ts_node_type(grandParent);
-                if (grandParentType == "template_type_list" ||
-                    grandParentType == "cast_expression" ||
-                    grandParentType == "template_parameter_list")
+                const TSSymbol grandParentSym = ts_node_symbol(grandParent);
+                if (grandParentSym == syms.symTemplateTypeList ||
+                    grandParentSym == syms.symCastExpression ||
+                    grandParentSym == syms.symTemplateParameterList)
                 {
-                    if (parentType != "binary_expression" &&
-                        parentType != "assignment_expression" &&
-                        parentType != "unary_expression" &&
-                        parentType != "postfix_expression")
+                    if (parentSym != syms.symBinaryExpression &&
+                        parentSym != syms.symAssignmentExpression &&
+                        parentSym != syms.symUnaryExpression &&
+                        parentSym != syms.symPostfixExpression)
                     {
                         return true;
                     }
@@ -297,18 +362,20 @@ namespace angel_lsp::features
             }
             TSNode curr = directParent;
 
+            const auto &syms = GetGrammarSymbols();
+
             for (int level = 0; level < 8 && !ts_node_is_null(curr); ++level, curr = ts_node_parent(curr))
             {
-                std::string_view currType = ts_node_type(curr);
+                const TSSymbol currSym = ts_node_symbol(curr);
 
-                if (currType == "statement_block" || currType == "lambda_expression")
+                if (currSym == syms.symStatementBlock || currSym == syms.symLambdaExpression)
                 {
                     return tokenType;
                 }
 
                 // A parameter at its declaration site: the identifier is the "name" field of a `parameter` node.
                 // Does not touch parameters inside active expression blocks (handled by local resolution).
-                if (currType == "parameter")
+                if (currSym == syms.symParameter)
                 {
                     if (isNodeName(curr) || ts_node_eq(directParent, curr))
                     {
@@ -318,7 +385,7 @@ namespace angel_lsp::features
 
                 // A method declared inside an interface body: the identifier is the "name" field of an
                 // `interface_method` node. Does not touch free functions or class methods (handled separately).
-                if (currType == "interface_method")
+                if (currSym == syms.symInterfaceMethod)
                 {
                     if (isNodeName(curr) || ts_node_eq(directParent, curr))
                     {
@@ -326,14 +393,14 @@ namespace angel_lsp::features
                     }
                 }
 
-                if (currType == "func_declaration")
+                if (currSym == syms.symFuncDeclaration)
                 {
                     if (isNodeName(curr))
                     {
                         for (TSNode anc = ts_node_parent(curr); !ts_node_is_null(anc); anc = ts_node_parent(anc))
                         {
-                            std::string_view ancType = ts_node_type(anc);
-                            if (ancType == "class_body" || ancType == "interface_body")
+                            const TSSymbol ancSym = ts_node_symbol(anc);
+                            if (ancSym == syms.symClassBody || ancSym == syms.symInterfaceBody)
                             {
                                 return Type_Method;
                             }
@@ -342,29 +409,28 @@ namespace angel_lsp::features
                     }
                 }
 
-                if (currType == "variable_declaration")
+                if (currSym == syms.symVariableDeclaration)
                 {
                     for (TSNode anc = ts_node_parent(curr); !ts_node_is_null(anc); anc = ts_node_parent(anc))
                     {
-                        std::string_view ancType = ts_node_type(anc);
-                        if (ancType == "statement_block" || ancType == "func_declaration")
+                        const TSSymbol ancSym = ts_node_symbol(anc);
+                        if (ancSym == syms.symStatementBlock || ancSym == syms.symFuncDeclaration)
                         {
                             break;
                         }
-                        if (ancType == "class_body")
+                        if (ancSym == syms.symClassBody)
                         {
                             return Type_Property;
                         }
                     }
                 }
 
-                if (currType.find("enum") != std::string_view::npos)
+                if (currSym == syms.symEnumDeclaration || currSym == syms.symEnumMember)
                 {
                     bool isEnumOwnName = false;
                     for (TSNode anc = curr; !ts_node_is_null(anc); anc = ts_node_parent(anc))
                     {
-                        std::string_view ancType = ts_node_type(anc);
-                        if (ancType == "enum_declaration")
+                        if (ts_node_symbol(anc) == syms.symEnumDeclaration)
                         {
                             if (isNodeName(anc))
                             {
@@ -382,6 +448,177 @@ namespace angel_lsp::features
             }
 
             return tokenType;
+        }
+
+        struct CaptureRule
+        {
+            uint32_t tokenType = Type_Variable;
+            uint32_t tokenMod = 0;
+            int priority = 1;
+            bool isOperatorOrPunctuation = false;
+            bool valid = false;
+        };
+
+        struct HighlightsQueryData
+        {
+            TSQuery *query = nullptr;
+            std::vector<CaptureRule> rules;
+        };
+
+        const HighlightsQueryData &GetHighlightsQueryData()
+        {
+            static const HighlightsQueryData s_data = []() -> HighlightsQueryData
+            {
+                const TSLanguage *lang = tree_sitter_angelscript();
+                uint32_t errorOffset = 0;
+                TSQueryError errorType = TSQueryErrorNone;
+                TSQuery *query = ts_query_new(lang, parser::queries::HIGHLIGHTS_QUERY,
+                                              static_cast<uint32_t>(strlen(parser::queries::HIGHLIGHTS_QUERY)),
+                                              &errorOffset, &errorType);
+                if (!query)
+                {
+                    return HighlightsQueryData{};
+                }
+
+                const uint32_t count = ts_query_capture_count(query);
+                std::vector<CaptureRule> rules(count);
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    uint32_t nameLen = 0;
+                    const char *namePtr = ts_query_capture_name_for_id(query, i, &nameLen);
+                    std::string_view name(namePtr, nameLen);
+                    CaptureRule &rule = rules[i];
+
+                    if (name == "comment")
+                    {
+                        rule.tokenType = Type_Comment;
+                        rule.priority = 10;
+                        rule.valid = true;
+                    }
+                    else if (name == "keyword.directive")
+                    {
+                        rule.tokenType = Type_Macro;
+                        rule.priority = 8;
+                        rule.valid = true;
+                    }
+                    else if (name == "string")
+                    {
+                        rule.tokenType = Type_String;
+                        rule.priority = 10;
+                        rule.valid = true;
+                    }
+                    else if (name == "number")
+                    {
+                        rule.tokenType = Type_Number;
+                        rule.priority = 9;
+                        rule.valid = true;
+                    }
+                    else if (name == "type.builtin")
+                    {
+                        rule.tokenType = Type_Type;
+                        rule.tokenMod = Mod_DefaultLibrary;
+                        rule.priority = 7;
+                        rule.valid = true;
+                    }
+                    else if (name == "type")
+                    {
+                        rule.tokenType = Type_Type;
+                        rule.priority = 6;
+                        rule.valid = true;
+                    }
+                    else if (name == "constant")
+                    {
+                        rule.tokenType = Type_EnumMember;
+                        rule.priority = 5;
+                        rule.valid = true;
+                    }
+                    else if (name == "constant.builtin")
+                    {
+                        rule.tokenType = Type_Keyword;
+                        rule.tokenMod = Mod_Readonly;
+                        rule.priority = 8;
+                        rule.valid = true;
+                    }
+                    else if (name == "function")
+                    {
+                        rule.tokenType = Type_Function;
+                        rule.tokenMod = Mod_Declaration;
+                        rule.priority = 6;
+                        rule.valid = true;
+                    }
+                    else if (name == "function.call")
+                    {
+                        rule.tokenType = Type_Function;
+                        rule.priority = 5;
+                        rule.valid = true;
+                    }
+                    else if (name == "function.method.call")
+                    {
+                        rule.tokenType = Type_Method;
+                        rule.priority = 5;
+                        rule.valid = true;
+                    }
+                    else if (name == "property")
+                    {
+                        rule.tokenType = Type_Property;
+                        rule.priority = 5;
+                        rule.valid = true;
+                    }
+                    else if (name == "variable")
+                    {
+                        rule.tokenType = Type_Variable;
+                        rule.priority = 3;
+                        rule.valid = true;
+                    }
+                    else if (name == "variable.parameter")
+                    {
+                        rule.tokenType = Type_Parameter;
+                        rule.priority = 4;
+                        rule.valid = true;
+                    }
+                    else if (name == "module")
+                    {
+                        rule.tokenType = Type_Namespace;
+                        rule.priority = 6;
+                        rule.valid = true;
+                    }
+                    else if (name == "keyword" || name == "keyword.control" || name == "keyword.operator")
+                    {
+                        rule.tokenType = Type_Keyword;
+                        rule.priority = 8;
+                        rule.valid = true;
+                    }
+                    else if (name == "keyword.modifier")
+                    {
+                        rule.tokenType = Type_Modifier;
+                        rule.priority = 8;
+                        rule.valid = true;
+                    }
+                    else if (name == "boolean")
+                    {
+                        rule.tokenType = Type_Keyword;
+                        rule.priority = 8;
+                        rule.valid = true;
+                    }
+                    else if (name == "template.list")
+                    {
+                        rule.tokenType = Type_TemplatePunctuation;
+                        rule.priority = 4;
+                        rule.valid = true;
+                    }
+                    else if (name == "operator" || name == "punctuation.special")
+                    {
+                        rule.isOperatorOrPunctuation = true;
+                        rule.valid = true;
+                    }
+                    else
+                    {
+                        rule.valid = false;
+                    }
+                }
+                return HighlightsQueryData{ query, std::move(rules) };
+            }();
+            return s_data;
         }
     }
 
@@ -437,21 +674,73 @@ namespace angel_lsp::features
             return lsp::SemanticTokens{};
         }
 
-        static TSQuery *s_highlightsQuery = []() -> TSQuery *
-        {
-            const TSLanguage *lang = tree_sitter_angelscript();
-            uint32_t errorOffset = 0;
-            TSQueryError errorType = TSQueryErrorNone;
-            return ts_query_new(lang, parser::queries::HIGHLIGHTS_QUERY,
-                                static_cast<uint32_t>(strlen(parser::queries::HIGHLIGHTS_QUERY)),
-                                &errorOffset, &errorType);
-        }();
-
-        TSQuery *query = s_highlightsQuery;
+        const auto &highlightsData = GetHighlightsQueryData();
+        TSQuery *query = highlightsData.query;
         if (!query)
         {
             return lsp::SemanticTokens{};
         }
+
+        const auto &syms = GetGrammarSymbols();
+
+        std::optional<analysis::NodeIndex> localIndex;
+        const analysis::NodeIndex *nodeIndex = request.nodeIndex;
+        if (!nodeIndex && request.tree)
+        {
+            localIndex.emplace(ts_tree_root_node(request.tree));
+            nodeIndex = &*localIndex;
+        }
+
+        // Cache enclosing class spans
+        struct ClassSpan
+        {
+            uint32_t startByte = 0;
+            uint32_t endByte = 0;
+            std::string_view name;
+        };
+
+        std::vector<ClassSpan> classSpans;
+        if (nodeIndex)
+        {
+            for (TSNode classDecl : nodeIndex->Nodes(syms.symClassDeclaration))
+            {
+                TSNode classNameNode = parser::GetChildByField(classDecl, parser::fields::Name);
+                if (!ts_node_is_null(classNameNode))
+                {
+                    uint32_t cStart = ts_node_start_byte(classNameNode);
+                    uint32_t cEnd = ts_node_end_byte(classNameNode);
+                    if (cStart < cEnd && cEnd <= request.sourceCode.size())
+                    {
+                        classSpans.push_back(ClassSpan{
+                            ts_node_start_byte(classDecl),
+                            ts_node_end_byte(classDecl),
+                            std::string_view(request.sourceCode.data() + cStart, cEnd - cStart)
+                        });
+                    }
+                }
+            }
+        }
+
+        auto findEnclosingClass = [&](uint32_t byteOffset) -> std::string_view
+        {
+            std::string_view innermostName;
+            uint32_t innermostSpan = UINT32_MAX;
+            for (const auto &span : classSpans)
+            {
+                if (byteOffset >= span.startByte && byteOffset < span.endByte)
+                {
+                    uint32_t spanLen = span.endByte - span.startByte;
+                    if (spanLen < innermostSpan)
+                    {
+                        innermostSpan = spanLen;
+                        innermostName = span.name;
+                    }
+                }
+            }
+            return innermostName;
+        };
+
+        const auto ruleIndex = request.symbolTable.GetRuleIndex();
 
         // Resolved once for the whole document rather than per identifier: the map is keyed by
         // position, and every reference is looked up in the scope that already holds it.
@@ -475,128 +764,22 @@ namespace angel_lsp::features
             TSNode node = match.captures[captureIndex].node;
             uint32_t captureId = match.captures[captureIndex].index;
 
-            uint32_t nameLen = 0;
-            const char *captureNamePtr = ts_query_capture_name_for_id(query, captureId, &nameLen);
-            std::string_view captureName(captureNamePtr, nameLen);
+            if (captureId >= highlightsData.rules.size())
+            {
+                continue;
+            }
 
-            uint32_t tokenType = Type_Variable;
-            uint32_t tokenMod = 0;
-            int priority = 1;
-            bool valid = true;
+            const auto &rule = highlightsData.rules[captureId];
+            if (!rule.valid)
+            {
+                continue;
+            }
 
-            if (captureName == "comment")
-            {
-                tokenType = Type_Comment;
-                priority = 10;
-            }
-            else if (captureName == "keyword.directive")
-            {
-                tokenType = Type_Macro;
-                priority = 8;
-            }
-            else if (captureName == "string")
-            {
-                tokenType = Type_String;
-                priority = 10;
-            }
-            else if (captureName == "number")
-            {
-                tokenType = Type_Number;
-                priority = 9;
-            }
-            else if (captureName == "type.builtin")
-            {
-                // A type, not a keyword. `float` was reported as a keyword and themes paint that
-                // the colour of `if` and `return` - so a primitive read as control flow while every
-                // other type on the line read as a type, which is the one thing a reader uses
-                // colour for. The textmate grammar had it right all along
-                // (storage.type.built-in.primitive.angelscript); the semantic token was overriding
-                // it with a worse answer.
-                //
-                // defaultLibrary rather than a bare type so a theme can still tell `float` from a
-                // class the user wrote, which is the distinction "keyword" was reaching for.
-                tokenType = Type_Type;
-                tokenMod = Mod_DefaultLibrary;
-                priority = 7;
-            }
-            else if (captureName == "type")
-            {
-                tokenType = Type_Type;
-                priority = 6;
-            }
-            else if (captureName == "constant")
-            {
-                tokenType = Type_EnumMember;
-                priority = 5;
-            }
-            else if (captureName == "constant.builtin")
-            {
-                tokenType = Type_Keyword;
-                tokenMod = Mod_Readonly;
-                priority = 8;
-            }
-            else if (captureName == "function")
-            {
-                tokenType = Type_Function;
-                tokenMod = Mod_Declaration;
-                priority = 6;
-            }
-            else if (captureName == "function.call")
-            {
-                tokenType = Type_Function;
-                priority = 5;
-            }
-            else if (captureName == "function.method.call")
-            {
-                tokenType = Type_Method;
-                priority = 5;
-            }
-            else if (captureName == "property")
-            {
-                tokenType = Type_Property;
-                priority = 5;
-            }
-            else if (captureName == "variable")
-            {
-                tokenType = Type_Variable;
-                priority = 3;
-            }
-            else if (captureName == "variable.parameter")
-            {
-                tokenType = Type_Parameter;
-                priority = 4;
-            }
-            else if (captureName == "module")
-            {
-                tokenType = Type_Namespace;
-                priority = 6;
-            }
-            else if (captureName == "keyword" || captureName == "keyword.control" ||
-                     captureName == "keyword.operator")
-            {
-                // keyword.operator is `and`, `or`, `xor`, `not`, `is` and `!is`: operators by
-                // grammar, words by spelling. They are captured twice - once by the generic
-                // operator patterns and once by their own - and this arm wins because it carries
-                // the higher priority. See HIGHLIGHTS_QUERY.
-                tokenType = Type_Keyword;
-                priority = 8;
-            }
-            else if (captureName == "keyword.modifier")
-            {
-                tokenType = Type_Modifier;
-                priority = 8;
-            }
-            else if (captureName == "boolean")
-            {
-                tokenType = Type_Keyword;
-                priority = 8;
-            }
-            else if (captureName == "template.list")
-            {
-                tokenType = Type_TemplatePunctuation;
-                priority = 4;
-            }
-            else if (captureName == "operator" || captureName == "punctuation.special")
+            uint32_t tokenType = rule.tokenType;
+            uint32_t tokenMod = rule.tokenMod;
+            int priority = rule.priority;
+
+            if (rule.isOperatorOrPunctuation)
             {
                 const uint32_t sb = ts_node_start_byte(node);
                 const uint32_t eb = ts_node_end_byte(node);
@@ -605,27 +788,15 @@ namespace angel_lsp::features
                     std::string_view text(request.sourceCode.data() + sb, eb - sb);
                     if (IsPunctuationOrBracket(text) || !IsGenuineOperator(text))
                     {
-                        valid = false;
+                        continue;
                     }
-                    else
-                    {
-                        tokenType = Type_Operator;
-                        priority = 4;
-                    }
+                    tokenType = Type_Operator;
+                    priority = 4;
                 }
                 else
                 {
-                    valid = false;
+                    continue;
                 }
-            }
-            else
-            {
-                valid = false;
-            }
-
-            if (!valid)
-            {
-                continue;
             }
 
             TSPoint startPoint = ts_node_start_point(node);
@@ -662,7 +833,7 @@ namespace angel_lsp::features
                 const uint32_t endByte = ts_node_end_byte(node);
                 if (startByte < endByte && endByte <= request.sourceCode.size())
                 {
-                    const std::string tokenText = request.sourceCode.substr(startByte, endByte - startByte);
+                    std::string_view tokenText(request.sourceCode.data() + startByte, endByte - startByte);
                     if (!tokenText.empty())
                     {
                         // Qualified enum access such as `State::Idle`. The qualifier emits Type_Namespace
@@ -675,7 +846,7 @@ namespace angel_lsp::features
                             TSNode anc = ts_node_parent(node);
                             for (int level = 0; level < 8 && !ts_node_is_null(anc); ++level, anc = ts_node_parent(anc))
                             {
-                                if (std::string_view(ts_node_type(anc)) == "scoped_identifier")
+                                if (ts_node_symbol(anc) == syms.symScopedIdentifier)
                                 {
                                     scopedNode = anc;
                                     break;
@@ -750,45 +921,40 @@ namespace angel_lsp::features
                         // Deliberately does nothing if the identifier does not match an enclosing class member.
                         if (tokenType == Type_Variable || tokenType == Type_Function)
                         {
-                            TSNode classDecl = TSNode{};
-                            TSNode anc = ts_node_parent(node);
-                            for (int level = 0; level < 8 && !ts_node_is_null(anc); ++level, anc = ts_node_parent(anc))
+                            std::string_view className = findEnclosingClass(startByte);
+                            if (!className.empty() && ruleIndex)
                             {
-                                if (std::string_view(ts_node_type(anc)) == "class_declaration")
+                                char keyBuf[256];
+                                std::string_view qualifiedKey;
+                                std::string heapKey;
+                                const size_t keyLen = className.size() + 2 + tokenText.size();
+                                if (keyLen < sizeof(keyBuf))
                                 {
-                                    classDecl = anc;
-                                    break;
+                                    memcpy(keyBuf, className.data(), className.size());
+                                    keyBuf[className.size()] = ':';
+                                    keyBuf[className.size() + 1] = ':';
+                                    memcpy(keyBuf + className.size() + 2, tokenText.data(), tokenText.size());
+                                    qualifiedKey = std::string_view(keyBuf, keyLen);
                                 }
-                            }
-
-                            if (!ts_node_is_null(classDecl))
-                            {
-                                TSNode classNameNode = parser::GetChildByField(classDecl, parser::fields::Name);
-                                if (!ts_node_is_null(classNameNode))
+                                else
                                 {
-                                    uint32_t cStart = ts_node_start_byte(classNameNode);
-                                    uint32_t cEnd = ts_node_end_byte(classNameNode);
-                                    if (cStart < cEnd && cEnd <= request.sourceCode.size())
-                                    {
-                                        std::string className(request.sourceCode.substr(cStart, cEnd - cStart));
-                                        std::string qualifiedKey = className + "::" + tokenText;
-                                        if (const auto ruleIndex = request.symbolTable.GetRuleIndex())
-                                        {
-                                            const auto &typeMembers = ruleIndex->Members(className);
-                                            bool isMember = typeMembers.memberKeySet.contains(qualifiedKey);
+                                    heapKey.reserve(keyLen);
+                                    heapKey.append(className);
+                                    heapKey.append("::");
+                                    heapKey.append(tokenText);
+                                    qualifiedKey = heapKey;
+                                }
 
-                                            if (isMember)
-                                            {
-                                                if (tokenType == Type_Variable)
-                                                {
-                                                    tokenType = Type_Property;
-                                                }
-                                                else if (tokenType == Type_Function)
-                                                {
-                                                    tokenType = Type_Method;
-                                                }
-                                            }
-                                        }
+                                const auto &typeMembers = ruleIndex->Members(className);
+                                if (typeMembers.memberKeySet.contains(qualifiedKey))
+                                {
+                                    if (tokenType == Type_Variable)
+                                    {
+                                        tokenType = Type_Property;
+                                    }
+                                    else if (tokenType == Type_Function)
+                                    {
+                                        tokenType = Type_Method;
                                     }
                                 }
                             }
@@ -940,90 +1106,106 @@ namespace angel_lsp::features
             existingTokenStarts.insert(PositionKey(tok.line, tok.startChar));
         }
 
-        std::vector<TSNode> memberWalkStack;
-        memberWalkStack.push_back(ts_tree_root_node(request.tree));
-        while (!memberWalkStack.empty())
+        auto processMemberExpression = [&](TSNode currNode)
         {
-            TSNode currNode = memberWalkStack.back();
-            memberWalkStack.pop_back();
-
-            if (ts_node_is_null(currNode))
+            TSNode memberNode = parser::GetChildByField(currNode, parser::fields::Member);
+            if (!ts_node_is_null(memberNode) && ts_node_symbol(memberNode) == syms.symIdentifier)
             {
-                continue;
-            }
-
-            if (std::string_view(ts_node_type(currNode)) == "member_expression")
-            {
-                TSNode memberNode = parser::GetChildByField(currNode, parser::fields::Member);
-                if (!ts_node_is_null(memberNode) && std::string_view(ts_node_type(memberNode)) == "identifier")
+                TSPoint mStart = ts_node_start_point(memberNode);
+                TSPoint mEnd = ts_node_end_point(memberNode);
+                uint64_t posKey = PositionKey(mStart.row, mStart.column);
+                if (!existingTokenStarts.contains(posKey))
                 {
-                    TSPoint mStart = ts_node_start_point(memberNode);
-                    TSPoint mEnd = ts_node_end_point(memberNode);
-                    uint64_t posKey = PositionKey(mStart.row, mStart.column);
-                    if (!existingTokenStarts.contains(posKey))
-                    {
-                        if (mStart.row == mEnd.row && mEnd.column > mStart.column)
-                        {
-                            rawTokens.push_back(RawToken{
-                                mStart.row,
-                                mStart.column,
-                                mEnd.column - mStart.column,
-                                Type_Property,
-                                0,
-                                3
-                            });
-                            existingTokenStarts.insert(posKey);
-                        }
-                    }
-                }
-            }
-
-            // An anonymous function's parameters, at their declaration, are not captured either:
-            // `function(int val) { ... }` left `val` uncoloured while the same name in the body
-            // came out as a parameter, so one half of it was painted and the other was not.
-            //
-            // Walked here rather than refined above for the same reason as `this.` - there is no
-            // token to refine. `lambda_parameter_list` repeats its "name" field once per parameter,
-            // so child_by_field_name would only ever answer for the first: the children are
-            // iterated instead.
-            if (std::string_view(ts_node_type(currNode)) == "lambda_parameter_list")
-            {
-                const uint32_t namedCount = ts_node_named_child_count(currNode);
-                for (uint32_t i = 0; i < namedCount; ++i)
-                {
-                    TSNode child = ts_node_named_child(currNode, i);
-                    if (ts_node_is_null(child) || std::string_view(ts_node_type(child)) != "identifier")
-                    {
-                        continue;
-                    }
-
-                    TSPoint start = ts_node_start_point(child);
-                    TSPoint end = ts_node_end_point(child);
-                    const uint64_t posKey = PositionKey(start.row, start.column);
-
-                    if (!existingTokenStarts.contains(posKey) && start.row == end.row &&
-                        end.column > start.column)
+                    if (mStart.row == mEnd.row && mEnd.column > mStart.column)
                     {
                         rawTokens.push_back(RawToken{
-                            start.row,
-                            start.column,
-                            end.column - start.column,
-                            Type_Parameter,
-                            Mod_Declaration,
+                            mStart.row,
+                            mStart.column,
+                            mEnd.column - mStart.column,
+                            Type_Property,
+                            0,
                             3
                         });
                         existingTokenStarts.insert(posKey);
                     }
                 }
             }
+        };
 
-            uint32_t childCount = ts_node_child_count(currNode);
-            for (uint32_t i = 0; i < childCount; ++i)
+        auto processLambdaParameterList = [&](TSNode currNode)
+        {
+            const uint32_t namedCount = ts_node_named_child_count(currNode);
+            for (uint32_t i = 0; i < namedCount; ++i)
             {
-                TSNode child = ts_node_child(currNode, i);
-                if (!ts_node_is_null(child))
+                TSNode child = ts_node_named_child(currNode, i);
+                if (ts_node_is_null(child) || ts_node_symbol(child) != syms.symIdentifier)
                 {
-                    memberWalkStack.push_back(child);
+                    continue;
+                }
+
+                TSPoint start = ts_node_start_point(child);
+                TSPoint end = ts_node_end_point(child);
+                const uint64_t posKey = PositionKey(start.row, start.column);
+
+                if (!existingTokenStarts.contains(posKey) && start.row == end.row &&
+                    end.column > start.column)
+                {
+                    rawTokens.push_back(RawToken{
+                        start.row,
+                        start.column,
+                        end.column - start.column,
+                        Type_Parameter,
+                        Mod_Declaration,
+                        3
+                    });
+                    existingTokenStarts.insert(posKey);
+                }
+            }
+        };
+
+        if (nodeIndex)
+        {
+            for (TSNode currNode : nodeIndex->Nodes(syms.symMemberExpression))
+            {
+                processMemberExpression(currNode);
+            }
+            for (TSNode currNode : nodeIndex->Nodes(syms.symLambdaParameterList))
+            {
+                processLambdaParameterList(currNode);
+            }
+        }
+        else
+        {
+            std::vector<TSNode> memberWalkStack;
+            memberWalkStack.push_back(ts_tree_root_node(request.tree));
+            while (!memberWalkStack.empty())
+            {
+                TSNode currNode = memberWalkStack.back();
+                memberWalkStack.pop_back();
+
+                if (ts_node_is_null(currNode))
+                {
+                    continue;
+                }
+
+                const TSSymbol currSym = ts_node_symbol(currNode);
+                if (currSym == syms.symMemberExpression)
+                {
+                    processMemberExpression(currNode);
+                }
+                else if (currSym == syms.symLambdaParameterList)
+                {
+                    processLambdaParameterList(currNode);
+                }
+
+                uint32_t childCount = ts_node_child_count(currNode);
+                for (uint32_t i = 0; i < childCount; ++i)
+                {
+                    TSNode child = ts_node_child(currNode, i);
+                    if (!ts_node_is_null(child))
+                    {
+                        memberWalkStack.push_back(child);
+                    }
                 }
             }
         }
