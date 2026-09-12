@@ -157,13 +157,6 @@ namespace angel_lsp
         if (m_workspaceThread.joinable())
             m_workspaceThread.join();
 
-        for (auto &[uri, tree] : m_documentTrees)
-        {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
-        }
         m_documentTrees.clear();
     }
 
@@ -1993,11 +1986,11 @@ namespace angel_lsp
         // identical tree. Both already have an overload that borrows a tree; this is the caller
         // that had never been changed to use them.
         utils::HighResTimer parseTimer;
-        TSTree *tree = parser.Parse(content);
+        document::TreePtr tree = document::MakeTreePtr(parser.Parse(content));
         int64_t parseUs = parseTimer.ElapsedUs();
 
         utils::HighResTimer symTimer;
-        ReplaceSymbolsFromTree(uri, content, tree);
+        ReplaceSymbolsFromTree(uri, content, tree.get());
         int64_t symUs = symTimer.ElapsedUs();
 
         utils::HighResTimer scopeTimer;
@@ -2006,9 +1999,9 @@ namespace angel_lsp
         if (tree)
         {
             m_scopeIndex.SetScopeTree(uri,
-                m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), content));
-            ts_tree_delete(tree);
+                m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), content));
         }
+        tree.reset();
         int64_t scopeUs = scopeTimer.ElapsedUs();
 
         // `#define FOO` in a stub means "the host calls builder.DefineWord(\"FOO\")" - the stub is
@@ -2302,7 +2295,11 @@ namespace angel_lsp
 
     lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string &uriStr, const std::string &text)
     {
-        TSTree *tree = m_documentTrees.contains(uriStr) ? m_documentTrees[uriStr] : nullptr;
+        TSTree *tree = nullptr;
+        if (auto it = m_documentTrees.find(uriStr); it != m_documentTrees.end())
+        {
+            tree = it->second.get();
+        }
 
         int currentVersion = -1;
         if (auto it = m_documentVersions.find(uriStr); it != m_documentVersions.end())
@@ -3128,7 +3125,7 @@ namespace angel_lsp
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
             const std::string analysisText = AnalysisTextFor(uriStr, text);
-            TSTree *savedTree = m_parser->Parse(analysisText);
+            document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(analysisText));
             std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
             {
                 std::lock_guard<std::mutex> lock(m_predefinedMutex);
@@ -3137,15 +3134,15 @@ namespace angel_lsp
                 {
                     ClaimPredefinedFile(uriStr, /*forceReload=*/true);
                     m_predefinedDocuments[uriStr] = analysisText;
-                    diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree);
+                    diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree.get());
                 }
 
                 m_scopeIndex.ClearDocument(uriStr);
                 m_callGraph.ClearDocument(uriStr);
                 if (savedTree)
                 {
-                    m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(savedTree), analysisText));
-                    m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(savedTree), analysisText));
+                    m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(savedTree.get()), analysisText));
+                    m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(savedTree.get()), analysisText));
                 }
             }
 
@@ -3153,11 +3150,6 @@ namespace angel_lsp
             // didChangeWatchedFiles skips open documents on purpose, so this is the only place a
             // saved stub can announce that its `#define`s moved.
             const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
-
-            if (savedTree)
-            {
-                ts_tree_delete(savedTree);
-            }
 
             PublishDiagnostics(uriStr, {});
 
@@ -3171,10 +3163,10 @@ namespace angel_lsp
 
         // Parsed once and shared: symbol collection, scope building and the conversion rules all
         // need the same tree, and letting each of them parse the text again is pure waste.
-        TSTree *savedTree = m_parser->Parse(text);
+        document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(text));
 
         bool interfaceChanged = false;
-        auto diagnostics = ReplaceSymbolsFromTree(uriStr, text, savedTree, &interfaceChanged);
+        auto diagnostics = ReplaceSymbolsFromTree(uriStr, text, savedTree.get(), &interfaceChanged);
 
         // A save is the only point at which an edited #include line can change which module this
         // file belongs to, so the graph is patched here rather than on every keystroke.
@@ -3184,11 +3176,8 @@ namespace angel_lsp
 
         IndexModuleClosure(uriStr);
 
-        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, savedTree);
+        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, savedTree.get());
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
-
-        if (savedTree)
-            ts_tree_delete(savedTree);
 
         AppendIncludeDiagnostics(uriStr, text, diagnostics);
 
@@ -3307,17 +3296,12 @@ namespace angel_lsp
         m_openDocuments[uriStr] = text;
         RememberOpenDocument(uriStr, text);
 
-        if (auto treeIt = m_documentTrees.find(uriStr); treeIt != m_documentTrees.end())
-        {
-            if (treeIt->second)
-                ts_tree_delete(treeIt->second);
-        }
         const std::string analysisText = AnalysisTextFor(uriStr, text);
 
         utils::HighResTimer parseTimer;
         TSTree *tree = m_parser->Parse(analysisText);
         double parseMs = parseTimer.ElapsedMs();
-        m_documentTrees[uriStr] = tree;
+        m_documentTrees.insert_or_assign(uriStr, document::MakeTreePtr(tree));
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
@@ -3426,7 +3410,7 @@ namespace angel_lsp
         std::string &buffer = it->second;
 
         auto treeIt = m_documentTrees.find(uriStr);
-        TSTree *tree = (treeIt != m_documentTrees.end()) ? treeIt->second : nullptr;
+        TSTree *tree = (treeIt != m_documentTrees.end()) ? treeIt->second.get() : nullptr;
 
         const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
 
@@ -3499,12 +3483,8 @@ namespace angel_lsp
             {
                 const auto &t = std::get<lsp::TextDocumentContentChangeWholeDocument>(change);
                 buffer = t.text;
-                if (tree)
-                {
-                    ts_tree_delete(tree);
-                    tree = nullptr;
-                    m_documentTrees.erase(uriStr);
-                }
+                m_documentTrees.erase(uriStr);
+                tree = nullptr;
             }
         }
 
@@ -3514,11 +3494,7 @@ namespace angel_lsp
         // For a predefined stub, reparse cleanly without reusing incremental state.
         TSTree *oldTree = isPredefined ? nullptr : tree;
         TSTree *newTree = m_parser->Parse(analysisText, oldTree);
-        if (tree)
-        {
-            ts_tree_delete(tree);
-        }
-        m_documentTrees[uriStr] = newTree;
+        m_documentTrees.insert_or_assign(uriStr, document::MakeTreePtr(newTree));
         double parseMs = parseTimer.ElapsedMs();
         LogInfo(fmt::format("[DidChange Incremental Parse] File: {} | Parse: {:.2f} ms", uriStr, parseMs));
 
@@ -3561,15 +3537,7 @@ namespace angel_lsp
         // a payload the client threw away when it closed the editor tab.
         m_semanticTokensCache.erase(uriStr);
 
-        auto it = m_documentTrees.find(uriStr);
-        if (it != m_documentTrees.end())
-        {
-            if (it->second)
-            {
-                ts_tree_delete(it->second);
-            }
-            m_documentTrees.erase(it);
-        }
+        m_documentTrees.erase(uriStr);
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
@@ -3659,23 +3627,17 @@ namespace angel_lsp
 
         const std::string uriStr = UriFromPath(path);
 
-        TSTree *tree = parser.Parse(content);
+        document::TreePtr tree = document::MakeTreePtr(parser.Parse(content));
 
-        ReplaceSymbolsFromTree(uriStr, content, tree);
+        ReplaceSymbolsFromTree(uriStr, content, tree.get());
 
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
         if (tree)
         {
-            m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), content));
-            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), content));
+            m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), content));
+            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree.get()), content));
         }
-
-        // The tree is only needed to collect symbols; keeping one per closure file would multiply
-        // memory across a large module for no benefit, since no request is ever served from a file
-        // the user has not opened.
-        if (tree)
-            ts_tree_delete(tree);
 
         m_closureDocuments[uriStr] = std::move(content);
         m_indexedUriByPath[path] = uriStr;
@@ -3692,26 +3654,8 @@ namespace angel_lsp
         constexpr std::chrono::milliseconds k_analysisDebounce{200};
     }
 
-    void Server::ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force, TSTree *tree, int version)
+    void Server::ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force, angel_lsp::document::TreePtr tree, int version)
     {
-        struct TreeOwner
-        {
-            TSTree *ptr;
-            ~TreeOwner()
-            {
-                if (ptr)
-                {
-                    ts_tree_delete(ptr);
-                }
-            }
-            TSTree *Release()
-            {
-                TSTree *t = ptr;
-                ptr = nullptr;
-                return t;
-            }
-        } treeOwner{tree};
-
         if (version < 0)
         {
             version = GetDocumentVersion(uriStr);
@@ -3764,11 +3708,11 @@ namespace angel_lsp
                     return;
                 }
 
-                it->second = PendingAnalysisEntry{analysisText, treeOwner.Release(), version};
+                it->second = PendingAnalysisEntry{analysisText, std::move(tree), version};
             }
             else
             {
-                m_pendingAnalysis.emplace(uriStr, PendingAnalysisEntry{analysisText, treeOwner.Release(), version});
+                m_pendingAnalysis.emplace(uriStr, PendingAnalysisEntry{analysisText, std::move(tree), version});
             }
 
             ++m_analysisRevision;
@@ -3822,7 +3766,7 @@ namespace angel_lsp
                         continue;
                     }
                 }
-                AnalyzeDocument(uriStr, entry.text, parser, entry.ReleaseTree(), entry.version);
+                AnalyzeDocument(uriStr, entry.text, parser, std::move(entry.tree), entry.version);
             }
 
             {
@@ -3834,7 +3778,7 @@ namespace angel_lsp
 
     void Server::AnalyzeDocument(const std::string &uriStr, const std::string &text,
                                  angel_lsp::parser::AngelScriptParser &parser,
-                                 TSTree *treeCopy, int version)
+                                 angel_lsp::document::TreePtr treeCopy, int version)
     {
         utils::HighResTimer totalTimer;
 
@@ -3842,10 +3786,6 @@ namespace angel_lsp
         const int currentVersion = GetDocumentVersion(uriStr);
         if (currentVersion >= 0 && version >= 0 && version < currentVersion)
         {
-            if (treeCopy)
-            {
-                ts_tree_delete(treeCopy);
-            }
             return;
         }
 
@@ -3854,7 +3794,7 @@ namespace angel_lsp
         {
             const std::string analysisText = AnalysisTextFor(uriStr, text);
             utils::HighResTimer parseTimer;
-            TSTree *tree = treeCopy ? treeCopy : parser.Parse(analysisText);
+            document::TreePtr tree = treeCopy ? std::move(treeCopy) : document::MakeTreePtr(parser.Parse(analysisText));
             double parseMs = parseTimer.ElapsedMs();
 
             utils::HighResTimer colTimer;
@@ -3864,7 +3804,7 @@ namespace angel_lsp
                 {
                     ClaimPredefinedFile(uriStr, /*forceReload=*/true);
                     m_predefinedDocuments[uriStr] = analysisText;
-                    ReplaceSymbolsFromTree(uriStr, analysisText, tree);
+                    ReplaceSymbolsFromTree(uriStr, analysisText, tree.get());
                 }
             }
             double colMs = colTimer.ElapsedMs();
@@ -3874,16 +3814,11 @@ namespace angel_lsp
             m_callGraph.ClearDocument(uriStr);
             if (tree)
             {
-                m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), analysisText));
-                m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree), analysisText));
+                m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), analysisText));
+                m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree.get()), analysisText));
             }
             double scopeMs = scopeTimer.ElapsedMs();
             double checkMs = 0.0;
-
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
 
             PublishDiagnostics(uriStr, text, {}, version);
 
@@ -3912,14 +3847,14 @@ namespace angel_lsp
         IndexModuleClosure(uriStr);
 
         utils::HighResTimer parseTimer;
-        TSTree *tree = treeCopy ? treeCopy : parser.Parse(text);
+        document::TreePtr tree = treeCopy ? std::move(treeCopy) : document::MakeTreePtr(parser.Parse(text));
         double parseMs = parseTimer.ElapsedMs();
 
         // Collected into a staging table and swapped in one step, so a reader on the message loop
         // never catches this document mid-rebuild with no symbols at all.
         utils::HighResTimer colTimer;
         angel_lsp::analysis::SymbolTable staging;
-        auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, staging, m_i18n.get(), &m_config.types);
+        auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree.get(), staging, m_i18n.get(), &m_config.types);
         m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
         double colMs = colTimer.ElapsedMs();
 
@@ -3927,11 +3862,8 @@ namespace angel_lsp
         // expressions straight out of it, and it is the only tree this thread is allowed to touch.
         double scopeMs = 0.0;
         double checkMs = 0.0;
-        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, tree, &scopeMs, &checkMs);
+        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, tree.get(), &scopeMs, &checkMs);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
-
-        if (tree)
-            ts_tree_delete(tree);
 
         AppendIncludeDiagnostics(uriStr, text, diagnostics);
 
@@ -4825,7 +4757,7 @@ namespace angel_lsp
                     m_openDocuments[key] = text;
                     if (m_parser)
                     {
-                        m_documentTrees[key] = m_parser->Parse(text);
+                        m_documentTrees.insert_or_assign(key, document::MakeTreePtr(m_parser->Parse(text)));
                     }
                     docIt = m_openDocuments.find(key);
                 }
@@ -4854,7 +4786,7 @@ namespace angel_lsp
         }
 
         return OpenDocument{ key, textPtr,
-                             treeIt == m_documentTrees.end() ? nullptr : treeIt->second };
+                             treeIt == m_documentTrees.end() ? nullptr : treeIt->second.get() };
     }
 
     std::string Server::GenerateVirtualMixinDocument(std::string_view uri)

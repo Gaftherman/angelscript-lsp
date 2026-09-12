@@ -15,6 +15,7 @@
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "features/formatting/FormattingHandler.h"
+#include "document/Document.h"
 
 #include <lsp/messages.h>
 #include <lsp/connection.h>
@@ -114,7 +115,7 @@ namespace angel_lsp
          * diagnostics from appearing at all.
          */
         ankerl::unordered_dense::map<std::string, std::string> m_clientUriByKey;
-        std::unordered_map<std::string, TSTree*> m_documentTrees;
+        std::unordered_map<std::string, angel_lsp::document::TreePtr> m_documentTrees;
         std::mutex m_predefinedMutex;
         ankerl::unordered_dense::set<std::string> m_predefinedUris;
 
@@ -207,56 +208,29 @@ namespace angel_lsp
         struct PendingAnalysisEntry
         {
             std::string text;
-            TSTree *tree = nullptr;
+            angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(nullptr);
             int version = -1;
 
             PendingAnalysisEntry() = default;
-            PendingAnalysisEntry(std::string t, TSTree *tr, int v)
-                : text(std::move(t)), tree(tr), version(v)
+            PendingAnalysisEntry(std::string t, angel_lsp::document::TreePtr tr, int v)
+                : text(std::move(t)), tree(std::move(tr)), version(v)
             {
             }
 
-            ~PendingAnalysisEntry()
+            PendingAnalysisEntry(std::string t, TSTree *tr, int v)
+                : text(std::move(t)), tree(angel_lsp::document::MakeTreePtr(tr)), version(v)
             {
-                if (tree)
-                {
-                    ts_tree_delete(tree);
-                    tree = nullptr;
-                }
             }
 
             PendingAnalysisEntry(const PendingAnalysisEntry &) = delete;
             PendingAnalysisEntry &operator=(const PendingAnalysisEntry &) = delete;
 
-            PendingAnalysisEntry(PendingAnalysisEntry &&other) noexcept
-                : text(std::move(other.text)), tree(other.tree), version(other.version)
-            {
-                other.tree = nullptr;
-                other.version = -1;
-            }
-
-            PendingAnalysisEntry &operator=(PendingAnalysisEntry &&other) noexcept
-            {
-                if (this != &other)
-                {
-                    if (tree)
-                    {
-                        ts_tree_delete(tree);
-                    }
-                    text = std::move(other.text);
-                    tree = other.tree;
-                    version = other.version;
-                    other.tree = nullptr;
-                    other.version = -1;
-                }
-                return *this;
-            }
+            PendingAnalysisEntry(PendingAnalysisEntry &&) noexcept = default;
+            PendingAnalysisEntry &operator=(PendingAnalysisEntry &&) noexcept = default;
 
             TSTree *ReleaseTree() noexcept
             {
-                TSTree *t = tree;
-                tree = nullptr;
-                return t;
+                return tree.release();
             }
         };
 
@@ -1224,7 +1198,12 @@ namespace angel_lsp
         // `force` says the answer can differ even though the bytes did not - the symbol table
         // moved, not the buffer. Without it the dedupe drops the request as a duplicate of the
         // analysis whose answer is exactly the one being replaced.
-        void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force = false, TSTree *tree = nullptr, int version = -1);
+        void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force, angel_lsp::document::TreePtr tree, int version = -1);
+
+        void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force = false, TSTree *tree = nullptr, int version = -1)
+        {
+            ScheduleAnalysis(uriStr, text, force, angel_lsp::document::MakeTreePtr(tree), version);
+        }
 
         /**
          * @brief Analysis worker: waits for a quiet period, then drains the queue.
@@ -1238,7 +1217,7 @@ namespace angel_lsp
          */
         void AnalyzeDocument(const std::string &uriStr, const std::string &text,
                              angel_lsp::parser::AngelScriptParser &parser,
-                             TSTree *treeCopy = nullptr, int version = -1);
+                             angel_lsp::document::TreePtr treeCopy = angel_lsp::document::MakeTreePtr(nullptr), int version = -1);
 
 
 
