@@ -342,6 +342,10 @@ namespace angel_lsp
 
         void Run();
         void InitHandles();
+        void RegisterWorkspaceHandlers();
+        void RegisterTextDocumentHandlers();
+        void RegisterHierarchyHandlers();
+        void RegisterTokensAndFormattingHandlers();
 
         /**
          * @brief Snapshot of the workspace folder URIs. Safe to call from any thread.
@@ -590,9 +594,9 @@ namespace angel_lsp
                                                      : std::string_view{};
         }
 
-        auto HandleRequestsInitialized(lsp::requests::Initialize::Params &&params);
+        lsp::requests::Initialize::Result HandleRequestsInitialized(lsp::requests::Initialize::Params &&params);
         void HandleNotificationsInitialized(lsp::notifications::Initialized::Params &&params);
-        auto HandleRequestsShutdown();
+        lsp::requests::Shutdown::Result HandleRequestsShutdown();
         void HandleNotificationsExit();
         void HandleNotificationsWorkspace_DidChangeConfiguration(lsp::notifications::Workspace_DidChangeConfiguration::Params &&params);
 
