@@ -77,12 +77,15 @@ namespace angel_lsp::analysis
                         auto hierarchy = GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable);
                         for (const auto &typeName : hierarchy)
                         {
-                            auto found = ctx.request.symbolTable.FindSymbols(typeName + "::" + memName);
-                            for (const auto &sym : found)
+                            auto found = ctx.request.symbolTable.FindSymbolsPtr(typeName + "::" + memName);
+                            if (found)
                             {
-                                if (sym.type == SymbolType::Function)
+                                for (const auto &sym : *found)
                                 {
-                                    candidates.push_back(sym);
+                                    if (sym.type == SymbolType::Function)
+                                    {
+                                        candidates.push_back(sym);
+                                    }
                                 }
                             }
                         }
@@ -92,12 +95,15 @@ namespace angel_lsp::analysis
             else if (funcNodeType == "scoped_identifier")
             {
                 std::string qName = NodeText(funcNode, request.sourceCode);
-                auto found = ctx.request.symbolTable.FindSymbols(qName);
-                for (const auto &sym : found)
+                auto found = ctx.request.symbolTable.FindSymbolsPtr(qName);
+                if (found)
                 {
-                    if (sym.type == SymbolType::Function)
+                    for (const auto &sym : *found)
                     {
-                        candidates.push_back(sym);
+                        if (sym.type == SymbolType::Function)
+                        {
+                            candidates.push_back(sym);
+                        }
                     }
                 }
             }
@@ -122,12 +128,15 @@ namespace angel_lsp::analysis
                             auto hierarchy = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, ctx.request.symbolTable);
                             for (const auto &cls : hierarchy)
                             {
-                                auto found = ctx.request.symbolTable.FindSymbols(cls + "::" + name);
-                                for (const auto &sym : found)
+                                auto found = ctx.request.symbolTable.FindSymbolsPtr(cls + "::" + name);
+                                if (found)
                                 {
-                                    if (sym.type == SymbolType::Function)
+                                    for (const auto &sym : *found)
                                     {
-                                        candidates.push_back(sym);
+                                        if (sym.type == SymbolType::Function)
+                                        {
+                                            candidates.push_back(sym);
+                                        }
                                     }
                                 }
                             }
@@ -281,11 +290,11 @@ namespace angel_lsp::analysis
                     }
                 }
 
-                auto symbols = table.FindSymbols(name);
-                if (!symbols.empty())
+                auto symbols = table.FindSymbolsPtr(name);
+                if (symbols && !symbols->empty())
                 {
                     bool onlyFunctions = true;
-                    for (const auto &sym : symbols)
+                    for (const auto &sym : *symbols)
                     {
                         if (sym.type != SymbolType::Function && sym.type != SymbolType::Funcdef)
                         {

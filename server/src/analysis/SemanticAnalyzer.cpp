@@ -648,7 +648,7 @@ namespace angel_lsp::analysis
             });
     }
 
-    void SemanticAnalyzer::CheckUndefinedIdentifiers(const Scope *scope, const ankerl::unordered_dense::set<std::string> &knownGlobalNames, DiagnosticContext &ctx, int depth) const
+    void SemanticAnalyzer::CheckUndefinedIdentifiers(const Scope *scope, const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>> &knownGlobalNames, DiagnosticContext &ctx, int depth) const
     {
         // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
         if (depth > k_maxAstDepth)

@@ -270,12 +270,15 @@ namespace angel_lsp::analysis
                             auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
                             for (const auto &typeName : hierarchy)
                             {
-                                auto found = m_ctx.request.symbolTable.FindSymbols(typeName + "::" + memName);
-                                for (const auto &sym : found)
+                                auto found = m_ctx.request.symbolTable.FindSymbolsPtr(typeName + "::" + memName);
+                                if (found)
                                 {
-                                    if (sym.type == SymbolType::Function)
+                                    for (const auto &sym : *found)
                                     {
-                                        candidates.push_back(sym);
+                                        if (sym.type == SymbolType::Function)
+                                        {
+                                            candidates.push_back(sym);
+                                        }
                                     }
                                 }
                             }

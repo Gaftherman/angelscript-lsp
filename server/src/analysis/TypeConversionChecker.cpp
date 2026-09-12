@@ -1784,23 +1784,29 @@ namespace angel_lsp::analysis
             }
 
             std::vector<Symbol> candidates;
-            auto found = ctx.request.symbolTable.FindSymbols(funcName);
-            for (const auto &s : found)
+            auto found = ctx.request.symbolTable.FindSymbolsPtr(funcName);
+            if (found)
             {
-                if (s.type == SymbolType::Function)
+                for (const auto &s : *found)
                 {
-                    candidates.push_back(s);
+                    if (s.type == SymbolType::Function)
+                    {
+                        candidates.push_back(s);
+                    }
                 }
             }
             if (candidates.empty())
             {
                 std::string bare = LastScopeSegment(funcName);
-                auto all = ctx.request.symbolTable.FindSymbols(bare);
-                for (const auto &s : all)
+                auto all = ctx.request.symbolTable.FindSymbolsPtr(bare);
+                if (all)
                 {
-                    if (s.type == SymbolType::Function)
+                    for (const auto &s : *all)
                     {
-                        candidates.push_back(s);
+                        if (s.type == SymbolType::Function)
+                        {
+                            candidates.push_back(s);
+                        }
                     }
                 }
             }

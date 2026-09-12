@@ -1,223 +1,532 @@
 #include "analysis/rules/RuleIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include <algorithm>
 
 namespace angel_lsp::analysis::rules
 {
-    const ContainerMembers &RuleIndex::Members(const std::string &containerName) const
+    const ContainerMembers &RuleIndex::Members(std::string_view containerName) const
     {
         static const ContainerMembers empty;
         const auto it = byContainer.find(containerName);
         return it == byContainer.end() ? empty : it->second;
     }
 
-    std::shared_ptr<const RuleIndex> RuleIndex::Build(const SymbolTable &table)
+    const ContainerMembers &RuleIndex::Members(const std::string &containerName) const
+    {
+        return Members(std::string_view(containerName));
+    }
+
+    void RuleIndexPartial::Merge(RuleIndexPartial &&other)
+    {
+        allNames.insert(allNames.end(),
+                        std::make_move_iterator(other.allNames.begin()),
+                        std::make_move_iterator(other.allNames.end()));
+
+        enumMembers.insert(enumMembers.end(),
+                           std::make_move_iterator(other.enumMembers.begin()),
+                           std::make_move_iterator(other.enumMembers.end()));
+
+        qualifiedTypes.insert(qualifiedTypes.end(),
+                              std::make_move_iterator(other.qualifiedTypes.begin()),
+                              std::make_move_iterator(other.qualifiedTypes.end()));
+
+        accessorProperties.insert(accessorProperties.end(),
+                                  std::make_move_iterator(other.accessorProperties.begin()),
+                                  std::make_move_iterator(other.accessorProperties.end()));
+
+        keywordAccessorProperties.insert(keywordAccessorProperties.end(),
+                                         std::make_move_iterator(other.keywordAccessorProperties.begin()),
+                                         std::make_move_iterator(other.keywordAccessorProperties.end()));
+
+        derivedByBase.insert(derivedByBase.end(),
+                             std::make_move_iterator(other.derivedByBase.begin()),
+                             std::make_move_iterator(other.derivedByBase.end()));
+
+        hostClassesByMixin.insert(hostClassesByMixin.end(),
+                                  std::make_move_iterator(other.hostClassesByMixin.begin()),
+                                  std::make_move_iterator(other.hostClassesByMixin.end()));
+
+        for (auto &[containerName, contrib] : other.byContainer)
+        {
+            auto &target = byContainer[containerName];
+            target.methodNames.insert(target.methodNames.end(),
+                                      std::make_move_iterator(contrib.methodNames.begin()),
+                                      std::make_move_iterator(contrib.methodNames.end()));
+            target.finalMethodNames.insert(target.finalMethodNames.end(),
+                                           std::make_move_iterator(contrib.finalMethodNames.begin()),
+                                           std::make_move_iterator(contrib.finalMethodNames.end()));
+            target.allMemberNames.insert(target.allMemberNames.end(),
+                                         std::make_move_iterator(contrib.allMemberNames.begin()),
+                                         std::make_move_iterator(contrib.allMemberNames.end()));
+            target.memberKeys.insert(target.memberKeys.end(),
+                                     std::make_move_iterator(contrib.memberKeys.begin()),
+                                     std::make_move_iterator(contrib.memberKeys.end()));
+            target.nestedTypeCount += contrib.nestedTypeCount;
+        }
+    }
+
+    RuleIndexPartial RuleIndex::BuildPartial(const std::string &fileUri, const std::vector<Symbol> &symbols)
+    {
+        RuleIndexPartial partial;
+        partial.fileUri = fileUri;
+
+        for (const auto &sym : symbols)
+        {
+            if (sym.isSynthesized)
+            {
+                continue;
+            }
+
+            partial.allNames.push_back(sym.name);
+
+            if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+            {
+                for (const auto &param : sym.GetClass().templateParams)
+                {
+                    partial.allNames.push_back(param);
+                }
+            }
+
+            if (sym.type == SymbolType::Namespace)
+            {
+                std::string_view remaining = sym.name;
+                for (size_t at = remaining.find("::"); at != std::string_view::npos;
+                     at = remaining.find("::"))
+                {
+                    partial.allNames.push_back(std::string(remaining.substr(0, at)));
+                    remaining.remove_prefix(at + 2);
+                }
+                if (!remaining.empty())
+                {
+                    partial.allNames.push_back(std::string(remaining));
+                }
+            }
+
+            if (sym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(sym.signature))
+            {
+                for (const auto &member : sym.GetEnum().members)
+                {
+                    partial.enumMembers.emplace_back(member.name, sym);
+                }
+            }
+
+            if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
+                sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef || sym.type == SymbolType::Funcdef)
+            {
+                const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                partial.qualifiedTypes.emplace_back(sym.name, qName);
+            }
+
+            if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+            {
+                const DerivedType derived{
+                    sym.qualifiedName.empty() ? sym.name : sym.qualifiedName,
+                    sym.name
+                };
+
+                const auto recordBase = [&](const std::string &base)
+                {
+                    const std::string cleanBase = CleanBaseType(base);
+                    if (!cleanBase.empty())
+                    {
+                        partial.derivedByBase.emplace_back(cleanBase, derived);
+                    }
+                    if (!base.empty() && base != cleanBase)
+                    {
+                        partial.derivedByBase.emplace_back(base, derived);
+                    }
+                };
+
+                if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+                {
+                    for (const auto &base : sym.GetClass().bases)
+                    {
+                        recordBase(base);
+                    }
+
+                    for (const auto &mixinName : sym.GetClass().includedMixins)
+                    {
+                        const std::string cleanMixin = CleanBaseType(mixinName);
+                        if (!cleanMixin.empty())
+                        {
+                            partial.hostClassesByMixin.emplace_back(cleanMixin, derived);
+                            const std::string bareMixin = LastScopeSegment(cleanMixin);
+                            if (bareMixin != cleanMixin)
+                            {
+                                partial.hostClassesByMixin.emplace_back(bareMixin, derived);
+                            }
+                        }
+                    }
+                }
+                else if (sym.type == SymbolType::Interface && std::holds_alternative<InterfaceSignature>(sym.signature))
+                {
+                    for (const auto &base : sym.GetInterface().inheritedInterfaces)
+                    {
+                        recordBase(base);
+                    }
+                }
+            }
+
+            if (sym.containerName.empty() && sym.type == SymbolType::Function)
+            {
+                std::string_view accessor = sym.name;
+                if (accessor.starts_with("get_") || accessor.starts_with("set_"))
+                {
+                    accessor.remove_prefix(4);
+                    if (!accessor.empty())
+                    {
+                        partial.accessorProperties.emplace_back(accessor);
+                        if (std::holds_alternative<FunctionSignature>(sym.signature) &&
+                            sym.GetFunction().modifiers.isProperty)
+                        {
+                            partial.keywordAccessorProperties.emplace_back(accessor);
+                        }
+                    }
+                }
+            }
+
+            if (sym.containerName.empty())
+            {
+                continue;
+            }
+
+            auto &members = partial.byContainer[sym.containerName];
+            members.allMemberNames.push_back(sym.name);
+            members.memberKeys.push_back(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
+
+            switch (sym.type)
+            {
+            case SymbolType::Function:
+                members.methodNames.push_back(sym.name);
+                if (std::holds_alternative<FunctionSignature>(sym.signature) &&
+                    sym.GetFunction().modifiers.isFinal)
+                {
+                    members.finalMethodNames.push_back(sym.name);
+                }
+
+                {
+                    std::string_view accessor = sym.name;
+                    if (accessor.starts_with("get_") || accessor.starts_with("set_"))
+                    {
+                        accessor.remove_prefix(4);
+                        if (!accessor.empty())
+                        {
+                            partial.accessorProperties.emplace_back(accessor);
+                            if (std::holds_alternative<FunctionSignature>(sym.signature) &&
+                                sym.GetFunction().modifiers.isProperty)
+                            {
+                                partial.keywordAccessorProperties.emplace_back(accessor);
+                            }
+                        }
+                    }
+                }
+                break;
+            case SymbolType::Class:
+            case SymbolType::Interface:
+            case SymbolType::Enum:
+            case SymbolType::Typedef:
+            case SymbolType::Funcdef:
+                members.nestedTypeCount++;
+                break;
+            default:
+                break;
+            }
+        }
+
+        return partial;
+    }
+
+    void RuleIndex::ApplyPartial(const RuleIndexPartial &partial)
+    {
+        for (const auto &name : partial.allNames)
+        {
+            ++allNames[name];
+        }
+
+        for (const auto &[name, sym] : partial.enumMembers)
+        {
+            if (++enumMemberCounts[name] == 1)
+            {
+                enumMemberNames.insert(name);
+            }
+            enumSymbolsByMemberName[name].push_back(sym);
+        }
+
+        for (const auto &[shortName, qName] : partial.qualifiedTypes)
+        {
+            auto &counts = qualifiedTypeCounts[shortName];
+            if (++counts[qName] == 1)
+            {
+                qualifiedTypesByShortName[shortName].push_back(qName);
+            }
+        }
+
+        for (const auto &p : partial.accessorProperties)
+        {
+            if (++accessorPropertyCounts[p] == 1)
+            {
+                accessorPropertyNames.insert(p);
+            }
+        }
+
+        for (const auto &p : partial.keywordAccessorProperties)
+        {
+            if (++keywordAccessorPropertyCounts[p] == 1)
+            {
+                keywordAccessorPropertyNames.insert(p);
+            }
+        }
+
+        for (const auto &[base, derived] : partial.derivedByBase)
+        {
+            derivedByBase[base].push_back(derived);
+        }
+
+        for (const auto &[mixin, host] : partial.hostClassesByMixin)
+        {
+            hostClassesByMixin[mixin].push_back(host);
+        }
+
+        for (const auto &[containerName, contrib] : partial.byContainer)
+        {
+            auto &cm = byContainer[containerName];
+            for (const auto &m : contrib.methodNames)
+            {
+                if (++cm.methodCounts[m] == 1)
+                {
+                    cm.methodNames.insert(m);
+                }
+            }
+            for (const auto &m : contrib.finalMethodNames)
+            {
+                if (++cm.finalMethodCounts[m] == 1)
+                {
+                    cm.finalMethodNames.insert(m);
+                }
+            }
+            for (const auto &m : contrib.allMemberNames)
+            {
+                if (++cm.allMemberCounts[m] == 1)
+                {
+                    cm.allMemberNames.insert(m);
+                }
+            }
+            for (const auto &k : contrib.memberKeys)
+            {
+                cm.memberKeys.push_back(k);
+                if (++cm.memberKeyCounts[k] == 1)
+                {
+                    cm.memberKeySet.insert(k);
+                }
+            }
+            cm.nestedTypeCount += contrib.nestedTypeCount;
+            cm.hasNestedType = (cm.nestedTypeCount > 0);
+        }
+    }
+
+    void RuleIndex::RemovePartial(const RuleIndexPartial &partial)
+    {
+        for (const auto &name : partial.allNames)
+        {
+            auto it = allNames.find(name);
+            if (it != allNames.end())
+            {
+                if (--it->second == 0)
+                {
+                    allNames.erase(it);
+                }
+            }
+        }
+
+        for (const auto &[name, sym] : partial.enumMembers)
+        {
+            auto it = enumMemberCounts.find(name);
+            if (it != enumMemberCounts.end())
+            {
+                if (--it->second == 0)
+                {
+                    enumMemberCounts.erase(it);
+                    enumMemberNames.erase(name);
+                }
+            }
+            auto sIt = enumSymbolsByMemberName.find(name);
+            if (sIt != enumSymbolsByMemberName.end())
+            {
+                std::erase_if(sIt->second, [&](const Symbol &s)
+                {
+                    return s.fileUri == partial.fileUri && s.name == sym.name;
+                });
+                if (sIt->second.empty())
+                {
+                    enumSymbolsByMemberName.erase(sIt);
+                }
+            }
+        }
+
+        for (const auto &[shortName, qName] : partial.qualifiedTypes)
+        {
+            auto qIt = qualifiedTypeCounts.find(shortName);
+            if (qIt != qualifiedTypeCounts.end())
+            {
+                auto cIt = qIt->second.find(qName);
+                if (cIt != qIt->second.end())
+                {
+                    if (--cIt->second == 0)
+                    {
+                        qIt->second.erase(cIt);
+                        auto vecIt = qualifiedTypesByShortName.find(shortName);
+                        if (vecIt != qualifiedTypesByShortName.end())
+                        {
+                            std::erase(vecIt->second, qName);
+                            if (vecIt->second.empty())
+                            {
+                                qualifiedTypesByShortName.erase(vecIt);
+                            }
+                        }
+                    }
+                }
+                if (qIt->second.empty())
+                {
+                    qualifiedTypeCounts.erase(qIt);
+                }
+            }
+        }
+
+        for (const auto &p : partial.accessorProperties)
+        {
+            auto it = accessorPropertyCounts.find(p);
+            if (it != accessorPropertyCounts.end())
+            {
+                if (--it->second == 0)
+                {
+                    accessorPropertyCounts.erase(it);
+                    accessorPropertyNames.erase(p);
+                }
+            }
+        }
+
+        for (const auto &p : partial.keywordAccessorProperties)
+        {
+            auto it = keywordAccessorPropertyCounts.find(p);
+            if (it != keywordAccessorPropertyCounts.end())
+            {
+                if (--it->second == 0)
+                {
+                    keywordAccessorPropertyCounts.erase(it);
+                    keywordAccessorPropertyNames.erase(p);
+                }
+            }
+        }
+
+        for (const auto &[base, derived] : partial.derivedByBase)
+        {
+            auto it = derivedByBase.find(base);
+            if (it != derivedByBase.end())
+            {
+                std::erase_if(it->second, [&](const DerivedType &d)
+                {
+                    return d.qualifiedName == derived.qualifiedName && d.name == derived.name;
+                });
+                if (it->second.empty())
+                {
+                    derivedByBase.erase(it);
+                }
+            }
+        }
+
+        for (const auto &[mixin, host] : partial.hostClassesByMixin)
+        {
+            auto it = hostClassesByMixin.find(mixin);
+            if (it != hostClassesByMixin.end())
+            {
+                std::erase_if(it->second, [&](const DerivedType &d)
+                {
+                    return d.qualifiedName == host.qualifiedName && d.name == host.name;
+                });
+                if (it->second.empty())
+                {
+                    hostClassesByMixin.erase(it);
+                }
+            }
+        }
+
+        for (const auto &[containerName, contrib] : partial.byContainer)
+        {
+            auto cIt = byContainer.find(containerName);
+            if (cIt == byContainer.end())
+            {
+                continue;
+            }
+
+            auto &cm = cIt->second;
+            for (const auto &m : contrib.methodNames)
+            {
+                auto it = cm.methodCounts.find(m);
+                if (it != cm.methodCounts.end() && --it->second == 0)
+                {
+                    cm.methodCounts.erase(it);
+                    cm.methodNames.erase(m);
+                }
+            }
+            for (const auto &m : contrib.finalMethodNames)
+            {
+                auto it = cm.finalMethodCounts.find(m);
+                if (it != cm.finalMethodCounts.end() && --it->second == 0)
+                {
+                    cm.finalMethodCounts.erase(it);
+                    cm.finalMethodNames.erase(m);
+                }
+            }
+            for (const auto &m : contrib.allMemberNames)
+            {
+                auto it = cm.allMemberCounts.find(m);
+                if (it != cm.allMemberCounts.end() && --it->second == 0)
+                {
+                    cm.allMemberCounts.erase(it);
+                    cm.allMemberNames.erase(m);
+                }
+            }
+            for (const auto &k : contrib.memberKeys)
+            {
+                auto it = cm.memberKeyCounts.find(k);
+                if (it != cm.memberKeyCounts.end() && --it->second == 0)
+                {
+                    cm.memberKeyCounts.erase(it);
+                    cm.memberKeySet.erase(k);
+                }
+                auto vecIt = std::find(cm.memberKeys.begin(), cm.memberKeys.end(), k);
+                if (vecIt != cm.memberKeys.end())
+                {
+                    cm.memberKeys.erase(vecIt);
+                }
+            }
+
+            if (cm.nestedTypeCount >= contrib.nestedTypeCount)
+            {
+                cm.nestedTypeCount -= contrib.nestedTypeCount;
+            }
+            else
+            {
+                cm.nestedTypeCount = 0;
+            }
+            cm.hasNestedType = (cm.nestedTypeCount > 0);
+
+            if (cm.allMemberNames.empty() && cm.nestedTypeCount == 0 && cm.memberKeys.empty())
+            {
+                byContainer.erase(cIt);
+            }
+        }
+    }
+
+    std::shared_ptr<RuleIndex> RuleIndex::Build(const SymbolTable &table)
     {
         auto index = std::make_shared<RuleIndex>();
 
         table.ForEachSymbol(
             [&](const std::string &, const std::vector<Symbol> &symbols)
             {
-                for (const auto &sym : symbols)
-                {
-                    index->allNames.insert(sym.name);
-
-                    // A template class's parameters are names it introduces, so `T` inside
-                    // `class array<T>` is declared even though nothing declares it separately.
-                    //
-                    // Registered globally rather than scoped to the class, deliberately. Correct
-                    // scoping would mean threading a per-container name set through the identifier
-                    // check, and it would buy nothing: template classes only appear in predefined
-                    // stubs, where a missed shadowing costs nothing while the alternative cost eight
-                    // false "Undeclared identifier 'T'" on every open of the engine's own API file.
-                    // Guarded on the variant, not just the kind: this walks every symbol in the
-                    // workspace, and error recovery can leave one carrying the kind without the
-                    // signature to match. GetClass() on that throws.
-                    if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
-                    {
-                        for (const auto &param : sym.GetClass().templateParams)
-                        {
-                            index->allNames.insert(param);
-                        }
-                    }
-
-                    // `namespace A::B` declares A as well, and nothing writes `namespace A` on
-                    // its own - the Sven Co-op stub declares Hooks::Player, Hooks::Game and
-                    // Hooks::Weapon and no bare Hooks. Only the whole name was registered, so
-                    // every `Hooks::Player::ClientPutInServer` in a real plugin reported Hooks as
-                    // an undeclared identifier.
-                    //
-                    // Visible only through a stub: a script's own namespaces are reached by the
-                    // enclosing scope tree instead, and a predefined file has no scope tree.
-                    if (sym.type == SymbolType::Namespace)
-                    {
-                        // Every segment, the last one included: `Hooks::Player` is written both
-                        // as the qualifier `Hooks` and, one level in, as `Player`.
-                        std::string_view remaining = sym.name;
-                        for (size_t at = remaining.find("::"); at != std::string_view::npos;
-                             at = remaining.find("::"))
-                        {
-                            index->allNames.insert(std::string(remaining.substr(0, at)));
-                            remaining.remove_prefix(at + 2);
-                        }
-                        if (!remaining.empty())
-                        {
-                            index->allNames.insert(std::string(remaining));
-                        }
-                    }
-
-                    if (sym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(sym.signature))
-                    {
-                        for (const auto &member : sym.GetEnum().members)
-                        {
-                            index->enumMemberNames.insert(member.name);
-                            index->enumSymbolsByMemberName[member.name].push_back(sym);
-                        }
-                    }
-
-                    if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
-                        sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef || sym.type == SymbolType::Funcdef)
-                    {
-                        const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                        auto &vec = index->qualifiedTypesByShortName[sym.name];
-                        if (std::find(vec.begin(), vec.end(), qName) == vec.end())
-                        {
-                            vec.push_back(qName);
-                        }
-                    }
-
-                    // Reverse inheritance edges, for GetAllRelatedClasses. Recorded before the
-                    // containerName check below, because a class's bases matter whether or not the
-                    // class itself is nested inside something.
-                    if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
-                    {
-                        const DerivedType derived{
-                            sym.qualifiedName.empty() ? sym.name : sym.qualifiedName,
-                            sym.name
-                        };
-
-                        const auto recordBase = [&](const std::string &base)
-                        {
-                            const std::string cleanBase = CleanBaseType(base);
-                            if (!cleanBase.empty())
-                            {
-                                index->derivedByBase[cleanBase].push_back(derived);
-                            }
-                            // Indexed under the raw spelling too when it differs, because the
-                            // caller matches against both and a handle or const-qualified base
-                            // would otherwise never be found.
-                            if (!base.empty() && base != cleanBase)
-                            {
-                                index->derivedByBase[base].push_back(derived);
-                            }
-                        };
-
-                        if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
-                        {
-                            for (const auto &base : sym.GetClass().bases)
-                                recordBase(base);
-
-                            for (const auto &mixinName : sym.GetClass().includedMixins)
-                            {
-                                const std::string cleanMixin = CleanBaseType(mixinName);
-                                if (!cleanMixin.empty())
-                                {
-                                    index->hostClassesByMixin[cleanMixin].push_back(derived);
-                                    const std::string bareMixin = LastScopeSegment(cleanMixin);
-                                    if (bareMixin != cleanMixin)
-                                    {
-                                        index->hostClassesByMixin[bareMixin].push_back(derived);
-                                    }
-                                }
-                            }
-                        }
-                        else if (sym.type == SymbolType::Interface && std::holds_alternative<InterfaceSignature>(sym.signature))
-                        {
-                            for (const auto &base : sym.GetInterface().inheritedInterfaces)
-                                recordBase(base);
-                        }
-                    }
-
-                    // A virtual property at global scope, before the container guard below sends
-                    // every global away. `CScheduler@ get_g_Scheduler();` is how a stub writes a
-                    // registered global property, and `g_Scheduler` is then a name nothing
-                    // declares - measured against the game's own stub as
-                    // `Undeclared identifier 'g_Scheduler'` on code that runs.
-                    //
-                    // The oracle agrees these exist: `int get_gxValue() property` makes `gxValue`
-                    // readable, and without the keyword the same script is rejected - which is the
-                    // distinction the two sets below carry for members, and carry here too.
-                    if (sym.containerName.empty() && sym.type == SymbolType::Function)
-                    {
-                        std::string_view accessor = sym.name;
-                        if (accessor.starts_with("get_") || accessor.starts_with("set_"))
-                        {
-                            accessor.remove_prefix(4);
-                            if (!accessor.empty())
-                            {
-                                index->accessorPropertyNames.emplace(accessor);
-                                if (std::holds_alternative<FunctionSignature>(sym.signature) &&
-                                    sym.GetFunction().modifiers.isProperty)
-                                {
-                                    index->keywordAccessorPropertyNames.emplace(accessor);
-                                }
-                            }
-                        }
-                    }
-
-                    if (sym.containerName.empty())
-                    {
-                        continue;
-                    }
-
-                    ContainerMembers &members = index->byContainer[sym.containerName];
-                    members.allMemberNames.insert(sym.name);
-
-                    // Keyed the same way the table keys its buckets, so a consumer can go straight
-                    // to FindSymbolsPtr instead of scanning every bucket for a matching container.
-                    members.memberKeys.push_back(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
-
-                    switch (sym.type)
-                    {
-                    case SymbolType::Function:
-                        members.methodNames.insert(sym.name);
-                        if (std::holds_alternative<FunctionSignature>(sym.signature) &&
-                            sym.GetFunction().modifiers.isFinal)
-                        {
-                            members.finalMethodNames.insert(sym.name);
-                        }
-
-                        // `int get_Up() property` is reached as `Up`, a name nothing declares. Both
-                        // sets are filled here and the reader picks by accessor mode - see the
-                        // header. The empty-suffix case (a member literally called `get_`) is not a
-                        // property and inserting "" would excuse every unresolved name.
-                        {
-                            std::string_view accessor = sym.name;
-                            if (accessor.starts_with("get_") || accessor.starts_with("set_"))
-                            {
-                                accessor.remove_prefix(4);
-                                if (!accessor.empty())
-                                {
-                                    index->accessorPropertyNames.emplace(accessor);
-                                    if (std::holds_alternative<FunctionSignature>(sym.signature) &&
-                                        sym.GetFunction().modifiers.isProperty)
-                                    {
-                                        index->keywordAccessorPropertyNames.emplace(accessor);
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    case SymbolType::Class:
-                    case SymbolType::Interface:
-                    case SymbolType::Enum:
-                    case SymbolType::Typedef:
-                    case SymbolType::Funcdef:
-                        members.hasNestedType = true;
-                        break;
-                    default:
-                        break;
-                    }
-                }
+                RuleIndexPartial partial = BuildPartial("", symbols);
+                index->ApplyPartial(partial);
             });
 
         return index;

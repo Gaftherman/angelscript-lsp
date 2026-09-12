@@ -853,19 +853,33 @@ namespace angel_lsp::features
             std::string qualifier = scopeMatch[1].str();
 
             // Collect enum members under qualifier
-            auto enumMatches = request.symbolTable.FindSymbols(qualifier);
-            if (enumMatches.empty() && qualifier.find("::") == std::string::npos)
+            auto enumMatches = request.symbolTable.FindSymbolsPtr(qualifier);
+            if (enumMatches && !enumMatches->empty())
             {
-                enumMatches = request.symbolTable.FindTypeSymbolsByShortName(qualifier);
-            }
-            for (const auto &sym : enumMatches)
-            {
-                if (sym.type == analysis::SymbolType::Enum)
+                for (const auto &sym : *enumMatches)
                 {
-                    const auto &eSig = sym.GetEnum();
-                    for (const auto &mem : eSig.members)
+                    if (sym.type == analysis::SymbolType::Enum)
                     {
-                        AddItemIfNew(items, seenLabels, mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name);
+                        const auto &eSig = sym.GetEnum();
+                        for (const auto &mem : eSig.members)
+                        {
+                            AddItemIfNew(items, seenLabels, mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name);
+                        }
+                    }
+                }
+            }
+            else if (qualifier.find("::") == std::string::npos)
+            {
+                auto shortMatches = request.symbolTable.FindTypeSymbolsByShortName(qualifier);
+                for (const auto &sym : shortMatches)
+                {
+                    if (sym.type == analysis::SymbolType::Enum)
+                    {
+                        const auto &eSig = sym.GetEnum();
+                        for (const auto &mem : eSig.members)
+                        {
+                            AddItemIfNew(items, seenLabels, mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name);
+                        }
                     }
                 }
             }
@@ -1056,16 +1070,19 @@ namespace angel_lsp::features
 
                 if (rawTypeName.empty())
                 {
-                    auto globSyms = request.symbolTable.FindSymbols(seg0.name);
-                    for (const auto &sym : globSyms)
+                    auto globSyms = request.symbolTable.FindSymbolsPtr(seg0.name);
+                    if (globSyms)
                     {
-                        if (sym.type == analysis::SymbolType::Variable && sym.containerName.empty())
+                        for (const auto &sym : *globSyms)
                         {
-                            const auto &var = sym.GetVariable();
-                            if (!var.typeName.empty())
+                            if (sym.type == analysis::SymbolType::Variable && sym.containerName.empty())
                             {
-                                rawTypeName = var.typeName;
-                                break;
+                                const auto &var = sym.GetVariable();
+                                if (!var.typeName.empty())
+                                {
+                                    rawTypeName = var.typeName;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1082,13 +1099,16 @@ namespace angel_lsp::features
 
                 if (rawTypeName.empty() && seg0.isCall)
                 {
-                    auto fnSyms = request.symbolTable.FindSymbols(seg0.name);
-                    for (const auto &sym : fnSyms)
+                    auto fnSyms = request.symbolTable.FindSymbolsPtr(seg0.name);
+                    if (fnSyms)
                     {
-                        if (sym.type == analysis::SymbolType::Function && sym.containerName.empty())
+                        for (const auto &sym : *fnSyms)
                         {
-                            rawTypeName = sym.GetFunction().returnType;
-                            break;
+                            if (sym.type == analysis::SymbolType::Function && sym.containerName.empty())
+                            {
+                                rawTypeName = sym.GetFunction().returnType;
+                                break;
+                            }
                         }
                     }
                 }
@@ -1108,18 +1128,21 @@ namespace angel_lsp::features
 
                     for (const auto &typeName : hierarchy)
                     {
-                        auto memberSyms = request.symbolTable.FindSymbols(typeName + "::" + seg.name);
-                        for (const auto &sym : memberSyms)
+                        auto memberSyms = request.symbolTable.FindSymbolsPtr(typeName + "::" + seg.name);
+                        if (memberSyms)
                         {
-                            if (sym.type == analysis::SymbolType::Variable)
+                            for (const auto &sym : *memberSyms)
                             {
-                                nextTypeName = sym.GetVariable().typeName;
-                                break;
-                            }
-                            else if (sym.type == analysis::SymbolType::Function && seg.isCall)
-                            {
-                                nextTypeName = sym.GetFunction().returnType;
-                                break;
+                                if (sym.type == analysis::SymbolType::Variable)
+                                {
+                                    nextTypeName = sym.GetVariable().typeName;
+                                    break;
+                                }
+                                else if (sym.type == analysis::SymbolType::Function && seg.isCall)
+                                {
+                                    nextTypeName = sym.GetFunction().returnType;
+                                    break;
+                                }
                             }
                         }
                         if (!nextTypeName.empty())
@@ -1137,12 +1160,15 @@ namespace angel_lsp::features
                             }
                         }
 
-                        for (const auto &sym : memberSyms)
+                        if (memberSyms)
                         {
-                            if (sym.type == analysis::SymbolType::Function)
+                            for (const auto &sym : *memberSyms)
                             {
-                                nextTypeName = sym.GetFunction().returnType;
-                                break;
+                                if (sym.type == analysis::SymbolType::Function)
+                                {
+                                    nextTypeName = sym.GetFunction().returnType;
+                                    break;
+                                }
                             }
                         }
                         if (!nextTypeName.empty())
@@ -1633,25 +1659,31 @@ namespace angel_lsp::features
             return resolved;
         }
 
-        for (const auto &symbol : request.symbolTable.FindSymbols(qualifiedName))
+        auto syms = request.symbolTable.FindSymbolsPtr(qualifiedName);
+        if (syms)
         {
-            const std::string *text = request.readDocument(symbol.fileUri);
-            if (!text)
+            for (const auto &symbol : *syms)
             {
-                // The declaring file is not one the server holds text for - a workspace file that
-                // was indexed and released, say. Nothing to read the comment out of.
-                continue;
-            }
+                const std::string *text = request.readDocument(symbol.fileUri);
+                if (!text)
+                {
+                    // The declaring file is not one the server holds text for - a workspace file that
+                    // was indexed and released, say. Nothing to read the comment out of.
+                    continue;
+                }
 
-            const std::string documentation = analysis::ExtractDocComment(*text, symbol.startLine);
-            if (documentation.empty())
-            {
-                continue;
-            }
+                const std::string documentation = analysis::ExtractDocComment(*text, symbol.startLine);
+                if (documentation.empty())
+                {
+                    continue;
+                }
 
-            resolved.documentation = lsp::MarkupContent{
-                lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), documentation };
-            break;
+                resolved.documentation = lsp::MarkupContent{
+                    .kind = lsp::MarkupKind::Markdown,
+                    .value = documentation,
+                };
+                return resolved;
+            }
         }
 
         return resolved;

@@ -40,7 +40,7 @@ namespace angel_lsp::analysis
          *        member lookup this pass doesn't do, and would otherwise flood every "obj.member"
          *        access in the document with false positives.
          */
-        void CheckUndefinedIdentifiers(const Scope *scope, const ankerl::unordered_dense::set<std::string> &knownGlobalNames, DiagnosticContext &ctx, int depth = 0) const;
+        void CheckUndefinedIdentifiers(const Scope *scope, const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>> &knownGlobalNames, DiagnosticContext &ctx, int depth = 0) const;
 
         /**
          * @brief Pass 1 of the unused-variable check: recursively resolves every non-member-access

@@ -242,13 +242,16 @@ namespace angel_lsp::features
                 {
                     if (symbolTable)
                     {
-                        auto containerSyms = symbolTable->FindSymbols(sym.containerName);
-                        for (const auto &cs : containerSyms)
+                        auto containerSyms = symbolTable->FindSymbolsPtr(sym.containerName);
+                        if (containerSyms)
                         {
-                            if (cs.type == analysis::SymbolType::Class || cs.type == analysis::SymbolType::Interface || cs.type == analysis::SymbolType::Enum)
+                            for (const auto &cs : *containerSyms)
                             {
-                                isProperty = true;
-                                break;
+                                if (cs.type == analysis::SymbolType::Class || cs.type == analysis::SymbolType::Interface || cs.type == analysis::SymbolType::Enum)
+                                {
+                                    isProperty = true;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -259,13 +262,16 @@ namespace angel_lsp::features
                 }
                 if (!isProperty && symbolTable)
                 {
-                    auto typeSyms = symbolTable->FindSymbols(sym.GetVariable().typeName);
-                    for (const auto &ts : typeSyms)
+                    auto typeSyms = symbolTable->FindSymbolsPtr(sym.GetVariable().typeName);
+                    if (typeSyms)
                     {
-                        if (ts.type == analysis::SymbolType::Enum)
+                        for (const auto &ts : *typeSyms)
                         {
-                            isProperty = true;
-                            break;
+                            if (ts.type == analysis::SymbolType::Enum)
+                            {
+                                isProperty = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -771,13 +777,16 @@ namespace angel_lsp::features
             virtualHostClass = analysis::SymbolTable::ExtractVirtualHostClass(request.uri);
             virtualMixinName = analysis::SymbolTable::ExtractVirtualMixinName(request.uri);
 
-            auto candidates = request.symbolTable.FindSymbols(virtualMixinName);
-            for (const auto &cand : candidates)
+            auto candidates = request.symbolTable.FindSymbolsPtr(virtualMixinName);
+            if (candidates)
             {
-                if (cand.type == analysis::SymbolType::Class)
+                for (const auto &cand : *candidates)
                 {
-                    virtualMixinSym = cand;
-                    break;
+                    if (cand.type == analysis::SymbolType::Class)
+                    {
+                        virtualMixinSym = cand;
+                        break;
+                    }
                 }
             }
             if (!virtualMixinSym.has_value())
@@ -894,23 +903,26 @@ namespace angel_lsp::features
                 for (const auto &typeName : hierarchy)
                 {
                     std::string qualifiedMember = typeName + "::" + nodeText;
-                    auto found = request.symbolTable.FindSymbols(qualifiedMember);
-                    for (const auto &sym : found)
+                    auto found = request.symbolTable.FindSymbolsPtr(qualifiedMember);
+                    if (found)
                     {
-                        if (sym.type == analysis::SymbolType::Function)
+                        for (const auto &sym : *found)
                         {
-                            bool overriddenLower = std::any_of(memberSymbols.begin(), memberSymbols.end(),
-                                [&](const analysis::Symbol &kept) {
-                                    return analysis::HasSameParameterList(kept, sym);
-                                });
-                            if (!overriddenLower)
+                            if (sym.type == analysis::SymbolType::Function)
+                            {
+                                bool overriddenLower = std::any_of(memberSymbols.begin(), memberSymbols.end(),
+                                    [&](const analysis::Symbol &kept) {
+                                        return analysis::HasSameParameterList(kept, sym);
+                                    });
+                                if (!overriddenLower)
+                                {
+                                    memberSymbols.push_back(sym);
+                                }
+                            }
+                            else
                             {
                                 memberSymbols.push_back(sym);
                             }
-                        }
-                        else
-                        {
-                            memberSymbols.push_back(sym);
                         }
                     }
                 }
@@ -1102,6 +1114,7 @@ namespace angel_lsp::features
                         if (!isInsideFunction)
                         {
                             const analysis::Symbol *globalSym = nullptr;
+                            std::shared_ptr<const std::vector<analysis::Symbol>> exactCandidates;
                             auto candidates = analysis::FindSymbolsInScope(def->name, node, request.sourceCode, request.symbolTable);
                             for (const auto &cand : candidates)
                             {
@@ -1124,13 +1137,16 @@ namespace angel_lsp::features
                             }
                             if (!globalSym)
                             {
-                                auto exactCandidates = request.symbolTable.FindSymbols(def->name);
-                                for (const auto &cand : exactCandidates)
+                                exactCandidates = request.symbolTable.FindSymbolsPtr(def->name);
+                                if (exactCandidates)
                                 {
-                                    if (cand.type == analysis::SymbolType::Variable && cand.fileUri == request.uri)
+                                    for (const auto &cand : *exactCandidates)
                                     {
-                                        globalSym = &cand;
-                                        break;
+                                        if (cand.type == analysis::SymbolType::Variable && cand.fileUri == request.uri)
+                                        {
+                                            globalSym = &cand;
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -1231,18 +1247,21 @@ namespace angel_lsp::features
                 auto hierarchy = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
                 for (const auto &typeName : hierarchy)
                 {
-                    auto found = request.symbolTable.FindSymbols(typeName + "::" + nodeText);
-                    for (const auto &sym : found)
+                    auto found = request.symbolTable.FindSymbolsPtr(typeName + "::" + nodeText);
+                    if (found)
                     {
-                        if (sym.type == analysis::SymbolType::Function)
+                        for (const auto &sym : *found)
                         {
-                            bool overriddenLower = std::any_of(symbols.begin(), symbols.end(),
-                                [&](const analysis::Symbol &kept) {
-                                    return analysis::HasSameParameterList(kept, sym);
-                                });
-                            if (!overriddenLower)
+                            if (sym.type == analysis::SymbolType::Function)
                             {
-                                symbols.push_back(sym);
+                                bool overriddenLower = std::any_of(symbols.begin(), symbols.end(),
+                                    [&](const analysis::Symbol &kept) {
+                                        return analysis::HasSameParameterList(kept, sym);
+                                    });
+                                if (!overriddenLower)
+                                {
+                                    symbols.push_back(sym);
+                                }
                             }
                         }
                     }
@@ -1258,23 +1277,26 @@ namespace angel_lsp::features
             auto hierarchy = analysis::GetInheritedTypeHierarchy(virtualHostClass, request.symbolTable);
             for (const auto &typeName : hierarchy)
             {
-                auto found = request.symbolTable.FindSymbols(typeName + "::" + nodeText);
-                for (const auto &sym : found)
+                auto found = request.symbolTable.FindSymbolsPtr(typeName + "::" + nodeText);
+                if (found)
                 {
-                    if (sym.type == analysis::SymbolType::Function)
+                    for (const auto &sym : *found)
                     {
-                        bool overriddenLower = std::any_of(hostSymbols.begin(), hostSymbols.end(),
-                            [&](const analysis::Symbol &kept) {
-                                return analysis::HasSameParameterList(kept, sym);
-                            });
-                        if (!overriddenLower)
+                        if (sym.type == analysis::SymbolType::Function)
+                        {
+                            bool overriddenLower = std::any_of(hostSymbols.begin(), hostSymbols.end(),
+                                [&](const analysis::Symbol &kept) {
+                                    return analysis::HasSameParameterList(kept, sym);
+                                });
+                            if (!overriddenLower)
+                            {
+                                hostSymbols.push_back(sym);
+                            }
+                        }
+                        else if (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property)
                         {
                             hostSymbols.push_back(sym);
                         }
-                    }
-                    else if (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property)
-                    {
-                        hostSymbols.push_back(sym);
                     }
                 }
             }

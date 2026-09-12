@@ -1074,13 +1074,16 @@ namespace angel_lsp::analysis
                                         }
                                         if (!isLVal)
                                         {
-                                            auto syms = table.FindSymbols(aText);
-                                            for (const auto &s : syms)
+                                            auto syms = table.FindSymbolsPtr(aText);
+                                            if (syms)
                                             {
-                                                if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
+                                                for (const auto &s : *syms)
                                                 {
-                                                    isLVal = true;
-                                                    break;
+                                                    if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
+                                                    {
+                                                        isLVal = true;
+                                                        break;
+                                                    }
                                                 }
                                             }
                                         }
@@ -1218,22 +1221,28 @@ namespace angel_lsp::analysis
 
                 // Look up constructors
                 std::vector<Symbol> rawConstructors;
-                auto found = ctx.request.symbolTable.FindSymbols(baseName + "::" + baseName);
-                for (const auto &s : found)
+                auto found = ctx.request.symbolTable.FindSymbolsPtr(baseName + "::" + baseName);
+                if (found)
                 {
-                    if (s.type == SymbolType::Function)
-                    {
-                        rawConstructors.push_back(s);
-                    }
-                }
-                if (rawConstructors.empty())
-                {
-                    auto found2 = ctx.request.symbolTable.FindSymbols(baseName);
-                    for (const auto &s : found2)
+                    for (const auto &s : *found)
                     {
                         if (s.type == SymbolType::Function)
                         {
                             rawConstructors.push_back(s);
+                        }
+                    }
+                }
+                if (rawConstructors.empty())
+                {
+                    auto found2 = ctx.request.symbolTable.FindSymbolsPtr(baseName);
+                    if (found2)
+                    {
+                        for (const auto &s : *found2)
+                        {
+                            if (s.type == SymbolType::Function)
+                            {
+                                rawConstructors.push_back(s);
+                            }
                         }
                     }
                 }
@@ -1297,13 +1306,16 @@ namespace angel_lsp::analysis
                 if (!tmplInfo.templateArgs.empty())
                 {
                     std::vector<std::string> templateParams;
-                    auto classSymbols = ctx.request.symbolTable.FindSymbols(baseName);
-                    for (const auto &cs : classSymbols)
+                    auto classSymbols = ctx.request.symbolTable.FindSymbolsPtr(baseName);
+                    if (classSymbols)
                     {
-                        if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
+                        for (const auto &cs : *classSymbols)
                         {
-                            templateParams = cs.GetClass().templateParams;
-                            break;
+                            if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
+                            {
+                                templateParams = cs.GetClass().templateParams;
+                                break;
+                            }
                         }
                     }
                     if (templateParams.empty())

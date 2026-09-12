@@ -145,18 +145,27 @@ namespace angel_lsp::analysis
 
             for (const auto &owner : GetInheritedTypeHierarchy(typeName, table))
             {
-                auto candidates = table.FindSymbols(owner + "::" + memberName);
-                if (candidates.empty())
+                std::vector<Symbol> candidates;
+                auto candidatesPtr = table.FindSymbolsPtr(owner + "::" + memberName);
+                if (candidatesPtr && !candidatesPtr->empty())
+                {
+                    candidates.insert(candidates.end(), candidatesPtr->begin(), candidatesPtr->end());
+                }
+                else
                 {
                     for (const auto &accessor : { owner + "::get_" + memberName,
                                                   owner + "::set_" + memberName })
                     {
-                        for (const auto &sym : table.FindSymbols(accessor))
+                        auto accSyms = table.FindSymbolsPtr(accessor);
+                        if (accSyms)
                         {
-                            if (AccessorStandsForProperty(sym, accessorKeywordRequired))
+                            for (const auto &sym : *accSyms)
                             {
-                                result.viaAccessor = true;
-                                candidates.push_back(sym);
+                                if (AccessorStandsForProperty(sym, accessorKeywordRequired))
+                                {
+                                    result.viaAccessor = true;
+                                    candidates.push_back(sym);
+                                }
                             }
                         }
                     }
@@ -167,31 +176,43 @@ namespace angel_lsp::analysis
                     // A member declared inside a namespaced class is registered under a qualified
                     // name the concatenation above does not reproduce, so fall back to matching on
                     // the container the collector recorded.
-                    for (const auto &sym : table.FindSymbols(memberName))
+                    auto memberSyms = table.FindSymbolsPtr(memberName);
+                    if (memberSyms)
                     {
-                        if (IsSameType(sym.containerName, owner))
+                        for (const auto &sym : *memberSyms)
                         {
-                            candidates.push_back(sym);
+                            if (IsSameType(sym.containerName, owner))
+                            {
+                                candidates.push_back(sym);
+                            }
                         }
                     }
                     if (candidates.empty())
                     {
-                        for (const auto &sym : table.FindSymbols("get_" + memberName))
+                        auto getSyms = table.FindSymbolsPtr("get_" + memberName);
+                        if (getSyms)
                         {
-                            if (IsSameType(sym.containerName, owner) &&
-                                AccessorStandsForProperty(sym, accessorKeywordRequired))
+                            for (const auto &sym : *getSyms)
                             {
-                                result.viaAccessor = true;
-                                candidates.push_back(sym);
+                                if (IsSameType(sym.containerName, owner) &&
+                                    AccessorStandsForProperty(sym, accessorKeywordRequired))
+                                {
+                                    result.viaAccessor = true;
+                                    candidates.push_back(sym);
+                                }
                             }
                         }
-                        for (const auto &sym : table.FindSymbols("set_" + memberName))
+                        auto setSyms = table.FindSymbolsPtr("set_" + memberName);
+                        if (setSyms)
                         {
-                            if (IsSameType(sym.containerName, owner) &&
-                                AccessorStandsForProperty(sym, accessorKeywordRequired))
+                            for (const auto &sym : *setSyms)
                             {
-                                result.viaAccessor = true;
-                                candidates.push_back(sym);
+                                if (IsSameType(sym.containerName, owner) &&
+                                    AccessorStandsForProperty(sym, accessorKeywordRequired))
+                                {
+                                    result.viaAccessor = true;
+                                    candidates.push_back(sym);
+                                }
                             }
                         }
                     }

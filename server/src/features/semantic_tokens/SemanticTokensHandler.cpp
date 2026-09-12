@@ -708,12 +708,12 @@ namespace angel_lsp::features
                                     uint32_t leftEnd = ts_node_end_byte(leftNode);
                                     if (leftStart < leftEnd && leftEnd <= request.sourceCode.size())
                                     {
-                                        std::string leftText(request.sourceCode.substr(leftStart, leftEnd - leftStart));
-                                        const std::vector<analysis::Symbol> leftSymbols = request.symbolTable.FindSymbols(leftText);
-                                        if (!leftSymbols.empty())
+                                        std::string_view leftText(request.sourceCode.data() + leftStart, leftEnd - leftStart);
+                                        const auto leftSymbols = request.symbolTable.FindSymbolsPtr(leftText);
+                                        if (leftSymbols && !leftSymbols->empty())
                                         {
                                             bool allEnum = true;
-                                            for (const analysis::Symbol &sym : leftSymbols)
+                                            for (const analysis::Symbol &sym : *leftSymbols)
                                             {
                                                 if (sym.type != analysis::SymbolType::Enum)
                                                 {
@@ -775,15 +775,7 @@ namespace angel_lsp::features
                                         if (const auto ruleIndex = request.symbolTable.GetRuleIndex())
                                         {
                                             const auto &typeMembers = ruleIndex->Members(className);
-                                            bool isMember = false;
-                                            for (const auto &mKey : typeMembers.memberKeys)
-                                            {
-                                                if (mKey == qualifiedKey)
-                                                {
-                                                    isMember = true;
-                                                    break;
-                                                }
-                                            }
+                                            bool isMember = typeMembers.memberKeySet.contains(qualifiedKey);
 
                                             if (isMember)
                                             {
@@ -804,12 +796,12 @@ namespace angel_lsp::features
 
                         if (tokenType == Type_Type || tokenType == Type_Variable || tokenType == Type_Function)
                         {
-                            const std::vector<analysis::Symbol> symbols = request.symbolTable.FindSymbols(tokenText);
-                            if (!symbols.empty())
+                            const auto symbols = request.symbolTable.FindSymbolsPtr(tokenText);
+                            if (symbols && !symbols->empty())
                             {
-                                const analysis::SymbolType agreedType = symbols.front().type;
+                                const analysis::SymbolType agreedType = symbols->front().type;
                                 bool allSymbolsMatch = true;
-                                for (const analysis::Symbol &symbol : symbols)
+                                for (const analysis::Symbol &symbol : *symbols)
                                 {
                                     if (symbol.type != agreedType)
                                     {
@@ -832,11 +824,11 @@ namespace angel_lsp::features
                                     {
                                         tokenType = Type_Enum;
                                     }
-                                    else if (agreedType == analysis::SymbolType::Function && tokenType == Type_Function && !symbols.front().containerName.empty())
+                                    else if (agreedType == analysis::SymbolType::Function && tokenType == Type_Function && !symbols->front().containerName.empty())
                                     {
                                         tokenType = Type_Method;
                                     }
-                                    else if (agreedType == analysis::SymbolType::Variable && tokenType == Type_Variable && !symbols.front().containerName.empty())
+                                    else if (agreedType == analysis::SymbolType::Variable && tokenType == Type_Variable && !symbols->front().containerName.empty())
                                     {
                                         tokenType = Type_Property;
                                     }

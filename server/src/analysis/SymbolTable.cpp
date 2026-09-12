@@ -12,6 +12,13 @@
 
 namespace angel_lsp::analysis
 {
+    SymbolTable::SymbolTable()
+        : m_ruleIndexPartials(std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>())
+    {
+    }
+
+    SymbolTable::~SymbolTable() = default;
+
     namespace
     {
         std::string AccessModifierToString(AccessModifier access)
@@ -119,17 +126,29 @@ namespace angel_lsp::analysis
 
     void SymbolTable::IndexKeyForFileLocked(const std::string &fileUri, const std::string &key)
     {
-        auto &keys = m_keysByFile[fileUri];
-        // Linear, and deliberately: a document's symbols arrive grouped by declaration, so the key
-        // just added is almost always the one being added again for the next overload.
-        if (std::find(keys.begin(), keys.end(), key) == keys.end())
-        {
-            keys.push_back(key);
-        }
+        m_keysByFile[fileUri].insert(key);
     }
 
     void SymbolTable::EraseDocumentLocked(const std::string &fileUri)
     {
+        if (m_ruleIndexPartials)
+        {
+            auto partIt = m_ruleIndexPartials->find(fileUri);
+            if (partIt != m_ruleIndexPartials->end())
+            {
+                std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+                if (m_ruleIndex)
+                {
+                    if (m_ruleIndex.use_count() > 1)
+                    {
+                        m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
+                    }
+                    m_ruleIndex->RemovePartial(partIt->second);
+                }
+                m_ruleIndexPartials->erase(partIt);
+            }
+        }
+
         const auto fileEntry = m_keysByFile.find(fileUri);
         if (fileEntry == m_keysByFile.end())
         {
@@ -165,6 +184,34 @@ namespace angel_lsp::analysis
         const std::string &key = symbol.qualifiedName.empty() ? symbol.name : symbol.qualifiedName;
         MutableBucket(m_symbols[key]).push_back(symbol);
         IndexKeyForFileLocked(symbol.fileUri, key);
+
+        rules::RuleIndexPartial partial = rules::RuleIndex::BuildPartial(symbol.fileUri, {symbol});
+        {
+            std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+            if (!m_ruleIndex)
+            {
+                m_ruleIndex = std::make_shared<rules::RuleIndex>();
+            }
+            else if (m_ruleIndex.use_count() > 1)
+            {
+                m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
+            }
+            m_ruleIndex->ApplyPartial(partial);
+        }
+        if (!m_ruleIndexPartials)
+        {
+            m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
+        }
+        auto it = m_ruleIndexPartials->find(symbol.fileUri);
+        if (it != m_ruleIndexPartials->end())
+        {
+            it->second.Merge(std::move(partial));
+        }
+        else
+        {
+            (*m_ruleIndexPartials)[symbol.fileUri] = std::move(partial);
+        }
+
         ++m_version;
     }
 
@@ -243,6 +290,9 @@ namespace angel_lsp::analysis
             }
         }
 
+        // Build partial index contribution before moving fresh symbols
+        rules::RuleIndexPartial freshPartial = rules::RuleIndex::BuildPartial(fileUri, fresh);
+
         EraseDocumentLocked(fileUri);
 
         bool addedMixin = false;
@@ -278,6 +328,24 @@ namespace angel_lsp::analysis
             // Only resolve included mixins for the classes declared in this document
             ResolveIncludedMixinsForKeysLocked(freshClassKeys);
         }
+
+        {
+            std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+            if (!m_ruleIndex)
+            {
+                m_ruleIndex = std::make_shared<rules::RuleIndex>();
+            }
+            else if (m_ruleIndex.use_count() > 1)
+            {
+                m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
+            }
+            m_ruleIndex->ApplyPartial(freshPartial);
+        }
+        if (!m_ruleIndexPartials)
+        {
+            m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
+        }
+        (*m_ruleIndexPartials)[fileUri] = std::move(freshPartial);
 
         ++m_version;
     }
@@ -592,21 +660,21 @@ namespace angel_lsp::analysis
     }
 
 
-    static inline std::string_view CleanScope(const std::string &name)
+    static inline std::string_view CleanScope(std::string_view name)
     {
-        if (name.rfind("::", 0) == 0)
-            return std::string_view(name).substr(2);
+        if (name.starts_with("::"))
+            return name.substr(2);
         return name;
     }
 
-    bool SymbolTable::HasSymbol(const std::string &qualifiedName) const
+    bool SymbolTable::HasSymbol(std::string_view qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         std::string_view search = CleanScope(qualifiedName);
         return m_symbols.contains(search);
     }
 
-    std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindSymbolsPtr(const std::string &qualifiedName) const
+    std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindSymbolsPtr(std::string_view qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         std::string_view search = CleanScope(qualifiedName);
@@ -614,7 +682,7 @@ namespace angel_lsp::analysis
         return it != m_symbols.end() ? it->second : nullptr;
     }
 
-    std::vector<Symbol> SymbolTable::FindSymbols(const std::string &qualifiedName) const
+    std::vector<Symbol> SymbolTable::FindSymbols(std::string_view qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         std::string_view search = CleanScope(qualifiedName);
@@ -622,7 +690,7 @@ namespace angel_lsp::analysis
         return it != m_symbols.end() ? *it->second : std::vector<Symbol>{};
     }
 
-    std::optional<Symbol> SymbolTable::FindFirstSymbol(const std::string &qualifiedName) const
+    std::optional<Symbol> SymbolTable::FindFirstSymbol(std::string_view qualifiedName) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         std::string_view search = CleanScope(qualifiedName);
@@ -632,7 +700,7 @@ namespace angel_lsp::analysis
         return std::nullopt;
     }
 
-    std::optional<Symbol> SymbolTable::LookupSymbol(const std::string &name) const
+    std::optional<Symbol> SymbolTable::LookupSymbol(std::string_view name) const
     {
         return FindFirstSymbol(name);
     }
@@ -673,53 +741,32 @@ namespace angel_lsp::analysis
         AddSymbol(sym);
     }
 
-    bool SymbolTable::HasSymbolAnywhere(const std::string &name) const
+    bool SymbolTable::HasSymbolAnywhere(std::string_view name) const
     {
-        std::string searchName = name;
-        if (searchName.rfind("::", 0) == 0)
-            searchName = searchName.substr(2);
+        std::string_view searchName = CleanScope(name);
 
         {
             std::shared_lock<std::shared_mutex> lock(m_mutex);
-
-            // Buckets are keyed by qualified name, so these two probes already answer every
-            // qualifiedName match the linear scan below used to make.
             if (m_symbols.find(searchName) != m_symbols.end() || m_symbols.find(name) != m_symbols.end())
                 return true;
         }
 
-        // What the probes above cannot answer is a match on a symbol's *short* name when it is
-        // filed under a qualified one. That used to be a scan of every bucket and every symbol in
-        // the workspace - and CallChecker asks this once per declarator. RuleIndex::allNames holds
-        // exactly that set and is rebuilt only when the table's version moves.
-        //
-        // Deliberately outside the shared lock: GetRuleIndex() re-enters ForEachSymbol, which takes
-        // the same non-recursive shared_mutex, and a writer arriving between the two acquisitions
-        // would deadlock. See the note on ForEachSymbol.
         const auto index = GetRuleIndex();
         return index && (index->allNames.contains(searchName) || index->allNames.contains(name));
     }
 
     void SymbolTable::ForEachSymbol(const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const
     {
-        // The buckets are snapshotted under the lock and visited outside it, which costs one vector
-        // of (name, shared_ptr) pairs and buys freedom from a deadlock that had already been built
-        // in: a visitor that looks another symbol up - and the declaration rules do that constantly
-        // - re-enters FindSymbolsPtr while this shared lock is still held. std::shared_mutex is
-        // writer-preferring, so the moment the workspace scanner is waiting to write, that second
-        // shared_lock blocks behind it and the two threads wait on each other for good. Holding
-        // shared_ptr copies also keeps every bucket alive for the whole walk even if a writer
-        // replaces it mid-visit.
-        std::vector<std::pair<std::string, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
+        std::vector<std::pair<const std::string *, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
         {
             std::shared_lock<std::shared_mutex> lock(m_mutex);
             snapshot.reserve(m_symbols.size());
             for (const auto &[key, symbols] : m_symbols)
-                snapshot.emplace_back(key, symbols);
+                snapshot.emplace_back(&key, symbols);
         }
 
         for (const auto &[key, symbols] : snapshot)
-            visitor(key, *symbols);
+            visitor(*key, *symbols);
     }
 
     std::vector<Symbol> SymbolTable::GetAllSymbols() const
@@ -735,9 +782,7 @@ namespace angel_lsp::analysis
     void SymbolTable::ForEachSymbolInFile(const std::string &fileUri,
                                           const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const
     {
-        // Snapshotted outside the lock for the same reason ForEachSymbol does it: the declaration
-        // rules look other symbols up from inside the visitor.
-        std::vector<std::pair<std::string, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
+        std::vector<std::pair<const std::string *, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
         {
             std::shared_lock<std::shared_mutex> lock(m_mutex);
             const auto fileEntry = m_keysByFile.find(fileUri);
@@ -752,13 +797,13 @@ namespace angel_lsp::analysis
                 const auto bucket = m_symbols.find(key);
                 if (bucket != m_symbols.end())
                 {
-                    snapshot.emplace_back(key, bucket->second);
+                    snapshot.emplace_back(&bucket->first, bucket->second);
                 }
             }
         }
 
         for (const auto &[key, symbols] : snapshot)
-            visitor(key, *symbols);
+            visitor(*key, *symbols);
     }
 
     uint64_t SymbolTable::Version() const
@@ -769,14 +814,10 @@ namespace angel_lsp::analysis
 
     std::shared_ptr<const rules::RuleIndex> SymbolTable::GetRuleIndex() const
     {
-        const uint64_t version = Version();
-
         std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
-        if (!m_ruleIndex || m_ruleIndexVersion != version)
+        if (!m_ruleIndex)
         {
-            // Built without the table's lock held: RuleIndex::Build walks the table itself.
             m_ruleIndex = rules::RuleIndex::Build(*this);
-            m_ruleIndexVersion = version;
         }
         return m_ruleIndex;
     }
@@ -1103,7 +1144,7 @@ namespace angel_lsp::analysis
             return 0;
         }
 
-        std::vector<std::string> keys = fileEntry->second;
+        std::vector<std::string> keys(fileEntry->second.begin(), fileEntry->second.end());
         std::sort(keys.begin(), keys.end());
 
         uint64_t h = 0xcbf29ce484222325ULL;

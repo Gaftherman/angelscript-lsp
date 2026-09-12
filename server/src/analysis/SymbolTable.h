@@ -19,6 +19,7 @@ namespace angel_lsp::analysis
     namespace rules
     {
         struct RuleIndex;
+        struct RuleIndexPartial;
     }
 
     enum class SymbolType
@@ -411,13 +412,28 @@ namespace angel_lsp::analysis
         }
     };
 
+    struct TransparentStringHash
+    {
+        using is_transparent = void;
+        using is_avalanching = void;
+
+        [[nodiscard]] uint64_t operator()(std::string_view sv) const noexcept
+        {
+            return ankerl::unordered_dense::hash<std::string_view>{}(sv);
+        }
+    };
+
     using SymbolKind = SymbolType;
 
     class SymbolTable
     {
     public:
-        SymbolTable() = default;
-        ~SymbolTable() = default;
+        SymbolTable();
+        ~SymbolTable();
+        SymbolTable(const SymbolTable &) = delete;
+        SymbolTable &operator=(const SymbolTable &) = delete;
+        SymbolTable(SymbolTable &&) = delete;
+        SymbolTable &operator=(SymbolTable &&) = delete;
 
         void AddSymbol(const Symbol &symbol);
         void InsertSymbol(const std::string &name, SymbolKind kind, const std::string &type = "");
@@ -490,20 +506,70 @@ namespace angel_lsp::analysis
         /** @brief Returns true if the symbol table holds any symbols collected from fileUri. */
         [[nodiscard]] bool HasDocumentSymbols(const std::string &fileUri) const;
 
-        bool HasSymbol(const std::string &qualifiedName) const;
-        bool HasSymbolAnywhere(const std::string &name) const;
+        bool HasSymbol(std::string_view qualifiedName) const;
+        bool HasSymbol(const std::string &qualifiedName) const
+        {
+            return HasSymbol(std::string_view(qualifiedName));
+        }
+        bool HasSymbol(const char *qualifiedName) const
+        {
+            return HasSymbol(std::string_view(qualifiedName));
+        }
+
+        bool HasSymbolAnywhere(std::string_view name) const;
+        bool HasSymbolAnywhere(const std::string &name) const
+        {
+            return HasSymbolAnywhere(std::string_view(name));
+        }
+        bool HasSymbolAnywhere(const char *name) const
+        {
+            return HasSymbolAnywhere(std::string_view(name));
+        }
 
         /** @brief Returns a snapshot handle to the overload list for the given qualified name.
          *  @return Shared pointer to an immutable symbol list. The snapshot stays valid even if
          *          the table is mutated afterwards (copy-on-write), or nullptr if not found.
          *  @note Prefer this over FindSymbols() for hot read paths (Hover, Completion) to avoid vector copy. */
-        std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(const std::string &qualifiedName) const;
+        std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(std::string_view qualifiedName) const;
+        std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(const std::string &qualifiedName) const
+        {
+            return FindSymbolsPtr(std::string_view(qualifiedName));
+        }
+        std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(const char *qualifiedName) const
+        {
+            return FindSymbolsPtr(std::string_view(qualifiedName));
+        }
 
         /** @brief Returns a copy of all symbols matching qualifiedName. Safe across mutations. */
-        std::vector<Symbol> FindSymbols(const std::string &qualifiedName) const;
+        std::vector<Symbol> FindSymbols(std::string_view qualifiedName) const;
+        std::vector<Symbol> FindSymbols(const std::string &qualifiedName) const
+        {
+            return FindSymbols(std::string_view(qualifiedName));
+        }
+        std::vector<Symbol> FindSymbols(const char *qualifiedName) const
+        {
+            return FindSymbols(std::string_view(qualifiedName));
+        }
 
-        std::optional<Symbol> FindFirstSymbol(const std::string &qualifiedName) const;
-        std::optional<Symbol> LookupSymbol(const std::string &name) const;
+        std::optional<Symbol> FindFirstSymbol(std::string_view qualifiedName) const;
+        std::optional<Symbol> FindFirstSymbol(const std::string &qualifiedName) const
+        {
+            return FindFirstSymbol(std::string_view(qualifiedName));
+        }
+        std::optional<Symbol> FindFirstSymbol(const char *qualifiedName) const
+        {
+            return FindFirstSymbol(std::string_view(qualifiedName));
+        }
+
+        std::optional<Symbol> LookupSymbol(std::string_view name) const;
+        std::optional<Symbol> LookupSymbol(const std::string &name) const
+        {
+            return LookupSymbol(std::string_view(name));
+        }
+        std::optional<Symbol> LookupSymbol(const char *name) const
+        {
+            return LookupSymbol(std::string_view(name));
+        }
 
         /** @brief Returns all type symbols (class, interface, enum, typedef, funcdef) whose short name matches. */
         std::vector<Symbol> FindTypeSymbolsByShortName(const std::string &shortName) const;
@@ -567,33 +633,19 @@ namespace angel_lsp::analysis
         void ResolveIncludedMixinsForKeysLocked(const std::vector<std::string> &classKeys);
         uint64_t ComputeDocumentInterfaceHashLocked(const std::string &fileUri) const;
 
-        struct TransparentStringHash
-        {
-            using is_transparent = void;
-
-            [[nodiscard]] uint64_t operator()(std::string_view sv) const noexcept
-            {
-                return ankerl::unordered_dense::hash<std::string_view>{}(sv);
-            }
-            [[nodiscard]] uint64_t operator()(const std::string &s) const noexcept
-            {
-                return ankerl::unordered_dense::hash<std::string_view>{}(s);
-            }
-        };
-
         mutable std::shared_mutex m_mutex;
         ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>, TransparentStringHash, std::equal_to<>> m_symbols;
 
         /** @brief Bucket keys touched by each document, so a per-file walk need not scan the rest. */
-        ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_keysByFile;
+        ankerl::unordered_dense::map<std::string, ankerl::unordered_dense::set<std::string>> m_keysByFile;
 
         uint64_t m_version = 0;
 
-        // Guarded separately from m_mutex: building the index reads the table, so holding the
+        // Guarded separately from m_mutex: building or updating the index reads the table, so holding the
         // table's lock across the build would be a lock taken twice by one thread.
         mutable std::mutex m_ruleIndexMutex;
-        mutable std::shared_ptr<const rules::RuleIndex> m_ruleIndex;
-        mutable uint64_t m_ruleIndexVersion = 0;
+        mutable std::shared_ptr<rules::RuleIndex> m_ruleIndex;
+        std::unique_ptr<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>> m_ruleIndexPartials;
 
         bool m_virtualMixinDocumentsEnabled = false;
     };

@@ -242,38 +242,47 @@ namespace angel_lsp::features
                         auto hierarchy = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, request.symbolTable);
                         for (const auto &cls : hierarchy)
                         {
-                            auto found = request.symbolTable.FindSymbols(cls + "::" + targetMethodName);
-                            for (const auto &sym : found)
+                            auto found = request.symbolTable.FindSymbolsPtr(cls + "::" + targetMethodName);
+                            if (found)
                             {
-                                if (sym.type == analysis::SymbolType::Function && std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                                for (const auto &sym : *found)
                                 {
-                                    if (std::none_of(funcCandidates.begin(), funcCandidates.end(), [&](const analysis::Symbol &existing) {
-                                        return existing.qualifiedName == sym.qualifiedName && analysis::HasSameParameterList(existing, sym);
-                                    }))
+                                    if (sym.type == analysis::SymbolType::Function && std::holds_alternative<analysis::FunctionSignature>(sym.signature))
                                     {
-                                        funcCandidates.push_back(sym);
+                                        if (std::none_of(funcCandidates.begin(), funcCandidates.end(), [&](const analysis::Symbol &existing) {
+                                            return existing.qualifiedName == sym.qualifiedName && analysis::HasSameParameterList(existing, sym);
+                                        }))
+                                        {
+                                            funcCandidates.push_back(sym);
+                                        }
                                     }
                                 }
                             }
                         }
 
-                        auto hostSyms = request.symbolTable.FindSymbols(c.qualifiedName.empty() ? c.name : c.qualifiedName);
-                        for (const auto &hs : hostSyms)
+                        auto hostSyms = request.symbolTable.FindSymbolsPtr(c.qualifiedName.empty() ? c.name : c.qualifiedName);
+                        if (hostSyms)
                         {
-                            if (hs.type == analysis::SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(hs.signature))
+                            for (const auto &hs : *hostSyms)
                             {
-                                for (const auto &mixinName : hs.GetClass().includedMixins)
+                                if (hs.type == analysis::SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(hs.signature))
                                 {
-                                    auto mixinMethods = request.symbolTable.FindSymbols(mixinName + "::" + targetMethodName);
-                                    for (const auto &sym : mixinMethods)
+                                    for (const auto &mixinName : hs.GetClass().includedMixins)
                                     {
-                                        if (sym.type == analysis::SymbolType::Function && std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                                        auto mixinMethods = request.symbolTable.FindSymbolsPtr(mixinName + "::" + targetMethodName);
+                                        if (mixinMethods)
                                         {
-                                            if (std::none_of(funcCandidates.begin(), funcCandidates.end(), [&](const analysis::Symbol &existing) {
-                                                return existing.qualifiedName == sym.qualifiedName && analysis::HasSameParameterList(existing, sym);
-                                            }))
+                                            for (const auto &sym : *mixinMethods)
                                             {
-                                                funcCandidates.push_back(sym);
+                                                if (sym.type == analysis::SymbolType::Function && std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                                                {
+                                                    if (std::none_of(funcCandidates.begin(), funcCandidates.end(), [&](const analysis::Symbol &existing) {
+                                                        return existing.qualifiedName == sym.qualifiedName && analysis::HasSameParameterList(existing, sym);
+                                                    }))
+                                                    {
+                                                        funcCandidates.push_back(sym);
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -531,13 +540,16 @@ namespace angel_lsp::features
             virtualHostClass = analysis::SymbolTable::ExtractVirtualHostClass(request.uri);
             virtualMixinName = analysis::SymbolTable::ExtractVirtualMixinName(request.uri);
 
-            auto candidates = request.symbolTable.FindSymbols(virtualMixinName);
-            for (const auto &cand : candidates)
+            auto candidates = request.symbolTable.FindSymbolsPtr(virtualMixinName);
+            if (candidates)
             {
-                if (cand.type == analysis::SymbolType::Class)
+                for (const auto &cand : *candidates)
                 {
-                    virtualMixinSym = cand;
-                    break;
+                    if (cand.type == analysis::SymbolType::Class)
+                    {
+                        virtualMixinSym = cand;
+                        break;
+                    }
                 }
             }
             if (!virtualMixinSym.has_value())
