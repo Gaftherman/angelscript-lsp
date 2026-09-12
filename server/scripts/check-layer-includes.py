@@ -1,19 +1,23 @@
-"""The analysis and parser layers must compile without the LSP protocol library.
+"""Enforces architectural layer boundaries and encapsulation across the codebase.
 
-`analysis/SymbolTable.h` used to include `utils/LspLogger.h`, which includes
-`<lsp/messagehandler.h>` and `<lsp/messages.h>`. Every translation unit in `analysis/` therefore
-compiled the whole protocol library, and `SymbolTable` could not be tested without it - a header
-nobody would think to look at decided the dependencies of a layer that has no business knowing the
-protocol exists.
+The Layer Matrix defined in .agents/AGENTS.md:
+  - Layer 1: Core / Config (config/, document/, parser/, utils/)
+      Only standard C++ libraries or headers from its own layer.
+      FORBIDDEN: Layer 2 (analysis), Layer 3 (features), Layer 4 (lsp).
+  - Layer 2: Analysis (analysis/)
+      Layer 1 and C++ libraries.
+      FORBIDDEN: Layer 3 (features), Layer 4 (lsp).
+  - Layer 3: Features (features/)
+      Layer 1 and Layer 2.
+      FORBIDDEN: Other Features (e.g. Hover must not include Completion) and Layer 4 (lsp).
+  - Layer 4: Server / Listener (lsp/, main.cpp)
+      Layer 1, Layer 2, and Layer 3.
+      Decoupled server components (DocumentStore, AnalysisScheduler,
+      PredefinedStubManager, ModuleIndex) must not include Server.h.
 
-It was one `#include` to reintroduce and nothing would have said so: the code still compiles, the
-tests still pass, and the coupling is invisible until someone reads the transitive include tree by
-hand. That is the same shape as the two guards already in this directory - a control that silently
-stops working, with a green build on top.
-
-The rule: no header under `src/analysis/` or `src/parser/` may reach `<lsp/...>` or
-`utils/LspLogger.h`, directly or through another project header. A `.cpp` in those layers may -
-it is the translation unit's own business - and `src/lsp/` may, obviously.
+Additionally:
+  - analysis/ and parser/ must compile without the LSP protocol library (<lsp/...>
+    or utils/LspLogger.h).
 
 Run from server/:  python scripts/check-layer-includes.py
 """
@@ -25,10 +29,28 @@ from pathlib import Path
 SERVER = Path(__file__).resolve().parent.parent
 SRC = SERVER / 'src'
 
-# Layers that must stay free of the protocol, and what counts as reaching it.
+# Protocol isolation rules
 GUARDED_DIRS = ('analysis', 'parser')
 FORBIDDEN_ANGLED = re.compile(r'#\s*include\s*<\s*lsp/')
 FORBIDDEN_QUOTED = {'utils/LspLogger.h'}
+
+# Layer classification
+LAYER_MAP = {
+    'config': 1,
+    'document': 1,
+    'parser': 1,
+    'utils': 1,
+    'analysis': 2,
+    'features': 3,
+    'lsp': 4,
+}
+
+DECOUPLED_LSP_MODULES = {
+    'lsp/DocumentStore.h',
+    'lsp/AnalysisScheduler.h',
+    'lsp/PredefinedStubManager.h',
+    'lsp/ModuleIndex.h',
+}
 
 QUOTED_INCLUDE = re.compile(r'#\s*include\s*"([^"]+)"')
 
@@ -67,13 +89,60 @@ def reaches_protocol(header: Path, seen: set[Path]) -> list[str] | None:
     return None
 
 
+def get_layer_info(header: Path) -> tuple[int | None, str, str]:
+    """Returns (layer_number, top_dir, relative_path_from_src)."""
+    rel = header.resolve().relative_to(SRC.resolve()).as_posix()
+    top = rel.split('/')[0]
+    return LAYER_MAP.get(top, None), top, rel
+
+
+def check_layer_matrix() -> list[str]:
+    """Validates layer hierarchy and intra-feature encapsulation rules."""
+    violations = []
+    for header in sorted(SRC.rglob('*.h')):
+        l_from, top_from, rel_from = get_layer_info(header)
+        if l_from is None:
+            continue
+
+        text = header.read_text(encoding='utf-8', errors='replace')
+        for inc in QUOTED_INCLUDE.findall(text):
+            target = resolve(inc, header)
+            if target is None:
+                continue
+            l_to, top_to, rel_to = get_layer_info(target)
+            if l_to is None:
+                continue
+
+            # Check layer hierarchy (lower layer cannot include higher layer)
+            if l_from < l_to:
+                violations.append(
+                    f"Layer violation: {rel_from} (Layer {l_from}) includes {rel_to} (Layer {l_to})"
+                )
+            elif l_from == 3 and l_to == 3:
+                # Check cross-feature isolation in features/
+                parts_from = rel_from.split('/')
+                parts_to = rel_to.split('/')
+                feat_from = parts_from[1] if len(parts_from) > 1 else ''
+                feat_to = parts_to[1] if len(parts_to) > 1 else ''
+                if feat_from and feat_to and feat_from != feat_to:
+                    violations.append(
+                        f"Cross-feature violation: {rel_from} (feature '{feat_from}') includes {rel_to} (feature '{feat_to}')"
+                    )
+            elif top_from == 'lsp' and rel_from in DECOUPLED_LSP_MODULES:
+                if rel_to == 'lsp/Server.h':
+                    violations.append(
+                        f"Encapsulation violation: decoupled module {rel_from} includes {rel_to}"
+                    )
+
+    return violations
+
+
 def main() -> int:
     problems = []
 
+    # 1. Protocol isolation check for analysis/ and parser/
     for layer in GUARDED_DIRS:
         for header in sorted((SRC / layer).rglob('*.h')):
-            # A fresh `seen` per header: a shared one would let the first header consume a shared
-            # dependency and hide the same violation in every header after it.
             chain = reaches_protocol(header.resolve(), set())
             if chain is not None:
                 problems.append((header.relative_to(SERVER), ' -> '.join(chain)))
@@ -89,8 +158,18 @@ def main() -> int:
         print('These layers are meant to be usable, and testable, without the protocol.')
         return 1
 
+    # 2. Layer Matrix and modular encapsulation check
+    matrix_violations = check_layer_matrix()
+    if matrix_violations:
+        print('Layer matrix or modular encapsulation violations:')
+        for violation in matrix_violations:
+            print(f'  - {violation}')
+        return 1
+
     guarded = sum(len(list((SRC / layer).rglob('*.h'))) for layer in GUARDED_DIRS)
+    total_headers = len(list(SRC.rglob('*.h')))
     print(f'{guarded} headers in analysis/ and parser/ compile without the LSP protocol library.')
+    print(f'{total_headers} total headers conform to the Layer Matrix and modular encapsulation rules.')
     return 0
 
 
