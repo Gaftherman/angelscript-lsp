@@ -12,7 +12,7 @@ namespace angel_lsp
         }
 
         const uint64_t gen = m_nextGeneration++;
-        m_documents.insert_or_assign(uri, std::make_shared<document::Document>(uri, std::move(text), version, std::move(tree), gen));
+        m_documents.insert_or_assign(uri, std::make_shared<const document::Document>(uri, std::move(text), version, std::move(tree), gen));
     }
 
     void DocumentStore::UpdateDocument(const std::string &uri, std::string text, int version,
@@ -22,12 +22,12 @@ namespace angel_lsp
         if (auto it = m_documents.find(uri); it != m_documents.end())
         {
             const uint64_t gen = it->second ? it->second->generation : m_nextGeneration++;
-            it->second = std::make_shared<document::Document>(uri, std::move(text), version, std::move(tree), gen);
+            it->second = std::make_shared<const document::Document>(uri, std::move(text), version, std::move(tree), gen);
         }
         else
         {
             const uint64_t gen = m_nextGeneration++;
-            m_documents.insert_or_assign(uri, std::make_shared<document::Document>(uri, std::move(text), version, std::move(tree), gen));
+            m_documents.insert_or_assign(uri, std::make_shared<const document::Document>(uri, std::move(text), version, std::move(tree), gen));
         }
     }
 
@@ -68,7 +68,8 @@ namespace angel_lsp
         std::lock_guard<std::mutex> lock(m_mutex);
         if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
         {
-            it->second->version = version;
+            document::TreePtr treeCopy = document::MakeTreePtr(it->second->tree ? ts_tree_copy(it->second->tree.get()) : nullptr);
+            it->second = std::make_shared<const document::Document>(uri, it->second->text, version, std::move(treeCopy), it->second->generation);
         }
     }
 
@@ -87,7 +88,7 @@ namespace angel_lsp
         std::lock_guard<std::mutex> lock(m_mutex);
         if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
         {
-            it->second->tree = std::move(tree);
+            it->second = std::make_shared<const document::Document>(uri, it->second->text, it->second->version, std::move(tree), it->second->generation);
         }
     }
 
@@ -194,6 +195,21 @@ namespace angel_lsp
             return &it->second->text;
         }
         return nullptr;
+    }
+
+    std::vector<std::shared_ptr<const document::Document>> DocumentStore::GetAllDocuments() const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<std::shared_ptr<const document::Document>> docs;
+        docs.reserve(m_documents.size());
+        for (const auto &[uri, doc] : m_documents)
+        {
+            if (doc)
+            {
+                docs.push_back(doc);
+            }
+        }
+        return docs;
     }
 
     size_t DocumentStore::Size() const

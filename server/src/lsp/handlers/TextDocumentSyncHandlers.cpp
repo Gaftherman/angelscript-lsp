@@ -20,6 +20,7 @@ namespace angel_lsp
 
     void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params &&params)
     {
+        std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
         m_documentStore.SetClientUri(uriStr, params.textDocument.uri.toString());
         std::string text = params.text.has_value() ? params.text.value() : "";
@@ -169,6 +170,7 @@ namespace angel_lsp
 
     void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params &&params)
     {
+        std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
         utils::HighResTimer totalTimer;
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
         const std::string clientUri = params.textDocument.uri.toString();
@@ -270,21 +272,22 @@ namespace angel_lsp
 
     void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params)
     {
+        std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
+
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
         m_documentStore.SetClientUri(uriStr, params.textDocument.uri.toString());
 
-        auto docText = m_documentStore.GetText(uriStr);
-        if (!docText)
+        auto doc = m_documentStore.GetDocument(uriStr);
+        if (!doc)
         {
             return;
         }
 
         const int version = params.textDocument.version;
-        std::string buffer = std::move(*docText);
-
-        TSTree *tree = m_documentStore.GetTree(uriStr);
+        std::string buffer = doc->text;
 
         const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
+        document::TreePtr workingTree = document::MakeTreePtr((doc->tree && !isPredefined) ? ts_tree_copy(doc->tree.get()) : nullptr);
 
         for (const auto &change : params.contentChanges)
         {
@@ -292,7 +295,7 @@ namespace angel_lsp
             {
                 const auto &rt = std::get<lsp::TextDocumentContentChangePartial>(change);
 
-                if (tree && !isPredefined)
+                if (workingTree && !isPredefined)
                 {
                     uint32_t startLine = rt.range.start.line;
                     // rt.range is expressed in the negotiated encoding, while TSPoint::column and every
@@ -343,7 +346,7 @@ namespace angel_lsp
                     edit.old_end_point = old_end_point;
                     edit.new_end_point = new_end_point;
 
-                    ts_tree_edit(tree, &edit);
+                    ts_tree_edit(workingTree.get(), &edit);
                 }
 
                 angel_lsp::utils::ApplyIncrementalChange(buffer,
@@ -355,7 +358,7 @@ namespace angel_lsp
             {
                 const auto &t = std::get<lsp::TextDocumentContentChangeWholeDocument>(change);
                 buffer = t.text;
-                tree = nullptr;
+                workingTree.reset();
             }
         }
 
@@ -363,7 +366,7 @@ namespace angel_lsp
 
         utils::HighResTimer parseTimer;
         // For a predefined stub, reparse cleanly without reusing incremental state.
-        TSTree *oldTree = isPredefined ? nullptr : tree;
+        TSTree *oldTree = (isPredefined || !workingTree) ? nullptr : workingTree.get();
         TSTree *newTree = m_parser->Parse(analysisText, oldTree);
         m_documentStore.UpdateDocument(uriStr, buffer, version, document::MakeTreePtr(newTree));
         double parseMs = parseTimer.ElapsedMs();
@@ -386,6 +389,7 @@ namespace angel_lsp
 
     void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params &&params)
     {
+        std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
         m_documentStore.CloseDocument(uriStr);
         ForgetOpenDocument(uriStr);

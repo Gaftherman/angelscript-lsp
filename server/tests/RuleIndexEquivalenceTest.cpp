@@ -91,11 +91,55 @@ namespace
             CHECK(actual.accessorPropertyNames.contains(name));
         }
 
-        // 4. keywordAccessorPropertyNames
+        // 4. keywordAccessorPropertyNames & keywordAccessorPropertyCounts
         CHECK(actual.keywordAccessorPropertyNames.size() == oracle.keywordAccessorPropertyNames.size());
         for (const auto &name : oracle.keywordAccessorPropertyNames)
         {
             CHECK(actual.keywordAccessorPropertyNames.contains(name));
+        }
+        CHECK(actual.keywordAccessorPropertyCounts.size() == oracle.keywordAccessorPropertyCounts.size());
+        for (const auto &[name, count] : oracle.keywordAccessorPropertyCounts)
+        {
+            auto it = actual.keywordAccessorPropertyCounts.find(name);
+            CHECK(it != actual.keywordAccessorPropertyCounts.end());
+            if (it != actual.keywordAccessorPropertyCounts.end())
+            {
+                CHECK(it->second == count);
+            }
+        }
+
+        // 4b. enumSymbolsByMemberName
+        CHECK(actual.enumSymbolsByMemberName.size() == oracle.enumSymbolsByMemberName.size());
+        for (const auto &[name, oracleSymbols] : oracle.enumSymbolsByMemberName)
+        {
+            auto it = actual.enumSymbolsByMemberName.find(name);
+            CHECK(it != actual.enumSymbolsByMemberName.end());
+            if (it != actual.enumSymbolsByMemberName.end())
+            {
+                CHECK(it->second.size() == oracleSymbols.size());
+            }
+        }
+
+        // 4c. qualifiedTypesByShortName & qualifiedTypeCounts
+        CHECK(actual.qualifiedTypesByShortName.size() == oracle.qualifiedTypesByShortName.size());
+        for (const auto &[shortName, oracleTypes] : oracle.qualifiedTypesByShortName)
+        {
+            auto it = actual.qualifiedTypesByShortName.find(shortName);
+            CHECK(it != actual.qualifiedTypesByShortName.end());
+            if (it != actual.qualifiedTypesByShortName.end())
+            {
+                CHECK(it->second.size() == oracleTypes.size());
+            }
+        }
+        CHECK(actual.qualifiedTypeCounts.size() == oracle.qualifiedTypeCounts.size());
+        for (const auto &[shortName, oracleCounts] : oracle.qualifiedTypeCounts)
+        {
+            auto it = actual.qualifiedTypeCounts.find(shortName);
+            CHECK(it != actual.qualifiedTypeCounts.end());
+            if (it != actual.qualifiedTypeCounts.end())
+            {
+                CHECK(it->second == oracleCounts);
+            }
         }
 
         // 5. derivedByBase
@@ -163,6 +207,10 @@ namespace
                 CHECK(actCm.nestedTypeCount == oracleCm.nestedTypeCount);
                 CHECK(actCm.hasNestedType == oracleCm.hasNestedType);
                 CHECK(actCm.memberKeySet == oracleCm.memberKeySet);
+                CHECK(actCm.methodCounts == oracleCm.methodCounts);
+                CHECK(actCm.finalMethodCounts == oracleCm.finalMethodCounts);
+                CHECK(actCm.allMemberCounts == oracleCm.allMemberCounts);
+                CHECK(actCm.memberKeyCounts == oracleCm.memberKeyCounts);
             }
         }
     }

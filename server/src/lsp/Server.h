@@ -166,7 +166,16 @@ namespace angel_lsp
              */
             size_t textHash = 0;
             int version = -1;
+            uint64_t generation = 0;
+            uint64_t configRevision = 0;
         };
+
+        // Serializes document lifecycle mutations (didOpen, didChange, didSave, didClose)
+        // with background analysis commits (CommitAnalysisResults), eliminating race windows.
+        mutable std::mutex m_lifecycleMutex;
+
+        // Optional test hook invoked right before committing analysis results, for deterministic barrier testing.
+        std::function<void(const std::string &uri, int version, uint64_t generation)> m_onBeforeCommitHook;
 
         // Written by the analysis thread through PublishDiagnostics, read by the message loop
         // answering a pull. Its own mutex rather than m_analysisMutex: that one is held across the
@@ -285,6 +294,32 @@ namespace angel_lsp
         void RegisterTextDocumentHandlers();
         void RegisterHierarchyHandlers();
         void RegisterTokensAndFormattingHandlers();
+
+        using OnBeforeCommitHook = std::function<void(const std::string &uri, int version, uint64_t generation)>;
+
+        /**
+         * @brief Test hook invoked immediately before acquiring lifecycle mutex to commit analysis results.
+         */
+        void SetOnBeforeCommitHook(OnBeforeCommitHook hook)
+        {
+            m_onBeforeCommitHook = std::move(hook);
+        }
+
+        /**
+         * @brief Const reference to the server symbol table (used for test assertions).
+         */
+        const angel_lsp::analysis::SymbolTable &GetSymbolTable() const
+        {
+            return m_symbolTable;
+        }
+
+        /**
+         * @brief Reference to the server document store (used for test assertions).
+         */
+        const angel_lsp::DocumentStore &GetDocumentStore() const
+        {
+            return m_documentStore;
+        }
 
         /**
          * @brief Snapshot of the workspace folder URIs. Safe to call from any thread.
@@ -680,11 +715,29 @@ namespace angel_lsp
          * @param text Document text. Must outlive the returned request.
          * @param tree Parsed tree for that exact text, or nullptr. Must outlive the returned
          *        request: rules that inspect expressions read through it.
+         * @param customSymbolTable Optional custom or snapshot symbol table to use instead of m_symbolTable.
          * @return Request wired with the scope tree, type configuration and feature flags.
          */
-        angel_lsp::analysis::SemanticAnalysisRequest BuildAnalysisRequest(const std::string &uriStr,
-                                                                          const std::string &text,
-                                                                          const TSTree *tree) const;
+        angel_lsp::analysis::SemanticAnalysisRequest BuildAnalysisRequest(
+            const std::string &uriStr,
+            const std::string &text,
+            const TSTree *tree,
+            const angel_lsp::analysis::SymbolTable *customSymbolTable = nullptr) const;
+
+        /**
+         * @brief Atomically commits analysis results if and only if the document state is still current.
+         *        Guarded by m_lifecycleMutex to serialize with document lifecycle mutations.
+         * @return True if committed, false if rejected due to obsolescence or cancellation.
+         */
+        bool CommitAnalysisResults(const std::string &uriStr,
+                                   int version,
+                                   uint64_t generation,
+                                   uint64_t configRevision,
+                                   analysis::SymbolTable &&staging,
+                                   std::shared_ptr<const analysis::Scope> scopeRoot,
+                                   std::vector<analysis::CallSite> calls,
+                                   std::vector<analysis::Diagnostic> diagnostics,
+                                   const std::string &text);
 
         /**
          * @brief Rebuilds one document's symbols as a single atomic replacement.
@@ -866,7 +919,7 @@ namespace angel_lsp
          * The analysis thread cannot look the text up itself - m_openDocuments belongs to the
          * message loop - and the text is what the ranges are converted against.
          */
-        void PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics, int version = -1);
+        void PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics, int version = -1, uint64_t generation = 0);
 
         /**
          * @brief Analyzer diagnostics as the client receives them: filtered, encoded, converted.
@@ -1136,11 +1189,11 @@ namespace angel_lsp
         // `force` says the answer can differ even though the bytes did not - the symbol table
         // moved, not the buffer. Without it the dedupe drops the request as a duplicate of the
         // analysis whose answer is exactly the one being replaced.
-        void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force, angel_lsp::document::TreePtr tree, int version = -1);
+        void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force, angel_lsp::document::TreePtr tree, int version = -1, uint64_t generation = 0);
 
-        void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force = false, TSTree *tree = nullptr, int version = -1)
+        void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force = false, TSTree *tree = nullptr, int version = -1, uint64_t generation = 0)
         {
-            ScheduleAnalysis(uriStr, text, force, angel_lsp::document::MakeTreePtr(tree), version);
+            ScheduleAnalysis(uriStr, text, force, angel_lsp::document::MakeTreePtr(tree), version, generation);
         }
 
 

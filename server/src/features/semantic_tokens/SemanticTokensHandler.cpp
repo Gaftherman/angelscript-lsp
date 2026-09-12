@@ -711,6 +711,7 @@ namespace angel_lsp::features
             uint32_t startByte = 0;
             uint32_t endByte = 0;
             std::string_view name;
+            int parent = -1;
         };
 
         std::vector<ClassSpan> classSpans;
@@ -728,7 +729,8 @@ namespace angel_lsp::features
                         classSpans.push_back(ClassSpan{
                             ts_node_start_byte(classDecl),
                             ts_node_end_byte(classDecl),
-                            std::string_view(request.sourceCode.data() + cStart, cEnd - cStart)
+                            std::string_view(request.sourceCode.data() + cStart, cEnd - cStart),
+                            -1
                         });
                     }
                 }
@@ -745,6 +747,23 @@ namespace angel_lsp::features
             return a.endByte > b.endByte;
         });
 
+        // Build parent hierarchy via stack in O(N)
+        {
+            std::vector<int> spanStack;
+            for (size_t i = 0; i < classSpans.size(); ++i)
+            {
+                while (!spanStack.empty() && classSpans[spanStack.back()].endByte <= classSpans[i].startByte)
+                {
+                    spanStack.pop_back();
+                }
+                if (!spanStack.empty() && classSpans[spanStack.back()].endByte >= classSpans[i].endByte)
+                {
+                    classSpans[i].parent = spanStack.back();
+                }
+                spanStack.push_back(static_cast<int>(i));
+            }
+        }
+
         auto findEnclosingClass = [&](uint32_t byteOffset) -> std::string_view
         {
             if (classSpans.empty())
@@ -758,22 +777,20 @@ namespace angel_lsp::features
                     return offset < span.startByte;
                 });
 
-            std::string_view innermostName;
-            uint32_t innermostSpan = UINT32_MAX;
-            for (auto rIt = it; rIt != classSpans.begin(); )
+            if (it == classSpans.begin())
             {
-                --rIt;
-                if (byteOffset >= rIt->startByte && byteOffset < rIt->endByte)
+                return {};
+            }
+
+            const int cand = static_cast<int>(std::distance(classSpans.begin(), it)) - 1;
+            for (int cur = cand; cur != -1; cur = classSpans[cur].parent)
+            {
+                if (byteOffset >= classSpans[cur].startByte && byteOffset < classSpans[cur].endByte)
                 {
-                    uint32_t spanLen = rIt->endByte - rIt->startByte;
-                    if (spanLen < innermostSpan)
-                    {
-                        innermostSpan = spanLen;
-                        innermostName = rIt->name;
-                    }
+                    return classSpans[cur].name;
                 }
             }
-            return innermostName;
+            return {};
         };
 
         // Precalculate declaration refinements from NodeIndex to eliminate ancestor walks in the hot path
@@ -800,71 +817,71 @@ namespace angel_lsp::features
                 }
             }
 
-            // Function declarations inside classes or interfaces
-            for (TSNode funcDecl : nodeIndex->Nodes(syms.symFuncDeclaration))
+            // Member declarations inside class bodies (methods and properties)
+            for (TSNode classBody : nodeIndex->Nodes(syms.symClassBody))
             {
-                for (TSNode anc = ts_node_parent(funcDecl); !ts_node_is_null(anc); anc = ts_node_parent(anc))
+                const uint32_t memberCount = ts_node_child_count(classBody);
+                for (uint32_t i = 0; i < memberCount; ++i)
                 {
-                    const TSSymbol ancSym = ts_node_symbol(anc);
-                    if (ancSym == syms.symClassBody || ancSym == syms.symInterfaceBody)
+                    TSNode member = ts_node_child(classBody, i);
+                    const TSSymbol memberSym = ts_node_symbol(member);
+                    if (memberSym == syms.symFuncDeclaration)
                     {
-                        TSNode nameChild = parser::GetChildByField(funcDecl, parser::fields::Name);
+                        TSNode nameChild = parser::GetChildByField(member, parser::fields::Name);
                         if (!ts_node_is_null(nameChild))
                         {
                             refinedDeclByStartByte[ts_node_start_byte(nameChild)] = Type_Method;
                         }
-                        break;
+                    }
+                    else if (memberSym == syms.symVariableDeclaration)
+                    {
+                        const uint32_t varChildCount = ts_node_child_count(member);
+                        for (uint32_t j = 0; j < varChildCount; ++j)
+                        {
+                            TSNode child = ts_node_child(member, j);
+                            if (ts_node_symbol(child) == syms.symIdentifier)
+                            {
+                                refinedDeclByStartByte[ts_node_start_byte(child)] = Type_Property;
+                            }
+                            else
+                            {
+                                TSNode nameChild = parser::GetChildByField(child, parser::fields::Name);
+                                if (!ts_node_is_null(nameChild))
+                                {
+                                    refinedDeclByStartByte[ts_node_start_byte(nameChild)] = Type_Property;
+                                }
+                                else
+                                {
+                                    const uint32_t subCount = ts_node_child_count(child);
+                                    for (uint32_t k = 0; k < subCount; ++k)
+                                    {
+                                        TSNode subChild = ts_node_child(child, k);
+                                        if (ts_node_symbol(subChild) == syms.symIdentifier)
+                                        {
+                                            refinedDeclByStartByte[ts_node_start_byte(subChild)] = Type_Property;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            // Variable declarations inside classes (properties)
-            for (TSNode varDecl : nodeIndex->Nodes(syms.symVariableDeclaration))
+            // Method declarations inside interface bodies
+            for (TSNode ifaceBody : nodeIndex->Nodes(syms.symInterfaceBody))
             {
-                bool insideClass = false;
-                for (TSNode anc = ts_node_parent(varDecl); !ts_node_is_null(anc); anc = ts_node_parent(anc))
+                const uint32_t memberCount = ts_node_child_count(ifaceBody);
+                for (uint32_t i = 0; i < memberCount; ++i)
                 {
-                    const TSSymbol ancSym = ts_node_symbol(anc);
-                    if (ancSym == syms.symStatementBlock || ancSym == syms.symFuncDeclaration)
+                    TSNode member = ts_node_child(ifaceBody, i);
+                    const TSSymbol memberSym = ts_node_symbol(member);
+                    if (memberSym == syms.symFuncDeclaration || memberSym == syms.symInterfaceMethod)
                     {
-                        break;
-                    }
-                    if (ancSym == syms.symClassBody)
-                    {
-                        insideClass = true;
-                        break;
-                    }
-                }
-
-                if (insideClass)
-                {
-                    const uint32_t childCount = ts_node_child_count(varDecl);
-                    for (uint32_t i = 0; i < childCount; ++i)
-                    {
-                        TSNode child = ts_node_child(varDecl, i);
-                        if (ts_node_symbol(child) == syms.symIdentifier)
+                        TSNode nameChild = parser::GetChildByField(member, parser::fields::Name);
+                        if (!ts_node_is_null(nameChild))
                         {
-                            refinedDeclByStartByte[ts_node_start_byte(child)] = Type_Property;
-                        }
-                        else
-                        {
-                            TSNode nameChild = parser::GetChildByField(child, parser::fields::Name);
-                            if (!ts_node_is_null(nameChild))
-                            {
-                                refinedDeclByStartByte[ts_node_start_byte(nameChild)] = Type_Property;
-                            }
-                            else
-                            {
-                                const uint32_t subCount = ts_node_child_count(child);
-                                for (uint32_t j = 0; j < subCount; ++j)
-                                {
-                                    TSNode subChild = ts_node_child(child, j);
-                                    if (ts_node_symbol(subChild) == syms.symIdentifier)
-                                    {
-                                        refinedDeclByStartByte[ts_node_start_byte(subChild)] = Type_Property;
-                                    }
-                                }
-                            }
+                            refinedDeclByStartByte[ts_node_start_byte(nameChild)] = Type_Method;
                         }
                     }
                 }

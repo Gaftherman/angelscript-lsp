@@ -168,6 +168,12 @@ namespace angel_lsp
         [[nodiscard]] const std::string *GetTextPtr(const std::string &uri) const;
 
         /**
+         * @brief Returns thread-safe snapshot list of all open documents as immutable handles.
+         * @return Vector of shared_ptr to const Document.
+         */
+        [[nodiscard]] std::vector<std::shared_ptr<const document::Document>> GetAllDocuments() const;
+
+        /**
          * @brief Returns number of open documents.
          * @return Count of open documents.
          */
@@ -176,7 +182,7 @@ namespace angel_lsp
     private:
         mutable std::mutex m_mutex;
         uint64_t m_nextGeneration = 1;
-        ankerl::unordered_dense::map<std::string, std::shared_ptr<document::Document>> m_documents;
+        ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>> m_documents;
         ankerl::unordered_dense::map<std::string, std::string> m_clientUriByKey;
     };
 }

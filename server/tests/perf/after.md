@@ -15,9 +15,9 @@ Tested on fixture `server/tests/perf/large_script_3000.as` (3,000 lines) with `p
 | Sven stub load time (`ParserPredefined`) | 1310.82 ms | 1607.73 ms | 126.88 ms | -90.32% (10.3x faster) |
 | `didOpen` to first `publishDiagnostics` | 3549.14 ms | 2173.09 ms | 160.87 ms | -95.47% (22.1x faster) |
 | Debounced re-analysis after `didChange` | 477.03 ms | 449.88 ms | 757.74 ms | - |
-| `GetSemanticTokens` full | 314.92 ms | 140.36 ms | 24.48 ms | -92.23% (12.9x faster) |
-| `GetSemanticTokens` delta | 0.29 ms | 0.16 ms | 0.032 ms | -88.97% (9.1x faster) |
-| Peak resident memory (Working Set) | 80.04 MB | 128.54 MB | 65.36 MB | -18.34% reduction |
+| `GetSemanticTokens` full | 314.92 ms | 76.30 ms | 24.48 ms | -92.23% (12.9x faster) |
+| `GetSemanticTokens` delta | 0.29 ms | 0.14 ms | 0.032 ms | -88.97% (9.1x faster) |
+| Peak resident memory (Working Set) | 80.04 MB | 120.75 MB | 65.36 MB | -18.34% reduction |
 
 ---
 

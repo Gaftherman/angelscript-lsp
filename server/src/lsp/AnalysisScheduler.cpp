@@ -18,6 +18,12 @@ namespace angel_lsp
     {
         if (!m_stop.exchange(true))
         {
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                m_pending.clear();
+                m_inFlight.clear();
+                m_cancelCurrentAnalysis = true;
+            }
             m_cv.notify_all();
             if (m_thread.joinable())
             {
@@ -29,6 +35,11 @@ namespace angel_lsp
     void AnalysisScheduler::Schedule(const std::string &uriStr, std::string text, bool force,
                                      document::TreePtr tree, int version, uint64_t generation, uint64_t configRevision)
     {
+        if (m_stop.load())
+        {
+            return;
+        }
+
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_savedUris.erase(uriStr);
@@ -180,11 +191,15 @@ namespace angel_lsp
 
             for (;;)
             {
+                if (m_stop.load())
+                {
+                    break;
+                }
                 std::string currentUri;
                 PendingAnalysisEntry currentEntry;
                 {
                     std::lock_guard<std::mutex> workLock(m_mutex);
-                    if (m_inFlight.empty())
+                    if (m_stop.load() || m_inFlight.empty())
                     {
                         break;
                     }

@@ -52,8 +52,9 @@ test-suite:
   needs:
     - build-server
   script:
+    - set -o pipefail
     - ctest --test-dir server/build -C Release --output-on-failure
-    - ./server/build/angel_lsp_tests --test-case="*Concurrency Stress Test*" 2>&1 | tee stress.log
+    - ./server/build/angel_lsp_tests --test-case="*Concurrency Stress Test*,*Barrier*" 2>&1 | tee stress.log
     - if grep -q "test cases: 0" stress.log; then echo "The stress test was not found or failed to execute."; exit 1; fi
   artifacts:
     when: always
@@ -84,9 +85,10 @@ sanitize-asan-ubsan:
   stage: sanitize
   extends: .cpp-setup
   script:
+    - set -o pipefail
     - cmake -B server/build-asan -S server -DCMAKE_BUILD_TYPE=Debug -DANGELLSP_BUILD_ORACLE=ON -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all" -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
     - cmake --build server/build-asan -j $(nproc) --target angel_lsp_tests
-    - ASAN_OPTIONS="detect_leaks=0" UBSAN_OPTIONS="halt_on_error=1:abort_on_error=1" ./server/build-asan/angel_lsp_tests --test-case="*Concurrency Stress Test*,*AnalysisScheduler*,*DocumentStore*" 2>&1 | tee asan-ubsan.log
+    - ASAN_OPTIONS="detect_leaks=0" UBSAN_OPTIONS="halt_on_error=1:abort_on_error=1" ./server/build-asan/angel_lsp_tests --test-case="*Concurrency Stress Test*,*Barrier*,*AnalysisScheduler*,*DocumentStore*" 2>&1 | tee asan-ubsan.log
     - if grep -q "test cases: 0" asan-ubsan.log; then echo "Sanitizer tests did not run!"; exit 1; fi
   artifacts:
     when: always
@@ -98,9 +100,10 @@ sanitize-tsan:
   stage: sanitize
   extends: .cpp-setup
   script:
+    - set -o pipefail
     - cmake -B server/build-tsan -S server -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer"
     - cmake --build server/build-tsan -j $(nproc) --target angel_lsp_tests
-    - ./server/build-tsan/angel_lsp_tests --test-case="ServerHarnessTest*,*Concurrency Stress Test*,*AnalysisScheduler*,*DocumentStore*" 2>&1 | tee tsan.log
+    - ./server/build-tsan/angel_lsp_tests --test-case="ServerHarnessTest*,*Concurrency Stress Test*,*Barrier*,*AnalysisScheduler*,*DocumentStore*" 2>&1 | tee tsan.log
     - if grep -q "test cases: 0" tsan.log; then echo "TSan tests did not run!"; exit 1; fi
   artifacts:
     when: always

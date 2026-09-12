@@ -686,6 +686,7 @@ namespace angel_lsp
         const std::string *current = FindDocumentText(uriStr);
         const size_t currentHash = current ? std::hash<std::string>{}(*current) : 0;
         const int currentVersion = GetDocumentVersion(uriStr);
+        const uint64_t currentGen = m_documentStore.GetGeneration(uriStr);
 
         if (current)
         {
@@ -694,7 +695,11 @@ namespace angel_lsp
                 it != m_diagnosticsCache.end())
             {
                 bool isCurrent = false;
-                if (currentVersion >= 0 && it->second.version >= 0)
+                if (it->second.generation > 0 && currentGen > 0 && it->second.generation != currentGen)
+                {
+                    isCurrent = false;
+                }
+                else if (currentVersion >= 0 && it->second.version >= 0)
                 {
                     isCurrent = (it->second.version == currentVersion);
                 }

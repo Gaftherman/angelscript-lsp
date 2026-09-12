@@ -457,6 +457,17 @@ namespace angel_lsp::analysis
          * 411 ms a 646 KB stub took to load. `staging` is left empty.
          */
         void ReplaceDocumentSymbols(const std::string &fileUri, SymbolTable &&staging);
+
+        /**
+         * @brief Creates an isolated analysis snapshot of this symbol table with staging symbols applied for uriStr.
+         *        The global table is read-locked during copy; the returned snapshot is completely private to the caller
+         *        and safe for concurrent semantic analysis without contaminating the global symbol table.
+         * @param uriStr Document URI being analyzed.
+         * @param staging Fresh symbols collected for uriStr.
+         * @return Isolated SymbolTable snapshot owned by unique_ptr.
+         */
+        [[nodiscard]] std::unique_ptr<SymbolTable> CreateAnalysisSnapshot(const std::string &uriStr, const SymbolTable &staging) const;
+
         void ResolveIncludedMixins();
 
         /** @brief Controls whether synthetic virtual mixin document URIs are generated during mixin resolution. */

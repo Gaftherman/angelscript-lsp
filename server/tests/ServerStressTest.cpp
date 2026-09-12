@@ -290,7 +290,7 @@ TEST_CASE("Server - Concurrency Stress Test: 500 rapid edits with interleaved re
 TEST_CASE("Server - Barrier: Close during analysis cancels analysis and suppresses stale diagnostics")
 {
     TempStressWorkspace ws;
-    ws.Write("sample.as", "void main() { int a = ; }");
+    ws.Write("sample.as", "void SampleFunction() {}");
     const std::string fileUri = ws.Uri("sample.as");
 
     angel_lsp::config::ServerConfig serverConfig;
@@ -306,32 +306,70 @@ TEST_CASE("Server - Barrier: Close during analysis cancels analysis and suppress
                 ws.RootUri() + R"(","capabilities":{}}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
 
-    // 2. Open document with syntax error
+    // 2. Open document (version 1)
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" +
-                fileUri + R"(","languageId":"angelscript","version":1,"text":"void main() { int a = ; }"}}})");
+                fileUri + R"(","languageId":"angelscript","version":1,"text":"void SampleFunction() {}"}}})");
 
-    // 3. Edit document to trigger debounced analysis
+    // 3. Edit document (version 2) with a ghost function
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
-                fileUri + R"(","version":2},"contentChanges":[{"text":"void main() { int a = 123; }"}]}})");
+                fileUri + R"(","version":2},"contentChanges":[{"text":"void SampleFunction() {}\nvoid GhostSymbol() {}"}]}})");
 
-    // 4. Immediately close document before debounced analysis completes
+    std::mutex barrierMutex;
+    std::condition_variable barrierCv;
+    bool hookReached = false;
+    bool allowCommit = false;
+
+    // Pause worker thread when it finishes analyzing version 2 and is about to commit
+    stream.PushAction([&]()
+    {
+        std::unique_lock<std::mutex> lock(barrierMutex);
+        barrierCv.wait(lock, [&]() { return hookReached; });
+    });
+
+    // 4. While worker thread is paused at commit point, close the document
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":")" +
                 fileUri + R"("}}})");
 
-    // 5. Shutdown and exit
+    // 5. Release worker thread after didClose has been processed by the main thread
+    stream.PushAction([&]()
+    {
+        {
+            std::lock_guard<std::mutex> lock(barrierMutex);
+            allowCommit = true;
+        }
+        barrierCv.notify_all();
+    });
+
+    // 6. Shutdown and exit
     const int shutdownId = nextReqId++;
     stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(shutdownId) + R"(,"method":"shutdown"})");
     stream.Push(R"({"jsonrpc":"2.0","method":"exit"})");
 
+    angel_lsp::Server server(serverConfig, stream);
+    server.SetOnBeforeCommitHook([&](const std::string &/*uri*/, int version, uint64_t /*generation*/)
     {
-        angel_lsp::Server server(serverConfig, stream);
-        server.Run();
-    }
+        if (version == 2)
+        {
+            std::unique_lock<std::mutex> lock(barrierMutex);
+            hookReached = true;
+            barrierCv.notify_all();
+            barrierCv.wait(lock, [&]() { return allowCommit; });
+        }
+    });
+
+    server.Run();
 
     CHECK(stream.ResponseFor(initId).find("\"capabilities\"") != std::string::npos);
     CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
-    // On close, didClose publishes empty diagnostics `{}` to clear client markers
-    CHECK(stream.Output().find("\"diagnostics\":[]") != std::string::npos);
+
+    // Verify zero resurrection: closed document must not have symbols in symbol table
+    CHECK_FALSE(server.GetSymbolTable().HasDocumentSymbols(fileUri));
+    CHECK_FALSE(server.GetDocumentStore().IsOpen(fileUri));
+    CHECK(server.GetSymbolTable().FindSymbols("GhostSymbol").empty());
+
+    // Structured JSON assertion: publishDiagnostics on close cleared diagnostics
+    const std::string output = stream.Output();
+    CHECK(output.find(R"("diagnostics":[])") != std::string::npos);
 }
 
 TEST_CASE("Server - Barrier: Immediate reopen updates generation and receives fresh diagnostics")
@@ -355,30 +393,166 @@ TEST_CASE("Server - Barrier: Immediate reopen updates generation and receives fr
 
     // 2. Open generation 1
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" +
-                fileUri + R"(","languageId":"angelscript","version":1,"text":"void main() { int x = 1; }"}}})");
+                fileUri + R"(","languageId":"angelscript","version":1,"text":"void Gen1Function() {}"}}})");
 
-    // 3. Close generation 1
+    // 3. Edit document (version 2) to trigger background analysis on generation 1
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","version":2},"contentChanges":[{"text":"void Gen1Function() {}\nvoid Gen1Ghost() {}"}]}})");
+
+    std::mutex barrierMutex;
+    std::condition_variable barrierCv;
+    bool hookReachedGen1 = false;
+    bool allowCommitGen1 = false;
+
+    // Pause worker thread when it finishes analyzing generation 1 (version 2)
+    stream.PushAction([&]()
+    {
+        std::unique_lock<std::mutex> lock(barrierMutex);
+        barrierCv.wait(lock, [&]() { return hookReachedGen1; });
+    });
+
+    // 4. Close generation 1
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":")" +
                 fileUri + R"("}}})");
 
-    // 4. Immediately reopen as generation 2 with undeclared call
+    // 5. Immediately reopen as generation 2 with new code
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" +
-                fileUri + R"(","languageId":"angelscript","version":1,"text":"void main() { undeclared_func(); }"}}})");
+                fileUri + R"(","languageId":"angelscript","version":1,"text":"void Gen2Function() {}\nvoid test() { undeclared_func(); }"}}})");
 
-    // 5. Shutdown and exit
+    // 6. Release generation 1 worker thread after generation 2 has opened
+    stream.PushAction([&]()
+    {
+        {
+            std::lock_guard<std::mutex> lock(barrierMutex);
+            allowCommitGen1 = true;
+        }
+        barrierCv.notify_all();
+    });
+
+    // Allow generation 2 background analysis to settle
+    stream.PushAction([&]()
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    });
+
+    // 7. Shutdown and exit
     const int shutdownId = nextReqId++;
     stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(shutdownId) + R"(,"method":"shutdown"})");
     stream.Push(R"({"jsonrpc":"2.0","method":"exit"})");
 
+    angel_lsp::Server server(serverConfig, stream);
+    server.SetOnBeforeCommitHook([&](const std::string &/*uri*/, int version, uint64_t generation)
     {
-        angel_lsp::Server server(serverConfig, stream);
-        server.Run();
-    }
+        if (generation == 1 && version == 2)
+        {
+            std::unique_lock<std::mutex> lock(barrierMutex);
+            hookReachedGen1 = true;
+            barrierCv.notify_all();
+            barrierCv.wait(lock, [&]() { return allowCommitGen1; });
+        }
+    });
+
+    server.Run();
 
     CHECK(stream.ResponseFor(initId).find("\"capabilities\"") != std::string::npos);
     CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
-    // The second didOpen must be processed under new generation and report undeclared_func
+
+    // Generation 1 commit was rejected; current generation is 2
+    CHECK(server.GetDocumentStore().GetGeneration(fileUri) == 2);
+    // Gen1Ghost must not be in symbol table
+    CHECK(server.GetSymbolTable().FindSymbols("Gen1Ghost").empty());
+    // Gen2Function must be in symbol table
+    CHECK_FALSE(server.GetSymbolTable().FindSymbols("Gen2Function").empty());
+
+    // Structured JSON assertion: output reports undeclared_func from generation 2
     CHECK(stream.Output().find("undeclared_func") != std::string::npos);
+}
+
+TEST_CASE("Server - Barrier: Concurrent edit with higher version supersedes earlier analysis commit")
+{
+    TempStressWorkspace ws;
+    ws.Write("rapid.as", "void main() { int v = 1; }");
+    const std::string fileUri = ws.Uri("rapid.as");
+
+    angel_lsp::config::ServerConfig serverConfig;
+    serverConfig.searchDirectories.push_back(ws.dir.string());
+
+    angel_lsp::test::ScriptedStream stream;
+    int nextReqId = 1;
+
+    // 1. Initialize
+    const int initId = nextReqId++;
+    stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(initId) +
+                R"(,"method":"initialize","params":{"processId":null,"rootUri":")" +
+                ws.RootUri() + R"(","capabilities":{}}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // 2. Open document (version 1)
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","languageId":"angelscript","version":1,"text":"void main() { int v = 1; }"}}})");
+
+    // 3. Edit document (version 2) with Version2Ghost
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","version":2},"contentChanges":[{"text":"void main() {}\nvoid Version2Ghost() {}"}]}})");
+
+    std::mutex barrierMutex;
+    std::condition_variable barrierCv;
+    bool hookReachedV2 = false;
+    bool allowCommitV2 = false;
+
+    // Pause worker thread when analyzing version 2
+    stream.PushAction([&]()
+    {
+        std::unique_lock<std::mutex> lock(barrierMutex);
+        barrierCv.wait(lock, [&]() { return hookReachedV2; });
+    });
+
+    // 4. Send higher version edit (version 3) with Version3Active
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","version":3},"contentChanges":[{"text":"void main() {}\nvoid Version3Active() {}"}]}})");
+
+    // 5. Release version 2 worker thread: it should be rejected because document is now version 3
+    stream.PushAction([&]()
+    {
+        {
+            std::lock_guard<std::mutex> lock(barrierMutex);
+            allowCommitV2 = true;
+        }
+        barrierCv.notify_all();
+    });
+
+    // 6. Save version 3 to immediately trigger synchronous analysis and commit
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","version":3},"text":"void main() {}\nvoid Version3Active() {}"}})");
+
+    // 7. Shutdown and exit
+    const int shutdownId = nextReqId++;
+    stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(shutdownId) + R"(,"method":"shutdown"})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"exit"})");
+
+    angel_lsp::Server server(serverConfig, stream);
+    server.SetOnBeforeCommitHook([&](const std::string &/*uri*/, int version, uint64_t /*generation*/)
+    {
+        if (version == 2)
+        {
+            std::unique_lock<std::mutex> lock(barrierMutex);
+            hookReachedV2 = true;
+            barrierCv.notify_all();
+            barrierCv.wait(lock, [&]() { return allowCommitV2; });
+        }
+    });
+
+    server.Run();
+
+    CHECK(stream.ResponseFor(initId).find("\"capabilities\"") != std::string::npos);
+    CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
+
+    // Current version must be 3
+    CHECK(server.GetDocumentStore().GetVersion(fileUri) == 3);
+    // Version 2 commit was rejected
+    CHECK(server.GetSymbolTable().FindSymbols("Version2Ghost").empty());
+    // Version 3 symbol is present
+    CHECK_FALSE(server.GetSymbolTable().FindSymbols("Version3Active").empty());
 }
 
 TEST_CASE("Server - Barrier: Concurrent save flushes diagnostics and cancels superseded debounce")

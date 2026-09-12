@@ -317,8 +317,13 @@ namespace angel_lsp
                                            lsp::json::Value(std::move(params)));
     }
 
-    void Server::PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics, int version)
+    void Server::PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics, int version, uint64_t generation)
     {
+        if (generation > 0 && !m_documentStore.IsCurrent(uriStr, generation, version))
+        {
+            return;
+        }
+
         if (version >= 0)
         {
             const int currentVersion = GetDocumentVersion(uriStr);
@@ -352,6 +357,8 @@ namespace angel_lsp
             snapshot.items = params.diagnostics;
             snapshot.textHash = std::hash<std::string>{}(text);
             snapshot.version = version;
+            snapshot.generation = generation;
+            snapshot.configRevision = m_configRevision.load();
             m_diagnosticsCache[uriStr] = std::move(snapshot);
         }
 

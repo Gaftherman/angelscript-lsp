@@ -231,6 +231,36 @@ namespace angel_lsp::analysis
             ResolveIncludedMixinsForKeysLocked({key}, &affectedFiles);
         }
 
+        if (!isMixin && !isClass && affectedFiles.empty())
+        {
+            // O(1) incremental update for ordinary symbols: avoids quadratic re-scan of the file
+            const Symbol *symPtr = &symbol;
+            rules::RuleIndexPartial singlePartial = rules::RuleIndex::BuildPartial(symbol.fileUri, std::vector<const Symbol *>{ symPtr });
+
+            std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+            if (!m_ruleIndex)
+            {
+                m_ruleIndex = std::make_shared<rules::RuleIndex>();
+            }
+            else if (m_ruleIndex.use_count() > 1)
+            {
+                m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
+            }
+
+            if (!m_ruleIndexPartials)
+            {
+                m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
+            }
+
+            m_ruleIndex->ApplyPartial(singlePartial);
+            auto &filePartial = (*m_ruleIndexPartials)[symbol.fileUri];
+            filePartial.fileUri = symbol.fileUri;
+            filePartial.Merge(std::move(singlePartial));
+
+            ++m_version;
+            return;
+        }
+
         auto freshPtrs = GetDocumentSymbolPointersLocked(symbol.fileUri);
         rules::RuleIndexPartial freshPartial = rules::RuleIndex::BuildPartial(symbol.fileUri, freshPtrs);
 
@@ -421,6 +451,28 @@ namespace angel_lsp::analysis
         staging.m_symbols.clear();
 
         PublishDocumentSymbols(fileUri, std::move(fresh));
+    }
+
+    std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const std::string &uriStr, const SymbolTable &staging) const
+    {
+        auto snapshot = std::make_unique<SymbolTable>();
+        {
+            std::shared_lock<std::shared_mutex> lock(m_mutex);
+            snapshot->m_symbols = m_symbols;
+            snapshot->m_keysByFile = m_keysByFile;
+            snapshot->m_version = m_version;
+            snapshot->m_virtualMixinDocumentsEnabled = m_virtualMixinDocumentsEnabled;
+
+            std::lock_guard<std::mutex> ruleGuard(m_ruleIndexMutex);
+            snapshot->m_ruleIndex = m_ruleIndex;
+            if (m_ruleIndexPartials)
+            {
+                snapshot->m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>(*m_ruleIndexPartials);
+            }
+        }
+
+        snapshot->ReplaceDocumentSymbols(uriStr, staging);
+        return snapshot;
     }
 
     void SymbolTable::PublishDocumentSymbols(const std::string &fileUri, std::vector<Symbol> &&fresh)
