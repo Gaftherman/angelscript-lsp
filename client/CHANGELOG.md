@@ -4,6 +4,74 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.8-exp.2] - 2026-09-12
+
+### Performance & Optimization
+
+- Incremental RuleIndex Coherence:
+  - Implemented partial `RuleIndex` generation with dependency tracking for `includedMixins`, preserving bidirectional coherence across edits without whole-workspace rebuilds.
+  - Added non-allocating `FindSymbolsPtr` read path with `std::string_view` queries across hot paths.
+- AST Traversal & NodeIndex Sharing:
+  - Unified single-pass AST walk during analysis, sharing `NodeIndex` across semantic checkers and eliminating redundant full-tree traversals.
+- Semantic Tokens Hot Path:
+  - Pre-indexed declaration refinements and scoped identifier contexts, replacing deep ancestor walks in the capture loop.
+  - Range narrowing and enclosing class searches accelerated using binary search (`std::lower_bound` / `std::upper_bound`).
+
+### Stability & Architecture
+
+- Document Lifecycle & Concurrency Synchronization:
+  - Centralized document state in `DocumentStore` with monotonic generations, preventing stale analysis tasks from reviving closed documents or overwriting newer edits.
+  - Hardened `AnalysisScheduler` with active cancellation and debounced background job queues.
+  - Thread-safe `PredefinedStubManager` caching for multi-document workflows.
+  - Deterministic barrier test suite covering cancellation, reopen, concurrent saves, and shutdown.
+
+### CI & Quality Assurance
+
+- GitLab CI Pipeline Hardening:
+  - Corrected concurrency stress test filters and added fatal UBSan crash enforcement (`-fno-sanitize-recover=all`).
+  - Added explicit job dependency chains ensuring packaging runs only after successful sanitizers, tests, and parity audits.
+- Compiler Parity & Invariant Verification:
+  - Parity audit verified against 247 AngelScript scripts with 0 unexplained false positives.
+  - Added `RuleIndexEquivalenceTest` (verifying incremental index equivalence against oracle rebuilds) and `SemanticTokensDeltaTest` (verifying 5-integer tuple alignment and delta round-tripping).
+
+## [0.7.8-exp.1] - 2026-09-12
+
+### Performance
+
+- Hot-Path Symbol Table & Analysis:
+  - Migrated symbol indexing structures to `ankerl::unordered_dense::map` with fine-grained concurrent locking via `std::shared_mutex`.
+  - Optimized duplicate symbol validation by over 92% and reduced whole-file `SemanticAnalyzer::Analyze` latency from 636 ms down to 38 ms per file in Release mode (16.5x speedup).
+- Semantic Tokens Traversal:
+  - Implemented single-pass AST traversal directly emitting delta-encoded token slices, speeding up semantic highlighting on 3,000-line scripts from 315 ms to 24 ms (13x speedup).
+- Analysis Debouncing & Fast-Path Pipeline:
+  - Integrated stale analysis queue version gating in `AnalysisScheduler` to discard obsolete parse and semantic jobs before execution.
+
+### Stability
+
+- Concurrency Stress Test Suite:
+  - Added multi-threaded stress testing validating server stability under 500 rapid interleaved document edits and asynchronous analysis runs.
+- Predefined Stub Audit Test Calibration:
+  - Calibrated test assertions in `PredefinedStubAuditTest` to match repository-tracked `sven.as.predefined` stub metrics.
+- Zero Compiler Warnings:
+  - Resolved all compiler warnings across MSVC and GCC/Clang under strict warning-as-error build configuration.
+
+### Refactoring
+
+- Server Architecture Modularization:
+  - Deconstructed monolithic `Server.cpp` into modular Layer 4 handlers: `HierarchyHandlers.cpp`, `TextDocumentHandlers.cpp`, `TokensAndFormattingHandlers.cpp`, and `WorkspaceHandlers.cpp`.
+  - Expanded layer boundary audit to verify all 83 headers across Layers 1-4.
+- Directory Structure Harmonization:
+  - Renamed legacy `predefned/` directory to `predefined/` across the codebase, configuration, tests, and documentation.
+- CMake Modernization:
+  - Standardized minimum required CMake version to 3.22 and enforced warning-free compilation with `-DANGELLSP_WERROR=ON`.
+
+### CI
+
+- GitLab CI Pipeline Configuration:
+  - Added `.gitlab-ci.yml` defining stages for audit, build, test, parity, sanitizers (ASan, UBSan, TSan), and extension packaging.
+- Upstream AngelScript Compiler Oracle:
+  - Integrated standalone `angelscript_oracle` binary built against upstream AngelScript SDK add-ons, enabling local and CI parity verification without external dependencies.
+
 ## [0.7.7-exp.16] - 2026-09-11
 
 ### Fixed

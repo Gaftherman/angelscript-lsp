@@ -14,7 +14,7 @@ TEST_CASE("AnalysisScheduler - Debouncing collapses rapid edits")
     std::string lastAnalyzedText;
 
     AnalysisScheduler scheduler([&](const std::string &uri, const std::string &text,
-                                    document::TreePtr /*tree*/, int /*version*/)
+                                    document::TreePtr /*tree*/, int /*version*/, uint64_t /*generation*/, uint64_t /*configRevision*/)
     {
         lastAnalyzedUri = uri;
         lastAnalyzedText = text;
@@ -43,14 +43,14 @@ TEST_CASE("AnalysisScheduler - MarkSaved cancels pending work")
     std::atomic<int> analyzeCount{ 0 };
 
     AnalysisScheduler scheduler([&](const std::string &/*uri*/, const std::string &/*text*/,
-                                    document::TreePtr /*tree*/, int /*version*/)
+                                    document::TreePtr /*tree*/, int /*version*/, uint64_t /*generation*/, uint64_t /*configRevision*/)
     {
         ++analyzeCount;
     }, std::chrono::milliseconds(80));
 
     const std::string uri = "file:///saved.as";
     scheduler.Schedule(uri, "void f() {}", false, document::MakeTreePtr(nullptr), 1);
-    scheduler.MarkSaved(uri);
+    scheduler.MarkSaved(uri, 1);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(120));
 
@@ -79,7 +79,7 @@ TEST_CASE("AnalysisScheduler - Version-gated cancellation discards stale pending
     std::string analyzedText;
 
     AnalysisScheduler scheduler([&](const std::string &/*uri*/, const std::string &text,
-                                    document::TreePtr /*tree*/, int version)
+                                    document::TreePtr /*tree*/, int version, uint64_t /*generation*/, uint64_t /*configRevision*/)
     {
         analyzedVersion = version;
         analyzedText = text;
@@ -99,6 +99,52 @@ TEST_CASE("AnalysisScheduler - Version-gated cancellation discards stale pending
     CHECK(analyzeCount == 1);
     CHECK(analyzedVersion == 10);
     CHECK(analyzedText == "version 10");
+
+    scheduler.Stop();
+}
+
+TEST_CASE("AnalysisScheduler - Identical text with higher version updates pending version")
+{
+    std::atomic<int> analyzeCount{ 0 };
+    int analyzedVersion = -1;
+
+    AnalysisScheduler scheduler([&](const std::string &/*uri*/, const std::string &/*text*/,
+                                    document::TreePtr /*tree*/, int version, uint64_t /*generation*/, uint64_t /*configRevision*/)
+    {
+        analyzedVersion = version;
+        ++analyzeCount;
+    }, std::chrono::milliseconds(60));
+
+    const std::string uri = "file:///same_text.as";
+    scheduler.Schedule(uri, "const int x = 42;", false, document::MakeTreePtr(nullptr), 1);
+    scheduler.Schedule(uri, "const int x = 42;", false, document::MakeTreePtr(nullptr), 2);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(120));
+
+    CHECK(analyzeCount == 1);
+    CHECK(analyzedVersion == 2);
+
+    scheduler.Stop();
+}
+
+TEST_CASE("AnalysisScheduler - Cancel removes pending and cancels active analysis")
+{
+    std::atomic<int> analyzeCount{ 0 };
+
+    AnalysisScheduler scheduler([&](const std::string &/*uri*/, const std::string &/*text*/,
+                                    document::TreePtr /*tree*/, int /*version*/, uint64_t /*generation*/, uint64_t /*configRevision*/)
+    {
+        ++analyzeCount;
+    }, std::chrono::milliseconds(80));
+
+    const std::string uri = "file:///cancelled.as";
+    scheduler.Schedule(uri, "int a = 1;", false, document::MakeTreePtr(nullptr), 1);
+    scheduler.Cancel(uri);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(120));
+
+    CHECK(analyzeCount == 0);
+    CHECK(scheduler.IsCancelled(uri));
 
     scheduler.Stop();
 }

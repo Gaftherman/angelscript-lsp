@@ -20,15 +20,17 @@ namespace angel_lsp
         std::string text;
         document::TreePtr tree = document::MakeTreePtr(nullptr);
         int version = -1;
+        uint64_t generation = 0;
+        uint64_t configRevision = 0;
 
         PendingAnalysisEntry() = default;
-        PendingAnalysisEntry(std::string t, document::TreePtr tr, int v)
-            : text(std::move(t)), tree(std::move(tr)), version(v)
+        PendingAnalysisEntry(std::string t, document::TreePtr tr, int v, uint64_t gen = 0, uint64_t cfgRev = 0)
+            : text(std::move(t)), tree(std::move(tr)), version(v), generation(gen), configRevision(cfgRev)
         {
         }
 
-        PendingAnalysisEntry(std::string t, TSTree *tr, int v)
-            : text(std::move(t)), tree(document::MakeTreePtr(tr)), version(v)
+        PendingAnalysisEntry(std::string t, TSTree *tr, int v, uint64_t gen = 0, uint64_t cfgRev = 0)
+            : text(std::move(t)), tree(document::MakeTreePtr(tr)), version(v), generation(gen), configRevision(cfgRev)
         {
         }
 
@@ -53,7 +55,7 @@ namespace angel_lsp
     {
     public:
         using AnalyzeCallback = std::function<void(const std::string &uriStr, const std::string &text,
-                                                   document::TreePtr tree, int version)>;
+                                                   document::TreePtr tree, int version, uint64_t generation, uint64_t configRevision)>;
 
         /**
          * @brief Constructs and launches the background analysis worker thread.
@@ -80,21 +82,31 @@ namespace angel_lsp
          * @param force True to bypass deduplication when symbols moved without text changing.
          * @param tree Copied or newly parsed TSTree.
          * @param version Document version.
+         * @param generation Document opening generation.
+         * @param configRevision Revision number of relevant config/dependencies.
          */
         void Schedule(const std::string &uriStr, std::string text, bool force,
-                      document::TreePtr tree, int version);
+                      document::TreePtr tree, int version, uint64_t generation = 0, uint64_t configRevision = 0);
 
         /**
          * @brief Cancels pending analysis and marks document as saved on message loop.
          * @param uriStr Document URI key.
+         * @param version Document saved version (-1 if unknown).
          */
-        void MarkSaved(const std::string &uriStr);
+        void MarkSaved(const std::string &uriStr, int version = -1);
 
         /**
          * @brief Cancels any pending analysis for a closed document.
          * @param uriStr Document URI key.
          */
         void Cancel(const std::string &uriStr);
+
+        /**
+         * @brief Queries whether current analysis for uri has been cancelled.
+         * @param uriStr Document URI key.
+         * @return True if cancelled.
+         */
+        [[nodiscard]] bool IsCancelled(const std::string &uriStr) const;
 
         /**
          * @brief Stops the background worker thread.
@@ -122,7 +134,7 @@ namespace angel_lsp
         std::atomic<bool> m_stop{ false };
 
         std::thread m_thread;
-        std::mutex m_mutex;
+        mutable std::mutex m_mutex;
         std::condition_variable m_cv;
         uint64_t m_revision{ 0 };
 
@@ -131,7 +143,11 @@ namespace angel_lsp
         std::string m_currentlyAnalyzingUri;
         std::string m_currentlyAnalyzingText;
         int m_currentlyAnalyzingVersion = -1;
+        uint64_t m_currentlyAnalyzingGeneration = 0;
+        std::atomic<bool> m_cancelCurrentAnalysis{ false };
         ankerl::unordered_dense::set<std::string> m_savedUris;
+        ankerl::unordered_dense::map<std::string, int> m_savedVersions;
+        ankerl::unordered_dense::set<std::string> m_cancelledUris;
 
         mutable std::mutex m_peerMutex;
         ankerl::unordered_dense::map<std::string, std::chrono::steady_clock::time_point> m_peerTimestamps;

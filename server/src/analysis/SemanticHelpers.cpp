@@ -1092,8 +1092,12 @@ namespace angel_lsp::analysis
             std::string curType = queue[head++];
             related.push_back(curType);
 
-            auto symbols = symbolTable.FindSymbols(curType);
-            for (const auto &sym : symbols)
+            const auto symbols = symbolTable.FindSymbolsPtr(curType);
+            if (!symbols)
+            {
+                continue;
+            }
+            for (const auto &sym : *symbols)
             {
                 if (sym.type == SymbolType::Class)
                 {

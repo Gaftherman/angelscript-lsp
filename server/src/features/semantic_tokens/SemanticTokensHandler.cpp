@@ -667,6 +667,20 @@ namespace angel_lsp::features
         return legend;
     }
 
+    /**
+     * @brief Computes full or ranged semantic tokens stream using HIGHLIGHTS_QUERY.
+     *
+     * Pipeline architecture:
+     * - Pass 1: Declaration refinement & scoped identifier pre-indexing via NodeIndex.
+     * - Pass 2: Syntactic capture accumulation via TSQueryCursor.
+     * - Pass 3: Syntactic member expression & lambda parameter scan.
+     * - Pass 4: Excluded line filtering (preprocessor dead code).
+     * - Pass 5: Stable sort by line, startChar, and descending priority.
+     * - Pass 6: Deduplication and overlap filtering.
+     * - Pass 7: Range narrowing (binary search using std::lower_bound / std::upper_bound).
+     * - Pass 8: Operator token validation.
+     * - Pass 9: LSP delta encoding into 5-tuple integer stream.
+     */
     lsp::SemanticTokens GetSemanticTokens(const SemanticTokensRequest &request)
     {
         if (!request.tree || request.sourceCode.empty())
@@ -721,24 +735,219 @@ namespace angel_lsp::features
             }
         }
 
+        // Sort class spans for binary search
+        std::sort(classSpans.begin(), classSpans.end(), [](const ClassSpan &a, const ClassSpan &b)
+        {
+            if (a.startByte != b.startByte)
+            {
+                return a.startByte < b.startByte;
+            }
+            return a.endByte > b.endByte;
+        });
+
         auto findEnclosingClass = [&](uint32_t byteOffset) -> std::string_view
         {
+            if (classSpans.empty())
+            {
+                return {};
+            }
+
+            auto it = std::upper_bound(classSpans.begin(), classSpans.end(), byteOffset,
+                [](uint32_t offset, const ClassSpan &span)
+                {
+                    return offset < span.startByte;
+                });
+
             std::string_view innermostName;
             uint32_t innermostSpan = UINT32_MAX;
-            for (const auto &span : classSpans)
+            for (auto rIt = it; rIt != classSpans.begin(); )
             {
-                if (byteOffset >= span.startByte && byteOffset < span.endByte)
+                --rIt;
+                if (byteOffset >= rIt->startByte && byteOffset < rIt->endByte)
                 {
-                    uint32_t spanLen = span.endByte - span.startByte;
+                    uint32_t spanLen = rIt->endByte - rIt->startByte;
                     if (spanLen < innermostSpan)
                     {
                         innermostSpan = spanLen;
-                        innermostName = span.name;
+                        innermostName = rIt->name;
                     }
                 }
             }
             return innermostName;
         };
+
+        // Precalculate declaration refinements from NodeIndex to eliminate ancestor walks in the hot path
+        ankerl::unordered_dense::map<uint32_t, uint32_t> refinedDeclByStartByte;
+        if (nodeIndex)
+        {
+            // Parameter declarations
+            for (TSNode paramNode : nodeIndex->Nodes(syms.symParameter))
+            {
+                TSNode nameChild = parser::GetChildByField(paramNode, parser::fields::Name);
+                if (!ts_node_is_null(nameChild))
+                {
+                    refinedDeclByStartByte[ts_node_start_byte(nameChild)] = Type_Parameter;
+                }
+            }
+
+            // Interface method declarations
+            for (TSNode methodNode : nodeIndex->Nodes(syms.symInterfaceMethod))
+            {
+                TSNode nameChild = parser::GetChildByField(methodNode, parser::fields::Name);
+                if (!ts_node_is_null(nameChild))
+                {
+                    refinedDeclByStartByte[ts_node_start_byte(nameChild)] = Type_Method;
+                }
+            }
+
+            // Function declarations inside classes or interfaces
+            for (TSNode funcDecl : nodeIndex->Nodes(syms.symFuncDeclaration))
+            {
+                for (TSNode anc = ts_node_parent(funcDecl); !ts_node_is_null(anc); anc = ts_node_parent(anc))
+                {
+                    const TSSymbol ancSym = ts_node_symbol(anc);
+                    if (ancSym == syms.symClassBody || ancSym == syms.symInterfaceBody)
+                    {
+                        TSNode nameChild = parser::GetChildByField(funcDecl, parser::fields::Name);
+                        if (!ts_node_is_null(nameChild))
+                        {
+                            refinedDeclByStartByte[ts_node_start_byte(nameChild)] = Type_Method;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // Variable declarations inside classes (properties)
+            for (TSNode varDecl : nodeIndex->Nodes(syms.symVariableDeclaration))
+            {
+                bool insideClass = false;
+                for (TSNode anc = ts_node_parent(varDecl); !ts_node_is_null(anc); anc = ts_node_parent(anc))
+                {
+                    const TSSymbol ancSym = ts_node_symbol(anc);
+                    if (ancSym == syms.symStatementBlock || ancSym == syms.symFuncDeclaration)
+                    {
+                        break;
+                    }
+                    if (ancSym == syms.symClassBody)
+                    {
+                        insideClass = true;
+                        break;
+                    }
+                }
+
+                if (insideClass)
+                {
+                    const uint32_t childCount = ts_node_child_count(varDecl);
+                    for (uint32_t i = 0; i < childCount; ++i)
+                    {
+                        TSNode child = ts_node_child(varDecl, i);
+                        if (ts_node_symbol(child) == syms.symIdentifier)
+                        {
+                            refinedDeclByStartByte[ts_node_start_byte(child)] = Type_Property;
+                        }
+                        else
+                        {
+                            TSNode nameChild = parser::GetChildByField(child, parser::fields::Name);
+                            if (!ts_node_is_null(nameChild))
+                            {
+                                refinedDeclByStartByte[ts_node_start_byte(nameChild)] = Type_Property;
+                            }
+                            else
+                            {
+                                const uint32_t subCount = ts_node_child_count(child);
+                                for (uint32_t j = 0; j < subCount; ++j)
+                                {
+                                    TSNode subChild = ts_node_child(child, j);
+                                    if (ts_node_symbol(subChild) == syms.symIdentifier)
+                                    {
+                                        refinedDeclByStartByte[ts_node_start_byte(subChild)] = Type_Property;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Enum members
+            for (TSNode enumMember : nodeIndex->Nodes(syms.symEnumMember))
+            {
+                TSNode nameChild = parser::GetChildByField(enumMember, parser::fields::Name);
+                if (!ts_node_is_null(nameChild))
+                {
+                    refinedDeclByStartByte[ts_node_start_byte(nameChild)] = Type_EnumMember;
+                }
+                else
+                {
+                    const uint32_t childCount = ts_node_child_count(enumMember);
+                    for (uint32_t i = 0; i < childCount; ++i)
+                    {
+                        TSNode child = ts_node_child(enumMember, i);
+                        if (ts_node_symbol(child) == syms.symIdentifier)
+                        {
+                            refinedDeclByStartByte[ts_node_start_byte(child)] = Type_EnumMember;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Precalculate scoped enum qualifiers and members to avoid 8-level ancestor walks in the hot path
+        ankerl::unordered_dense::map<uint32_t, uint32_t> scopedEnumUpgrades;
+        if (nodeIndex)
+        {
+            for (TSNode scopedNode : nodeIndex->Nodes(syms.symScopedIdentifier))
+            {
+                uint32_t namedCount = ts_node_named_child_count(scopedNode);
+                TSNode leftNode = TSNode{};
+                TSNode rightNode = TSNode{};
+                if (namedCount >= 2)
+                {
+                    leftNode = ts_node_named_child(scopedNode, 0);
+                    rightNode = ts_node_named_child(scopedNode, namedCount - 1);
+                }
+                else
+                {
+                    uint32_t allCount = ts_node_child_count(scopedNode);
+                    if (allCount >= 2)
+                    {
+                        leftNode = ts_node_child(scopedNode, 0);
+                        rightNode = ts_node_child(scopedNode, allCount - 1);
+                    }
+                }
+
+                if (!ts_node_is_null(leftNode) && !ts_node_is_null(rightNode))
+                {
+                    uint32_t leftStart = ts_node_start_byte(leftNode);
+                    uint32_t leftEnd = ts_node_end_byte(leftNode);
+                    if (leftStart < leftEnd && leftEnd <= request.sourceCode.size())
+                    {
+                        std::string_view leftText(request.sourceCode.data() + leftStart, leftEnd - leftStart);
+                        const auto leftSymbols = request.symbolTable.FindSymbolsPtr(leftText);
+                        if (leftSymbols && !leftSymbols->empty())
+                        {
+                            bool allEnum = true;
+                            for (const analysis::Symbol &sym : *leftSymbols)
+                            {
+                                if (sym.type != analysis::SymbolType::Enum)
+                                {
+                                    allEnum = false;
+                                    break;
+                                }
+                            }
+
+                            if (allEnum)
+                            {
+                                scopedEnumUpgrades[leftStart] = Type_Enum;
+                                uint32_t rightStart = ts_node_start_byte(rightNode);
+                                scopedEnumUpgrades[rightStart] = Type_EnumMember;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         const auto ruleIndex = request.symbolTable.GetRuleIndex();
 
@@ -822,7 +1031,18 @@ namespace angel_lsp::features
                 }
             }
 
-            tokenType = RefineDeclarationTokenType(node, tokenType);
+            if (tokenType == Type_Variable || tokenType == Type_Function)
+            {
+                const uint32_t sb = ts_node_start_byte(node);
+                if (auto it = refinedDeclByStartByte.find(sb); it != refinedDeclByStartByte.end())
+                {
+                    tokenType = it->second;
+                }
+                else if (!nodeIndex)
+                {
+                    tokenType = RefineDeclarationTokenType(node, tokenType);
+                }
+            }
 
             // Upgrade coarse token types using the syntax context and workspace symbol table when
             // unambiguous. If lookups are ambiguous or unresolved, leave the type coarse rather
@@ -836,82 +1056,12 @@ namespace angel_lsp::features
                     std::string_view tokenText(request.sourceCode.data() + startByte, endByte - startByte);
                     if (!tokenText.empty())
                     {
-                        // Qualified enum access such as `State::Idle`. The qualifier emits Type_Namespace
-                        // and the member emits Type_Variable. When the left-hand qualifier resolves exclusively
-                        // to enum symbols, upgrade the qualifier to Type_Enum and the member to Type_EnumMember.
-                        // Deliberately leaves non-enum qualifiers (such as namespace or class scopes) untouched.
+                        // Qualified enum access such as `State::Idle`. Upgrade using precalculated map
                         if (tokenType == Type_Namespace || tokenType == Type_Variable || tokenType == Type_Type)
                         {
-                            TSNode scopedNode = TSNode{};
-                            TSNode anc = ts_node_parent(node);
-                            for (int level = 0; level < 8 && !ts_node_is_null(anc); ++level, anc = ts_node_parent(anc))
+                            if (auto it = scopedEnumUpgrades.find(startByte); it != scopedEnumUpgrades.end())
                             {
-                                if (ts_node_symbol(anc) == syms.symScopedIdentifier)
-                                {
-                                    scopedNode = anc;
-                                    break;
-                                }
-                            }
-
-                            if (!ts_node_is_null(scopedNode))
-                            {
-                                uint32_t namedCount = ts_node_named_child_count(scopedNode);
-                                TSNode leftNode = TSNode{};
-                                TSNode rightNode = TSNode{};
-                                if (namedCount >= 2)
-                                {
-                                    leftNode = ts_node_named_child(scopedNode, 0);
-                                    rightNode = ts_node_named_child(scopedNode, namedCount - 1);
-                                }
-                                else
-                                {
-                                    uint32_t allCount = ts_node_child_count(scopedNode);
-                                    if (allCount >= 2)
-                                    {
-                                        leftNode = ts_node_child(scopedNode, 0);
-                                        rightNode = ts_node_child(scopedNode, allCount - 1);
-                                    }
-                                }
-
-                                if (!ts_node_is_null(leftNode) && !ts_node_is_null(rightNode))
-                                {
-                                    uint32_t leftStart = ts_node_start_byte(leftNode);
-                                    uint32_t leftEnd = ts_node_end_byte(leftNode);
-                                    if (leftStart < leftEnd && leftEnd <= request.sourceCode.size())
-                                    {
-                                        std::string_view leftText(request.sourceCode.data() + leftStart, leftEnd - leftStart);
-                                        const auto leftSymbols = request.symbolTable.FindSymbolsPtr(leftText);
-                                        if (leftSymbols && !leftSymbols->empty())
-                                        {
-                                            bool allEnum = true;
-                                            for (const analysis::Symbol &sym : *leftSymbols)
-                                            {
-                                                if (sym.type != analysis::SymbolType::Enum)
-                                                {
-                                                    allEnum = false;
-                                                    break;
-                                                }
-                                            }
-
-                                            if (allEnum)
-                                            {
-                                                if (ts_node_eq(node, leftNode) || (startByte == leftStart && endByte == leftEnd))
-                                                {
-                                                    tokenType = Type_Enum;
-                                                }
-                                                else
-                                                {
-                                                    uint32_t rightStart = ts_node_start_byte(rightNode);
-                                                    uint32_t rightEnd = ts_node_end_byte(rightNode);
-                                                    if (ts_node_eq(node, rightNode) || (startByte == rightStart && endByte == rightEnd))
-                                                    {
-                                                        tokenType = Type_EnumMember;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                                tokenType = it->second;
                             }
                         }
 
@@ -1278,23 +1428,58 @@ namespace angel_lsp::features
         // loses an overlap in the full document win it in a range that excludes its competitor.
         if (request.range.has_value())
         {
-            const lsp::Range &range = *request.range;
-            std::erase_if(filteredTokens, [&range](const RawToken &tok)
+            if (filteredTokens.empty())
             {
-                if (tok.line < range.start.line || tok.line > range.end.line)
+                return lsp::SemanticTokens{};
+            }
+
+            const lsp::Range &range = *request.range;
+            auto first = std::lower_bound(filteredTokens.begin(), filteredTokens.end(), range.start.line,
+                [](const RawToken &tok, uint32_t line)
                 {
-                    return true;
-                }
-                if (tok.line == range.start.line && tok.startChar + tok.length <= range.start.character)
+                    return tok.line < line;
+                });
+
+            while (first != filteredTokens.end() &&
+                   first->line == range.start.line &&
+                   first->startChar + first->length <= range.start.character)
+            {
+                ++first;
+            }
+
+            auto last = std::upper_bound(first, filteredTokens.end(), range.end.line,
+                [](uint32_t line, const RawToken &tok)
                 {
-                    return true;
-                }
-                if (tok.line == range.end.line && tok.startChar >= range.end.character)
+                    return line < tok.line;
+                });
+
+            while (last != first)
+            {
+                auto prev = std::prev(last);
+                if (prev->line == range.end.line && prev->startChar >= range.end.character)
                 {
-                    return true;
+                    last = prev;
                 }
-                return false;
-            });
+                else
+                {
+                    break;
+                }
+            }
+
+            if (first >= last)
+            {
+                filteredTokens.clear();
+            }
+            else
+            {
+                std::vector<RawToken> narrowed;
+                narrowed.reserve(static_cast<size_t>(last - first));
+                for (auto it = first; it != last; ++it)
+                {
+                    narrowed.push_back(std::move(*it));
+                }
+                filteredTokens = std::move(narrowed);
+            }
         }
 
         // Post-filter safety: ensure no brackets, punctuation, or non-operators ever get emitted as Type_Operator

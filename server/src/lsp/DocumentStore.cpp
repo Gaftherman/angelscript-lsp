@@ -11,7 +11,8 @@ namespace angel_lsp
             m_clientUriByKey[uri] = clientUri;
         }
 
-        m_documents.insert_or_assign(uri, document::Document{ uri, std::move(text), version, std::move(tree) });
+        const uint64_t gen = m_nextGeneration++;
+        m_documents.insert_or_assign(uri, std::make_shared<document::Document>(uri, std::move(text), version, std::move(tree), gen));
     }
 
     void DocumentStore::UpdateDocument(const std::string &uri, std::string text, int version,
@@ -20,13 +21,13 @@ namespace angel_lsp
         std::lock_guard<std::mutex> lock(m_mutex);
         if (auto it = m_documents.find(uri); it != m_documents.end())
         {
-            it->second.text = std::move(text);
-            it->second.version = version;
-            it->second.tree = std::move(tree);
+            const uint64_t gen = it->second ? it->second->generation : m_nextGeneration++;
+            it->second = std::make_shared<document::Document>(uri, std::move(text), version, std::move(tree), gen);
         }
         else
         {
-            m_documents.insert_or_assign(uri, document::Document{ uri, std::move(text), version, std::move(tree) });
+            const uint64_t gen = m_nextGeneration++;
+            m_documents.insert_or_assign(uri, std::make_shared<document::Document>(uri, std::move(text), version, std::move(tree), gen));
         }
     }
 
@@ -45,9 +46,9 @@ namespace angel_lsp
     std::optional<std::string> DocumentStore::GetText(const std::string &uri) const
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (auto it = m_documents.find(uri); it != m_documents.end())
+        if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
         {
-            return it->second.text;
+            return it->second->text;
         }
         return std::nullopt;
     }
@@ -55,9 +56,9 @@ namespace angel_lsp
     int DocumentStore::GetVersion(const std::string &uri) const
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (auto it = m_documents.find(uri); it != m_documents.end())
+        if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
         {
-            return it->second.version;
+            return it->second->version;
         }
         return -1;
     }
@@ -65,18 +66,18 @@ namespace angel_lsp
     void DocumentStore::SetVersion(const std::string &uri, int version)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (auto it = m_documents.find(uri); it != m_documents.end())
+        if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
         {
-            it->second.version = version;
+            it->second->version = version;
         }
     }
 
     TSTree *DocumentStore::GetTree(const std::string &uri) const
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (auto it = m_documents.find(uri); it != m_documents.end())
+        if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
         {
-            return it->second.tree.get();
+            return it->second->tree.get();
         }
         return nullptr;
     }
@@ -84,9 +85,9 @@ namespace angel_lsp
     void DocumentStore::SetTree(const std::string &uri, document::TreePtr tree)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (auto it = m_documents.find(uri); it != m_documents.end())
+        if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
         {
-            it->second.tree = std::move(tree);
+            it->second->tree = std::move(tree);
         }
     }
 
@@ -106,6 +107,12 @@ namespace angel_lsp
         m_clientUriByKey[uri] = clientUri;
     }
 
+    void DocumentStore::RemoveClientUri(const std::string &uri)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_clientUriByKey.erase(uri);
+    }
+
     std::vector<std::pair<std::string, std::string>> DocumentStore::GetSnapshot() const
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -113,7 +120,10 @@ namespace angel_lsp
         snapshot.reserve(m_documents.size());
         for (const auto &[uri, doc] : m_documents)
         {
-            snapshot.emplace_back(uri, doc.text);
+            if (doc)
+            {
+                snapshot.emplace_back(uri, doc->text);
+            }
         }
         return snapshot;
     }
@@ -135,6 +145,55 @@ namespace angel_lsp
         std::lock_guard<std::mutex> lock(m_mutex);
         m_documents.clear();
         m_clientUriByKey.clear();
+    }
+
+    uint64_t DocumentStore::GetGeneration(const std::string &uri) const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
+        {
+            return it->second->generation;
+        }
+        return 0;
+    }
+
+    bool DocumentStore::IsCurrent(const std::string &uri, uint64_t generation, int version) const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_documents.find(uri);
+        if (it == m_documents.end() || !it->second)
+        {
+            return false;
+        }
+        if (generation > 0 && it->second->generation != generation)
+        {
+            return false;
+        }
+        if (version >= 0 && it->second->version > version)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    std::shared_ptr<const document::Document> DocumentStore::GetDocument(const std::string &uri) const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (auto it = m_documents.find(uri); it != m_documents.end())
+        {
+            return it->second;
+        }
+        return nullptr;
+    }
+
+    const std::string *DocumentStore::GetTextPtr(const std::string &uri) const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
+        {
+            return &it->second->text;
+        }
+        return nullptr;
     }
 
     size_t DocumentStore::Size() const

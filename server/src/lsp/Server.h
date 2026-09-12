@@ -16,6 +16,9 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "features/formatting/FormattingHandler.h"
 #include "document/Document.h"
+#include "lsp/DocumentStore.h"
+#include "lsp/AnalysisScheduler.h"
+#include "lsp/PredefinedStubManager.h"
 
 #include <lsp/messages.h>
 #include <lsp/connection.h>
@@ -80,6 +83,7 @@ namespace angel_lsp
          * there too. Nothing frees a buffer under a reader, which is what that mutex is for.
          */
         std::atomic<bool> m_formatBraceStyleKR{ false };
+        std::atomic<uint64_t> m_configRevision{ 0 };
 
         std::unique_ptr<angel_lsp::i18n::I18n> m_i18n;
         std::thread m_workspaceThread;
@@ -89,6 +93,7 @@ namespace angel_lsp
         std::mutex m_messageHandlerMutex;
         std::unique_ptr<angel_lsp::utils::LspLogger> m_logger;
         std::unique_ptr<angel_lsp::parser::AngelScriptParser> m_parser;
+        std::unique_ptr<angel_lsp::parser::AngelScriptParser> m_workerParser;
         angel_lsp::analysis::SymbolTable m_symbolTable;
         std::unique_ptr<angel_lsp::analysis::SymbolCollector> m_symbolCollector;
         angel_lsp::analysis::ScopeIndex m_scopeIndex;
@@ -103,30 +108,8 @@ namespace angel_lsp
         angel_lsp::analysis::CallGraphIndex m_callGraph;
         std::unique_ptr<angel_lsp::analysis::LocalScopeCollector> m_localScopeCollector;
         std::unique_ptr<angel_lsp::analysis::SemanticAnalyzer> m_semanticAnalyzer;
-        ankerl::unordered_dense::map<std::string, std::string> m_openDocuments;
-
-        /**
-         * @brief DocumentKey -> the URI spelling the client last used for that document.
-         *
-         * Diagnostics have to go back out under the client's own spelling. `PathToUri` writes
-         * `file:///E:/dir/f.as` while VS Code sends `file:///e%3A/dir/f.as`, and those are
-         * different strings to a client matching a notification to an open editor - so keying
-         * internally by the canonical form and publishing under it would have quietly stopped
-         * diagnostics from appearing at all.
-         */
-        ankerl::unordered_dense::map<std::string, std::string> m_clientUriByKey;
-        ankerl::unordered_dense::map<std::string, angel_lsp::document::TreePtr> m_documentTrees;
-        std::mutex m_predefinedMutex;
-        ankerl::unordered_dense::set<std::string> m_predefinedUris;
-
-        // Canonical filesystem path -> the URI that predefined file is currently indexed under.
-        // The workspace scan synthesises a URI from the path while the client sends its own
-        // spelling on didOpen (percent-encoded drive letter, differing case). Keying the loaded
-        // set by URI alone let the same stub file be collected once per spelling, which showed
-        // every predefined declaration twice in hover, completion and signature help.
-        // Guarded by m_predefinedMutex.
-        ankerl::unordered_dense::map<std::string, std::string> m_predefinedUriByPath;
-        ankerl::unordered_dense::map<std::string, std::string> m_predefinedDocuments;
+        angel_lsp::DocumentStore m_documentStore;
+        angel_lsp::PredefinedStubManager m_predefinedManager;
 
 
         /**
@@ -203,70 +186,22 @@ namespace angel_lsp
         // always see a current tree, but symbol collection, scope building and semantic analysis
         // rebuild whole-document state and are far too heavy to run on every keystroke of a
         // 3000-line file. They are queued here instead and run once editing pauses.
-        /**
-         * @brief Entry held in the analysis queue, owning a copied tree and document version.
-         */
-        struct PendingAnalysisEntry
+        std::unique_ptr<angel_lsp::AnalysisScheduler> m_analysisScheduler;
+
+        void SetDocumentVersion(const std::string &uriStr, int version)
         {
-            std::string text;
-            angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(nullptr);
-            int version = -1;
+            m_documentStore.SetVersion(uriStr, version);
+        }
 
-            PendingAnalysisEntry() = default;
-            PendingAnalysisEntry(std::string t, angel_lsp::document::TreePtr tr, int v)
-                : text(std::move(t)), tree(std::move(tr)), version(v)
-            {
-            }
+        int GetDocumentVersion(const std::string &uriStr) const
+        {
+            return m_documentStore.GetVersion(uriStr);
+        }
 
-            PendingAnalysisEntry(std::string t, TSTree *tr, int v)
-                : text(std::move(t)), tree(angel_lsp::document::MakeTreePtr(tr)), version(v)
-            {
-            }
-
-            PendingAnalysisEntry(const PendingAnalysisEntry &) = delete;
-            PendingAnalysisEntry &operator=(const PendingAnalysisEntry &) = delete;
-
-            PendingAnalysisEntry(PendingAnalysisEntry &&) noexcept = default;
-            PendingAnalysisEntry &operator=(PendingAnalysisEntry &&) noexcept = default;
-
-            TSTree *ReleaseTree() noexcept
-            {
-                return tree.release();
-            }
-        };
-
-        std::thread m_analysisThread;
-        std::mutex m_analysisMutex;
-        std::condition_variable m_analysisCv;
-        ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_pendingAnalysis;
-
-        // What the analysis thread took off the queue and is working on right now. Kept so a
-        // request to analyse text that is already being analysed can be recognised and dropped
-        // instead of queueing a second identical run behind the first.
-        //
-        // Written only by the analysis thread and only under m_analysisMutex; that thread then
-        // iterates it unlocked, which is safe because it is also the only writer.
-        ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_analysisInFlight;
-        std::string m_currentlyAnalyzingUri;
-        std::string m_currentlyAnalyzingText;
-        int m_currentlyAnalyzingVersion = -1;
-        ankerl::unordered_dense::set<std::string> m_savedUris;
-
-        mutable std::mutex m_documentVersionsMutex;
-        ankerl::unordered_dense::map<std::string, int> m_documentVersions;
-
-        void SetDocumentVersion(const std::string &uriStr, int version);
-        int GetDocumentVersion(const std::string &uriStr) const;
-        void RemoveDocumentVersion(const std::string &uriStr);
-
-        uint64_t m_analysisRevision = 0;
-        std::atomic<bool> m_analysisStop{ false };
-
-        // Debounce & coalescing tracker for cascading peer open document analysis passes
-        // (e.g. editing base.as affecting multiple open documents).
-        mutable std::mutex m_peerDebounceMutex;
-        ankerl::unordered_dense::map<std::string, std::chrono::steady_clock::time_point> m_peerAnalysisTimestamps;
-        static constexpr std::chrono::milliseconds k_peerAnalysisDebounceWindow{ 250 };
+        void RemoveDocumentVersion(const std::string &uriStr)
+        {
+            m_documentStore.SetVersion(uriStr, -1);
+        }
 
 
         // Files pulled in because some open document's #include module needs them, keyed by the URI
@@ -489,16 +424,7 @@ namespace angel_lsp
          * @brief What is open, readable from any thread.
          *
          * m_openDocuments belongs to the message loop and is touched in two dozen places without a
-         * lock, which is fine while only that thread touches it. The workspace thread needs the same
-         * answer twice - to skip open files during a module pass, and to re-analyse them once the
-         * host stub is finally in the table - and reading the real map from there corrupted the heap
-         * inside one run.
-         *
-         * So: a copy, written only where the loop already mutates the map, read only from off it.
-         * Two owners, one lock, and no existing call site changes behaviour.
-         */
-        mutable std::mutex m_openSnapshotMutex;
-        ankerl::unordered_dense::map<std::string, std::string> m_openSnapshot;
+
 
         /** @brief Records a document's current text in the snapshot. Message loop only. */
         void RememberOpenDocument(const std::string &uriStr, const std::string &text);
@@ -807,7 +733,8 @@ namespace angel_lsp
                                                                              const std::string &text,
                                                                              const TSTree *tree,
                                                                              double *outScopeMs = nullptr,
-                                                                             double *outCheckMs = nullptr);
+                                                                             double *outCheckMs = nullptr,
+                                                                             const analysis::NodeIndex *nodeIndex = nullptr);
 
         /**
          * @brief Claims a predefined stub file for the given URI, releasing any earlier spelling.
@@ -1090,6 +1017,8 @@ namespace angel_lsp
             std::string uri;
             const std::string *text = nullptr;
             TSTree *tree = nullptr;
+            std::shared_ptr<const document::Document> docHandle;
+            std::shared_ptr<const std::string> predefinedHandle;
         };
 
         /**
@@ -1214,10 +1143,7 @@ namespace angel_lsp
             ScheduleAnalysis(uriStr, text, force, angel_lsp::document::MakeTreePtr(tree), version);
         }
 
-        /**
-         * @brief Analysis worker: waits for a quiet period, then drains the queue.
-         */
-        void RunAnalysisLoop();
+
 
         /**
          * @brief Rebuilds symbols, scopes and diagnostics for one document and publishes them.
@@ -1226,7 +1152,8 @@ namespace angel_lsp
          */
         void AnalyzeDocument(const std::string &uriStr, const std::string &text,
                              angel_lsp::parser::AngelScriptParser &parser,
-                             angel_lsp::document::TreePtr treeCopy = angel_lsp::document::MakeTreePtr(nullptr), int version = -1);
+                             angel_lsp::document::TreePtr treeCopy = angel_lsp::document::MakeTreePtr(nullptr),
+                             int version = -1, uint64_t generation = 0, uint64_t configRevision = 0);
 
 
 

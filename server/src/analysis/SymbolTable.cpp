@@ -129,26 +129,8 @@ namespace angel_lsp::analysis
         m_keysByFile[fileUri].insert(key);
     }
 
-    void SymbolTable::EraseDocumentLocked(const std::string &fileUri)
+    void SymbolTable::EraseDocumentSymbolsOnlyLocked(const std::string &fileUri)
     {
-        if (m_ruleIndexPartials)
-        {
-            auto partIt = m_ruleIndexPartials->find(fileUri);
-            if (partIt != m_ruleIndexPartials->end())
-            {
-                std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
-                if (m_ruleIndex)
-                {
-                    if (m_ruleIndex.use_count() > 1)
-                    {
-                        m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
-                    }
-                    m_ruleIndex->RemovePartial(partIt->second);
-                }
-                m_ruleIndexPartials->erase(partIt);
-            }
-        }
-
         const auto fileEntry = m_keysByFile.find(fileUri);
         if (fileEntry == m_keysByFile.end())
         {
@@ -178,6 +160,57 @@ namespace angel_lsp::analysis
         m_keysByFile.erase(fileEntry);
     }
 
+    std::vector<const Symbol *> SymbolTable::GetDocumentSymbolPointersLocked(const std::string &fileUri) const
+    {
+        std::vector<const Symbol *> result;
+        const auto fileEntry = m_keysByFile.find(fileUri);
+        if (fileEntry == m_keysByFile.end())
+        {
+            return result;
+        }
+
+        for (const auto &key : fileEntry->second)
+        {
+            const auto bucket = m_symbols.find(key);
+            if (bucket == m_symbols.end() || !bucket->second)
+            {
+                continue;
+            }
+
+            for (const auto &sym : *bucket->second)
+            {
+                if (sym.fileUri == fileUri && !sym.isSynthesized)
+                {
+                    result.push_back(&sym);
+                }
+            }
+        }
+        return result;
+    }
+
+    void SymbolTable::EraseDocumentLocked(const std::string &fileUri)
+    {
+        EraseDocumentSymbolsOnlyLocked(fileUri);
+
+        if (m_ruleIndexPartials)
+        {
+            auto partIt = m_ruleIndexPartials->find(fileUri);
+            if (partIt != m_ruleIndexPartials->end())
+            {
+                std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+                if (m_ruleIndex)
+                {
+                    if (m_ruleIndex.use_count() > 1)
+                    {
+                        m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
+                    }
+                    m_ruleIndex->RemovePartial(partIt->second);
+                }
+                m_ruleIndexPartials->erase(partIt);
+            }
+        }
+    }
+
     void SymbolTable::AddSymbol(const Symbol &symbol)
     {
         std::unique_lock<std::shared_mutex> lock(m_mutex);
@@ -185,7 +218,39 @@ namespace angel_lsp::analysis
         MutableBucket(m_symbols[key]).push_back(symbol);
         IndexKeyForFileLocked(symbol.fileUri, key);
 
-        rules::RuleIndexPartial partial = rules::RuleIndex::BuildPartial(symbol.fileUri, {symbol});
+        const bool isClass = (symbol.type == SymbolType::Class && std::holds_alternative<ClassSignature>(symbol.signature));
+        const bool isMixin = isClass && symbol.GetClass().modifiers.isMixin;
+
+        std::vector<std::string> affectedFiles;
+        if (isMixin)
+        {
+            ResolveIncludedMixinsLocked(&affectedFiles);
+        }
+        else if (isClass)
+        {
+            ResolveIncludedMixinsForKeysLocked({key}, &affectedFiles);
+        }
+
+        auto freshPtrs = GetDocumentSymbolPointersLocked(symbol.fileUri);
+        rules::RuleIndexPartial freshPartial = rules::RuleIndex::BuildPartial(symbol.fileUri, freshPtrs);
+
+        ankerl::unordered_dense::set<std::string> uniqueAffected;
+        for (const auto &affectedUri : affectedFiles)
+        {
+            if (affectedUri != symbol.fileUri && !affectedUri.empty())
+            {
+                uniqueAffected.insert(affectedUri);
+            }
+        }
+
+        std::vector<std::pair<std::string, rules::RuleIndexPartial>> affectedPartials;
+        affectedPartials.reserve(uniqueAffected.size());
+        for (const auto &affectedUri : uniqueAffected)
+        {
+            auto affectedPtrs = GetDocumentSymbolPointersLocked(affectedUri);
+            affectedPartials.emplace_back(affectedUri, rules::RuleIndex::BuildPartial(affectedUri, affectedPtrs));
+        }
+
         {
             std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
             if (!m_ruleIndex)
@@ -196,20 +261,30 @@ namespace angel_lsp::analysis
             {
                 m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
             }
-            m_ruleIndex->ApplyPartial(partial);
-        }
-        if (!m_ruleIndexPartials)
-        {
-            m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
-        }
-        auto it = m_ruleIndexPartials->find(symbol.fileUri);
-        if (it != m_ruleIndexPartials->end())
-        {
-            it->second.Merge(std::move(partial));
-        }
-        else
-        {
-            (*m_ruleIndexPartials)[symbol.fileUri] = std::move(partial);
+
+            if (!m_ruleIndexPartials)
+            {
+                m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
+            }
+
+            auto it = m_ruleIndexPartials->find(symbol.fileUri);
+            if (it != m_ruleIndexPartials->end())
+            {
+                m_ruleIndex->RemovePartial(it->second);
+            }
+            m_ruleIndex->ApplyPartial(freshPartial);
+            (*m_ruleIndexPartials)[symbol.fileUri] = std::move(freshPartial);
+
+            for (auto &[affectedUri, newPartial] : affectedPartials)
+            {
+                auto affIt = m_ruleIndexPartials->find(affectedUri);
+                if (affIt != m_ruleIndexPartials->end())
+                {
+                    m_ruleIndex->RemovePartial(affIt->second);
+                }
+                m_ruleIndex->ApplyPartial(newPartial);
+                (*m_ruleIndexPartials)[affectedUri] = std::move(newPartial);
+            }
         }
 
         ++m_version;
@@ -218,7 +293,97 @@ namespace angel_lsp::analysis
     void SymbolTable::ClearDocumentSymbols(const std::string &fileUri)
     {
         std::unique_lock<std::shared_mutex> lock(m_mutex);
-        EraseDocumentLocked(fileUri);
+
+        bool erasedMixin = false;
+        const auto fileEntry = m_keysByFile.find(fileUri);
+        if (fileEntry != m_keysByFile.end())
+        {
+            for (const auto &key : fileEntry->second)
+            {
+                const auto bucket = m_symbols.find(key);
+                if (bucket != m_symbols.end() && bucket->second)
+                {
+                    for (const auto &sym : *bucket->second)
+                    {
+                        if (sym.fileUri == fileUri && sym.type == SymbolType::Class &&
+                            std::holds_alternative<ClassSignature>(sym.signature) &&
+                            sym.GetClass().modifiers.isMixin)
+                        {
+                            erasedMixin = true;
+                            break;
+                        }
+                    }
+                }
+                if (erasedMixin)
+                {
+                    break;
+                }
+            }
+        }
+
+        EraseDocumentSymbolsOnlyLocked(fileUri);
+
+        std::vector<std::string> affectedFiles;
+        if (erasedMixin)
+        {
+            ResolveIncludedMixinsLocked(&affectedFiles);
+        }
+
+        ankerl::unordered_dense::set<std::string> uniqueAffected;
+        for (const auto &affectedUri : affectedFiles)
+        {
+            if (affectedUri != fileUri && !affectedUri.empty())
+            {
+                uniqueAffected.insert(affectedUri);
+            }
+        }
+
+        std::vector<std::pair<std::string, rules::RuleIndexPartial>> affectedPartials;
+        affectedPartials.reserve(uniqueAffected.size());
+        for (const auto &affectedUri : uniqueAffected)
+        {
+            auto affectedPtrs = GetDocumentSymbolPointersLocked(affectedUri);
+            affectedPartials.emplace_back(affectedUri, rules::RuleIndex::BuildPartial(affectedUri, affectedPtrs));
+        }
+
+        {
+            std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+            if (m_ruleIndex && m_ruleIndex.use_count() > 1)
+            {
+                m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
+            }
+
+            if (m_ruleIndexPartials)
+            {
+                auto oldIt = m_ruleIndexPartials->find(fileUri);
+                if (oldIt != m_ruleIndexPartials->end())
+                {
+                    if (m_ruleIndex)
+                    {
+                        m_ruleIndex->RemovePartial(oldIt->second);
+                    }
+                    m_ruleIndexPartials->erase(oldIt);
+                }
+
+                for (auto &[affectedUri, newPartial] : affectedPartials)
+                {
+                    auto affIt = m_ruleIndexPartials->find(affectedUri);
+                    if (affIt != m_ruleIndexPartials->end())
+                    {
+                        if (m_ruleIndex)
+                        {
+                            m_ruleIndex->RemovePartial(affIt->second);
+                        }
+                    }
+                    if (m_ruleIndex)
+                    {
+                        m_ruleIndex->ApplyPartial(newPartial);
+                    }
+                    (*m_ruleIndexPartials)[affectedUri] = std::move(newPartial);
+                }
+            }
+        }
+
         ++m_version;
     }
 
@@ -290,10 +455,7 @@ namespace angel_lsp::analysis
             }
         }
 
-        // Build partial index contribution before moving fresh symbols
-        rules::RuleIndexPartial freshPartial = rules::RuleIndex::BuildPartial(fileUri, fresh);
-
-        EraseDocumentLocked(fileUri);
+        EraseDocumentSymbolsOnlyLocked(fileUri);
 
         bool addedMixin = false;
         std::vector<std::string> freshClassKeys;
@@ -318,15 +480,37 @@ namespace angel_lsp::analysis
             MutableBucket(m_symbols[key]).push_back(std::move(symbol));
         }
 
+        std::vector<std::string> affectedFiles;
         if (erasedMixin || addedMixin)
         {
             // A mixin class was added or removed; existing classes across the entire workspace might be affected
-            ResolveIncludedMixinsLocked();
+            ResolveIncludedMixinsLocked(&affectedFiles);
         }
         else if (!freshClassKeys.empty())
         {
             // Only resolve included mixins for the classes declared in this document
-            ResolveIncludedMixinsForKeysLocked(freshClassKeys);
+            ResolveIncludedMixinsForKeysLocked(freshClassKeys, &affectedFiles);
+        }
+
+        // Build partial for fileUri after mixin resolution
+        auto freshPtrs = GetDocumentSymbolPointersLocked(fileUri);
+        rules::RuleIndexPartial freshPartial = rules::RuleIndex::BuildPartial(fileUri, freshPtrs);
+
+        ankerl::unordered_dense::set<std::string> uniqueAffected;
+        for (const auto &affectedUri : affectedFiles)
+        {
+            if (affectedUri != fileUri && !affectedUri.empty())
+            {
+                uniqueAffected.insert(affectedUri);
+            }
+        }
+
+        std::vector<std::pair<std::string, rules::RuleIndexPartial>> affectedPartials;
+        affectedPartials.reserve(uniqueAffected.size());
+        for (const auto &affectedUri : uniqueAffected)
+        {
+            auto affectedPtrs = GetDocumentSymbolPointersLocked(affectedUri);
+            affectedPartials.emplace_back(affectedUri, rules::RuleIndex::BuildPartial(affectedUri, affectedPtrs));
         }
 
         {
@@ -339,18 +523,37 @@ namespace angel_lsp::analysis
             {
                 m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
             }
+
+            if (!m_ruleIndexPartials)
+            {
+                m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
+            }
+
+            auto oldIt = m_ruleIndexPartials->find(fileUri);
+            if (oldIt != m_ruleIndexPartials->end())
+            {
+                m_ruleIndex->RemovePartial(oldIt->second);
+            }
             m_ruleIndex->ApplyPartial(freshPartial);
+            (*m_ruleIndexPartials)[fileUri] = std::move(freshPartial);
+
+            for (auto &[affectedUri, newPartial] : affectedPartials)
+            {
+                auto affIt = m_ruleIndexPartials->find(affectedUri);
+                if (affIt != m_ruleIndexPartials->end())
+                {
+                    m_ruleIndex->RemovePartial(affIt->second);
+                }
+                m_ruleIndex->ApplyPartial(newPartial);
+                (*m_ruleIndexPartials)[affectedUri] = std::move(newPartial);
+            }
         }
-        if (!m_ruleIndexPartials)
-        {
-            m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
-        }
-        (*m_ruleIndexPartials)[fileUri] = std::move(freshPartial);
 
         ++m_version;
     }
 
-    void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::string> &classKeys)
+    void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::string> &classKeys,
+                                                         std::vector<std::string> *outAffectedFiles)
     {
         if (classKeys.empty())
         {
@@ -374,6 +577,7 @@ namespace angel_lsp::analysis
                 if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
                 {
                     auto &sig = std::get<ClassSignature>(sym.signature);
+                    const auto oldIncludedMixins = sig.includedMixins;
                     sig.includedMixins.clear();
                     for (const auto &b : sig.bases)
                     {
@@ -393,6 +597,11 @@ namespace angel_lsp::analysis
                                 }
                             }
                         }
+                    }
+
+                    if (outAffectedFiles && sig.includedMixins != oldIncludedMixins)
+                    {
+                        outAffectedFiles->push_back(sym.fileUri);
                     }
                 }
             }
@@ -415,6 +624,7 @@ namespace angel_lsp::analysis
                     if (fileIt != m_keysByFile.end())
                     {
                         const std::string prefix = hostQName + "::";
+                        std::vector<std::string> keysToClean;
                         for (const auto &k : fileIt->second)
                         {
                             if (k.starts_with(prefix))
@@ -427,8 +637,17 @@ namespace angel_lsp::analysis
                                     {
                                         return s.isSynthesized;
                                     });
+                                    if (vec.empty())
+                                    {
+                                        m_symbols.erase(bIt);
+                                        keysToClean.push_back(k);
+                                    }
                                 }
                             }
+                        }
+                        for (const auto &k : keysToClean)
+                        {
+                            fileIt->second.erase(k);
                         }
                     }
                 }
@@ -543,7 +762,7 @@ namespace angel_lsp::analysis
         }
     }
 
-    void SymbolTable::ResolveIncludedMixinsLocked()
+    void SymbolTable::ResolveIncludedMixinsLocked(std::vector<std::string> *outAffectedFiles)
     {
         std::vector<std::string> classKeys;
         for (const auto &[name, bucket] : m_symbols)
@@ -561,7 +780,7 @@ namespace angel_lsp::analysis
                 }
             }
         }
-        ResolveIncludedMixinsForKeysLocked(classKeys);
+        ResolveIncludedMixinsForKeysLocked(classKeys, outAffectedFiles);
     }
 
     void SymbolTable::ResolveIncludedMixins()

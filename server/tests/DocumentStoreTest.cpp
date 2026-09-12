@@ -94,3 +94,29 @@ TEST_CASE("DocumentStore - Concurrent read/write stress")
 
     CHECK(store.Size() == 0);
 }
+
+TEST_CASE("DocumentStore - Generation invalidation on close and reopen")
+{
+    DocumentStore store;
+    const std::string uri = "file:///gen_test.as";
+
+    store.OpenDocument(uri, "void main() {}", 1, document::MakeTreePtr(nullptr));
+    const uint64_t gen1 = store.GetGeneration(uri);
+    CHECK(gen1 > 0);
+    CHECK(store.IsCurrent(uri, gen1, 1));
+    CHECK(store.IsCurrent(uri, gen1, 2));
+    CHECK_FALSE(store.IsCurrent(uri, gen1, 0)); // Version 0 is older than version 1
+
+    // Close document
+    store.CloseDocument(uri);
+    CHECK_FALSE(store.IsCurrent(uri, gen1, 1));
+    CHECK(store.GetGeneration(uri) == 0);
+
+    // Reopen document -> new generation
+    store.OpenDocument(uri, "void main() { int y = 2; }", 1, document::MakeTreePtr(nullptr));
+    const uint64_t gen2 = store.GetGeneration(uri);
+    CHECK(gen2 > gen1);
+    CHECK_FALSE(store.IsCurrent(uri, gen1, 1)); // Stale gen1 must be rejected
+    CHECK(store.IsCurrent(uri, gen2, 1));       // Fresh gen2 is accepted
+}
+

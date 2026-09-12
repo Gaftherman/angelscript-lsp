@@ -2,6 +2,7 @@
 #include "utils/Utils.h"
 #include "utils/Timer.h"
 #include "utils/PreprocessorRegions.h"
+#include "analysis/NodeIndex.h"
 #include "lsp/PositionCodec.h"
 #include <spdlog/fmt/fmt.h>
 #include <tree_sitter/api.h>
@@ -20,19 +21,21 @@ namespace angel_lsp
     void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params &&params)
     {
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
-        // Remembered so diagnostics go back out under the client's own spelling - see
-        // m_clientUriByKey. Recorded on every notification that carries a document, because the
-        // client is free to change how it writes the URI between them.
-        m_clientUriByKey[uriStr] = params.textDocument.uri.toString();
+        m_documentStore.SetClientUri(uriStr, params.textDocument.uri.toString());
         std::string text = params.text.has_value() ? params.text.value() : "";
 
-        if (text.empty() && m_openDocuments.contains(uriStr))
-            text = m_openDocuments[uriStr];
-
+        if (text.empty())
         {
-            std::lock_guard<std::mutex> lock(m_analysisMutex);
-            m_pendingAnalysis.erase(uriStr);
-            m_savedUris.insert(uriStr);
+            if (auto docText = m_documentStore.GetText(uriStr))
+            {
+                text = std::move(*docText);
+            }
+        }
+
+        const int version = m_documentStore.GetVersion(uriStr);
+        if (m_analysisScheduler)
+        {
+            m_analysisScheduler->MarkSaved(uriStr, version);
         }
 
         m_scopeIndex.ClearDocument(uriStr);
@@ -43,23 +46,20 @@ namespace angel_lsp
             const std::string analysisText = AnalysisTextFor(uriStr, text);
             document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(analysisText));
             std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
+
+            if (PredefinedStubContributes(uriStr))
             {
-                std::lock_guard<std::mutex> lock(m_predefinedMutex);
+                ClaimPredefinedFile(uriStr, /*forceReload=*/true);
+                m_predefinedManager.SetDocumentText(uriStr, analysisText);
+                diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree.get());
+            }
 
-                if (PredefinedStubContributes(uriStr))
-                {
-                    ClaimPredefinedFile(uriStr, /*forceReload=*/true);
-                    m_predefinedDocuments[uriStr] = analysisText;
-                    diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree.get());
-                }
-
-                m_scopeIndex.ClearDocument(uriStr);
-                m_callGraph.ClearDocument(uriStr);
-                if (savedTree)
-                {
-                    m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(savedTree.get()), analysisText));
-                    m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(savedTree.get()), analysisText));
-                }
+            m_scopeIndex.ClearDocument(uriStr);
+            m_callGraph.ClearDocument(uriStr);
+            if (savedTree)
+            {
+                m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(savedTree.get()), analysisText));
+                m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(savedTree.get()), analysisText));
             }
 
             // A save is the point the watcher would have reacted to, had the file not been open -
@@ -74,39 +74,37 @@ namespace angel_lsp
                 ReanalyseOpenDocuments();
             }
 
+            AnalyzeConfiguredModules();
             return;
         }
 
-        // Parsed once and shared: symbol collection, scope building and the conversion rules all
-        // need the same tree, and letting each of them parse the text again is pure waste.
-        document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(text));
+        const std::string analysisText = AnalysisTextFor(uriStr, text);
+        document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(analysisText));
 
-        bool interfaceChanged = false;
-        auto diagnostics = ReplaceSymbolsFromTree(uriStr, text, savedTree.get(), &interfaceChanged);
-
-        // A save is the only point at which an edited #include line can change which module this
-        // file belongs to, so the graph is patched here rather than on every keystroke.
         if (const std::string savedPath = CanonicalPathFromUri(uriStr); !savedPath.empty())
             m_includeGraph.UpdateFile(savedPath, text, *SearchDirectories(), IncludeAllowedRoots(),
                                       ImplicitIncludeExtension());
 
         IndexModuleClosure(uriStr);
 
-        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, text, savedTree.get());
+        bool interfaceChanged = false;
+        auto diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree.get(), &interfaceChanged);
+
+        double scopeMs = 0.0;
+        double checkMs = 0.0;
+        analysis::NodeIndex nodeIndex(ts_tree_root_node(savedTree.get()));
+        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, savedTree.get(), &scopeMs, &checkMs, &nodeIndex);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
-        AppendIncludeDiagnostics(uriStr, text, diagnostics);
+        AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
 
-        PublishDiagnostics(uriStr, diagnostics);
+        PublishDiagnostics(uriStr, analysisText, diagnostics, version);
 
         if (!m_modules.empty())
         {
             WithdrawStaleModuleDiagnostics();
         }
 
-        // Restrict cascading analysis strictly to open documents.
-        // Fast path: if public declarations did not change (only function bodies edited),
-        // skip re-analyzing peer documents.
         if (interfaceChanged)
         {
             const std::string savedPath = CanonicalPathFromUri(uriStr);
@@ -118,7 +116,7 @@ namespace angel_lsp
             }
             ankerl::unordered_dense::set<std::string> closureSet(closureFiles.begin(), closureFiles.end());
 
-            for (const auto &[openUri, openText] : m_openDocuments)
+            for (const auto &[openUri, openText] : m_documentStore.GetSnapshot())
             {
                 if (openUri == uriStr)
                 {
@@ -144,18 +142,9 @@ namespace angel_lsp
 
                 if (isDependent)
                 {
-                    const auto now = std::chrono::steady_clock::now();
+                    if (m_analysisScheduler && m_analysisScheduler->ShouldDebouncePeer(openUri))
                     {
-                        std::lock_guard<std::mutex> lock(m_peerDebounceMutex);
-                        auto it = m_peerAnalysisTimestamps.find(openUri);
-                        if (it != m_peerAnalysisTimestamps.end())
-                        {
-                            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second) < k_peerAnalysisDebounceWindow)
-                            {
-                                continue;
-                            }
-                        }
-                        m_peerAnalysisTimestamps[openUri] = now;
+                        continue;
                     }
 
                     IndexModuleClosure(openUri);
@@ -167,25 +156,6 @@ namespace angel_lsp
         {
             LogInfo(fmt::format("Save {}: public interface unchanged, skipping cascading re-analysis", uriStr));
         }
-    }
-
-    void Server::SetDocumentVersion(const std::string &uriStr, int version)
-    {
-        std::lock_guard<std::mutex> lock(m_documentVersionsMutex);
-        m_documentVersions[uriStr] = version;
-    }
-
-    int Server::GetDocumentVersion(const std::string &uriStr) const
-    {
-        std::lock_guard<std::mutex> lock(m_documentVersionsMutex);
-        auto it = m_documentVersions.find(uriStr);
-        return (it != m_documentVersions.end()) ? it->second : -1;
-    }
-
-    void Server::RemoveDocumentVersion(const std::string &uriStr)
-    {
-        std::lock_guard<std::mutex> lock(m_documentVersionsMutex);
-        m_documentVersions.erase(uriStr);
     }
 
     std::string Server::AnalysisTextFor(const std::string &uriStr, const std::string &text) const
@@ -201,34 +171,25 @@ namespace angel_lsp
     {
         utils::HighResTimer totalTimer;
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
-        // Remembered so diagnostics go back out under the client's own spelling - see
-        // m_clientUriByKey. Recorded on every notification that carries a document, because the
-        // client is free to change how it writes the URI between them.
-        m_clientUriByKey[uriStr] = params.textDocument.uri.toString();
+        const std::string clientUri = params.textDocument.uri.toString();
         const int version = params.textDocument.version;
-        SetDocumentVersion(uriStr, version);
         std::string text = params.textDocument.text;
-
-        m_openDocuments[uriStr] = text;
-        RememberOpenDocument(uriStr, text);
 
         const std::string analysisText = AnalysisTextFor(uriStr, text);
 
         utils::HighResTimer parseTimer;
         TSTree *tree = m_parser->Parse(analysisText);
         double parseMs = parseTimer.ElapsedMs();
-        m_documentTrees.insert_or_assign(uriStr, document::MakeTreePtr(tree));
+        m_documentStore.OpenDocument(uriStr, text, version, document::MakeTreePtr(tree), clientUri);
+        RememberOpenDocument(uriStr, text);
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
             bool contentUnchanged = false;
+            auto existingText = m_predefinedManager.GetDocumentText(uriStr);
+            if (existingText && *existingText == analysisText)
             {
-                std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                auto it = m_predefinedDocuments.find(uriStr);
-                if (it != m_predefinedDocuments.end() && it->second == analysisText)
-                {
-                    contentUnchanged = true;
-                }
+                contentUnchanged = true;
             }
 
             if (contentUnchanged)
@@ -245,14 +206,11 @@ namespace angel_lsp
             }
 
             utils::HighResTimer colTimer;
+            if (PredefinedStubContributes(uriStr))
             {
-                std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                if (PredefinedStubContributes(uriStr))
-                {
-                    ClaimPredefinedFile(uriStr, /*forceReload=*/true);
-                    m_predefinedDocuments[uriStr] = analysisText;
-                    ReplaceSymbolsFromTree(uriStr, analysisText, tree);
-                }
+                ClaimPredefinedFile(uriStr, /*forceReload=*/true);
+                m_predefinedManager.SetDocumentText(uriStr, analysisText);
+                ReplaceSymbolsFromTree(uriStr, analysisText, tree);
             }
             double colMs = colTimer.ElapsedMs();
 
@@ -296,7 +254,8 @@ namespace angel_lsp
 
         double scopeMs = 0.0;
         double checkMs = 0.0;
-        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree, &scopeMs, &checkMs);
+        analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+        auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree, &scopeMs, &checkMs, &nodeIndex);
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
         AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
@@ -312,21 +271,18 @@ namespace angel_lsp
     void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params &&params)
     {
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
-        // Remembered so diagnostics go back out under the client's own spelling - see
-        // m_clientUriByKey. Recorded on every notification that carries a document, because the
-        // client is free to change how it writes the URI between them.
-        m_clientUriByKey[uriStr] = params.textDocument.uri.toString();
-        auto it = m_openDocuments.find(uriStr);
-        if (it == m_openDocuments.end())
+        m_documentStore.SetClientUri(uriStr, params.textDocument.uri.toString());
+
+        auto docText = m_documentStore.GetText(uriStr);
+        if (!docText)
+        {
             return;
+        }
 
         const int version = params.textDocument.version;
-        SetDocumentVersion(uriStr, version);
+        std::string buffer = std::move(*docText);
 
-        std::string &buffer = it->second;
-
-        auto treeIt = m_documentTrees.find(uriStr);
-        TSTree *tree = (treeIt != m_documentTrees.end()) ? treeIt->second.get() : nullptr;
+        TSTree *tree = m_documentStore.GetTree(uriStr);
 
         const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
 
@@ -399,7 +355,6 @@ namespace angel_lsp
             {
                 const auto &t = std::get<lsp::TextDocumentContentChangeWholeDocument>(change);
                 buffer = t.text;
-                m_documentTrees.erase(uriStr);
                 tree = nullptr;
             }
         }
@@ -410,16 +365,14 @@ namespace angel_lsp
         // For a predefined stub, reparse cleanly without reusing incremental state.
         TSTree *oldTree = isPredefined ? nullptr : tree;
         TSTree *newTree = m_parser->Parse(analysisText, oldTree);
-        m_documentTrees.insert_or_assign(uriStr, document::MakeTreePtr(newTree));
+        m_documentStore.UpdateDocument(uriStr, buffer, version, document::MakeTreePtr(newTree));
         double parseMs = parseTimer.ElapsedMs();
         LogInfo(fmt::format("[DidChange Incremental Parse] File: {} | Parse: {:.2f} ms", uriStr, parseMs));
 
         if (isPredefined)
         {
-            std::lock_guard<std::mutex> lock(m_predefinedMutex);
-            m_predefinedDocuments[uriStr] = analysisText;
+            m_predefinedManager.SetDocumentText(uriStr, analysisText);
         }
-
 
         // The reparse above is incremental and cheap, and stays on this thread so a request
         // arriving right after the edit is answered against a current tree. Symbol collection,
@@ -434,18 +387,12 @@ namespace angel_lsp
     void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params &&params)
     {
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
-        m_openDocuments.erase(uriStr);
+        m_documentStore.CloseDocument(uriStr);
         ForgetOpenDocument(uriStr);
-        RemoveDocumentVersion(uriStr);
 
+        if (m_analysisScheduler)
         {
-            std::lock_guard<std::mutex> lock(m_analysisMutex);
-            m_savedUris.erase(uriStr);
-            m_pendingAnalysis.erase(uriStr);
-        }
-        {
-            std::lock_guard<std::mutex> lock(m_peerDebounceMutex);
-            m_peerAnalysisTimestamps.erase(uriStr);
+            m_analysisScheduler->Cancel(uriStr);
         }
 
         // The cached token payload is only meaningful while the client still holds it. Dropping it
@@ -455,8 +402,6 @@ namespace angel_lsp
             std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
             m_semanticTokensCache.erase(uriStr);
         }
-
-        m_documentTrees.erase(uriStr);
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
@@ -505,10 +450,7 @@ namespace angel_lsp
         // Closing a file does not remove it from the modules of the documents still open. Re-running
         // their closures picks it back up as an on-disk closure file - and costs nothing for the
         // files already indexed, which are skipped by URI.
-        std::vector<std::string> stillOpen;
-        stillOpen.reserve(m_openDocuments.size());
-        for (const auto &[openUri, _] : m_openDocuments)
-            stillOpen.push_back(openUri);
+        const std::vector<std::string> stillOpen = m_documentStore.GetOpenUris();
 
         for (const auto &openUri : stillOpen)
         {

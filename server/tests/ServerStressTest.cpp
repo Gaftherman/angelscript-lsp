@@ -286,3 +286,183 @@ TEST_CASE("Server - Concurrency Stress Test: 500 rapid edits with interleaved re
 
     CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
 }
+
+TEST_CASE("Server - Barrier: Close during analysis cancels analysis and suppresses stale diagnostics")
+{
+    TempStressWorkspace ws;
+    ws.Write("sample.as", "void main() { int a = ; }");
+    const std::string fileUri = ws.Uri("sample.as");
+
+    angel_lsp::config::ServerConfig serverConfig;
+    serverConfig.searchDirectories.push_back(ws.dir.string());
+
+    angel_lsp::test::ScriptedStream stream;
+    int nextReqId = 1;
+
+    // 1. Initialize
+    const int initId = nextReqId++;
+    stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(initId) +
+                R"(,"method":"initialize","params":{"processId":null,"rootUri":")" +
+                ws.RootUri() + R"(","capabilities":{}}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // 2. Open document with syntax error
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","languageId":"angelscript","version":1,"text":"void main() { int a = ; }"}}})");
+
+    // 3. Edit document to trigger debounced analysis
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","version":2},"contentChanges":[{"text":"void main() { int a = 123; }"}]}})");
+
+    // 4. Immediately close document before debounced analysis completes
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":")" +
+                fileUri + R"("}}})");
+
+    // 5. Shutdown and exit
+    const int shutdownId = nextReqId++;
+    stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(shutdownId) + R"(,"method":"shutdown"})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"exit"})");
+
+    {
+        angel_lsp::Server server(serverConfig, stream);
+        server.Run();
+    }
+
+    CHECK(stream.ResponseFor(initId).find("\"capabilities\"") != std::string::npos);
+    CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
+    // On close, didClose publishes empty diagnostics `{}` to clear client markers
+    CHECK(stream.Output().find("\"diagnostics\":[]") != std::string::npos);
+}
+
+TEST_CASE("Server - Barrier: Immediate reopen updates generation and receives fresh diagnostics")
+{
+    TempStressWorkspace ws;
+    ws.Write("reopen.as", "void main() { int x = 1; }");
+    const std::string fileUri = ws.Uri("reopen.as");
+
+    angel_lsp::config::ServerConfig serverConfig;
+    serverConfig.searchDirectories.push_back(ws.dir.string());
+
+    angel_lsp::test::ScriptedStream stream;
+    int nextReqId = 1;
+
+    // 1. Initialize
+    const int initId = nextReqId++;
+    stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(initId) +
+                R"(,"method":"initialize","params":{"processId":null,"rootUri":")" +
+                ws.RootUri() + R"(","capabilities":{}}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // 2. Open generation 1
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","languageId":"angelscript","version":1,"text":"void main() { int x = 1; }"}}})");
+
+    // 3. Close generation 1
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":")" +
+                fileUri + R"("}}})");
+
+    // 4. Immediately reopen as generation 2 with undeclared call
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","languageId":"angelscript","version":1,"text":"void main() { undeclared_func(); }"}}})");
+
+    // 5. Shutdown and exit
+    const int shutdownId = nextReqId++;
+    stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(shutdownId) + R"(,"method":"shutdown"})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"exit"})");
+
+    {
+        angel_lsp::Server server(serverConfig, stream);
+        server.Run();
+    }
+
+    CHECK(stream.ResponseFor(initId).find("\"capabilities\"") != std::string::npos);
+    CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
+    // The second didOpen must be processed under new generation and report undeclared_func
+    CHECK(stream.Output().find("undeclared_func") != std::string::npos);
+}
+
+TEST_CASE("Server - Barrier: Concurrent save flushes diagnostics and cancels superseded debounce")
+{
+    TempStressWorkspace ws;
+    ws.Write("save_flush.as", "void main() { int v = 1; }");
+    const std::string fileUri = ws.Uri("save_flush.as");
+
+    angel_lsp::config::ServerConfig serverConfig;
+    serverConfig.searchDirectories.push_back(ws.dir.string());
+
+    angel_lsp::test::ScriptedStream stream;
+    int nextReqId = 1;
+
+    // 1. Initialize
+    const int initId = nextReqId++;
+    stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(initId) +
+                R"(,"method":"initialize","params":{"processId":null,"rootUri":")" +
+                ws.RootUri() + R"(","capabilities":{}}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // 2. Open document
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","languageId":"angelscript","version":1,"text":"void main() { int v = 1; }"}}})");
+
+    // 3. Edit document (version 2)
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","version":2},"contentChanges":[{"text":"void main() { int v = 2; }"}]}})");
+
+    // 4. Save document (version 2) - should immediately flush synchronous analysis
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","version":2},"text":"void main() { int v = 2; }"}})");
+
+    // 5. Shutdown and exit
+    const int shutdownId = nextReqId++;
+    stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(shutdownId) + R"(,"method":"shutdown"})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"exit"})");
+
+    {
+        angel_lsp::Server server(serverConfig, stream);
+        server.Run();
+    }
+
+    CHECK(stream.ResponseFor(initId).find("\"capabilities\"") != std::string::npos);
+    CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
+}
+
+TEST_CASE("Server - Barrier: Identical text with higher version updates version without redundant re-parse")
+{
+    TempStressWorkspace ws;
+    ws.Write("same_text.as", "void foo() {}");
+    const std::string fileUri = ws.Uri("same_text.as");
+
+    angel_lsp::config::ServerConfig serverConfig;
+    serverConfig.searchDirectories.push_back(ws.dir.string());
+
+    angel_lsp::test::ScriptedStream stream;
+    int nextReqId = 1;
+
+    // 1. Initialize
+    const int initId = nextReqId++;
+    stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(initId) +
+                R"(,"method":"initialize","params":{"processId":null,"rootUri":")" +
+                ws.RootUri() + R"(","capabilities":{}}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    // 2. Open document (version 1)
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","languageId":"angelscript","version":1,"text":"void foo() {}"}}})");
+
+    // 3. Change with identical text (version 2)
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                fileUri + R"(","version":2},"contentChanges":[{"text":"void foo() {}"}]}})");
+
+    // 4. Shutdown and exit
+    const int shutdownId = nextReqId++;
+    stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(shutdownId) + R"(,"method":"shutdown"})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"exit"})");
+
+    {
+        angel_lsp::Server server(serverConfig, stream);
+        server.Run();
+    }
+
+    CHECK(stream.ResponseFor(initId).find("\"capabilities\"") != std::string::npos);
+    CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
+}

@@ -274,8 +274,7 @@ namespace angel_lsp
                 {
                     lsp::DiagnosticRelatedInformation lspRel;
                     lspRel.message = rel.message;
-                    const auto clientRelUri = m_clientUriByKey.find(rel.fileUri);
-                    const std::string &relUri = clientRelUri != m_clientUriByKey.end() ? clientRelUri->second : rel.fileUri;
+                    const std::string relUri = m_documentStore.GetClientUri(rel.fileUri);
                     lspRel.location.uri = lsp::DocumentUri(lsp::Uri::parse(relUri));
                     lspRel.location.range.start.line = rel.range.start.line;
                     lspRel.location.range.start.character = rel.range.start.character;
@@ -309,10 +308,8 @@ namespace angel_lsp
         }
 
         lsp::json::Object params;
-
-        const auto clientUri = m_clientUriByKey.find(uriStr);
-        params["uri"] = lsp::json::Value(
-            std::string(clientUri != m_clientUriByKey.end() ? clientUri->second : uriStr));
+        std::string clientUri = m_documentStore.GetClientUri(uriStr);
+        params["uri"] = lsp::json::Value(std::move(clientUri));
         params["regions"] = std::move(regions);
 
         std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
@@ -341,8 +338,7 @@ namespace angel_lsp
             params.version = version;
         }
 
-        const auto clientUri = m_clientUriByKey.find(uriStr);
-        const std::string &outgoingUri = clientUri != m_clientUriByKey.end() ? clientUri->second : uriStr;
+        const std::string outgoingUri = m_documentStore.GetClientUri(uriStr);
         params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
 
         params.diagnostics = ToProtocolDiagnostics(text, diagnostics);

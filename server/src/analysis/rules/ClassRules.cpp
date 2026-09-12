@@ -467,13 +467,17 @@ namespace angel_lsp::analysis::rules
             for (const auto &mixinName : includedMixins)
             {
                 const Symbol *mixinSym = nullptr;
-                auto candidates = ctx.request.symbolTable.FindSymbols(mixinName);
-                for (const auto &c : candidates)
+                std::optional<Symbol> fallbackMixin;
+                auto candidates = ctx.request.symbolTable.FindSymbolsPtr(mixinName);
+                if (candidates)
                 {
-                    if (c.type == SymbolType::Class && c.GetClass().modifiers.isMixin)
+                    for (const auto &c : *candidates)
                     {
-                        mixinSym = &c;
-                        break;
+                        if (c.type == SymbolType::Class && c.GetClass().modifiers.isMixin)
+                        {
+                            mixinSym = &c;
+                            break;
+                        }
                     }
                 }
                 if (!mixinSym)
@@ -489,7 +493,8 @@ namespace angel_lsp::analysis::rules
                     {
                         if (c.type == SymbolType::Class && c.GetClass().modifiers.isMixin)
                         {
-                            mixinSym = &c;
+                            fallbackMixin = c;
+                            mixinSym = &*fallbackMixin;
                             break;
                         }
                     }

@@ -379,11 +379,8 @@ namespace angel_lsp
                     return lsp::Null{};
                 }
 
-                std::unordered_set<std::string> predefinedUris;
-                {
-                    std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                    predefinedUris.insert(m_predefinedUris.begin(), m_predefinedUris.end());
-                }
+                const auto loadedUris = m_predefinedManager.GetLoadedUris();
+                std::unordered_set<std::string> predefinedUris(loadedUris.begin(), loadedUris.end());
 
                 features::PrepareRenameRequest pr{
                     doc->uri, *doc->text, doc->tree,
@@ -412,11 +409,8 @@ namespace angel_lsp
                     return lsp::Null{};
                 }
 
-                std::unordered_set<std::string> predefinedUris;
-                {
-                    std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                    predefinedUris.insert(m_predefinedUris.begin(), m_predefinedUris.end());
-                }
+                const auto loadedUris = m_predefinedManager.GetLoadedUris();
+                std::unordered_set<std::string> predefinedUris(loadedUris.begin(), loadedUris.end());
 
                 features::RenameRequest rr{
                     doc->uri, *doc->text, doc->tree,

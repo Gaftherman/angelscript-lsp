@@ -156,16 +156,9 @@ namespace angel_lsp
                     std::string(std::string_view(requested).substr(k_scheme.size())));
 
                 std::string fileUri;
+                if (const auto uriOpt = m_predefinedManager.GetUriByPath(wanted))
                 {
-                    std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                    for (const auto &entry : m_predefinedUriByPath)
-                    {
-                        if (entry.first == wanted)
-                        {
-                            fileUri = entry.second;
-                            break;
-                        }
-                    }
+                    fileUri = *uriOpt;
                 }
 
                 if (fileUri.empty())
@@ -518,8 +511,7 @@ namespace angel_lsp
         {
             // Out under the client's own spelling, for the same reason PublishDiagnostics does it:
             // the key is canonical and the client matches these against its own URIs.
-            const auto clientUri = m_clientUriByKey.find(uriStr);
-            const std::string &outgoingUri = clientUri != m_clientUriByKey.end() ? clientUri->second : uriStr;
+            const std::string outgoingUri = m_documentStore.GetClientUri(uriStr);
 
             if (const auto it = known.find(uriStr); it != known.end() && it->second == snapshot.resultId)
             {

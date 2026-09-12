@@ -125,6 +125,7 @@ namespace angel_lsp::analysis::rules
 
         /** @brief Extracts a partial index from the given symbols belonging to fileUri. */
         static RuleIndexPartial BuildPartial(const std::string &fileUri, const std::vector<Symbol> &symbols);
+        static RuleIndexPartial BuildPartial(const std::string &fileUri, const std::vector<const Symbol *> &symbols);
 
         /** @brief Walks the table once and returns the index it yields. */
         static std::shared_ptr<RuleIndex> Build(const SymbolTable &table);

@@ -28,15 +28,16 @@ namespace angel_lsp::document
         std::string uri;
         std::string text;
         int version = 0;
+        uint64_t generation = 0;
         TreePtr tree = MakeTreePtr(nullptr);
 
         Document() = default;
-        Document(std::string u, std::string t, int v = 0, TSTree *tr = nullptr)
-            : uri(std::move(u)), text(std::move(t)), version(v), tree(MakeTreePtr(tr))
+        Document(std::string u, std::string t, int v = 0, TSTree *tr = nullptr, uint64_t gen = 0)
+            : uri(std::move(u)), text(std::move(t)), version(v), generation(gen), tree(MakeTreePtr(tr))
         {
         }
-        Document(std::string u, std::string t, int v, TreePtr tr)
-            : uri(std::move(u)), text(std::move(t)), version(v), tree(std::move(tr))
+        Document(std::string u, std::string t, int v, TreePtr tr, uint64_t gen = 0)
+            : uri(std::move(u)), text(std::move(t)), version(v), generation(gen), tree(std::move(tr))
         {
         }
     };

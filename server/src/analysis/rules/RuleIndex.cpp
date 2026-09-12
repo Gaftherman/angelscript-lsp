@@ -65,145 +65,121 @@ namespace angel_lsp::analysis::rules
         }
     }
 
-    RuleIndexPartial RuleIndex::BuildPartial(const std::string &fileUri, const std::vector<Symbol> &symbols)
+    namespace
     {
-        RuleIndexPartial partial;
-        partial.fileUri = fileUri;
-
-        for (const auto &sym : symbols)
+        template <typename SymbolRange>
+        void PopulatePartial(RuleIndexPartial &partial, const SymbolRange &symbols)
         {
-            if (sym.isSynthesized)
+            for (const auto &symRef : symbols)
             {
-                continue;
-            }
-
-            partial.allNames.push_back(sym.name);
-
-            if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
-            {
-                for (const auto &param : sym.GetClass().templateParams)
+                const Symbol &sym = [&]() -> const Symbol &
                 {
-                    partial.allNames.push_back(param);
-                }
-            }
-
-            if (sym.type == SymbolType::Namespace)
-            {
-                std::string_view remaining = sym.name;
-                for (size_t at = remaining.find("::"); at != std::string_view::npos;
-                     at = remaining.find("::"))
-                {
-                    partial.allNames.push_back(std::string(remaining.substr(0, at)));
-                    remaining.remove_prefix(at + 2);
-                }
-                if (!remaining.empty())
-                {
-                    partial.allNames.push_back(std::string(remaining));
-                }
-            }
-
-            if (sym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(sym.signature))
-            {
-                for (const auto &member : sym.GetEnum().members)
-                {
-                    partial.enumMembers.emplace_back(member.name, sym);
-                }
-            }
-
-            if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
-                sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef || sym.type == SymbolType::Funcdef)
-            {
-                const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                partial.qualifiedTypes.emplace_back(sym.name, qName);
-            }
-
-            if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
-            {
-                const DerivedType derived{
-                    sym.qualifiedName.empty() ? sym.name : sym.qualifiedName,
-                    sym.name
-                };
-
-                const auto recordBase = [&](const std::string &base)
-                {
-                    const std::string cleanBase = CleanBaseType(base);
-                    if (!cleanBase.empty())
+                    if constexpr (std::is_pointer_v<std::decay_t<decltype(symRef)>>)
                     {
-                        partial.derivedByBase.emplace_back(cleanBase, derived);
+                        return *symRef;
                     }
-                    if (!base.empty() && base != cleanBase)
+                    else
                     {
-                        partial.derivedByBase.emplace_back(base, derived);
+                        return symRef;
                     }
-                };
+                }();
+
+                if (sym.isSynthesized)
+                {
+                    continue;
+                }
+
+                partial.allNames.push_back(sym.name);
 
                 if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
                 {
-                    for (const auto &base : sym.GetClass().bases)
+                    for (const auto &param : sym.GetClass().templateParams)
                     {
-                        recordBase(base);
+                        partial.allNames.push_back(param);
                     }
+                }
 
-                    for (const auto &mixinName : sym.GetClass().includedMixins)
+                if (sym.type == SymbolType::Namespace)
+                {
+                    std::string_view remaining = sym.name;
+                    for (size_t at = remaining.find("::"); at != std::string_view::npos;
+                         at = remaining.find("::"))
                     {
-                        const std::string cleanMixin = CleanBaseType(mixinName);
-                        if (!cleanMixin.empty())
+                        partial.allNames.push_back(std::string(remaining.substr(0, at)));
+                        remaining.remove_prefix(at + 2);
+                    }
+                    if (!remaining.empty())
+                    {
+                        partial.allNames.push_back(std::string(remaining));
+                    }
+                }
+
+                if (sym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(sym.signature))
+                {
+                    for (const auto &member : sym.GetEnum().members)
+                    {
+                        partial.enumMembers.emplace_back(member.name, sym);
+                    }
+                }
+
+                if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
+                    sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef || sym.type == SymbolType::Funcdef)
+                {
+                    const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                    partial.qualifiedTypes.emplace_back(sym.name, qName);
+                }
+
+                if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+                {
+                    const DerivedType derived{
+                        sym.qualifiedName.empty() ? sym.name : sym.qualifiedName,
+                        sym.name
+                    };
+
+                    const auto recordBase = [&](const std::string &base)
+                    {
+                        const std::string cleanBase = CleanBaseType(base);
+                        if (!cleanBase.empty())
                         {
-                            partial.hostClassesByMixin.emplace_back(cleanMixin, derived);
-                            const std::string bareMixin = LastScopeSegment(cleanMixin);
-                            if (bareMixin != cleanMixin)
+                            partial.derivedByBase.emplace_back(cleanBase, derived);
+                        }
+                        if (!base.empty() && base != cleanBase)
+                        {
+                            partial.derivedByBase.emplace_back(base, derived);
+                        }
+                    };
+
+                    if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+                    {
+                        for (const auto &base : sym.GetClass().bases)
+                        {
+                            recordBase(base);
+                        }
+
+                        for (const auto &mixinName : sym.GetClass().includedMixins)
+                        {
+                            const std::string cleanMixin = CleanBaseType(mixinName);
+                            if (!cleanMixin.empty())
                             {
-                                partial.hostClassesByMixin.emplace_back(bareMixin, derived);
+                                partial.hostClassesByMixin.emplace_back(cleanMixin, derived);
+                                const std::string bareMixin = LastScopeSegment(cleanMixin);
+                                if (bareMixin != cleanMixin)
+                                {
+                                    partial.hostClassesByMixin.emplace_back(bareMixin, derived);
+                                }
                             }
                         }
                     }
-                }
-                else if (sym.type == SymbolType::Interface && std::holds_alternative<InterfaceSignature>(sym.signature))
-                {
-                    for (const auto &base : sym.GetInterface().inheritedInterfaces)
+                    else if (sym.type == SymbolType::Interface && std::holds_alternative<InterfaceSignature>(sym.signature))
                     {
-                        recordBase(base);
-                    }
-                }
-            }
-
-            if (sym.containerName.empty() && sym.type == SymbolType::Function)
-            {
-                std::string_view accessor = sym.name;
-                if (accessor.starts_with("get_") || accessor.starts_with("set_"))
-                {
-                    accessor.remove_prefix(4);
-                    if (!accessor.empty())
-                    {
-                        partial.accessorProperties.emplace_back(accessor);
-                        if (std::holds_alternative<FunctionSignature>(sym.signature) &&
-                            sym.GetFunction().modifiers.isProperty)
+                        for (const auto &base : sym.GetInterface().inheritedInterfaces)
                         {
-                            partial.keywordAccessorProperties.emplace_back(accessor);
+                            recordBase(base);
                         }
                     }
                 }
-            }
 
-            if (sym.containerName.empty())
-            {
-                continue;
-            }
-
-            auto &members = partial.byContainer[sym.containerName];
-            members.allMemberNames.push_back(sym.name);
-            members.memberKeys.push_back(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
-
-            switch (sym.type)
-            {
-            case SymbolType::Function:
-                members.methodNames.push_back(sym.name);
-                if (std::holds_alternative<FunctionSignature>(sym.signature) &&
-                    sym.GetFunction().modifiers.isFinal)
-                {
-                    members.finalMethodNames.push_back(sym.name);
-                }
-
+                if (sym.containerName.empty() && sym.type == SymbolType::Function)
                 {
                     std::string_view accessor = sym.name;
                     if (accessor.starts_with("get_") || accessor.starts_with("set_"))
@@ -220,19 +196,70 @@ namespace angel_lsp::analysis::rules
                         }
                     }
                 }
-                break;
-            case SymbolType::Class:
-            case SymbolType::Interface:
-            case SymbolType::Enum:
-            case SymbolType::Typedef:
-            case SymbolType::Funcdef:
-                members.nestedTypeCount++;
-                break;
-            default:
-                break;
+
+                if (sym.containerName.empty())
+                {
+                    continue;
+                }
+
+                auto &members = partial.byContainer[sym.containerName];
+                members.allMemberNames.push_back(sym.name);
+                members.memberKeys.push_back(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
+
+                switch (sym.type)
+                {
+                case SymbolType::Function:
+                    members.methodNames.push_back(sym.name);
+                    if (std::holds_alternative<FunctionSignature>(sym.signature) &&
+                        sym.GetFunction().modifiers.isFinal)
+                    {
+                        members.finalMethodNames.push_back(sym.name);
+                    }
+
+                    {
+                        std::string_view accessor = sym.name;
+                        if (accessor.starts_with("get_") || accessor.starts_with("set_"))
+                        {
+                            accessor.remove_prefix(4);
+                            if (!accessor.empty())
+                            {
+                                partial.accessorProperties.emplace_back(accessor);
+                                if (std::holds_alternative<FunctionSignature>(sym.signature) &&
+                                    sym.GetFunction().modifiers.isProperty)
+                                {
+                                    partial.keywordAccessorProperties.emplace_back(accessor);
+                                }
+                            }
+                        }
+                    }
+                    break;
+                case SymbolType::Class:
+                case SymbolType::Interface:
+                case SymbolType::Enum:
+                case SymbolType::Typedef:
+                case SymbolType::Funcdef:
+                    members.nestedTypeCount++;
+                    break;
+                default:
+                    break;
+                }
             }
         }
+    }
 
+    RuleIndexPartial RuleIndex::BuildPartial(const std::string &fileUri, const std::vector<Symbol> &symbols)
+    {
+        RuleIndexPartial partial;
+        partial.fileUri = fileUri;
+        PopulatePartial(partial, symbols);
+        return partial;
+    }
+
+    RuleIndexPartial RuleIndex::BuildPartial(const std::string &fileUri, const std::vector<const Symbol *> &symbols)
+    {
+        RuleIndexPartial partial;
+        partial.fileUri = fileUri;
+        PopulatePartial(partial, symbols);
         return partial;
     }
 

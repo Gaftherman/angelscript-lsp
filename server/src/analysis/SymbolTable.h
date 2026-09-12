@@ -624,13 +624,20 @@ namespace angel_lsp::analysis
         /** @brief Records that a symbol's bucket now holds something from its file. Caller holds the write lock. */
         void IndexKeyForFileLocked(const std::string &fileUri, const std::string &key);
 
+        /** @brief Erases symbols belonging to fileUri from m_symbols and m_keysByFile. Caller holds the write lock. */
+        void EraseDocumentSymbolsOnlyLocked(const std::string &fileUri);
+
+        /** @brief Returns pointers to all non-synthesized symbols declared in fileUri. Caller holds the read or write lock. */
+        std::vector<const Symbol *> GetDocumentSymbolPointersLocked(const std::string &fileUri) const;
+
         /** @brief Erases every symbol belonging to fileUri, touching only that file's buckets. Caller holds the write lock. */
         void EraseDocumentLocked(const std::string &fileUri);
 
         /** @brief The half both ReplaceDocumentSymbols overloads share: take the write lock, swap the file's symbols for these. */
         void PublishDocumentSymbols(const std::string &fileUri, std::vector<Symbol> &&fresh);
-        void ResolveIncludedMixinsLocked();
-        void ResolveIncludedMixinsForKeysLocked(const std::vector<std::string> &classKeys);
+        void ResolveIncludedMixinsLocked(std::vector<std::string> *outAffectedFiles = nullptr);
+        void ResolveIncludedMixinsForKeysLocked(const std::vector<std::string> &classKeys,
+                                                std::vector<std::string> *outAffectedFiles = nullptr);
         uint64_t ComputeDocumentInterfaceHashLocked(const std::string &fileUri) const;
 
         mutable std::shared_mutex m_mutex;

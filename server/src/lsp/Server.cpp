@@ -110,6 +110,7 @@ namespace angel_lsp
         }
 
         m_parser = std::make_unique<angel_lsp::parser::AngelScriptParser>(m_logger.get());
+        m_workerParser = std::make_unique<angel_lsp::parser::AngelScriptParser>(m_logger.get());
 
         m_symbolCollector = std::make_unique<angel_lsp::analysis::SymbolCollector>(m_logger.get());
 
@@ -134,30 +135,28 @@ namespace angel_lsp
 
         InitHandles();
 
-        m_analysisThread = std::thread([this] { this->RunAnalysisLoop(); });
+        m_analysisScheduler = std::make_unique<angel_lsp::AnalysisScheduler>(
+            [this](const std::string &uriStr, const std::string &text, angel_lsp::document::TreePtr tree, int version, uint64_t generation, uint64_t configRevision)
+            {
+                AnalyzeDocument(uriStr, text, *m_workerParser, std::move(tree), version, generation, configRevision);
+            });
     }
 
     Server::~Server()
     {
         m_running = false;
 
-        // Stopped and joined before the trees below are freed: both threads read member state and
-        // must not outlive it. A destructor that joined implicitly would do so in reverse
-        // declaration order - and m_workspaceThread is declared early enough that it would be
-        // joined only after the symbol table and include graph it reads were already gone.
+        if (m_analysisScheduler)
         {
-            std::lock_guard<std::mutex> lock(m_analysisMutex);
-            m_analysisStop = true;
+            m_analysisScheduler->Stop();
         }
-        m_analysisCv.notify_all();
-        if (m_analysisThread.joinable())
-            m_analysisThread.join();
 
         m_workspaceStop.Request();
         if (m_workspaceThread.joinable())
             m_workspaceThread.join();
 
-        m_documentTrees.clear();
+        m_documentStore.Clear();
+        m_predefinedManager.Clear();
     }
 
     std::vector<std::string> Server::WorkspaceRoots() const
@@ -667,19 +666,18 @@ namespace angel_lsp
 
     lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string &uriStr, const std::string &text)
     {
-        TSTree *tree = nullptr;
-        if (auto it = m_documentTrees.find(uriStr); it != m_documentTrees.end())
+        TSTree *tree = m_documentStore.GetTree(uriStr);
+        int currentVersion = m_documentStore.GetVersion(uriStr);
+
+        analysis::NodeIndex localNodeIndex;
+        const analysis::NodeIndex *nodeIndexPtr = nullptr;
+        if (tree)
         {
-            tree = it->second.get();
+            localNodeIndex.Build(ts_tree_root_node(tree));
+            nodeIndexPtr = &localNodeIndex;
         }
 
-        int currentVersion = -1;
-        if (auto it = m_documentVersions.find(uriStr); it != m_documentVersions.end())
-        {
-            currentVersion = it->second;
-        }
-
-        features::SemanticTokensRequest request{ uriStr, text, tree, m_symbolTable, m_scopeIndex.GetRoot(uriStr) };
+        features::SemanticTokensRequest request{ uriStr, text, tree, m_symbolTable, m_scopeIndex.GetRoot(uriStr), std::nullopt, nodeIndexPtr };
         request.excludedLineRanges = ExcludedLineRanges(text);
         lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
         codec::EncodeSemanticTokens(text, m_positionEncoding, tokens.data);
@@ -797,16 +795,15 @@ namespace angel_lsp
 
         if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
         {
-            std::lock_guard<std::mutex> lock(const_cast<std::mutex &>(m_predefinedMutex));
-            if (const auto predefined = m_predefinedDocuments.find(key); predefined != m_predefinedDocuments.end())
+            if (const std::string *predefined = m_predefinedManager.GetDocumentTextPtr(key))
             {
-                return &predefined->second;
+                return predefined;
             }
         }
 
-        if (const auto open = m_openDocuments.find(key); open != m_openDocuments.end())
+        if (const std::string *open = m_documentStore.GetTextPtr(key))
         {
-            return &open->second;
+            return open;
         }
 
         // Closure files are not open, but their ranges still reach the client through references,
@@ -824,20 +821,17 @@ namespace angel_lsp
     {
         const std::string key = DocumentKey(uriStr);
 
-        auto docIt = m_openDocuments.find(key);
-        if (docIt == m_openDocuments.end())
+        auto doc = m_documentStore.GetDocument(key);
+        if (!doc)
         {
             if (key.starts_with("angelscript-virtual:") || uriStr.starts_with("angelscript-virtual:"))
             {
                 std::string text = GenerateVirtualMixinDocument(key.starts_with("angelscript-virtual:") ? key : uriStr);
                 if (!text.empty())
                 {
-                    m_openDocuments[key] = text;
-                    if (m_parser)
-                    {
-                        m_documentTrees.insert_or_assign(key, document::MakeTreePtr(m_parser->Parse(text)));
-                    }
-                    docIt = m_openDocuments.find(key);
+                    document::TreePtr tree = m_parser ? document::MakeTreePtr(m_parser->Parse(text)) : document::MakeTreePtr(nullptr);
+                    m_documentStore.OpenDocument(key, text, 0, std::move(tree), key);
+                    doc = m_documentStore.GetDocument(key);
                 }
                 else
                 {
@@ -850,21 +844,20 @@ namespace angel_lsp
             }
         }
 
-        const auto treeIt = m_documentTrees.find(key);
+        const std::string *textPtr = doc ? &doc->text : nullptr;
+        TSTree *treePtr = doc ? doc->tree.get() : nullptr;
+        std::shared_ptr<const std::string> predefinedHandle;
 
-        const std::string *textPtr = &docIt->second;
         if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
         {
-            std::lock_guard<std::mutex> lock(m_predefinedMutex);
-            auto preIt = m_predefinedDocuments.find(key);
-            if (preIt != m_predefinedDocuments.end())
+            predefinedHandle = m_predefinedManager.GetDocumentTextShared(key);
+            if (predefinedHandle)
             {
-                textPtr = &preIt->second;
+                textPtr = predefinedHandle.get();
             }
         }
 
-        return OpenDocument{ key, textPtr,
-                             treeIt == m_documentTrees.end() ? nullptr : treeIt->second.get() };
+        return OpenDocument{ key, textPtr, treePtr, doc, predefinedHandle };
     }
 
 

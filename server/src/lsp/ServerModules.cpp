@@ -168,42 +168,30 @@ namespace angel_lsp
         return claim;
     }
 
-    void Server::RememberOpenDocument(const std::string &uriStr, const std::string &text)
+    void Server::RememberOpenDocument(const std::string &/*uriStr*/, const std::string &/*text*/)
     {
-        std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
-        m_openSnapshot[uriStr] = text;
     }
 
-    void Server::ForgetOpenDocument(const std::string &uriStr)
+    void Server::ForgetOpenDocument(const std::string &/*uriStr*/)
     {
-        std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
-        m_openSnapshot.erase(uriStr);
     }
 
     bool Server::IsOpenElsewhere(const std::string &uriStr) const
     {
-        std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
-        return m_openSnapshot.contains(uriStr);
+        return m_documentStore.IsOpen(uriStr);
     }
 
     void Server::ScheduleOpenDocumentsForReanalysis()
     {
-        std::vector<std::pair<std::string, std::string>> open;
-        {
-            std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
-            open.reserve(m_openSnapshot.size());
-            for (const auto &[uriStr, text] : m_openSnapshot)
-            {
-                if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
-                {
-                    continue;
-                }
-                open.emplace_back(uriStr, text);
-            }
-        }
-
+        const auto open = m_documentStore.GetSnapshot();
         for (const auto &[uriStr, text] : open)
+        {
+            if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+            {
+                continue;
+            }
             ScheduleAnalysis(uriStr, text, /*force=*/true);
+        }
 
         if (m_logger)
         {
@@ -323,15 +311,12 @@ namespace angel_lsp
     {
         ankerl::unordered_dense::set<std::string> wantedCanonicalPaths;
 
+        for (const auto &openUri : m_documentStore.GetOpenUris())
         {
-            std::lock_guard<std::mutex> lock(m_openSnapshotMutex);
-            for (const auto &[openUri, _] : m_openSnapshot)
+            const std::string p = CanonicalPathFromUri(openUri);
+            if (!p.empty())
             {
-                const std::string p = CanonicalPathFromUri(openUri);
-                if (!p.empty())
-                {
-                    wantedCanonicalPaths.insert(p);
-                }
+                wantedCanonicalPaths.insert(p);
             }
         }
 
@@ -401,7 +386,7 @@ namespace angel_lsp
             {
                 const std::string uriStr = UriFromPath(path);
 
-                if (IsOpenElsewhere(uriStr) || m_openDocuments.contains(uriStr))
+                if (IsOpenElsewhere(uriStr) || m_documentStore.IsOpen(uriStr))
                 {
                     continue;
                 }
@@ -600,11 +585,11 @@ namespace angel_lsp
 
             const std::string uriStr = UriFromPath(path);
 
-            if (m_openDocuments.contains(uriStr))
+            if (m_documentStore.IsOpen(uriStr))
                 continue;
 
             if (const auto already = m_indexedUriByPath.find(path);
-                already != m_indexedUriByPath.end() && m_openDocuments.contains(already->second))
+                already != m_indexedUriByPath.end() && m_documentStore.IsOpen(already->second))
             {
                 continue;
             }

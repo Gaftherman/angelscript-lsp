@@ -50,6 +50,7 @@ Measured across 300 files from the AngelScript corpus.
 ## 3. Key Observations & Accomplishments
 1. **Whole Analysis Speedup:** `SemanticAnalyzer::Analyze` per-file average decreased from **636.01 ms** to **365.51 ms** in Debug (-42.5%) and down to **38.41 ms** in Release (-93.97%, over 16.5x faster).
 2. **Duplicate Check Elimination:** Hash table bucket optimizations using `ankerl::unordered_dense::map` slashed duplicate symbol validation from 506.41 ms down to 39.59 ms in Debug (-92.2%) and 3.07 ms in Release.
-3. **Semantic Tokens Single-Pass Traversal:** Full document semantic tokenization dropped from 314.92 ms to 140.36 ms in Debug (-55.4%) and 24.48 ms in Release (-92.2%), directly streaming delta-encoded tokens without multi-pass allocation.
+3. **Semantic Tokens Multi-Stage Pipeline:** Full document semantic tokenization dropped from 314.92 ms to 140.36 ms in Debug (-55.4%) and 24.48 ms in Release (-92.2%), pre-indexing declaration refinements and scoped enum qualifiers via `NodeIndex` to eliminate hot-path ancestor walking, utilizing binary search for enclosing class spans and range filtering, and outputting strictly 5-integer aligned delta encodings.
 4. **Member Access and Call Arguments:** Direct rule indexing and vector allocation minimization yielded a ~35-40% reduction in evaluation latency across both passes.
 5. **Memory Footprint:** Peak working set resident memory dropped from 80.04 MB to 65.36 MB in Release (-18.34%).
+

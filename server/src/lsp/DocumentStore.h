@@ -115,6 +115,12 @@ namespace angel_lsp
         void SetClientUri(const std::string &uri, const std::string &clientUri);
 
         /**
+         * @brief Removes the client URI spelling. Thread-safe.
+         * @param uri Canonical URI key.
+         */
+        void RemoveClientUri(const std::string &uri);
+
+        /**
          * @brief Returns a thread-safe snapshot of all open document URIs and texts.
          * @return Vector of pairs containing (uri, text).
          */
@@ -132,6 +138,36 @@ namespace angel_lsp
         void Clear();
 
         /**
+         * @brief Gets current document open generation, or 0 if not open. Thread-safe.
+         * @param uri Canonical URI key.
+         * @return Monotonic generation counter.
+         */
+        [[nodiscard]] uint64_t GetGeneration(const std::string &uri) const;
+
+        /**
+         * @brief Verifies whether a work item matches the active open document state.
+         * @param uri Canonical URI key.
+         * @param generation Document generation at time of scheduling.
+         * @param version Document version at time of scheduling.
+         * @return True if document is open with identical generation and version >= current version.
+         */
+        [[nodiscard]] bool IsCurrent(const std::string &uri, uint64_t generation, int version) const;
+
+        /**
+         * @brief Returns a shared pointer snapshot of the document, or nullptr if not open. Thread-safe.
+         * @param uri Canonical URI key.
+         * @return Shared pointer to Document or nullptr.
+         */
+        [[nodiscard]] std::shared_ptr<const document::Document> GetDocument(const std::string &uri) const;
+
+        /**
+         * @brief Borrows pointer to document source text, or nullptr if not open. Thread-safe.
+         * @param uri Canonical URI key.
+         * @return Pointer to document text or nullptr.
+         */
+        [[nodiscard]] const std::string *GetTextPtr(const std::string &uri) const;
+
+        /**
          * @brief Returns number of open documents.
          * @return Count of open documents.
          */
@@ -139,7 +175,8 @@ namespace angel_lsp
 
     private:
         mutable std::mutex m_mutex;
-        ankerl::unordered_dense::map<std::string, document::Document> m_documents;
+        uint64_t m_nextGeneration = 1;
+        ankerl::unordered_dense::map<std::string, std::shared_ptr<document::Document>> m_documents;
         ankerl::unordered_dense::map<std::string, std::string> m_clientUriByKey;
     };
 }

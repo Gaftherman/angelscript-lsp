@@ -4,6 +4,7 @@
 #include "features/selection_range/SelectionRangeHandler.h"
 #include "features/folding_range/FoldingRangeHandler.h"
 #include "features/inlay_hint/InlayHintHandler.h"
+#include "analysis/NodeIndex.h"
 #include "lsp/PositionCodec.h"
 
 namespace angel_lsp
@@ -136,11 +137,7 @@ namespace angel_lsp
                     return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
                 }
 
-                int currentVersion = -1;
-                if (auto it = m_documentVersions.find(doc->uri); it != m_documentVersions.end())
-                {
-                    currentVersion = it->second;
-                }
+                const int currentVersion = m_documentStore.GetVersion(doc->uri);
 
                 if (currentVersion >= 0 && cachedVersion >= 0 &&
                     cachedVersion == currentVersion && !currHasError)
@@ -188,7 +185,15 @@ namespace angel_lsp
                     return lsp::Null{};
                 }
 
-                features::SemanticTokensRequest sr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex.GetRoot(doc->uri) };
+                analysis::NodeIndex localNodeIndex;
+                const analysis::NodeIndex *nodeIndexPtr = nullptr;
+                if (doc->tree)
+                {
+                    localNodeIndex.Build(ts_tree_root_node(doc->tree));
+                    nodeIndexPtr = &localNodeIndex;
+                }
+
+                features::SemanticTokensRequest sr{ doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex.GetRoot(doc->uri), std::nullopt, nodeIndexPtr };
                 sr.excludedLineRanges = ExcludedLineRanges(*doc->text);
                 sr.range = codec::Decode(*doc->text, m_positionEncoding, req.range);
 

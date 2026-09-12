@@ -73,10 +73,8 @@ namespace angel_lsp
             for (const auto pKind : profilesToLoad)
                 wanted.push_back(angel_lsp::analysis::GetProfileSyntheticUri(pKind));
 
-            std::lock_guard<std::mutex> lock(m_predefinedMutex);
-
             std::vector<std::string> stale;
-            for (const auto &loaded : m_predefinedUris)
+            for (const auto &loaded : m_predefinedManager.GetLoadedUris())
             {
                 if (!loaded.starts_with(angel_lsp::analysis::k_profileUriPrefix))
                     continue;
@@ -106,11 +104,12 @@ namespace angel_lsp
 
             const std::string syntheticUri = angel_lsp::analysis::GetProfileSyntheticUri(pKind);
 
-            std::lock_guard<std::mutex> lock(m_predefinedMutex);
             if (!ClaimPredefinedFile(syntheticUri, /*forceReload=*/false))
             {
                 continue;
             }
+
+            m_predefinedManager.SetDocumentText(syntheticUri, stubSource);
 
             ReplaceSymbolsFromSource(syntheticUri, stubSource, parser);
 
@@ -173,21 +172,16 @@ namespace angel_lsp
         if (path.empty())
             return false;
 
-        {
-            std::lock_guard<std::mutex> lock(m_predefinedMutex);
-            if (!PredefinedStubContributes(uriStr))
-                return false;
-        }
+        if (!PredefinedStubContributes(uriStr))
+            return false;
 
         return SetDefinedWordsFrom(path, angel_lsp::utils::ScanDefinedWords(text));
     }
 
     void Server::UnloadUnselectedPredefinedStubs(const std::vector<std::string> &wantedPaths)
     {
-        std::lock_guard<std::mutex> lock(m_predefinedMutex);
-
         std::vector<std::string> stale;
-        for (const auto &[path, uri] : m_predefinedUriByPath)
+        for (const auto &[path, uri] : m_predefinedManager.GetAllUriByPath())
         {
             const bool wanted = std::any_of(wantedPaths.begin(), wantedPaths.end(),
                                             [&path](const std::string &candidate)
@@ -231,9 +225,9 @@ namespace angel_lsp
         if (!activePath.empty())
         {
             const bool found = std::any_of(discovered.begin(), discovered.end(),
-                                           [&activePath](const std::string &path) {
-                                               return PathsAreSameFile(path, activePath);
-                                           });
+                                            [&activePath](const std::string &path) {
+                                                return PathsAreSameFile(path, activePath);
+                                            });
 
             if (!found)
             {
@@ -277,7 +271,8 @@ namespace angel_lsp
 
     bool Server::UnloadPredefinedUri(std::string uriStr)
     {
-        if (!m_predefinedUris.contains(uriStr))
+        std::string path;
+        if (!m_predefinedManager.UnloadUri(uriStr, &path))
         {
             return false;
         }
@@ -285,17 +280,10 @@ namespace angel_lsp
         m_symbolTable.ClearDocumentSymbols(uriStr);
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
-        m_predefinedUris.erase(uriStr);
-        m_predefinedDocuments.erase(uriStr);
 
-        for (auto it = m_predefinedUriByPath.begin(); it != m_predefinedUriByPath.end(); ++it)
+        if (!path.empty())
         {
-            if (it->second == uriStr)
-            {
-                SetDefinedWordsFrom(it->first, {});
-                m_predefinedUriByPath.erase(it);
-                break;
-            }
+            SetDefinedWordsFrom(path, {});
         }
 
         return true;
@@ -314,7 +302,7 @@ namespace angel_lsp
             return true;
         }
 
-        if (m_predefinedUris.contains(uriStr))
+        if (m_predefinedManager.HasStub(uriStr))
         {
             return true;
         }
@@ -326,28 +314,16 @@ namespace angel_lsp
     bool Server::ClaimPredefinedFile(const std::string &uriStr, bool forceReload)
     {
         const std::string path = CanonicalPathFromUri(uriStr);
+        std::string previous;
+        const bool claimed = m_predefinedManager.ClaimFile(uriStr, path, forceReload, &previous);
 
-        if (path.empty())
+        if (!previous.empty() && previous != uriStr)
         {
-            return m_predefinedUris.insert(uriStr).second || forceReload;
-        }
-
-        if (const auto owner = m_predefinedUriByPath.find(path); owner != m_predefinedUriByPath.end())
-        {
-            if (owner->second == uriStr)
-            {
-                return forceReload;
-            }
-
-            const std::string previous = owner->second;
             UnloadPredefinedUri(previous);
-
             LogInfo(fmt::format("Predefined file re-indexed under {} (was {})", uriStr, previous));
         }
 
-        m_predefinedUriByPath[path] = uriStr;
-        m_predefinedUris.insert(uriStr);
-        return true;
+        return claimed;
     }
 
     void Server::ParserPredefined(const std::string &filePath, angel_lsp::parser::AngelScriptParser &parser, bool forceReload)
@@ -365,14 +341,12 @@ namespace angel_lsp
         std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         content = angel_lsp::utils::SanitizePredefinedContent(content);
 
-        std::lock_guard<std::mutex> lock(m_predefinedMutex);
-
         if (!ClaimPredefinedFile(uri, forceReload))
         {
             return;
         }
 
-        m_predefinedDocuments[uri] = content;
+        m_predefinedManager.SetDocumentText(uri, content);
 
         utils::HighResTimer parseTimer;
         document::TreePtr tree = document::MakeTreePtr(parser.Parse(content));

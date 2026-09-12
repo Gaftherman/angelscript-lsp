@@ -53,7 +53,13 @@ test-suite:
     - build-server
   script:
     - ctest --test-dir server/build -C Release --output-on-failure
-    - ./server/build/angel_lsp_tests --test-case="*Stress*"
+    - ./server/build/angel_lsp_tests --test-case="*Concurrency Stress Test*" 2>&1 | tee stress.log
+    - if grep -q "test cases: 0" stress.log; then echo "The stress test was not found or failed to execute."; exit 1; fi
+  artifacts:
+    when: always
+    paths:
+      - stress.log
+    expire_in: 1 day
 
 compiler-parity:
   stage: parity
@@ -68,14 +74,25 @@ compiler-parity:
     - ./server/build/angel_lsp_tests --no-skip --test-case="*Parity*" 2>&1 | tee parity.log
     - if ! grep -q "AngelScript parity audit (" parity.log; then echo "The parity audit skipped itself - no summary line in its output."; exit 1; fi
     - if grep -q "AngelScript parity audit (0 scripts)" parity.log; then echo "The parity audit ran but found no scripts to audit."; exit 1; fi
+  artifacts:
+    when: always
+    paths:
+      - parity.log
+    expire_in: 1 day
 
 sanitize-asan-ubsan:
   stage: sanitize
   extends: .cpp-setup
   script:
-    - cmake -B server/build-asan -S server -DCMAKE_BUILD_TYPE=Debug -DANGELLSP_BUILD_ORACLE=ON -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+    - cmake -B server/build-asan -S server -DCMAKE_BUILD_TYPE=Debug -DANGELLSP_BUILD_ORACLE=ON -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all" -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
     - cmake --build server/build-asan -j $(nproc) --target angel_lsp_tests
-    - ASAN_OPTIONS=detect_leaks=0 ./server/build-asan/angel_lsp_tests --test-case="*ServerStress*,*AnalysisScheduler*,*DocumentStore*"
+    - ASAN_OPTIONS="detect_leaks=0" UBSAN_OPTIONS="halt_on_error=1:abort_on_error=1" ./server/build-asan/angel_lsp_tests --test-case="*Concurrency Stress Test*,*AnalysisScheduler*,*DocumentStore*" 2>&1 | tee asan-ubsan.log
+    - if grep -q "test cases: 0" asan-ubsan.log; then echo "Sanitizer tests did not run!"; exit 1; fi
+  artifacts:
+    when: always
+    paths:
+      - asan-ubsan.log
+    expire_in: 1 day
 
 sanitize-tsan:
   stage: sanitize
@@ -83,13 +100,23 @@ sanitize-tsan:
   script:
     - cmake -B server/build-tsan -S server -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer"
     - cmake --build server/build-tsan -j $(nproc) --target angel_lsp_tests
-    - ./server/build-tsan/angel_lsp_tests --test-case="ServerHarnessTest*,*ServerStress*"
+    - ./server/build-tsan/angel_lsp_tests --test-case="ServerHarnessTest*,*Concurrency Stress Test*,*AnalysisScheduler*,*DocumentStore*" 2>&1 | tee tsan.log
+    - if grep -q "test cases: 0" tsan.log; then echo "TSan tests did not run!"; exit 1; fi
+  artifacts:
+    when: always
+    paths:
+      - tsan.log
+    expire_in: 1 day
 
 package-extension:
   stage: package
   image: node:20-bookworm-slim
   needs:
     - build-server
+    - test-suite
+    - compiler-parity
+    - sanitize-asan-ubsan
+    - sanitize-tsan
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends git
   script:
@@ -101,3 +128,4 @@ package-extension:
     paths:
       - client/*.vsix
     expire_in: 7 days
+

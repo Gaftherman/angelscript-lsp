@@ -93,6 +93,45 @@ namespace angel_lsp
         [[nodiscard]] bool Contributes(const std::string &uri, const std::string &activeStub = "") const;
 
         /**
+         * @brief Claims or re-indexes a predefined stub by URI and filesystem path.
+         * @param uri Stub URI.
+         * @param path Canonical filesystem path.
+         * @param forceReload Force reloading if already registered.
+         * @param outPreviousUri Optional out-parameter receiving previously claimed URI if replaced.
+         * @return True if claimed/reloaded.
+         */
+        bool ClaimFile(const std::string &uri, const std::string &path, bool forceReload = false,
+                       std::string *outPreviousUri = nullptr);
+
+        /**
+         * @brief Unloads a predefined stub by URI, returning its associated path if any.
+         * @param uri Stub URI.
+         * @param outPath Optional out-parameter receiving filesystem path.
+         * @return True if stub was unloaded.
+         */
+        bool UnloadUri(const std::string &uri, std::string *outPath = nullptr);
+
+        /**
+         * @brief Returns snapshot of all registered filesystem paths and their indexed URIs.
+         * @return Vector of pairs (path, uri).
+         */
+        [[nodiscard]] std::vector<std::pair<std::string, std::string>> GetAllUriByPath() const;
+
+        /**
+         * @brief Gets shared pointer to source text for a predefined stub URI.
+         * @param uri Stub URI.
+         * @return Shared pointer to text string or nullptr if not registered.
+         */
+        [[nodiscard]] std::shared_ptr<const std::string> GetDocumentTextShared(const std::string &uri) const;
+
+        /**
+         * @brief Borrows raw pointer to source text for a predefined stub URI.
+         * @param uri Stub URI.
+         * @return Raw pointer to text string or nullptr if not registered.
+         */
+        [[nodiscard]] const std::string *GetDocumentTextPtr(const std::string &uri) const;
+
+        /**
          * @brief Clears all registered stubs and path mappings.
          */
         void Clear();
@@ -106,6 +145,6 @@ namespace angel_lsp
         mutable std::mutex m_mutex;
         ankerl::unordered_dense::set<std::string> m_predefinedUris;
         ankerl::unordered_dense::map<std::string, std::string> m_predefinedUriByPath;
-        ankerl::unordered_dense::map<std::string, std::string> m_predefinedDocuments;
+        ankerl::unordered_dense::map<std::string, std::shared_ptr<std::string>> m_predefinedDocuments;
     };
 }

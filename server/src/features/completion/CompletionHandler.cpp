@@ -112,12 +112,14 @@ namespace angel_lsp::features
                 visited.insert(currentTypeName);
                 hierarchy.push_back(currentTypeName);
 
-                auto syms = symbolTable.FindSymbols(currentTypeName);
-                if (syms.empty() && currentTypeName.find("::") == std::string::npos)
+                auto symsPtr = symbolTable.FindSymbolsPtr(currentTypeName);
+                std::vector<analysis::Symbol> fallbackSyms;
+                if ((!symsPtr || symsPtr->empty()) && currentTypeName.find("::") == std::string::npos)
                 {
-                    syms = symbolTable.FindTypeSymbolsByShortName(currentTypeName);
+                    fallbackSyms = symbolTable.FindTypeSymbolsByShortName(currentTypeName);
                 }
 
+                const auto &syms = (symsPtr && !symsPtr->empty()) ? *symsPtr : fallbackSyms;
                 for (const auto &sym : syms)
                 {
                     if (sym.type == analysis::SymbolType::Class)

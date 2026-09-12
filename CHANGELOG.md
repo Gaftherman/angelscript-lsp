@@ -4,6 +4,36 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.8-exp.2] - 2026-09-12
+
+### Performance & Optimization
+
+- Incremental RuleIndex Coherence:
+  - Implemented partial `RuleIndex` generation with dependency tracking for `includedMixins`, preserving bidirectional coherence across edits without whole-workspace rebuilds.
+  - Added non-allocating `FindSymbolsPtr` read path with `std::string_view` queries across hot paths.
+- AST Traversal & NodeIndex Sharing:
+  - Unified single-pass AST walk during analysis, sharing `NodeIndex` across semantic checkers and eliminating redundant full-tree traversals.
+- Semantic Tokens Hot Path:
+  - Pre-indexed declaration refinements and scoped identifier contexts, replacing deep ancestor walks in the capture loop.
+  - Range narrowing and enclosing class searches accelerated using binary search (`std::lower_bound` / `std::upper_bound`).
+
+### Stability & Architecture
+
+- Document Lifecycle & Concurrency Synchronization:
+  - Centralized document state in `DocumentStore` with monotonic generations, preventing stale analysis tasks from reviving closed documents or overwriting newer edits.
+  - Hardened `AnalysisScheduler` with active cancellation and debounced background job queues.
+  - Thread-safe `PredefinedStubManager` caching for multi-document workflows.
+  - Deterministic barrier test suite covering cancellation, reopen, concurrent saves, and shutdown.
+
+### CI & Quality Assurance
+
+- GitLab CI Pipeline Hardening:
+  - Corrected concurrency stress test filters and added fatal UBSan crash enforcement (`-fno-sanitize-recover=all`).
+  - Added explicit job dependency chains ensuring packaging runs only after successful sanitizers, tests, and parity audits.
+- Compiler Parity & Invariant Verification:
+  - Parity audit verified against 247 AngelScript scripts with 0 unexplained false positives.
+  - Added `RuleIndexEquivalenceTest` (verifying incremental index equivalence against oracle rebuilds) and `SemanticTokensDeltaTest` (verifying 5-integer tuple alignment and delta round-tripping).
+
 ## [0.7.8-exp.1] - 2026-09-12
 
 ### Performance

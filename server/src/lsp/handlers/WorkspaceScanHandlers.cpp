@@ -416,7 +416,7 @@ namespace angel_lsp
 
             // The editor's buffer wins over the copy on disk: it may hold unsaved edits, and
             // didChange/didSave already keep it indexed.
-            if (m_openDocuments.contains(uriStr))
+            if (m_documentStore.IsOpen(uriStr))
                 continue;
 
             const std::string path = CanonicalPathFromUri(uriStr);
@@ -448,10 +448,9 @@ namespace angel_lsp
                             stubSelectionInvalidated = true;
                     }
 
-                    std::lock_guard<std::mutex> lock(m_predefinedMutex);
-                    if (const auto owner = m_predefinedUriByPath.find(path); owner != m_predefinedUriByPath.end())
+                    if (const auto owner = m_predefinedManager.GetUriByPath(path))
                     {
-                        UnloadPredefinedUri(owner->second);
+                        UnloadPredefinedUri(*owner);
 
                         // A deleted stub takes its `#define`s with it, so every `#if` that was live
                         // because of one goes back to being excluded. That is a change to what the
@@ -574,7 +573,7 @@ namespace angel_lsp
         // and re-resolving every file in the workspace on every watched event would turn a `git
         // checkout` into a full rescan. Directives only, so it costs a scan of the text rather than
         // a parse.
-        for (const auto &[openUri, openText] : m_openDocuments)
+        for (const auto &[openUri, openText] : m_documentStore.GetSnapshot())
         {
             if (const std::string openPath = CanonicalPathFromUri(openUri); !openPath.empty())
                 m_includeGraph.UpdateFile(openPath, openText, *SearchDirectories(), IncludeAllowedRoots(),
@@ -696,7 +695,7 @@ namespace angel_lsp
         }
 
         const auto searchDirectories = SearchDirectories();
-        for (const auto &[openUri, text] : m_openDocuments)
+        for (const auto &[openUri, text] : m_documentStore.GetSnapshot())
         {
             const std::string openPath = CanonicalPathFromUri(openUri);
             if (!openPath.empty())
@@ -722,7 +721,7 @@ namespace angel_lsp
 
             PurgeClosureFile(uriStr);
             anythingChanged = m_includeGraph.RemoveFile(path) || anythingChanged;
-            m_clientUriByKey.erase(uriStr);
+            m_documentStore.RemoveClientUri(uriStr);
         }
 
         if (!anythingChanged)
@@ -752,7 +751,7 @@ namespace angel_lsp
 
             PurgeClosureFile(oldUri);
             m_includeGraph.RemoveFile(oldPath);
-            m_clientUriByKey.erase(oldUri);
+            m_documentStore.RemoveClientUri(oldUri);
             anythingChanged = true;
 
             for (const std::string &includer : includers)
