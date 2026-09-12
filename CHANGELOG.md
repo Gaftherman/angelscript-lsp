@@ -4,6 +4,44 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.8-exp.1] - 2026-09-12
+
+### Performance
+
+- Hot-Path Symbol Table & Analysis:
+  - Migrated symbol indexing structures to `ankerl::unordered_dense::map` with fine-grained concurrent locking via `std::shared_mutex`.
+  - Optimized duplicate symbol validation by over 92% and reduced whole-file `SemanticAnalyzer::Analyze` latency from 636 ms down to 38 ms per file in Release mode (16.5x speedup).
+- Semantic Tokens Traversal:
+  - Implemented single-pass AST traversal directly emitting delta-encoded token slices, speeding up semantic highlighting on 3,000-line scripts from 315 ms to 24 ms (13x speedup).
+- Analysis Debouncing & Fast-Path Pipeline:
+  - Integrated stale analysis queue version gating in `AnalysisScheduler` to discard obsolete parse and semantic jobs before execution.
+
+### Stability
+
+- Concurrency Stress Test Suite:
+  - Added multi-threaded stress testing validating server stability under 500 rapid interleaved document edits and asynchronous analysis runs.
+- Predefined Stub Audit Test Calibration:
+  - Calibrated test assertions in `PredefinedStubAuditTest` to match repository-tracked `sven.as.predefined` stub metrics.
+- Zero Compiler Warnings:
+  - Resolved all compiler warnings across MSVC and GCC/Clang under strict warning-as-error build configuration.
+
+### Refactoring
+
+- Server Architecture Modularization:
+  - Deconstructed monolithic `Server.cpp` into modular Layer 4 handlers: `HierarchyHandlers.cpp`, `TextDocumentHandlers.cpp`, `TokensAndFormattingHandlers.cpp`, and `WorkspaceHandlers.cpp`.
+  - Expanded layer boundary audit to verify all 83 headers across Layers 1-4.
+- Directory Structure Harmonization:
+  - Renamed legacy `predefned/` directory to `predefined/` across the codebase, configuration, tests, and documentation.
+- CMake Modernization:
+  - Standardized minimum required CMake version to 3.22 and enforced warning-free compilation with `-DANGELLSP_WERROR=ON`.
+
+### CI
+
+- GitLab CI Pipeline Configuration:
+  - Added `.gitlab-ci.yml` defining stages for audit, build, test, parity, sanitizers (ASan, UBSan, TSan), and extension packaging.
+- Upstream AngelScript Compiler Oracle:
+  - Integrated standalone `angelscript_oracle` binary built against upstream AngelScript SDK add-ons, enabling local and CI parity verification without external dependencies.
+
 ## [0.7.7-exp.16] - 2026-09-11
 
 ### Fixed

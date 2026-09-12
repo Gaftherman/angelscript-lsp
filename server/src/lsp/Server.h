@@ -43,7 +43,7 @@ namespace angel_lsp
         angel_lsp::config::ServerConfig m_config;
         std::unique_ptr<lsp::Connection> m_connection;
         std::unique_ptr<lsp::MessageHandler> m_messageHandler;
-        bool m_running;
+        std::atomic<bool> m_running{ false };
 
         // ---- Runtime-mutable configuration ------------------------------------------------
         // Everything else in m_config is written once in the constructor and can be read from any
@@ -115,7 +115,7 @@ namespace angel_lsp
          * diagnostics from appearing at all.
          */
         ankerl::unordered_dense::map<std::string, std::string> m_clientUriByKey;
-        std::unordered_map<std::string, angel_lsp::document::TreePtr> m_documentTrees;
+        ankerl::unordered_dense::map<std::string, angel_lsp::document::TreePtr> m_documentTrees;
         std::mutex m_predefinedMutex;
         ankerl::unordered_dense::set<std::string> m_predefinedUris;
 
@@ -260,7 +260,7 @@ namespace angel_lsp
         void RemoveDocumentVersion(const std::string &uriStr);
 
         uint64_t m_analysisRevision = 0;
-        bool m_analysisStop = false;
+        std::atomic<bool> m_analysisStop{ false };
 
         // Debounce & coalescing tracker for cascading peer open document analysis passes
         // (e.g. editing base.as affecting multiple open documents).
