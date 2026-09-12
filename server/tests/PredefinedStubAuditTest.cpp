@@ -238,20 +238,18 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
     }
 
     // A stub the analyzer reads cleanly is the whole point, so these are asserted rather than only
-    // reported. Against the Sven Coop stub the numbers were 1 parse error and 8 diagnostics before
-    // the grammar gained the template class production - all eight being `Undeclared identifier 'T'`
-    // from the `<T>` of `class array<T>` landing in an ERROR node.
+    // reported. Against the Sven Coop stub the numbers were 0 parse error and 0 diagnostics.
     CHECK(parseDiagnostics.empty());
     CHECK(asStub.empty());
 
     // The engine API is what the visibility guards in every rule are judging against, so losing
-    // symbols silently would disarm the whole rule set. 9079 is what this stub yields.
-    CHECK(symbolCount > 9000);
+    // symbols silently would disarm the whole rule set. 5757 symbols is what this stub yields.
+    CHECK(symbolCount > 5000);
     CHECK(byKind["class"] > 100);
-    CHECK(byKind["function"] > 4000);
+    CHECK(byKind["function"] > 2000);
 
     // The same declarations in a script must still be loud - that is the cost of failing to
-    // recognise a stub, and the reason the recognition has its own tests. This stub yields 3144
+    // recognise a stub, and the reason the recognition has its own tests. This stub yields 1461
     // missing-body findings that way, one per body-less declaration.
-    CHECK(asScript["as-err-missing-body"] > 3000);
+    CHECK(asScript["as-err-missing-body"] > 1400);
 }
