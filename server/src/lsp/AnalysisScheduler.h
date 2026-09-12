@@ -128,6 +128,9 @@ namespace angel_lsp
 
         ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_pending;
         ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_inFlight;
+        std::string m_currentlyAnalyzingUri;
+        std::string m_currentlyAnalyzingText;
+        int m_currentlyAnalyzingVersion = -1;
         ankerl::unordered_dense::set<std::string> m_savedUris;
 
         mutable std::mutex m_peerMutex;

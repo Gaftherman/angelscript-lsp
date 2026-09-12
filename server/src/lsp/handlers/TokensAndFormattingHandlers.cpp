@@ -107,16 +107,28 @@ namespace angel_lsp
                     return lsp::Null{};
                 }
 
-                const auto cached = m_semanticTokensCache.find(doc->uri);
-                const bool canDiff = cached != m_semanticTokensCache.end() &&
-                                     cached->second.resultId == req.previousResultId;
+                bool canDiff = false;
+                bool prevHadError = false;
+                int cachedVersion = -1;
+                std::vector<lsp::uint> previous;
+
+                {
+                    std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
+                    if (const auto cached = m_semanticTokensCache.find(doc->uri);
+                        cached != m_semanticTokensCache.end() && cached->second.resultId == req.previousResultId)
+                    {
+                        canDiff = true;
+                        prevHadError = cached->second.hasError;
+                        cachedVersion = cached->second.version;
+                        previous = std::move(cached->second.data);
+                    }
+                }
 
                 if (!canDiff)
                 {
                     return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
                 }
 
-                const bool prevHadError = cached->second.hasError;
                 const bool currHasError = doc->tree != nullptr && ts_node_has_error(ts_tree_root_node(doc->tree));
 
                 if (prevHadError || currHasError)
@@ -130,18 +142,21 @@ namespace angel_lsp
                     currentVersion = it->second;
                 }
 
-                if (currentVersion >= 0 && cached->second.version >= 0 &&
-                    cached->second.version == currentVersion && !currHasError)
+                if (currentVersion >= 0 && cachedVersion >= 0 &&
+                    cachedVersion == currentVersion && !currHasError)
                 {
+                    std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
                     const std::string newResultId = std::to_string(++m_semanticTokensRevision);
-                    cached->second.resultId = newResultId;
+                    if (auto it = m_semanticTokensCache.find(doc->uri); it != m_semanticTokensCache.end())
+                    {
+                        it->second.resultId = newResultId;
+                    }
                     lsp::SemanticTokensDelta delta;
                     delta.resultId = newResultId;
                     delta.edits = {};
                     return delta;
                 }
 
-                const std::vector<lsp::uint> previous = std::move(cached->second.data);
                 lsp::SemanticTokens tokens = ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
 
                 lsp::SemanticTokensDelta delta;

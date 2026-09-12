@@ -487,7 +487,10 @@ namespace angel_lsp
 
                 std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
-                m_publishedForModules.insert(uriStr);
+                {
+                    std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
+                    m_publishedForModules.insert(uriStr);
+                }
                 ScheduleAnalysis(uriStr, content);
             }
         }
@@ -497,12 +500,15 @@ namespace angel_lsp
     {
         std::vector<std::string> stale;
 
-        for (const auto &uriStr : m_publishedForModules)
         {
-            const std::string path = CanonicalPathFromUri(uriStr);
-            if (path.empty() || ClaimFor(path).owner == nullptr)
+            std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
+            for (const auto &uriStr : m_publishedForModules)
             {
-                stale.push_back(uriStr);
+                const std::string path = CanonicalPathFromUri(uriStr);
+                if (path.empty() || ClaimFor(path).owner == nullptr)
+                {
+                    stale.push_back(uriStr);
+                }
             }
         }
 
@@ -512,6 +518,7 @@ namespace angel_lsp
             // its errors in the Problems panel for the rest of the session, on files the user may
             // not be able to open to clear by hand.
             PublishDiagnostics(uriStr, std::string(), {});
+            std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
             m_publishedForModules.erase(uriStr);
         }
 
@@ -2317,7 +2324,10 @@ namespace angel_lsp
         // Cached after encoding, so a delta is computed against exactly the bytes the client holds.
         const std::string resultId = std::to_string(++m_semanticTokensRevision);
         tokens.resultId = resultId;
-        m_semanticTokensCache[uriStr] = SemanticTokensSnapshot{ resultId, tokens.data, hasError, currentVersion };
+        {
+            std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
+            m_semanticTokensCache[uriStr] = SemanticTokensSnapshot{ resultId, tokens.data, hasError, currentVersion };
+        }
 
         return tokens;
     }
@@ -3535,7 +3545,10 @@ namespace angel_lsp
         // The cached token payload is only meaningful while the client still holds it. Dropping it
         // here also means a reopened document starts from a full stream rather than a delta against
         // a payload the client threw away when it closed the editor tab.
-        m_semanticTokensCache.erase(uriStr);
+        {
+            std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
+            m_semanticTokensCache.erase(uriStr);
+        }
 
         m_documentTrees.erase(uriStr);
 
@@ -3559,7 +3572,12 @@ namespace angel_lsp
 
             // If the document that was closed belongs to a configured module, revert it to an
             // on-disk closure file so its declarations remain visible to the module.
-            if (ClaimFor(path).owner != nullptr || m_publishedForModules.contains(uriStr))
+            bool isClaimedOrPublished = false;
+            {
+                std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
+                isClaimedOrPublished = (ClaimFor(path).owner != nullptr || m_publishedForModules.contains(uriStr));
+            }
+            if (isClaimedOrPublished)
             {
                 isModuleFile = true;
                 angel_lsp::parser::AngelScriptParser restoreParser(m_logger.get());
@@ -3569,7 +3587,10 @@ namespace angel_lsp
                 if (file.is_open())
                 {
                     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-                    m_publishedForModules.insert(uriStr);
+                    {
+                        std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
+                        m_publishedForModules.insert(uriStr);
+                    }
                     ScheduleAnalysis(uriStr, content, true);
                 }
             }
@@ -3691,6 +3712,13 @@ namespace angel_lsp
             // answer". That is true of an edit and false of a table change: the startup
             // re-analysis passes the identical text on purpose, and dropping it as a duplicate
             // drops it in favour of the stale answer it exists to replace. `force` is that case.
+            if (!force && m_currentlyAnalyzingUri == uriStr &&
+                m_currentlyAnalyzingVersion >= version && version >= 0 &&
+                m_currentlyAnalyzingText == analysisText)
+            {
+                return;
+            }
+
             if (const auto running = m_analysisInFlight.find(uriStr);
                 !force && running != m_analysisInFlight.end() && running->second.version >= version && version >= 0 && running->second.text == analysisText)
             {
@@ -3762,27 +3790,44 @@ namespace angel_lsp
             m_analysisInFlight.swap(m_pendingAnalysis);
             lock.unlock();
 
-            for (auto &[uriStr, entry] : m_analysisInFlight)
+            for (;;)
             {
+                std::string currentUri;
+                PendingAnalysisEntry currentEntry;
                 {
-                    std::lock_guard<std::mutex> savedLock(m_analysisMutex);
-                    if (m_savedUris.erase(uriStr) > 0)
+                    std::lock_guard<std::mutex> workLock(m_analysisMutex);
+                    if (m_analysisInFlight.empty())
+                    {
+                        break;
+                    }
+                    auto it = m_analysisInFlight.begin();
+                    currentUri = it->first;
+                    currentEntry = std::move(it->second);
+                    m_analysisInFlight.erase(it);
+
+                    if (m_savedUris.erase(currentUri) > 0)
                     {
                         continue;
                     }
-                    if (const auto pendingIt = m_pendingAnalysis.find(uriStr);
-                        pendingIt != m_pendingAnalysis.end() && pendingIt->second.version > entry.version && entry.version >= 0)
+                    if (const auto pendingIt = m_pendingAnalysis.find(currentUri);
+                        pendingIt != m_pendingAnalysis.end() && pendingIt->second.version > currentEntry.version && currentEntry.version >= 0)
                     {
                         // Superseded by newer edit while queued
                         continue;
                     }
+                    m_currentlyAnalyzingUri = currentUri;
+                    m_currentlyAnalyzingText = currentEntry.text;
+                    m_currentlyAnalyzingVersion = currentEntry.version;
                 }
-                AnalyzeDocument(uriStr, entry.text, parser, std::move(entry.tree), entry.version);
-            }
 
-            {
-                std::lock_guard<std::mutex> doneLock(m_analysisMutex);
-                m_analysisInFlight.clear();
+                AnalyzeDocument(currentUri, currentEntry.text, parser, std::move(currentEntry.tree), currentEntry.version);
+
+                {
+                    std::lock_guard<std::mutex> workLock(m_analysisMutex);
+                    m_currentlyAnalyzingUri.clear();
+                    m_currentlyAnalyzingText.clear();
+                    m_currentlyAnalyzingVersion = -1;
+                }
             }
         }
     }

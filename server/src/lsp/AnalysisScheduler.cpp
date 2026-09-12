@@ -33,6 +33,13 @@ namespace angel_lsp
             std::lock_guard<std::mutex> lock(m_mutex);
             m_savedUris.erase(uriStr);
 
+            if (!force && m_currentlyAnalyzingUri == uriStr &&
+                m_currentlyAnalyzingVersion >= version && version >= 0 &&
+                m_currentlyAnalyzingText == text)
+            {
+                return;
+            }
+
             if (const auto running = m_inFlight.find(uriStr);
                 !force && running != m_inFlight.end() && running->second.version >= version && version >= 0 && running->second.text == text)
             {
@@ -137,31 +144,47 @@ namespace angel_lsp
             m_inFlight.swap(m_pending);
             lock.unlock();
 
-            for (auto &[uriStr, entry] : m_inFlight)
+            for (;;)
             {
+                std::string currentUri;
+                PendingAnalysisEntry currentEntry;
                 {
-                    std::lock_guard<std::mutex> savedLock(m_mutex);
-                    if (m_savedUris.erase(uriStr) > 0)
+                    std::lock_guard<std::mutex> workLock(m_mutex);
+                    if (m_inFlight.empty())
+                    {
+                        break;
+                    }
+                    auto it = m_inFlight.begin();
+                    currentUri = it->first;
+                    currentEntry = std::move(it->second);
+                    m_inFlight.erase(it);
+
+                    if (m_savedUris.erase(currentUri) > 0)
                     {
                         continue;
                     }
-                    if (const auto it = m_pending.find(uriStr);
-                        it != m_pending.end() && it->second.version > entry.version && entry.version >= 0)
+                    if (const auto itPending = m_pending.find(currentUri);
+                        itPending != m_pending.end() && itPending->second.version > currentEntry.version && currentEntry.version >= 0)
                     {
                         // Superseded by newer edit while queued
                         continue;
                     }
+                    m_currentlyAnalyzingUri = currentUri;
+                    m_currentlyAnalyzingText = currentEntry.text;
+                    m_currentlyAnalyzingVersion = currentEntry.version;
                 }
 
                 if (m_callback)
                 {
-                    m_callback(uriStr, entry.text, std::move(entry.tree), entry.version);
+                    m_callback(currentUri, currentEntry.text, std::move(currentEntry.tree), currentEntry.version);
                 }
-            }
 
-            {
-                std::lock_guard<std::mutex> doneLock(m_mutex);
-                m_inFlight.clear();
+                {
+                    std::lock_guard<std::mutex> workLock(m_mutex);
+                    m_currentlyAnalyzingUri.clear();
+                    m_currentlyAnalyzingText.clear();
+                    m_currentlyAnalyzingVersion = -1;
+                }
             }
         }
     }

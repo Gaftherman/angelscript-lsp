@@ -146,6 +146,7 @@ namespace angel_lsp
         };
 
         ankerl::unordered_dense::map<std::string, SemanticTokensSnapshot> m_semanticTokensCache;
+        mutable std::mutex m_semanticTokensMutex;
         uint64_t m_semanticTokensRevision = 0;
 
         /**
@@ -246,6 +247,9 @@ namespace angel_lsp
         // Written only by the analysis thread and only under m_analysisMutex; that thread then
         // iterates it unlocked, which is safe because it is also the only writer.
         ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_analysisInFlight;
+        std::string m_currentlyAnalyzingUri;
+        std::string m_currentlyAnalyzingText;
+        int m_currentlyAnalyzingVersion = -1;
         ankerl::unordered_dense::set<std::string> m_savedUris;
 
         mutable std::mutex m_documentVersionsMutex;
@@ -524,6 +528,7 @@ namespace angel_lsp
         void WithdrawStaleModuleDiagnostics();
 
         /** @brief URIs this server has published module diagnostics for, so they can be withdrawn. */
+        mutable std::mutex m_publishedForModulesMutex;
         ankerl::unordered_dense::set<std::string> m_publishedForModules;
 
         /** @brief The configured modules, resolved. Empty when angelscript.modules is not set. */

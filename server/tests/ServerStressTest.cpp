@@ -129,10 +129,10 @@ TEST_CASE("Server - Concurrency Stress Test: 500 rapid edits with interleaved re
 
     fs::path repoRoot(ANGELSCRIPT_REPO_ROOT);
     fs::path largeScriptPath = repoRoot / "server" / "tests" / "perf" / "large_script_3000.as";
-    fs::path svenStubPath = repoRoot / "predefned" / "sven.as.predefined";
+    fs::path svenStubPath = repoRoot / "predefined" / "sven.as.predefined";
     if (!fs::exists(svenStubPath))
     {
-        svenStubPath = repoRoot / "predefined" / "sven.as.predefined";
+        svenStubPath = repoRoot / "predefned" / "sven.as.predefined";
     }
 
     REQUIRE_MESSAGE(fs::exists(largeScriptPath), "large_script_3000.as must exist");
