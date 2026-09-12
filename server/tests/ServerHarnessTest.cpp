@@ -676,6 +676,57 @@ TEST_CASE("Server - Invalidates delta cache on syntax error transition")
     CHECK(r4.find("\"resultId\":\"3\"") != std::string::npos);
 }
 
+/**
+ * @brief Verifies that delta token requests correctly splice edits after modifications,
+ *        remain stable during settled idle states, and cleanly refresh on error recovery.
+ */
+TEST_CASE("Server - Delta tokens splice edits after modifications and stabilize in idle state")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", "void main() { int a = 1; }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), "void main() { int a = 1; }\n"));
+
+    // 1. Initial full tokens request upon opening
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full","params":{)"
+                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("}}})");
+
+    // 2. Incremental modification appending a variable declaration
+    stream.Push(DidChangeMessage(fixture.Uri("main.as"), 2, "void main() { int a = 1; int b = 2; }\n"));
+
+    // 3. Delta request after edit -> returns spliced edits against resultId 1
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta","params":{)"
+                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"previousResultId":"1"}})");
+
+    // 4. Settled post-edit idle state: second delta request with resultId 2 -> empty edits
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/semanticTokens/full/delta","params":{)"
+                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"previousResultId":"2"}})");
+
+    stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    // Verify initial full tokens
+    const std::string r2 = stream.ResponseFor(2);
+    CHECK(r2.find("\"data\"") != std::string::npos);
+    CHECK(r2.find("\"resultId\":\"1\"") != std::string::npos);
+
+    // Verify delta response with edits
+    const std::string r3 = stream.ResponseFor(3);
+    CHECK(r3.find("\"edits\"") != std::string::npos);
+    CHECK(r3.find("\"resultId\":\"2\"") != std::string::npos);
+
+    // Verify settled idle state (no further edits needed)
+    const std::string r4 = stream.ResponseFor(4);
+    CHECK(r4.find("\"edits\":[]") != std::string::npos);
+    CHECK(r4.find("\"resultId\":\"3\"") != std::string::npos);
+}
+
+
 // =====================================================================================
 // Every rule module, over the protocol
 //

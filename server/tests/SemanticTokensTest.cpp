@@ -1323,3 +1323,56 @@ TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integri
     }
     CHECK(applied == tokens3.data);
 }
+
+/**
+ * @brief Verifies that arbitrary member accesses (obj.property) are tokenized as property
+ *        while member method calls (obj.method()) remain tokenized as method.
+ */
+TEST_CASE("SemanticTokensHandler - Member accesses on objects are tokenized as properties")
+{
+    const std::string code =
+        "class Player\n"
+        "{\n"
+        "    int health;\n"
+        "    void run() {}\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Player p;\n"
+        "    p.health = 100;\n"
+        "    p.run();\n"
+        "}\n";
+
+    AngelScriptParser parser;
+    TSTree *tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{ nullptr };
+    SymbolTable table;
+    collector.CollectSymbols("file:///test.as", code, parser, table);
+
+    LocalScopeCollector scopeCollector{ nullptr };
+    std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(code, parser);
+
+    SemanticTokensRequest request{ "file:///test.as", code, tree, table, scopeRoot };
+    const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+    // Verify p.health on line 8 has health as property
+    auto healthToken = std::find_if(tokens.begin(), tokens.end(), [](const AbsoluteToken &t)
+    {
+        return t.line == 8 && t.character == 6 && t.length == 6;
+    });
+    REQUIRE(healthToken != tokens.end());
+    CHECK(healthToken->type == "property");
+
+    // Verify p.run() on line 9 has run as method
+    auto runToken = std::find_if(tokens.begin(), tokens.end(), [](const AbsoluteToken &t)
+    {
+        return t.line == 9 && t.character == 6 && t.length == 3;
+    });
+    REQUIRE(runToken != tokens.end());
+    CHECK(runToken->type == "method");
+
+    ts_tree_delete(tree);
+}
+

@@ -935,12 +935,12 @@ namespace angel_lsp::features
 
         ts_query_cursor_delete(cursor);
 
-        // Additional pass for `this.` member expressions.
-        // The highlights query does not capture member identifiers accessed via `this.`, leaving
-        // them uncoloured. Any member accessed via `this` is a property of the enclosing instance.
-        // We walk the syntax tree for `member_expression` nodes whose "object" is `this` and whose
-        // "member" is an identifier, emitting a Type_Property token with priority 3 if no token
-        // already starts at that position. Deliberately leaves non-`this` member expressions alone.
+        // Additional pass for member expressions (e.g. `this.field` or `obj.property`).
+        // The highlights query does not capture member identifiers accessed via member expression,
+        // leaving property reads/writes uncoloured unless they are part of a method call (captured
+        // as Type_Method). Any member property accessed via member access is a property of the object instance.
+        // We walk the syntax tree for `member_expression` nodes whose "member" is an identifier, emitting
+        // a Type_Property token with priority 3 if no token already starts at that position.
         ankerl::unordered_dense::set<uint64_t> existingTokenStarts;
         existingTokenStarts.reserve(rawTokens.size());
         for (const auto &tok : rawTokens)
@@ -962,38 +962,25 @@ namespace angel_lsp::features
 
             if (std::string_view(ts_node_type(currNode)) == "member_expression")
             {
-                TSNode objectNode = parser::GetChildByField(currNode, parser::fields::Object);
                 TSNode memberNode = parser::GetChildByField(currNode, parser::fields::Member);
-                if (!ts_node_is_null(objectNode) && !ts_node_is_null(memberNode))
+                if (!ts_node_is_null(memberNode) && std::string_view(ts_node_type(memberNode)) == "identifier")
                 {
-                    uint32_t objStart = ts_node_start_byte(objectNode);
-                    uint32_t objEnd = ts_node_end_byte(objectNode);
-                    if (objStart < objEnd && objEnd <= request.sourceCode.size())
+                    TSPoint mStart = ts_node_start_point(memberNode);
+                    TSPoint mEnd = ts_node_end_point(memberNode);
+                    uint64_t posKey = PositionKey(mStart.row, mStart.column);
+                    if (!existingTokenStarts.contains(posKey))
                     {
-                        std::string_view objText(request.sourceCode.data() + objStart, objEnd - objStart);
-                        if (objText == "this")
+                        if (mStart.row == mEnd.row && mEnd.column > mStart.column)
                         {
-                            if (std::string_view(ts_node_type(memberNode)) == "identifier")
-                            {
-                                TSPoint mStart = ts_node_start_point(memberNode);
-                                TSPoint mEnd = ts_node_end_point(memberNode);
-                                uint64_t posKey = PositionKey(mStart.row, mStart.column);
-                                if (!existingTokenStarts.contains(posKey))
-                                {
-                                    if (mStart.row == mEnd.row && mEnd.column > mStart.column)
-                                    {
-                                        rawTokens.push_back(RawToken{
-                                            mStart.row,
-                                            mStart.column,
-                                            mEnd.column - mStart.column,
-                                            Type_Property,
-                                            0,
-                                            3
-                                        });
-                                        existingTokenStarts.insert(posKey);
-                                    }
-                                }
-                            }
+                            rawTokens.push_back(RawToken{
+                                mStart.row,
+                                mStart.column,
+                                mEnd.column - mStart.column,
+                                Type_Property,
+                                0,
+                                3
+                            });
+                            existingTokenStarts.insert(posKey);
                         }
                     }
                 }
