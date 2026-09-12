@@ -3692,7 +3692,7 @@ namespace angel_lsp
             // re-analysis passes the identical text on purpose, and dropping it as a duplicate
             // drops it in favour of the stale answer it exists to replace. `force` is that case.
             if (const auto running = m_analysisInFlight.find(uriStr);
-                !force && running != m_analysisInFlight.end() && running->second.text == analysisText)
+                !force && running != m_analysisInFlight.end() && running->second.version >= version && version >= 0 && running->second.text == analysisText)
             {
                 // Already being analysed, with exactly these bytes. The answer is on its way.
                 return;
@@ -3705,6 +3705,11 @@ namespace angel_lsp
                 {
                     // Already queued and unchanged. The thread is awake and holds this text; a
                     // second notify would only move the deadline.
+                    return;
+                }
+
+                if (!force && it->second.version > version && version >= 0)
+                {
                     return;
                 }
 
@@ -3763,6 +3768,12 @@ namespace angel_lsp
                     std::lock_guard<std::mutex> savedLock(m_analysisMutex);
                     if (m_savedUris.erase(uriStr) > 0)
                     {
+                        continue;
+                    }
+                    if (const auto pendingIt = m_pendingAnalysis.find(uriStr);
+                        pendingIt != m_pendingAnalysis.end() && pendingIt->second.version > entry.version && entry.version >= 0)
+                    {
+                        // Superseded by newer edit while queued
                         continue;
                     }
                 }

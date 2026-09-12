@@ -71,3 +71,34 @@ TEST_CASE("AnalysisScheduler - Peer debounce window")
 
     scheduler.Stop();
 }
+
+TEST_CASE("AnalysisScheduler - Version-gated cancellation discards stale pending versions")
+{
+    std::atomic<int> analyzeCount{ 0 };
+    int analyzedVersion = -1;
+    std::string analyzedText;
+
+    AnalysisScheduler scheduler([&](const std::string &/*uri*/, const std::string &text,
+                                    document::TreePtr /*tree*/, int version)
+    {
+        analyzedVersion = version;
+        analyzedText = text;
+        ++analyzeCount;
+    }, std::chrono::milliseconds(50));
+
+    const std::string uri = "file:///version_test.as";
+
+    // Schedule version 10
+    scheduler.Schedule(uri, "version 10", false, document::MakeTreePtr(nullptr), 10);
+
+    // Stale version 5 arrives late - should be discarded and not overwrite version 10
+    scheduler.Schedule(uri, "version 5", false, document::MakeTreePtr(nullptr), 5);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    CHECK(analyzeCount == 1);
+    CHECK(analyzedVersion == 10);
+    CHECK(analyzedText == "version 10");
+
+    scheduler.Stop();
+}

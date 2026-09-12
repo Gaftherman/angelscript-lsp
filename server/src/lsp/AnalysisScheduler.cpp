@@ -34,7 +34,7 @@ namespace angel_lsp
             m_savedUris.erase(uriStr);
 
             if (const auto running = m_inFlight.find(uriStr);
-                !force && running != m_inFlight.end() && running->second.text == text)
+                !force && running != m_inFlight.end() && running->second.version >= version && version >= 0 && running->second.text == text)
             {
                 return;
             }
@@ -43,6 +43,11 @@ namespace angel_lsp
             if (it != m_pending.end())
             {
                 if (!force && it->second.text == text)
+                {
+                    return;
+                }
+
+                if (!force && it->second.version > version && version >= 0)
                 {
                     return;
                 }
@@ -138,6 +143,12 @@ namespace angel_lsp
                     std::lock_guard<std::mutex> savedLock(m_mutex);
                     if (m_savedUris.erase(uriStr) > 0)
                     {
+                        continue;
+                    }
+                    if (const auto it = m_pending.find(uriStr);
+                        it != m_pending.end() && it->second.version > entry.version && entry.version >= 0)
+                    {
+                        // Superseded by newer edit while queued
                         continue;
                     }
                 }
