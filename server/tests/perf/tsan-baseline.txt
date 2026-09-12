@@ -1,0 +1,18 @@
+ThreadSanitizer Baseline Report
+Date: 2026-09-12
+Host: Windows x64 (MSVC 19.50.35730.0 / CMake 4.3.2)
+
+Build attempt with -DANGELLSP_SANITIZE=thread:
+MSVC does not support ThreadSanitizer natively (MSVC supports AddressSanitizer via /fsanitize=address).
+CMake configuration error:
+  CMake Error at CMakeLists.txt:145 (message):
+    MSVC supports only ANGELLSP_SANITIZE=address; use Clang for thread/undefined.
+
+Server* tests run under default build (161 test cases, 594 assertions):
+===============================================================================
+[doctest] test cases: 161 | 161 passed | 0 failed | 1580 skipped
+[doctest] assertions: 594 | 594 passed | 0 failed |
+[doctest] Status: SUCCESS!
+
+TSan report from native environment:
+No race conditions caught by runtime assertions; full TSan execution deferred to Linux/Clang CI jobs.
