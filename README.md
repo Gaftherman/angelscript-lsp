@@ -69,7 +69,7 @@ Create or update `.vscode/settings.json` in your workspace:
 
 | Feature / LSP Method | Status | Reliability Notes | Configuration Flag |
 | :--- | :--- | :--- | :--- |
-| **Diagnostics**<br>`textDocument/publishDiagnostics` | Stable / Production-Ready | Dual-pass (syntax + semantic) validation oracle. Fast AST error detection with debounced background semantic pass. FNV-1a 64-bit ABI fingerprinting prevents cascading save storms when public interfaces are untouched. | `--enable-type-conversion-checks` |
+| **Diagnostics**<br>`textDocument/publishDiagnostics` | Stable / Production-Ready | Dual-pass (syntax + semantic) analysis engine. Fast AST error detection with debounced background semantic pass. FNV-1a 64-bit ABI fingerprinting prevents cascading save storms when public interfaces are untouched. | `--enable-type-conversion-checks` |
 | **Hover**<br>`textDocument/hover` | Stable / Production-Ready | Sub-millisecond keyed spatial lookup (zero linear table scans). Full Doxygen docstring parser (`@brief`, `@param`, `@return`, `@see`), property accessors, and virtual document host scope fallback. | `--enable-hover` |
 | **Definition & Declaration**<br>`textDocument/definition`<br>`textDocument/declaration`<br>`textDocument/typeDefinition` | Stable / Production-Ready | Precise cross-file symbol lookup. Overload-aware callee argument scoring (`FilterOverloadsForCall`), mixin origin source mapping (jumps to template declaration range), and base/interface traversal. | `--enable-definition` |
 | **Implementation**<br>`textDocument/implementation` | Stable / Production-Ready | Resolves interface implementations and base class virtual method overrides across derived types. Automatically falls back to definition when no derived overrides exist. | `--enable-implementation` |
@@ -145,7 +145,7 @@ Create or update `.vscode/settings.json` in your workspace:
 - **Predefined Stubs & Engine Extensions**:
   - Native support for standard AngelScript add-on types (`string`, `array<T>`, `dictionary`, `ref`, `datetime`, `file`).
   - Predefined stubs can specify list factories using manual constructor syntax `{repeat T}`.
-  - Built-in Sven Co-op API stub (`predefned/sven.as.predefined`) and workspace stub selection.
+  - Built-in Sven Co-op API stub (`predefined/sven.as.predefined`) and workspace stub selection.
   - **Format Predefined Stub** editor command: automatically consolidates duplicate namespace declarations from engine dumps while preserving 100% of comments and formatting.
 - **Context-Aware Completion & Semantic Tokens**:
   - Completion prioritization offers declared class types before the `class` keyword.
@@ -278,7 +278,7 @@ AngelLSP follows a 4-layer unidirectional architecture designed to eliminate cir
 
 1. **Layer 4: LSP Orchestrator & Server (`lsp/`, `main.cpp`)**: Manages JSON-RPC message dispatching, client capability announcement, and configuration state.
 2. **Layer 3: Feature Handlers (`features/`)**: Decoupled, stateless pure functions handling specific LSP requests (`hover`, `definition`, `completion`, `semantic_tokens`, `signature_help`).
-3. **Layer 2: Analysis & Symbol Management (`analysis/`)**: Manages global and local symbol tables (`SymbolTable`), Tree-Sitter AST symbol extraction (`SymbolCollector`), scope resolution (`SymbolResolver`), and diagnostic caching (`DiagnosticCache`).
+3. **Layer 2: Analysis & Symbol Management (`analysis/`)**: Manages global and local symbol tables (`SymbolTable`), Tree-Sitter AST symbol extraction (`SymbolCollector`), local scope indexing (`LocalScopeCollector`), rule validation (`SemanticAnalyzer`), and indexed AST node queries (`NodeIndex`).
 4. **Layer 1: Core, Document, Parser & Utilities (`document/`, `parser/`, `utils/`, `config/`, `i18n/`)**: Thread-safe document AST container (`Document`), Tree-Sitter parser queries, Doxygen docstring extractor, and configuration options.
 
 ### Performance Optimizations

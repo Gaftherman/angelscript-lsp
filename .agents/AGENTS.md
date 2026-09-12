@@ -7,7 +7,7 @@ AngelLSP is a high-performance C++20 Language Server Protocol (LSP) implementati
 ## Core Architecture
 - **Layer 4**: LSP Orchestrator & Server (`server/src/lsp/`, `server/src/main.cpp`)
 - **Layer 3**: Feature Handlers (`server/src/features/`) - hover, definition, completion, semantic tokens, signature help.
-- **Layer 2**: Analysis & Symbol Management (`server/src/analysis/`) - `SymbolTable`, `SymbolCollector`, `SymbolResolver`.
+- **Layer 2**: Analysis & Symbol Management (`server/src/analysis/`) - `SymbolTable`, `SymbolCollector`, `LocalScopeCollector`, `SemanticAnalyzer`, `NodeIndex`.
 - **Layer 1**: Core, Document, Parser & Utilities (`server/src/document/`, `server/src/parser/`, `server/src/utils/`).
 
 ## Key Directories
@@ -38,7 +38,7 @@ AngelLSP is a high-performance C++20 Language Server Protocol (LSP) implementati
 
 To prevent circular dependencies and cascading build errors, review this matrix before writing any `#include`:
 
-| Current File Layer | ✅ May `#include`: | ❌ FORBIDDEN to `#include`: |
+| Current File Layer | May `#include`: | FORBIDDEN to `#include`: |
 | --- | --- | --- |
 | **Layer 1: Core / Config**<br>(`config/`, `document/`, `parser/`, `utils/`) | Only standard C++ libraries (`<string>`, `<vector>`, etc.) or headers from its own layer. | Layer 2 (Analysis), Layer 3 (Features), Layer 4 (Server). |
 | **Layer 2: Analysis**<br>(`analysis/`) | Layer 1 (Core/Config) and C++ libraries. | Layer 3 (Features), Layer 4 (Server). |
@@ -143,40 +143,7 @@ ctest -C Debug --output-on-failure
 
 ---
 
-## 3. Advanced Hybrid Architecture: Kimi K3 (Director) + Gemini `agy` (Executor)
-
-### Maximum Efficiency Flags for `agy`:
-- `--dangerously-skip-permissions`: Allows `agy` to modify files and execute scripts non-interactively without prompting for permissions.
-- `--mode accept-edits`: Automatically accepts code modifications made by Gemini.
-- `--output-format json`: Returns the response in structured JSON format for Kimi to parse the result accurately.
-
-### Standard Execution Command for `agy`:
-```powershell
-agy -p "<prompt>" --dangerously-skip-permissions --mode accept-edits
-```
-
----
-
-### Work Protocol & Mandatory Verification:
-
-1. **Delegation to Gemini (`agy`):**
-   Kimi K3 sends heavy tasks to `agy` to conserve OpenRouter tokens:
-   `agy -p "Modify <file> to apply <change>" --dangerously-skip-permissions`
-
-2. **Quality Verification (Quality Control by Kimi K3):**
-   Immediately after `agy` finishes, Kimi K3 MUST verify the completed work using `git diff` or by reviewing the file:
-   `git diff <file>`
-   - Kimi K3 analyzes the `diff` produced by Gemini.
-   - If any logic or syntax error is detected in Gemini's edits, Kimi K3 applies fine-tuning adjustments.
-
-3. **Build & Test Verification:**
-   Kimi K3 runs the compilation and tests to guarantee 100% functionality:
-   `cmake --build server/build --config Debug`
-   `ctest --test-dir server/build -C Debug --output-on-failure`
-
----
-
-## 4. Code Style and Documentation
+## 3. Code Style and Documentation
 
 1. **Allman Style**: Opening braces `{` always on a new line for classes, structs, functions, loops, and `if`/`switch`.
 2. **Doxygen Comments in English**: Document every class, function, and struct using `/** ... */` format in English.

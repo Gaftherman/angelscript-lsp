@@ -47,6 +47,14 @@ namespace
                 return fromEnv;
             }
         }
+#ifdef ANGELSCRIPT_REPO_ROOT
+        std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
+        std::filesystem::path defaultStub = repoRoot / "predefined" / "sven.as.predefined";
+        if (std::filesystem::exists(defaultStub))
+        {
+            return defaultStub.string();
+        }
+#endif
         return "";
     }
 

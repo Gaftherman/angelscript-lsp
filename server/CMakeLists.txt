@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.14)
-set(CMAKE_POLICY_VERSION_MINIMUM 3.14)
+cmake_minimum_required(VERSION 3.22)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.22)
 
 # One version, read from the manifest that actually publishes it.
 #

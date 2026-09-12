@@ -1,0 +1,103 @@
+stages:
+  - audit
+  - build
+  - test
+  - parity
+  - sanitize
+  - package
+
+variables:
+  DEBIAN_FRONTEND: noninteractive
+  GIT_SUBMODULE_STRATEGY: recursive
+
+default:
+  image: gcc:13-bookworm
+
+.cpp-setup:
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends cmake git python3 python-is-python3 ninja-build curl
+
+code-audit:
+  stage: audit
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends git python3 python-is-python3
+  script:
+    - python3 server/scripts/check-diagnostic-codes.py
+    - python3 server/scripts/check-layer-includes.py
+    - python3 server/scripts/check-grammar-names.py
+    - python3 server/scripts/check-grammar-pin.py
+    - python3 server/scripts/check-client-l10n.py
+    - "! git grep -P '[\\x{1F300}-\\x{1F9FF}\\x{2600}-\\x{26FF}\\x{2700}-\\x{27BF}]' server/ client/"
+
+build-server:
+  stage: build
+  extends: .cpp-setup
+  cache:
+    key: "$CI_COMMIT_REF_SLUG-deps"
+    paths:
+      - server/build/_deps/
+  script:
+    - cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release -DANGELLSP_BUILD_ORACLE=ON -DANGELLSP_WERROR=ON
+    - cmake --build server/build --config Release -j $(nproc)
+  artifacts:
+    paths:
+      - server/build/
+    expire_in: 1 day
+
+test-suite:
+  stage: test
+  extends: .cpp-setup
+  needs:
+    - build-server
+  script:
+    - ctest --test-dir server/build -C Release --output-on-failure
+    - ./server/build/angel_lsp_tests --test-case="*Stress*"
+
+compiler-parity:
+  stage: parity
+  extends: .cpp-setup
+  needs:
+    - build-server
+  script:
+    - export ASHARNESS_EXE=$(pwd)/server/build/angelscript_oracle
+    - export PARITY_PREDEFINED=$(pwd)/server/tests/fixtures/sdk-addons.as.predefined
+    - export PARITY_SCRIPT_DIR=$(pwd)/server/tests/parity
+    - set -o pipefail
+    - ./server/build/angel_lsp_tests --no-skip --test-case="*Parity*" 2>&1 | tee parity.log
+    - if ! grep -q "AngelScript parity audit (" parity.log; then echo "The parity audit skipped itself - no summary line in its output."; exit 1; fi
+    - if grep -q "AngelScript parity audit (0 scripts)" parity.log; then echo "The parity audit ran but found no scripts to audit."; exit 1; fi
+
+sanitize-asan-ubsan:
+  stage: sanitize
+  extends: .cpp-setup
+  script:
+    - cmake -B server/build-asan -S server -DCMAKE_BUILD_TYPE=Debug -DANGELLSP_BUILD_ORACLE=ON -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+    - cmake --build server/build-asan -j $(nproc) --target angel_lsp_tests
+    - ASAN_OPTIONS=detect_leaks=0 ./server/build-asan/angel_lsp_tests --test-case="*ServerStress*,*AnalysisScheduler*,*DocumentStore*"
+
+sanitize-tsan:
+  stage: sanitize
+  extends: .cpp-setup
+  script:
+    - cmake -B server/build-tsan -S server -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer"
+    - cmake --build server/build-tsan -j $(nproc) --target angel_lsp_tests
+    - ./server/build-tsan/angel_lsp_tests --test-case="ServerHarnessTest*,*ServerStress*"
+
+package-extension:
+  stage: package
+  image: node:20-bookworm-slim
+  needs:
+    - build-server
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends git
+  script:
+    - cd client
+    - npm ci
+    - npm run pretest
+    - npx --yes @vscode/vsce package --out angelscript-lsp.vsix
+  artifacts:
+    paths:
+      - client/*.vsix
+    expire_in: 7 days

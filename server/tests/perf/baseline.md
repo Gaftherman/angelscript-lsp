@@ -6,7 +6,7 @@ Branch: test/compiler-modernization
 Configuration: Debug (MSVC v143, x64)
 
 ## 1. End-to-End & Feature Timings (PerfBaselineTest)
-Tested on fixture `server/tests/perf/large_script_3000.as` (3,000 lines) with `predefned/sven.as.predefined` loaded.
+Tested on fixture `server/tests/perf/large_script_3000.as` (3,000 lines) with `predefined/sven.as.predefined` loaded.
 
 | Metric | Baseline Value | Description |
 | :--- | :--- | :--- |
