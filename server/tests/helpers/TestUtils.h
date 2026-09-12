@@ -1107,6 +1107,11 @@ namespace angel_lsp::test
             return SymbolTableWrapper{ &m_symbolTable };
         }
 
+        TSTree *GetTree() const
+        {
+            return m_tree;
+        }
+
         void UpdateText(const std::string &newText)
         {
             m_sourceCode = newText;

@@ -12,6 +12,8 @@
 
 namespace angel_lsp::analysis
 {
+    class NodeIndex;
+
     namespace node_types
     {
         constexpr std::string_view StringLiteral = "string_literal";
@@ -531,7 +533,15 @@ namespace angel_lsp::analysis
     bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode);
 
     /**
-     * @brief Collects all using namespace directives in an AST tree.
+     * @brief Collects namespace names introduced via `using namespace X;` using NodeIndex.
+     * @param nodeIndex Pre-indexed syntax tree node index.
+     * @param sourceCode Document source text.
+     * @return Vector of imported namespace names.
+     */
+    std::vector<std::string> CollectUsingNamespaces(const NodeIndex &nodeIndex, std::string_view sourceCode);
+
+    /**
+     * @brief Collects namespace names introduced via `using namespace X;` declarations.
      * @param root The root AST node or enclosing container.
      * @param sourceCode Document source text.
      * @return Vector of imported namespace names.

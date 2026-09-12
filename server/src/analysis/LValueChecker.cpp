@@ -1,5 +1,6 @@
 #include "analysis/LValueChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
 #include <string>
@@ -388,6 +389,17 @@ namespace angel_lsp::analysis
 
         if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
         {
+            return;
+        }
+
+        if (request.nodeIndex)
+        {
+            for (const TSNode &node : request.nodeIndex->Nodes(parser::nodes::AssignmentExpression))
+            {
+                const TSPoint start = ts_node_start_point(node);
+                const Scope *scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
+                CheckAssignmentTarget(node, request, scope, ctx);
+            }
             return;
         }
 

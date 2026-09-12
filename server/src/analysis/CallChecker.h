@@ -34,6 +34,8 @@ namespace angel_lsp::analysis
      *   reach a declaration written down nowhere here;
      * - one candidate taking `...` accepts any count, so the question is answered and closed.
      */
+    class NodeIndex;
+
     struct CallCheckRequest
     {
         /** @brief Root node of the document's syntax tree. */
@@ -44,6 +46,9 @@ namespace angel_lsp::analysis
 
         /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
         const Scope *scopeRoot = nullptr;
+
+        /** @brief Optional pre-indexed node index for fast single-pass querying. */
+        const NodeIndex *nodeIndex = nullptr;
     };
 
     /**

@@ -3258,6 +3258,25 @@ namespace angel_lsp
         }
     }
 
+    void Server::SetDocumentVersion(const std::string &uriStr, int version)
+    {
+        std::lock_guard<std::mutex> lock(m_documentVersionsMutex);
+        m_documentVersions[uriStr] = version;
+    }
+
+    int Server::GetDocumentVersion(const std::string &uriStr) const
+    {
+        std::lock_guard<std::mutex> lock(m_documentVersionsMutex);
+        auto it = m_documentVersions.find(uriStr);
+        return (it != m_documentVersions.end()) ? it->second : -1;
+    }
+
+    void Server::RemoveDocumentVersion(const std::string &uriStr)
+    {
+        std::lock_guard<std::mutex> lock(m_documentVersionsMutex);
+        m_documentVersions.erase(uriStr);
+    }
+
     std::string Server::AnalysisTextFor(const std::string &uriStr, const std::string &text) const
     {
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
@@ -3275,6 +3294,8 @@ namespace angel_lsp
         // m_clientUriByKey. Recorded on every notification that carries a document, because the
         // client is free to change how it writes the URI between them.
         m_clientUriByKey[uriStr] = params.textDocument.uri.toString();
+        const int version = params.textDocument.version;
+        SetDocumentVersion(uriStr, version);
         std::string text = params.textDocument.text;
 
         m_openDocuments[uriStr] = text;
@@ -3306,7 +3327,7 @@ namespace angel_lsp
 
             if (contentUnchanged)
             {
-                PublishDiagnostics(uriStr, {});
+                PublishDiagnostics(uriStr, {}, version);
                 double totalMs = totalTimer.ElapsedMs();
                 LogInfo(fmt::format(
                     "[Predefined Fast Path] File: {} content unchanged; bypassed re-indexing. Elapsed: {:.2f} ms",
@@ -3340,7 +3361,7 @@ namespace angel_lsp
             double scopeMs = scopeTimer.ElapsedMs();
             double checkMs = 0.0;
 
-            PublishDiagnostics(uriStr, {});
+            PublishDiagnostics(uriStr, {}, version);
 
             const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
             if (wordsChanged)
@@ -3374,7 +3395,7 @@ namespace angel_lsp
 
         AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
 
-        PublishDiagnostics(uriStr, diagnostics);
+        PublishDiagnostics(uriStr, analysisText, diagnostics, version);
 
         double totalMs = totalTimer.ElapsedMs();
         LogInfo(fmt::format(
@@ -3392,6 +3413,9 @@ namespace angel_lsp
         auto it = m_openDocuments.find(uriStr);
         if (it == m_openDocuments.end())
             return;
+
+        const int version = params.textDocument.version;
+        SetDocumentVersion(uriStr, version);
 
         std::string &buffer = it->second;
 
@@ -3506,7 +3530,7 @@ namespace angel_lsp
         // run once typing pauses. Until then the symbol table still holds the previous revision,
         // which is the same trade every other language server makes.
         RememberOpenDocument(uriStr, buffer);
-        ScheduleAnalysis(uriStr, buffer);
+        ScheduleAnalysis(uriStr, buffer, /*force=*/false, newTree ? ts_tree_copy(newTree) : nullptr, version);
     }
 
     void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params &&params)
@@ -3514,10 +3538,12 @@ namespace angel_lsp
         std::string uriStr = DocumentKey(params.textDocument.uri.toString());
         m_openDocuments.erase(uriStr);
         ForgetOpenDocument(uriStr);
+        RemoveDocumentVersion(uriStr);
 
         {
             std::lock_guard<std::mutex> lock(m_analysisMutex);
             m_savedUris.erase(uriStr);
+            m_pendingAnalysis.erase(uriStr);
         }
         {
             std::lock_guard<std::mutex> lock(m_peerDebounceMutex);
@@ -3660,8 +3686,31 @@ namespace angel_lsp
         constexpr std::chrono::milliseconds k_analysisDebounce{200};
     }
 
-    void Server::ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force)
+    void Server::ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force, TSTree *tree, int version)
     {
+        struct TreeOwner
+        {
+            TSTree *ptr;
+            ~TreeOwner()
+            {
+                if (ptr)
+                {
+                    ts_tree_delete(ptr);
+                }
+            }
+            TSTree *Release()
+            {
+                TSTree *t = ptr;
+                ptr = nullptr;
+                return t;
+            }
+        } treeOwner{tree};
+
+        if (version < 0)
+        {
+            version = GetDocumentVersion(uriStr);
+        }
+
         // ScheduleAnalysis is the funnel through which every background analysis request passes.
         // Background schedulers (such as ScheduleOpenDocumentsForReanalysis and ReanalyseOpenDocuments)
         // hand it raw mirror text from m_openSnapshot and m_openDocuments - deliberately, because
@@ -3693,23 +3742,27 @@ namespace angel_lsp
             // re-analysis passes the identical text on purpose, and dropping it as a duplicate
             // drops it in favour of the stale answer it exists to replace. `force` is that case.
             if (const auto running = m_analysisInFlight.find(uriStr);
-                !force && running != m_analysisInFlight.end() && running->second == analysisText)
+                !force && running != m_analysisInFlight.end() && running->second.text == analysisText)
             {
                 // Already being analysed, with exactly these bytes. The answer is on its way.
                 return;
             }
 
-            const auto [entry, inserted] = m_pendingAnalysis.try_emplace(uriStr, analysisText);
-            if (!inserted)
+            const auto it = m_pendingAnalysis.find(uriStr);
+            if (it != m_pendingAnalysis.end())
             {
-                if (!force && entry->second == analysisText)
+                if (!force && it->second.text == analysisText)
                 {
                     // Already queued and unchanged. The thread is awake and holds this text; a
                     // second notify would only move the deadline.
                     return;
                 }
 
-                entry->second = analysisText;
+                it->second = PendingAnalysisEntry{analysisText, treeOwner.Release(), version};
+            }
+            else
+            {
+                m_pendingAnalysis.emplace(uriStr, PendingAnalysisEntry{analysisText, treeOwner.Release(), version});
             }
 
             ++m_analysisRevision;
@@ -3754,7 +3807,7 @@ namespace angel_lsp
             m_analysisInFlight.swap(m_pendingAnalysis);
             lock.unlock();
 
-            for (const auto &[uriStr, text] : m_analysisInFlight)
+            for (auto &[uriStr, entry] : m_analysisInFlight)
             {
                 {
                     std::lock_guard<std::mutex> savedLock(m_analysisMutex);
@@ -3763,7 +3816,7 @@ namespace angel_lsp
                         continue;
                     }
                 }
-                AnalyzeDocument(uriStr, text, parser);
+                AnalyzeDocument(uriStr, entry.text, parser, entry.ReleaseTree(), entry.version);
             }
 
             {
@@ -3774,15 +3827,28 @@ namespace angel_lsp
     }
 
     void Server::AnalyzeDocument(const std::string &uriStr, const std::string &text,
-                                 angel_lsp::parser::AngelScriptParser &parser)
+                                 angel_lsp::parser::AngelScriptParser &parser,
+                                 TSTree *treeCopy, int version)
     {
         utils::HighResTimer totalTimer;
+
+        // Version gating: if document has already been superseded by a newer version, discard this run.
+        const int currentVersion = GetDocumentVersion(uriStr);
+        if (currentVersion >= 0 && version >= 0 && version < currentVersion)
+        {
+            if (treeCopy)
+            {
+                ts_tree_delete(treeCopy);
+            }
+            return;
+        }
+
         const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
         if (isPredefined)
         {
             const std::string analysisText = AnalysisTextFor(uriStr, text);
             utils::HighResTimer parseTimer;
-            TSTree *tree = parser.Parse(analysisText);
+            TSTree *tree = treeCopy ? treeCopy : parser.Parse(analysisText);
             double parseMs = parseTimer.ElapsedMs();
 
             utils::HighResTimer colTimer;
@@ -3813,7 +3879,7 @@ namespace angel_lsp
                 ts_tree_delete(tree);
             }
 
-            PublishDiagnostics(uriStr, text, {});
+            PublishDiagnostics(uriStr, text, {}, version);
 
             const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
             if (wordsChanged)
@@ -3840,7 +3906,7 @@ namespace angel_lsp
         IndexModuleClosure(uriStr);
 
         utils::HighResTimer parseTimer;
-        TSTree *tree = parser.Parse(text);
+        TSTree *tree = treeCopy ? treeCopy : parser.Parse(text);
         double parseMs = parseTimer.ElapsedMs();
 
         // Collected into a staging table and swapped in one step, so a reader on the message loop
@@ -3863,7 +3929,7 @@ namespace angel_lsp
 
         AppendIncludeDiagnostics(uriStr, text, diagnostics);
 
-        PublishDiagnostics(uriStr, text, diagnostics);
+        PublishDiagnostics(uriStr, text, diagnostics, version);
 
         double totalMs = totalTimer.ElapsedMs();
         LogInfo(fmt::format(
@@ -4247,10 +4313,14 @@ namespace angel_lsp
         }
     }
 
-    void Server::PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics)
+    void Server::PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics, int version)
     {
         const std::string *docText = FindDocumentText(uriStr);
-        PublishDiagnostics(uriStr, docText ? *docText : std::string(), diagnostics);
+        if (version < 0)
+        {
+            version = GetDocumentVersion(uriStr);
+        }
+        PublishDiagnostics(uriStr, docText ? *docText : std::string(), diagnostics, version);
     }
 
     std::vector<lsp::Diagnostic> Server::ToProtocolDiagnostics(const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics) const
@@ -4340,9 +4410,28 @@ namespace angel_lsp
                                            lsp::json::Value(std::move(params)));
     }
 
-    void Server::PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics)
+    void Server::PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics, int version)
     {
+        if (version >= 0)
+        {
+            const int currentVersion = GetDocumentVersion(uriStr);
+            if (currentVersion >= 0 && currentVersion != version)
+            {
+                // Superseded! A newer edit was already registered. Drop stale diagnostics.
+                return;
+            }
+            if (currentVersion < 0 && !diagnostics.empty())
+            {
+                // Document was closed while analysis was in flight; do not resurrect diagnostics.
+                return;
+            }
+        }
+
         lsp::notifications::TextDocument_PublishDiagnostics::Params params;
+        if (version >= 0)
+        {
+            params.version = version;
+        }
 
         // Back out under the CLIENT's spelling, not the internal key. Every map in this server is
         // keyed by DocumentKey so that one file cannot become several documents, and that key is
@@ -4371,6 +4460,7 @@ namespace angel_lsp
             snapshot.resultId = std::to_string(++m_diagnosticsRevision);
             snapshot.items = params.diagnostics;
             snapshot.textHash = std::hash<std::string>{}(text);
+            snapshot.version = version;
             m_diagnosticsCache[uriStr] = std::move(snapshot);
         }
 
@@ -4417,24 +4507,38 @@ namespace angel_lsp
         // stale pull answer sat beside the correct push one and only cleared on the next keystroke.
         const std::string *current = FindDocumentText(uriStr);
         const size_t currentHash = current ? std::hash<std::string>{}(*current) : 0;
+        const int currentVersion = GetDocumentVersion(uriStr);
 
         if (current)
         {
             std::lock_guard<std::mutex> lock(m_diagnosticsCacheMutex);
             if (const auto it = m_diagnosticsCache.find(uriStr);
-                it != m_diagnosticsCache.end() && it->second.textHash == currentHash)
+                it != m_diagnosticsCache.end())
             {
-                if (params.previousResultId.has_value() && *params.previousResultId == it->second.resultId)
+                bool isCurrent = false;
+                if (currentVersion >= 0 && it->second.version >= 0)
                 {
-                    lsp::RelatedUnchangedDocumentDiagnosticReport unchanged;
-                    unchanged.resultId = it->second.resultId;
-                    return unchanged;
+                    isCurrent = (it->second.version == currentVersion);
+                }
+                else
+                {
+                    isCurrent = (it->second.textHash == currentHash);
                 }
 
-                lsp::RelatedFullDocumentDiagnosticReport full;
-                full.resultId = it->second.resultId;
-                full.items = it->second.items;
-                return full;
+                if (isCurrent)
+                {
+                    if (params.previousResultId.has_value() && *params.previousResultId == it->second.resultId)
+                    {
+                        lsp::RelatedUnchangedDocumentDiagnosticReport unchanged;
+                        unchanged.resultId = it->second.resultId;
+                        return unchanged;
+                    }
+
+                    lsp::RelatedFullDocumentDiagnosticReport full;
+                    full.resultId = it->second.resultId;
+                    full.items = it->second.items;
+                    return full;
+                }
             }
         }
 
@@ -4480,7 +4584,7 @@ namespace angel_lsp
             {
                 lsp::WorkspaceUnchangedDocumentDiagnosticReport unchanged;
                 unchanged.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
-                unchanged.version = nullptr;
+                unchanged.version = (snapshot.version >= 0) ? lsp::NullOr<int>(snapshot.version) : nullptr;
                 unchanged.resultId = snapshot.resultId;
                 report.items.push_back(std::move(unchanged));
                 continue;
@@ -4488,7 +4592,7 @@ namespace angel_lsp
 
             lsp::WorkspaceFullDocumentDiagnosticReport full;
             full.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
-            full.version = nullptr;
+            full.version = (snapshot.version >= 0) ? lsp::NullOr<int>(snapshot.version) : nullptr;
             full.resultId = snapshot.resultId;
             full.items = snapshot.items;
             report.items.push_back(std::move(full));

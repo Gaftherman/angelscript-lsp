@@ -1,6 +1,7 @@
 #include "analysis/rules/FunctionRules.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
@@ -835,6 +836,25 @@ namespace angel_lsp::analysis::rules
         }
 
         WalkStandaloneLambda(root, ctx);
+    }
+
+    void ValidateStandaloneLambda(const analysis::NodeIndex &nodeIndex, const DiagnosticContext &ctx)
+    {
+        for (const TSNode &node : nodeIndex.Nodes(parser::nodes::ExpressionStatement))
+        {
+            if (ts_node_named_child_count(node) == 1)
+            {
+                const TSNode child = ts_node_named_child(node, 0);
+                if (NodeType(child) == parser::nodes::LambdaExpression)
+                {
+                    const TSPoint start = ts_node_start_point(child);
+                    const TSPoint end = ts_node_end_point(child);
+                    ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                    diagnostics::codes::StandaloneAnonymousFunction,
+                                    DiagnosticSeverity::Error);
+                }
+            }
+        }
     }
 }
 

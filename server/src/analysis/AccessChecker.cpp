@@ -1,5 +1,6 @@
 #include "analysis/AccessChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
@@ -587,6 +588,46 @@ namespace angel_lsp::analysis
         // rules already exempt it from.
         if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
         {
+            return;
+        }
+
+        if (request.nodeIndex)
+        {
+            auto members = request.nodeIndex->Nodes(parser::nodes::MemberExpression);
+            auto scopeds = request.nodeIndex->Nodes(parser::nodes::ScopedIdentifier);
+            auto idents = request.nodeIndex->Nodes(parser::nodes::Identifier);
+
+            size_t i = 0;
+            size_t j = 0;
+            size_t k = 0;
+            while (i < members.size() || j < scopeds.size() || k < idents.size())
+            {
+                uint32_t bMembers = (i < members.size()) ? ts_node_start_byte(members[i]) : UINT32_MAX;
+                uint32_t bScopeds = (j < scopeds.size()) ? ts_node_start_byte(scopeds[j]) : UINT32_MAX;
+                uint32_t bIdents = (k < idents.size()) ? ts_node_start_byte(idents[k]) : UINT32_MAX;
+
+                if (bMembers <= bScopeds && bMembers <= bIdents)
+                {
+                    TSNode node = members[i++];
+                    const TSPoint start = ts_node_start_point(node);
+                    CheckMemberExpression(node, request,
+                                          FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
+                }
+                else if (bScopeds <= bIdents)
+                {
+                    TSNode node = scopeds[j++];
+                    const TSPoint start = ts_node_start_point(node);
+                    CheckIdentifierNode(node, request,
+                                        FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
+                }
+                else
+                {
+                    TSNode node = idents[k++];
+                    const TSPoint start = ts_node_start_point(node);
+                    CheckIdentifierNode(node, request,
+                                        FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
+                }
+            }
             return;
         }
 

@@ -1,5 +1,6 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/DiagnosticContext.h"
@@ -1497,6 +1498,32 @@ namespace angel_lsp::analysis
         }
 
         return rawContainers;
+    }
+
+    std::vector<std::string> CollectUsingNamespaces(const NodeIndex &nodeIndex, std::string_view sourceCode)
+    {
+        std::vector<std::string> usings;
+        for (TSNode cur : nodeIndex.Nodes(parser::nodes::UsingDeclaration))
+        {
+            TSNode nameNode = parser::GetChildByField(cur, parser::fields::Name);
+            if (!ts_node_is_null(nameNode))
+            {
+                std::string uName = GetNodeText(nameNode, sourceCode);
+                while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
+                {
+                    uName.erase(uName.begin());
+                }
+                while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back())))
+                {
+                    uName.pop_back();
+                }
+                if (!uName.empty())
+                {
+                    usings.push_back(uName);
+                }
+            }
+        }
+        return usings;
     }
 
     std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode)

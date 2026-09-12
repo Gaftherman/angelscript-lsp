@@ -17,6 +17,8 @@
 
 namespace angel_lsp::analysis
 {
+    class NodeIndex;
+
     /**
      * @brief Context and configuration passed into the semantic analysis process.
      */
@@ -208,6 +210,13 @@ namespace angel_lsp::analysis
          * caller: it must not be deleted until Analyze() returns.
          */
         const TSTree *tree = nullptr;
+
+        /**
+         * @brief Optional precomputed single-pass AST node index.
+         *
+         * When null, SemanticAnalyzer builds a local NodeIndex from tree on first use.
+         */
+        const NodeIndex *nodeIndex = nullptr;
 
         /**
          * @brief Gets configured name for the string type or 'string' default.

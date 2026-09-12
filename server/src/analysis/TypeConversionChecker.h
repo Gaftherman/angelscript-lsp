@@ -26,6 +26,8 @@ namespace angel_lsp::analysis
      * the point: a missed error costs nothing, a false one costs the user's trust in every other
      * diagnostic on screen.
      */
+    class NodeIndex;
+
     struct TypeConversionCheckRequest
     {
         /** @brief Root node of the document's syntax tree. */
@@ -47,6 +49,9 @@ namespace angel_lsp::analysis
          * deduction still drives this pass's own diagnostics, it just is not written back.
          */
         Scope *mutableScopeRoot = nullptr;
+
+        /** @brief Optional pre-indexed node index for fast single-pass querying. */
+        const NodeIndex *nodeIndex = nullptr;
     };
 
     /**

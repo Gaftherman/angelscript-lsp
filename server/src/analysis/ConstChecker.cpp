@@ -1,5 +1,6 @@
 #include "analysis/ConstChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
 
@@ -484,6 +485,42 @@ namespace angel_lsp::analysis
         // the same exemption every other use-site pass carries.
         if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
         {
+            return;
+        }
+
+        if (request.nodeIndex)
+        {
+            auto assignNodes = request.nodeIndex->Nodes(parser::nodes::AssignmentExpression);
+            auto callNodes = request.nodeIndex->Nodes(parser::nodes::CallExpression);
+            size_t i = 0;
+            size_t j = 0;
+            while (i < assignNodes.size() || j < callNodes.size())
+            {
+                bool takeAssign = false;
+                if (i < assignNodes.size() && j < callNodes.size())
+                {
+                    takeAssign = (ts_node_start_byte(assignNodes[i]) <= ts_node_start_byte(callNodes[j]));
+                }
+                else if (i < assignNodes.size())
+                {
+                    takeAssign = true;
+                }
+
+                if (takeAssign)
+                {
+                    TSNode node = assignNodes[i++];
+                    const TSPoint start = ts_node_start_point(node);
+                    const Scope *scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
+                    CheckAssignment(node, request, scope, ctx);
+                }
+                else
+                {
+                    TSNode node = callNodes[j++];
+                    const TSPoint start = ts_node_start_point(node);
+                    const Scope *scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
+                    CheckMethodCall(node, request, scope, ctx);
+                }
+            }
             return;
         }
 

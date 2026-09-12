@@ -126,34 +126,9 @@ namespace
     const std::vector<KnownGap> &KnownGaps()
     {
         static const std::vector<KnownGap> gaps = {
-            { "json.as",
-              "AS-Harness registers JSON's constructors in C++ but as.predefined declares none, so "
-              "JSON(1) genuinely has no visible constructor for any analyzer reading that stub to "
-              "find. Stub gap, not an analyzer defect. "
-              "This entry used to carry a second, real cause: lines 37-50 sit inside `#if FALSE`, "
-              "which CScriptBuilder strips before the compiler sees them, and this analyzer had no "
-              "conditional-compilation handling and analysed the dead block. That is fixed - see "
-              "utils/PreprocessorRegions.h - and the two error_handler diagnostics it produced are "
-              "gone, which is why the count here dropped from 12 to 10." },
-
-            // The digit separator - `1'000'000`, `0xDEAD'BEEF`, `0b1100'0011` - sat here for one
-            // pin. The grammar did not know the single quote can separate digits, so all three were
-            // syntax errors on code the compiler accepts; tree-sitter-angelscript 23cb160 fixed it
-            // and cmake/TreeSitter.cmake now names that commit, so the entries came out. They are
-            // doc_p104 through doc_p106 and they pass on their own now.
-            //
-            // Worth recording how they left, because the mechanism nearly failed: the check that
-            // forces a closed gap out of this list used to return early whenever PARITY_SCRIPT_DIR
-            // was set, which is how CI runs this audit. The reminder was unreachable in exactly the
-            // configuration that matters, and the three entries would have stayed green forever.
-
-            // optional.as used to sit here for exactly the reason json.as still does: as.predefined
-            // declares optional<T>::opAssign but no constructor, so the declaration behind
-            // `optional<string> o(...)` was invisible and the construction was reported. That was
-            // never a stub gap to work around - it was the analyzer answering a question it could
-            // not see the evidence for, and the corpus audit's 273 findings were the same mistake
-            // at scale. CheckConstruction now stays silent when the target's constructors are not
-            // visible, and this entry closed on its own.
+            // json.as used to sit here: as.predefined declares no JSON constructors, so JSON(1) had no
+            // visible constructor. That closed on its own once CheckConstruction stayed silent when
+            // constructors are not visible in predefined stubs.
 
             // doc_p44 is not listed here, and the reason is worth writing down because the count
             // above moved when the `any` add-on was added to the built-in standard profile.

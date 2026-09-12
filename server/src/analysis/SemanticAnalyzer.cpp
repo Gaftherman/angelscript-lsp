@@ -9,6 +9,7 @@
 #include "analysis/IsolationChecker.h"
 #include "analysis/LValueChecker.h"
 #include "analysis/NamespaceChecker.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
@@ -96,6 +97,14 @@ namespace angel_lsp::analysis
             scopeRulesMs = timer.ElapsedMs();
         }
 
+        std::unique_ptr<NodeIndex> localNodeIndex;
+        const NodeIndex *indexPtr = request.nodeIndex;
+        if (!indexPtr && request.tree)
+        {
+            localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(request.tree));
+            indexPtr = localNodeIndex.get();
+        }
+
         // Statements, not declarations: whether a break sits inside a loop or a path falls off the
         // end of a function is nowhere in the symbol table.
         double controlFlowMs = 0.0;
@@ -105,7 +114,14 @@ namespace angel_lsp::analysis
             DiagnosticContext ctx{request, diagnostics, m_logger};
             const ControlFlowCheckRequest flowRequest{ts_tree_root_node(request.tree), request.sourceCode};
             CheckControlFlow(flowRequest, ctx);
-            rules::ValidateStandaloneLambda(ts_tree_root_node(request.tree), ctx);
+            if (indexPtr)
+            {
+                rules::ValidateStandaloneLambda(*indexPtr, ctx);
+            }
+            else
+            {
+                rules::ValidateStandaloneLambda(ts_tree_root_node(request.tree), ctx);
+            }
             controlFlowMs = timer.ElapsedMs();
         }
 
@@ -119,7 +135,8 @@ namespace angel_lsp::analysis
             const AccessCheckRequest accessRequest{
                 ts_tree_root_node(request.tree),
                 request.sourceCode,
-                request.scopeRoot.get()
+                request.scopeRoot.get(),
+                indexPtr
             };
             CheckMemberAccess(accessRequest, ctx);
             accessMs = timer.ElapsedMs();
@@ -133,7 +150,8 @@ namespace angel_lsp::analysis
             const ConstCheckRequest constRequest{
                 ts_tree_root_node(request.tree),
                 request.sourceCode,
-                request.scopeRoot.get()
+                request.scopeRoot.get(),
+                indexPtr
             };
             CheckConstCorrectness(constRequest, ctx);
             constMs = timer.ElapsedMs();
@@ -147,7 +165,8 @@ namespace angel_lsp::analysis
             const LValueCheckRequest lvalueRequest{
                 ts_tree_root_node(request.tree),
                 request.sourceCode,
-                request.scopeRoot.get()
+                request.scopeRoot.get(),
+                indexPtr
             };
             CheckLValues(lvalueRequest, ctx);
             lvalueMs = timer.ElapsedMs();
@@ -161,7 +180,8 @@ namespace angel_lsp::analysis
             const CallCheckRequest callRequest{
                 ts_tree_root_node(request.tree),
                 request.sourceCode,
-                request.scopeRoot.get()
+                request.scopeRoot.get(),
+                indexPtr
             };
             CheckCallArguments(callRequest, ctx);
             callMs = timer.ElapsedMs();
@@ -178,7 +198,14 @@ namespace angel_lsp::analysis
                 request.scopeRoot.get()
             };
             CheckDefiniteAssignment(assignRequest, ctx);
-            CheckEngineDialectRules(ts_tree_root_node(request.tree), ctx);
+            if (indexPtr)
+            {
+                CheckEngineDialectRules(*indexPtr, ctx);
+            }
+            else
+            {
+                CheckEngineDialectRules(ts_tree_root_node(request.tree), ctx);
+            }
             assignMs = timer.ElapsedMs();
         }
 
@@ -193,7 +220,8 @@ namespace angel_lsp::analysis
                 ts_tree_root_node(request.tree),
                 request.sourceCode,
                 request.scopeRoot.get(),
-                request.mutableScopeRoot
+                request.mutableScopeRoot,
+                indexPtr
             };
             CheckTypeConversions(conversionRequest, ctx);
             typeConvMs = timer.ElapsedMs();
@@ -218,7 +246,7 @@ namespace angel_lsp::analysis
         {
             utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
-            CheckNamespacesAndScopes(NamespaceCheckRequest{ ts_tree_root_node(request.tree), request.sourceCode }, ctx);
+            CheckNamespacesAndScopes(NamespaceCheckRequest{ ts_tree_root_node(request.tree), request.sourceCode, indexPtr }, ctx);
             namespaceMs = timer.ElapsedMs();
         }
 
@@ -228,7 +256,7 @@ namespace angel_lsp::analysis
             utils::HighResTimer timer;
             DiagnosticContext ctx{request, diagnostics, m_logger};
             CheckInitializerLists(InitializerListCheckRequest{ ts_tree_root_node(request.tree), request.sourceCode,
-                                                              request.scopeRoot.get() }, ctx);
+                                                              request.scopeRoot.get(), indexPtr }, ctx);
             initListMs = timer.ElapsedMs();
         }
 
@@ -319,6 +347,235 @@ namespace angel_lsp::analysis
         }
 
         return diagnostics;
+    }
+
+    void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex &nodeIndex, DiagnosticContext &ctx) const
+    {
+        // 1. Foreach statement check
+        if (!ctx.request.SupportsForeach())
+        {
+            for (TSNode node : nodeIndex.Nodes(parser::nodes::ForeachStatement))
+            {
+                const TSPoint start = ts_node_start_point(node);
+                ctx.EmitAtRange(start.row, start.column, start.row, start.column + 7,
+                                "as-err-foreach-unsupported", DiagnosticSeverity::Error);
+            }
+        }
+
+        // 2. Disallow empty list elements
+        if (ctx.request.DisallowsEmptyListElements())
+        {
+            for (TSNode node : nodeIndex.Nodes(parser::nodes::InitializerList))
+            {
+                const uint32_t childCount = ts_node_child_count(node);
+                for (uint32_t i = 1; i < childCount; ++i)
+                {
+                    const std::string_view previous = ts_node_type(ts_node_child(node, i - 1));
+                    const std::string_view current = ts_node_type(ts_node_child(node, i));
+                    if (previous == "," && (current == "," || current == "}"))
+                    {
+                        const TSPoint at = ts_node_start_point(ts_node_child(node, i - 1));
+                        ctx.EmitAtRange(at.row, at.column, at.row, at.column + 1,
+                                        "as-err-empty-list-element", DiagnosticSeverity::Error);
+                    }
+                }
+            }
+        }
+
+        // 3. Character literal mode 0
+        if (ctx.request.CharacterLiteralMode() == 0)
+        {
+            for (TSNode node : nodeIndex.Nodes(parser::nodes::VariableDeclaration))
+            {
+                const TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
+                if (!ts_node_is_null(typeNode))
+                {
+                    const std::string declared = CleanBaseType(GetNodeText(typeNode, ctx.request.sourceCode));
+                    if (IsPrimitiveTypeName(declared) && declared != "auto" && declared != "void")
+                    {
+                        const uint32_t declaratorCount = ts_node_child_count(node);
+                        for (uint32_t i = 0; i < declaratorCount; ++i)
+                        {
+                            const TSNode declarator = ts_node_child(node, i);
+                            if (std::string_view(ts_node_type(declarator)) != "variable_declarator")
+                            {
+                                continue;
+                            }
+
+                            const TSNode value = parser::GetChildByField(declarator, parser::fields::Value);
+                            if (ts_node_is_null(value) ||
+                                std::string_view(ts_node_type(value)) != "string_literal")
+                            {
+                                continue;
+                            }
+
+                            const uint32_t from = ts_node_start_byte(value);
+                            if (from < ctx.request.sourceCode.size() && ctx.request.sourceCode[from] == '\'')
+                            {
+                                const TSPoint start = ts_node_start_point(value);
+                                const TSPoint end = ts_node_end_point(value);
+                                ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                                "as-err-character-literal-is-string", declared,
+                                                DiagnosticSeverity::Error);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Integer division hint
+        if (ctx.request.diagnostics && ctx.request.diagnostics->reportIntegerDivision &&
+            !ctx.request.DisablesIntegerDivision())
+        {
+            for (TSNode node : nodeIndex.Nodes(parser::nodes::BinaryExpression))
+            {
+                const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
+                if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "/")
+                {
+                    const TSNode left = parser::GetChildByField(node, parser::fields::Left);
+                    const TSNode right = parser::GetChildByField(node, parser::fields::Right);
+
+                    const auto isIntegerLiteral = [&ctx](TSNode candidate)
+                    {
+                        if (ts_node_is_null(candidate) ||
+                            std::string_view(ts_node_type(candidate)) != "number_literal")
+                        {
+                            return false;
+                        }
+                        const std::string text = GetNodeText(candidate, ctx.request.sourceCode);
+                        return text.find('.') == std::string::npos &&
+                               text.find('e') == std::string::npos &&
+                               text.find('E') == std::string::npos &&
+                               text.find('f') == std::string::npos &&
+                               text.find('F') == std::string::npos;
+                    };
+
+                    if (isIntegerLiteral(left) && isIntegerLiteral(right))
+                    {
+                        const TSPoint start = ts_node_start_point(node);
+                        const TSPoint end = ts_node_end_point(node);
+                        ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                        "as-hint-integer-division", DiagnosticSeverity::Hint);
+                    }
+                }
+            }
+        }
+
+        // 5. Named argument syntax
+        if (ctx.request.NamedArgumentSyntaxMode() != 2)
+        {
+            for (TSNode node : nodeIndex.Nodes(parser::nodes::ArgumentList))
+            {
+                const uint32_t argCount = ts_node_named_child_count(node);
+                for (uint32_t i = 0; i < argCount; ++i)
+                {
+                    const TSNode argument = ts_node_named_child(node, i);
+                    if (std::string_view(ts_node_type(argument)) != "assignment_expression")
+                    {
+                        continue;
+                    }
+
+                    const TSNode target = parser::GetChildByField(argument, parser::fields::Left);
+                    if (ts_node_is_null(target))
+                    {
+                        continue;
+                    }
+                    const std::string_view targetType = ts_node_type(target);
+                    if (targetType != "identifier" && targetType != "scoped_identifier")
+                    {
+                        continue;
+                    }
+                    if (targetType == "scoped_identifier" && ts_node_named_child_count(target) != 1)
+                    {
+                        continue;
+                    }
+
+                    const TSPoint start = ts_node_start_point(argument);
+                    const TSPoint end = ts_node_end_point(argument);
+                    const std::string name = GetNodeText(target, ctx.request.sourceCode);
+
+                    ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                    "as-err-named-argument-syntax", name,
+                                    ctx.request.NamedArgumentSyntaxMode() == 1 ? DiagnosticSeverity::Warning
+                                                                               : DiagnosticSeverity::Error);
+                }
+            }
+        }
+
+        // 6. Disallow value assign for ref type
+        if (ctx.request.DisallowsValueAssignForRef())
+        {
+            for (TSNode node : nodeIndex.Nodes(parser::nodes::AssignmentExpression))
+            {
+                const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
+                const TSNode target = parser::GetChildByField(node, parser::fields::Left);
+
+                if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "=" &&
+                    !ts_node_is_null(target))
+                {
+                    bool isHandleAssignment = false;
+                    if (std::string_view(ts_node_type(target)) == "unary_expression")
+                    {
+                        const TSNode prefix = parser::GetChildByField(target, parser::fields::Operator);
+                        isHandleAssignment = !ts_node_is_null(prefix) &&
+                                             std::string_view(ts_node_type(prefix)) == "@";
+                    }
+
+                    const Scope *scope = ctx.request.scopeRoot
+                                             ? FindInnermostScope(ctx.request.scopeRoot.get(),
+                                                                  ts_node_start_point(target).row,
+                                                                  ts_node_start_point(target).column)
+                                             : nullptr;
+                    const std::string targetType = CleanBaseType(ResolveExpressionType(
+                        target, scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri));
+
+                    bool isVisibleClass = false;
+                    if (const auto symbols = ctx.request.symbolTable.FindSymbolsPtr(targetType))
+                    {
+                        for (const auto &sym : *symbols)
+                        {
+                            if (sym.type == SymbolType::Class)
+                            {
+                                isVisibleClass = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (isVisibleClass && !isHandleAssignment)
+                    {
+                        const TSPoint start = ts_node_start_point(node);
+                        const TSPoint end = ts_node_end_point(node);
+                        ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                        "as-err-value-assign-for-ref", targetType, DiagnosticSeverity::Error);
+                    }
+                }
+            }
+        }
+
+        // 7. Multiline string literals
+        if (!ctx.request.AllowsMultilineStrings())
+        {
+            for (TSNode node : nodeIndex.Nodes(parser::nodes::StringLiteral))
+            {
+                const TSPoint start = ts_node_start_point(node);
+                const TSPoint end = ts_node_end_point(node);
+
+                if (end.row > start.row)
+                {
+                    const uint32_t from = ts_node_start_byte(node);
+                    const bool isHeredoc = from + 3 <= ctx.request.sourceCode.size() &&
+                                           ctx.request.sourceCode.compare(from, 3, "\"\"\"") == 0;
+
+                    if (!isHeredoc)
+                    {
+                        ctx.EmitAtRange(start.row, start.column, start.row, start.column + 1,
+                                        "as-err-multiline-string", DiagnosticSeverity::Error);
+                    }
+                }
+            }
+        }
     }
 
     void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext &ctx, int depth) const

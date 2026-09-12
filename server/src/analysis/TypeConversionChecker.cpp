@@ -1,6 +1,7 @@
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 
 #include <algorithm>
@@ -2138,13 +2139,8 @@ namespace angel_lsp::analysis
             operands.push_back(expr);
         }
 
-        void VisitNode(TSNode node, const TypeConversionCheckRequest &request, DiagnosticContext &ctx, int depth = 0)
-                {
-            // Pathologically nested source would otherwise recurse until the stack gives out; see
-            // k_maxAstDepth in ASTUtils.h.
-            if (depth > k_maxAstDepth)
-                return;
-
+        void ProcessNode(TSNode node, const TypeConversionCheckRequest &request, DiagnosticContext &ctx)
+        {
             const std::string_view nodeType = NodeType(node);
 
             // Resolved lazily: only the three rules below need the scope walk, and paying for it on
@@ -3047,6 +3043,16 @@ namespace angel_lsp::analysis
             {
                 CheckConstructorDelegation(node, ctx, request.sourceCode);
             }
+        }
+
+        void VisitNode(TSNode node, const TypeConversionCheckRequest &request, DiagnosticContext &ctx, int depth = 0)
+        {
+            if (depth > k_maxAstDepth)
+            {
+                return;
+            }
+
+            ProcessNode(node, request, ctx);
 
             // Named children only: every node these rules match is a named one, and anonymous
             // token nodes ('(', '=', ';') are leaves with nothing underneath them to find.
@@ -3150,7 +3156,20 @@ namespace angel_lsp::analysis
             ctx.logger->LogDebug(fmt::format("[TypeConversionChecker] Running CheckTypeConversions for URI: {}", ctx.request.fileUri));
         }
 
-        VisitNode(request.root, request, ctx);
+        if (request.nodeIndex)
+        {
+            for (TSNode node : request.nodeIndex->AllNodes())
+            {
+                if (ts_node_is_named(node))
+                {
+                    ProcessNode(node, request, ctx);
+                }
+            }
+        }
+        else
+        {
+            VisitNode(request.root, request, ctx);
+        }
 
         if (ctx.logger && ctx.logger->IsTraceEnabled())
         {

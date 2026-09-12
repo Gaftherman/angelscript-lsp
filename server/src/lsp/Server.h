@@ -179,6 +179,7 @@ namespace angel_lsp
              * failure.
              */
             size_t textHash = 0;
+            int version = -1;
         };
 
         // Written by the analysis thread through PublishDiagnostics, read by the message loop
@@ -199,10 +200,69 @@ namespace angel_lsp
         // always see a current tree, but symbol collection, scope building and semantic analysis
         // rebuild whole-document state and are far too heavy to run on every keystroke of a
         // 3000-line file. They are queued here instead and run once editing pauses.
+        /**
+         * @brief Entry held in the analysis queue, owning a copied tree and document version.
+         */
+        struct PendingAnalysisEntry
+        {
+            std::string text;
+            TSTree *tree = nullptr;
+            int version = -1;
+
+            PendingAnalysisEntry() = default;
+            PendingAnalysisEntry(std::string t, TSTree *tr, int v)
+                : text(std::move(t)), tree(tr), version(v)
+            {
+            }
+
+            ~PendingAnalysisEntry()
+            {
+                if (tree)
+                {
+                    ts_tree_delete(tree);
+                    tree = nullptr;
+                }
+            }
+
+            PendingAnalysisEntry(const PendingAnalysisEntry &) = delete;
+            PendingAnalysisEntry &operator=(const PendingAnalysisEntry &) = delete;
+
+            PendingAnalysisEntry(PendingAnalysisEntry &&other) noexcept
+                : text(std::move(other.text)), tree(other.tree), version(other.version)
+            {
+                other.tree = nullptr;
+                other.version = -1;
+            }
+
+            PendingAnalysisEntry &operator=(PendingAnalysisEntry &&other) noexcept
+            {
+                if (this != &other)
+                {
+                    if (tree)
+                    {
+                        ts_tree_delete(tree);
+                    }
+                    text = std::move(other.text);
+                    tree = other.tree;
+                    version = other.version;
+                    other.tree = nullptr;
+                    other.version = -1;
+                }
+                return *this;
+            }
+
+            TSTree *ReleaseTree() noexcept
+            {
+                TSTree *t = tree;
+                tree = nullptr;
+                return t;
+            }
+        };
+
         std::thread m_analysisThread;
         std::mutex m_analysisMutex;
         std::condition_variable m_analysisCv;
-        ankerl::unordered_dense::map<std::string, std::string> m_pendingAnalysis;
+        ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_pendingAnalysis;
 
         // What the analysis thread took off the queue and is working on right now. Kept so a
         // request to analyse text that is already being analysed can be recognised and dropped
@@ -210,8 +270,15 @@ namespace angel_lsp
         //
         // Written only by the analysis thread and only under m_analysisMutex; that thread then
         // iterates it unlocked, which is safe because it is also the only writer.
-        ankerl::unordered_dense::map<std::string, std::string> m_analysisInFlight;
+        ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_analysisInFlight;
         ankerl::unordered_dense::set<std::string> m_savedUris;
+
+        mutable std::mutex m_documentVersionsMutex;
+        ankerl::unordered_dense::map<std::string, int> m_documentVersions;
+
+        void SetDocumentVersion(const std::string &uriStr, int version);
+        int GetDocumentVersion(const std::string &uriStr) const;
+        void RemoveDocumentVersion(const std::string &uriStr);
 
         uint64_t m_analysisRevision = 0;
         bool m_analysisStop = false;
@@ -880,7 +947,7 @@ namespace angel_lsp
          * dims whatever is underneath, brackets included.
          */
         void PublishInactiveRegions(const std::string &uriStr, const std::string &text);
-        void PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics);
+        void PublishDiagnostics(const std::string &uriStr, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics, int version = -1);
 
         /**
          * @brief PublishDiagnostics with the document text supplied explicitly.
@@ -888,7 +955,7 @@ namespace angel_lsp
          * The analysis thread cannot look the text up itself - m_openDocuments belongs to the
          * message loop - and the text is what the ranges are converted against.
          */
-        void PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics);
+        void PublishDiagnostics(const std::string &uriStr, const std::string &text, const std::vector<angel_lsp::analysis::Diagnostic> &diagnostics, int version = -1);
 
         /**
          * @brief Analyzer diagnostics as the client receives them: filtered, encoded, converted.
@@ -1156,7 +1223,7 @@ namespace angel_lsp
         // `force` says the answer can differ even though the bytes did not - the symbol table
         // moved, not the buffer. Without it the dedupe drops the request as a duplicate of the
         // analysis whose answer is exactly the one being replaced.
-        void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force = false);
+        void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force = false, TSTree *tree = nullptr, int version = -1);
 
         /**
          * @brief Analysis worker: waits for a quiet period, then drains the queue.
@@ -1166,12 +1233,11 @@ namespace angel_lsp
         /**
          * @brief Rebuilds symbols, scopes and diagnostics for one document and publishes them.
          *
-         * Takes its own copy of the text and parses its own tree: the message loop owns the
-         * TSTree in m_documentTrees and deletes it on the next edit, so touching it from here
-         * would be a use-after-free.
+         * Reuses copied TSTree if provided; otherwise falls back to parsing its own tree.
          */
         void AnalyzeDocument(const std::string &uriStr, const std::string &text,
-                             angel_lsp::parser::AngelScriptParser &parser);
+                             angel_lsp::parser::AngelScriptParser &parser,
+                             TSTree *treeCopy = nullptr, int version = -1);
 
 
 

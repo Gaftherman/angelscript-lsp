@@ -1,4 +1,5 @@
 #include "analysis/NamespaceChecker.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 
 #include <cctype>
@@ -35,14 +36,12 @@ namespace angel_lsp::analysis
         const std::string_view sourceCode = request.sourceCode;
 
         const auto &table = ctx.request.symbolTable;
-        auto usings = CollectUsingNamespaces(root, sourceCode);
+        auto usings = request.nodeIndex
+            ? CollectUsingNamespaces(*request.nodeIndex, sourceCode)
+            : CollectUsingNamespaces(root, sourceCode);
 
-        std::vector<TSNode> stack = { root };
-        while (!stack.empty())
+        auto processNode = [&](TSNode node)
         {
-            TSNode node = stack.back();
-            stack.pop_back();
-
             std::string_view type = ts_node_type(node);
 
             if (type == "scoped_identifier")
@@ -155,6 +154,58 @@ namespace angel_lsp::analysis
                     }
                 }
             }
+        };
+
+        if (request.nodeIndex)
+        {
+            struct Cursor
+            {
+                std::span<const TSNode> nodes;
+                size_t index = 0;
+                uint32_t currentByte() const
+                {
+                    return (index < nodes.size()) ? ts_node_start_byte(nodes[index]) : UINT32_MAX;
+                }
+            };
+
+            std::array<Cursor, 4> cursors = {{
+                { request.nodeIndex->Nodes(parser::nodes::ScopedIdentifier), 0 },
+                { request.nodeIndex->Nodes(parser::nodes::CallExpression), 0 },
+                { request.nodeIndex->Nodes(parser::nodes::ImportDeclaration), 0 },
+                { request.nodeIndex->Nodes("ERROR"), 0 }
+            }};
+
+            while (true)
+            {
+                size_t best = 0;
+                uint32_t minByte = cursors[0].currentByte();
+                for (size_t c = 1; c < cursors.size(); ++c)
+                {
+                    uint32_t b = cursors[c].currentByte();
+                    if (b < minByte)
+                    {
+                        minByte = b;
+                        best = c;
+                    }
+                }
+                if (minByte == UINT32_MAX)
+                {
+                    break;
+                }
+
+                TSNode node = cursors[best].nodes[cursors[best].index++];
+                processNode(node);
+            }
+            return;
+        }
+
+        std::vector<TSNode> stack = { root };
+        while (!stack.empty())
+        {
+            TSNode node = stack.back();
+            stack.pop_back();
+
+            processNode(node);
 
             uint32_t count = ts_node_child_count(node);
             for (uint32_t i = 0; i < count; ++i)

@@ -2,6 +2,7 @@
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/InitializerListChecker.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Utils.h"
@@ -1453,6 +1454,40 @@ namespace angel_lsp::analysis
         // same exemption every other use-site pass carries.
         if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
         {
+            return;
+        }
+
+        if (request.nodeIndex)
+        {
+            auto callNodes = request.nodeIndex->Nodes(parser::nodes::CallExpression);
+            auto varNodes = request.nodeIndex->Nodes(parser::nodes::VariableDeclaration);
+            size_t i = 0;
+            size_t j = 0;
+            while (i < callNodes.size() || j < varNodes.size())
+            {
+                bool takeCall = false;
+                if (i < callNodes.size() && j < varNodes.size())
+                {
+                    takeCall = (ts_node_start_byte(callNodes[i]) <= ts_node_start_byte(varNodes[j]));
+                }
+                else if (i < callNodes.size())
+                {
+                    takeCall = true;
+                }
+
+                if (takeCall)
+                {
+                    TSNode node = callNodes[i++];
+                    const TSPoint start = ts_node_start_point(node);
+                    CheckCall(node, request,
+                              FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
+                }
+                else
+                {
+                    TSNode node = varNodes[j++];
+                    CheckVariableDirectInitialization(node, request, ctx);
+                }
+            }
             return;
         }
 

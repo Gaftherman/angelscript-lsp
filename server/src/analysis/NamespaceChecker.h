@@ -19,6 +19,8 @@ namespace angel_lsp::analysis
      * request struct; this one simply never got moved, and its size made SemanticAnalyzer look like
      * a checker rather than the thing that runs them.
      */
+    class NodeIndex;
+
     struct NamespaceCheckRequest
     {
         /** @brief Root node of the document's syntax tree. */
@@ -26,6 +28,9 @@ namespace angel_lsp::analysis
 
         /** @brief Document source text the tree was parsed from. */
         std::string_view sourceCode;
+
+        /** @brief Optional pre-indexed node index for fast single-pass querying. */
+        const NodeIndex *nodeIndex = nullptr;
     };
 
     /**

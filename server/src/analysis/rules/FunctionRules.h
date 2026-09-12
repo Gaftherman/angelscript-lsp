@@ -33,6 +33,15 @@ namespace angel_lsp::analysis::rules
                             bool isFuncdef,
                             const DiagnosticContext &ctx);
 
+}
+
+namespace angel_lsp::analysis
+{
+    class NodeIndex;
+}
+
+namespace angel_lsp::analysis::rules
+{
     /**
      * @brief Reports an anonymous function (lambda expression) that stands alone as an expression statement.
      *
@@ -43,5 +52,12 @@ namespace angel_lsp::analysis::rules
      * @param ctx Diagnostic sink.
      */
     void ValidateStandaloneLambda(TSNode root, const DiagnosticContext &ctx);
+
+    /**
+     * @brief Reports an anonymous function (lambda expression) using pre-indexed AST nodes.
+     * @param nodeIndex Pre-indexed syntax tree nodes.
+     * @param ctx Diagnostic sink.
+     */
+    void ValidateStandaloneLambda(const analysis::NodeIndex &nodeIndex, const DiagnosticContext &ctx);
 }
 

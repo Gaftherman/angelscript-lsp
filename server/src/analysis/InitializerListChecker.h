@@ -21,6 +21,8 @@ namespace angel_lsp::analysis
      * This checker validates initializer list nesting and element compatibility
      * against target types per the AngelScript compiler specifications.
      */
+    class NodeIndex;
+
     struct InitializerListCheckRequest
     {
         /** @brief Root node of the document's syntax tree. */
@@ -37,6 +39,9 @@ namespace angel_lsp::analysis
          * on everything else, which is the correct degradation.
          */
         const Scope *scopeRoot = nullptr;
+
+        /** @brief Optional pre-indexed node index for fast single-pass querying. */
+        const NodeIndex *nodeIndex = nullptr;
     };
 
     /**

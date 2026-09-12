@@ -29,6 +29,8 @@ namespace angel_lsp::analysis
      * member could be anything - an engine-registered type carries members that appear in no
      * source this analyzer reads - and a wrong "illegal access" costs more than a missed one.
      */
+    class NodeIndex;
+
     struct AccessCheckRequest
     {
         /** @brief Root node of the document's syntax tree. */
@@ -39,6 +41,9 @@ namespace angel_lsp::analysis
 
         /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
         const Scope *scopeRoot = nullptr;
+
+        /** @brief Optional pre-indexed node index for fast single-pass querying. */
+        const NodeIndex *nodeIndex = nullptr;
     };
 
     /**

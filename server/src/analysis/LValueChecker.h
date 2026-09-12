@@ -6,6 +6,8 @@
 
 namespace angel_lsp::analysis
 {
+    class NodeIndex;
+
     /**
      * @brief Request context for l-value correctness checking.
      */
@@ -19,6 +21,9 @@ namespace angel_lsp::analysis
 
         /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
         const Scope *scopeRoot = nullptr;
+
+        /** @brief Optional single-pass AST node index. */
+        const NodeIndex *nodeIndex = nullptr;
     };
 
     /**

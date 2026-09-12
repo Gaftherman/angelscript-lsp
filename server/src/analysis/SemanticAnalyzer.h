@@ -13,6 +13,8 @@ namespace angel_lsp::utils { class LspLogger; }
 
 namespace angel_lsp::analysis
 {
+    class NodeIndex;
+
     /**
      * @brief Orchestrates semantic analysis on symbol tables by invoking domain-specific rule modules.
      */
@@ -101,6 +103,11 @@ namespace angel_lsp::analysis
          * (asEP_FOREACH_SUPPORT, which is ON by default), and a hole in an initializer list
          * (asEP_DISALLOW_EMPTY_LIST_ELEMENTS).
          */
+        /**
+         * @brief Fast single-pass engine dialect check using NodeIndex.
+         */
+        void CheckEngineDialectRules(const NodeIndex &nodeIndex, DiagnosticContext &ctx) const;
+
         void CheckEngineDialectRules(TSNode node, DiagnosticContext &ctx, int depth = 0) const;
 
         /**

@@ -32,6 +32,8 @@ namespace angel_lsp::analysis
      * engine-registered one looks like from here, and those carry members - and const overloads -
      * written down in no source this analyzer reads.
      */
+    class NodeIndex;
+
     struct ConstCheckRequest
     {
         /** @brief Root node of the document's syntax tree. */
@@ -42,6 +44,9 @@ namespace angel_lsp::analysis
 
         /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
         const Scope *scopeRoot = nullptr;
+
+        /** @brief Optional pre-indexed node index for fast single-pass querying. */
+        const NodeIndex *nodeIndex = nullptr;
     };
 
     /**
