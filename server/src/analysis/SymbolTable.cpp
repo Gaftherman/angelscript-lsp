@@ -12,10 +12,7 @@
 
 namespace angel_lsp::analysis
 {
-    SymbolTable::SymbolTable()
-        : m_ruleIndexPartials(std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>())
-    {
-    }
+    SymbolTable::SymbolTable() = default;
 
     SymbolTable::~SymbolTable() = default;
 
@@ -231,7 +228,13 @@ namespace angel_lsp::analysis
             ResolveIncludedMixinsForKeysLocked({key}, &affectedFiles);
         }
 
-        if (!isMixin && !isClass && affectedFiles.empty())
+        if (!m_ruleIndex && !m_ruleIndexPartials)
+        {
+            ++m_version;
+            return;
+        }
+
+        if (!isMixin && affectedFiles.empty())
         {
             // O(1) incremental update for ordinary symbols: avoids quadratic re-scan of the file
             const Symbol *symPtr = &symbol;
@@ -1085,11 +1088,35 @@ namespace angel_lsp::analysis
 
     std::shared_ptr<const rules::RuleIndex> SymbolTable::GetRuleIndex() const
     {
-        std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
-        if (!m_ruleIndex)
         {
-            m_ruleIndex = rules::RuleIndex::Build(*this);
+            std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+            if (m_ruleIndex)
+            {
+                return m_ruleIndex;
+            }
         }
+
+        std::shared_lock<std::shared_mutex> tableLock(m_mutex);
+        std::lock_guard<std::mutex> ruleGuard(m_ruleIndexMutex);
+        if (m_ruleIndex)
+        {
+            return m_ruleIndex;
+        }
+
+        if (!m_ruleIndexPartials)
+        {
+            m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
+        }
+
+        auto index = std::make_shared<rules::RuleIndex>();
+        for (const auto &[fileUri, keys] : m_keysByFile)
+        {
+            auto docSymbols = GetDocumentSymbolPointersLocked(fileUri);
+            rules::RuleIndexPartial partial = rules::RuleIndex::BuildPartial(fileUri, docSymbols);
+            index->ApplyPartial(partial);
+            (*m_ruleIndexPartials)[fileUri] = std::move(partial);
+        }
+        m_ruleIndex = std::move(index);
         return m_ruleIndex;
     }
 

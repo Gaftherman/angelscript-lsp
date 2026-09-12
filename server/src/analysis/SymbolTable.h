@@ -663,7 +663,7 @@ namespace angel_lsp::analysis
         // table's lock across the build would be a lock taken twice by one thread.
         mutable std::mutex m_ruleIndexMutex;
         mutable std::shared_ptr<rules::RuleIndex> m_ruleIndex;
-        std::unique_ptr<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>> m_ruleIndexPartials;
+        mutable std::unique_ptr<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>> m_ruleIndexPartials;
 
         bool m_virtualMixinDocumentsEnabled = false;
     };
