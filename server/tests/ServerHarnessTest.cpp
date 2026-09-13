@@ -6218,64 +6218,69 @@ TEST_CASE("Server - Saving an open file in a module does not re-analyze closed f
 
 TEST_CASE("Server - Initialize falls back to rootUri when workspaceFolders is not provided")
 {
+    WorkspaceFixture fixture;
     test::ScriptedStream stream;
     config::ServerConfig config;
     Server server(config, stream);
 
     lsp::requests::Initialize::Params params;
-    params.rootUri = lsp::DocumentUri::parse("file:///C:/test/legacy_root");
+    params.rootUri = lsp::DocumentUri::parse(fixture.RootUri());
     server.HandleRequestsInitialized(std::move(params));
 
     const auto roots = server.WorkspaceRoots();
     REQUIRE(roots.size() == 1);
-    CHECK(roots[0] == utils::IncludeResolver::NormalizePath("C:/test/legacy_root"));
+    CHECK(roots[0] == utils::IncludeResolver::NormalizePath(fixture.dir.string()));
 }
 
 TEST_CASE("Server - Initialize falls back to rootUri when workspaceFolders is empty")
 {
+    WorkspaceFixture fixture;
     test::ScriptedStream stream;
     config::ServerConfig config;
     Server server(config, stream);
 
     lsp::requests::Initialize::Params params;
     params.workspaceFolders = lsp::Array<lsp::WorkspaceFolder>{};
-    params.rootUri = lsp::DocumentUri::parse("file:///C:/test/empty_folders_root");
+    params.rootUri = lsp::DocumentUri::parse(fixture.RootUri());
     server.HandleRequestsInitialized(std::move(params));
 
     const auto roots = server.WorkspaceRoots();
     REQUIRE(roots.size() == 1);
-    CHECK(roots[0] == utils::IncludeResolver::NormalizePath("C:/test/empty_folders_root"));
+    CHECK(roots[0] == utils::IncludeResolver::NormalizePath(fixture.dir.string()));
 }
 
 TEST_CASE("Server - Initialize falls back to rootPath when workspaceFolders and rootUri are missing")
 {
+    WorkspaceFixture fixture;
     test::ScriptedStream stream;
     config::ServerConfig config;
     Server server(config, stream);
 
     lsp::requests::Initialize::Params params;
-    params.rootPath = std::string("C:/test/root_path_only");
+    params.rootPath = fixture.dir.string();
     server.HandleRequestsInitialized(std::move(params));
 
     const auto roots = server.WorkspaceRoots();
     REQUIRE(roots.size() == 1);
-    CHECK(roots[0] == utils::IncludeResolver::NormalizePath("C:/test/root_path_only"));
+    CHECK(roots[0] == utils::IncludeResolver::NormalizePath(fixture.dir.string()));
 }
 
 TEST_CASE("Server - Initialize falls back to rootPath when formatted as file URI string")
 {
+    WorkspaceFixture fixture;
     test::ScriptedStream stream;
     config::ServerConfig config;
     Server server(config, stream);
 
     lsp::requests::Initialize::Params params;
-    params.rootPath = std::string("file:///C:/test/uri_root_path");
+    params.rootPath = fixture.RootUri();
     server.HandleRequestsInitialized(std::move(params));
 
     const auto roots = server.WorkspaceRoots();
     REQUIRE(roots.size() == 1);
-    CHECK(roots[0] == utils::IncludeResolver::NormalizePath("C:/test/uri_root_path"));
+    CHECK(roots[0] == utils::IncludeResolver::NormalizePath(fixture.dir.string()));
 }
+
 
 
 
