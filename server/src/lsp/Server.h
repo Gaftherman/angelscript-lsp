@@ -90,6 +90,9 @@ namespace angel_lsp
 
         /** @brief Cancels the workspace scan. Rearmed only after the thread reading it was joined. */
         angel_lsp::utils::StopFlag m_workspaceStop;
+
+        /** @brief Set once the first workspace scan finishes; used to defer initial diagnostics. */
+        std::atomic<bool> m_workspaceScanComplete{ false };
         std::mutex m_messageHandlerMutex;
         std::unique_ptr<angel_lsp::utils::LspLogger> m_logger;
         std::unique_ptr<angel_lsp::parser::AngelScriptParser> m_parser;
@@ -1194,6 +1197,13 @@ namespace angel_lsp
         void ScheduleAnalysis(const std::string &uriStr, const std::string &text, bool force = false, TSTree *tree = nullptr, int version = -1, uint64_t generation = 0)
         {
             ScheduleAnalysis(uriStr, text, force, angel_lsp::document::MakeTreePtr(tree), version, generation);
+        }
+
+        void ScheduleAnalysisImmediate(const std::string &uriStr, const std::string &text, bool force, angel_lsp::document::TreePtr tree, int version = -1, uint64_t generation = 0);
+
+        void ScheduleAnalysisImmediate(const std::string &uriStr, const std::string &text, bool force = false, TSTree *tree = nullptr, int version = -1, uint64_t generation = 0)
+        {
+            ScheduleAnalysisImmediate(uriStr, text, force, angel_lsp::document::MakeTreePtr(tree), version, generation);
         }
 
 

@@ -250,6 +250,7 @@ namespace angel_lsp
         m_scopeIndex.ClearDocument(uriStr);
         m_callGraph.ClearDocument(uriStr);
 
+
         // Before analysis, not after: the module the file belongs to supplies declarations this
         // file legitimately uses, and without them every one of them would be reported undeclared.
         IndexModuleClosure(uriStr);

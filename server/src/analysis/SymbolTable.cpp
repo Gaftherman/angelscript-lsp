@@ -547,6 +547,18 @@ namespace angel_lsp::analysis
             ResolveIncludedMixinsForKeysLocked(freshClassKeys, &affectedFiles);
         }
 
+        {
+            // If RuleIndex has not been lazily initialized yet, skip partial construction.
+            // EnsureRuleIndex() or GetRuleIndex() will build the complete index over all
+            // documents on first access.
+            std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+            if (!m_ruleIndex && !m_ruleIndexPartials)
+            {
+                ++m_version;
+                return;
+            }
+        }
+
         // Build partial for fileUri after mixin resolution
         auto freshPtrs = GetDocumentSymbolPointersLocked(fileUri);
         rules::RuleIndexPartial freshPartial = rules::RuleIndex::BuildPartial(fileUri, freshPtrs);
@@ -1118,6 +1130,13 @@ namespace angel_lsp::analysis
         }
         m_ruleIndex = std::move(index);
         return m_ruleIndex;
+    }
+
+    void SymbolTable::EnsureRuleIndex() const
+    {
+        // Delegate to the lazy builder. If already constructed, this is a no-op
+        // (one mutex acquisition + null check).
+        GetRuleIndex();
     }
 
     void SymbolTable::PrintSymbols(angel_lsp::utils::LspLogger *logger) const

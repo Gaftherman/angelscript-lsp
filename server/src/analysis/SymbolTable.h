@@ -629,6 +629,16 @@ namespace angel_lsp::analysis
          */
         std::shared_ptr<const rules::RuleIndex> GetRuleIndex() const;
 
+        /**
+         * @brief Forces construction of the RuleIndex if not already built.
+         *
+         * Called at the end of the workspace scan to avoid a latency spike on the first hover
+         * that calls FindTypeSymbolsByShortName. Building the index eagerly on the workspace
+         * thread costs the same as building it lazily on the first request, but the user is
+         * not waiting for a tooltip while it happens.
+         */
+        void EnsureRuleIndex() const;
+
         void PrintSymbols(angel_lsp::utils::LspLogger *logger) const;
 
     private:

@@ -89,6 +89,17 @@ namespace angel_lsp
                       document::TreePtr tree, int version, uint64_t generation = 0, uint64_t configRevision = 0);
 
         /**
+         * @brief Enqueues a document for analysis without debounce delay.
+         *
+         * Used when the workspace scan completes and open documents must be re-analysed
+         * immediately: the 200 ms debounce serves no purpose because no further edits are
+         * expected from the scan, and the user is already waiting.
+         */
+        void ScheduleImmediate(const std::string &uriStr, std::string text, bool force,
+                               document::TreePtr tree = document::MakeTreePtr(nullptr), int version = -1,
+                               uint64_t generation = 0, uint64_t configRevision = 0);
+
+        /**
          * @brief Cancels pending analysis and marks document as saved on message loop.
          * @param uriStr Document URI key.
          * @param version Document saved version (-1 if unknown).
@@ -140,6 +151,7 @@ namespace angel_lsp
 
         ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_pending;
         ankerl::unordered_dense::map<std::string, PendingAnalysisEntry> m_inFlight;
+        std::atomic<bool> m_immediateRequested{ false };
         std::string m_currentlyAnalyzingUri;
         std::string m_currentlyAnalyzingText;
         int m_currentlyAnalyzingVersion = -1;

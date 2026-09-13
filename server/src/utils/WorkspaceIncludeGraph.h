@@ -64,6 +64,27 @@ namespace angel_lsp::utils
                    std::string_view implicitExtension = {});
 
         /**
+         * @brief Builds the graph from a pre-discovered list of script file paths.
+         *
+         * Used when the caller has already walked the workspace and collected the paths, so a
+         * second walk would be redundant. The semantics are identical to Build() except the
+         * filesystem walk is skipped.
+         *
+         * @param scriptFiles Normalized paths of every script file to include in the graph.
+         * @param searchDirectories Extra include search paths, in priority order.
+         * @param workspaceRoots Directories that define the allowed-roots boundary.
+         * @param shouldStop Polled between files so a shutdown can interrupt.
+         * @param fileReader Optional content source; reads from disk when not supplied.
+         * @param implicitExtension Optional implicit file extension for includes.
+         */
+        void BuildFromFiles(const std::vector<std::string> &scriptFiles,
+                            const std::vector<std::string> &searchDirectories,
+                            const std::vector<std::string> &workspaceRoots,
+                            const std::function<bool()> &shouldStop = {},
+                            const FileReader &fileReader = {},
+                            std::string_view implicitExtension = {});
+
+        /**
          * @brief Re-reads one file's directives and patches just its edges.
          *
          * Called on save: an edited `#include` line changes which module a file belongs to, and a

@@ -173,11 +173,53 @@ namespace angel_lsp
         struct ReanalyseOnExit
         {
             Server *server;
-            ~ReanalyseOnExit() { server->ScheduleOpenDocumentsForReanalysis(); }
+            ~ReanalyseOnExit()
+            {
+                server->m_workspaceScanComplete.store(true);
+                server->ScheduleOpenDocumentsForReanalysis();
+            }
         } reanalyseOnExit{ this };
         std::optional<PhaseTimer> phase;
 
         angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
+
+        // Unified workspace walk: collect ALL relevant file paths in a single pass rather than
+        // walking the directory tree up to three times (profile detection, stub discovery,
+        // include graph). On a workspace with 300 files and deep directories, each walk costs
+        // 2-5 seconds of sequential I/O.
+        std::vector<std::string> allScriptFiles;
+        std::vector<std::string> allFileNames;
+        std::vector<std::string> discoveredStubPaths;
+
+        {
+            PhaseTimer walkTimer(m_logger.get(), "unified workspace walk");
+            const bool walkCompleted = angel_lsp::utils::ForEachWorkspaceFile(
+                roots, m_config.exclude,
+                [&stopToken]() { return stopToken.stop_requested(); },
+                [&](const std::filesystem::directory_entry &entry)
+                {
+                    const std::string pathStr = entry.path().string();
+                    allFileNames.push_back(entry.path().filename().string());
+
+                    if (angel_lsp::utils::IsPredefinedFile(pathStr, m_config.info.predefinedFileExtension))
+                    {
+                        discoveredStubPaths.push_back(
+                            angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path()));
+                    }
+                    else if (!m_config.info.fileExtension.empty() &&
+                             std::string_view(pathStr).ends_with(m_config.info.fileExtension))
+                    {
+                        allScriptFiles.push_back(
+                            angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path()));
+                    }
+                });
+
+            if (!walkCompleted)
+            {
+                EndWorkspaceProgress("Cancelled");
+                return;
+            }
+        }
 
         if (m_config.features.enablePredefinedLoader)
         {
@@ -230,42 +272,31 @@ namespace angel_lsp
                 // is released at the end - see UnloadUnselectedPredefinedStubs.
                 std::vector<std::string> wantedPaths = configuredPaths;
 
-                const bool completed = angel_lsp::utils::ForEachWorkspaceFile(
-                    rootPaths, m_config.exclude,
-                    [&stopToken]() { return stopToken.stop_requested(); },
-                    [&](const std::filesystem::directory_entry &entry) {
-                        if (!angel_lsp::utils::IsPredefinedFile(entry.path().string(), m_config.info.predefinedFileExtension))
-                            return;
+                for (const std::string &path : discoveredStubPaths)
+                {
+                    if (stopToken.stop_requested())
+                    {
+                        EndWorkspaceProgress("Cancelled");
+                        return;
+                    }
 
-                        const std::string path = angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path());
-                        discovered.push_back(path);
+                    discovered.push_back(path);
 
-                        if (!activePath.empty())
+                    if (!activePath.empty())
+                    {
+                        if (PathsAreSameFile(path, activePath))
                         {
-                            if (PathsAreSameFile(path, activePath))
-                            {
-                                ParserPredefined(entry.path().string(), backgroundParser);
-                                wantedPaths.push_back(path);
-                            }
-                            return;
-                        }
-
-                        if (mergeAll)
-                        {
-                            ParserPredefined(entry.path().string(), backgroundParser);
+                            ParserPredefined(path, backgroundParser);
                             wantedPaths.push_back(path);
                         }
+                        continue;
+                    }
 
-                        // Neither chosen nor merging: nothing is loaded here, because which stub wins
-                        // cannot be decided until the walk has seen all of them.
-                    });
-
-                // The only caller with something to close out on a cancel, which is why the walker
-                // reports whether it finished rather than swallowing the distinction.
-                if (!completed)
-                {
-                    EndWorkspaceProgress("Cancelled");
-                    return;
+                    if (mergeAll)
+                    {
+                        ParserPredefined(path, backgroundParser);
+                        wantedPaths.push_back(path);
+                    }
                 }
 
                 // Sorted so the pick below is the same on every machine and every run. Directory
@@ -312,13 +343,12 @@ namespace angel_lsp
 
         phase.emplace(m_logger.get(), "include graph");
 
-        m_includeGraph.Build(roots,
-                             *searchDirectories,
-                             m_config.info.fileExtension,
-                             [&stopToken]() { return stopToken.stop_requested(); },
-                             {},
-                             m_config.exclude,
-                             ImplicitIncludeExtension());
+        m_includeGraph.BuildFromFiles(allScriptFiles,
+                                      *searchDirectories,
+                                      roots,
+                                      [&stopToken]() { return stopToken.stop_requested(); },
+                                      {},
+                                      ImplicitIncludeExtension());
 
         if (stopToken.stop_requested())
         {
@@ -346,6 +376,12 @@ namespace angel_lsp
         // new answers go out, or a file that changed module keeps both verdicts.
         WithdrawStaleModuleDiagnostics();
         AnalyzeConfiguredModules();
+
+        // Force the RuleIndex to be built now rather than on the first hover request. The cost is
+        // the same - every file in the table is visited once - but it happens on the workspace
+        // thread where the user is not waiting for a tooltip.
+        phase.emplace(m_logger.get(), "rule index construction");
+        m_symbolTable.EnsureRuleIndex();
 
         EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
     }

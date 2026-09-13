@@ -91,6 +91,14 @@ namespace angel_lsp
         m_cv.notify_one();
     }
 
+    void AnalysisScheduler::ScheduleImmediate(const std::string &uriStr, std::string text, bool force,
+                                              document::TreePtr tree, int version, uint64_t generation, uint64_t configRevision)
+    {
+        Schedule(uriStr, std::move(text), force, std::move(tree), version, generation, configRevision);
+        m_immediateRequested.store(true);
+        m_cv.notify_one();
+    }
+
     void AnalysisScheduler::MarkSaved(const std::string &uriStr, int version)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -169,15 +177,27 @@ namespace angel_lsp
 
             for (;;)
             {
+                if (m_immediateRequested.load())
+                {
+                    m_immediateRequested.store(false);
+                    break;
+                }
+
                 const uint64_t seen = m_revision;
                 const bool interrupted = m_cv.wait_for(lock, m_debounceWindow, [this, seen]()
                 {
-                    return m_stop.load() || m_revision != seen;
+                    return m_stop.load() || m_revision != seen || m_immediateRequested.load();
                 });
 
                 if (m_stop.load())
                 {
                     return;
+                }
+
+                if (m_immediateRequested.load())
+                {
+                    m_immediateRequested.store(false);
+                    break;
                 }
 
                 if (!interrupted)

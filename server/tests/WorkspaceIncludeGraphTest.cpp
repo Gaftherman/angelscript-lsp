@@ -376,3 +376,35 @@ TEST_CASE("Build - an excluded directory is never descended into")
     const auto unprunedClosure = unpruned.GetModuleClosure(fixture.Path("build/generated/main.as"));
     CHECK(has(unprunedClosure, fixture.Path("build/generated/helper.as")));
 }
+
+TEST_CASE("WorkspaceIncludeGraph - BuildFromFiles produces identical graph to Build")
+{
+    GraphFixture fixture;
+    fixture.Write("a.as", "#include \"b.as\"\n");
+    fixture.Write("b.as", "#include \"c.as\"\n");
+    fixture.Write("c.as", "\n");
+
+    std::vector<std::string> files = {
+        fixture.Path("a.as"),
+        fixture.Path("b.as"),
+        fixture.Path("c.as")
+    };
+
+    WorkspaceIncludeGraph graphFromFiles;
+    graphFromFiles.BuildFromFiles(files, {}, { fixture.Root() });
+
+    WorkspaceIncludeGraph graphFromBuild;
+    graphFromBuild.Build({ fixture.Root() }, {}, ".as");
+
+    CHECK(graphFromFiles.FileCount() == 3);
+    CHECK(graphFromBuild.FileCount() == 3);
+
+    auto closureFiles = graphFromFiles.GetModuleClosure(fixture.Path("a.as"));
+    auto closureBuild = graphFromBuild.GetModuleClosure(fixture.Path("a.as"));
+
+    std::sort(closureFiles.begin(), closureFiles.end());
+    std::sort(closureBuild.begin(), closureBuild.end());
+
+    CHECK(closureFiles == closureBuild);
+}
+

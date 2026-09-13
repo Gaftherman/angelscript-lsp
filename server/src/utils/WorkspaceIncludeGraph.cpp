@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <thread>
 
 namespace angel_lsp::utils
 {
@@ -125,6 +126,112 @@ namespace angel_lsp::utils
         // to yet look as though it included nothing.
         if (!completed)
             return;
+
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        m_includes = std::move(includes);
+        m_includedBy = std::move(includedBy);
+    }
+
+    void WorkspaceIncludeGraph::BuildFromFiles(const std::vector<std::string> &scriptFiles,
+                                               const std::vector<std::string> &searchDirectories,
+                                               const std::vector<std::string> &workspaceRoots,
+                                               const std::function<bool()> &shouldStop,
+                                               const FileReader &fileReader,
+                                               std::string_view implicitExtension)
+    {
+        std::vector<std::string> allowedRoots = workspaceRoots;
+        allowedRoots.insert(allowedRoots.end(), searchDirectories.begin(), searchDirectories.end());
+
+        const FileReader read = fileReader ? fileReader : FileReader(ReadFileFromDisk);
+
+        struct FileDirectives
+        {
+            std::string path;
+            std::vector<std::string> targets;
+        };
+
+        const size_t totalFiles = scriptFiles.size();
+        std::vector<FileDirectives> results(totalFiles);
+
+        const unsigned int hwThreads = std::thread::hardware_concurrency();
+        const unsigned int numThreads = (totalFiles >= 16 && hwThreads > 1) ? std::min(hwThreads, 8u) : 1u;
+
+        if (numThreads > 1)
+        {
+            std::vector<std::thread> workers;
+            workers.reserve(numThreads);
+            const size_t chunkSize = (totalFiles + numThreads - 1) / numThreads;
+
+            for (unsigned int t = 0; t < numThreads; ++t)
+            {
+                const size_t start = t * chunkSize;
+                const size_t end = std::min(start + chunkSize, totalFiles);
+                if (start >= end)
+                {
+                    break;
+                }
+
+                workers.emplace_back([&, start, end]()
+                {
+                    for (size_t i = start; i < end; ++i)
+                    {
+                        if (shouldStop && shouldStop())
+                        {
+                            return;
+                        }
+                        const auto &path = scriptFiles[i];
+                        results[i] = FileDirectives{
+                            path,
+                            ResolveDirectives(path, read(path), searchDirectories, allowedRoots, implicitExtension)
+                        };
+                    }
+                });
+            }
+
+            for (auto &w : workers)
+            {
+                if (w.joinable())
+                {
+                    w.join();
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < totalFiles; ++i)
+            {
+                if (shouldStop && shouldStop())
+                {
+                    return;
+                }
+                const auto &path = scriptFiles[i];
+                results[i] = FileDirectives{
+                    path,
+                    ResolveDirectives(path, read(path), searchDirectories, allowedRoots, implicitExtension)
+                };
+            }
+        }
+
+        if (shouldStop && shouldStop())
+        {
+            return;
+        }
+
+        ankerl::unordered_dense::map<std::string, std::vector<std::string>> includes;
+        ankerl::unordered_dense::map<std::string, std::vector<std::string>> includedBy;
+
+        for (auto &entry : results)
+        {
+            if (entry.path.empty())
+            {
+                continue;
+            }
+            for (const auto &target : entry.targets)
+            {
+                includedBy[target].push_back(entry.path);
+            }
+            includes[std::move(entry.path)] = std::move(entry.targets);
+        }
 
         std::unique_lock<std::shared_mutex> lock(m_mutex);
         m_includes = std::move(includes);

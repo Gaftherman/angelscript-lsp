@@ -217,6 +217,27 @@ namespace angel_lsp
         }
     }
 
+    void Server::ScheduleAnalysisImmediate(const std::string &uriStr, const std::string &text, bool force, angel_lsp::document::TreePtr tree, int version, uint64_t generation)
+    {
+        if (version < 0)
+        {
+            version = GetDocumentVersion(uriStr);
+        }
+
+        if (generation == 0)
+        {
+            generation = m_documentStore.GetGeneration(uriStr);
+        }
+
+        const uint64_t configRevision = m_configRevision.load();
+        const std::string analysisText = AnalysisTextFor(uriStr, text);
+
+        if (m_analysisScheduler)
+        {
+            m_analysisScheduler->ScheduleImmediate(uriStr, analysisText, force, std::move(tree), version, generation, configRevision);
+        }
+    }
+
     bool Server::CommitAnalysisResults(const std::string &uriStr,
                                        int version,
                                        uint64_t generation,
