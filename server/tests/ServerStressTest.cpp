@@ -91,6 +91,12 @@ namespace
             const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
             dir = std::filesystem::temp_directory_path() / ("angel_lsp_stress_" + unique);
             std::filesystem::create_directories(dir);
+            std::error_code ec;
+            auto c = std::filesystem::canonical(dir, ec);
+            if (!ec)
+            {
+                dir = std::move(c);
+            }
         }
 
         ~TempStressWorkspace()
@@ -363,8 +369,9 @@ TEST_CASE("Server - Barrier: Close during analysis cancels analysis and suppress
     CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
 
     // Verify zero resurrection: closed document must not have symbols in symbol table
-    CHECK_FALSE(server.GetSymbolTable().HasDocumentSymbols(fileUri));
-    CHECK_FALSE(server.GetDocumentStore().IsOpen(fileUri));
+    const std::string docKey = server.DocumentKey(fileUri);
+    CHECK_FALSE(server.GetSymbolTable().HasDocumentSymbols(docKey));
+    CHECK_FALSE(server.GetDocumentStore().IsOpen(docKey));
     CHECK(server.GetSymbolTable().FindSymbols("GhostSymbol").empty());
 
     // Structured JSON assertion: publishDiagnostics on close cleared diagnostics
@@ -458,7 +465,8 @@ TEST_CASE("Server - Barrier: Immediate reopen updates generation and receives fr
     CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
 
     // Generation 1 commit was rejected; current generation is 2
-    CHECK(server.GetDocumentStore().GetGeneration(fileUri) == 2);
+    const std::string docKey = server.DocumentKey(fileUri);
+    CHECK(server.GetDocumentStore().GetGeneration(docKey) == 2);
     // Gen1Ghost must not be in symbol table
     CHECK(server.GetSymbolTable().FindSymbols("Gen1Ghost").empty());
     // Gen2Function must be in symbol table
@@ -548,7 +556,8 @@ TEST_CASE("Server - Barrier: Concurrent edit with higher version supersedes earl
     CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
 
     // Current version must be 3
-    CHECK(server.GetDocumentStore().GetVersion(fileUri) == 3);
+    const std::string docKey = server.DocumentKey(fileUri);
+    CHECK(server.GetDocumentStore().GetVersion(docKey) == 3);
     // Version 2 commit was rejected
     CHECK(server.GetSymbolTable().FindSymbols("Version2Ghost").empty());
     // Version 3 symbol is present
