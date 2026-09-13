@@ -1002,6 +1002,10 @@ namespace angel_lsp::features
         if (typeNameToFind.empty())
         {
             auto symbols = request.symbolTable.FindSymbols(nodeText);
+            if (symbols.empty() && !ts_node_is_null(node))
+            {
+                symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
+            }
             for (const auto &sym : symbols)
             {
                 if (sym.type == analysis::SymbolType::Variable)
@@ -1034,6 +1038,30 @@ namespace angel_lsp::features
             }
         }
 
+        // Global property accessors fallback (e.g. g_Module -> get_g_Module -> return type)
+        if (typeNameToFind.empty())
+        {
+            auto accessors = analysis::FindGlobalPropertyAccessors(nodeText, request.symbolTable);
+            if (accessors.empty() && !ts_node_is_null(node))
+            {
+                for (const auto prefix : { "get_", "set_" })
+                {
+                    for (const auto &sym : analysis::FindSymbolsInScope(prefix + nodeText, node, request.sourceCode, request.symbolTable))
+                    {
+                        if (sym.type == analysis::SymbolType::Function)
+                        {
+                            accessors.push_back(sym);
+                        }
+                    }
+                }
+            }
+            const std::string propType = analysis::PropertyTypeFromAccessors(accessors);
+            if (!propType.empty())
+            {
+                typeNameToFind = analysis::CleanBaseType(propType);
+            }
+        }
+
         // 3. Fallback: maybe nodeText itself is a type name (e.g. Player in Player@ p)
         if (typeNameToFind.empty())
         {
@@ -1047,6 +1075,24 @@ namespace angel_lsp::features
 
         std::vector<lsp::Location> locations;
         auto typeSymbols = request.symbolTable.FindSymbols(typeNameToFind);
+        if (typeSymbols.empty() && !ts_node_is_null(node))
+        {
+            for (const auto &sym : analysis::FindSymbolsInScope(typeNameToFind, node, request.sourceCode, request.symbolTable))
+            {
+                if (sym.type == analysis::SymbolType::Class ||
+                    sym.type == analysis::SymbolType::Interface ||
+                    sym.type == analysis::SymbolType::Enum ||
+                    sym.type == analysis::SymbolType::Typedef ||
+                    sym.type == analysis::SymbolType::Funcdef)
+                {
+                    typeSymbols.push_back(sym);
+                }
+            }
+        }
+        if (typeSymbols.empty())
+        {
+            typeSymbols = request.symbolTable.FindTypeSymbolsByShortName(typeNameToFind);
+        }
 
         for (const auto &sym : typeSymbols)
         {

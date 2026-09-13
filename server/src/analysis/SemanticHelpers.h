@@ -433,7 +433,7 @@ namespace angel_lsp::analysis
      */
     std::vector<Symbol> FindGlobalPropertyAccessors(const std::string &propertyName,
                                                     const SymbolTable &symbolTable,
-                                                    bool keywordRequired);
+                                                    bool keywordRequired = false);
 
     /**
      * @brief The type a property backed by these accessors carries.

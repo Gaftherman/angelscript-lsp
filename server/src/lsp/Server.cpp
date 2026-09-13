@@ -274,14 +274,39 @@ namespace angel_lsp
 
     lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::requests::Initialize::Params &&params)
     {
-        if (params.workspaceFolders.has_value() && !params.workspaceFolders.value().isNull())
         {
-            for (const auto &workspace : params.workspaceFolders.value().value())
+            std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+            if (params.workspaceFolders.has_value() && !params.workspaceFolders.value().isNull())
             {
-                std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-                const std::string fsPath = workspace.uri.fsPath();
-                if (!fsPath.empty())
-                    m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(fsPath));
+                for (const auto &workspace : params.workspaceFolders.value().value())
+                {
+                    const std::string fsPath = workspace.uri.fsPath();
+                    if (!fsPath.empty())
+                    {
+                        m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(fsPath));
+                    }
+                }
+            }
+
+            if (m_workspacesRoot.empty())
+            {
+                std::string root;
+                if (!params.rootUri.isNull())
+                {
+                    root = params.rootUri.value().fsPath();
+                    if (root.empty())
+                    {
+                        root = angel_lsp::utils::UriToPath(params.rootUri.value().toString());
+                    }
+                }
+                if (root.empty() && params.rootPath.has_value() && !params.rootPath.value().isNull())
+                {
+                    root = angel_lsp::utils::UriToPath(params.rootPath.value().value());
+                }
+                if (!root.empty())
+                {
+                    m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(root));
+                }
             }
         }
 

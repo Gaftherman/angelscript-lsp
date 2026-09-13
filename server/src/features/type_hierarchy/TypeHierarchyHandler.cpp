@@ -1,6 +1,7 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <string_view>
@@ -46,6 +47,12 @@ namespace angel_lsp::features
             item.name = analysis::LastScopeSegment(sym.name);
             item.kind = sym.type == SymbolType::Interface ? lsp::SymbolKind::Interface : lsp::SymbolKind::Class;
             item.uri = lsp::DocumentUri::parse(sym.fileUri);
+            std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            item.data = lsp::json::Value(std::move(qName));
+            if (!sym.containerName.empty())
+            {
+                item.detail = sym.containerName;
+            }
 
             // fullRange covers the declaration and its body; selectionRange is the name alone. The
             // protocol requires the second be contained by the first, and a collector that recorded
@@ -123,9 +130,76 @@ namespace angel_lsp::features
         const std::string name = IdentifierAt(request, node);
 
         std::vector<Symbol> declarations;
-        if (!name.empty())
+
+        // Check if cursor sits on or inside a qualified type (e.g. Outer::Widget or Other::Base)
+        if (!ts_node_is_null(node))
+        {
+            TSNode p = node;
+            while (!ts_node_is_null(p))
+            {
+                std::string_view pType = ts_node_type(p);
+                if (pType == "type" || pType == "scoped_identifier")
+                {
+                    std::string text = analysis::CleanBaseType(analysis::GetNodeText(p, request.sourceCode));
+                    if (!text.empty() && text.find("::") != std::string::npos)
+                    {
+                        declarations = FindTypeDeclarations(text, request.symbolTable);
+                        if (declarations.empty())
+                        {
+                            for (const auto &container : analysis::GetEnclosingContainers(p, request.sourceCode))
+                            {
+                                if (container.kind == analysis::ContainerKind::Namespace)
+                                {
+                                    declarations = FindTypeDeclarations(container.qualifiedName + "::" + text, request.symbolTable);
+                                    if (!declarations.empty())
+                                    {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (!declarations.empty())
+                        {
+                            break;
+                        }
+                    }
+                }
+                if (pType == "class_declaration" || pType == "interface_declaration" ||
+                    pType == "function_declaration" || pType == "statement_block")
+                {
+                    break;
+                }
+                p = ts_node_parent(p);
+            }
+        }
+
+        if (declarations.empty() && !name.empty())
         {
             declarations = FindTypeDeclarations(name, request.symbolTable);
+            if (declarations.empty() && !ts_node_is_null(node))
+            {
+                for (const auto &container : analysis::GetEnclosingContainers(node, request.sourceCode))
+                {
+                    if (container.kind == analysis::ContainerKind::Namespace)
+                    {
+                        declarations = FindTypeDeclarations(container.qualifiedName + "::" + name, request.symbolTable);
+                        if (!declarations.empty())
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+            if (declarations.empty())
+            {
+                for (const auto &sym : request.symbolTable.FindTypeSymbolsByShortName(name))
+                {
+                    if (IsTypeSymbol(sym))
+                    {
+                        declarations.push_back(sym);
+                    }
+                }
+            }
         }
 
         // Not on a type's name, but perhaps inside one's body - which is where a reader asking for
@@ -139,7 +213,21 @@ namespace angel_lsp::features
                 {
                     continue;
                 }
-                declarations = FindTypeDeclarations(container.name, request.symbolTable);
+                declarations = FindTypeDeclarations(container.qualifiedName, request.symbolTable);
+                if (declarations.empty())
+                {
+                    declarations = FindTypeDeclarations(container.name, request.symbolTable);
+                }
+                if (declarations.empty())
+                {
+                    for (const auto &sym : request.symbolTable.FindTypeSymbolsByShortName(container.name))
+                    {
+                        if (IsTypeSymbol(sym))
+                        {
+                            declarations.push_back(sym);
+                        }
+                    }
+                }
                 break;
             }
         }
@@ -160,7 +248,47 @@ namespace angel_lsp::features
 
     std::optional<std::vector<lsp::TypeHierarchyItem>> GetSupertypes(const TypeHierarchyItemRequest &request)
     {
-        const auto declarations = FindTypeDeclarations(request.item.name, request.symbolTable);
+        std::vector<Symbol> declarations;
+        if (request.item.data.has_value() && request.item.data->isString() && !request.item.data->string().empty())
+        {
+            declarations = FindTypeDeclarations(request.item.data->string(), request.symbolTable);
+        }
+        if (declarations.empty())
+        {
+            declarations = FindTypeDeclarations(request.item.name, request.symbolTable);
+        }
+        if (declarations.empty())
+        {
+            for (const auto &sym : request.symbolTable.FindTypeSymbolsByShortName(request.item.name))
+            {
+                if (IsTypeSymbol(sym))
+                {
+                    declarations.push_back(sym);
+                }
+            }
+        }
+        if (declarations.size() > 1 && request.item.uri.isValid())
+        {
+            const std::string itemUri = request.item.uri.toString();
+            auto it = std::find_if(declarations.begin(), declarations.end(), [&](const Symbol &sym)
+            {
+                if (sym.fileUri != itemUri && angel_lsp::utils::PathToUri(sym.fileUri) != itemUri)
+                {
+                    return false;
+                }
+                auto range = (sym.selectionRange.endLine != 0 || sym.selectionRange.endCharacter != 0)
+                                 ? ToRange(sym.selectionRange)
+                                 : (sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0)
+                                       ? ToRange(sym.fullRange)
+                                       : lsp::Range{ lsp::Position{ sym.startLine, sym.startCharacter },
+                                                     lsp::Position{ sym.endLine, sym.endCharacter } };
+                return range.start.line == request.item.selectionRange.start.line;
+            });
+            if (it != declarations.end())
+            {
+                declarations = { *it };
+            }
+        }
         if (declarations.empty())
         {
             return std::nullopt;
@@ -171,21 +299,58 @@ namespace angel_lsp::features
 
         for (const auto &declaration : declarations)
         {
+            std::string declPrefix;
+            auto lastScope = declaration.name.rfind("::");
+            if (lastScope != std::string::npos)
+            {
+                declPrefix = declaration.name.substr(0, lastScope);
+            }
+
             for (const auto &base : DeclaredBases(declaration))
             {
-                const std::string baseName = analysis::LastScopeSegment(analysis::CleanBaseType(base));
-                if (baseName.empty() || std::find(seen.begin(), seen.end(), baseName) != seen.end())
+                const std::string cleanBase = analysis::CleanBaseType(base);
+                const std::string baseName = analysis::LastScopeSegment(cleanBase);
+                if (baseName.empty())
                 {
                     continue;
                 }
-                seen.push_back(baseName);
 
-                // A base that resolves to nothing is an engine-registered type, and there is no
-                // declaration to point the client at - so it is left out rather than offered as an
-                // item that navigates nowhere.
-                for (const auto &baseSymbol : FindTypeDeclarations(baseName, request.symbolTable))
+                // Look up base types in order:
+                // 1. Fully qualified / written base (e.g. "Other::Base")
+                // 2. Enclosing namespace + clean base (e.g. "Game::Base")
+                // 3. Short name in table
+                // 4. Fallback: FindTypeSymbolsByShortName
+                std::vector<Symbol> baseSymbols;
+                if (cleanBase.find("::") != std::string::npos)
                 {
-                    items.push_back(ToItem(baseSymbol));
+                    baseSymbols = FindTypeDeclarations(cleanBase, request.symbolTable);
+                }
+                if (baseSymbols.empty() && !declPrefix.empty())
+                {
+                    baseSymbols = FindTypeDeclarations(declPrefix + "::" + cleanBase, request.symbolTable);
+                }
+                if (baseSymbols.empty())
+                {
+                    baseSymbols = FindTypeDeclarations(baseName, request.symbolTable);
+                }
+                if (baseSymbols.empty())
+                {
+                    for (const auto &sym : request.symbolTable.FindTypeSymbolsByShortName(baseName))
+                    {
+                        if (IsTypeSymbol(sym))
+                        {
+                            baseSymbols.push_back(sym);
+                        }
+                    }
+                }
+                for (const auto &baseSymbol : baseSymbols)
+                {
+                    const std::string key = baseSymbol.qualifiedName.empty() ? baseSymbol.name : baseSymbol.qualifiedName;
+                    if (std::find(seen.begin(), seen.end(), key) == seen.end())
+                    {
+                        seen.push_back(key);
+                        items.push_back(ToItem(baseSymbol));
+                    }
                 }
             }
         }
@@ -198,6 +363,12 @@ namespace angel_lsp::features
         if (target.empty())
         {
             return std::nullopt;
+        }
+
+        std::string qualifiedTarget;
+        if (request.item.data.has_value() && request.item.data->isString() && !request.item.data->string().empty())
+        {
+            qualifiedTarget = request.item.data->string();
         }
 
         std::vector<lsp::TypeHierarchyItem> items;
@@ -233,6 +404,10 @@ namespace angel_lsp::features
                 }
             };
 
+            if (!qualifiedTarget.empty())
+            {
+                collectFrom(qualifiedTarget);
+            }
             collectFrom(target);
             if (request.item.name != target)
             {
@@ -252,7 +427,9 @@ namespace angel_lsp::features
 
                     for (const auto &base : DeclaredBases(sym))
                     {
-                        if (analysis::LastScopeSegment(analysis::CleanBaseType(base)) == target)
+                        const std::string cleanBase = analysis::CleanBaseType(base);
+                        if ((!qualifiedTarget.empty() && cleanBase == qualifiedTarget) ||
+                            analysis::LastScopeSegment(cleanBase) == target)
                         {
                             items.push_back(ToItem(sym));
                             break;

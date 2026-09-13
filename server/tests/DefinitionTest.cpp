@@ -449,4 +449,84 @@ TEST_CASE("Definition - F12 on declaration node returns its own definition range
     CHECK((*defs)[0].range.start.line == 2);
 }
 
+TEST_CASE("DefinitionHandler - Go to Type Definition for Global Property Accessor")
+{
+    std::string code =
+        "class ModuleInfo {}\n"
+        "ModuleInfo@ get_g_Module() { return null; }\n"
+        "void main() {\n"
+        "    g_Module;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Line 3: "    g_Module;" -> col 5 is on "g_Module"
+    auto typeDef = env.TypeDefAt(3, 5);
+    REQUIRE(typeDef.has_value());
+    REQUIRE(typeDef->size() == 1);
+    CHECK((*typeDef)[0].range.start.line == 0);
+}
+
+TEST_CASE("DefinitionHandler - Go to Type Definition for Setter-Only Global Property Accessor")
+{
+    std::string code =
+        "class ConfigData {}\n"
+        "void set_g_Config(ConfigData@ c) {}\n"
+        "void main() {\n"
+        "    g_Config = null;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Line 3: "    g_Config = null;" -> col 5 is on "g_Config"
+    auto typeDef = env.TypeDefAt(3, 5);
+    REQUIRE(typeDef.has_value());
+    REQUIRE(typeDef->size() == 1);
+    CHECK((*typeDef)[0].range.start.line == 0);
+}
+
+TEST_CASE("DefinitionHandler - Go to Type Definition for Property Accessor Resolves Scoped Type Over Disjoint Namespace")
+{
+    std::string code =
+        "namespace Library {\n"
+        "    class Config {}\n"
+        "}\n"
+        "namespace App {\n"
+        "    class Config {}\n"
+        "    Config@ get_g_Config() { return null; }\n"
+        "    void main() {\n"
+        "        g_Config;\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Line 7: "        g_Config;" -> col 9 is on "g_Config"
+    auto typeDef = env.TypeDefAt(7, 9);
+    REQUIRE(typeDef.has_value());
+    REQUIRE(typeDef->size() == 1);
+    // Line 4 is App::Config; line 1 is Library::Config. Must resolve to App::Config (line 4).
+    CHECK((*typeDef)[0].range.start.line == 4);
+}
+
+TEST_CASE("DefinitionHandler - Go to Type Definition for Namespace-Scoped Variable")
+{
+    std::string code =
+        "namespace Game {\n"
+        "    class Player {}\n"
+        "    Player g_player;\n"
+        "    void main() {\n"
+        "        g_player;\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Line 4: "        g_player;" -> col 9 is on "g_player"
+    auto typeDef = env.TypeDefAt(4, 9);
+    REQUIRE(typeDef.has_value());
+    REQUIRE(typeDef->size() == 1);
+    CHECK((*typeDef)[0].range.start.line == 1);
+}
+
 

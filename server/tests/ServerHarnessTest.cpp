@@ -6216,6 +6216,67 @@ TEST_CASE("Server - Saving an open file in a module does not re-analyze closed f
     CHECK(output.find("public interface unchanged, skipping cascading re-analysis") != std::string::npos);
 }
 
+TEST_CASE("Server - Initialize falls back to rootUri when workspaceFolders is not provided")
+{
+    test::ScriptedStream stream;
+    config::ServerConfig config;
+    Server server(config, stream);
+
+    lsp::requests::Initialize::Params params;
+    params.rootUri = lsp::DocumentUri::parse("file:///C:/test/legacy_root");
+    server.HandleRequestsInitialized(std::move(params));
+
+    const auto roots = server.WorkspaceRoots();
+    REQUIRE(roots.size() == 1);
+    CHECK(roots[0] == utils::IncludeResolver::NormalizePath("C:/test/legacy_root"));
+}
+
+TEST_CASE("Server - Initialize falls back to rootUri when workspaceFolders is empty")
+{
+    test::ScriptedStream stream;
+    config::ServerConfig config;
+    Server server(config, stream);
+
+    lsp::requests::Initialize::Params params;
+    params.workspaceFolders = lsp::Array<lsp::WorkspaceFolder>{};
+    params.rootUri = lsp::DocumentUri::parse("file:///C:/test/empty_folders_root");
+    server.HandleRequestsInitialized(std::move(params));
+
+    const auto roots = server.WorkspaceRoots();
+    REQUIRE(roots.size() == 1);
+    CHECK(roots[0] == utils::IncludeResolver::NormalizePath("C:/test/empty_folders_root"));
+}
+
+TEST_CASE("Server - Initialize falls back to rootPath when workspaceFolders and rootUri are missing")
+{
+    test::ScriptedStream stream;
+    config::ServerConfig config;
+    Server server(config, stream);
+
+    lsp::requests::Initialize::Params params;
+    params.rootPath = std::string("C:/test/root_path_only");
+    server.HandleRequestsInitialized(std::move(params));
+
+    const auto roots = server.WorkspaceRoots();
+    REQUIRE(roots.size() == 1);
+    CHECK(roots[0] == utils::IncludeResolver::NormalizePath("C:/test/root_path_only"));
+}
+
+TEST_CASE("Server - Initialize falls back to rootPath when formatted as file URI string")
+{
+    test::ScriptedStream stream;
+    config::ServerConfig config;
+    Server server(config, stream);
+
+    lsp::requests::Initialize::Params params;
+    params.rootPath = std::string("file:///C:/test/uri_root_path");
+    server.HandleRequestsInitialized(std::move(params));
+
+    const auto roots = server.WorkspaceRoots();
+    REQUIRE(roots.size() == 1);
+    CHECK(roots[0] == utils::IncludeResolver::NormalizePath("C:/test/uri_root_path"));
+}
+
 
 
 

@@ -236,3 +236,146 @@ TEST_CASE("TypeHierarchy - The selection range is contained by the item's range"
     CHECK(startsBefore);
     CHECK(endsAfter);
 }
+
+TEST_CASE("TypeHierarchy - Type declared inside a namespace opens on declaration")
+{
+    Fixture fixture(
+        "namespace Game\n"
+        "{\n"
+        "    class Base { }\n"
+        "    class Player : Base { }\n"
+        "}\n");
+
+    // Line 3: "    class Player : Base { }" -> col 12 is on Player
+    const auto items = fixture.Prepare(3, 12);
+    REQUIRE(items.has_value());
+    REQUIRE(items->size() == 1);
+    CHECK((*items)[0].name == "Player");
+    CHECK((*items)[0].kind == lsp::SymbolKind::Class);
+
+    const auto supertypes = fixture.Supertypes((*items)[0]);
+    REQUIRE(supertypes.has_value());
+    CHECK(HasName(supertypes, "Base"));
+}
+
+TEST_CASE("TypeHierarchy - Type declared inside nested namespaces opens inside body")
+{
+    Fixture fixture(
+        "namespace Outer\n"
+        "{\n"
+        "    namespace Inner\n"
+        "    {\n"
+        "        class Widget\n"
+        "        {\n"
+        "            void Update() { }\n"
+        "        }\n"
+        "    }\n"
+        "}\n");
+
+    // Line 6: "            void Update() { }" -> col 18 is inside Widget body
+    const auto items = fixture.Prepare(6, 18);
+    REQUIRE(items.has_value());
+    REQUIRE(items->size() == 1);
+    CHECK((*items)[0].name == "Widget");
+}
+
+TEST_CASE("TypeHierarchy - Type inside namespace resolved by short name fallback")
+{
+    Fixture fixture(
+        "namespace Library\n"
+        "{\n"
+        "    class Service { }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Service s;\n"
+        "}\n");
+
+    // Line 6: "    Service s;" -> col 6 is on Service
+    const auto items = fixture.Prepare(6, 6);
+    REQUIRE(items.has_value());
+    REQUIRE(items->size() == 1);
+    CHECK((*items)[0].name == "Service");
+}
+
+TEST_CASE("TypeHierarchy - Supertypes resolves qualified base when same-named global type exists")
+{
+    Fixture fixture(
+        "class Base { }\n"
+        "namespace Other\n"
+        "{\n"
+        "    class Base { }\n"
+        "}\n"
+        "class Derived : Other::Base { }\n");
+
+    // Line 5: "class Derived : Other::Base { }" -> col 8 is on Derived
+    const auto items = fixture.Prepare(5, 8);
+    REQUIRE(items.has_value());
+    REQUIRE(items->size() == 1);
+
+    const auto supertypes = fixture.Supertypes((*items)[0]);
+    REQUIRE(supertypes.has_value());
+    REQUIRE(supertypes->size() == 1);
+    CHECK((*supertypes)[0].name == "Base");
+    // Line 3 is Other::Base; line 0 is global Base. Must resolve to Other::Base (line 3).
+    CHECK((*supertypes)[0].range.start.line == 3);
+}
+
+TEST_CASE("TypeHierarchy - Prepare on scoped identifier opens qualified type")
+{
+    Fixture fixture(
+        "namespace Outer\n"
+        "{\n"
+        "    class Widget { }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    Outer::Widget w;\n"
+        "}\n");
+
+    // Line 6: "    Outer::Widget w;" -> col 5 is on Outer, col 12 is on Widget
+    const auto itemsOuter = fixture.Prepare(6, 5);
+    REQUIRE(itemsOuter.has_value());
+    REQUIRE(itemsOuter->size() == 1);
+    CHECK((*itemsOuter)[0].name == "Widget");
+    CHECK((*itemsOuter)[0].range.start.line == 2);
+
+    const auto itemsWidget = fixture.Prepare(6, 12);
+    REQUIRE(itemsWidget.has_value());
+    REQUIRE(itemsWidget->size() == 1);
+    CHECK((*itemsWidget)[0].name == "Widget");
+    CHECK((*itemsWidget)[0].range.start.line == 2);
+}
+
+TEST_CASE("TypeHierarchy - Supertypes isolates bases of same-named types across namespaces")
+{
+    Fixture fixture(
+        "namespace NS1\n"
+        "{\n"
+        "    class Base1 { }\n"
+        "    class Target : Base1 { }\n"
+        "}\n"
+        "namespace NS2\n"
+        "{\n"
+        "    class Base2 { }\n"
+        "    class Target : Base2 { }\n"
+        "}\n");
+
+    // Line 3: NS1::Target
+    const auto items1 = fixture.Prepare(3, 12);
+    REQUIRE(items1.has_value());
+    REQUIRE(items1->size() == 1);
+    const auto supertypes1 = fixture.Supertypes((*items1)[0]);
+    REQUIRE(supertypes1.has_value());
+    CHECK(supertypes1->size() == 1);
+    CHECK((*supertypes1)[0].name == "Base1");
+
+    // Line 8: NS2::Target
+    const auto items2 = fixture.Prepare(8, 12);
+    REQUIRE(items2.has_value());
+    REQUIRE(items2->size() == 1);
+    const auto supertypes2 = fixture.Supertypes((*items2)[0]);
+    REQUIRE(supertypes2.has_value());
+    CHECK(supertypes2->size() == 1);
+    CHECK((*supertypes2)[0].name == "Base2");
+}
