@@ -18,11 +18,25 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
 namespace angel_lsp::test
 {
+    /**
+     * @brief Generates an unpredictable, valid AngelScript identifier per test run.
+     *        Prevents string-literal matching shortcuts and forces generic AST resolution.
+     * @param[in] prefix Optional namespace or symbol category prefix.
+     * @return A unique identifier string (e.g. "sym_9283718947219").
+     */
+    inline std::string GenerateRandomSymbolName(const std::string& prefix = "var")
+    {
+        static thread_local std::mt19937_64 rng{std::random_device{}()};
+        std::uniform_int_distribution<uint64_t> dist(100000, 999999999);
+        return prefix + "_" + std::to_string(dist(rng));
+    }
+
     struct Position
     {
         uint32_t line = 0;
@@ -180,7 +194,7 @@ namespace angel_lsp::test
                 }
             }
 
-            auto collectDiags = m_symbolCollector.CollectSymbolsWithTree(m_uri, m_sourceCode, m_tree, m_symbolTable, &i18n, &m_config.types);
+            auto collectDiags = m_symbolCollector.CollectSymbolsWithTree(m_uri, m_sourceCode, m_tree, m_symbolTable, &i18n);
             m_diagnostics.insert(m_diagnostics.end(), collectDiags.begin(), collectDiags.end());
 
             analysis::SemanticAnalysisRequest request{ m_symbolTable, m_uri, m_config.info.predefinedFileExtension.empty() ? ".as.predefined" : m_config.info.predefinedFileExtension, &i18n };
@@ -1124,7 +1138,7 @@ namespace angel_lsp::test
             }
             m_tree = m_parser.Parse(m_sourceCode);
             static angel_lsp::i18n::I18n i18n;
-            auto collectDiags = m_symbolCollector.CollectSymbolsWithTree(m_uri, m_sourceCode, m_tree, m_symbolTable, &i18n, &m_config.types);
+            auto collectDiags = m_symbolCollector.CollectSymbolsWithTree(m_uri, m_sourceCode, m_tree, m_symbolTable, &i18n);
             m_diagnostics.insert(m_diagnostics.end(), collectDiags.begin(), collectDiags.end());
 
             analysis::SemanticAnalysisRequest request{ m_symbolTable, m_uri, m_config.info.predefinedFileExtension.empty() ? ".as.predefined" : m_config.info.predefinedFileExtension, &i18n };

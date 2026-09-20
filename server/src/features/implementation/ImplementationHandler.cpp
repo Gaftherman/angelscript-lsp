@@ -148,7 +148,7 @@ std::vector<Symbol> CollectSubtypes(const std::string& rootType, const SymbolTab
         std::vector<std::string> next;
 
         table.ForEachSymbol(
-            [&](const std::string&, const std::vector<Symbol>& symbols)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
             {
                 for (const auto& sym : symbols)
                 {

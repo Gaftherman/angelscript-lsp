@@ -503,7 +503,7 @@ void Server::HandleNotificationsWorkspace_DidChangeWatchedFiles(
         {
             if (m_config.features.enablePredefinedLoader)
             {
-                ParserPredefined(path, watchedParser, /*forceReload=*/true);
+                ParserPredefined(path, watchedParser, true);
 
                 // The stub was re-read, and every open document was judged against the old
                 // one. Editing a stub is how a user teaches this server about the types their

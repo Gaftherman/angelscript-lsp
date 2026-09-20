@@ -115,7 +115,7 @@ std::vector<Symbol> FindByBareName(const std::string& bareName, const SymbolTabl
     }
 
     table.ForEachSymbol(
-        [&](const std::string&, const std::vector<Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {

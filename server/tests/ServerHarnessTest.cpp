@@ -4934,7 +4934,10 @@ std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFram
     fixture.Write("engine.as.predefined", stub);
     fixture.Write("main.as", source);
 
+    config::ServerConfig serverConfig;
     test::ScriptedStream stream;
+    Server server(serverConfig, stream);
+
     stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
@@ -4946,6 +4949,9 @@ std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFram
     // The user opens the stub in a tab. From here on didChangeWatchedFiles will not touch it.
     stream.Push(DidOpenMessage(fixture.Uri("engine.as.predefined"), stub));
     stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 2); });
+
+    // Deterministically drain any background reanalysis triggered by opening the stub before taking baseline
+    stream.PushAction([&server]() { server.DrainQueue(); });
 
     size_t before = 0;
     stream.PushAction([&stream, &before]() { before = CountPublishedFor(stream.Output(), "main.as"); });
@@ -4965,6 +4971,9 @@ std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFram
                 R"("params":{"textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
 
+    // Deterministically drain background reanalysis triggered by didChange
+    stream.PushAction([&server]() { server.DrainQueue(); });
+
     // Waiting for a *new* frame about main.as, not for silence: the document was already
     // published once, so "there is a publish for main.as" was true before the edit.
     stream.PushAction(
@@ -4979,8 +4988,7 @@ std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFram
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
-    config::ServerConfig serverConfig;
-    RunScript(serverConfig, stream);
+    server.Run();
     return stream.Output();
 }
 } // namespace

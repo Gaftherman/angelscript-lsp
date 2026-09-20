@@ -146,7 +146,7 @@ std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRe
     std::unordered_set<std::string> seenKeys;
 
     request.symbolTable.ForEachSymbol(
-        [&](const std::string& /*qualifiedName*/, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {

@@ -53,13 +53,11 @@ class SymbolCollector
      * @param parser Tree-sitter parser used to produce the AST (and immediately discarded).
      * @param symbolTable Table that receives the collected symbols.
      * @param i18n Optional localizer for diagnostic messages; English is used when null.
-     * @param typeConfig Optional type configuration (reserved for future type resolution).
      * @return Diagnostics produced while parsing and validating the document.
      */
     std::vector<Diagnostic> CollectSymbols(const std::string& fileUri, const std::string& sourceCode,
                                            angel_lsp::parser::AngelScriptParser& parser, SymbolTable& symbolTable,
-                                           const angel_lsp::i18n::I18n* i18n = nullptr,
-                                           const angel_lsp::config::TypeConfig* typeConfig = nullptr);
+                                           const angel_lsp::i18n::I18n* i18n = nullptr);
 
     /**
      * @brief Collects symbols from an already-parsed tree, without owning or freeing it.
@@ -68,8 +66,7 @@ class SymbolCollector
      */
     std::vector<Diagnostic> CollectSymbolsWithTree(const std::string& fileUri, const std::string& sourceCode,
                                                    TSTree* tree, SymbolTable& symbolTable,
-                                                   const angel_lsp::i18n::I18n* i18n = nullptr,
-                                                   const angel_lsp::config::TypeConfig* typeConfig = nullptr);
+                                                   const angel_lsp::i18n::I18n* i18n = nullptr);
 
     // =====================================================================================
     // AST Helpers

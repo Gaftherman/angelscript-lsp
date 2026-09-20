@@ -53,7 +53,7 @@ std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, cons
     std::string enclosingClass;
     symbolTable.ForEachSymbolInFile(
         uri,
-        [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -447,7 +447,7 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
 
     request.symbolTable.ForEachSymbolInFile(
         request.uri,
-        [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -534,7 +534,8 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
             {
                 size_t implCount = 0;
                 request.symbolTable.ForEachSymbol(
-                    [&](const std::string&, const std::vector<analysis::Symbol>& candidates)
+                    [&]([[maybe_unused]] const std::string& qualifiedName,
+                        const std::vector<analysis::Symbol>& candidates)
                     {
                         for (const auto& cand : candidates)
                         {
@@ -626,7 +627,8 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
                 if (!compatibleClasses.empty() && targetAccess != analysis::AccessModifier::Private)
                 {
                     request.symbolTable.ForEachSymbol(
-                        [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+                        [&]([[maybe_unused]] const std::string& qualifiedName,
+                            const std::vector<analysis::Symbol>& symbols)
                         {
                             for (const auto& cand : symbols)
                             {
@@ -719,7 +721,7 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
         {
             size_t implCount = 0;
             request.symbolTable.ForEachSymbol(
-                [&](const std::string&, const std::vector<analysis::Symbol>& candidates)
+                [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& candidates)
                 {
                     for (const auto& cand : candidates)
                     {

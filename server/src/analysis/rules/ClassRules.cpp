@@ -323,7 +323,7 @@ void CheckBases(const Symbol& sym, const ClassSignature& sig, const DiagnosticCo
 }
 
 /** @brief Reports property accessor get/set type mismatches within a class/interface. */
-void CheckPropertyAccessors(const Symbol& sym, const ClassSignature& /*sig*/, const DiagnosticContext& ctx)
+void CheckPropertyAccessors(const Symbol& sym, const DiagnosticContext& ctx)
 {
     const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
     if (container.empty())
@@ -337,7 +337,7 @@ void CheckPropertyAccessors(const Symbol& sym, const ClassSignature& /*sig*/, co
     ankerl::unordered_dense::map<std::string, const Symbol*> setters;
 
     table.ForEachSymbolInFile(ctx.request.fileUri,
-                              [&](const std::string& /*qName*/, const std::vector<Symbol>& syms)
+                              [&]([[maybe_unused]] const std::string& qName, const std::vector<Symbol>& syms)
                               {
                                   for (const auto& s : syms)
                                   {
@@ -992,7 +992,7 @@ void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx)
     CheckBases(sym, sig, ctx);
     CheckFinalOverrides(sym, sig, ctx);
     CheckInterfaceImplementation(sym, sig, ctx);
-    CheckPropertyAccessors(sym, sig, ctx);
+    CheckPropertyAccessors(sym, ctx);
     CheckMixinInstantiations(sym, sig, ctx);
 }
 } // namespace angel_lsp::analysis::rules

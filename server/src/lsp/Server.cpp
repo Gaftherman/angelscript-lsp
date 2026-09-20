@@ -676,7 +676,7 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
     return result;
 }
 
-void Server::HandleNotificationsInitialized(lsp::notifications::Initialized::Params&& /*params*/)
+void Server::HandleNotificationsInitialized([[maybe_unused]] lsp::notifications::Initialized::Params&& params)
 {
     // Started unconditionally: even with the predefined-stub loader disabled, the workspace
     // thread still has to build the #include graph that module-closure indexing depends on.

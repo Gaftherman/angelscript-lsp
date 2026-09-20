@@ -48,7 +48,7 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         m_logger->LogDebug(fmt::format("=== [SYMBOL COLLECTOR OUTPUT] Document: {} ===", request.fileUri));
         request.symbolTable.ForEachSymbolInFile(
             request.fileUri,
-            [&](const std::string& /*qualifiedName*/, const std::vector<Symbol>& symbols)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
             {
                 for (const auto& sym : symbols)
                 {
@@ -798,57 +798,58 @@ void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, Dia
     // Only the buckets this document touches. Every rule below either filters to the analysed
     // file or, in ValidateDuplicates' case, needs the whole bucket - which it still gets. The
     // rest of the workspace's fifty thousand symbols have nothing to contribute here.
-    symbolTable.ForEachSymbolInFile(ctx.request.fileUri,
-                                    [&](const std::string&, const std::vector<Symbol>& symbols)
-                                    {
-                                        // Whether a name is redeclared is a property of the whole overload bucket, so
-                                        // this one is handed the set rather than each member of it.
-                                        rules::ValidateDuplicates(symbols, ctx);
+    symbolTable.ForEachSymbolInFile(
+        ctx.request.fileUri,
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        {
+            // Whether a name is redeclared is a property of the whole overload bucket, so
+            // this one is handed the set rather than each member of it.
+            rules::ValidateDuplicates(symbols, ctx);
 
-                                        for (const auto& sym : symbols)
-                                        {
-                                            // Only the document under analysis is reported on. Its module's other files
-                                            // are indexed alongside it so their declarations resolve, but diagnosing
-                                            // them here would attach findings to files the user did not open.
-                                            if (sym.fileUri != ctx.request.fileUri)
-                                            {
-                                                continue;
-                                            }
+            for (const auto& sym : symbols)
+            {
+                // Only the document under analysis is reported on. Its module's other files
+                // are indexed alongside it so their declarations resolve, but diagnosing
+                // them here would attach findings to files the user did not open.
+                if (sym.fileUri != ctx.request.fileUri)
+                {
+                    continue;
+                }
 
-                                            switch (sym.type)
-                                            {
-                                            case SymbolType::Class:
-                                                rules::ValidateClass(sym, ctx);
-                                                break;
-                                            case SymbolType::Interface:
-                                                rules::ValidateClass(sym, ctx);
-                                                rules::ValidateInterfaceMembers(sym, ctx);
-                                                break;
-                                            case SymbolType::Typedef:
-                                                rules::ValidateTypedef(sym, ctx);
-                                                break;
-                                            case SymbolType::Function:
-                                                rules::ValidateFunction(sym, ctx);
-                                                rules::ValidateOperator(sym, ctx);
-                                                break;
-                                            case SymbolType::Funcdef:
-                                                rules::ValidateFuncdef(sym, ctx);
-                                                // A funcdef's parameter list obeys the same rules as a function's,
-                                                // minus everything that presumes a body or a container.
-                                                rules::ValidateParameters(sym, sym.GetFuncdef().parameters, true, ctx);
-                                                break;
-                                            case SymbolType::Enum:
-                                                rules::ValidateEnum(sym, ctx);
-                                                break;
-                                            case SymbolType::Variable:
-                                            case SymbolType::Property:
-                                                rules::ValidateVariable(sym, ctx);
-                                                break;
-                                            default:
-                                                break;
-                                            }
-                                        }
-                                    });
+                switch (sym.type)
+                {
+                case SymbolType::Class:
+                    rules::ValidateClass(sym, ctx);
+                    break;
+                case SymbolType::Interface:
+                    rules::ValidateClass(sym, ctx);
+                    rules::ValidateInterfaceMembers(sym, ctx);
+                    break;
+                case SymbolType::Typedef:
+                    rules::ValidateTypedef(sym, ctx);
+                    break;
+                case SymbolType::Function:
+                    rules::ValidateFunction(sym, ctx);
+                    rules::ValidateOperator(sym, ctx);
+                    break;
+                case SymbolType::Funcdef:
+                    rules::ValidateFuncdef(sym, ctx);
+                    // A funcdef's parameter list obeys the same rules as a function's,
+                    // minus everything that presumes a body or a container.
+                    rules::ValidateParameters(sym, sym.GetFuncdef().parameters, true, ctx);
+                    break;
+                case SymbolType::Enum:
+                    rules::ValidateEnum(sym, ctx);
+                    break;
+                case SymbolType::Variable:
+                case SymbolType::Property:
+                    rules::ValidateVariable(sym, ctx);
+                    break;
+                default:
+                    break;
+                }
+            }
+        });
 }
 
 void SemanticAnalyzer::CheckUndefinedIdentifiers(
@@ -861,18 +862,18 @@ void SemanticAnalyzer::CheckUndefinedIdentifiers(
         return;
 
     std::vector<std::pair<uint32_t, uint32_t>> mixinRanges;
-    ctx.request.symbolTable.ForEachSymbolInFile(ctx.request.fileUri,
-                                                [&](const std::string&, const std::vector<Symbol>& symbols)
-                                                {
-                                                    for (const auto& sym : symbols)
-                                                    {
-                                                        if (sym.type == SymbolType::Class &&
-                                                            sym.GetClass().modifiers.isMixin)
-                                                        {
-                                                            mixinRanges.push_back({sym.startLine, sym.endLine});
-                                                        }
-                                                    }
-                                                });
+    ctx.request.symbolTable.ForEachSymbolInFile(
+        ctx.request.fileUri,
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        {
+            for (const auto& sym : symbols)
+            {
+                if (sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin)
+                {
+                    mixinRanges.push_back({sym.startLine, sym.endLine});
+                }
+            }
+        });
 
     for (const auto& ref : scope->references)
     {
@@ -1102,7 +1103,7 @@ void SemanticAnalyzer::CheckNullAssignedToNonHandle(const SymbolTable& symbolTab
 {
     symbolTable.ForEachSymbolInFile(
         ctx.request.fileUri,
-        [&](const std::string&, const std::vector<Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {

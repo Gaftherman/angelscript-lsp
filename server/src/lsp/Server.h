@@ -472,12 +472,6 @@ class Server
      * m_openDocuments belongs to the message loop and is touched in two dozen places without a
 
 
-    /** @brief Records a document's current text in the snapshot. Message loop only. */
-    void RememberOpenDocument(const std::string& uriStr, const std::string& text);
-
-    /** @brief Forgets a closed document. Message loop only. */
-    void ForgetOpenDocument(const std::string& uriStr);
-
     /** @brief True when the snapshot holds this document. Safe from any thread. */
     [[nodiscard]] bool IsOpenElsewhere(const std::string& uriStr) const;
 

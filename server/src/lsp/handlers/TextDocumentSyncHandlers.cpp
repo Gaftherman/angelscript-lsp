@@ -11,7 +11,8 @@
 
 namespace angel_lsp
 {
-void Server::HandleNotificationsTextDocument_WillSave(lsp::notifications::TextDocument_WillSave::Params&& /*params*/)
+void Server::HandleNotificationsTextDocument_WillSave(
+    [[maybe_unused]] lsp::notifications::TextDocument_WillSave::Params&& params)
 {
     // The server has nothing it must do before a save - the analysis is already current and the
     // document text is already held - so the handler body is empty apart from this comment: it exists
@@ -50,7 +51,7 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
 
         if (PredefinedStubContributes(uriStr))
         {
-            ClaimPredefinedFile(uriStr, /*forceReload=*/true);
+            ClaimPredefinedFile(uriStr, true);
             m_predefinedManager.SetDocumentText(uriStr, analysisText);
             diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree.get());
         }
@@ -191,7 +192,6 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     TSTree* tree = m_parser->Parse(analysisText);
     double parseMs = parseTimer.ElapsedMs();
     m_documentStore.OpenDocument(uriStr, text, version, document::MakeTreePtr(tree), clientUri);
-    RememberOpenDocument(uriStr, text);
 
     if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
     {
@@ -220,7 +220,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
         utils::HighResTimer colTimer;
         if (contributes)
         {
-            ClaimPredefinedFile(uriStr, /*forceReload=*/true);
+            ClaimPredefinedFile(uriStr, true);
             m_predefinedManager.SetDocumentText(uriStr, analysisText);
             ReplaceSymbolsFromTree(uriStr, analysisText, tree);
         }
@@ -401,8 +401,7 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
     // makes a 3000-line file feel slow when it runs on every keystroke - so they are queued and
     // run once typing pauses. Until then the symbol table still holds the previous revision,
     // which is the same trade every other language server makes.
-    RememberOpenDocument(uriStr, buffer);
-    ScheduleAnalysis(uriStr, buffer, /*force=*/false, newTree ? ts_tree_copy(newTree) : nullptr, version);
+    ScheduleAnalysis(uriStr, buffer, false, newTree ? ts_tree_copy(newTree) : nullptr, version);
 }
 
 void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params&& params)
@@ -410,7 +409,6 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
     std::string uriStr = DocumentKey(params.textDocument.uri.toString());
     m_documentStore.CloseDocument(uriStr);
-    ForgetOpenDocument(uriStr);
 
     if (m_analysisScheduler)
     {

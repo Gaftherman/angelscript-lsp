@@ -299,7 +299,7 @@ bool MethodBodyMutatesClassState(TSNode bodyNode, TSNode classNode, std::string_
 
     ankerl::unordered_dense::set<std::string> classFields;
     table.ForEachSymbol(
-        [&](const std::string&, const std::vector<analysis::Symbol>& symList)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
         {
             for (const auto& sym : symList)
             {
@@ -489,7 +489,8 @@ bool MethodBodyMutatesClassState(TSNode bodyNode, TSNode classNode, std::string_
                 if (isMemberOnThis && !callMethodName.empty())
                 {
                     table.ForEachSymbol(
-                        [&](const std::string&, const std::vector<analysis::Symbol>& symList)
+                        [&]([[maybe_unused]] const std::string& qualifiedName,
+                            const std::vector<analysis::Symbol>& symList)
                         {
                             for (const auto& sym : symList)
                             {
@@ -1315,7 +1316,7 @@ void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode
     else
     {
         request.symbolTable.ForEachSymbol(
-            [&](const std::string&, const std::vector<analysis::Symbol>& symList)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
             {
                 for (const auto& sym : symList)
                 {
@@ -1358,7 +1359,7 @@ void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode
         bool hasSetter = false;
 
         request.symbolTable.ForEachSymbol(
-            [&](const std::string&, const std::vector<analysis::Symbol>& symList)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
             {
                 for (const auto& sym : symList)
                 {
@@ -1795,7 +1796,7 @@ void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::v
     // candidate.
     ankerl::unordered_dense::set<std::string> indexedUris;
     request.symbolTable.ForEachSymbol(
-        [&indexedUris](const std::string&, const std::vector<analysis::Symbol>& symbols)
+        [&indexedUris]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -2240,7 +2241,7 @@ void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNo
                 analysis::ResolveExpressionType(objNode, scope, request.symbolTable, request.sourceCode, request.uri));
 
             request.symbolTable.ForEachSymbol(
-                [&](const std::string&, const std::vector<analysis::Symbol>& symList)
+                [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
                 {
                     for (const auto& sym : symList)
                     {
@@ -2403,8 +2404,7 @@ void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNo
 /**
  * @brief Tries to generate a Sort and Clean #include Directives code action.
  */
-void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, TSNode /*rootNode*/,
-                                      std::vector<lsp::CodeAction>& actions)
+void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
     auto includes = utils::IncludeResolver::ExtractIncludes(request.sourceCode);
     if (includes.empty())
@@ -2436,7 +2436,7 @@ void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, TSNode /
 
         std::vector<std::string> symbolsInFile;
         request.symbolTable.ForEachSymbol(
-            [&](const std::string&, const std::vector<analysis::Symbol>& symList)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
             {
                 for (const auto& s : symList)
                 {
@@ -2686,7 +2686,7 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
     // Quick-Fix 2: Implement Missing Interface Methods in Implementing Classes
     // =========================================================================
     request.symbolTable.ForEachSymbol(
-        [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& clsSym : symbols)
             {
@@ -2720,7 +2720,8 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
                         for (const auto& ifaceName : ifaceHierarchy)
                         {
                             request.symbolTable.ForEachSymbol(
-                                [&](const std::string&, const std::vector<analysis::Symbol>& mSyms)
+                                [&]([[maybe_unused]] const std::string& qualifiedName,
+                                    const std::vector<analysis::Symbol>& mSyms)
                                 {
                                     for (const auto& m : mSyms)
                                     {
@@ -2740,7 +2741,8 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
 
                     std::vector<analysis::Symbol> classMethods;
                     request.symbolTable.ForEachSymbol(
-                        [&](const std::string&, const std::vector<analysis::Symbol>& mSyms)
+                        [&]([[maybe_unused]] const std::string& qualifiedName,
+                            const std::vector<analysis::Symbol>& mSyms)
                         {
                             for (const auto& m : mSyms)
                             {
@@ -2917,7 +2919,7 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
     // =========================================================================
     // Feature 5: Sort and Clean #include Directives
     // =========================================================================
-    TryAddSortAndCleanIncludesAction(request, rootNode, actions);
+    TryAddSortAndCleanIncludesAction(request, actions);
 
     if (actions.empty())
     {

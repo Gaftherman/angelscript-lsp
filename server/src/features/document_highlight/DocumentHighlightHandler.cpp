@@ -83,7 +83,7 @@ std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, cons
     std::string enclosingClass;
     symbolTable.ForEachSymbolInFile(
         uri,
-        [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -707,7 +707,7 @@ std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighl
 
             if (!matchedDef)
             {
-                matchedDef = analysis::ResolveInScope(innerScope, nodeText, nullptr, /*respectClosureBarrier=*/false);
+                matchedDef = analysis::ResolveInScope(innerScope, nodeText, nullptr, false);
                 if (matchedDef)
                 {
                     declScope = FindScopeDeclaringDefinition(rootScope.get(), *matchedDef);
@@ -810,7 +810,7 @@ std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighl
     {
         request.symbolTable.ForEachSymbolInFile(
             request.uri,
-            [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
             {
                 for (const auto& sym : symbols)
                 {
@@ -1231,7 +1231,7 @@ std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighl
             std::vector<std::pair<uint32_t, uint32_t>> nsRanges;
             request.symbolTable.ForEachSymbolInFile(
                 request.uri,
-                [&](const std::string&, const std::vector<analysis::Symbol>& sList)
+                [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& sList)
                 {
                     for (const auto& s : sList)
                     {

@@ -596,7 +596,7 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
         }
         // A class may declare an operator producing the enum, and the compiler accepts it:
         // `class W { Color opImplConv() const { … } } … Color c = w;` compiles.
-        if (!fromBuiltIn && DeclaresConversionTo(from, to, table, /*implicitOnly=*/false))
+        if (!fromBuiltIn && DeclaresConversionTo(from, to, table, false))
         {
             return true;
         }
@@ -619,7 +619,7 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
     {
         return true;
     }
-    if (!fromBuiltIn && DeclaresConversionTo(from, to, table, /*implicitOnly=*/false))
+    if (!fromBuiltIn && DeclaresConversionTo(from, to, table, false))
     {
         return true;
     }
@@ -1483,7 +1483,7 @@ void CheckConstruction(TSNode argumentListNode, const std::string& targetType, c
     {
         return;
     }
-    if (DeclaresConversionTo(source.baseName, targetType, table, /*implicitOnly=*/false))
+    if (DeclaresConversionTo(source.baseName, targetType, table, false))
     {
         return;
     }
@@ -1706,7 +1706,7 @@ bool MatchesFuncdefSignature(const FunctionSignature& fn, const FuncdefSignature
 // qualifies a name without changing whether it is a handle.
 
 void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode valueNode,
-                            const Scope* /*scope*/, DiagnosticContext& ctx, std::string_view sourceCode)
+                            DiagnosticContext& ctx, std::string_view sourceCode)
 {
     if (ts_node_is_null(valueNode))
     {
@@ -2465,8 +2465,7 @@ void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, Diagnos
                         continue;
                     }
                     TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
-                    CheckFuncdefAssignment(child, funcdefSym->GetFuncdef(), valNode, scopeAt(), ctx,
-                                           request.sourceCode);
+                    CheckFuncdefAssignment(child, funcdefSym->GetFuncdef(), valNode, ctx, request.sourceCode);
                 }
             }
 
@@ -2573,7 +2572,7 @@ void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, Diagnos
             auto leftFuncdef = FindFuncdef(cleanLeft, ctx.request.symbolTable);
             if (leftFuncdef)
             {
-                CheckFuncdefAssignment(node, leftFuncdef->GetFuncdef(), right, scopeAt(), ctx, request.sourceCode);
+                CheckFuncdefAssignment(node, leftFuncdef->GetFuncdef(), right, ctx, request.sourceCode);
             }
 
             // Handle assignment const qualifier discard check
@@ -2999,7 +2998,7 @@ void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, Diagnos
         }
         else if (calleeFuncdef)
         {
-            CheckFuncdefAssignment(node, calleeFuncdef->GetFuncdef(), soleArgument, scopeAt(), ctx, request.sourceCode);
+            CheckFuncdefAssignment(node, calleeFuncdef->GetFuncdef(), soleArgument, ctx, request.sourceCode);
         }
         else
         {

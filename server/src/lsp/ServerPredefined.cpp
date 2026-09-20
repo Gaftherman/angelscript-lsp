@@ -101,7 +101,7 @@ void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser& par
 
         const std::string syntheticUri = angel_lsp::analysis::GetProfileSyntheticUri(pKind);
 
-        if (!ClaimPredefinedFile(syntheticUri, /*forceReload=*/false))
+        if (!ClaimPredefinedFile(syntheticUri, false))
         {
             continue;
         }

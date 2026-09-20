@@ -140,7 +140,7 @@ std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, cons
     std::string enclosingClass;
     symbolTable.ForEachSymbolInFile(
         uri,
-        [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -166,7 +166,7 @@ std::vector<std::string> GetAllIndexedFileUris(const analysis::SymbolTable& symb
     }
 
     symbolTable.ForEachSymbol(
-        [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -412,7 +412,7 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(const std::string& uri, cons
     if (target.kind == TargetKind::GlobalSymbol)
     {
         symbolTable.ForEachSymbol(
-            [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
             {
                 for (const auto& sym : symbols)
                 {
@@ -1238,7 +1238,7 @@ std::vector<lsp::Location> CollectOccurrences(const TargetDescriptor& target, co
             // Find all namespace regions in fileUri matching declaringNamespace
             std::vector<std::pair<uint32_t, uint32_t>> nsRanges;
             symbolTable.ForEachSymbol(
-                [&](const std::string&, const std::vector<analysis::Symbol>& sList)
+                [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& sList)
                 {
                     for (const auto& s : sList)
                     {

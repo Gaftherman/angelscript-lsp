@@ -6,7 +6,7 @@ AngelLSP is a high-performance C++20 Language Server Protocol (LSP) implementati
 
 ## 1. Architectural Layers & Include Matrix
 
-Layer isolation is strict and enforced by `server/scripts/check-layer-includes.py`. Downward-to-upward or cross-feature inclusions are strictly forbidden:
+Layer isolation is strict and enforced by `server/scripts/check-layer-includes.py`:
 
 | Layer | Path | Allowed to `#include` | Strictly FORBIDDEN to `#include` |
 | :--- | :--- | :--- | :--- |
@@ -17,90 +17,37 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
 
 ---
 
-## 2. Doxygen Documentation Standard (Mandatory for Public APIs)
+## 2. Function Signature & Parameter Governance
 
-All classes, structs, member variables, functions, and feature contracts must be documented in **English** using Javadoc-style Doxygen blocks (`/** ... */`).
-
-### Rules:
-1. `@brief`: Clear single-line description ending with a period.
-2. `@param[in]`, `@param[out]`, or `@param[in,out]`: Explicit direction tag for every parameter, followed by parameter name and purpose.
-3. `@return`: Explicit description of return value, including `std::nullopt` or empty-state semantics.
-4. `@note` / `@warning`: Concurrency guarantees, thread safety, or AST node lifetime constraints.
-5. Never use single-line comments (`//`) to document public interface contracts.
-
-### Canonical Example:
-```cpp
-namespace lsp::features
-{
-    /**
-     * @brief Immutable context bundle required to compute hover tooltips.
-     */
-    struct HoverRequest
-    {
-        const Document& document;          /**< Read-only snapshot of the active script document. */
-        const SymbolTable& symbolTable;    /**< Precomputed semantic symbol table for the active scope. */
-        Position position;                 /**< UTF-16 character position where hover was triggered. */
-    };
-
-    /**
-     * @brief Resolves hover tooltip information for an AST node at a given document coordinate.
-     * @param[in] request Immutable context payload containing document, symbols, and coordinates.
-     * @return An optional HoverResult containing Markdown contents; std::nullopt if the position
-     *         does not correspond to a resolvable symbol or comment.
-     * @note Thread-safe. Operates purely on const references without mutating shared or global state.
-     */
-    std::optional<HoverResult> GetHover(const HoverRequest& request);
-}
-```
+1. **Parameter Ceiling:** Functions must accept at most 4 parameters. If more inputs are needed, bundle them into an immutable struct (e.g., `struct <Feature>Request`).
+2. **Zero Dead Parameters (`/we4100`):** Unreferenced formal parameters are prohibited. If an argument is no longer needed, delete it from the header, implementation, and all call sites immediately.
+3. **No Unnamed or Commented-Out Parameters:** Never bypass warnings using `int /* b */` or unnamed parameters (`int`). Leaving dead parameters in call sites is a severe defect.
+4. **Virtual Method Overrides:** Only virtual method overrides may silence unused parameters using `[[maybe_unused]]` with an explicit Doxygen `@note`.
 
 ---
 
-## 3. Conventional Commits & Git Hygiene Standard
+## 3. Tree-Sitter Traversal & Anti-Monolith Mandate
 
-Every commit must adhere strictly to the Conventional Commits specification. Unstructured commits or commits containing temporary debugging code are rejected.
-
-### Format:
-```
-<type>(<scope>): <short imperative description>
-
-[optional body explaining context, edge cases, and rationale]
-
-[optional footer(s): Closes #123, Breaking-Change: ...]
-```
-
-### Allowed Types:
-- `feat`: A new user-facing LSP capability or feature handler.
-- `fix`: A bug fix in parser, analysis, scheduler, or diagnostics.
-- `test`: Adding missing tests, eliminating flakiness, or refactoring test harnesses.
-- `perf`: Performance optimizations reducing latency or memory footprint.
-- `refactor`: Code restructurings without functional changes.
-- `style`: Formatting, Allman brace adjustments, or whitespace.
-- `docs`: Documentation only changes (Doxygen, README, AGENTS.md).
-- `chore`: CMake adjustments, CI workflows, script improvements, or gitignore updates.
-
-### Allowed Scopes:
-- `core`, `parser`, `analysis`, `features`, `server`, `harness`, `tests`, `docs`.
-
-### Quality Rules:
-- Commits must be **atomic** (one logical change per commit).
-- **Zero debug code**: Never commit `std::cout`, `printf`, or temporary tracing logs.
+1. **Query-First Rule:** Structure extraction must use precompiled S-expression queries (`BuiltQueries.h`) and `ts_query_cursor_*`. Never write nested index-based `ts_node_child` loops.
+2. **Flat Cursor Traversal:** When full sub-tree iteration is necessary, use flat `TSTreeCursor` loops (`ts_tree_cursor_goto_first_child` / `ts_tree_cursor_goto_next_sibling`) without recursion on the C++ execution stack.
+3. **Complexity Ceiling:** Functions must not exceed 15 Cyclomatic Complexity points or 70 net lines of code (enforced by `lizard`).
+4. **No Root-Cause Bypass:** Never patch edge cases using string comparison hardcoding (`if (name == "...")`). Fixes must reside in grammar queries, symbol resolution passes, or type rules.
 
 ---
 
-## 4. Deterministic Testing & Performance Budget SLA
+## 4. Doxygen Documentation Standard
 
-1. **Deterministic Schedulers:** No `sleep_for` in tests. Background analysis must be synchronized deterministically using `AnalysisScheduler::DrainQueue()`.
-2. **In-Memory Testing:** Feature tests must use `TestUtils.h` (`CreateTestDocument`, `PopulateTestSymbolTable`) without filesystem I/O.
-3. **Performance SLA:**
-   - `Hover` / `Definition`: < 20 ms.
-   - `Completion`: < 50 ms.
-   - `SemanticTokens`: < 80 ms per 1,000 lines.
-   - Complete CTest suite run: < 120s across all 1,771+ test cases with zero flakiness.
+All public classes, structs, member variables, functions, and feature contracts must be documented in **English** using Javadoc-style blocks (`/** ... */`):
+- `@brief`: Concise single-line summary ending with a period.
+- `@param[in/out]`: Explicit direction tag, parameter name, and purpose.
+- `@return`: Detailed return description, including `std::nullopt` or empty-state semantics.
+- `@note` / `@warning`: Concurrency guarantees or AST node lifetime rules.
 
 ---
 
-## 5. Tooling & Static Analysis Standards
+## 5. Conventional Commits & Git Hygiene
 
-- **Code Style:** Strict Allman style with 4-space indentation enforced by `.clang-format`.
-- **Static Analysis:** Audited by `clang-tidy` (`.clang-tidy`) and `cppcheck` via `run-harness.ps1 -FullAudit`.
-- **AST & Semantic Exploration:** Handled via `@nendo/tree-sitter-mcp` and `@felipeerias/clangd-mcp-server`.
+Format: `<type>(<scope>): <short imperative description>`
+- **Types:** `feat`, `fix`, `test`, `perf`, `refactor`, `style`, `docs`, `chore`.
+- **Scopes:** `core`, `parser`, `analysis`, `features`, `server`, `harness`, `tests`, `docs`.
+- Zero debug code: Never commit `std::cout`, `printf`, or temporary tracing logs.

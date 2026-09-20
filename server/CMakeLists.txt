@@ -186,6 +186,7 @@ if(MSVC)
         /W4
         /WX
         /permissive-
+        /we4100  # Treat 'C4100: unreferenced formal parameter' as a FATAL error
         /w14189  # Local variable initialized but not referenced (unused)
         /w14101  # Unreferenced local variable
         /w14265  # Class has virtual functions, but destructor is not virtual
@@ -285,6 +286,7 @@ if(TEST_SOURCES)
             /W4
             /WX
             /permissive-
+            /we4100
         )
     else()
         target_compile_options(angel_lsp_tests PRIVATE ${ANGELLSP_WARNING_FLAGS})

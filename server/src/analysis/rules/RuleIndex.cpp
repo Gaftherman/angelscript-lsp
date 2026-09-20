@@ -530,7 +530,7 @@ std::shared_ptr<RuleIndex> RuleIndex::Build(const SymbolTable& table)
     auto index = std::make_shared<RuleIndex>();
 
     table.ForEachSymbol(
-        [&](const std::string&, const std::vector<Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
         {
             RuleIndexPartial partial = BuildPartial("", symbols);
             index->ApplyPartial(partial);

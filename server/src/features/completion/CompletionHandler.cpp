@@ -947,7 +947,7 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
     if (IsInsideTemplateArguments(prefix))
     {
         request.symbolTable.ForEachSymbol(
-            [&](const std::string&, const std::vector<analysis::Symbol>& symList)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
             {
                 for (const auto& sym : symList)
                 {
@@ -1027,7 +1027,8 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
                 {
                     request.symbolTable.ForEachSymbolInFile(
                         request.uri,
-                        [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+                        [&]([[maybe_unused]] const std::string& qualifiedName,
+                            const std::vector<analysis::Symbol>& symbols)
                         {
                             for (const auto& sym : symbols)
                             {
@@ -1384,7 +1385,7 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
     {
         request.symbolTable.ForEachSymbolInFile(
             request.uri,
-            [&](const std::string&, const std::vector<analysis::Symbol>& symbols)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
             {
                 for (const auto& sym : symbols)
                 {
@@ -1429,7 +1430,7 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
 
     // C. Global Symbols from SymbolTable
     request.symbolTable.ForEachSymbol(
-        [&](const std::string&, const std::vector<analysis::Symbol>& symList)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
         {
             for (const auto& sym : symList)
             {

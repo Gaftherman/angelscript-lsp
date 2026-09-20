@@ -165,14 +165,6 @@ Server::ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
     return claim;
 }
 
-void Server::RememberOpenDocument(const std::string& /*uriStr*/, const std::string& /*text*/)
-{
-}
-
-void Server::ForgetOpenDocument(const std::string& /*uriStr*/)
-{
-}
-
 bool Server::IsOpenElsewhere(const std::string& uriStr) const
 {
     return m_documentStore.IsOpen(uriStr);
@@ -187,7 +179,7 @@ void Server::ScheduleOpenDocumentsForReanalysis()
         {
             continue;
         }
-        ScheduleAnalysis(uriStr, text, /*force=*/true);
+        ScheduleAnalysis(uriStr, text, true);
     }
 
     if (m_logger)

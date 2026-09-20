@@ -416,7 +416,7 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> GetSubtypes(const TypeHierarc
     else
     {
         request.symbolTable.ForEachSymbol(
-            [&](const std::string&, const std::vector<Symbol>& symbols)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
             {
                 for (const auto& sym : symbols)
                 {

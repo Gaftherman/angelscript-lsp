@@ -128,8 +128,7 @@ SymbolCollector::~SymbolCollector()
 
 std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string& fileUri, const std::string& sourceCode,
                                                         angel_lsp::parser::AngelScriptParser& parser,
-                                                        SymbolTable& symbolTable, const angel_lsp::i18n::I18n* i18n,
-                                                        const angel_lsp::config::TypeConfig* /*typeConfig*/)
+                                                        SymbolTable& symbolTable, const angel_lsp::i18n::I18n* i18n)
 {
     std::vector<Diagnostic> diagnostics;
     TSTree* tree = parser.Parse(sourceCode);
@@ -148,8 +147,7 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string& fileU
 std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const std::string& fileUri,
                                                                 const std::string& sourceCode, TSTree* tree,
                                                                 SymbolTable& symbolTable,
-                                                                const angel_lsp::i18n::I18n* i18n,
-                                                                const angel_lsp::config::TypeConfig* /*typeConfig*/)
+                                                                const angel_lsp::i18n::I18n* i18n)
 {
     std::vector<Diagnostic> diagnostics;
     if (!tree)

@@ -94,10 +94,10 @@ namespace
         angel_lsp::config::TypeConfig types;
 
         result.stubDiagnostics =
-            collector.CollectSymbols("file:///full-addons.as.predefined", Fixture(), parser, table, &i18n, &types);
+            collector.CollectSymbols("file:///full-addons.as.predefined", Fixture(), parser, table, &i18n);
 
         const std::string uri = "file:///script.as";
-        const auto scriptCollected = collector.CollectSymbols(uri, script, parser, table, &i18n, &types);
+        const auto scriptCollected = collector.CollectSymbols(uri, script, parser, table, &i18n);
         result.scriptDiagnostics = scriptCollected;
 
         SemanticAnalysisRequest request{ table, uri, ".as.predefined", &i18n };
@@ -465,7 +465,7 @@ TEST_CASE("PredefinedFixture - dictionary retains all member methods when define
 
     SymbolCollector collector{ nullptr };
     SymbolTable table;
-    std::vector<Diagnostic> diags = collector.CollectSymbolsWithTree("file:///as.predefined", sanitized, tree, table, nullptr, nullptr);
+    std::vector<Diagnostic> diags = collector.CollectSymbolsWithTree("file:///as.predefined", sanitized, tree, table, nullptr);
     CHECK(diags.empty());
 
     // Verify all member methods exist in the symbol table

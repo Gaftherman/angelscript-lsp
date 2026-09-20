@@ -422,8 +422,9 @@ void SymbolTable::ReplaceDocumentSymbols(const std::string& fileUri, const Symbo
     // Snapshot staging first: it is a separate object with its own lock, and reading it while
     // holding this table's write lock is what keeps the replacement a single atomic step.
     std::vector<Symbol> fresh;
-    staging.ForEachSymbol([&fresh](const std::string&, const std::vector<Symbol>& symbols)
-                          { fresh.insert(fresh.end(), symbols.begin(), symbols.end()); });
+    staging.ForEachSymbol(
+        [&fresh]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        { fresh.insert(fresh.end(), symbols.begin(), symbols.end()); });
 
     PublishDocumentSymbols(fileUri, std::move(fresh));
 }
@@ -1032,8 +1033,8 @@ bool SymbolTable::HasSymbolAnywhere(std::string_view name) const
     return index && (index->allNames.contains(searchName) || index->allNames.contains(name));
 }
 
-void SymbolTable::ForEachSymbol(
-    const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
+void SymbolTable::ForEachSymbol(const std::function<void([[maybe_unused]] const std::string& qualifiedName,
+                                                         const std::vector<Symbol>&)>& visitor) const
 {
     std::vector<std::pair<const std::string*, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
     {
@@ -1050,14 +1051,14 @@ void SymbolTable::ForEachSymbol(
 std::vector<Symbol> SymbolTable::GetAllSymbols() const
 {
     std::vector<Symbol> result;
-    ForEachSymbol([&result](const std::string&, const std::vector<Symbol>& syms)
+    ForEachSymbol([&result]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& syms)
                   { result.insert(result.end(), syms.begin(), syms.end()); });
     return result;
 }
 
-void SymbolTable::ForEachSymbolInFile(
-    const std::string& fileUri,
-    const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
+void SymbolTable::ForEachSymbolInFile(const std::string& fileUri,
+                                      const std::function<void([[maybe_unused]] const std::string& qualifiedName,
+                                                               const std::vector<Symbol>&)>& visitor) const
 {
     std::vector<std::pair<const std::string*, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
     {

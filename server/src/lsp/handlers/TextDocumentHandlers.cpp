@@ -134,19 +134,21 @@ void Server::RegisterTextDocumentHandlers()
             const std::string declaredIn = DocumentKey(where.uri.toString());
 
             std::string qualified;
-            m_symbolTable.ForEachSymbolInFile(
-                declaredIn,
-                [&](const std::string&, const std::vector<angel_lsp::analysis::Symbol>& symbols)
-                {
-                    for (const auto& sym : symbols)
-                    {
-                        if (sym.startLine != where.range.start.line || !qualified.empty())
-                        {
-                            continue;
-                        }
-                        qualified = sym.containerName.empty() ? sym.name : sym.containerName + "::" + sym.name;
-                    }
-                });
+            m_symbolTable.ForEachSymbolInFile(declaredIn,
+                                              [&]([[maybe_unused]] const std::string& qualifiedName,
+                                                  const std::vector<angel_lsp::analysis::Symbol>& symbols)
+                                              {
+                                                  for (const auto& sym : symbols)
+                                                  {
+                                                      if (sym.startLine != where.range.start.line || !qualified.empty())
+                                                      {
+                                                          continue;
+                                                      }
+                                                      qualified = sym.containerName.empty()
+                                                                      ? sym.name
+                                                                      : sym.containerName + "::" + sym.name;
+                                                  }
+                                              });
 
             if (qualified.empty())
             {
