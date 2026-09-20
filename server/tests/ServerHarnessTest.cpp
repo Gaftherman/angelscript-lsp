@@ -79,22 +79,10 @@ struct WorkspaceFixture
     }
 };
 
-/** @brief Waits until a needle has appeared at least `times` times. */
+/** @brief Waits deterministically until a needle has appeared at least `times` times. */
 void WaitForCount(test::ScriptedStream& stream, const std::string& needle, size_t times)
 {
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-    while (std::chrono::steady_clock::now() < deadline)
-    {
-        const std::string output = stream.Output();
-        size_t count = 0;
-        for (size_t at = output.find(needle); at != std::string::npos; at = output.find(needle, at + needle.size()))
-        {
-            ++count;
-        }
-        if (count >= times)
-            return;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+    stream.WaitForCount(needle, times);
 }
 
 /** @brief Drives a Server through a scripted message sequence and returns everything it wrote. */
@@ -1196,19 +1184,7 @@ TEST_CASE("ServerHarness - Reports workspace scan progress when the client suppo
     // A request after the notification, so the loop has demonstrably come back round and dispatched
     // `initialized` before the wait below begins. Without it the action fires while that
     // notification is still in flight and the scan has not been started yet.
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.Output().find("\"kind\":\"end\"") != std::string::npos)
-                {
-                    return;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("\"kind\":\"end\"", 1); });
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -1573,17 +1549,7 @@ TEST_CASE("Server - A pulled diagnostic carries what the pushed one carried")
     // processed.
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("publishDiagnostics"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("publishDiagnostics", 1); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
@@ -1626,17 +1592,7 @@ TEST_CASE("Server - Pull diagnostics client receives workspace/diagnostic/refres
 
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("workspace/diagnostic/refresh"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("workspace/diagnostic/refresh", 1); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -1671,17 +1627,7 @@ TEST_CASE("Server - A second pull of an unedited document is answered unchanged"
 
         stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
         stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-        stream.PushAction(
-            [&stream]()
-            {
-                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-                while (std::chrono::steady_clock::now() < deadline)
-                {
-                    if (stream.OutputContains("publishDiagnostics"))
-                        return;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                }
-            });
+        stream.PushAction([&stream]() { stream.WaitForCount("publishDiagnostics", 1); });
 
         std::string request =
             R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
@@ -1762,17 +1708,7 @@ TEST_CASE("Server - workspace/diagnostic reports the documents already analysed"
 
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("publishDiagnostics"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("publishDiagnostics", 1); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/diagnostic","params":{"previousResultIds":[]}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
@@ -1858,17 +1794,7 @@ TEST_CASE("Server - Push diagnostics keep working with pull switched off")
 
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("publishDiagnostics"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("publishDiagnostics", 1); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -1944,17 +1870,7 @@ TEST_CASE("Server - The workspace scan announces itself as cancellable")
     // about a notification the server was right not to send.
     stream.Push(InitializeWithProgress(fixture.RootUri(), true));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("\"kind\":\"end\""))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("\"kind\":\"end\"", 1); });
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2627,34 +2543,14 @@ std::string RunUnderStub(const std::string& stubText)
     // The stub is read by the workspace scan, so opening the document before the scan reports
     // "end" would analyse it against a server that has not seen the `#define` yet - and the
     // test would then be measuring the race rather than the feature.
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("\"kind\":\"end\""))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("\"kind\":\"end\"", 1); });
 
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
 
     // And analysis runs on its own thread, so shutting down straight after didOpen would end
     // the session before anything was published. Both of these tests passed that way once -
     // the one expecting silence passed because there was silence about everything.
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("publishDiagnostics"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("publishDiagnostics", 1); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -2701,30 +2597,10 @@ TEST_CASE("Server - A #define in a script is reported, and the same one in a stu
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("\"kind\":\"end\""))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("\"kind\":\"end\"", 1); });
 
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("publishDiagnostics"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("publishDiagnostics", 1); });
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2760,21 +2636,7 @@ TEST_CASE("Server - Switching engine profile forgets the profile that was left")
     fixture.Write("main.as", source);
 
     const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle, size_t times)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            const std::string output = stream.Output();
-            size_t count = 0;
-            for (size_t at = output.find(needle); at != std::string::npos; at = output.find(needle, at + needle.size()))
-            {
-                ++count;
-            }
-            if (count >= times)
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, times); };
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
@@ -2840,15 +2702,7 @@ struct TwoStubFixture
 std::string RunWithActiveStub(const TwoStubFixture& two, const std::string& source, const std::string& activeStub)
 {
     const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (stream.OutputContains(needle))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, 1); };
 
     two.fixture.Write("main.as", source);
 
@@ -2948,15 +2802,7 @@ TEST_CASE("Server - A lone stub is loaded without a word about it")
     fixture.Write("main.as", "void main() { TypeFromA a; }\n");
 
     const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (stream.OutputContains(needle))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, 1); };
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
@@ -3062,15 +2908,7 @@ TEST_CASE("Server - A pull answer is never about text the analyzer has not seen"
     const std::string fixed = "void main() { float f; }\n";
 
     const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (stream.OutputContains(needle))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, 1); };
 
     WorkspaceFixture fixture;
     fixture.Write("main.as", broken);
@@ -3188,15 +3026,7 @@ TEST_CASE("Server - Answers the stub listing the picker is built on")
     two.fixture.Write("main.as", "void main() { }\n");
 
     const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (stream.OutputContains(needle))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, 1); };
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
@@ -3235,15 +3065,7 @@ TEST_CASE("Server - The listing reports a merge as one")
     two.fixture.Write("main.as", "void main() { }\n");
 
     const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (stream.OutputContains(needle))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, 1); };
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
@@ -3349,15 +3171,7 @@ TEST_CASE("Server - Opening the stub that was not selected does not load it")
     two.fixture.Write("main.as", source);
 
     const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (stream.OutputContains(needle))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, 1); };
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
@@ -3392,15 +3206,7 @@ TEST_CASE("Server - Opening the stub that was selected keeps it loaded")
     two.fixture.Write("main.as", source);
 
     const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (stream.OutputContains(needle))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, 1); };
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
@@ -3808,15 +3614,7 @@ TEST_CASE("Server - A namespace reopened in two files of one module")
     REQUIRE_FALSE(cases.empty());
 
     const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (stream.OutputContains(needle))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, 1); };
 
     for (const ModuleCase& moduleCase : cases)
     {
@@ -3905,15 +3703,7 @@ TEST_CASE("Server - A header included by many files is not a redeclaration")
     }
 
     const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (stream.OutputContains(needle))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, 1); };
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
@@ -3962,21 +3752,7 @@ TEST_CASE("Server - Deleting the stub in force hands the workspace to the next o
     two.fixture.Write("main.as", source);
 
     const auto waitForCount = [](test::ScriptedStream& stream, const std::string& needle, size_t times)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            const std::string output = stream.Output();
-            size_t count = 0;
-            for (size_t at = output.find(needle); at != std::string::npos; at = output.find(needle, at + needle.size()))
-            {
-                ++count;
-            }
-            if (count >= times)
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    };
+    { stream.WaitForCount(needle, times); };
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
@@ -4201,17 +3977,7 @@ TEST_CASE("Server - What it says while the code is still being written")
         // the stub has started - see ScriptedStream::PushAction.
         stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
                     R"("params":{"command":"angelscript.listPredefinedStubs"}})");
-        stream.PushAction(
-            [&]()
-            {
-                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-                while (std::chrono::steady_clock::now() < deadline)
-                {
-                    if (stream.OutputContains("\"kind\":\"end\""))
-                        return;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                }
-            });
+        stream.PushAction([&]() { stream.WaitForCount("\"kind\":\"end\"", 1); });
 
         stream.Push(DidOpenMessage(fixture.Uri("main.as"), scenario.initial));
 
@@ -4241,13 +4007,7 @@ TEST_CASE("Server - What it says while the code is still being written")
         stream.PushAction(
             [&stream, &publishesBefore]()
             {
-                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-                while (std::chrono::steady_clock::now() < deadline)
-                {
-                    if (CountPublishedFor(stream.Output(), "main.as") > 0)
-                        break;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                }
+                stream.WaitForCondition([&](const std::string& out) { return CountPublishedFor(out, "main.as") > 0; });
                 publishesBefore = CountPublishedFor(stream.Output(), "main.as");
             });
 
@@ -4294,35 +4054,10 @@ TEST_CASE("Server - What it says while the code is still being written")
                     // So wait for a publish that did not exist before this keystroke, and only then for
                     // the stream to settle, which catches a later republish. The deadline is the
                     // backstop; reaching it means something is genuinely wrong rather than slow.
-                    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-                    size_t lastSize = 0;
-                    auto quietSince = std::chrono::steady_clock::now();
-                    bool sawNewPublish = false;
 
-                    while (std::chrono::steady_clock::now() < deadline)
-                    {
-                        const std::string output = stream.Output();
-
-                        if (!sawNewPublish && CountPublishedFor(output, "main.as") > publishesBefore)
-                        {
-                            sawNewPublish = true;
-                            quietSince = std::chrono::steady_clock::now();
-                        }
-
-                        const size_t size = output.size();
-                        if (size != lastSize)
-                        {
-                            lastSize = size;
-                            quietSince = std::chrono::steady_clock::now();
-                        }
-                        else if (sawNewPublish &&
-                                 std::chrono::steady_clock::now() - quietSince > std::chrono::milliseconds(400))
-                        {
-                            break;
-                        }
-
-                        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                    }
+                    stream.WaitForCondition([&](const std::string& output)
+                                            { return CountPublishedFor(output, "main.as") > publishesBefore; },
+                                            std::chrono::seconds(20));
 
                     published[index] = LastPublishedFor(stream.Output(), "main.as");
                     publishesBefore = CountPublishedFor(stream.Output(), "main.as");
@@ -5238,13 +4973,8 @@ std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFram
             // Bounded short when no new frame is expected: waiting the full timeout for something
             // that correctly never arrives would cost fifteen seconds of suite time per run.
             const auto budget = expectNewFrame ? std::chrono::seconds(15) : std::chrono::seconds(2);
-            const auto deadline = std::chrono::steady_clock::now() + budget;
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (CountPublishedFor(stream.Output(), "main.as") > before)
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
+            stream.WaitForCondition([&](const std::string& out) { return CountPublishedFor(out, "main.as") > before; },
+                                    budget);
         });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
@@ -5554,13 +5284,8 @@ std::string RunWithFolderModules(FolderModuleFixture& fx,
         stream.PushAction(
             [&stream, waitForFile]()
             {
-                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-                while (std::chrono::steady_clock::now() < deadline)
-                {
-                    if (!LastPublishedFor(stream.Output(), waitForFile).empty())
-                        return;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                }
+                stream.WaitForCondition([&](const std::string& out)
+                                        { return !LastPublishedFor(out, waitForFile).empty(); });
             });
     }
 
@@ -5753,17 +5478,7 @@ TEST_CASE("Server - A renamed module folder is not remembered at its old path")
 
     stream.Push(DidOpenMessage(fixture.Uri("opened.as"), "void RnOpened() { }\n"));
 
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("renamed_map.as"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("renamed_map.as", 1); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -5809,17 +5524,7 @@ TEST_CASE("Server - A symlink does not put one file in two modules twice over")
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
     stream.Push(DidOpenMessage(fixture.Uri("opened.as"), "void SlOpened() { }\n"));
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("linked_map.as"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("linked_map.as", 1); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -5873,13 +5578,9 @@ TEST_CASE("Server - The cost of a module-wide pass is measured rather than assum
     stream.PushAction(
         [&stream, &savedAt, &elapsed]()
         {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (CountPublishedFor(stream.Output(), "module/file") >= k_files)
-                    break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
+            stream.WaitForCondition([&](const std::string& out)
+                                    { return CountPublishedFor(out, "module/file") >= k_files; },
+                                    std::chrono::seconds(60));
             elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - savedAt);
         });
 
@@ -5921,17 +5622,7 @@ TEST_CASE("Server - Closing an open file in a folder module does not purge modul
     // Open use.as: RetainedHelper must still be known and resolve without error
     stream.Push(DidOpenMessage(fixture.Uri("scripts/maps/use.as"), "void UserFunc()\n{\n    RetainedHelper();\n}\n"));
 
-    stream.PushAction(
-        [&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("use.as"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+    stream.PushAction([&stream]() { stream.WaitForCount("use.as", 1); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -6010,16 +5701,9 @@ TEST_CASE("Server - Dynamic modules change updates diagnostics for open document
     stream.PushAction(
         [&stream, &initialPublished]()
         {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains("ins2_register.as"))
-                {
-                    initialPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
-                    return;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
+            stream.WaitForCondition([&](const std::string& out)
+                                    { return out.find("ins2_register.as") != std::string::npos; });
+            initialPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
         });
 
     // 2. Send didChangeConfiguration REMOVING the ins2 folder module.
@@ -6035,16 +5719,9 @@ TEST_CASE("Server - Dynamic modules change updates diagnostics for open document
     stream.PushAction(
         [&stream, &removedPublished]()
         {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (CountPublishedFor(stream.Output(), "ins2_register.as") >= 2)
-                {
-                    removedPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
-                    return;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
+            stream.WaitForCondition([&](const std::string& out)
+                                    { return CountPublishedFor(out, "ins2_register.as") >= 2; });
+            removedPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
         });
 
     // 3. Send didChangeConfiguration ADDING the ins2 folder module back using ${workspaceFolder}!
@@ -6059,16 +5736,9 @@ TEST_CASE("Server - Dynamic modules change updates diagnostics for open document
     stream.PushAction(
         [&stream, &restoredPublished]()
         {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (CountPublishedFor(stream.Output(), "ins2_register.as") >= 3)
-                {
-                    restoredPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
-                    return;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
+            stream.WaitForCondition([&](const std::string& out)
+                                    { return CountPublishedFor(out, "ins2_register.as") >= 3; });
+            restoredPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
         });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
@@ -6197,15 +5867,8 @@ TEST_CASE("Server - Saving an open file in a module does not re-analyze closed f
     stream.PushAction(
         [&stream]()
         {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (CountPublishedFor(stream.Output(), "weapon_closed.as") >= 1)
-                {
-                    break;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
+            stream.WaitForCondition([&](const std::string& out)
+                                    { return CountPublishedFor(out, "weapon_closed.as") >= 1; });
         });
 
     // Open weapon_open.as

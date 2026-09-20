@@ -2,6 +2,8 @@
 
 #include <lsp/io/stream.h>
 
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <functional>
 #include <mutex>
@@ -10,177 +12,222 @@
 
 namespace angel_lsp::test
 {
-    /**
-     * @brief In-memory lsp::io::Stream that replays a scripted request sequence and records replies.
-     *
-     * The Server owns a real JSON-RPC connection, so the only way to exercise its handlers is to
-     * speak the protocol at it. Over stdio that is impossible inside a test binary - the test
-     * process needs its own stdin and stdout - which is why Server takes the stream by reference.
-     *
-     * Reads drain the scripted input and then report end of file by throwing lsp::io::Error, which
-     * is what a closed editor looks like to the framework and what makes Server::Run() return.
-     */
-    class ScriptedStream final : public lsp::io::Stream
+/**
+ * @brief In-memory lsp::io::Stream that replays a scripted request sequence and records replies.
+ *
+ * The Server owns a real JSON-RPC connection, so the only way to exercise its handlers is to
+ * speak the protocol at it. Over stdio that is impossible inside a test binary - the test
+ * process needs its own stdin and stdout - which is why Server takes the stream by reference.
+ *
+ * Reads drain the scripted input and then report end of file by throwing lsp::io::Error, which
+ * is what a closed editor looks like to the framework and what makes Server::Run() return.
+ */
+class ScriptedStream final : public lsp::io::Stream
+{
+  public:
+    /** @brief Wraps one JSON body in the Content-Length framing the protocol requires. */
+    static std::string Frame(const std::string& jsonBody)
     {
-    public:
-        /** @brief Wraps one JSON body in the Content-Length framing the protocol requires. */
-        static std::string Frame(const std::string &jsonBody)
+        return "Content-Length: " + std::to_string(jsonBody.size()) + "\r\n\r\n" + jsonBody;
+    }
+
+    /** @brief Appends a framed message to the scripted input. */
+    void Push(const std::string& jsonBody)
+    {
+        m_input += Frame(jsonBody);
+    }
+
+    /**
+     * @brief Schedules a side effect to run once the message pushed before it has been handled.
+     *
+     * Needed because the whole script is built before the server starts: a plain statement
+     * between two Push() calls would run before the first message is ever read. Anything that
+     * models the world changing mid-session - a file deleted on disk between two notifications,
+     * or a wait for something a handler produces - has to be scheduled here instead.
+     *
+     * An action fires on the reader thread, when the reader has *consumed* the bytes it is
+     * scheduled behind. Consuming bytes is not handling them: the framework reads a whole
+     * message, dispatches it, and only then reads the next. So an action recorded at the end of
+     * the script so far runs BEFORE the message just pushed has been dispatched - and one that
+     * waits for that message's effect waits for something that has not started, on the very
+     * thread that would have started it. It then waits out its entire timeout and measures a
+     * race afterwards.
+     *
+     * That trap was documented here and sprung anyway, in most of the suite. The durations gave
+     * it away: whole families of harness tests took 20, 40 or 60 seconds - round numbers, which
+     * is never work and always a deadline. Callers were expected to push a filler message
+     * themselves and most did not, so this pushes one for them.
+     *
+     * The filler is a notification the server does not handle. LSP requires an unknown
+     * notification to be ignored - only requests get MethodNotFound back - so it costs one
+     * dispatch and writes nothing, and its only job is to be the thing whose bytes the action
+     * waits behind.
+     */
+    void PushAction(std::function<void()> action)
+    {
+        m_input += Frame(R"({"jsonrpc":"2.0","method":"$/angelscriptTestBarrier","params":{}})");
+        m_actions.push_back({m_input.size(), std::move(action)});
+    }
+
+    void read(char* buffer, std::size_t size) override
+    {
+        if (m_readOffset + size > m_input.size())
         {
-            return "Content-Length: " + std::to_string(jsonBody.size()) + "\r\n\r\n" + jsonBody;
+            // Everything scripted has been consumed. Reported the same way a closed transport
+            // is, so the server's message loop ends instead of blocking the test forever.
+            throw lsp::io::Error("end of scripted input");
         }
 
-        /** @brief Appends a framed message to the scripted input. */
-        void Push(const std::string &jsonBody)
-        {
-            m_input += Frame(jsonBody);
-        }
+        std::memcpy(buffer, m_input.data() + m_readOffset, size);
+        m_readOffset += size;
 
-        /**
-         * @brief Schedules a side effect to run once the message pushed before it has been handled.
-         *
-         * Needed because the whole script is built before the server starts: a plain statement
-         * between two Push() calls would run before the first message is ever read. Anything that
-         * models the world changing mid-session - a file deleted on disk between two notifications,
-         * or a wait for something a handler produces - has to be scheduled here instead.
-         *
-         * An action fires on the reader thread, when the reader has *consumed* the bytes it is
-         * scheduled behind. Consuming bytes is not handling them: the framework reads a whole
-         * message, dispatches it, and only then reads the next. So an action recorded at the end of
-         * the script so far runs BEFORE the message just pushed has been dispatched - and one that
-         * waits for that message's effect waits for something that has not started, on the very
-         * thread that would have started it. It then waits out its entire timeout and measures a
-         * race afterwards.
-         *
-         * That trap was documented here and sprung anyway, in most of the suite. The durations gave
-         * it away: whole families of harness tests took 20, 40 or 60 seconds - round numbers, which
-         * is never work and always a deadline. Callers were expected to push a filler message
-         * themselves and most did not, so this pushes one for them.
-         *
-         * The filler is a notification the server does not handle. LSP requires an unknown
-         * notification to be ignored - only requests get MethodNotFound back - so it costs one
-         * dispatch and writes nothing, and its only job is to be the thing whose bytes the action
-         * waits behind.
-         */
-        void PushAction(std::function<void()> action)
-        {
-            m_input += Frame(R"({"jsonrpc":"2.0","method":"$/angelscriptTestBarrier","params":{}})");
-            m_actions.push_back({ m_input.size(), std::move(action) });
-        }
+        RunDueActions();
+    }
 
-        void read(char *buffer, std::size_t size) override
-        {
-            if (m_readOffset + size > m_input.size())
-            {
-                // Everything scripted has been consumed. Reported the same way a closed transport
-                // is, so the server's message loop ends instead of blocking the test forever.
-                throw lsp::io::Error("end of scripted input");
-            }
-
-            std::memcpy(buffer, m_input.data() + m_readOffset, size);
-            m_readOffset += size;
-
-            RunDueActions();
-        }
-
-        void write(const char *buffer, std::size_t size) override
+    void write(const char* buffer, std::size_t size) override
+    {
         {
             std::lock_guard<std::mutex> lock(m_outputMutex);
             m_output.append(buffer, size);
         }
+        m_outputCv.notify_all();
+    }
 
-        /** @brief Everything the server has written back, framing included. */
-        std::string Output() const
+    /**
+     * @brief Waits deterministically until a needle appears at least `times` times in output.
+     * @param needle Substring to look for in received output.
+     * @param times Minimum number of occurrences required.
+     * @param timeout Maximum duration to wait before returning false.
+     * @return True if condition met within timeout; false otherwise.
+     */
+    bool WaitForCount(const std::string& needle, size_t times = 1,
+                      std::chrono::milliseconds timeout = std::chrono::seconds(20)) const
+    {
+        std::unique_lock<std::mutex> lock(m_outputMutex);
+        return m_outputCv.wait_for(lock, timeout,
+                                   [this, &needle, times]()
+                                   {
+                                       if (needle.empty())
+                                           return true;
+                                       size_t count = 0;
+                                       for (size_t pos = m_output.find(needle); pos != std::string::npos;
+                                            pos = m_output.find(needle, pos + needle.size()))
+                                       {
+                                           ++count;
+                                       }
+                                       return count >= times;
+                                   });
+    }
+
+    /**
+     * @brief Waits deterministically until a custom predicate over output evaluates to true.
+     * @param predicate Callable accepting const std::string& and returning bool.
+     * @param timeout Maximum duration to wait before returning false.
+     * @return True if condition met within timeout; false otherwise.
+     */
+    template <typename Pred>
+    bool WaitForCondition(Pred&& predicate, std::chrono::milliseconds timeout = std::chrono::seconds(20)) const
+    {
+        std::unique_lock<std::mutex> lock(m_outputMutex);
+        return m_outputCv.wait_for(lock, timeout, [this, &predicate]() { return predicate(m_output); });
+    }
+
+    /** @brief Everything the server has written back, framing included. */
+    std::string Output() const
+    {
+        std::lock_guard<std::mutex> lock(m_outputMutex);
+        return m_output;
+    }
+
+    /** @brief True if the server wrote anything containing the given fragment. */
+    bool OutputContains(const std::string& fragment) const
+    {
+        std::lock_guard<std::mutex> lock(m_outputMutex);
+        return m_output.find(fragment) != std::string::npos;
+    }
+
+    /**
+     * @brief The body of the reply to one request id, or an empty string if there was none.
+     *
+     * Assertions about a specific answer belong here rather than over the whole transcript:
+     * the server also writes log notifications and diagnostics from its background threads, so
+     * searching everything makes a test depend on thread timing.
+     */
+    std::string ResponseFor(int id) const
+    {
+        std::lock_guard<std::mutex> lock(m_outputMutex);
+        const std::string idField = "\"id\":" + std::to_string(id);
+
+        size_t pos = 0;
+        while (pos < m_output.size())
         {
-            std::lock_guard<std::mutex> lock(m_outputMutex);
-            return m_output;
-        }
+            const size_t headerStart = m_output.find("Content-Length:", pos);
+            if (headerStart == std::string::npos)
+                break;
 
-        /** @brief True if the server wrote anything containing the given fragment. */
-        bool OutputContains(const std::string &fragment) const
-        {
-            std::lock_guard<std::mutex> lock(m_outputMutex);
-            return m_output.find(fragment) != std::string::npos;
-        }
+            const size_t bodyStart = m_output.find("\r\n\r\n", headerStart);
+            if (bodyStart == std::string::npos)
+                break;
 
-        /**
-         * @brief The body of the reply to one request id, or an empty string if there was none.
-         *
-         * Assertions about a specific answer belong here rather than over the whole transcript:
-         * the server also writes log notifications and diagnostics from its background threads, so
-         * searching everything makes a test depend on thread timing.
-         */
-        std::string ResponseFor(int id) const
-        {
-            std::lock_guard<std::mutex> lock(m_outputMutex);
-            const std::string idField = "\"id\":" + std::to_string(id);
+            const size_t contentStart = bodyStart + 4;
+            const size_t nextHeader = m_output.find("Content-Length:", contentStart);
+            const size_t bodyLength =
+                (nextHeader == std::string::npos) ? (m_output.size() - contentStart) : (nextHeader - contentStart);
 
-            size_t pos = 0;
-            while (pos < m_output.size())
+            std::string body = m_output.substr(contentStart, bodyLength);
+            if (body.find(idField) != std::string::npos &&
+                (body.find("\"result\"") != std::string::npos || body.find("\"error\"") != std::string::npos))
             {
-                const size_t headerStart = m_output.find("Content-Length:", pos);
-                if (headerStart == std::string::npos)
-                    break;
-
-                const size_t bodyStart = m_output.find("\r\n\r\n", headerStart);
-                if (bodyStart == std::string::npos)
-                    break;
-
-                const size_t contentStart = bodyStart + 4;
-                const size_t nextHeader = m_output.find("Content-Length:", contentStart);
-                const size_t bodyLength = (nextHeader == std::string::npos) ? (m_output.size() - contentStart) : (nextHeader - contentStart);
-
-                std::string body = m_output.substr(contentStart, bodyLength);
-                if (body.find(idField) != std::string::npos && (body.find("\"result\"") != std::string::npos || body.find("\"error\"") != std::string::npos))
-                {
-                    return body;
-                }
-
-                pos = contentStart + bodyLength;
+                return body;
             }
 
-            return "";
+            pos = contentStart + bodyLength;
         }
 
-        /** @brief Number of times a fragment appears in everything written back. */
-        size_t CountInOutput(const std::string &fragment) const
-        {
-            if (fragment.empty())
-            {
-                return 0;
-            }
+        return "";
+    }
 
-            std::lock_guard<std::mutex> lock(m_outputMutex);
-            size_t count = 0;
-            for (size_t pos = m_output.find(fragment); pos != std::string::npos;
-                 pos = m_output.find(fragment, pos + fragment.size()))
-            {
-                ++count;
-            }
-            return count;
+    /** @brief Number of times a fragment appears in everything written back. */
+    size_t CountInOutput(const std::string& fragment) const
+    {
+        if (fragment.empty())
+        {
+            return 0;
         }
 
-    private:
-        /** @brief Fires every scheduled action the reader has now passed, in order, exactly once. */
-        void RunDueActions()
+        std::lock_guard<std::mutex> lock(m_outputMutex);
+        size_t count = 0;
+        for (size_t pos = m_output.find(fragment); pos != std::string::npos;
+             pos = m_output.find(fragment, pos + fragment.size()))
         {
-            while (m_nextAction < m_actions.size() && m_actions[m_nextAction].offset <= m_readOffset)
-            {
-                m_actions[m_nextAction].action();
-                ++m_nextAction;
-            }
+            ++count;
         }
+        return count;
+    }
 
-        struct ScheduledAction
+  private:
+    /** @brief Fires every scheduled action the reader has now passed, in order, exactly once. */
+    void RunDueActions()
+    {
+        while (m_nextAction < m_actions.size() && m_actions[m_nextAction].offset <= m_readOffset)
         {
-            std::size_t offset = 0;
-            std::function<void()> action;
-        };
+            m_actions[m_nextAction].action();
+            ++m_nextAction;
+        }
+    }
 
-        std::string m_input;
-        std::string m_output;
-        mutable std::mutex m_outputMutex;
-        std::size_t m_readOffset = 0;
-        std::vector<ScheduledAction> m_actions;
-        std::size_t m_nextAction = 0;
+    struct ScheduledAction
+    {
+        std::size_t offset = 0;
+        std::function<void()> action;
     };
-}
+
+    std::string m_input;
+    std::string m_output;
+    mutable std::mutex m_outputMutex;
+    mutable std::condition_variable m_outputCv;
+    std::size_t m_readOffset = 0;
+    std::vector<ScheduledAction> m_actions;
+    std::size_t m_nextAction = 0;
+};
+} // namespace angel_lsp::test

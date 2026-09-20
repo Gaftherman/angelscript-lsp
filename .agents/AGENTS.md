@@ -1,14 +1,14 @@
 # Standard Operating Procedure (SOP) & Engineering Standard - AngelLSP
 
-AngelLSP is a high-performance C++20 Language Server Protocol (LSP) server for the AngelScript language (`.as`), using Tree-Sitter for AST parsing, semantic token resolution, and symbol analysis.
+AngelLSP is a high-performance C++20 Language Server Protocol (LSP) implementation for the AngelScript language (`.as`), powered by Tree-Sitter for AST parsing, semantic token resolution, and symbol analysis.
 
 ---
 
 ## 1. Architectural Layers & Include Matrix
 
-Circular or downward-to-upward inclusions are strictly prohibited and checked via `server/scripts/check-layer-includes.py`:
+Layer isolation is strict and enforced by `server/scripts/check-layer-includes.py`. Downward-to-upward or cross-feature inclusions are strictly forbidden:
 
-| Layer | Path | Allowed to `#include` | FORBIDDEN to `#include` |
+| Layer | Path | Allowed to `#include` | Strictly FORBIDDEN to `#include` |
 | :--- | :--- | :--- | :--- |
 | **Layer 1: Core / Config** | `core/`, `config/`, `document/`, `parser/`, `utils/` | Own layer, standard C++ libraries | Layers 2, 3, and 4 |
 | **Layer 2: Analysis** | `analysis/` | Layer 1, standard C++ libraries | Layers 3 and 4 |
@@ -17,16 +17,16 @@ Circular or downward-to-upward inclusions are strictly prohibited and checked vi
 
 ---
 
-## 2. Doxygen Documentation Standard (Mandatory for All Public APIs)
+## 2. Doxygen Documentation Standard (Mandatory for Public APIs)
 
-All classes, structs, member variables, functions, and feature contracts must be documented in **English** using Javadoc-style Doxygen comments (`/** ... */`).
+All classes, structs, member variables, functions, and feature contracts must be documented in **English** using Javadoc-style Doxygen blocks (`/** ... */`).
 
 ### Rules:
-1. **`@brief`**: A concise single-line description ending with a period.
-2. **`@param[in/out]`**: Explicit direction tag for each parameter, followed by parameter name and purpose.
-3. **`@return`**: Describes the returned value and empty/nullopt semantics.
-4. **`@note` / `@warning`**: Concurrency constraints, thread-safety guarantees, or AST lifecycle rules.
-5. **No inline comments for API contracts**: Do not use `//` comments for function contracts.
+1. `@brief`: Clear single-line description ending with a period.
+2. `@param[in]`, `@param[out]`, or `@param[in,out]`: Explicit direction tag for every parameter, followed by parameter name and purpose.
+3. `@return`: Explicit description of return value, including `std::nullopt` or empty-state semantics.
+4. `@note` / `@warning`: Concurrency guarantees, thread safety, or AST node lifetime constraints.
+5. Never use single-line comments (`//`) to document public interface contracts.
 
 ### Canonical Example:
 ```cpp
@@ -47,7 +47,7 @@ namespace lsp::features
      * @param[in] request Immutable context payload containing document, symbols, and coordinates.
      * @return An optional HoverResult containing Markdown contents; std::nullopt if the position
      *         does not correspond to a resolvable symbol or comment.
-     * @note Thread-safe. This function operates purely on const references without modifying global state.
+     * @note Thread-safe. Operates purely on const references without mutating shared or global state.
      */
     std::optional<HoverResult> GetHover(const HoverRequest& request);
 }
@@ -57,56 +57,50 @@ namespace lsp::features
 
 ## 3. Conventional Commits & Git Hygiene Standard
 
-Every commit must adhere strictly to the Conventional Commits specification. Unstructured commits or commits containing temporary debugging logs are rejected.
+Every commit must adhere strictly to the Conventional Commits specification. Unstructured commits or commits containing temporary debugging code are rejected.
 
 ### Format:
 ```
 <type>(<scope>): <short imperative description>
 
-[optional body explaining WHY, context, or edge cases]
+[optional body explaining context, edge cases, and rationale]
 
 [optional footer(s): Closes #123, Breaking-Change: ...]
 ```
 
 ### Allowed Types:
-- **`feat`**: A new LSP feature, user-facing capability, or language extension.
-- **`fix`**: A bug fix in parsing, type checking, scheduling, or diagnostics.
-- **`test`**: Adding missing tests, refactoring test helpers, or improving coverage.
-- **`perf`**: A code change that improves throughput or reduces memory/latency.
-- **`refactor`**: A code change that neither fixes a bug nor adds a feature.
-- **`style`**: Changes that do not affect code logic (clang-format, whitespace, Allman braces).
-- **`docs`**: Documentation only changes (Doxygen, README, AGENTS.md).
-- **`chore`**: Maintenance tasks, CMake adjustments, CI workflows, or gitignore updates.
+- `feat`: A new user-facing LSP capability or feature handler.
+- `fix`: A bug fix in parser, analysis, scheduler, or diagnostics.
+- `test`: Adding missing tests, eliminating flakiness, or refactoring test harnesses.
+- `perf`: Performance optimizations reducing latency or memory footprint.
+- `refactor`: Code restructurings without functional changes.
+- `style`: Formatting, Allman brace adjustments, or whitespace.
+- `docs`: Documentation only changes (Doxygen, README, AGENTS.md).
+- `chore`: CMake adjustments, CI workflows, script improvements, or gitignore updates.
 
 ### Allowed Scopes:
 - `core`, `parser`, `analysis`, `features`, `server`, `harness`, `tests`, `docs`.
 
-### Examples:
-- `feat(features): implement signature help handler for overloaded constructors`
-- `fix(analysis): resolve false positive in definite assignment loop break`
-- `test(harness): replace sleep_for with deterministic DrainQueue barrier`
-- `docs(architecture): update layer matrix and Doxygen standards in AGENTS.md`
-
-### Rules:
+### Quality Rules:
 - Commits must be **atomic** (one logical change per commit).
-- **Zero debug code**: Never commit `std::cout`, `printf`, or temporary trace logs.
+- **Zero debug code**: Never commit `std::cout`, `printf`, or temporary tracing logs.
 
 ---
 
 ## 4. Deterministic Testing & Performance Budget SLA
 
-1. **Deterministic Execution:** No `sleep_for` in any test. Background tasks must be synchronized using `AnalysisScheduler::DrainQueue()`.
-2. **In-Memory Testing:** Feature tests must use `TestUtils.h` (`CreateTestDocument`, `PopulateTestSymbolTable`) without touching physical disk I/O.
+1. **Deterministic Schedulers:** No `sleep_for` in tests. Background analysis must be synchronized deterministically using `AnalysisScheduler::DrainQueue()`.
+2. **In-Memory Testing:** Feature tests must use `TestUtils.h` (`CreateTestDocument`, `PopulateTestSymbolTable`) without filesystem I/O.
 3. **Performance SLA:**
    - `Hover` / `Definition`: < 20 ms.
    - `Completion`: < 50 ms.
    - `SemanticTokens`: < 80 ms per 1,000 lines.
-   - Full test suite execution target: < 120s across all 1,771 tests.
+   - Complete CTest suite run: < 120s across all 1,771+ test cases with zero flakiness.
 
 ---
 
-## 5. Tooling & Linting Standards
+## 5. Tooling & Static Analysis Standards
 
 - **Code Style:** Strict Allman style with 4-space indentation enforced by `.clang-format`.
-- **Static Analysis:** `clang-tidy` rules in `.clang-tidy` and `cppcheck` via `run-harness.ps1 -FullAudit`.
-- **AST Exploration:** Handled via `@nendo/tree-sitter-mcp` and `@felipeerias/clangd-mcp-server`.
+- **Static Analysis:** Audited by `clang-tidy` (`.clang-tidy`) and `cppcheck` via `run-harness.ps1 -FullAudit`.
+- **AST & Semantic Exploration:** Handled via `@nendo/tree-sitter-mcp` and `@felipeerias/clangd-mcp-server`.

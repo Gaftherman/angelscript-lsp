@@ -32,7 +32,13 @@ if ($EnableASan) {
     $cmakeArgs += "-DCMAKE_CXX_FLAGS=-fsanitize=address"
 }
 cmake @cmakeArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "CMake configuration failed with exit code $LASTEXITCODE"
+}
 cmake --build build --config Debug
+if ($LASTEXITCODE -ne 0) {
+    throw "Build failed with exit code $LASTEXITCODE"
+}
 
 Copy-Item "build\compile_commands.json" -Destination "$projectRoot\" -Force
 
@@ -40,6 +46,9 @@ Write-Host "`n==========================================" -ForegroundColor Cyan
 Write-Host " [4/6] Executing Deterministic Test Suite " -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 ctest --test-dir build -C Debug --output-on-failure
+if ($LASTEXITCODE -ne 0) {
+    throw "CTest failed with exit code $LASTEXITCODE"
+}
 
 if ($CheckFormatting) {
     Write-Host "`n==========================================" -ForegroundColor Cyan
